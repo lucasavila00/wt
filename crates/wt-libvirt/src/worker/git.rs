@@ -9,6 +9,8 @@ use std::time::Instant;
 use virt::domain::Domain;
 
 const BUNDLE_DIR: &str = "/workspace/.git/wt";
+const CLONE_CREDENTIALS_DIR: &str = "/run/wt-git";
+const CLONE_ASKPASS: &str = "/tmp/wt-git-askpass";
 const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
 const SSH_WRAPPER: &[u8] = br#"#!/bin/sh
 set -eu
@@ -69,7 +71,7 @@ pub(super) fn clone_and_checkout(
         domain,
         "Git credentials",
         "/usr/bin/install",
-        &["-d", "-m", "0700", "/run/wt-git"],
+        &["-d", "-m", "0700", CLONE_CREDENTIALS_DIR],
         deadline,
     )?;
     let result = (|| {
@@ -101,7 +103,12 @@ pub(super) fn clone_and_checkout(
         install_persistent_bundle(domain, credentials, deadline)
     })();
     // The passphrase is allowed only in guest tmpfs for the blocking create.
-    let _ = guest_agent::exec(domain, "/bin/rm", &["-rf", "/run/wt-git"], deadline);
+    let _ = guest_agent::exec(
+        domain,
+        "/bin/rm",
+        &["-rf", CLONE_CREDENTIALS_DIR, CLONE_ASKPASS],
+        deadline,
+    );
     result
 }
 
@@ -116,14 +123,14 @@ fn stage_clone_credentials(
         guest_agent::write(domain, "/run/wt-git/passphrase", passphrase)?;
         guest_agent::write(
             domain,
-            "/run/wt-git/askpass",
+            CLONE_ASKPASS,
             b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
         )?;
         guest_agent::run_phase(
             domain,
             "Git credentials",
             "/bin/chmod",
-            &["0700", "/run/wt-git/askpass"],
+            &["0700", CLONE_ASKPASS],
             deadline,
         )?;
     }
@@ -143,7 +150,7 @@ fn git_environment(has_passphrase: bool) -> Vec<String> {
     ];
     if has_passphrase {
         environment.extend([
-            "SSH_ASKPASS=/run/wt-git/askpass".to_owned(),
+            format!("SSH_ASKPASS={CLONE_ASKPASS}"),
             "SSH_ASKPASS_REQUIRE=force".to_owned(),
             "DISPLAY=wt:0".to_owned(),
         ]);
@@ -160,6 +167,8 @@ fn run_git(
 ) -> Result<(), WorkerError> {
     let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
     args.push("/usr/bin/git");
+    // cloud-init creates /workspace for wt, while guest-agent provisioning runs as root.
+    args.extend(["-c", "safe.directory=/workspace"]);
     args.extend_from_slice(git_args);
     guest_agent::run_phase(domain, phase, "/usr/bin/env", &args, deadline)?;
     Ok(())
@@ -297,6 +306,13 @@ mod tests {
         assert!(!private_key_accepts_passphrase(key, "").unwrap());
         assert!(!private_key_accepts_passphrase(key, "wrong").unwrap());
         assert!(private_key_accepts_passphrase(key, "secret").unwrap());
+    }
+
+    #[test]
+    fn encrypted_clone_executes_askpass_outside_noexec_run() {
+        let environment = git_environment(true);
+        assert!(environment.contains(&format!("SSH_ASKPASS={CLONE_ASKPASS}")));
+        assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 
     fn run(command: &mut Command, action: &str) {

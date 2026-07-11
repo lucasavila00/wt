@@ -115,7 +115,7 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 | Injected worker | source/ref and SSH wire shape, persistence, conflicts, sync inventory, Git/devcontainer/SSH failure propagation |
 | KVM | SSH-served jsdev sample → requested ref → devcontainer ready → push from container → strict guest SSH → list → remove |
 
-The KVM test clones `https://github.com/lucasavila00/jsdev-sample.git` into a temporary bare repository and serves it over SSH from the host bridge. The world itself always clones through SSH. It runs the stock devcontainer recipe and proves the container can push a branch back through the installed identity.
+The KVM test clones `git@github.com:lucasavila00/jsdev-sample.git` into a temporary bare repository and serves it over SSH from the host bridge. The world itself always clones through SSH. It runs the stock devcontainer recipe and proves the container can push a branch back through the installed identity.
 
 The test uses temporary SSH server, Git identity, guest-login identity, and host keys. No long-lived provider credential is required.
 

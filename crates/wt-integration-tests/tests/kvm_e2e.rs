@@ -9,7 +9,7 @@ use wt_libvirt::{LibvirtWorker, SiteConfig};
 use wt_local::service::Service;
 use wt_local::store::Store;
 
-const SAMPLE_SOURCE: &str = "https://github.com/lucasavila00/jsdev-sample.git";
+const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 
 #[test]
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {

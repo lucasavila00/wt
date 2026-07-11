@@ -22,7 +22,7 @@ The KVM E2E test requires:
 | Libvirt network | `default`, active, persistent, autostart, DHCP enabled |
 | World directory | `/var/lib/libvirt/images/wt`, site user:`kvm`, mode `2770`, writable |
 | SSH Git fixture | Host `openssh-server`; installed by `scripts/install-site` |
-| Git server | Host access to `https://github.com/lucasavila00/jsdev-sample.git` |
+| Git server | SSH access to `git@github.com:lucasavila00/jsdev-sample.git` |
 
 These paths come from `/etc/wt/local.toml`. `wt-local-setup` creates and verifies them. Installation details: [wt-local](./crates/wt-local/README.md#install-on-ubuntu).
 
