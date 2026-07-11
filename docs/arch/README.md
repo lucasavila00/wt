@@ -29,7 +29,9 @@ Client:  ssh {repo}-{feature}  after print / wt sync  →  guest world
 crates/
   wt-api
   wt-cli       # package; binary name wt
-  wt-local     # site server
+  wt-libvirt   # production libvirt/KVM backend
+  wt-local     # site helper + registry + service
+  wt-integration-tests
 ```
 
 Not in the repo yet: `wt-control-plane`, `wt-worker`.

@@ -1,5 +1,4 @@
-use crate::config::LocalConfig;
-use crate::worker::{ProvisionSpec, WorkerError, WorldWorker};
+use crate::{LibvirtConfig, ProvisionSpec, WorkerError, WorldWorker};
 use std::fs;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -11,11 +10,16 @@ use virt::error::ErrorNumber;
 use wt_api::SshEndpoint;
 
 pub struct LibvirtWorker {
-    config: LocalConfig,
+    config: LibvirtConfig,
 }
 
 impl LibvirtWorker {
-    pub fn new(config: LocalConfig) -> Result<Self, WorkerError> {
+    pub fn new(config: LibvirtConfig) -> Result<Self, WorkerError> {
+        if !Path::new("/dev/kvm").exists() {
+            return Err(WorkerError::new(
+                "KVM is required but /dev/kvm is unavailable",
+            ));
+        }
         require_file(&config.image, "guest image")?;
         require_file(&config.ssh_public_key, "SSH public key")?;
         require_file(&config.ssh_private_key, "SSH private key")?;
@@ -62,18 +66,13 @@ impl LibvirtWorker {
             "create cloud-init seed",
         )?;
 
-        let virt_type = if Path::new("/dev/kvm").exists() {
-            "kvm"
-        } else {
-            "qemu"
-        };
         run(
             Command::new("virt-install")
                 .args(["--connect", &self.config.libvirt_uri])
                 .args(["--name", spec.backend_id])
                 .args(["--memory", &self.config.memory_mib.to_string()])
                 .args(["--vcpus", &self.config.vcpus.to_string()])
-                .args(["--virt-type", virt_type])
+                .args(["--virt-type", "kvm"])
                 .args(["--os-variant", "ubuntu24.04"])
                 .args(["--import", "--boot", "uefi"])
                 .arg("--disk")

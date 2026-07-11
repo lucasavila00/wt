@@ -363,15 +363,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quick-xml"
-version = "0.39.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -726,20 +717,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-integration-tests"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "wt-api",
+ "wt-libvirt",
+ "wt-local",
+]
+
+[[package]]
+name = "wt-libvirt"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+ "uuid",
+ "virt",
+ "wt-api",
+]
+
+[[package]]
 name = "wt-local"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
  "nix",
- "quick-xml",
  "rusqlite",
  "serde_json",
- "tempfile",
  "thiserror",
  "uuid",
- "virt",
  "wt-api",
+ "wt-libvirt",
 ]
 
 [[package]]

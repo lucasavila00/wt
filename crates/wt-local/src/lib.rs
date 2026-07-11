@@ -1,11 +1,10 @@
 pub mod config;
 pub mod service;
 pub mod store;
-pub mod worker;
 
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: worker::WorldWorker>(
+pub fn handle_request<W: wt_libvirt::WorldWorker>(
     service: &mut service::Service<W>,
     owner: &str,
     request: ApiRequest,

@@ -8,14 +8,23 @@ Local target: Ubuntu 24.04, amd64.
 - Ubuntu packages:
 
 ```text
-sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils ovmf libvirt-dev
+sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils ovmf libvirt-dev
 ```
 
 The injected-worker integration tests do not use libvirt/KVM.
 
 ## Libvirt/KVM
 
-Libvirt manages QEMU guests. KVM acceleration through `/dev/kvm` is required for the real integration test.
+The real VM backend is libvirt/KVM. KVM is required.
+
+QEMU supplies the userspace VM process and virtual devices. KVM executes guest CPU instructions in hardware. Both are part of the same libvirt/KVM backend.
+
+Required:
+
+- CPU virtualization enabled in host firmware.
+- `kvm-ok` succeeds.
+- `/dev/kvm` exists.
+- Development user belongs to `kvm` and `libvirt`.
 
 ## Guest image
 
@@ -46,7 +55,6 @@ KVM needs CPU virtualization support, host firmware support, `/dev/kvm`, and use
 ## Still to decide
 
 - Test pool and network names.
-- Rust libvirt bindings vs `virsh` subprocesses.
 - Guest CPU, memory, and disk defaults.
 
 Installation and host configuration instructions land after testing the setup on the local workstation.

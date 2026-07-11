@@ -1,8 +1,8 @@
 use tempfile::TempDir;
 use wt_api::{CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response};
+use wt_libvirt::{ProvisionSpec, WorkerError, WorldWorker};
 use wt_local::service::Service;
 use wt_local::store::Store;
-use wt_local::worker::{ProvisionSpec, WorkerError, WorldWorker};
 
 #[derive(Clone, Debug, Default)]
 struct InjectedWorker {

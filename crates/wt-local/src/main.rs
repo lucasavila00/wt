@@ -3,10 +3,10 @@ use clap::{Parser, Subcommand};
 use nix::unistd::{Uid, User};
 use std::io::{Read, Write};
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
+use wt_libvirt::{LibvirtConfig, LibvirtWorker};
 use wt_local::config::LocalConfig;
 use wt_local::service::Service;
 use wt_local::store::Store;
-use wt_local::worker::libvirt::LibvirtWorker;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-local")]
@@ -37,7 +37,8 @@ fn run() -> Result<()> {
 fn run_api() -> Result<()> {
     let config = LocalConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&config.database_path()).context("open instance registry")?;
-    let worker = LibvirtWorker::new(config.clone()).map_err(anyhow::Error::msg)?;
+    let worker_config = LibvirtConfig::from_env().map_err(anyhow::Error::msg)?;
+    let worker = LibvirtWorker::new(worker_config).map_err(anyhow::Error::msg)?;
     let owner = process_user()?;
     let mut service = Service::new(store, worker);
 

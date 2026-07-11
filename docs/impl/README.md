@@ -2,15 +2,17 @@
 
 Order of work. Product: [plan.md](../plan.md). Arch: [arch/](../arch/README.md). CLI: [arch/cli.md](../arch/cli.md).
 
-Crates: `wt-api`, `wt-local`, `wt-cli` (binary `wt`).
+Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-integration-tests`.
 
 ## Division of labor
 
 | Piece | Role |
 |-------|------|
 | **`wt-api`** | Shared JSON request/response + status enums |
-| **`wt-local`** | Site brain: instances + worker. Helper: JSON in → work → JSON out |
+| **`wt-local`** | Site brain: helper + registry + instance service. JSON in → work → JSON out |
+| **`wt-libvirt`** | Production libvirt/KVM world backend |
 | **`wt-cli` (`wt`)** | Thin: context → spawn helper (local or `ssh --`) → print / `sync` |
+| **`wt-integration-tests`** | Injected service tests + real libvirt/KVM acceptance test |
 
 SSH remote spawn is a small CLI feature. **Real VMs (libvirt) are the hard part.**
 
@@ -27,7 +29,8 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 | Deliver | |
 |---------|--|
 | `wt-api` | create / list / get / delete; status; guest `endpoint`; errors |
-| `wt-local` | helper entrypoint; durable local registry; owner = process user; golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; `Provisioning` → `Running` / `Error` |
+| `wt-local` | helper entrypoint; durable local registry; owner = process user; instance service; `Provisioning` → `Running` / `Error` |
+| `wt-libvirt` | golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; KVM only |
 | `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print Host; basic `sync` if cheap |
 | ops | image, pool, network/bridge, libvirt permissions |
 
@@ -40,9 +43,9 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 | Lane | Covers |
 |------|--------|
 | **Injected worker** | helper/API, registry, ownership, state transitions, restart/reconcile, failures |
-| **Libvirt/KVM** | image, disk, domain, boot, network, IP discovery, SSH, destroy |
+| **Libvirt/KVM** | production backend: image, disk, domain, boot, network, IP discovery, SSH, destroy |
 
-The injected worker is fast and deterministic. It does not imitate libvirt internals.
+Both lanes live in `wt-integration-tests`. The injected worker is fast and deterministic. It does not imitate libvirt internals.
 
 The libvirt/KVM test is the Era 1 acceptance test: `wt new` → `wt ls` → guest SSH → `wt rm`.
 
@@ -79,8 +82,8 @@ Do not pre-build these.
 
 1. `wt-api` types
 2. `wt-local` helper + durable local registry
-3. `wt-cli` local spawn + new/ls/rm (+ print/sync)
-4. **Libvirt** guest lifecycle + SSH endpoint
+3. `wt-libvirt` KVM guest lifecycle + SSH endpoint
+4. `wt-cli` local spawn + new/ls/rm (+ print/sync)
 5. Recipe + remote SSH + CLI polish
 
 ## Open (pick in code)

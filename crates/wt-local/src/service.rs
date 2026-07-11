@@ -1,7 +1,7 @@
 use crate::store::{Store, StoreError, StoredInstance};
-use crate::worker::{ProvisionSpec, WorldWorker};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
+use wt_libvirt::{ProvisionSpec, WorldWorker};
 
 pub struct Service<W> {
     store: Store,
