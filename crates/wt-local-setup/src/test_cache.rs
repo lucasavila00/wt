@@ -1,12 +1,14 @@
 use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
+use crate::host;
 use crate::image;
 use crate::runner::{args, Runner};
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -81,7 +83,12 @@ fn build(
         bail!("stale integration cache build state exists for {BUILD_NAME}");
     }
     fs::create_dir(&build_dir).context("create integration cache build directory")?;
-    let result = build_inner(runner, config, installed, manifest_path, &build_dir);
+    let result = (|| {
+        fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
+            .context("set integration cache build directory permissions")?;
+        host::ensure_qemu_search_acl(runner, &build_dir)?;
+        build_inner(runner, config, installed, manifest_path, &build_dir)
+    })();
     if result.is_err() {
         cleanup_failed_build(runner, &build_dir);
     }

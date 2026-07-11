@@ -11,6 +11,8 @@ scripts/install-site --config config/wt-local.development.toml
 ```
 
 The first run may add the current user to the `libvirt` and `kvm` groups. If it asks you to log out, log back in and run the same command again.
+The installer also grants `libvirt-qemu` search-only ACL access to the worlds
+directory so libvirt can traverse it without exposing worlds to other users.
 
 ## Prepare the automated KVM test image
 

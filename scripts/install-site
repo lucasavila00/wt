@@ -54,6 +54,7 @@ sudo apt install -y \
     libguestfs-tools \
     ovmf \
     libvirt-dev \
+    acl \
     openssh-server
 
 cd "$root"

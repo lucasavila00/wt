@@ -1,12 +1,14 @@
 use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
+use crate::host;
 use crate::runner::{args, Runner};
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -111,18 +113,23 @@ fn build_image(
         bail!("stale image build state exists for {BUILD_NAME}");
     }
     fs::create_dir(&build_dir).context("create image build directory")?;
-    let result = build_image_inner(
-        runner,
-        config,
-        config_bytes,
-        source,
-        manifest_path,
-        &disk,
-        &seed,
-        &user_data,
-        &meta_data,
-        &prepared,
-    );
+    let result = (|| {
+        fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
+            .context("set image build directory permissions")?;
+        host::ensure_qemu_search_acl(runner, &build_dir)?;
+        build_image_inner(
+            runner,
+            config,
+            config_bytes,
+            source,
+            manifest_path,
+            &disk,
+            &seed,
+            &user_data,
+            &meta_data,
+            &prepared,
+        )
+    })();
     if result.is_err() {
         cleanup_failed_build(runner, &build_dir);
     }

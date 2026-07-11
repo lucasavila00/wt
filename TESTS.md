@@ -36,7 +36,7 @@ The KVM E2E test requires:
 | Image manifest | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2.manifest.json`, `root:root`, mode `0644` |
 | Test image cache | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.integration-tests.qcow2` plus its manifest; created by `scripts/prepare-test-image` |
 | Libvirt network | `default`, active, persistent, autostart, DHCP enabled |
-| World directory | `/var/lib/libvirt/images/wt`, site user:`kvm`, mode `2770`, writable |
+| World directory | `/var/lib/libvirt/images/wt`, site user:`kvm`, mode `2770`, writable, with ACL `user:libvirt-qemu:--x` |
 | SSH Git fixture | Host `openssh-server`; installed by `scripts/install-site` |
 | Git server | SSH access to `git@github.com:lucasavila00/jsdev-sample.git` |
 

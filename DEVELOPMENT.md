@@ -11,7 +11,7 @@ Target: Ubuntu 24.04 amd64.
 Ubuntu packages:
 
 ```text
-sudo apt update && sudo apt install -y build-essential pkg-config git curl cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils libguestfs-tools ovmf libvirt-dev
+sudo apt update && sudo apt install -y build-essential pkg-config git curl cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils libguestfs-tools ovmf libvirt-dev acl
 ```
 
 Host access:
@@ -19,7 +19,13 @@ Host access:
 ```text
 sudo usermod -aG libvirt,kvm "$USER"
 sudo install -d -o "$USER" -g kvm -m 2770 /var/lib/libvirt/images/wt
+sudo setfacl -m u:libvirt-qemu:--x /var/lib/libvirt/images/wt
 ```
+
+The ACL grants only the libvirt QEMU service account directory traversal. It
+avoids virt-install path-access warnings without making world files searchable
+by every local user. `scripts/install-site` enforces the same owner, group,
+mode, and ACL for the configured `libvirt.worlds_dir`.
 
 Log out and back in after changing groups. Then require:
 

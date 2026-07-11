@@ -68,7 +68,7 @@ The installer:
 - Requires working KVM. No emulation fallback.
 - Starts and enables the configured existing libvirt network.
 - Creates and verifies configured directories.
-- Owns the worlds directory as the site user and `kvm`, mode `2770`.
+- Owns the worlds directory as the site user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
 - Downloads and verifies the pinned Ubuntu source image.
 - Builds the Docker/Compose-ready golden image in a temporary KVM guest.
 - Installs `wt` and `wt-local` into `install.binary_dir`.

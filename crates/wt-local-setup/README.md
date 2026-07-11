@@ -23,6 +23,11 @@ The implementation follows those responsibilities:
 - `files.rs` contains strict ownership/mode checks and privileged file publication.
 - `runner.rs` is the small command-execution boundary used by the other modules.
 
+The configured worlds directory is strict site state: site user:`kvm`, mode
+`2770`, plus `user:libvirt-qemu:--x`. Temporary image-build directories use
+the same ACL. This gives QEMU traversal without granting access to other local
+users and prevents virt-install path-search warnings.
+
 ## Prepare the integration-test cache
 
 After installing the local site, prepare the separate cached backing image used

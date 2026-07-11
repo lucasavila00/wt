@@ -139,7 +139,51 @@ fn ensure_directories(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
         Uid::effective(),
         kvm_gid,
         0o2770,
+    )?;
+    ensure_qemu_search_acl(runner, &config.libvirt.worlds_dir)
+}
+
+pub(crate) fn ensure_qemu_search_acl(runner: &impl Runner, path: &Path) -> Result<()> {
+    let output = runner.text(
+        "getfacl",
+        &["-cp".into(), "--".into(), path.as_os_str().to_owned()],
+        "inspect libvirt-qemu directory ACL",
+    )?;
+    let entries = acl_entries(&output);
+    let expected =
+        acl_entries("user::rwx\nuser:libvirt-qemu:--x\ngroup::rwx\nmask::rwx\nother::---\n");
+    if entries == expected {
+        return Ok(());
+    }
+    let legacy = acl_entries("user::rwx\ngroup::rwx\nother::---\n");
+    if entries != legacy {
+        bail!(
+            "directory ACL drift at {}: expected only user:libvirt-qemu:--x in addition to mode 2770",
+            path.display()
+        );
+    }
+    runner.run(
+        "sudo",
+        &[
+            "setfacl".into(),
+            "-m".into(),
+            "u:libvirt-qemu:--x".into(),
+            "--".into(),
+            path.as_os_str().to_owned(),
+        ],
+        "grant libvirt-qemu search access to directory",
     )
+}
+
+fn acl_entries(contents: &str) -> Vec<String> {
+    let mut entries = contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
 }
 
 fn ensure_directory(
@@ -267,5 +311,36 @@ mod tests {
             .1
             .iter()
             .any(|argument| argument == "net-autostart"));
+    }
+
+    #[test]
+    fn acl_entries_ignore_headers_and_order() {
+        assert_eq!(
+            acl_entries("# file: /tmp/worlds\nother::---\nuser::rwx\ngroup::rwx\n"),
+            acl_entries("user::rwx\ngroup::rwx\nother::---\n")
+        );
+    }
+
+    #[test]
+    fn legacy_worlds_acl_is_upgraded() {
+        let runner = FakeRunner::new([("user::rwx\ngroup::rwx\nother::---\n", true), ("", true)]);
+        ensure_qemu_search_acl(&runner, Path::new("/worlds")).unwrap();
+        let calls = runner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].0, "sudo");
+        assert!(calls[1]
+            .1
+            .iter()
+            .any(|argument| argument == "u:libvirt-qemu:--x"));
+    }
+
+    #[test]
+    fn unexpected_worlds_acl_is_drift() {
+        let runner = FakeRunner::new([(
+            "user::rwx\nuser:other:rwx\ngroup::rwx\nmask::rwx\nother::---\n",
+            true,
+        )]);
+        assert!(ensure_qemu_search_acl(&runner, Path::new("/worlds")).is_err());
+        assert_eq!(runner.calls.borrow().len(), 1);
     }
 }
