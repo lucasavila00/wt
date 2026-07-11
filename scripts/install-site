@@ -38,6 +38,7 @@ sudo apt install -y \
     qemu-utils \
     libvirt-daemon-system \
     libvirt-clients \
+    virtinst \
     cloud-image-utils \
     libguestfs-tools \
     ovmf \
@@ -65,12 +66,28 @@ if [[ ! -f "$prepared_image" ]]; then
     "$root/scripts/prepare-image"
 fi
 sudo install -o root -g root -m 0644 "$prepared_image" "$installed_image"
+sudo install -d -o root -g root -m 0755 /etc/wt
+sudo tee /etc/wt/local.toml >/dev/null <<'EOF'
+image = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+worlds_dir = "/var/lib/libvirt/images/wt"
+libvirt_uri = "qemu:///system"
+network = "default"
+architecture = "x86_64"
+machine = "q35"
+memory_mib = 2048
+vcpus = 2
+disk_gib = 16
+boot_timeout_seconds = 300
+EOF
+sudo chown root:root /etc/wt/local.toml
+sudo chmod 0644 /etc/wt/local.toml
 
-cargo build --manifest-path "$root/Cargo.toml" --release -p wt-local
+cargo build --manifest-path "$root/Cargo.toml" --release -p wt-local -p wt-cli
 sudo install -o root -g root -m 0755 "$root/target/release/wt-local" /usr/local/bin/wt-local
+sudo install -o root -g root -m 0755 "$root/target/release/wt" /usr/local/bin/wt
 
 echo
-echo "wt-local installed"
+echo "wt and wt-local installed"
 echo "image: $installed_image"
 echo "worlds: $worlds_dir"
 if [[ " $(id -nG) " != *" libvirt "* || " $(id -nG) " != *" kvm "* ]]; then

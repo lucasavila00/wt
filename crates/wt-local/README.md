@@ -32,6 +32,8 @@ scripts/install-site
 
 Run it as the site user, not with `sudo`. The script uses `sudo` for host changes.
 
+Run it in an interactive terminal. Image preparation invokes `sudo virt-customize` and may ask for your password.
+
 Prerequisite: stable Rust toolchain from rustup.
 
 The script:
@@ -43,7 +45,7 @@ The script:
 - Starts and enables the default libvirt network.
 - Downloads and prepares the Docker-ready Ubuntu image once.
 - Creates `/var/lib/wt/images` and `/var/lib/libvirt/images/wt`.
-- Builds and installs `/usr/local/bin/wt-local`.
+- Builds and installs `/usr/local/bin/wt` and `/usr/local/bin/wt-local`.
 
 Log out and back in if the script changes group membership.
 
@@ -61,6 +63,8 @@ The command writes one JSON response to stdout.
 
 ### Runtime overrides
 
+Site config: `/etc/wt/local.toml`. Override its path with `WT_CONFIG`. Environment variables override file values.
+
 | Variable | Default |
 |----------|---------|
 | `WT_STATE_DIR` | `~/.local/state/wt` |
@@ -68,6 +72,8 @@ The command writes one JSON response to stdout.
 | `WT_WORLDS_DIR` | `/var/lib/libvirt/images/wt` |
 | `WT_LIBVIRT_URI` | `qemu:///system` |
 | `WT_LIBVIRT_NETWORK` | `default` |
+| `WT_GUEST_ARCH` | `x86_64` |
+| `WT_GUEST_MACHINE` | `q35` |
 | `WT_GUEST_MEMORY_MIB` | `2048` |
 | `WT_GUEST_VCPUS` | `2` |
 | `WT_GUEST_DISK_GIB` | `16` |

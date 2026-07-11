@@ -43,8 +43,6 @@ impl Store {
                  id            TEXT PRIMARY KEY,
                  owner         TEXT NOT NULL,
                  name          TEXT NOT NULL,
-                 source        TEXT NOT NULL,
-                 git_ref       TEXT,
                  status        TEXT NOT NULL,
                  guest_ip      TEXT,
                  last_error    TEXT,
@@ -59,14 +57,12 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, source, git_ref, status, backend_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             (id, owner, name, status, backend_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 instance.id.to_string(),
                 instance.owner,
                 instance.name.as_str(),
-                instance.source,
-                instance.git_ref,
                 instance.status.to_string(),
                 stored.backend_id,
             ],
@@ -85,7 +81,7 @@ impl Store {
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
         self.connection
             .query_row(
-                "SELECT id, owner, name, source, git_ref, status,
+                "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
@@ -97,7 +93,7 @@ impl Store {
 
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT id, owner, name, source, git_ref, status,
+            "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
@@ -154,21 +150,19 @@ impl Store {
 fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> {
     let id: String = row.get(0)?;
     let name: String = row.get(2)?;
-    let status: String = row.get(5)?;
+    let status: String = row.get(3)?;
     Ok(StoredInstance {
         instance: Instance {
             id: Uuid::parse_str(&id).map_err(|error| invalid_column(&error.to_string()))?,
             owner: row.get(1)?,
             name: InstanceName::parse(name).map_err(|error| invalid_column(&error.to_string()))?,
-            source: row.get(3)?,
-            git_ref: row.get(4)?,
             status: status
                 .parse()
                 .map_err(|error: wt_api::ParseStatusError| invalid_column(&error.to_string()))?,
-            guest_ip: row.get(6)?,
-            last_error: row.get(7)?,
+            guest_ip: row.get(4)?,
+            last_error: row.get(5)?,
         },
-        backend_id: row.get(8)?,
+        backend_id: row.get(6)?,
     })
 }
 

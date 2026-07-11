@@ -9,7 +9,9 @@ description = "Libvirt/KVM world backend for wt"
 [dependencies]
 wt-api = { workspace = true }
 quick-xml = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
 uuid = { workspace = true }
 virt = { workspace = true }

@@ -4,7 +4,7 @@ Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.m
 
 | Doc | Topic |
 |-----|--------|
-| [cli.md](./cli.md) | `wt` CLI (contexts, API, sync, SSH) |
+| [cli.md](./cli.md) | Era 1 local `wt` CLI |
 | [control-plane.md](./control-plane.md) | Control plane, workers, binaries |
 | [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt worker / `wt-local` |
 | [k8s-agent.md](./k8s-agent.md) | k8s worker (not implemented) |

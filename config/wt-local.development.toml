@@ -1,0 +1,11 @@
+# Development sample only. Cargo builds do not embed or install this file.
+image = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+worlds_dir = "/var/lib/libvirt/images/wt"
+libvirt_uri = "qemu:///system"
+network = "default"
+architecture = "x86_64"
+machine = "q35"
+memory_mib = 2048
+vcpus = 2
+disk_gib = 16
+boot_timeout_seconds = 300

@@ -35,10 +35,7 @@ pub enum Operation {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
-    pub source: String,
     pub name: InstanceName,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -84,9 +81,6 @@ pub struct Instance {
     pub id: Uuid,
     pub name: InstanceName,
     pub owner: String,
-    pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
     pub status: InstanceStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest_ip: Option<String>,

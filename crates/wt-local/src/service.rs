@@ -26,7 +26,6 @@ impl<W: WorldWorker> Service<W> {
     }
 
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
-        validate_create(&request)?;
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
@@ -34,8 +33,6 @@ impl<W: WorldWorker> Service<W> {
                 id,
                 name: request.name,
                 owner: owner.to_owned(),
-                source: request.source,
-                git_ref: request.git_ref,
                 status: InstanceStatus::Provisioning,
                 guest_ip: None,
                 last_error: None,
@@ -107,32 +104,6 @@ impl<W: WorldWorker> Service<W> {
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
     }
-}
-
-fn validate_create(request: &CreateInstance) -> Result<(), ApiError> {
-    if request.source.trim().is_empty() {
-        return Err(ApiError::new(
-            ErrorCode::InvalidRequest,
-            "source must not be empty",
-        ));
-    }
-    if request.source.len() > 4096 {
-        return Err(ApiError::new(
-            ErrorCode::InvalidRequest,
-            "source is too long",
-        ));
-    }
-    if request
-        .git_ref
-        .as_ref()
-        .is_some_and(|value| value.trim().is_empty())
-    {
-        return Err(ApiError::new(
-            ErrorCode::InvalidRequest,
-            "git ref must not be empty",
-        ));
-    }
-    Ok(())
 }
 
 fn map_store_error(error: StoreError) -> ApiError {

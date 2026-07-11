@@ -5,27 +5,122 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_image="$root/imgs/ubuntu-24.04-server-cloudimg-amd64.img"
 output_image="$root/imgs/wt-ubuntu-24.04-amd64.qcow2"
 temporary_image="$output_image.tmp"
+build_name="wt-image-build"
+build_dir="/var/lib/libvirt/images/wt/$build_name"
+build_disk="$build_dir/disk.qcow2"
+seed_image="$build_dir/seed.img"
+user_data="$build_dir/user-data"
+meta_data="$build_dir/meta-data"
 
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as the site user, not with sudo" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication may be required" >&2
+    exit 1
+fi
 if [[ ! -f "$source_image" ]]; then
     echo "missing source image: $source_image" >&2
     exit 1
 fi
-
-if [[ -e "$output_image" ]]; then
-    echo "prepared image already exists: $output_image" >&2
+if [[ -e "$output_image" || -e "$temporary_image" ]]; then
+    echo "prepared or temporary image already exists under $root/imgs" >&2
+    exit 1
+fi
+if [[ ! -c /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+    echo "working /dev/kvm is required" >&2
+    exit 1
+fi
+if [[ ! -d /var/lib/libvirt/images/wt || ! -w /var/lib/libvirt/images/wt ]]; then
+    echo "writable /var/lib/libvirt/images/wt is required" >&2
+    exit 1
+fi
+if virsh -c qemu:///system dominfo "$build_name" >/dev/null 2>&1; then
+    echo "build domain already exists: $build_name" >&2
+    exit 1
+fi
+if [[ -e "$build_dir" ]]; then
+    echo "build directory already exists: $build_dir" >&2
     exit 1
 fi
 
-trap 'rm -f "$temporary_image"' EXIT
+cleanup() {
+    if virsh -c qemu:///system dominfo "$build_name" >/dev/null 2>&1; then
+        if [[ $(virsh -c qemu:///system domstate "$build_name" | xargs) != "shut off" ]]; then
+            virsh -c qemu:///system destroy "$build_name" >/dev/null
+        fi
+        virsh -c qemu:///system undefine "$build_name" --nvram >/dev/null
+    fi
+    rm -rf "$build_dir" "$temporary_image"
+}
+trap cleanup EXIT
 
-qemu-img convert -p -O qcow2 "$source_image" "$temporary_image"
-qemu-img resize "$temporary_image" 16G
-virt-customize -a "$temporary_image" \
-    --install docker.io,docker-compose-v2,qemu-guest-agent \
-    --run-command 'systemctl enable docker.service qemu-guest-agent.service' \
-    --run-command 'cloud-init clean --logs --machine-id'
+mkdir "$build_dir"
+qemu-img convert -p -O qcow2 "$source_image" "$build_disk"
+qemu-img resize "$build_disk" 16G
+
+cat >"$user_data" <<'EOF'
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - qemu-guest-agent
+runcmd:
+  - systemctl enable --now docker.service qemu-guest-agent.service
+  - docker info
+  - docker compose version
+  - touch /var/lib/wt-image-ready
+power_state:
+  mode: poweroff
+  timeout: 60
+  condition: true
+EOF
+
+cat >"$meta_data" <<'EOF'
+instance-id: wt-image-build
+local-hostname: wt-image-build
+EOF
+
+cloud-localds "$seed_image" "$user_data" "$meta_data"
+virt-install \
+    --connect qemu:///system \
+    --name "$build_name" \
+    --memory 2048 \
+    --vcpus 2 \
+    --virt-type kvm \
+    --os-variant ubuntu24.04 \
+    --import \
+    --boot uefi \
+    --disk "path=$build_disk,format=qcow2,bus=virtio" \
+    --disk "path=$seed_image,device=cdrom" \
+    --network network=default,model=virtio \
+    --graphics none \
+    --noautoconsole \
+    --wait 0
+
+deadline=$((SECONDS + 1200))
+while [[ $(virsh -c qemu:///system domstate "$build_name" | xargs) != "shut off" ]]; do
+    if (( SECONDS >= deadline )); then
+        echo "timed out waiting for image build VM" >&2
+        exit 1
+    fi
+    sleep 3
+done
+
+if ! sudo virt-ls -a "$build_disk" /var/lib | grep -Fxq wt-image-ready; then
+    echo "image build finished without Docker/Compose readiness marker" >&2
+    exit 1
+fi
+
+virsh -c qemu:///system undefine "$build_name" --nvram >/dev/null
+sudo virt-sysprep -a "$build_disk"
+sudo chown "$USER:$(id -gn)" "$build_disk"
+qemu-img convert -p -O qcow2 "$build_disk" "$temporary_image"
 qemu-img check "$temporary_image"
 mv "$temporary_image" "$output_image"
+rm -rf "$build_dir"
 trap - EXIT
 
 echo "prepared $output_image"

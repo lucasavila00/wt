@@ -10,7 +10,6 @@ use virt::error::ErrorNumber;
 
 pub struct LibvirtWorker {
     config: LibvirtConfig,
-    staged_image: PathBuf,
 }
 
 impl LibvirtWorker {
@@ -21,22 +20,15 @@ impl LibvirtWorker {
             .open("/dev/kvm")
             .map_err(|error| worker_error("KVM is required but /dev/kvm is unavailable", error))?;
         require_file(&config.image, "guest image")?;
-        fs::create_dir_all(&config.worlds_dir)
-            .map_err(|error| worker_error("create worlds directory", error))?;
-        let staged_image = config.worlds_dir.join("base.qcow2");
-        if !staged_image.exists() {
-            let temporary = config.worlds_dir.join("base.qcow2.tmp");
-            fs::copy(&config.image, &temporary)
-                .map_err(|error| worker_error("stage prepared image", error))?;
-            fs::rename(&temporary, &staged_image)
-                .map_err(|error| worker_error("publish prepared image", error))?;
+        if !config.worlds_dir.is_dir() {
+            return Err(WorkerError::new(format!(
+                "worlds directory not found: {}",
+                config.worlds_dir.display()
+            )));
         }
         Connect::open(Some(&config.libvirt_uri))
             .map_err(|error| worker_error("connect to libvirt", error))?;
-        Ok(Self {
-            config,
-            staged_image,
-        })
+        Ok(Self { config })
     }
 
     fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
@@ -47,7 +39,7 @@ impl LibvirtWorker {
         run(
             Command::new("qemu-img")
                 .args(["create", "-q", "-f", "qcow2", "-F", "qcow2", "-b"])
-                .arg(&self.staged_image)
+                .arg(&self.config.image)
                 .arg(&paths.disk)
                 .arg(format!("{}G", self.config.disk_gib)),
             "create qcow2 overlay",
@@ -78,6 +70,8 @@ impl LibvirtWorker {
             &paths.disk,
             &paths.seed,
             &self.config.network,
+            &self.config.architecture,
+            &self.config.machine,
             self.config.memory_mib,
             self.config.vcpus,
         );
@@ -181,14 +175,14 @@ impl LibvirtWorker {
             Err(error) => return Err(worker_error("look up libvirt domain", error)),
         };
         let interfaces = domain
-            .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, 0)
+            .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
             .map_err(|error| worker_error("get domain interface addresses", error))?;
         Ok(interfaces
             .into_iter()
             .flat_map(|interface| interface.addrs)
             .find_map(|address| {
                 let ip = address.addr.parse::<IpAddr>().ok()?;
-                ip.is_ipv4().then(|| ip.to_string())
+                (ip.is_ipv4() && !ip.is_loopback()).then(|| ip.to_string())
             }))
     }
 
@@ -227,7 +221,7 @@ impl LibvirtWorker {
 impl WorldWorker for LibvirtWorker {
     fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         match self.provision_inner(spec) {
-            Ok(endpoint) => Ok(endpoint),
+            Ok(world) => Ok(world),
             Err(error) => {
                 let _ = self.remove_domain(spec.backend_id);
                 let _ = self.remove_files(spec.backend_id);
@@ -274,6 +268,8 @@ fn domain_xml(
     disk: &Path,
     seed: &Path,
     network: &str,
+    architecture: &str,
+    machine: &str,
     memory_mib: u64,
     vcpus: u32,
 ) -> String {
@@ -283,13 +279,15 @@ fn domain_xml(
     let disk = quick_xml::escape::escape(disk.as_ref());
     let seed = quick_xml::escape::escape(seed.as_ref());
     let network = quick_xml::escape::escape(network);
+    let architecture = quick_xml::escape::escape(architecture);
+    let machine = quick_xml::escape::escape(machine);
     format!(
         "<domain type='kvm'>
   <name>{name}</name>
   <memory unit='MiB'>{memory_mib}</memory>
   <vcpu>{vcpus}</vcpu>
   <os firmware='efi'>
-    <type arch='x86_64' machine='q35'>hvm</type>
+    <type arch='{architecture}' machine='{machine}'>hvm</type>
     <firmware><feature enabled='no' name='secure-boot'/></firmware>
   </os>
   <features><acpi/><apic/></features>

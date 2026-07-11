@@ -8,7 +8,7 @@ Local target: Ubuntu 24.04, amd64.
 - Ubuntu packages:
 
 ```text
-sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients cloud-image-utils libguestfs-tools ovmf libvirt-dev
+sudo apt update && sudo apt install -y build-essential pkg-config git curl cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils libguestfs-tools ovmf libvirt-dev
 ```
 
 The injected-worker integration tests do not use libvirt/KVM.
@@ -61,6 +61,8 @@ Prepare the Docker-ready image once:
 scripts/prepare-image
 ```
 
+Run it in an interactive terminal. `virt-customize` runs through `sudo` and may ask for your password.
+
 This creates:
 
 ```text
@@ -74,7 +76,7 @@ sudo install -d -o root -g root -m 0755 /var/lib/wt/images
 sudo install -o root -g root -m 0644 imgs/wt-ubuntu-24.04-amd64.qcow2 /var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2
 ```
 
-`wt-libvirt` stages the installed image in its world directory and creates per-world qcow2 overlays from it. Docker is not installed during world creation.
+`wt-libvirt` creates per-world qcow2 overlays backed by the installed read-only image. Docker is not installed during world creation.
 
 Run the real acceptance test:
 
@@ -93,7 +95,6 @@ KVM needs CPU virtualization support, host firmware support, `/dev/kvm`, and use
 
 ## Still to decide
 
-- Test pool and network names.
 - Guest CPU, memory, and disk defaults.
 
 Installation and host configuration instructions land after testing the setup on the local workstation.

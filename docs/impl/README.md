@@ -42,7 +42,7 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 
 | Lane | Covers |
 |------|--------|
-| **Injected worker** | helper/API, registry, ownership, state transitions, restart/reconcile, failures |
+| **Injected worker** | helper/API, registry, ownership, state transitions, restart persistence, failures |
 | **Libvirt/KVM** | production backend: image, disk, domain, boot, guest agent, Docker + Compose, IP, destroy |
 
 Both lanes live in `wt-integration-tests`. The injected worker is fast and deterministic. It does not imitate libvirt internals.
