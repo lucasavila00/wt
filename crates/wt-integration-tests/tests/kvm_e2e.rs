@@ -8,9 +8,11 @@ use tempfile::TempDir;
 fn local_cli_manages_docker_ready_kvm_guest() {
     let root = workspace_root();
     let wt = root.join("target/debug/wt");
-    let helper = root.join("target/debug/wt-local");
     assert!(wt.is_file(), "build workspace binaries first");
-    assert!(helper.is_file(), "build workspace binaries first");
+    assert!(
+        root.join("target/debug/wt-local").is_file(),
+        "build workspace binaries first"
+    );
 
     let temp = TempDir::new().unwrap();
     let name = format!(
@@ -20,8 +22,8 @@ fn local_cli_manages_docker_ready_kvm_guest() {
             .unwrap()
             .as_secs()
     );
-    let created = wt_command(&wt, &helper, temp.path())
-        .args(["new", "example.invalid/repo", &name])
+    let created = wt_command(&wt, &root, temp.path())
+        .args(["new", &name])
         .output()
         .unwrap();
     if !created.status.success() {
@@ -29,7 +31,7 @@ fn local_cli_manages_docker_ready_kvm_guest() {
     }
 
     let result = (|| {
-        let listed = wt_command(&wt, &helper, temp.path())
+        let listed = wt_command(&wt, &root, temp.path())
             .arg("ls")
             .output()
             .map_err(|error| error.to_string())?;
@@ -41,7 +43,7 @@ fn local_cli_manages_docker_ready_kvm_guest() {
         Ok(())
     })();
 
-    let removed = wt_command(&wt, &helper, temp.path())
+    let removed = wt_command(&wt, &root, temp.path())
         .args(["rm", &name])
         .output()
         .unwrap();
@@ -49,11 +51,13 @@ fn local_cli_manages_docker_ready_kvm_guest() {
     result.unwrap();
 }
 
-fn wt_command(wt: &Path, helper: &Path, state_root: &Path) -> Command {
+fn wt_command(wt: &Path, root: &Path, state_root: &Path) -> Command {
     let mut command = Command::new(wt);
-    command
-        .env("WT_HELPER", helper)
-        .env("WT_STATE_DIR", state_root.join("state"));
+    let path = std::env::join_paths(std::iter::once(root.join("target/debug")).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .unwrap();
+    command.env("PATH", path).env("HOME", state_root);
     command
 }
 

@@ -16,7 +16,7 @@ wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KV
 ```
 
 - No listener. No SSH. `wt` spawns `wt-local` directly.
-- Context: `bare_metal_local` only.
+- Local path only. No client contexts.
 - Guest: Ubuntu 24.04 + Docker Engine + Compose v2 + QEMU guest agent.
 
 ## Language and crates
@@ -29,6 +29,7 @@ crates/
   wt-cli       # package; binary name wt
   wt-libvirt   # production libvirt/KVM backend
   wt-local     # site helper + registry + service
+  wt-setup     # Ubuntu/KVM site installer
   wt-integration-tests
 ```
 
@@ -38,7 +39,7 @@ Not in the repo yet: `wt-control-plane`, `wt-worker`.
 
 | Verb | Meaning |
 |------|---------|
-| create | source + name → Docker/Compose-ready KVM world + guest IP |
+| create | name → Docker/Compose-ready KVM world + guest IP |
 | list | name, status, guest IP |
 | destroy | tear down world |
 

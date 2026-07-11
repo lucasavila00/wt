@@ -1,100 +1,96 @@
 # Development
 
-Local target: Ubuntu 24.04, amd64.
+Target: Ubuntu 24.04 amd64.
 
-## Base
+## Prerequisites
 
 - Rust stable, Cargo, rustfmt, Clippy via rustup.
-- Ubuntu packages:
+- CPU virtualization enabled in firmware.
+- KVM available.
+
+Ubuntu packages:
 
 ```text
 sudo apt update && sudo apt install -y build-essential pkg-config git curl cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils libguestfs-tools ovmf libvirt-dev
 ```
 
-The injected-worker integration tests do not use libvirt/KVM.
-
-For the complete local site setup, run:
+Host access:
 
 ```text
-scripts/install-site
-```
-
-## Libvirt/KVM
-
-The real VM backend is libvirt/KVM. KVM is required.
-
-QEMU supplies the userspace VM process and virtual devices. KVM executes guest CPU instructions in hardware. Both are part of the same libvirt/KVM backend.
-
-Required:
-
-- CPU virtualization enabled in host firmware.
-- `kvm-ok` succeeds.
-- `/dev/kvm` exists.
-- Development user belongs to `kvm` and `libvirt`.
-
-Create the local image directory:
-
-```text
-sudo apt install -y libguestfs-tools
+sudo usermod -aG libvirt,kvm "$USER"
 sudo install -d -o "$USER" -g libvirt -m 2770 /var/lib/libvirt/images/wt
 ```
 
-## Guest image
+Log out and back in after changing groups. Then require:
 
-Tests and development scripts expect the Ubuntu 24.04 amd64 cloud image at:
+```text
+kvm-ok
+test -r /dev/kvm -a -w /dev/kvm
+```
+
+No software-emulation fallback exists.
+
+## Config
+
+`config/wt-local.development.toml` is the development sample. Cargo does not embed or install it.
+
+Review CPU, memory, disk, paths, URL, and SHA before use:
+
+```text
+cargo run -p wt-setup -- validate --config config/wt-local.development.toml
+```
+
+Era 1 has no runtime environment overrides. `wt-local` always reads `/etc/wt/local.toml`.
+
+## Source image
+
+Expected cache path:
 
 ```text
 imgs/ubuntu-24.04-server-cloudimg-amd64.img
 ```
 
-Download it from the repo root:
+`imgs/` is gitignored. Setup downloads the pinned image when absent. Manual download:
 
 ```text
-mkdir -p imgs && curl -fL https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img -o imgs/ubuntu-24.04-server-cloudimg-amd64.img
+mkdir -p imgs
+curl -fL https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img -o imgs/ubuntu-24.04-server-cloudimg-amd64.img
+printf '%s  %s\n' 5fa5b05e5ec239858c4531485d6023b0896448c2df7c63b34f8dae6ea6051a44 imgs/ubuntu-24.04-server-cloudimg-amd64.img | sha256sum --check
 ```
 
-`imgs/` is gitignored. Keep the base image unchanged; create per-world qcow2 overlays from it.
+## Setup
 
-Prepare the Docker-ready image once:
+Complete local setup:
 
 ```text
-scripts/prepare-image
+scripts/install-site --config config/wt-local.development.toml
 ```
 
-Run it in an interactive terminal. `virt-customize` runs through `sudo` and may ask for your password.
-
-This creates:
+Image only:
 
 ```text
-imgs/wt-ubuntu-24.04-amd64.qcow2
+scripts/prepare-image --config config/wt-local.development.toml
 ```
 
-Install it at the site path:
+Run both scripts in an interactive terminal. They invoke `sudo` and may ask for the password.
+
+Image construction boots a temporary KVM guest. Cloud-init installs Docker Engine, Docker Compose v2, and QEMU guest agent. The installer verifies readiness, syspreps the disk, writes a provenance manifest, then publishes the golden image.
+
+Matching installed state is reused. Config, permissions, partial files, stale build state, or image provenance drift is an error.
+
+## Tests
+
+Fast lane:
 
 ```text
-sudo install -d -o root -g root -m 0755 /var/lib/wt/images
-sudo install -o root -g root -m 0644 imgs/wt-ubuntu-24.04-amd64.qcow2 /var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2
+cargo test --workspace
 ```
 
-`wt-libvirt` creates per-world qcow2 overlays backed by the installed read-only image. Docker is not installed during world creation.
-
-Run the real acceptance test:
+Real KVM acceptance:
 
 ```text
-cargo build --workspace && cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
+cargo build --workspace
+cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
 ```
 
-## Runtime
-
-- Writable libvirt image directory for the staged image and qcow2 overlays.
-- Test libvirt network with DHCP.
-- Permission to use the system libvirt socket.
-- Disk and memory for one test guest.
-
-KVM needs CPU virtualization support, host firmware support, `/dev/kvm`, and user access to it.
-
-## Still to decide
-
-- Guest CPU, memory, and disk defaults.
-
-Installation and host configuration instructions land after testing the setup on the local workstation.
+The acceptance test uses `/etc/wt/local.toml` and the installed golden image. It runs `wt new <name>`, `wt ls`, and `wt rm <name>`.

@@ -6,10 +6,10 @@ Carried as JSON over stdio to the local `wt-local` helper in Era 1.
 
 ## Role
 
-- Instance payloads (name, owner, source, status, guest IP, errors)  
+- Instance payloads (name, owner, status, guest IP, errors)
 - Status and error enums (serde)  
 - No I/O, libvirt, or transport  
-- Client context config lives in `wt-cli`, not the wire API
+- No transport or site configuration
 
 CLI behavior: [docs/arch/cli.md](../../docs/arch/cli.md).
 
@@ -24,4 +24,4 @@ Future multi-node binaries use the same control-plane types where they expose th
 
 ## Status
 
-Library skeleton only; types not defined yet.
+Era 1 types implemented.

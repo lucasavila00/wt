@@ -19,27 +19,15 @@ Owner = local OS user running the helper.
 
 ## Context
 
-Era 1 has one context kind:
-
-```toml
-[[contexts]]
-name = "local"
-kind = "bare_metal_local"
-# helper = "wt-local"
-# helper_args = ["api"]
-```
-
-No config file means one implicit local context. Config path: `~/.config/wt/config.toml`.
+Era 1 is local only. No client config. No context selection. `wt-local` resolves from `PATH`.
 
 ## Commands
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name>` | Create KVM world; print name, status, IP |
+| `wt new <name>` | Create KVM world; print name, status, IP |
 | `wt ls` | List my worlds: name, status, IP |
 | `wt rm <name>` | Destroy my world |
-
-`source` is stored but not cloned in Era 1.
 
 ## Later
 

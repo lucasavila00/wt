@@ -6,7 +6,6 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 
 ## Role
 
-- **Context** — `bare_metal_local` in Era 1  
 - **Transport** — spawn local `wt-local`; JSON over stdio; owner = OS user  
 - **Instances** — `new` / `ls` / `rm`  
 - **Names** — `{repo}-{feature}` (e.g. `frontend-checkout-rewrite`)  
@@ -17,7 +16,7 @@ Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
 ## Commands (target)
 
 ```text
-wt new <source> <name>
+wt new <name>
 wt ls
 wt rm <name>
 ```

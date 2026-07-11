@@ -1,11 +1,20 @@
 # Development sample only. Cargo builds do not embed or install this file.
-image = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
-worlds_dir = "/var/lib/libvirt/images/wt"
-libvirt_uri = "qemu:///system"
+version = 1
+
+[image]
+source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
+source_sha256 = "5fa5b05e5ec239858c4531485d6023b0896448c2df7c63b34f8dae6ea6051a44"
+installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+
+[libvirt]
 network = "default"
-architecture = "x86_64"
-machine = "q35"
-memory_mib = 2048
-vcpus = 2
-disk_gib = 16
+worlds_dir = "/var/lib/libvirt/images/wt"
+
+[guest]
+memory_mib = 8192
+vcpus = 4
+disk_gib = 32
 boot_timeout_seconds = 300
+
+[install]
+binary_dir = "/usr/local/bin"

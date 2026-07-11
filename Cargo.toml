@@ -6,6 +6,7 @@ members = [
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
     "crates/wt-local",
+    "crates/wt-setup",
 ]
 
 [workspace.package]
@@ -25,6 +26,7 @@ quick-xml = "0.39.2"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+sha2 = "0.10.9"
 thiserror = "2.0.18"
 toml = "1.0.3"
 uuid = { version = "1.21.0", features = ["serde", "v4"] }

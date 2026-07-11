@@ -1,16 +1,10 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 use wt_api::{ApiRequest, CreateInstance, InstanceName, Operation, Response};
-use wt_cli::config::{default_config_path, Config};
 
 #[derive(Debug, Parser)]
 #[command(name = "wt")]
 struct Cli {
-    #[arg(long, global = true)]
-    context: Option<String>,
-    #[arg(long, global = true)]
-    config: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -18,12 +12,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a world.
-    New {
-        source: String,
-        name: InstanceName,
-        #[arg(long = "ref")]
-        git_ref: Option<String>,
-    },
+    New { name: InstanceName },
     /// List worlds.
     Ls,
     /// Remove a world.
@@ -38,25 +27,12 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
-    let config_path = cli.config.unwrap_or(default_config_path()?);
-    let config = Config::load(&config_path)?;
-    let context = config.select(cli.context.as_deref())?;
-
-    match cli.command {
-        Command::New {
-            source,
-            name,
-            git_ref,
-        } => {
-            let response = wt_cli::transport::call(
-                context,
-                &ApiRequest::new(Operation::Create(CreateInstance {
-                    source,
+    match Cli::parse().command {
+        Command::New { name } => {
+            let response =
+                wt_cli::transport::call(&ApiRequest::new(Operation::Create(CreateInstance {
                     name,
-                    git_ref,
-                })),
-            )?;
+                })))?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -68,7 +44,7 @@ fn run() -> Result<()> {
             );
         }
         Command::Ls => {
-            let response = wt_cli::transport::call(context, &ApiRequest::new(Operation::List))?;
+            let response = wt_cli::transport::call(&ApiRequest::new(Operation::List))?;
             let Response::Instances { instances } = response else {
                 bail!("helper returned the wrong response to list");
             };
@@ -83,8 +59,7 @@ fn run() -> Result<()> {
             }
         }
         Command::Rm { name } => {
-            let response =
-                wt_cli::transport::call(context, &ApiRequest::new(Operation::Delete { name }))?;
+            let response = wt_cli::transport::call(&ApiRequest::new(Operation::Delete { name }))?;
             let Response::Deleted { name } = response else {
                 bail!("helper returned the wrong response to delete");
             };

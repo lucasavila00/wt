@@ -1,23 +1,16 @@
-use crate::config::{Connection, Context};
 use anyhow::{bail, Context as _, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use wt_api::{ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 
-pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
-    let (program, args) = match &context.connection {
-        Connection::BareMetalLocal {
-            helper,
-            helper_args,
-        } => (helper, helper_args),
-    };
-    let mut child = Command::new(program)
-        .args(args)
+pub fn call(request: &ApiRequest) -> Result<Response> {
+    let mut child = Command::new("wt-local")
+        .arg("api")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("start helper {program:?} for context {:?}", context.name))?;
+        .context("start wt-local helper")?;
     serde_json::to_writer(
         child
             .stdin

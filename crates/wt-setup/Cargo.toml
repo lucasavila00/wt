@@ -1,21 +1,23 @@
 [package]
-name = "wt-cli"
+name = "wt-setup"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "CLI client for the wt control-plane API (binary name: wt)"
+description = "Ubuntu 24.04 site installer for wt"
 
 [[bin]]
-name = "wt"
+name = "wt-setup"
 path = "src/main.rs"
 
 [dependencies]
-wt-api = { workspace = true }
+wt-libvirt = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+nix = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
-uuid = { workspace = true }

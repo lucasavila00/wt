@@ -2,7 +2,7 @@
 
 Order of work. Product: [plan.md](../plan.md). Arch: [arch/](../arch/README.md). CLI: [arch/cli.md](../arch/cli.md).
 
-Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-integration-tests`.
+Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-setup`, `wt-integration-tests`.
 
 ## Division of labor
 
@@ -12,6 +12,7 @@ Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-integrat
 | **`wt-local`** | Site brain: helper + registry + instance service. JSON in → work → JSON out |
 | **`wt-libvirt`** | Production libvirt/KVM world backend |
 | **`wt-cli` (`wt`)** | Thin: spawn local helper → print |
+| **`wt-setup`** | Strict Ubuntu/KVM site config + install + golden image build |
 | **`wt-integration-tests`** | Injected service tests + real libvirt/KVM acceptance test |
 
 **Real VMs (libvirt/KVM) are the hard part.**
@@ -31,8 +32,8 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 | `wt-api` | create / list / get / delete; status; guest IP; errors |
 | `wt-local` | helper entrypoint; durable local registry; owner = process user; instance service; `Provisioning` → `Running` / `Error` |
 | `wt-libvirt` | Docker + Compose golden image; define/start/destroy; guest-agent readiness; guest IP; instance↔domain; KVM only |
-| `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print status/IP |
-| ops | image, pool, network/bridge, libvirt permissions |
+| `wt-cli` | `new` / `ls` / `rm`; spawn helper; print status/IP |
+| `wt-setup` | config-first Ubuntu install; pinned image; KVM golden build; provenance; drift checks |
 
 **Done when:** local `wt new` creates a real KVM guest where the guest agent verifies Docker Engine + Compose; `wt ls` shows it; `wt rm` destroys it.
 

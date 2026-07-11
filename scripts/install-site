@@ -2,15 +2,26 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source_image="$root/imgs/ubuntu-24.04-server-cloudimg-amd64.img"
-prepared_image="$root/imgs/wt-ubuntu-24.04-amd64.qcow2"
-installed_image="/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
-worlds_dir="/var/lib/libvirt/images/wt"
+
+if [[ $# -ne 2 || $1 != --config ]]; then
+    echo "usage: scripts/install-site --config PATH" >&2
+    exit 2
+fi
+config=$2
 
 if [[ $EUID -eq 0 ]]; then
     echo "run this script as the site user, not with sudo" >&2
     exit 1
 fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication is required" >&2
+    exit 1
+fi
+if [[ ! -f $config ]]; then
+    echo "config file not found: $config" >&2
+    exit 1
+fi
+config=$(realpath "$config")
 
 # shellcheck source=/dev/null
 source /etc/os-release
@@ -45,51 +56,14 @@ sudo apt install -y \
     libvirt-dev
 
 sudo usermod -aG libvirt,kvm "$USER"
-
-if ! kvm-ok; then
-    echo "KVM is required. Enable CPU virtualization in firmware, reboot, and rerun." >&2
+groups=" $(id -nG) "
+if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
+    echo "libvirt/kvm group membership was added but is not active" >&2
+    echo "log out, log back in, then rerun this command" >&2
     exit 1
 fi
 
-sudo virsh net-start default >/dev/null 2>&1 || true
-sudo virsh net-autostart default >/dev/null
-sudo install -d -o root -g root -m 0755 /var/lib/wt/images
-sudo install -d -o root -g libvirt -m 2770 "$worlds_dir"
-
-mkdir -p "$root/imgs"
-if [[ ! -f "$source_image" ]]; then
-    curl -fL \
-        https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img \
-        -o "$source_image"
-fi
-if [[ ! -f "$prepared_image" ]]; then
-    "$root/scripts/prepare-image"
-fi
-sudo install -o root -g root -m 0644 "$prepared_image" "$installed_image"
-sudo install -d -o root -g root -m 0755 /etc/wt
-sudo tee /etc/wt/local.toml >/dev/null <<'EOF'
-image = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
-worlds_dir = "/var/lib/libvirt/images/wt"
-libvirt_uri = "qemu:///system"
-network = "default"
-architecture = "x86_64"
-machine = "q35"
-memory_mib = 2048
-vcpus = 2
-disk_gib = 16
-boot_timeout_seconds = 300
-EOF
-sudo chown root:root /etc/wt/local.toml
-sudo chmod 0644 /etc/wt/local.toml
-
-cargo build --manifest-path "$root/Cargo.toml" --release -p wt-local -p wt-cli
-sudo install -o root -g root -m 0755 "$root/target/release/wt-local" /usr/local/bin/wt-local
-sudo install -o root -g root -m 0755 "$root/target/release/wt" /usr/local/bin/wt
-
-echo
-echo "wt and wt-local installed"
-echo "image: $installed_image"
-echo "worlds: $worlds_dir"
-if [[ " $(id -nG) " != *" libvirt "* || " $(id -nG) " != *" kvm "* ]]; then
-    echo "log out and back in before running wt-local"
-fi
+cd "$root"
+cargo build --release -p wt-setup
+target/release/wt-setup validate --config "$config"
+target/release/wt-setup install --config "$config"

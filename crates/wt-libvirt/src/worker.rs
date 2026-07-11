@@ -26,7 +26,7 @@ impl LibvirtWorker {
                 config.worlds_dir.display()
             )));
         }
-        Connect::open(Some(&config.libvirt_uri))
+        Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
         Ok(Self { config })
     }
@@ -63,18 +63,9 @@ impl LibvirtWorker {
             "create cloud-init seed",
         )?;
 
-        let connection = Connect::open(Some(&self.config.libvirt_uri))
+        let connection = Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
-        let xml = domain_xml(
-            spec.backend_id,
-            &paths.disk,
-            &paths.seed,
-            &self.config.network,
-            &self.config.architecture,
-            &self.config.machine,
-            self.config.memory_mib,
-            self.config.vcpus,
-        );
+        let xml = domain_xml(spec.backend_id, &paths.disk, &paths.seed, &self.config);
         let domain = Domain::define_xml(&connection, &xml)
             .map_err(|error| worker_error("define KVM domain", error))?;
         domain
@@ -167,7 +158,7 @@ impl LibvirtWorker {
     }
 
     fn domain_ip(&self, backend_id: &str) -> Result<Option<String>, WorkerError> {
-        let connection = Connect::open(Some(&self.config.libvirt_uri))
+        let connection = Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
         let domain = match Domain::lookup_by_name(&connection, backend_id) {
             Ok(domain) => domain,
@@ -187,7 +178,7 @@ impl LibvirtWorker {
     }
 
     fn remove_domain(&self, backend_id: &str) -> Result<(), WorkerError> {
-        let connection = Connect::open(Some(&self.config.libvirt_uri))
+        let connection = Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
         let domain = match Domain::lookup_by_name(&connection, backend_id) {
             Ok(domain) => domain,
@@ -263,24 +254,17 @@ impl WorldPaths {
     }
 }
 
-fn domain_xml(
-    name: &str,
-    disk: &Path,
-    seed: &Path,
-    network: &str,
-    architecture: &str,
-    machine: &str,
-    memory_mib: u64,
-    vcpus: u32,
-) -> String {
+fn domain_xml(name: &str, disk: &Path, seed: &Path, config: &LibvirtConfig) -> String {
     let disk = disk.to_string_lossy();
     let seed = seed.to_string_lossy();
     let name = quick_xml::escape::escape(name);
     let disk = quick_xml::escape::escape(disk.as_ref());
     let seed = quick_xml::escape::escape(seed.as_ref());
-    let network = quick_xml::escape::escape(network);
-    let architecture = quick_xml::escape::escape(architecture);
-    let machine = quick_xml::escape::escape(machine);
+    let network = quick_xml::escape::escape(&config.network);
+    let architecture = quick_xml::escape::escape(crate::GUEST_ARCHITECTURE);
+    let machine = quick_xml::escape::escape(crate::GUEST_MACHINE);
+    let memory_mib = config.memory_mib;
+    let vcpus = config.vcpus;
     format!(
         "<domain type='kvm'>
   <name>{name}</name>

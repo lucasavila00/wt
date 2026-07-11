@@ -42,11 +42,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     let created = service
         .execute(
             "lucas",
-            Operation::Create(CreateInstance {
-                source: "git@example.com:team/repo.git".to_owned(),
-                name: name.clone(),
-                git_ref: Some("feature".to_owned()),
-            }),
+            Operation::Create(CreateInstance { name: name.clone() }),
         )
         .unwrap();
     let Response::Instance { instance } = created else {
@@ -58,11 +54,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     let conflict = service
         .execute(
             "lucas",
-            Operation::Create(CreateInstance {
-                source: "anything".to_owned(),
-                name: name.clone(),
-                git_ref: None,
-            }),
+            Operation::Create(CreateInstance { name: name.clone() }),
         )
         .unwrap_err();
     assert_eq!(conflict.code, ErrorCode::Conflict);
@@ -104,9 +96,7 @@ fn provision_failure_is_recorded() {
         .execute(
             "lucas",
             Operation::Create(CreateInstance {
-                source: "source".to_owned(),
                 name: InstanceName::parse("repo-failure").unwrap(),
-                git_ref: None,
             }),
         )
         .unwrap_err();

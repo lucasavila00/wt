@@ -1,124 +1,228 @@
-use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
-const DEFAULT_CONFIG_PATH: &str = "/etc/wt/local.toml";
+pub const SITE_CONFIG_PATH: &str = "/etc/wt/local.toml";
+pub const LIBVIRT_URI: &str = "qemu:///system";
+pub const GUEST_ARCHITECTURE: &str = "x86_64";
+pub const GUEST_MACHINE: &str = "q35";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteConfig {
+    pub version: u32,
+    pub image: ImageConfig,
+    pub libvirt: SiteLibvirtConfig,
+    pub guest: GuestConfig,
+    pub install: InstallConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageConfig {
+    pub source_url: String,
+    pub source_sha256: String,
+    pub installed_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteLibvirtConfig {
+    pub network: String,
+    pub worlds_dir: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuestConfig {
+    pub memory_mib: u64,
+    pub vcpus: u32,
+    pub disk_gib: u64,
+    pub boot_timeout_seconds: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstallConfig {
+    pub binary_dir: PathBuf,
+}
 
 #[derive(Clone, Debug)]
 pub struct LibvirtConfig {
     pub image: PathBuf,
     pub worlds_dir: PathBuf,
-    pub libvirt_uri: String,
     pub network: String,
-    pub architecture: String,
-    pub machine: String,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
-    pub boot_timeout: std::time::Duration,
+    pub boot_timeout: Duration,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct FileConfig {
-    image: Option<PathBuf>,
-    worlds_dir: Option<PathBuf>,
-    libvirt_uri: Option<String>,
-    network: Option<String>,
-    architecture: Option<String>,
-    machine: Option<String>,
-    memory_mib: Option<u64>,
-    vcpus: Option<u32>,
-    disk_gib: Option<u64>,
-    boot_timeout_seconds: Option<u64>,
-}
+impl SiteConfig {
+    pub fn load() -> Result<Self, String> {
+        Self::load_from(Path::new(SITE_CONFIG_PATH))
+    }
 
-impl LibvirtConfig {
-    pub fn from_env() -> Result<Self, String> {
-        let config_path = std::env::var_os("WT_CONFIG")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
-        let file = read_config(&config_path)?;
-
-        let config = Self {
-            image: env_path(
-                "WT_IMAGE",
-                file.image,
-                "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2",
-            ),
-            worlds_dir: env_path(
-                "WT_WORLDS_DIR",
-                file.worlds_dir,
-                "/var/lib/libvirt/images/wt",
-            ),
-            libvirt_uri: env_string("WT_LIBVIRT_URI", file.libvirt_uri, "qemu:///system"),
-            network: env_string("WT_LIBVIRT_NETWORK", file.network, "default"),
-            architecture: env_string("WT_GUEST_ARCH", file.architecture, "x86_64"),
-            machine: env_string("WT_GUEST_MACHINE", file.machine, "q35"),
-            memory_mib: env_parse("WT_GUEST_MEMORY_MIB", file.memory_mib, 2048)?,
-            vcpus: env_parse("WT_GUEST_VCPUS", file.vcpus, 2)?,
-            disk_gib: env_parse("WT_GUEST_DISK_GIB", file.disk_gib, 16)?,
-            boot_timeout: std::time::Duration::from_secs(env_parse(
-                "WT_GUEST_BOOT_TIMEOUT_SECONDS",
-                file.boot_timeout_seconds,
-                300,
-            )?),
-        };
+    pub fn load_from(path: &Path) -> Result<Self, String> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|error| format!("read config {}: {error}", path.display()))?;
+        let config: Self = toml::from_str(&contents)
+            .map_err(|error| format!("parse config {}: {error}", path.display()))?;
         config.validate()?;
         Ok(config)
     }
 
-    fn validate(&self) -> Result<(), String> {
-        for (name, value) in [
-            ("libvirt_uri", self.libvirt_uri.as_str()),
-            ("network", self.network.as_str()),
-            ("architecture", self.architecture.as_str()),
-            ("machine", self.machine.as_str()),
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != 1 {
+            return Err(format!(
+                "unsupported config version {}; expected 1",
+                self.version
+            ));
+        }
+        if !self.image.source_url.starts_with("https://") {
+            return Err("image.source_url must be an https URL".to_owned());
+        }
+        if self.image.source_sha256.len() != 64
+            || !self
+                .image
+                .source_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err("image.source_sha256 must contain 64 hexadecimal characters".to_owned());
+        }
+        for (name, path) in [
+            ("image.installed_path", &self.image.installed_path),
+            ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
+            ("install.binary_dir", &self.install.binary_dir),
         ] {
-            if value.trim().is_empty() {
-                return Err(format!("{name} must not be empty"));
+            if !path.is_absolute() {
+                return Err(format!("{name} must be an absolute path"));
+            }
+            if path == Path::new("/")
+                || path.components().any(|component| {
+                    !matches!(component, Component::RootDir | Component::Normal(_))
+                })
+            {
+                return Err(format!(
+                    "{name} must be an absolute normalized path below /"
+                ));
             }
         }
-        if self.memory_mib == 0 || self.vcpus == 0 || self.disk_gib == 0 {
-            return Err("memory_mib, vcpus, and disk_gib must be greater than zero".to_owned());
+        if self
+            .image
+            .installed_path
+            .extension()
+            .and_then(|value| value.to_str())
+            != Some("qcow2")
+        {
+            return Err("image.installed_path must end in .qcow2".to_owned());
         }
-        if self.boot_timeout.is_zero() {
-            return Err("boot_timeout_seconds must be greater than zero".to_owned());
+        let image_dir = self
+            .image
+            .installed_path
+            .parent()
+            .ok_or_else(|| "image.installed_path must have a parent directory".to_owned())?;
+        for (left_name, left, right_name, right) in [
+            (
+                "image directory",
+                image_dir,
+                "libvirt.worlds_dir",
+                self.libvirt.worlds_dir.as_path(),
+            ),
+            (
+                "image directory",
+                image_dir,
+                "install.binary_dir",
+                self.install.binary_dir.as_path(),
+            ),
+            (
+                "libvirt.worlds_dir",
+                self.libvirt.worlds_dir.as_path(),
+                "install.binary_dir",
+                self.install.binary_dir.as_path(),
+            ),
+        ] {
+            if left.starts_with(right) || right.starts_with(left) {
+                return Err(format!("{left_name} and {right_name} must not overlap"));
+            }
+        }
+        if self.libvirt.network.trim().is_empty() {
+            return Err("libvirt.network must not be empty".to_owned());
+        }
+        if self.guest.memory_mib == 0
+            || self.guest.vcpus == 0
+            || self.guest.disk_gib == 0
+            || self.guest.boot_timeout_seconds == 0
+        {
+            return Err("guest resource values must be greater than zero".to_owned());
         }
         Ok(())
     }
-}
 
-fn read_config(path: &Path) -> Result<FileConfig, String> {
-    if !path.exists() {
-        return Ok(FileConfig::default());
+    pub fn worker_config(&self) -> LibvirtConfig {
+        LibvirtConfig {
+            image: self.image.installed_path.clone(),
+            worlds_dir: self.libvirt.worlds_dir.clone(),
+            network: self.libvirt.network.clone(),
+            memory_mib: self.guest.memory_mib,
+            vcpus: self.guest.vcpus,
+            disk_gib: self.guest.disk_gib,
+            boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
+        }
     }
-    let contents = std::fs::read_to_string(path)
-        .map_err(|error| format!("read config {}: {error}", path.display()))?;
-    toml::from_str(&contents).map_err(|error| format!("parse config {}: {error}", path.display()))
 }
 
-fn env_string(name: &str, file: Option<String>, default: &str) -> String {
-    std::env::var(name)
-        .ok()
-        .or(file)
-        .unwrap_or_else(|| default.to_owned())
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn env_path(name: &str, file: Option<PathBuf>, default: &str) -> PathBuf {
-    std::env::var_os(name)
-        .map(PathBuf::from)
-        .or(file)
-        .unwrap_or_else(|| PathBuf::from(default))
-}
+    const VALID: &str = r#"
+version = 1
 
-fn env_parse<T>(name: &str, file: Option<T>, default: T) -> Result<T, String>
-where
-    T: std::str::FromStr,
-    T::Err: std::fmt::Display,
-{
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse()
-            .map_err(|error| format!("invalid {name}: {error}")),
-        Err(_) => Ok(file.unwrap_or(default)),
+[image]
+source_url = "https://cloud-images.ubuntu.com/image.img"
+source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+installed_path = "/var/lib/wt/images/wt.qcow2"
+
+[libvirt]
+network = "default"
+worlds_dir = "/var/lib/libvirt/images/wt"
+
+[guest]
+memory_mib = 8192
+vcpus = 4
+disk_gib = 32
+boot_timeout_seconds = 300
+
+[install]
+binary_dir = "/usr/local/bin"
+"#;
+
+    fn parse(value: &str) -> Result<SiteConfig, String> {
+        let config: SiteConfig = toml::from_str(value).map_err(|error| error.to_string())?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    #[test]
+    fn complete_config_is_valid() {
+        parse(VALID).unwrap();
+    }
+
+    #[test]
+    fn missing_and_unknown_fields_fail() {
+        assert!(parse(&VALID.replace("vcpus = 4\n", "")).is_err());
+        assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 4\nfallback = true")).is_err());
+    }
+
+    #[test]
+    fn invalid_values_fail() {
+        assert!(parse(&VALID.replace(&"a".repeat(64), "not-a-sha")).is_err());
+        assert!(parse(&VALID.replace("/usr/local/bin", "relative/bin")).is_err());
+        assert!(parse(&VALID.replace("/usr/local/bin", "/")).is_err());
+        assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
+        assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
+        assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
     }
 }

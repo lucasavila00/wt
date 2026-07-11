@@ -1,7 +1,10 @@
 mod config;
 mod worker;
 
-pub use config::LibvirtConfig;
+pub use config::{
+    GuestConfig, ImageConfig, InstallConfig, LibvirtConfig, SiteConfig, SiteLibvirtConfig,
+    GUEST_ARCHITECTURE, GUEST_MACHINE, LIBVIRT_URI, SITE_CONFIG_PATH,
+};
 pub use worker::LibvirtWorker;
 
 use thiserror::Error;
