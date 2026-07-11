@@ -71,7 +71,7 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 - Add required `guest.ssh_authorized_keys_file` to site config. It points to one or more public keys to inject per world; private keys are rejected.
 - One recipe deadline covers clone, checkout, and `devcontainer up`.
 - Guest commands receive source/ref as argv, never interpolated shell text.
-- Keep the final 64 KiB of command stdout/stderr in errors. Prefix phase + exit code.
+- Stream provisioning command stdout/stderr live to the CLI through the helper's stderr. Keep the final 64 KiB in errors and prefix it with phase + exit code.
 - Image recipe version changes. `wt-local-setup image rebuild --config PATH` refuses active `wt-*` domains, then atomically replaces the golden image and manifest. No automatic replacement during install.
 
 #### Git contract

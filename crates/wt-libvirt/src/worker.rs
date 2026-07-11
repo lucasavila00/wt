@@ -194,7 +194,7 @@ impl LibvirtWorker {
         domain: &Domain,
         deadline: Instant,
     ) -> Result<Vec<String>, WorkerError> {
-        let output = guest_agent::run_phase(
+        let output = guest_agent::capture_phase(
             domain,
             "SSH host keys",
             "/bin/sh",
