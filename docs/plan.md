@@ -13,7 +13,8 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 
 ## Recipe
 
-- Canonical recipe = the team’s existing **`.devcontainer` + Compose**. No parallel env format for `wt`.
+- Canonical recipe = the repository’s stock **`devcontainer.json`**, run by the pinned Dev Container CLI. Compose remains an implementation detail of that recipe.
+- `wt` adds no repository config or override. Relative bind mounts work because the repository is cloned inside its world before the recipe starts.
 - GitLab CI stays a separate batch path; shared contract with interactive dev is mainly **images** (+ discipline), not one mega-file.
 - Era 1.5 may use the invoking site user's existing `ssh-agent` for private SSH clones. This is a provisional convenience assumption, not the final Git credential model or a blocker for validating the world lifecycle.
 
@@ -21,7 +22,7 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 
 ```text
 world = small Linux with Docker + own netns/IP
-        clone repo → stock compose/devcontainer up
+        clone repo → devcontainer up
 ```
 
 ## Control plane and workers
@@ -68,7 +69,7 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 ## Build order
 
 1. Local bare-metal vertical slice: Docker/Compose-ready KVM guest
-2. Era 1.5: Git clone + ref checkout + Compose up inside the local world, then SSH/VS Code access to that usable environment
+2. Era 1.5: Git clone + ref checkout + `devcontainer up` inside the local world, then SSH/VS Code access
 3. Era 2: remote client → site helper through OpenSSH
 4. Multi-node bins and k8s worker when needed
 

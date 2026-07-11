@@ -28,7 +28,7 @@ KVM is required. No CPU-emulation backend.
 7. Era 1.5: create the `wt` user and inject configured public keys
 8. Era 1.5: generate unique guest SSH host keys and verify sshd readiness
 9. Era 1.5: clone source + checkout ref into `/workspace/repo`
-10. Era 1.5: discover one root Compose file + up --build --wait
+10. Era 1.5: run `devcontainer up --workspace-folder /workspace/repo`
 11. Read guest IP and public SSH host keys
 12. Running
 ```
@@ -53,8 +53,8 @@ The QEMU guest agent remains the core provisioning and readiness channel. An SSH
 
 World creation does not install packages.
 
-Era 1.5 adds `git`, `openssh-server`, and one pinned small container image used by the offline KVM acceptance test. The manifest records all of them. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
+Era 1.5 adds `git`, `openssh-server`, the pinned Dev Container CLI, and one pinned small container image used by the offline KVM acceptance test. The manifest records all of them. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
 
 ## One-line summary
 
-**Prepared Ubuntu image → KVM guest → clone + checkout → Compose ready.**
+**Prepared Ubuntu image → KVM guest → clone + checkout → devcontainer ready.**

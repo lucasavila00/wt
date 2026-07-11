@@ -35,7 +35,7 @@ guest world: Docker + clone + stock compose
 | **Control plane + worker** | Worlds and inventory ([control-plane](../arch/control-plane.md)) |
 | **ssh** | Site hop (API) and world hop (guest) |
 
-Guest SSH arrives with the first usable Git/Compose world in Era 1.5. The site hop remains local stdio until Era 2. These are separate transports even when both eventually use OpenSSH.
+Guest SSH arrives with the first usable Git/devcontainer world in Era 1.5. The site hop remains local stdio until Era 2. These are separate transports even when both eventually use OpenSSH.
 
 ## Example commands
 

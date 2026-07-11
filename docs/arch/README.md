@@ -23,16 +23,16 @@ wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KV
 
 ```text
 wt new source name  ──►  local wt-local  ──►  KVM guest
-                                                   ├─ clone → checkout → compose up
+                                                   ├─ clone → checkout → devcontainer up
                                                    └─ sshd → shell / VS Code Remote SSH
 ```
 
 - Same local transport and KVM lifecycle.
-- `Running` means guest SSH and the selected Git revision's Compose project are ready.
+- `Running` means guest SSH and the selected Git revision's devcontainer are ready.
 - The checkout remains inside the guest at `/workspace/repo`; it is not exported to the host.
 - Each instance records a stable SSH user, endpoint, and host-key identity. `wt sync` projects those records into managed OpenSSH files so the instance name is also the VS Code Remote SSH target.
 - Guest SSH is independent of Era 2's SSH transport to `wt-local`.
-- Private SSH cloning may provisionally use the invoking user's forwarded `ssh-agent`; the self-contained Git/Compose path remains the Era 1.5 acceptance contract while the long-term credential model is deferred.
+- Private SSH cloning may provisionally use the invoking user's forwarded `ssh-agent`; the self-contained Git/devcontainer path remains the Era 1.5 acceptance contract while the long-term credential model is deferred.
 
 ## Era 2
 
@@ -63,7 +63,7 @@ Not in the repo yet: `wt-control-plane`, `wt-worker`.
 
 | Verb | Meaning |
 |------|---------|
-| create | name → Docker/Compose-ready KVM world + guest IP |
+| create | name → devcontainer-ready KVM world + guest IP |
 | list | name, status, guest IP |
 | destroy | tear down world |
 
@@ -71,4 +71,4 @@ Owner: local OS user.
 
 ## One-line summary
 
-**`wt` runs local `wt-local`; `wt-libvirt` manages Docker/Compose-ready KVM worlds.**
+**`wt` runs local `wt-local`; `wt-libvirt` manages devcontainer-ready KVM worlds.**
