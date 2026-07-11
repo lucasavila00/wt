@@ -53,7 +53,7 @@ crates/
   wt-cli       # package; binary name wt
   wt-libvirt   # production libvirt/KVM backend
   wt-local     # site helper + registry + service
-  wt-setup     # Ubuntu/KVM site installer
+  wt-local-setup # Ubuntu/KVM local-site installer
   wt-integration-tests
 ```
 

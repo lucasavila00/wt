@@ -37,7 +37,7 @@ Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the 
 ## Era 1.5 guest access
 
 - The guest username is the fixed, non-root `wt` user and its working checkout is `/workspace`.
-- `wt-setup` requires a public-key file path in strict site config. `wt-local` injects those public keys into every world it creates.
+- `wt-local-setup` requires a public-key file path in strict site config. `wt-local` injects those public keys into every world it creates.
 - Every world has unique SSH host keys. After boot, `wt-libvirt` reads the public host keys through the QEMU guest agent; `wt-local` persists them with the SSH endpoint.
 - `wt sync` manages dedicated config and known-hosts files, ensures the user's main SSH config contains one bounded `Include` for the managed config, and makes `Host <instance-name>` resolve to the recorded guest. It must not weaken host-key checking or overwrite unrelated user SSH configuration.
 - VS Code Remote SSH uses the same instance alias and opens `/workspace`, so the editor terminal and Git operations run inside the world.

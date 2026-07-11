@@ -49,7 +49,7 @@ Save it outside `config/`. That directory contains development samples only.
 Validate:
 
 ```text
-cargo run --release -p wt-setup -- validate --config /path/to/site.toml
+cargo run --release -p wt-local-setup -- validate --config /path/to/site.toml
 ```
 
 Install:

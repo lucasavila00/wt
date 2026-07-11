@@ -1,5 +1,5 @@
 [package]
-name = "wt-setup"
+name = "wt-local-setup"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Ubuntu 24.04 site installer for wt"
 
 [[bin]]
-name = "wt-setup"
+name = "wt-local-setup"
 path = "src/main.rs"
 
 [dependencies]

@@ -57,8 +57,8 @@ sudo apt install -y \
     openssh-server
 
 cd "$root"
-cargo build --release -p wt-setup
-target/release/wt-setup validate --config "$config"
+cargo build --release -p wt-local-setup
+target/release/wt-local-setup validate --config "$config"
 
 sudo usermod -aG libvirt,kvm "$USER"
 groups=" $(id -nG) "
@@ -68,4 +68,4 @@ if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
     exit 1
 fi
 
-target/release/wt-setup install --config "$config"
+target/release/wt-local-setup install --config "$config"

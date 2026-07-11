@@ -37,7 +37,7 @@ No software-emulation fallback exists.
 Review CPU, memory, disk, paths, URL, and SHA before use:
 
 ```text
-cargo run -p wt-setup -- validate --config config/wt-local.development.toml
+cargo run -p wt-local-setup -- validate --config config/wt-local.development.toml
 ```
 
 Era 1 has no runtime environment overrides. `wt-local` always reads `/etc/wt/local.toml`.

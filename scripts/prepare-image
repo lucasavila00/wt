@@ -18,4 +18,4 @@ fi
 config=$(realpath "$2")
 
 cd "$root"
-cargo run --release -p wt-setup -- image rebuild --config "$config"
+cargo run --release -p wt-local-setup -- image rebuild --config "$config"

@@ -10,6 +10,7 @@ Named parallel instances of an existing Docker/devcontainer recipe. The Mac is c
 | [docs/plan-reasoning/](./docs/plan-reasoning/) | Background notes |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Local development prerequisites |
 | [TESTS.md](./TESTS.md) | Test prerequisites and commands |
+| [MANUAL-TESTS.md](./MANUAL-TESTS.md) | Copy-paste Era 1.5 operator tests |
 
 ## Workspace
 
@@ -19,7 +20,7 @@ crates/
   wt-cli/      CLI package (binary name: `wt`)
   wt-libvirt/  production libvirt/KVM world backend
   wt-local/    site helper + registry + control-plane service
-  wt-setup/    Ubuntu/KVM site installer
+  wt-local-setup/    Ubuntu/KVM local-site installer
   wt-integration-tests/  injected + real-system tests
 ```
 
@@ -29,7 +30,7 @@ crates/
 | [`wt-cli`](./crates/wt-cli/) | bin `wt` | Local CLI — new, ls, rm, sync, ssh |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
 | [`wt-local`](./crates/wt-local/) | bin | Local helper — registry + instance service + embedded backend |
-| [`wt-setup`](./crates/wt-setup/) | bin | Strict Ubuntu/KVM site installation and golden image build |
+| [`wt-local-setup`](./crates/wt-local-setup/) | bin | Strict Ubuntu/KVM local-site installation and golden image build |
 | [`wt-integration-tests`](./crates/wt-integration-tests/) | tests | Injected service tests + libvirt/KVM acceptance test |
 
 Out of the workspace until multi-node is in scope: `wt-control-plane`, `wt-worker`.

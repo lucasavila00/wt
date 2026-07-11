@@ -6,7 +6,7 @@ members = [
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
     "crates/wt-local",
-    "crates/wt-setup",
+    "crates/wt-local-setup",
 ]
 
 [workspace.package]

@@ -2,7 +2,7 @@
 
 Order of work. Product: [plan.md](../plan.md). Arch: [arch/](../arch/README.md). CLI: [arch/cli.md](../arch/cli.md).
 
-Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-setup`, `wt-integration-tests`.
+Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-local-setup`, `wt-integration-tests`.
 
 ## Division of labor
 
@@ -12,7 +12,7 @@ Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-setup`, 
 | **`wt-local`** | Site brain: helper + registry + instance service. JSON in → work → JSON out |
 | **`wt-libvirt`** | Production libvirt/KVM world backend |
 | **`wt-cli` (`wt`)** | Thin: spawn local helper → print |
-| **`wt-setup`** | Strict Ubuntu/KVM site config + install + golden image build |
+| **`wt-local-setup`** | Strict Ubuntu/KVM local-site config + install + golden image build |
 | **`wt-integration-tests`** | Injected service tests + real libvirt/KVM acceptance test |
 
 **Real VMs (libvirt/KVM) are the hard part.**
@@ -33,7 +33,7 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 | `wt-local` | helper entrypoint; durable local registry; owner = process user; instance service; `Provisioning` → `Running` / `Error` |
 | `wt-libvirt` | Docker + Compose golden image; define/start/destroy; guest-agent readiness; guest IP; instance↔domain; KVM only |
 | `wt-cli` | `new` / `ls` / `rm`; spawn helper; print status/IP |
-| `wt-setup` | config-first Ubuntu install; pinned image; KVM golden build; provenance; drift checks |
+| `wt-local-setup` | config-first Ubuntu install; pinned image; KVM golden build; provenance; drift checks |
 
 **Done when:** local `wt new` creates a real KVM guest where the guest agent verifies Docker Engine + Compose; `wt ls` shows it; `wt rm` destroys it.
 
@@ -64,14 +64,14 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 | `wt-cli` | `wt new <source> <name> [--ref <ref>] [--identity PATH]`; blocking interactive create; automatic sync; `wt ssh` |
 | `wt-local` | versioned SQLite registry; persist source/ref and SSH identity; preserve failure detail |
 | `wt-libvirt` | guest exec helper; SSH setup/readiness; clone; checkout; `devcontainer up`; captured errors |
-| `wt-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI; configure public-key source; record provenance |
+| `wt-local-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI; configure public-key source; record provenance |
 
 - Add required `guest.recipe_timeout_seconds` to site config. Development value: `900`.
 - Add required `guest.ssh_authorized_keys_file` to site config. It points to one or more public keys to inject per world; private keys are rejected.
 - One recipe deadline covers clone, checkout, and `devcontainer up`.
 - Guest commands receive source/ref as argv, never interpolated shell text.
 - Keep the final 64 KiB of command stdout/stderr in errors. Prefix phase + exit code.
-- Image recipe version changes. `wt-setup image rebuild --config PATH` refuses active `wt-*` domains, then atomically replaces the golden image and manifest. No automatic replacement during install.
+- Image recipe version changes. `wt-local-setup image rebuild --config PATH` refuses active `wt-*` domains, then atomically replaces the golden image and manifest. No automatic replacement during install.
 
 #### Git contract
 
@@ -98,7 +98,7 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 
 - Guest SSH is an Era 1.5 deliverable. SSH transport from `wt` to `wt-local` remains Era 2.
 - The fixed guest login is non-root user `wt`; its checkout is `/workspace`.
-- `guest.ssh_authorized_keys_file` is strict site configuration. `wt-setup` validates the referenced public keys and `wt-libvirt` injects them into each new world's cloud-init data.
+- `guest.ssh_authorized_keys_file` is strict site configuration. `wt-local-setup` validates the referenced public keys and `wt-libvirt` injects them into each new world's cloud-init data.
 - Each world generates unique SSH host keys. After sshd starts, retrieve the public host keys through the QEMU guest agent and persist them with `ssh_user = "wt"`, guest address, and port `22`.
 - Treat the host keys, not a DHCP address, as the world's stable SSH identity. Reconciliation refreshes the persisted address from libvirt; `wt sync` then updates the alias without accepting a different host key.
 - SSH readiness is required before `Running`. Clone, checkout, and devcontainer provisioning continue through the guest agent.
@@ -115,7 +115,7 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 | Injected worker | source/ref and SSH wire shape, persistence, conflicts, sync inventory, Git/devcontainer/SSH failure propagation |
 | KVM | SSH-served jsdev sample → requested ref → devcontainer ready → push from container → strict guest SSH → list → remove |
 
-The KVM test serves a temporary bare clone of the sibling `../jsdev` checkout over SSH from the host bridge, falling back to a host-side clone of `https://github.com/lucasavila00/jsdev-sample`. The world itself always clones through SSH. It runs the stock devcontainer recipe and proves the container can push a branch back through the installed identity.
+The KVM test clones `https://github.com/lucasavila00/jsdev-sample.git` into a temporary bare repository and serves it over SSH from the host bridge. The world itself always clones through SSH. It runs the stock devcontainer recipe and proves the container can push a branch back through the installed identity.
 
 The test uses temporary SSH server, Git identity, guest-login identity, and host keys. No long-lived provider credential is required.
 

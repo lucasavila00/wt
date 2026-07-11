@@ -1,1 +1,0 @@
-- [ ]  rename crates/wt-setup to wt-local-setup if it has code specific to local code, we can add a wt-setup-shared later with shared stuff if needed somewhere
