@@ -2,7 +2,37 @@ use tempfile::TempDir;
 use wt_api::{CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response};
 use wt_local::service::Service;
 use wt_local::store::Store;
-use wt_local::worker::FakeWorker;
+use wt_local::worker::{ProvisionSpec, WorkerError, WorldWorker};
+
+#[derive(Clone, Debug, Default)]
+struct InjectedWorker {
+    fail_provision: bool,
+}
+
+impl WorldWorker for InjectedWorker {
+    fn provision(&self, _spec: &ProvisionSpec<'_>) -> Result<wt_api::SshEndpoint, WorkerError> {
+        if self.fail_provision {
+            return Err(WorkerError::new("injected provision failure"));
+        }
+        Ok(endpoint())
+    }
+
+    fn destroy(&self, _backend_id: &str) -> Result<(), WorkerError> {
+        Ok(())
+    }
+
+    fn inspect(&self, _backend_id: &str) -> Result<Option<wt_api::SshEndpoint>, WorkerError> {
+        Ok(Some(endpoint()))
+    }
+}
+
+fn endpoint() -> wt_api::SshEndpoint {
+    wt_api::SshEndpoint {
+        user: "ubuntu".to_owned(),
+        host: "192.0.2.2".to_owned(),
+        port: 22,
+    }
+}
 
 #[test]
 fn lifecycle_persists_and_is_owner_scoped() {
@@ -10,7 +40,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     let database = temp.path().join("instances.db");
     let name = InstanceName::parse("repo-feature").unwrap();
 
-    let mut service = Service::new(Store::open(&database).unwrap(), FakeWorker::default());
+    let mut service = Service::new(Store::open(&database).unwrap(), InjectedWorker::default());
     let created = service
         .execute(
             "lucas",
@@ -40,7 +70,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     assert_eq!(conflict.code, ErrorCode::Conflict);
 
     drop(service);
-    let mut restarted = Service::new(Store::open(&database).unwrap(), FakeWorker::default());
+    let mut restarted = Service::new(Store::open(&database).unwrap(), InjectedWorker::default());
     let Response::Instances { instances } = restarted.execute("lucas", Operation::List).unwrap()
     else {
         panic!("expected instances response");
@@ -67,9 +97,8 @@ fn provision_failure_is_recorded() {
     let temp = TempDir::new().unwrap();
     let mut service = Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
-        FakeWorker {
+        InjectedWorker {
             fail_provision: true,
-            ..FakeWorker::default()
         },
     );
 

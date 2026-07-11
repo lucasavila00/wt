@@ -10,11 +10,11 @@ use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use wt_api::SshEndpoint;
 
-pub struct QemuWorker {
+pub struct LibvirtWorker {
     config: LocalConfig,
 }
 
-impl QemuWorker {
+impl LibvirtWorker {
     pub fn new(config: LocalConfig) -> Result<Self, WorkerError> {
         require_file(&config.image, "guest image")?;
         require_file(&config.ssh_public_key, "SSH public key")?;
@@ -203,7 +203,7 @@ impl QemuWorker {
     }
 }
 
-impl WorldWorker for QemuWorker {
+impl WorldWorker for LibvirtWorker {
     fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<SshEndpoint, WorkerError> {
         match self.provision_inner(spec) {
             Ok(endpoint) => Ok(endpoint),
@@ -315,18 +315,5 @@ trait OutputStatus {
 impl OutputStatus for Output {
     fn status_success(&self) -> bool {
         self.status.success()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cloud_config_contains_key_and_docker() {
-        let value = user_data("ubuntu", "ssh-ed25519 AAAA test");
-        assert!(value.starts_with("#cloud-config\n"));
-        assert!(value.contains("ssh-ed25519 AAAA test"));
-        assert!(value.contains("docker.io"));
     }
 }

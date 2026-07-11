@@ -11,11 +11,11 @@ Local target: Ubuntu 24.04, amd64.
 sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils ovmf libvirt-dev
 ```
 
-The injected-worker integration tests do not use QEMU/libvirt.
+The injected-worker integration tests do not use libvirt/KVM.
 
-## QEMU/libvirt
+## Libvirt/KVM
 
-`qemu-kvm` is not a package candidate on this Ubuntu 24.04 workstation. `qemu-system-x86` supports software emulation and KVM acceleration through `/dev/kvm`.
+Libvirt manages QEMU guests. KVM acceleration through `/dev/kvm` is required for the real integration test.
 
 ## Guest image
 
@@ -41,7 +41,7 @@ mkdir -p imgs && curl -fL https://cloud-images.ubuntu.com/releases/24.04/release
 - Permission to use the system libvirt socket.
 - Disk and memory for one test guest.
 
-KVM is optional at first. It needs CPU virtualization support, host firmware support, `/dev/kvm`, and user access to it.
+KVM needs CPU virtualization support, host firmware support, `/dev/kvm`, and user access to it.
 
 ## Still to decide
 

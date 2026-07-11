@@ -40,11 +40,11 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 | Lane | Covers |
 |------|--------|
 | **Injected worker** | helper/API, registry, ownership, state transitions, restart/reconcile, failures |
-| **QEMU/libvirt** | image, disk, domain, boot, network, IP discovery, SSH, destroy |
+| **Libvirt/KVM** | image, disk, domain, boot, network, IP discovery, SSH, destroy |
 
 The injected worker is fast and deterministic. It does not imitate libvirt internals.
 
-The QEMU test is the Era 1 acceptance test: `wt new` → `wt ls` → guest SSH → `wt rm`. Run with software emulation first; use KVM acceleration when available. Same test.
+The libvirt/KVM test is the Era 1 acceptance test: `wt new` → `wt ls` → guest SSH → `wt rm`.
 
 Keep unit tests narrow: validation, wire types, Host rendering.
 

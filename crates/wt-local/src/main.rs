@@ -6,8 +6,7 @@ use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_local::config::LocalConfig;
 use wt_local::service::Service;
 use wt_local::store::Store;
-use wt_local::worker::qemu::QemuWorker;
-use wt_local::worker::{FakeWorker, WorldWorker};
+use wt_local::worker::libvirt::LibvirtWorker;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-local")]
@@ -38,12 +37,7 @@ fn run() -> Result<()> {
 fn run_api() -> Result<()> {
     let config = LocalConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&config.database_path()).context("open instance registry")?;
-    let worker_name = std::env::var("WT_WORKER").unwrap_or_else(|_| "qemu".to_owned());
-    let worker: Box<dyn WorldWorker> = match worker_name.as_str() {
-        "fake" => Box::new(FakeWorker::default()),
-        "qemu" => Box::new(QemuWorker::new(config.clone()).map_err(anyhow::Error::msg)?),
-        other => anyhow::bail!("unsupported worker {other:?}"),
-    };
+    let worker = LibvirtWorker::new(config.clone()).map_err(anyhow::Error::msg)?;
     let owner = process_user()?;
     let mut service = Service::new(store, worker);
 
