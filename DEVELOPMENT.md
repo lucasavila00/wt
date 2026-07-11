@@ -72,11 +72,23 @@ Image only:
 scripts/prepare-image --config config/wt-local.development.toml
 ```
 
-Run both scripts in an interactive terminal. They invoke `sudo` and may ask for the password.
+Integration-test image cache:
+
+```text
+scripts/prepare-test-image --config config/wt-local.development.toml
+```
+
+Run these scripts in an interactive terminal. They invoke `sudo` and may ask for the password.
 
 Image construction boots a temporary KVM guest. Cloud-init installs Docker Engine, Docker Compose v2, and QEMU guest agent. The installer verifies readiness, syspreps the disk, writes a provenance manifest, then publishes the golden image.
 
 Matching installed state is reused. Config, permissions, partial files, stale build state, or image provenance drift is an error.
+
+The test-image command creates a separate qcow2 backing image with the existing
+jsdev Compose images preloaded. Prepare it once before running the workspace
+tests, and prepare it again after rebuilding the production image or changing
+`crates/wt-integration-tests/fixture-images.txt`. It does not affect normal
+worlds.
 
 ## Tests
 

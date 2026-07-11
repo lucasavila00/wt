@@ -427,7 +427,7 @@ fn publish_image(
     Ok(())
 }
 
-fn verify_installed_image(
+pub(crate) fn verify_installed_image(
     config: &SiteConfig,
     config_bytes: &[u8],
     manifest_path: &Path,
@@ -455,7 +455,16 @@ fn verify_installed_image(
     )
 }
 
-fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
+pub(crate) fn installed_golden_sha(manifest_path: &Path) -> Result<String> {
+    let manifest: ImageManifest = serde_json::from_slice(
+        &fs::read(manifest_path)
+            .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
+    )
+    .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
+    Ok(manifest.golden_sha256)
+}
+
+pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
     let names = runner.text(
         "virsh",
         &args(["-c", LIBVIRT_URI, "list", "--state-running", "--name"]),
@@ -474,11 +483,11 @@ fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
     Ok(())
 }
 
-fn manifest_path(image: &Path) -> PathBuf {
+pub(crate) fn manifest_path(image: &Path) -> PathBuf {
     PathBuf::from(format!("{}.manifest.json", image.display()))
 }
 
-fn sibling_temporary(path: &Path) -> Result<PathBuf> {
+pub(crate) fn sibling_temporary(path: &Path) -> Result<PathBuf> {
     let name = path
         .file_name()
         .context("installed path has no file name")?
@@ -486,7 +495,7 @@ fn sibling_temporary(path: &Path) -> Result<PathBuf> {
     Ok(path.with_file_name(format!(".{name}.wt-new")))
 }
 
-fn require_sha(path: &Path, expected: &str, description: &str) -> Result<()> {
+pub(crate) fn require_sha(path: &Path, expected: &str, description: &str) -> Result<()> {
     let actual = sha_file(path)?;
     if !actual.eq_ignore_ascii_case(expected) {
         bail!("{description} SHA-256 mismatch: expected {expected}, got {actual}");
@@ -494,7 +503,7 @@ fn require_sha(path: &Path, expected: &str, description: &str) -> Result<()> {
     Ok(())
 }
 
-fn sha_file(path: &Path) -> Result<String> {
+pub(crate) fn sha_file(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut digest = Sha256::new();
     std::io::copy(&mut file, &mut digest).with_context(|| format!("hash {}", path.display()))?;

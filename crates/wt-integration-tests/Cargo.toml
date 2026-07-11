@@ -12,4 +12,6 @@ wt-local = { workspace = true }
 wt-cli = { path = "../wt-cli" }
 
 [dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
 tempfile = "3.27.0"

@@ -12,6 +12,23 @@ scripts/install-site --config config/wt-local.development.toml
 
 The first run may add the current user to the `libvirt` and `kvm` groups. If it asks you to log out, log back in and run the same command again.
 
+## Prepare the automated KVM test image
+
+Before running `cargo test --workspace` on this workstation, build the separate
+integration-test image cache once:
+
+```bash
+scripts/prepare-test-image --config config/wt-local.development.toml
+```
+
+Run this command in an interactive terminal because it invokes `sudo`. Re-run
+it after rebuilding the production golden image or changing
+`crates/wt-integration-tests/fixture-images.txt`.
+
+This cache is used only by the automated KVM test. It does not change the
+production golden image or the ordinary `wt new` manual workflow below. See
+[TESTS.md](./TESTS.md) for cache paths, validation, and diagnostic commands.
+
 ## Create a world
 
 Once per workstation, add this line at the beginning of `~/.ssh/config`, before any `Host` blocks:

@@ -2,7 +2,7 @@ use std::fs;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{CreateInstance, InstanceName, InstanceStatus, Operation, Response};
 use wt_libvirt::{LibvirtWorker, SiteConfig};
@@ -10,21 +10,42 @@ use wt_local::service::Service;
 use wt_local::store::Store;
 
 const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
+const FIXTURE_IMAGES: &str = include_str!("../fixture-images.txt");
+
+#[derive(serde::Deserialize)]
+struct GoldenManifest {
+    golden_sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CacheManifest {
+    version: u32,
+    recipe_version: u32,
+    base_golden_sha256: String,
+    images: Vec<String>,
+    resolved_images: Vec<String>,
+}
 
 #[test]
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
+    let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    run(
-        Command::new(env!("CARGO"))
-            .current_dir(&workspace)
-            .args(["build", "-p", "wt-guest"]),
-        "build guest helpers",
-    );
+    timings.run("build guest helpers", || {
+        run(
+            Command::new(env!("CARGO"))
+                .current_dir(&workspace)
+                .args(["build", "-p", "wt-guest"]),
+            "build guest helpers",
+        )
+    });
     let mut config = SiteConfig::load().unwrap();
+    config.image.installed_path = validate_test_cache(&config.image.installed_path);
     config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
-    let git = GitSshServer::start(temp.path(), bridge_ip);
+    let git = timings.run("prepare SSH Git fixture", || {
+        GitSshServer::start(temp.path(), bridge_ip)
+    });
     config.guest.ssh_authorized_keys_file = git.client_public_key.clone();
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
@@ -47,17 +68,19 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             .as_secs()
     ))
     .unwrap();
-    let created = service
-        .execute(
-            "lucas",
-            Operation::Create(CreateInstance {
-                name: name.clone(),
-                source: git.url(),
-                git_ref: Some(git.main_commit.clone()),
-                identity_file: git.client_key.to_string_lossy().into_owned(),
-            }),
-        )
-        .unwrap();
+    let created = timings.run("create KVM devcontainer world", || {
+        service
+            .execute(
+                "lucas",
+                Operation::Create(CreateInstance {
+                    name: name.clone(),
+                    source: git.url(),
+                    git_ref: Some(git.main_commit.clone()),
+                    identity_file: git.client_key.to_string_lossy().into_owned(),
+                }),
+            )
+            .unwrap()
+    });
     let Response::Instance { instance } = created else {
         panic!("expected instance");
     };
@@ -70,17 +93,21 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             return Err("expected list response".to_owned());
         };
         assert_eq!(instances.len(), 1);
-        wt_cli::ssh::sync(&instances).map_err(|error| error.to_string())?;
+        timings.run("sync SSH inventory", || {
+            wt_cli::ssh::sync(&instances).map_err(|error| error.to_string())
+        })?;
 
         let host_alias = format!("{}-host", name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
-        let output = Command::new("ssh")
-            .arg("-F")
-            .arg(&ssh_config)
-            .args(["-i", git.client_key.to_str().unwrap(), &host_alias])
-            .args(["test", "-d", "/workspace"])
-            .output()
-            .map_err(|error| error.to_string())?;
+        let output = timings.run("verify guest SSH", || {
+            Command::new("ssh")
+                .arg("-F")
+                .arg(&ssh_config)
+                .args(["-i", git.client_key.to_str().unwrap(), &host_alias])
+                .args(["test", "-d", "/workspace"])
+                .output()
+                .map_err(|error| error.to_string())
+        })?;
         ensure_success("enter jsdev guest host", &output)?;
 
         let branch = format!("wt-e2e-{}", std::process::id());
@@ -93,13 +120,15 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         )
         .map_err(|error| error.to_string())?;
         let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
-        let output = Command::new("ssh")
-            .arg("-F")
-            .arg(&ssh_config)
-            .args(["-i", git.client_key.to_str().unwrap(), name.as_str()])
-            .stdin(Stdio::from(input))
-            .output()
-            .map_err(|error| error.to_string())?;
+        let output = timings.run("push from app container", || {
+            Command::new("ssh")
+                .arg("-F")
+                .arg(&ssh_config)
+                .args(["-i", git.client_key.to_str().unwrap(), name.as_str()])
+                .stdin(Stdio::from(input))
+                .output()
+                .map_err(|error| error.to_string())
+        })?;
         ensure_success("enter and push from jsdev app container", &output)?;
         let pushed = git_output(
             Command::new("git")
@@ -114,7 +143,9 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         Ok(())
     })();
 
-    let removed = service.execute("lucas", Operation::Delete { name });
+    let removed = timings.run("remove KVM world", || {
+        service.execute("lucas", Operation::Delete { name })
+    });
     assert!(removed.is_ok(), "remove KVM sample world: {removed:?}");
     result.unwrap();
 }
@@ -138,6 +169,7 @@ impl GitSshServer {
                 .arg(&repository),
             "create bare jsdev repository",
         );
+        assert_fixture_images(&repository);
         let main_commit = git_output(
             Command::new("git")
                 .arg("--git-dir")
@@ -216,6 +248,111 @@ impl GitSshServer {
             self.port,
             self.repository.display()
         )
+    }
+}
+
+fn validate_test_cache(golden: &Path) -> PathBuf {
+    let stem = golden.file_stem().unwrap().to_string_lossy();
+    let cache = golden.with_file_name(format!("{stem}.integration-tests.qcow2"));
+    let golden_manifest_path = PathBuf::from(format!("{}.manifest.json", golden.display()));
+    let cache_manifest_path = PathBuf::from(format!("{}.manifest.json", cache.display()));
+    let help = "run scripts/prepare-test-image --config config/wt-local.development.toml";
+    assert!(
+        cache.is_file(),
+        "integration test image cache is missing; {help}"
+    );
+    let golden_manifest: GoldenManifest = serde_json::from_slice(
+        &fs::read(&golden_manifest_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", golden_manifest_path.display())),
+    )
+    .unwrap_or_else(|error| panic!("parse {}: {error}", golden_manifest_path.display()));
+    let cache_manifest: CacheManifest =
+        serde_json::from_slice(&fs::read(&cache_manifest_path).unwrap_or_else(|error| {
+            panic!("read {}: {error}; {help}", cache_manifest_path.display())
+        }))
+        .unwrap_or_else(|error| panic!("parse {}: {error}; {help}", cache_manifest_path.display()));
+    let expected_images = fixture_images();
+    assert!(
+        cache_manifest.version == 1
+            && cache_manifest.recipe_version == 1
+            && cache_manifest.base_golden_sha256 == golden_manifest.golden_sha256
+            && cache_manifest.images == expected_images
+            && cache_manifest.resolved_images.len() == expected_images.len(),
+        "integration test image cache is stale; {help}"
+    );
+    let info = git_output(
+        Command::new("qemu-img")
+            .args(["info", "--output=json"])
+            .arg(&cache),
+        "inspect integration test image cache",
+    );
+    let info: serde_json::Value = serde_json::from_str(&info).unwrap();
+    assert_eq!(
+        info["backing-filename"].as_str(),
+        golden.to_str(),
+        "integration test image cache has the wrong backing image; {help}"
+    );
+    cache
+}
+
+fn fixture_images() -> Vec<String> {
+    FIXTURE_IMAGES
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn assert_fixture_images(repository: &Path) {
+    let compose = git_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(repository)
+            .args(["show", "refs/heads/main:.devcontainer/compose.yaml"]),
+        "read jsdev Compose fixture",
+    );
+    let actual = compose
+        .lines()
+        .map(str::trim)
+        .filter_map(|line| line.strip_prefix("image: "))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        fixture_images(),
+        "jsdev fixture images changed; update fixture-images.txt and rebuild the integration cache"
+    );
+}
+
+struct Timings {
+    started: Instant,
+    phases: Vec<(&'static str, Duration)>,
+}
+
+impl Timings {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            phases: Vec::new(),
+        }
+    }
+
+    fn run<T>(&mut self, label: &'static str, action: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let result = action();
+        self.phases.push((label, started.elapsed()));
+        result
+    }
+}
+
+impl Drop for Timings {
+    fn drop(&mut self) {
+        eprintln!("KVM E2E timings:");
+        for (label, elapsed) in &self.phases {
+            eprintln!("  {label}: {:.1}s", elapsed.as_secs_f64());
+        }
+        eprintln!("  total: {:.1}s", self.started.elapsed().as_secs_f64());
     }
 }
 

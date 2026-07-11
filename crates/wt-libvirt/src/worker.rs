@@ -93,14 +93,21 @@ impl LibvirtWorker {
         // QEMU guest-agent is the provisioning channel. SSH is exposed to the
         // user, but wt does not depend on it to configure the world.
         eprintln!("Waiting for the guest agent...");
+        let phase_started = Instant::now();
         self.wait_for_guest_agent(&domain)?;
+        report_phase("guest agent and Docker readiness", phase_started);
         eprintln!("Waiting for guest networking...");
+        let phase_started = Instant::now();
         let guest_ip = self.wait_for_ip(spec.backend_id)?;
+        report_phase("guest networking", phase_started);
         let recipe_deadline = Instant::now() + self.config.recipe_timeout;
         eprintln!("Waiting for guest SSH...");
+        let phase_started = Instant::now();
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
+        report_phase("guest SSH readiness", phase_started);
         eprintln!("Cloning {}...", spec.source);
+        let phase_started = Instant::now();
         git::clone_and_checkout(
             &domain,
             spec.source,
@@ -108,7 +115,9 @@ impl LibvirtWorker {
             &private_git,
             recipe_deadline,
         )?;
+        report_phase("Git clone and checkout", phase_started);
         eprintln!("Starting the repository devcontainer...");
+        let phase_started = Instant::now();
         guest_agent::run_phase(
             &domain,
             "workspace ownership",
@@ -133,6 +142,8 @@ impl LibvirtWorker {
             ],
             recipe_deadline,
         )?;
+        report_phase("devcontainer up", phase_started);
+        let phase_started = Instant::now();
         devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
         guest_agent::run_phase(
             &domain,
@@ -148,6 +159,7 @@ impl LibvirtWorker {
             ],
             recipe_deadline,
         )?;
+        report_phase("app shell and Git credential verification", phase_started);
         eprintln!("World {} is ready.", spec.name);
         Ok(World {
             guest_ip: guest_ip.clone(),
@@ -364,4 +376,8 @@ fn run(command: &mut Command, action: &str) -> Result<(), WorkerError> {
 
 fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
+}
+
+fn report_phase(label: &str, started: Instant) {
+    eprintln!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64());
 }
