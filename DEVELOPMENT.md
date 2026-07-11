@@ -18,7 +18,7 @@ Host access:
 
 ```text
 sudo usermod -aG libvirt,kvm "$USER"
-sudo install -d -o "$USER" -g libvirt -m 2770 /var/lib/libvirt/images/wt
+sudo install -d -o "$USER" -g kvm -m 2770 /var/lib/libvirt/images/wt
 ```
 
 Log out and back in after changing groups. Then require:

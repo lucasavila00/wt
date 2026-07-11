@@ -129,7 +129,9 @@ fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
     prepare_host_state(runner, &config)?;
     ensure_image(runner, &config, &config_bytes)?;
+    println!("Building and installing wt binaries...");
     build_and_install_binaries(runner, &config)?;
+    println!("Installing site config at {SITE_CONFIG_PATH}...");
     install_config(runner, &config_bytes)?;
     println!("installed wt site from {}", config_path.display());
     Ok(())
@@ -175,11 +177,25 @@ fn preflight_host(runner: &impl Runner) -> Result<()> {
     require_kvm()?;
     require_active_group("kvm")?;
     require_active_group("libvirt")?;
-    runner.run(
+    require_libvirt_qemu_identity()?;
+    runner.text(
         "virsh",
         &args(["-c", LIBVIRT_URI, "domcapabilities", "--virttype", "kvm"]),
         "verify libvirt KVM capability",
     )?;
+    Ok(())
+}
+
+fn require_libvirt_qemu_identity() -> Result<()> {
+    let kvm = Group::from_name("kvm")
+        .context("look up kvm group")?
+        .context("required group does not exist: kvm")?;
+    let qemu = User::from_name("libvirt-qemu")
+        .context("look up libvirt-qemu user")?
+        .context("required user does not exist: libvirt-qemu")?;
+    if qemu.gid != kvm.gid {
+        bail!("libvirt-qemu must use kvm as its primary group");
+    }
     Ok(())
 }
 
@@ -280,15 +296,15 @@ fn ensure_directories(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
         0o755,
     )?;
 
-    let libvirt_gid = Group::from_name("libvirt")
-        .context("look up libvirt group")?
-        .context("required group does not exist: libvirt")?
+    let kvm_gid = Group::from_name("kvm")
+        .context("look up kvm group")?
+        .context("required group does not exist: kvm")?
         .gid;
     ensure_directory(
         runner,
         &config.libvirt.worlds_dir,
         Uid::effective(),
-        libvirt_gid,
+        kvm_gid,
         0o2770,
     )
 }
@@ -348,7 +364,9 @@ fn ensure_image(runner: &impl Runner, config: &SiteConfig, config_bytes: &[u8]) 
     let manifest_path = manifest_path(&config.image.installed_path);
     match (config.image.installed_path.exists(), manifest_path.exists()) {
         (true, true) => {
+            println!("Verifying installed golden image and provenance...");
             verify_installed_image(config, config_bytes, &manifest_path)?;
+            println!("Reusing verified golden image.");
             return Ok(());
         }
         (false, false) => {}
@@ -363,7 +381,9 @@ fn source_image(config: &SiteConfig, runner: &impl Runner) -> Result<PathBuf> {
     let path = Path::new("imgs").join(SOURCE_IMAGE_NAME);
     fs::create_dir_all("imgs").context("create imgs directory")?;
     if path.exists() {
+        println!("Verifying cached Ubuntu source image...");
         require_sha(&path, &config.image.source_sha256, "source image")?;
+        println!("Reusing verified source image: {}", path.display());
         return Ok(path);
     }
     let temporary = path.with_extension("img.download");
@@ -373,6 +393,7 @@ fn source_image(config: &SiteConfig, runner: &impl Runner) -> Result<PathBuf> {
             temporary.display()
         );
     }
+    println!("Downloading pinned Ubuntu source image...");
     runner.run(
         "curl",
         &[
@@ -440,6 +461,7 @@ fn build_image_inner(
     meta_data: &Path,
     prepared: &Path,
 ) -> Result<()> {
+    println!("Preparing temporary KVM build disk...");
     runner.run(
         "qemu-img",
         &[
@@ -508,8 +530,13 @@ fn build_image_inner(
         ],
         "start KVM image build guest",
     )?;
+    println!(
+        "KVM build guest started. Waiting for cloud-init to install Docker, Compose, and guest agent."
+    );
+    println!("The guest will power off when ready. Timeout: 30 minutes.");
     wait_for_shutdown(runner)?;
 
+    println!("Guest powered off. Verifying readiness and package versions...");
     let marker = runner.text(
         "sudo",
         &[
@@ -541,8 +568,10 @@ fn build_image_inner(
     if packages.len() != 3 {
         bail!("image package manifest must contain exactly three packages");
     }
+    println!("Verified packages: {}", packages.join(", "));
 
     undefine_build_domain(runner)?;
+    println!("Sysprepping golden image...");
     runner.run(
         "sudo",
         &[
@@ -564,6 +593,7 @@ fn build_image_inner(
         ],
         "restore image build disk ownership",
     )?;
+    println!("Compacting golden image...");
     runner.run(
         "qemu-img",
         &[
@@ -582,6 +612,7 @@ fn build_image_inner(
         "check golden image",
     )?;
 
+    println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
         version: 1,
         source_sha256: config.image.source_sha256.to_ascii_lowercase(),
@@ -616,7 +647,9 @@ power_state:
 }
 
 fn wait_for_shutdown(runner: &impl Runner) -> Result<()> {
+    let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
+    let mut next_report = Duration::from_secs(15);
     loop {
         let state = runner.text(
             "virsh",
@@ -625,6 +658,15 @@ fn wait_for_shutdown(runner: &impl Runner) -> Result<()> {
         )?;
         if state.trim() == "shut off" {
             return Ok(());
+        }
+        let elapsed = started.elapsed();
+        if elapsed >= next_report {
+            println!(
+                "Still building guest: elapsed={}s, domain_state={}",
+                elapsed.as_secs(),
+                state.trim()
+            );
+            next_report = elapsed + Duration::from_secs(15);
         }
         if Instant::now() >= deadline {
             bail!("timed out waiting for KVM image build guest");
