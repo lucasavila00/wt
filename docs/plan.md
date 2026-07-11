@@ -7,7 +7,8 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 
 - **Named parallel instances** of an existing `.devcontainer` + Docker Compose recipe.
 - **Mac = cockpit only** (CLI + `ssh`). No Docker on the Mac.
-- **`wt new <repo> <name>`** → site runs stock recipe → CLI **prints** an SSH `Host` snippet → daily enter is **`ssh <name>`** (after the user applies the snippet; automatic ssh-config edit is a later UX polish item, not required for the core loop).
+- **`wt new <source> <name>`** with **`name` = `{repo}-{feature}`** → site runs stock recipe → CLI **prints** guest Host snippet; **`wt sync`** projects **my** worlds into managed ssh config; enter with **`ssh <name>`** / **`wt ssh`**.  
+- **Clusters = SSH contexts** (`user@host`, optional key)—CLI talks to the control plane **over SSH**, not a public URL + token. Owner = SSH user. Multi-user host, single-user client. Detail: [arch/cli.md](./arch/cli.md).
 - **Isolation** = each instance has its own network identity so stock `"3000:3000"` works N times. **Trusted pool** (solo or same company)—not hostile multi-tenant security.
 
 ## Recipe
@@ -28,13 +29,13 @@ Detail: [arch/control-plane.md](./arch/control-plane.md).
 
 | Piece | Role |
 |-------|------|
-| **CLI (`wt`)** | One control-plane base URL only |
-| **Control plane** | Create/list/destroy instances; fleet view; state may be disposable RAM |
-| **Worker** | Runs worlds; ground truth on that host/cluster; inventory for the control plane |
+| **CLI (`wt`)** | SSH context → site; logical instance API over that hop |
+| **Control plane** | Create/list/destroy (owner-scoped); loopback/SSH-only access |
+| **Worker** | Runs worlds; ground truth; inventory for the control plane |
 
-**Current deploy shape:** binary **`wt-local`** = control plane + embedded bare-metal worker on one hypervisor. CLI points at `wt-local`.
+**Current deploy shape:** **`wt-local`** on the hypervisor; CLI **SSHes in**. No public control-plane HTTP required.
 
-**Multi-node shape (not built yet):** **`wt-control-plane`** + **`wt-worker`** (libvirt and/or k8s). Same CLI API.
+**Multi-node shape (not built yet):** **`wt-control-plane`** + **`wt-worker`**. Prefer SSH (or equivalent private path) to the plane.
 
 ## Worker backends
 
@@ -62,7 +63,7 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 
 ## Build order
 
-1. `wt-api` + `wt` + `wt-local` ([arch](./arch/README.md), [impl](./impl/README.md))  
+1. `wt-api` + `wt-cli` (bin `wt`) + `wt-local` ([arch](./arch/README.md), [impl](./impl/README.md))  
 2. Libvirt guest + real SSH  
 3. Stock recipe in guest  
 4. Daily-driver UX (including optional ssh-config apply)  

@@ -5,43 +5,45 @@ Target product shape. Plan: [../plan.md](../plan.md). Arch: [../arch/](../arch/R
 ## Gesture
 
 ```text
-$ wt new github.com:lucasavila00/frontend my-feature
-# control plane creates world + recipe; CLI prints SSH Host snippet
-ready  my-feature
-
-# user applies Host (or later: tool applies when that UX exists)
-$ ssh my-feature
-# byobu on that world (feel: already inside the container)
+$ wt new github.com:lucasavila00/frontend frontend-my-feature
+# CLI SSHes to site (context); creates world; prints guest Host snippet
+$ wt sync
+$ ssh frontend-my-feature
 ```
 
-Second stream = another name, another world. Never another port in the app repo.
+Second stream = another `{repo}-{feature}`, another world. Never another port in the app repo.  
+Full CLI: [../arch/cli.md](../arch/cli.md).
 
 ## Overall arch
 
 ```text
-Mac (CLI + stock ssh)
-   │  wt → control-plane URL
+Mac (CLI + stock OpenSSH)
+   │  wt → context (ssh user@host, optional key)
    ▼
-wt-local  (or later wt-control-plane + workers)
+wt-local on hypervisor  (API over that SSH hop)
    │
    ▼
-world: Docker + clone + stock .devcontainer/compose
+guest world: Docker + clone + stock compose
+   ▲
+   └── ssh Host after sync
 ```
 
 | Layer | Job |
 |-------|-----|
-| **CLI** | Control-plane client; print (optionally later apply) Host map |
+| **CLI** | SSH contexts; owner-scoped API over SSH; print + `sync` guest Hosts |
 | **Control plane + worker** | Worlds and inventory ([control-plane](../arch/control-plane.md)) |
-| **ssh** | How you live on an instance |
+| **ssh** | Site hop (API) and world hop (guest) |
 
 ## Example commands
 
 | Command | Meaning |
 |---------|---------|
-| `wt new <source> <name>` | Ensure instance; print SSH Host snippet |
-| `ssh <name>` | Enter (after Host is configured) |
-| `wt rm <name>` | Tear down; print Host removal guidance |
+| `wt new <source> <name>` | Create; print SSH Host snippet (`name` = `{repo}-{feature}`) |
+| `wt sync` | Rewrite managed ssh config from **my** instances on this cluster |
+| `ssh <name>` / `wt ssh <name>` | Enter |
+| `wt rm <name>` | Tear down |
 | `wt ls` | name, status, SSH target |
+| `wt context …` | Which cluster |
 
 ## What stays true
 

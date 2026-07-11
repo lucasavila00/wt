@@ -2,24 +2,23 @@
 
 Single-site server: **control-plane API + embedded bare-metal worker**.
 
-Run on the hypervisor. Point `wt` at this process’s URL.
+Runs on the hypervisor. The CLI reaches it **via SSH** to this host (not a public control-plane URL). API is loopback/stdio/socket-oriented; owner = connecting SSH user.
 
 ## Role
 
 | Does | Does not |
 |------|----------|
-| Serve control-plane API | Run on the Mac |
+| Serve control-plane ops to authenticated SSH users | Require separate bearer-token product for bare metal |
 | Embedded worker (stub → libvirt) | Multi-node fleet by itself |
 | Local inventory + domain reconcile | |
 
-Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/arch/bare-metal-agent.md](../../docs/arch/bare-metal-agent.md).
-
-Multi-node (not in workspace): `wt-control-plane`, `wt-worker` as separate processes reusing the same libraries.
+Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/arch/cli.md](../../docs/arch/cli.md), [docs/arch/bare-metal-agent.md](../../docs/arch/bare-metal-agent.md).
 
 ## Run
 
 ```text
 cargo run -p wt-local
+# CLI on Mac: context ssh = user@this-host
 ```
 
 ## Status

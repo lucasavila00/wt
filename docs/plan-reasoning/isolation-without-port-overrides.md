@@ -67,8 +67,8 @@ Tool maps names to SSH endpoints (print Host / later apply). Repo stays instance
 
 | Concern | Lives in |
 |---------|----------|
-| name → SSH target | CLI output / optional later managed ssh config |
-| provision / destroy world | control plane + worker (`wt-local` today) |
+| name → guest SSH target | CLI print + `wt sync` managed ssh config |
+| provision / destroy world | CLI over SSH to `wt-local` (control plane + worker) |
 | checkout + compose | inside world |
 
 ## One-line summary

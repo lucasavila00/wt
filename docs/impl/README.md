@@ -1,14 +1,14 @@
 # Implementation plan
 
 Order of work. Product: [plan.md](../plan.md). Architecture: [arch/](../arch/README.md).  
-Crates: `wt-api`, `wt`, `wt-local`.
+Crates: `wt-api`, `wt-cli` (bin `wt`), `wt-local`.
 
 ## Approach
 
 Ship a **vertical slice** of the product loop each era, then deepen the world implementation.
 
 ```text
-Era 1:  wt ↔ wt-local          (stub world, real API + print Host)
+Era 1:  wt ──SSH──► wt-local   (stub world, real API + print/sync Host)
 Era 2:  real SSH guest         (libvirt + golden image)
 Era 3:  stock recipe in guest  (clone + compose)
 Era 4:  daily-driver UX
@@ -18,11 +18,12 @@ Era 5:  library seams for multi-node bins
 Gesture each era protects:
 
 ```text
-wt new <source> <name>  →  instance on control plane  →  printed SSH Host snippet
-wt ls / wt rm
+wt new <source> <name>  →  over SSH to site  →  printed guest Host snippet
+wt ls / wt rm / wt sync
 ```
 
-SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
+CLI design (SSH contexts, owner = SSH user, API, sync): [arch/cli.md](../arch/cli.md).  
+Era 1: SSH context + CRUD over SSH + print; **`wt sync`** when list + guest endpoint exist.
 
 ---
 
@@ -32,11 +33,11 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 |-------|----------|
 | **wt-api** | Create/list/get/delete types; `InstanceStatus`; serde JSON |
 | **wt-local** | HTTP control plane; in-memory registry; stub embedded worker |
-| **wt** | `new` / `ls` / `rm`; control-plane URL; **print** Host snippets |
+| **wt-cli** | SSH contexts (`ssh` + optional key); `new` / `ls` / `rm` **over SSH**; **print** + **`wt sync`** guest Hosts |
 
-**Done when:** `wt-local` + `wt new/ls/rm` work end-to-end; types live only in `wt-api`.
+**Done when:** CLI SSHes to a box running `wt-local`; CRUD + sync work; types only in `wt-api`; no public API token required.
 
-**Not in this era:** libvirt, compose, multi-node bins, auto ssh config.
+**Not in this era:** libvirt, compose, multi-node bins, public HTTPS control plane.
 
 ---
 
@@ -45,7 +46,7 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 | Layer | Delivers |
 |-------|----------|
 | **wt-local** | define/start/destroy guest; IP; SSH keys; status → `Running` |
-| **wt** | printed Host uses real endpoint |
+| **wt-cli** | printed Host uses real endpoint |
 | **ops** | golden image + network notes |
 
 **Done when:** after applying the snippet, `ssh <name>` reaches the guest; `wt rm` destroys the domain.
@@ -57,7 +58,7 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 | Layer | Delivers |
 |-------|----------|
 | **wt-local** | clone; detect compose/`.devcontainer`; stock `compose up` |
-| **wt-api** / **wt** | ref, errors, phases as needed |
+| **wt-api** / **wt-cli** | ref, errors, phases as needed |
 
 **Done when:** real repo stacks come up on `new`; failures surface as `Error`; `rm` cleans up.
 
@@ -66,8 +67,9 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 ## Era 4 — Daily-driver UX
 
 - Status polling / phases  
-- config.toml, tokens, known_hosts  
-- Optional **apply** of SSH config when the print path is trusted  
+- Context/SSH key polish, known_hosts for guests  
+
+- Sync/keys polish (sync itself is earlier)  
 - Timeouts, clearer errors, landing shell polish  
 
 ---
@@ -86,8 +88,8 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 
 1. `wt-api` types  
 2. `wt-local` listen + CRUD + stub worker  
-3. `wt` client + print Host  
-4. Manual smoke  
+3. `wt-cli` SSH contexts + client over SSH + print Host + `sync`  
+4. Manual smoke
 
 ## Open (non-blocking)
 
@@ -97,4 +99,4 @@ SSH config **file** edits are Era 4 polish. Eras 1–3 print only.
 
 ## One-line summary
 
-**`wt` + `wt-local` first: skeleton → SSH VM → recipe → UX → multi-node-ready libs.**
+**`wt-cli` + `wt-local` first: skeleton → SSH VM → recipe → UX → multi-node-ready libs.**

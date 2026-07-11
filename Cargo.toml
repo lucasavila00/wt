@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/wt-api",
-    "crates/wt",
+    "crates/wt-cli",
     "crates/wt-local",
 ]
 

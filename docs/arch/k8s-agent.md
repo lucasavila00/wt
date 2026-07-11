@@ -8,10 +8,10 @@ Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-
 - **`wt-worker`** (or equivalent) on a **DinD-friendly** dev cluster / node pool.  
 - Long-lived **Pod world** per instance; Docker-in-Docker (or equivalent) runs **stock** `.devcontainer`/compose inside.  
 - Pod netns → stock ports without host port clashes.  
-- CLI still talks only to the **control-plane** API (`wt-local` or later `wt-control-plane`).
+- CLI still reaches the **control plane over SSH** (or the same SSH-first policy); not a separate public token API by default.
 
 ```text
-CLI ──► control plane ──► k8s worker ──► Pod (DinD) per name
+CLI ──SSH──► control plane ──► k8s worker ──► Pod (DinD) per name
 ```
 
 ## Requirements

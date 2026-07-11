@@ -6,14 +6,17 @@ Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-
 ## Deployed shape
 
 ```text
-CLI ── control-plane API ──►  wt-local
-                                ├─ control-plane registry
-                                └─ embedded bare-metal worker
-                                     libvirt guests, bootstrap, clone, compose
-                                     reconcile domains vs records
+CLI ── SSH user@hypervisor ──►  wt-local
+                                  ├─ control-plane API (loopback / stdio / socket)
+                                  └─ embedded bare-metal worker
+                                       libvirt guests, bootstrap, clone, compose
+                                       reconcile domains vs records
 ```
 
-Multi-node target: same worker logic in **`wt-worker`**, reporting to **`wt-control-plane`** (not implemented).
+- CLI auth = SSH to this host; **owner** = SSH user.  
+- Guests get their own IPs; **`wt sync`** writes Host entries to reach **guests**, not the hypervisor API.  
+
+Multi-node target: **`wt-worker`** + **`wt-control-plane`** (not implemented).
 
 ## World model
 
@@ -28,16 +31,16 @@ Multi-node target: same worker logic in **`wt-worker`**, reporting to **`wt-cont
 
 ## Control-plane API surface
 
-Types in `wt-api`:
+Logical ops in `wt-api` (served only to the authenticated SSH user; not a public internet listener by default):
 
-| Endpoint | Behavior |
-|----------|----------|
-| `POST /instances` | `{ source, name, ref? }` → provision |
-| `GET /instances` | list |
-| `GET /instances/:name` | detail + endpoint + error |
-| `DELETE /instances/:name` | destroy + free name |
+| Op | Behavior |
+|----|----------|
+| Create | `{ source, name, ref? }` → provision; `owner` = SSH user |
+| List / get | **My** instances |
+| Delete | **My** instance |
 
-Status examples: `Provisioning`, `StartingRecipe`, `Running`, `Error`, `Destroying`.
+Status examples: `Provisioning`, `StartingRecipe`, `Running`, `Error`, `Destroying`.  
+`endpoint` on an instance is **guest** SSH (for world entry), not the hypervisor control path.
 
 ## Provision pipeline
 
@@ -66,7 +69,8 @@ Reconcile libvirt vs records on startup and periodically (orphans).
 
 - Hypervisor (or nested virt), bridge/network, golden image path configured  
 - Process can use libvirt  
-- Mac can reach guest IPs  
+- Mac can **SSH to the hypervisor** (control plane)  
+- Mac can reach **guest** IPs (worlds)—LAN/mesh/VPN as needed
 
 ## Out of scope here
 

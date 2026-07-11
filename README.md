@@ -14,15 +14,15 @@ Named parallel instances of an existing Docker/devcontainer recipe. The Mac is c
 ```text
 crates/
   wt-api/      shared control-plane HTTP/JSON types (library)
-  wt/          CLI (`wt`)
+  wt-cli/      CLI package (binary name: `wt`)
   wt-local/    site server (`wt-local` = control plane + embedded worker)
 ```
 
 | Package | Kind | Role |
 |---------|------|------|
 | [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt`](./crates/wt/) | bin | CLI — talks to control-plane URL; prints SSH Host snippets |
-| [`wt-local`](./crates/wt-local/) | bin | Single-site server — control plane + bare-metal worker |
+| [`wt-cli`](./crates/wt-cli/) | bin `wt` | CLI — SSH contexts, API over SSH, world Host sync |
+| [`wt-local`](./crates/wt-local/) | bin | Site server on hypervisor — plane + worker (reached via SSH) |
 
 Out of the workspace until multi-node is in scope: `wt-control-plane`, `wt-worker`.
 
@@ -30,7 +30,7 @@ Out of the workspace until multi-node is in scope: `wt-control-plane`, `wt-worke
 
 ```text
 cargo check --workspace
-cargo run -p wt
+cargo run -p wt-cli
 cargo run -p wt-local
 ```
 

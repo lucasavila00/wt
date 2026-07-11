@@ -1,10 +1,10 @@
 [package]
-name = "wt"
+name = "wt-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Local CLI: agent client and SSH Host management"
+description = "CLI client for the wt control-plane API (binary name: wt)"
 
 [[bin]]
 name = "wt"
