@@ -34,8 +34,11 @@ impl<W: WorldWorker> Service<W> {
                 name: request.name,
                 owner: owner.to_owned(),
                 status: InstanceStatus::Provisioning,
+                source: request.source,
+                git_ref: request.git_ref,
                 guest_ip: None,
                 last_error: None,
+                ssh: None,
             },
             backend_id,
         };
@@ -46,15 +49,19 @@ impl<W: WorldWorker> Service<W> {
             backend_id: &stored.backend_id,
             owner,
             name: &stored.instance.name,
+            source: &stored.instance.source,
+            git_ref: stored.instance.git_ref.as_deref(),
+            identity_file: request.identity_file.as_deref(),
         };
         match self.worker.provision(&spec) {
             Ok(world) => {
                 self.store
-                    .mark_running(id, &world.guest_ip)
+                    .mark_running(id, &world.guest_ip, &world.ssh)
                     .map_err(map_store_error)?;
                 let mut instance = stored.instance;
                 instance.status = InstanceStatus::Running;
                 instance.guest_ip = Some(world.guest_ip);
+                instance.ssh = Some(world.ssh);
                 Ok(Response::Instance { instance })
             }
             Err(error) => {

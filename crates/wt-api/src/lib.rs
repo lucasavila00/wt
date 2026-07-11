@@ -6,7 +6,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -36,6 +36,11 @@ pub enum Operation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
     pub name: InstanceName,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,10 +87,23 @@ pub struct Instance {
     pub name: InstanceName,
     pub owner: String,
     pub status: InstanceStatus,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<SshAccess>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SshAccess {
+    pub user: String,
+    pub host: String,
+    pub port: u16,
+    pub host_keys: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -251,7 +269,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "operation": "get",
                 "name": "repo-feature"
             })

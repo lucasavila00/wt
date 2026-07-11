@@ -15,6 +15,9 @@ memory_mib = 8192
 vcpus = 4
 disk_gib = 32
 boot_timeout_seconds = 300
+recipe_timeout_seconds = 900
+# Replace this development placeholder before installing the site.
+ssh_authorized_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt-development"]
 
 [install]
 binary_dir = "/usr/local/bin"

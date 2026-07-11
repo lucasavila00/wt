@@ -15,6 +15,6 @@ impl LocalConfig {
     }
 
     pub fn database_path(&self) -> PathBuf {
-        self.state_dir.join("instances.db")
+        self.state_dir.join("instances-v2.db")
     }
 }

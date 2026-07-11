@@ -9,7 +9,7 @@ pub use worker::LibvirtWorker;
 
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::InstanceName;
+use wt_api::{InstanceName, SshAccess};
 
 #[derive(Clone, Debug)]
 pub struct ProvisionSpec<'a> {
@@ -17,11 +17,15 @@ pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
     pub owner: &'a str,
     pub name: &'a InstanceName,
+    pub source: &'a str,
+    pub git_ref: Option<&'a str>,
+    pub identity_file: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct World {
     pub guest_ip: String,
+    pub ssh: SshAccess,
 }
 
 pub trait WorldWorker {

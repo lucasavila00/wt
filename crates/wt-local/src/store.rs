@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, ErrorCode as SqliteErrorCode, OptionalExtensi
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{Instance, InstanceName, InstanceStatus};
+use wt_api::{Instance, InstanceName, InstanceStatus, SshAccess};
 
 #[derive(Debug)]
 pub struct Store {
@@ -47,9 +47,22 @@ impl Store {
                  guest_ip      TEXT,
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
+                 source        TEXT NOT NULL,
+                 git_ref       TEXT,
+                 ssh_user      TEXT,
+                 ssh_host      TEXT,
+                 ssh_port      INTEGER,
+                 ssh_host_keys TEXT NOT NULL,
                  UNIQUE(owner, name)
-             );",
+             );
+             PRAGMA user_version = 2;",
         )?;
+        let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version != 2 {
+            return Err(StoreError::InvalidData(format!(
+                "unsupported registry schema version {version}; expected 2"
+            )));
+        }
         Ok(Self { connection })
     }
 
@@ -57,14 +70,16 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             (id, owner, name, status, backend_id, source, git_ref, ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
                 instance.name.as_str(),
                 instance.status.to_string(),
                 stored.backend_id,
+                instance.source,
+                instance.git_ref,
             ],
         );
         match result {
@@ -82,7 +97,8 @@ impl Store {
         self.connection
             .query_row(
                 "SELECT id, owner, name, status,
-                        guest_ip, last_error, backend_id
+                        guest_ip, last_error, backend_id, source, git_ref,
+                        ssh_user, ssh_host, ssh_port, ssh_host_keys
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -94,7 +110,8 @@ impl Store {
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
-                    guest_ip, last_error, backend_id
+                    guest_ip, last_error, backend_id, source, git_ref,
+                    ssh_user, ssh_host, ssh_port, ssh_host_keys
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -102,8 +119,22 @@ impl Store {
             .map_err(StoreError::from)
     }
 
-    pub fn mark_running(&self, id: Uuid, guest_ip: &str) -> Result<(), StoreError> {
-        self.update_state(id, InstanceStatus::Running, Some(guest_ip), None)
+    pub fn mark_running(
+        &self,
+        id: Uuid,
+        guest_ip: &str,
+        ssh: &SshAccess,
+    ) -> Result<(), StoreError> {
+        let host_keys = serde_json::to_string(&ssh.host_keys)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let changed = self.connection.execute(
+            "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
+             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
+            params![id.to_string(), InstanceStatus::Running.to_string(), guest_ip,
+                ssh.user, ssh.host, ssh.port, host_keys],
+        )?;
+        if changed == 0 { return Err(StoreError::NotFound); }
+        Ok(())
     }
 
     pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
@@ -161,10 +192,28 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
                 .map_err(|error: wt_api::ParseStatusError| invalid_column(&error.to_string()))?,
             guest_ip: row.get(4)?,
             last_error: row.get(5)?,
+            source: row.get(7)?,
+            git_ref: row.get(8)?,
+            ssh: ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
     })
 }
+
+fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
+    let user: Option<String> = row.get(9)?;
+    let Some(user) = user else { return Ok(None); };
+    let keys: String = row.get(12)?;
+    let host_keys = serde_json::from_str(&keys)
+        .map_err(|error| invalid_column(&error.to_string()))?;
+    Ok(Some(SshAccess {
+        user,
+        host: row.get(10)?,
+        port: row.get(11)?,
+        host_keys,
+    }))
+}
+
 
 fn invalid_column(message: &str) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(

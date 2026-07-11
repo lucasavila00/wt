@@ -39,6 +39,8 @@ pub struct GuestConfig {
     pub vcpus: u32,
     pub disk_gib: u64,
     pub boot_timeout_seconds: u64,
+    pub recipe_timeout_seconds: u64,
+    pub ssh_authorized_keys: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -56,6 +58,8 @@ pub struct LibvirtConfig {
     pub vcpus: u32,
     pub disk_gib: u64,
     pub boot_timeout: Duration,
+    pub recipe_timeout: Duration,
+    pub ssh_authorized_keys: Vec<String>,
 }
 
 impl SiteConfig {
@@ -154,8 +158,15 @@ impl SiteConfig {
             || self.guest.vcpus == 0
             || self.guest.disk_gib == 0
             || self.guest.boot_timeout_seconds == 0
+            || self.guest.recipe_timeout_seconds == 0
         {
             return Err("guest resource values must be greater than zero".to_owned());
+        }
+        if self.guest.ssh_authorized_keys.is_empty() {
+            return Err("guest.ssh_authorized_keys must contain at least one public key".to_owned());
+        }
+        for key in &self.guest.ssh_authorized_keys {
+            validate_public_key(key)?;
         }
         Ok(())
     }
@@ -169,6 +180,8 @@ impl SiteConfig {
             vcpus: self.guest.vcpus,
             disk_gib: self.guest.disk_gib,
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
+            recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
+            ssh_authorized_keys: self.guest.ssh_authorized_keys.clone(),
         }
     }
 }
@@ -194,6 +207,8 @@ memory_mib = 8192
 vcpus = 4
 disk_gib = 32
 boot_timeout_seconds = 300
+recipe_timeout_seconds = 900
+ssh_authorized_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example"]
 
 [install]
 binary_dir = "/usr/local/bin"
@@ -225,4 +240,23 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
     }
+}
+
+fn validate_public_key(key: &str) -> Result<(), String> {
+    if key.contains('\n') || key.contains('\r') || key.contains("PRIVATE KEY") {
+        return Err("guest.ssh_authorized_keys accepts public keys only".to_owned());
+    }
+    let mut fields = key.split_whitespace();
+    let kind = fields.next().unwrap_or_default();
+    let data = fields.next().unwrap_or_default();
+    let supported = kind == "ssh-ed25519"
+        || kind == "ssh-rsa"
+        || kind.starts_with("ecdsa-sha2-nistp");
+    if !supported
+        || data.len() < 16
+        || !data.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'=')
+    {
+        return Err("guest.ssh_authorized_keys contains an invalid public key".to_owned());
+    }
+    Ok(())
 }
