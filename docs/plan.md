@@ -15,6 +15,7 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 
 - Canonical recipe = the team’s existing **`.devcontainer` + Compose**. No parallel env format for `wt`.
 - GitLab CI stays a separate batch path; shared contract with interactive dev is mainly **images** (+ discipline), not one mega-file.
+- Era 1.5 may use the invoking site user's existing `ssh-agent` for private SSH clones. This is a provisional convenience assumption, not the final Git credential model or a blocker for validating the world lifecycle.
 
 ## World
 

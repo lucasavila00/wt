@@ -40,9 +40,9 @@ Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the 
 - `wt-setup` requires one or more administrator-selected public keys in strict site config. `wt-local` injects those public keys into every world it creates. Private keys never enter site config, the API, registry, image, or guest.
 - Every world has unique SSH host keys. After boot, `wt-libvirt` reads the public host keys through the QEMU guest agent; `wt-local` persists them with the SSH endpoint.
 - `wt sync` manages dedicated config and known-hosts files, ensures the user's main SSH config contains one bounded `Include` for the managed config, and makes `Host <instance-name>` resolve to the recorded guest. It must not weaken host-key checking or overwrite unrelated user SSH configuration.
-- VS Code Remote SSH uses the same instance alias. Opening `/workspace/repo` therefore runs the editor terminal and Git operations inside the world.
+- VS Code Remote SSH uses the same instance alias. Opening `/workspace/repo` therefore runs the editor terminal and Git operations inside the world. Era 1.5 may enable agent forwarding on this trusted local path so interactive fetch/push can use the caller's loaded keys without copying them.
 - SSH reachability is part of create readiness. `Running` still additionally requires clone, checkout, and Compose wait to succeed.
-- This access channel does not expand the Era 1.5 Git contract: provisioning private repositories and forwarding Git credentials remain out of scope.
+- SSH Git sources may rely on an inherited `SSH_AUTH_SOCK` and the invoking owner's existing SSH host trust. This is a provisional environment assumption: `wt` does not discover, generate, store, rotate, or copy private Git credentials, and the final forwarding/credential policy remains undecided.
 
 ## Era 2
 

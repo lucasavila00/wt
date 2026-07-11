@@ -33,7 +33,7 @@ KVM is required. No CPU-emulation backend.
 12. Running
 ```
 
-The QEMU guest agent remains the provisioning and readiness channel. SSH is for the human/editor session, not for `wt-local` to configure the guest. The guest checkout is never mounted or exported to the host.
+The QEMU guest agent remains the core provisioning and readiness channel. An SSH source may provisionally use a narrowly scoped, agent-forwarded SSH session for the clone after sshd is ready; this convenience path is not the Era 1.5 acceptance dependency. The guest checkout is never mounted or exported to the host.
 
 ## Destroy
 
