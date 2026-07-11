@@ -3,7 +3,7 @@
 Product: **named parallel instances** of an existing Docker/devcontainer recipe, driven from a thin CLI over SSH. (Binary name TBD—not decided yet.)
 
 Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [idealized-api.md](./idealized-api.md), [bare-metal-worlds.md](./bare-metal-worlds.md).  
-Next doc: architecture (implements the idealized API) → then build.
+**Plan (decisions):** [plan.md](./plan.md).
 
 ## Who / setup
 
@@ -47,32 +47,36 @@ Preferred shape:
 1. Instance name (e.g. branch or short slug)
 2. One **remote world** for that instance (so ports/project names need not fork the recipe)—worlds come from a **trusted pool** (personal or shared team), not a secure multi-tenant product
 3. Checkout on that remote (normal clone/directory; worktrees only if architecture later proves them worth it—not the identity of the tool)
-4. Session = SSH (+ byobu) **on that world**—ideally plain `ssh <name>` after the tool writes `~/.ssh/config` ([idealized API](./idealized-api.md))
+4. Session = SSH (+ byobu) **on that world**—plain `ssh <name>` after the tool writes `~/.ssh/config` ([idealized API](./idealized-api.md))
 
-## Devcontainer constraint (flag for architecture)
+Providers (home bare-metal vs company k8s): [plan.md](./plan.md).
 
-Typical devcontainer: **one host checkout bind-mounted** into the container → one filesystem identity. Fine for one world per remote. Painful if many instances share one Docker host and one tree. Details and options: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Architecture must not ignore this.
+## Devcontainer constraint
+
+Typical devcontainer: **one host checkout bind-mounted** into the container → one filesystem identity. Fine for one world per remote. Painful if many instances share one Docker host and one tree. Details: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Plan: one checkout per world; **same** `.devcontainer` + compose as today.
 
 ## Non-goals (for now)
 
 - Running containers on the Mac / laptop Docker
 - Requiring a hosted SaaS dev-environment product
-- Replacing Docker, Compose, or the existing image/devcontainer **recipe**
+- Replacing Docker, Compose, or the existing image/devcontainer **recipe** (no new GitLab-CI-like format for `wt`)
 - Agent orchestration, PR automation, full “task runtime”
 - Being CI system of record
 - Being a git-worktree manager
-- **Hostile multi-tenant isolation** — pool is trusted (solo or same-company). Care about separate port/network identity so stock compose works N times, not sandboxing neighbors ([isolation](./isolation-without-port-overrides.md))
+- **Hostile multi-tenant isolation** — trusted pool; care about port/network identity only ([isolation](./isolation-without-port-overrides.md))
+- Forcing k8s on a single personal server; requiring KubeVirt on every company cluster ([plan](./plan.md))
 
 Multiplicity layer only. Other things may compose later.
 
 ## Desired lifecycle CLI
 
+Illustrative—see [idealized-api.md](./idealized-api.md) for current gesture. Exact verbs later.
+
 | Command | Meaning |
 |---------|---------|
-| `up <name>` | Ensure instance’s remote world exists; start env (compose/devcontainer) there |
-| `sh <name>` | Enter session (SSH + byobu/shell on that world) |
-| `down <name>` | Stop containers; keep checkout and world state |
-| `rm <name>` | Stop + tear down instance (volumes optional; destroy world/checkout only if tool owns them) |
+| `new <source> <name>` | World + stock recipe; write SSH Host |
+| `ssh <name>` | Enter session (byobu on that world) |
+| `rm <name>` | Tear down instance; drop Host |
 | `ls` | List instances: name, SSH target, running? |
 
 ```text
@@ -84,19 +88,18 @@ same recipe (images + compose/devcontainer)
 ## Success criteria
 
 - Second (or fifth) parallel stream is one command, not a checklist
-- No port/name collisions between instances (via separate worlds or equivalent—not by polluting the app with port matrices)
-- Same images/recipe as CI; no special tool-only image
+- No port/name collisions between instances (via separate worlds—not by polluting the app with port matrices)
+- Same images/recipe as existing devcontainer/compose; no special tool-only format
 - Fits existing habits: byobu, ssh, docker on remote
-- Teardown is deliberate: `down` keeps state, `rm` destroys
 - Framing stays **instances on remotes** (not git-worktree management)
 
 ## Docs / decision order
 
-1. **Problem statement** (this file) — why, constraints, lifecycle  
-2. **Isolation / devcontainer notes** — how worlds stay stock; recipe constraints  
-3. **Idealized API** — perfect CLI + control-plane surface ([idealized-api.md](./idealized-api.md))  
-4. **Architecture** — providers (k8s agent / fleet / VMs), compose vs devcontainer runtime path, state on Mac  
-5. **Build** — implement against architecture  
+1. **Problem statement** (this file) — why, constraints  
+2. **Isolation / devcontainer / bare-metal notes** — worlds stay stock  
+3. **Idealized API** — gesture + SSH Host  
+4. **Plan** — providers and build order ([plan.md](./plan.md))  
+5. **Build**  
 
 ## One-line summary
 

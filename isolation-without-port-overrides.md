@@ -1,7 +1,7 @@
 # Isolation without port / project-name overrides
 
 How to run **N copies** of the same Compose recipe **without** teaching the app about instance ports or `COMPOSE_PROJECT_NAME`.  
-Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer single-workspace constraint: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md). One fat host: [bare-metal-worlds.md](./bare-metal-worlds.md).
+Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md). Bare metal: [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](./plan.md).
 
 ## What “isolation” means here
 
@@ -16,6 +16,8 @@ Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontaine
 | Shared golden images, git creds, registry | Strong tenancy / blast-radius product |
 
 So “one world per instance” is **L3/L4 identity for stock compose**, not a security boundary. Trust does not fix two stacks publishing `:3000` on the **same** host network—separate world/IP still required for that.
+
+How worlds are supplied (libvirt vs k8s DinD pods): [plan.md](./plan.md).
 
 ## Hard constraint
 
@@ -46,7 +48,7 @@ If **many stacks share one Docker engine on one remote host network**:
 - Collision = **publishing** many stacks onto the **same host IP stack** (one remote, one Docker).  
 - `COMPOSE_PROJECT_NAME` disambiguates object **names** on that daemon. It does **not** create a second host port 3000.
 
-So: project name = naming isolation; port overrides = sharing one host network; **neither needed** if each stack has its own network identity (own machine, own VM/IP) or never publishes to a shared host interface.
+So: project name = naming isolation; port overrides = sharing one host network; **neither needed** if each stack has its own network identity (own machine, own VM/IP, or own pod netns) or never publishes to a shared host interface.
 
 ## Fix direction
 
@@ -57,7 +59,7 @@ Mac ─ssh─► world-A  Docker  :3000  stock compose
 Mac ─ssh─► world-B  Docker  :3000  stock compose
 ```
 
-- Tool (and SSH config) maps `name → user@host`  
+- Tool writes `~/.ssh/config` Host entries (`name →` world)  
 - Repo stays instance-blind  
 - Access: SSH/byobu primary; browser via tunnel, VPN, or private hostname—not a port matrix in git  
 
@@ -69,72 +71,69 @@ Contrast bad default: “feat-b is this box but port **3001** and project **proj
 |---|--------|----------------|--------------|
 | **0** | One remote, shared Docker, port + project maps | **High** | Best hardware density; config poison—escape hatch, not target arch |
 | **1** | One remote, shared Docker, **no host publish**; proxy/hostname or exec-only | Low–med | One box; still one kernel/daemon; browser needs naming layer |
-| **2** | One remote as **hypervisor**; **KVM (or similar) guest per instance** | Low | Own IP + Docker per guest; stock compose; ops = libvirt/images/DHCP |
-| **3** | **One machine or cloud VM per instance** | **Lowest** | Simplest pure form; $ and fleet/pool; warm images mitigate latency |
+| **2** | One remote as **hypervisor**; **KVM guest per instance** | Low | **Plan home path** ([bare-metal-worlds](./bare-metal-worlds.md), [plan](./plan.md)) |
+| **3** | **One machine or cloud VM per instance** | **Lowest** | Simplest pure form; $ and fleet/pool |
 | **4** | Strong container isolation (sysbox, etc.) without full VM | Low | Density; more exotic |
+| **5** | **k8s Pod world + DinD** (compose inside pod) | Low | **Plan company path**; pod netns = GitLab-CI-like port free; needs DinD-friendly cluster |
 
-**Lean:** **3**, or **2** when one physical box must densify—see [bare-metal-worlds.md](./bare-metal-worlds.md) (bias **KVM** when instances are large and recipe spin-up dominates). Shared **trusted pool** of workers is the natural ops model (claim a free world). **0** allowed only as density mode that must **not** force app-repo port tables.
+**Lean (plan):** home **2** (KVM on bare metal); company **5** (k8s DinD worlds). Shared trusted pool either way. **0** only as density escape hatch that must **not** force app-repo port tables. Single personal server **via k8s only** = overkill when libvirt works.
 
-**Anti-pattern:** treating “one Colima/Docker on a laptop” as isolation—wrong machine; author doesn’t run Docker there anyway. One Docker host = one publish port space.  
-**Anti-pattern:** designing for malicious neighbors—wrong threat model; wastes the build on tenancy theater.
+**Anti-pattern:** treating “one Colima/Docker on a laptop” as isolation—wrong machine.  
+**Anti-pattern:** designing for malicious neighbors—wrong threat model.  
+**Anti-pattern:** inventing a new recipe format so k8s feels native—compose stays canonical ([plan](./plan.md)).
 
 ## What stays identical inside each world
 
-If isolation is whole Docker host (machine or guest):
+If isolation is whole Docker host (machine, guest, or DinD-in-pod):
 
 - `docker-compose.yml` published ports  
 - Service DNS names  
-- App defaults to `localhost:3000` **on that remote**  
+- App defaults to `localhost:3000` **on that world**  
 - CI images / Dockerfiles  
 - e2e against localhost **inside** that world  
 
-`COMPOSE_PROJECT_NAME` optional/unnecessary when only one stack runs on that engine (directory default is enough).
+`COMPOSE_PROJECT_NAME` optional when only one stack runs on that engine.
 
 ## What the tool still owns (cannot vanish)
 
-Multiplicity always has an identity **somewhere**. Prefer tool/infra, not app:
-
 | Concern | Lives in |
 |---------|----------|
-| name → SSH target | CLI state; optional generated `~/.ssh/config` Host entries |
-| provision / start / stop / destroy world | Provider: static inventory, cloud API, or libvirt on a hypervising remote |
+| name → SSH target | CLI `~/.ssh/config` Host entries |
+| provision / destroy world | **Provider:** bare-metal agent (libvirt) or k8s agent (DinD pods) |
 | checkout on remote | clone/fetch inside world |
-| compose up/down | remote commands over SSH |
-| browser reachability | optional `ssh -L`, private DNS, one-at-a-time forward—not compose edits in git |
+| compose up | inside world, stock recipe |
+| browser reachability | optional tunnel/DNS—not compose edits in git |
 
 ## Fit with other constraints
 
 | Piece | Implication |
 |-------|-------------|
-| Devcontainer | “Host” for bind-mount = remote world; **one workspace per world** matches the spec. Avoid many instances on one bind-mounted tree. |
-| byobu / ssh | `sh <name>` = SSH + session on that world—natural. |
-| CI | Each world ≈ long-lived CI-shaped machine; stock images. |
-| Devcontainer “Mac bind mount” problems | Largely sidestepped: checkout lives on remote inside the world. |
+| Devcontainer | “Host” for bind-mount = remote world; **one workspace per world**. |
+| byobu / ssh | `ssh <name>` on that world—natural. |
+| CI | Same **images**; CI job wiring stays separate from interactive compose. |
+| Mac bind mount | Sidestepped: checkout lives on remote inside the world. |
 
 ## Risks / lies to avoid
 
-1. VMs mean zero ops—still need golden image + control plane  
+1. VMs mean zero ops—still need golden image + agent  
 2. Shared daemon + clever ports = “temporary” that leaks into the repo  
-3. Encoding instance ports in the application so remotes stay “flexible”  
-4. Classical bare-metal KVM language on Mac cockpit—irrelevant; KVM/libvirt matter **on the remote Linux** hypervising host  
+3. Encoding instance ports in the application  
+4. Assuming every company cluster allows DinD—need a **dev** cluster/pool that does  
+5. Running home solo box through full k8s “because company uses k8s”
 
-## Open questions (architecture)
+## Still open (detail, not direction)
 
-1. Fleet model: static SSH pool vs on-demand cloud VMs vs libvirt guests on one bare metal?  
-2. Warm pool (preinstalled Docker/images) vs cold provision?  
-3. Who owns DNS/SSH naming (only the CLI vs Tailscale/homelab)?  
-4. Browser: dynamic single tunnel vs stable per-instance hostnames on private net?  
-5. Is shared-daemon+overrides a supported “cheap mode” or forbidden for docs/app?  
-6. Where CLI state lives (Mac-local map name→host vs remote registry)?  
+- Warm pool vs cold provision sizing  
+- Browser: tunnel vs private DNS  
+- SSH auth mechanics (keys vs certs; Include vs markers in ssh config)
 
 ## Lean (non-binding)
 
 - Isolation = **no port soup**, not sandbox the coworker  
-- Port/project sprawl is an artifact of **sharing one host network/Docker**  
-- Keep compose + app instance-blind via **one remote world per instance** (machine or VM) in a **trusted pool**  
-- Mac = SSH control plane only  
+- One **world** per instance (VM or DinD pod) in a **trusted pool**  
+- Mac = SSH + CLI only; two providers per [plan.md](./plan.md)  
 - Shared-daemon overrides = density escape hatch, not what the repo is written for  
 
 ## One-line summary
 
-Never run Docker on the Mac—only on SSH remotes; avoid port/project soup by giving each instance its own remote world (trusted pool, not multi-tenant security) with stock compose; the CLI maps names to SSH targets, not remapped ports in the app.
+Never run Docker on the Mac—only inside remote worlds; avoid port soup with one world per instance (trusted pool); CLI maps names to SSH targets, not remapped ports in the app.

@@ -1,13 +1,13 @@
 # Idealized API
 
 Perfect **shape** of the product—not a full architecture. Mental map only.  
-Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md).
+Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](./plan.md).
 
 ## The gesture
 
 ```text
 $ wt new github.com:lucasavila00/frontend my-feature
-# agent mints a world, recipe running, CLI writes ~/.ssh/config
+# agent mints a world, stock devcontainer/compose up, CLI writes ~/.ssh/config
 ready  my-feature
 
 $ ssh my-feature
@@ -22,22 +22,23 @@ Second stream = another name, another world/Host. Never another port in the app 
 
 ```text
 Mac (CLI + stock ssh)
-   │  wt …  (ensure instance exists / managed)
-   │  maintains ~/.ssh/config  (name → that world)
+   │  wt …  maintains ~/.ssh/config  (name → that world)
    ▼
-control plane / agent
-   │  world + Docker + clone + stock compose
+agent API
+   │
+   ├─ bare-metal provider (libvirt VMs)     ← home / 1–2 servers
+   └─ k8s provider (DinD pod worlds)      ← company dev cluster
    ▼
-one remote world per instance  ← SSH target for `ssh <name>`
+world: Docker + clone + stock .devcontainer/compose
 ```
 
 | Layer | Job |
 |-------|-----|
 | **CLI** | Talk to agent; keep local SSH Host map; no Docker on Mac |
-| **Agent** | Worlds that run the repo’s existing recipe |
-| **ssh** | How you actually live on an instance |
+| **Agent + provider** | Create/destroy worlds ([plan.md](./plan.md)) |
+| **ssh** | How you live on an instance |
 
-Exact verb set, idempotency, and teardown rules: **later**. Same for provider under the agent (k8s, VMs, pool).
+Exact verb set and idempotency: later. Provider choice is **not** later—see plan.
 
 ## Example commands
 
@@ -52,24 +53,24 @@ Illustrative only—not a locked lifecycle.
 
 ## What stays true
 
-- Multiplicity = **worlds**, not port/project overrides in the app ([isolation](./isolation-without-port-overrides.md))
-- Worlds from a **trusted pool** (solo or same company)—isolation means stock ports work N times, not hostile multi-tenant security
-- One checkout per world keeps devcontainer-shaped recipes honest ([devcontainer issue](./the-devcontainer-issue.md))
-- Recipe source = existing compose/devcontainer in the git repo; tool does not invent a new env format
-- Session feel = byobu on the world, preferably already in the primary container
+- Multiplicity = **worlds**, not port overrides in the app ([isolation](./isolation-without-port-overrides.md))
+- **Trusted pool**; isolation = stock ports N times, not multi-tenant security  
+- Recipe = **exact same** `.devcontainer` + compose—no new format ([plan](./plan.md))  
+- One checkout per world ([devcontainer issue](./the-devcontainer-issue.md))  
+- Session feel = byobu on the world, preferably already in the primary container  
+- Two providers (bare-metal + k8s); not “k8s everywhere including one home box”
 
-## Open questions (later)
+## Still open (detail)
 
-1. Agent concrete form; warm pool vs cold.  
-2. Lifecycle verbs and idempotency.  
-3. SSH auth + how config is maintained (markers vs Include).  
-4. How much of byobu/`docker exec` is RemoteCommand vs remote login.
+- Lifecycle verbs beyond the gesture; idempotency  
+- SSH auth + ssh config maintenance (markers vs Include)  
+- How much of byobu/`docker exec` is RemoteCommand vs remote login  
 
 ## Lean (non-binding)
 
-- Ensure a named instance from a repo → **SSH Host** → **`ssh <name>`**  
-- Agent owns remote reality; CLI owns local map; recipe stays instance-blind  
+- **`wt new` → SSH Host → `ssh <name>`**  
+- Agent/providers own remote reality; CLI owns local map; recipe instance-blind  
 
 ## One-line summary
 
-**`wt` leaves you with a Host in `~/.ssh/config`; `ssh <name>` is the product**—each name is its own remote world running stock compose, not a port fork of the app.
+**`wt` leaves you with a Host in `~/.ssh/config`; `ssh <name>` is the product**—each name is its own world running stock compose, via bare-metal or k8s provider.

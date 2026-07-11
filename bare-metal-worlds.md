@@ -1,86 +1,70 @@
 # Bare-metal worlds (one big server)
 
-How to run **N instances** on **one** fat host without port soup. Mental map from discussion—not full ops runbook.  
-Context: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [idealized-api.md](./idealized-api.md). Trust model: **trusted pool** (solo or same company), not hostile multi-tenant.
+How to run **N instances** on **one** fat host without port soup.  
+Context: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](./plan.md) — this is the **home / 1–2 server** provider path (not company k8s).
 
 ## Constraint reminder
 
-- Need **per-instance network identity** (own IP / publish space) so stock `"3000:3000"` works N times.
-- Do **not** need security sandboxing of neighbors.
-- App/compose RAM dominates and is **not decidable** up front. Planning assumption: **≥16 GB per instance** is normal.
-- Create path always pays **clone + images + compose/devcontainer up**. Hypervisor/container **boot** of an empty world is not the long pole.
+- Need **per-instance network identity** so stock `"3000:3000"` works N times.
+- **Trusted pool** only—not security sandboxing.
+- Planning: **≥16 GB per instance** is normal; app RAM dominates.
+- Create path pays **clone + images + compose/devcontainer up**; empty-world **boot is not the long pole**.
 
 ## Options
 
 ### 1. One Docker, many IPs (macvlan / host addresses)
 
-One kernel, one Docker. Each instance publishes on **its** IP (`10.0.0.11:3000` vs `10.0.0.12:3000`).
+One kernel, one Docker. Each instance publishes on **its** IP.
 
 | + | − |
 |---|---|
-| Max density | One daemon; everything visible together |
-| Fast “create” (no guest) | `ssh <name>` ≠ natural mini-host unless extra work |
-| | Publish often needs tool-owned bind-IP (not always 100% stock compose verbatim) |
+| Max density | One daemon; weaker world boundary |
+| No guest | `ssh <name>` less natural; publish bind-IP may need tool-owned tweak |
 
 ### 2. LXD / Incus system containers
 
-Each instance = system container, own netns/IP; **Docker runs inside**. Compose authors see a normal Linux.
+System container + Docker **inside**. Can be transparent to compose authors.
 
 | + | − |
 |---|---|
-| Dense; no guest kernel | Nested Docker: privileges, storage, edge-case footguns |
-| `ssh <name>` maps cleanly if unit has the IP | Complexity is **yours** (golden profile), not app authors—if done right |
-| Snapshots/clones | “Works in VM, fails in LXD” until profile is boring |
+| Dense | Nested Docker footguns until golden profile is boring |
 
-**DX:** Can be transparent: authors never hear LXD; only SSH + stock compose **inside** the unit.
+### 3. KVM / libvirt guests — **plan default for bare metal**
 
-### 3. KVM / libvirt guests
-
-Each instance = VM, own IP, own Docker. Closest to “mini server from the pool.”
+VM + own IP + own Docker. Closest to mini server.
 
 | + | − |
 |---|---|
-| Easiest path to **stable + transparent** stock Docker/compose | Heavier idle tax (~0.5–1 GB OS); worse density |
-| Dumb failure modes; no Docker-in-container games | Image + libvirt/cloud-init ops |
-| `ssh <name>` → guest IP is obvious | |
+| Most stable stock Docker/compose DX | ~0.5–1 GB OS tax (noise at ≥16 GB/instance) |
+| Obvious `ssh <name>` → guest | Slightly worse density than LXD |
 
-## RAM: does KVM matter?
+## RAM / boot (decided enough)
 
-- Idle KVM floor often **~0.5–1 GB** (budget **~1 GB** for empty-ish warm guest).
-- LXD saves mostly that per-instance OS/kernel tax.
-- At **≥16 GB/instance**, KVM overhead is **noise** (~few percent). Compose/app size dominates either way.
-- So RAM is **not** a strong reason to pick 2 over 3 under this sizing.
+- At **≥16 GB/instance**, KVM vs LXD RAM difference **does not drive the choice**.  
+- Faster LXD boot **does not matter**—recipe spin-up dominates.  
+- Prefer **KVM** for simplicity and transparent DX ([plan.md](./plan.md)).
 
-## Boot time: does LXD matter?
+## Relation to k8s
 
-Faster guest/container start for 2 vs 3 is real but **usually irrelevant** for this product:
+- **Do not** put a solo home box through k8s/minikube just to run compose worlds—**overkill**.  
+- Company horizontal scale = **k8s provider** (DinD pods), separate agent—see plan.  
+- KubeVirt optional later; not required for the bare-metal path.
 
-```text
-claim world → (optional short boot) → clone → pull/build → compose/devcontainer up
-                 ^^^^^^^^^^^^^^^^      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                 small                dominates wall clock
-```
-
-You pay recipe spin-up on every new instance regardless of hypervisor. Optimize **golden image + warm pool + image cache**, not micro-VM boot.
-
-## Lean (non-binding)
+## Lean
 
 | Priority | Choice |
 |----------|--------|
-| Stable, transparent DX first | **3 KVM** on the big box |
-| Density later, own nesting | **2 LXD** with Docker-in-unit, same SSH story |
-| Max pack, accept weaker world boundary | **1** multi-IP Docker |
+| Home bare metal (plan) | **KVM/libvirt** guest per instance |
+| Density later | LXD if willing to own nesting |
+| Max pack | multi-IP Docker (escape hatch) |
 
-**Default bias:** **KVM guests on bare metal** as the world factory. One huge server = hypervisor + pool of golden VMs (or cold-clone from template). Agent claims a free guest, runs recipe, CLI writes `Host <name>`.
+**Transparency rule:** world = “small Linux with Docker.” Never special host compose for authors.
 
-**Transparency rule:** world = “small Linux with Docker.” Never “special host Docker that compose authors must target.”
+## Still open (ops detail)
 
-## Open
-
-1. Warm pool size vs cold clone-from-template.  
-2. How IPs are assigned (bridge + DHCP vs static).  
-3. Whether LXD is a later density migration or never.
+- Warm pool size vs cold clone-from-template  
+- IP assignment (bridge + DHCP vs static)  
 
 ## One-line summary
 
-On one fat trusted host, prefer **KVM-per-instance** for stock compose and simple SSH worlds; at ≥16 GB/instance and full recipe spin-up, LXD’s RAM/boot wins rarely justify nested-Docker complexity.
+On one fat trusted host, **KVM-per-instance** for stock compose and simple SSH; leave k8s to the company provider, not the home box.
