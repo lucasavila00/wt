@@ -29,16 +29,3 @@ worlds on Ubuntu sites.
 - KVM is required for the bare-metal backend; there is no emulation fallback.
 - WT is an interactive world manager, not a CI system, Git worktree manager,
   recipe language, or hosted development environment.
-
-## Next steps
-
-Only pursue these when product needs justify them:
-
-1. Support standalone Compose repositories without `devcontainer.json`.
-2. Define a shared-site credential lifecycle beyond copying a dedicated site
-   identity into each trusted world.
-3. Add operational runbooks and explicit reconciliation, garbage-collection,
-   destroy, and fleet policies.
-4. Split out multi-node control-plane and worker binaries.
-5. Add a Kubernetes context and worker for clusters that can run isolated Docker
-   or VM-backed worlds.
