@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
+use std::fmt::Write as _;
 use std::process::Command as ProcessCommand;
 use wt_api::{ApiRequest, CreateInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
@@ -98,23 +99,7 @@ fn run() -> Result<()> {
         Command::Ls => {
             let instances = inventory::list_all(&config)?;
             wt_cli::ssh::sync(&instances)?;
-            println!("CONTEXT\tNAME\tSTATUS\tIP\tSSH");
-            for item in instances {
-                let instance = item.instance;
-                let target = instance
-                    .ssh
-                    .as_ref()
-                    .map(|ssh| format!("{}@{}:{}", ssh.user, ssh.host, ssh.port))
-                    .unwrap_or_else(|| "-".to_owned());
-                println!(
-                    "{}\t{}\t{}\t{}\t{}",
-                    item.context,
-                    instance.name,
-                    instance.status,
-                    instance.guest_ip.as_deref().unwrap_or("-"),
-                    target
-                );
-            }
+            print!("{}", format_instances(&instances));
         }
         Command::Rm { name } => {
             let instances = inventory::list_all(&config)?;
@@ -167,6 +152,58 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn format_instances(instances: &[ContextInstance]) -> String {
+    let mut rows = Vec::with_capacity(instances.len() + 1);
+    rows.push([
+        "CONTEXT".to_owned(),
+        "NAME".to_owned(),
+        "STATUS".to_owned(),
+        "IP".to_owned(),
+        "SSH".to_owned(),
+    ]);
+    rows.extend(instances.iter().map(|item| {
+        let instance = &item.instance;
+        let target = instance
+            .ssh
+            .as_ref()
+            .map(|ssh| format!("{}@{}:{}", ssh.user, ssh.host, ssh.port))
+            .unwrap_or_else(|| "-".to_owned());
+        [
+            item.context.clone(),
+            instance.name.to_string(),
+            instance.status.to_string(),
+            instance.guest_ip.as_deref().unwrap_or("-").to_owned(),
+            target,
+        ]
+    }));
+
+    let mut widths = [0; 4];
+    for row in &rows {
+        for (width, value) in widths.iter_mut().zip(row) {
+            *width = (*width).max(value.chars().count());
+        }
+    }
+
+    let mut output = String::new();
+    for row in rows {
+        writeln!(
+            output,
+            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<ip_width$}  {}",
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            row[4],
+            context_width = widths[0],
+            name_width = widths[1],
+            status_width = widths[2],
+            ip_width = widths[3],
+        )
+        .expect("writing to a String cannot fail");
+    }
+    output
+}
+
 fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Context> {
     config
         .context(name)
@@ -176,4 +213,56 @@ fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Cont
 fn sync_inventory(config: &ClientConfig) -> Result<std::path::PathBuf> {
     let instances: Vec<ContextInstance> = inventory::list_all(config)?;
     wt_cli::ssh::sync(&instances)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+    use wt_api::{Instance, InstanceName, InstanceStatus, SshAccess};
+
+    fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
+        ContextInstance {
+            context: context.to_owned(),
+            instance: Instance {
+                id: Uuid::new_v4(),
+                name: InstanceName::parse(name).unwrap(),
+                owner: "tester".to_owned(),
+                status,
+                source: "git@example.test:repo.git".to_owned(),
+                git_ref: None,
+                guest_ip: None,
+                last_error: None,
+                ssh: None,
+            },
+        }
+    }
+
+    #[test]
+    fn formats_aligned_instance_columns_without_tabs() {
+        let provisioning = item("local", "jsdev-manual", InstanceStatus::Provisioning);
+        let mut running = item("remote-lab", "a", InstanceStatus::Running);
+        running.instance.guest_ip = Some("192.0.2.10".to_owned());
+        running.instance.ssh = Some(SshAccess {
+            user: "wt".to_owned(),
+            host: "192.0.2.10".to_owned(),
+            port: 2222,
+            host_keys: Vec::new(),
+        });
+
+        let output = format_instances(&[provisioning, running]);
+
+        assert_eq!(
+            output,
+            "CONTEXT     NAME          STATUS        IP          SSH\n\
+             local       jsdev-manual  provisioning  -           -\n\
+             remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222\n"
+        );
+        assert!(!output.contains('\t'));
+    }
+
+    #[test]
+    fn formats_header_for_empty_inventory() {
+        assert_eq!(format_instances(&[]), "CONTEXT  NAME  STATUS  IP  SSH\n");
+    }
 }
