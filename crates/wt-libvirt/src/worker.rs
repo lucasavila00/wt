@@ -102,23 +102,13 @@ impl LibvirtWorker {
         let recipe_deadline = Instant::now() + self.config.recipe_timeout;
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
-        self.clone_private(&domain, spec.source, &private_git, recipe_deadline)?;
-        if let Some(git_ref) = spec.git_ref {
-            self.run_phase(
-                &domain,
-                "git fetch ref",
-                "/usr/bin/git",
-                &["-C", "/workspace", "fetch", "origin", git_ref],
-                recipe_deadline,
-            )?;
-            self.run_phase(
-                &domain,
-                "git checkout ref",
-                "/usr/bin/git",
-                &["-C", "/workspace", "checkout", "--detach", "FETCH_HEAD"],
-                recipe_deadline,
-            )?;
-        }
+        self.clone_private(
+            &domain,
+            spec.source,
+            spec.git_ref,
+            &private_git,
+            recipe_deadline,
+        )?;
         self.run_phase(
             &domain,
             "workspace ownership",
@@ -254,6 +244,7 @@ impl LibvirtWorker {
         &self,
         domain: &Domain,
         source: &str,
+        git_ref: Option<&str>,
         credentials: &PrivateGit,
         deadline: Instant,
     ) -> Result<(), WorkerError> {
@@ -301,6 +292,28 @@ impl LibvirtWorker {
             let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
             args.extend(["/usr/bin/git", "clone", "--", source, "/workspace"]);
             self.run_phase(domain, "Git clone", "/usr/bin/env", &args, deadline)?;
+            if let Some(git_ref) = git_ref {
+                let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
+                args.extend([
+                    "/usr/bin/git",
+                    "-C",
+                    "/workspace",
+                    "fetch",
+                    "origin",
+                    git_ref,
+                ]);
+                self.run_phase(domain, "Git fetch ref", "/usr/bin/env", &args, deadline)?;
+                let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
+                args.extend([
+                    "/usr/bin/git",
+                    "-C",
+                    "/workspace",
+                    "checkout",
+                    "--detach",
+                    "FETCH_HEAD",
+                ]);
+                self.run_phase(domain, "Git checkout ref", "/usr/bin/env", &args, deadline)?;
+            }
             self.install_git_bundle(domain, credentials, deadline)
         })();
         let _ = guest_exec(domain, "/bin/rm", &["-rf", "/run/wt-git"], deadline);
@@ -811,7 +824,7 @@ mod tests {
         fs::create_dir(&runtime).unwrap();
         let status = Command::new("sh")
             .arg("-c")
-            .arg(format!("{GIT_SSH_COMMAND} -G example.test >/dev/null"))
+            .arg(format!("{GIT_SSH_COMMAND} -T -G example.test >/dev/null"))
             .current_dir(&nested)
             .env("TMPDIR", &runtime)
             .status()

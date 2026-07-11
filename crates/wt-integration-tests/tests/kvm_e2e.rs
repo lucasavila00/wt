@@ -147,7 +147,7 @@ impl GitSshServer {
             ),
         )
         .unwrap();
-        let child = Command::new("/usr/sbin/sshd")
+        let mut child = Command::new("/usr/sbin/sshd")
             .args(["-D", "-e", "-f"])
             .arg(&config)
             .stdout(Stdio::null())
@@ -179,6 +179,8 @@ impl GitSshServer {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+        let _ = child.kill();
+        let _ = child.wait();
         panic!("temporary SSH Git server did not become ready");
     }
 

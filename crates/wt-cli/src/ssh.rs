@@ -151,7 +151,7 @@ mod tests {
             name: InstanceName::parse("repo-feature").unwrap(),
             owner: "lucas".into(),
             status: InstanceStatus::Running,
-            source: "git://example/repo".into(),
+            source: "git@example.test:repo.git".into(),
             git_ref: None,
             guest_ip: Some("192.0.2.2".into()),
             last_error: None,

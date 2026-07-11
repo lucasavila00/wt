@@ -205,6 +205,45 @@ impl SiteConfig {
     }
 }
 
+fn expand_home(path: &Path) -> Result<PathBuf, String> {
+    if path == Path::new("~") {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_owned())?;
+        return Ok(home);
+    }
+    if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_owned())?;
+        return Ok(home.join(relative));
+    }
+    if !path.is_absolute() {
+        return Err("guest.ssh_authorized_keys_file must be absolute or start with ~/".to_owned());
+    }
+    Ok(path.to_owned())
+}
+
+fn validate_public_key(key: &str) -> Result<(), String> {
+    if key.contains('\n') || key.contains('\r') || key.contains("PRIVATE KEY") {
+        return Err("guest.ssh_authorized_keys_file accepts public keys only".to_owned());
+    }
+    let mut fields = key.split_whitespace();
+    let kind = fields.next().unwrap_or_default();
+    let data = fields.next().unwrap_or_default();
+    let supported =
+        kind == "ssh-ed25519" || kind == "ssh-rsa" || kind.starts_with("ecdsa-sha2-nistp");
+    if !supported
+        || data.len() < 16
+        || !data.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'='
+        })
+    {
+        return Err("guest.ssh_authorized_keys_file contains an invalid public key".to_owned());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,43 +306,4 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
     }
-}
-
-fn expand_home(path: &Path) -> Result<PathBuf, String> {
-    if path == Path::new("~") {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        return Ok(home);
-    }
-    if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        return Ok(home.join(relative));
-    }
-    if !path.is_absolute() {
-        return Err("guest.ssh_authorized_keys_file must be absolute or start with ~/".to_owned());
-    }
-    Ok(path.to_owned())
-}
-
-fn validate_public_key(key: &str) -> Result<(), String> {
-    if key.contains('\n') || key.contains('\r') || key.contains("PRIVATE KEY") {
-        return Err("guest.ssh_authorized_keys_file accepts public keys only".to_owned());
-    }
-    let mut fields = key.split_whitespace();
-    let kind = fields.next().unwrap_or_default();
-    let data = fields.next().unwrap_or_default();
-    let supported =
-        kind == "ssh-ed25519" || kind == "ssh-rsa" || kind.starts_with("ecdsa-sha2-nistp");
-    if !supported
-        || data.len() < 16
-        || !data.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'='
-        })
-    {
-        return Err("guest.ssh_authorized_keys_file contains an invalid public key".to_owned());
-    }
-    Ok(())
 }
