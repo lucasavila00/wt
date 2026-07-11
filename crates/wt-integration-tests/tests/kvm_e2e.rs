@@ -9,7 +9,6 @@ use wt_libvirt::{LibvirtWorker, SiteConfig};
 use wt_local::service::Service;
 use wt_local::store::Store;
 
-const LOCAL_SAMPLE: &str = "/home/lucas/fluff/jsdev";
 const SAMPLE_FALLBACK: &str = "https://github.com/lucasavila00/jsdev-sample.git";
 
 #[test]
@@ -103,14 +102,19 @@ struct GitSshServer {
 impl GitSshServer {
     fn start(root: &Path, address: IpAddr) -> Self {
         let repository = root.join("jsdev-sample.git");
-        let source = if Path::new(LOCAL_SAMPLE).join(".git").is_dir() {
-            LOCAL_SAMPLE
+        let local_sample = workspace_root()
+            .parent()
+            .expect("workspace root has a parent")
+            .join("jsdev");
+        let source = if local_sample.join(".git").is_dir() {
+            local_sample.into_os_string()
         } else {
-            SAMPLE_FALLBACK
+            SAMPLE_FALLBACK.into()
         };
         run(
             Command::new("git")
-                .args(["clone", "--bare", source])
+                .args(["clone", "--bare"])
+                .arg(source)
                 .arg(&repository),
             "create bare jsdev repository",
         );
@@ -213,6 +217,10 @@ fn generate_key(path: &Path) {
 
 fn current_user() -> String {
     std::env::var("USER").expect("USER is set")
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn network_address(network: &str) -> IpAddr {
