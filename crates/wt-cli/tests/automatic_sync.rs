@@ -17,17 +17,17 @@ state="$HOME/helper-state"
 case "$request" in
   *'"operation":"create"'*)
     : > "$state"
-    printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"delete"'*)
     rm -f "$state"
-    printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"deleted","name":"repo-feature"}}'
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"deleted","name":"repo-feature"}}'
     ;;
   *'"operation":"list"'*)
     if [ -f "$state" ]; then
-      printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
+      printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
     else
-      printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instances","instances":[]}}'
+      printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instances","instances":[]}}'
     fi
     ;;
   *) exit 2 ;;

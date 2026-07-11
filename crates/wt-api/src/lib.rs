@@ -6,7 +6,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 1,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_protocol_v3_site_credentials_shape() {
+    fn create_request_has_site_credentials_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 1,
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",

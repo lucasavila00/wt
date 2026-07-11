@@ -1,5 +1,5 @@
 # Development sample only. Cargo builds do not embed or install this file.
-version = 2
+version = 1
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"

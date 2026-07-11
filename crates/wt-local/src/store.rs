@@ -56,13 +56,13 @@ impl Store {
                  ssh_host_keys TEXT NOT NULL,
                  UNIQUE(owner, name)
              );
-             PRAGMA user_version = 2;",
+             PRAGMA user_version = 1;",
             )?;
         }
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version != 2 {
+        if version != 1 {
             return Err(StoreError::InvalidData(format!(
-                "unsupported registry schema version {version}; expected 2"
+                "unsupported registry schema version {version}; expected 1"
             )));
         }
         Ok(Self { connection })

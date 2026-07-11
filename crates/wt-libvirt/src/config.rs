@@ -88,9 +88,9 @@ impl SiteConfig {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != 2 {
+        if self.version != 1 {
             return Err(format!(
-                "unsupported config version {}; expected 2",
+                "unsupported config version {}; expected 1",
                 self.version
             ));
         }
@@ -265,7 +265,7 @@ mod tests {
     use super::*;
 
     const VALID: &str = r#"
-version = 2
+version = 1
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"

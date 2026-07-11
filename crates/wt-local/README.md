@@ -15,7 +15,9 @@ executing the helper.
 | Keep the site user's instance registry | Implement SSH authentication or policy |
 | Invoke `wt-libvirt` | Implement libvirt/KVM lifecycle |
 
-Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/arch/cli.md](../../docs/arch/cli.md), [docs/arch/bare-metal-agent.md](../../docs/arch/bare-metal-agent.md).
+Design: [architecture](../../docs/arch/README.md),
+[CLI](../../docs/arch/cli.md), and
+[libvirt/KVM backend](../../docs/arch/bare-metal-agent.md).
 
 ## Install on Ubuntu
 
@@ -24,7 +26,7 @@ Target: Ubuntu 24.04 amd64. KVM required. Source checkout required.
 Install stable Rust with rustup. Clone `wt`. Create a complete site config:
 
 ```toml
-version = 2
+version = 1
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
@@ -88,14 +90,15 @@ dedicated, unencrypted, mode-`0600` key owned by the site user. It is distinct
 from both client-to-site OpenSSH authentication and guest-login authorized
 keys. There are no runtime environment overrides.
 
-Each user registry is fixed at `~/.local/state/wt/instances-v2.db`. There is no migration from older development registries. Worlds share the configured `libvirt.worlds_dir` and system libvirt daemon.
+Each user registry is fixed at `~/.local/state/wt/instances.db`. Worlds share
+the configured `libvirt.worlds_dir` and system libvirt daemon.
 
 The `libvirt` group controls the host hypervisor. Only grant it to trusted site users.
 
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":3,"operation":"list"}' | wt-local api
+printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-local api
 ```
 
 The command writes one JSON response to stdout.

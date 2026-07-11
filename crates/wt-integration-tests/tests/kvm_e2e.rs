@@ -59,7 +59,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
 
     let worker = LibvirtWorker::new(config.worker_config().unwrap()).unwrap();
     let mut service = Service::new(
-        Store::open(&temp.path().join("instances-v2.db")).unwrap(),
+        Store::open(&temp.path().join("instances.db")).unwrap(),
         worker,
     );
     let name = InstanceName::parse(format!(

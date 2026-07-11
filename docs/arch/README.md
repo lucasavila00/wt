@@ -5,9 +5,7 @@ Current product direction: [plan.md](../plan.md).
 | Doc | Topic |
 |-----|-------|
 | [cli.md](./cli.md) | `wt` CLI, contexts, and SSH inventory |
-| [control-plane.md](./control-plane.md) | Site helper, registry, and API |
 | [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt/KVM world backend |
-| [k8s-agent.md](./k8s-agent.md) | Unimplemented backend stub |
 
 ## System
 
@@ -66,5 +64,5 @@ crates/
 | get | Return one caller-owned world |
 | delete | Destroy one caller-owned world |
 
-The API uses protocol version 3 JSON over helper stdio. The owner is the OS user
+The API uses protocol version 1 JSON over helper stdio. The owner is the OS user
 running `wt-local`, whether the helper was started locally or through OpenSSH.

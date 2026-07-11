@@ -180,7 +180,7 @@ fn require_installed_config_compatible(config_bytes: &[u8]) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
-    // The site file is a complete contract. Byte-level differences are drift, not migrations.
+    // The site file is a complete contract. Byte-level differences are drift.
     let installed = fs::read(path).with_context(|| format!("read {SITE_CONFIG_PATH}"))?;
     if installed != config_bytes {
         bail!("installed config differs from requested config: {SITE_CONFIG_PATH}");

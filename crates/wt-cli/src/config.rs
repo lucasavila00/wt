@@ -123,7 +123,7 @@ mod tests {
     fn rejects_invalid_configs() {
         for contents in [
             "version = 1\ncontexts = []\n",
-            "version = 2\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
+            "version = 0\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
             "version = 1\n[[contexts]]\nname = \"bad.name\"\nkind = \"bare_metal_local\"\n",
             "version = 1\n[[contexts]]\nname = \"same\"\nkind = \"bare_metal_local\"\n[[contexts]]\nname = \"same\"\nkind = \"bare_metal_local\"\n",
             "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"-bad\"\n",

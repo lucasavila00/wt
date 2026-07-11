@@ -2,7 +2,7 @@
 
 Shared **control-plane** request/response types for the CLI and site helper.
 
-Carried as protocol version 3 JSON over stdio to `wt-local`, either locally or
+Carried as protocol version 1 JSON over stdio to `wt-local`, either locally or
 through OpenSSH.
 
 ## Role

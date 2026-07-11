@@ -43,21 +43,4 @@ image or `crates/wt-integration-tests/fixture-images.txt` changes. Both image
 and manifest are published next to the production golden image; ordinary worlds
 continue to use the production image.
 
-## Reset an older development installation
-
-The site config and image provenance are intentionally strict and have no development-schema migrations. After either format changes, an older installation can fail with errors such as a missing manifest field or config drift.
-
-After removing any existing worlds, delete the installed config, golden image, and its adjacent manifest together, then reinstall:
-
-```bash
-sudo rm -f \
-  /etc/wt/local.toml \
-  /var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2 \
-  /var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2.manifest.json
-
-scripts/install-site --config config/wt-local.development.toml
-```
-
-The cached Ubuntu source image under `imgs/` does not need to be removed. Setup verifies and reuses it while rebuilding the golden image and manifest.
-
 Production instructions: [`wt-local` Install on Ubuntu](../wt-local/README.md#install-on-ubuntu).

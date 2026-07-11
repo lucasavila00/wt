@@ -33,7 +33,7 @@ guest world: Docker + clone + stock compose
 | Layer | Job |
 |-------|-----|
 | **CLI** | Local and SSH contexts; owner-scoped API over stdio; print and sync guest aliases |
-| **Control plane + worker** | Worlds and inventory ([control-plane](../arch/control-plane.md)) |
+| **Control plane + worker** | Worlds and inventory ([architecture](../arch/README.md)) |
 | **ssh** | Site hop (API) and world hop (guest) |
 
 Site SSH transports the helper API. Guest SSH enters a provisioned world. They

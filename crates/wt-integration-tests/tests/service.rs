@@ -51,7 +51,7 @@ fn create(name: InstanceName) -> CreateInstance {
 #[test]
 fn lifecycle_persists_and_is_owner_scoped() {
     let temp = TempDir::new().unwrap();
-    let database = temp.path().join("instances-v2.db");
+    let database = temp.path().join("instances.db");
     let name = InstanceName::parse("repo-feature").unwrap();
 
     let mut service = Service::new(Store::open(&database).unwrap(), InjectedWorker::default());
@@ -99,7 +99,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
 fn provision_failure_is_recorded() {
     let temp = TempDir::new().unwrap();
     let mut service = Service::new(
-        Store::open(&temp.path().join("instances-v2.db")).unwrap(),
+        Store::open(&temp.path().join("instances.db")).unwrap(),
         InjectedWorker {
             fail_provision: true,
         },
@@ -128,7 +128,7 @@ fn provision_failure_is_recorded() {
 fn create_accepts_only_ssh_sources() {
     let temp = TempDir::new().unwrap();
     let mut service = Service::new(
-        Store::open(&temp.path().join("instances-v2.db")).unwrap(),
+        Store::open(&temp.path().join("instances.db")).unwrap(),
         InjectedWorker::default(),
     );
     for source in [
