@@ -8,18 +8,18 @@ Parent: [arch README](./README.md). Plan: [plan.md](../plan.md). CLI transport: 
 |------|-----|
 | **Control plane** | Instance create/list/destroy; owner-scoped view. Invoked as a **remote command** over SSH in v1. |
 | **Worker** | Runs worlds; ground truth for VMs/pods; inventory for the control plane. |
-| **CLI** | Reaches the control plane per **context kind** (v1: SSH to site host). Context config is a sum type—[cli.md](./cli.md). |
+| **CLI** | Reaches the control plane per **context kind** (SSH remote or local helper). Sum type—[cli.md](./cli.md). |
 
 ```text
-CLI  ── ssh user@host -- <helper> ──►  site host
+CLI  ── ssh user@host -- helper  ──►  remote host wt-local
+   └─ or ── helper (local)       ──►  same-machine wt-local
                                          JSON in/out (wt-api)
-                                         wt-local control plane + worker
                                               │
                                               ▼
                                            VMs / pods
 ```
 
-**v1 transport:** remote command over SSH ([cli.md](./cli.md))—not port-forwarded HTTP.
+**v1 transport:** run helper as a command, optionally under SSH ([cli.md](./cli.md))—not port-forwarded HTTP.
 
 Ground truth for “does this VM exist?” = **worker + hypervisor**.  
 Mac ssh config for **worlds** is not inventory; `wt sync` projects **my** guest endpoints only.
@@ -28,8 +28,9 @@ Mac ssh config for **worlds** is not inventory; `wt sync` projects **my** guest 
 
 | Deploy | How the CLI authenticates |
 |--------|---------------------------|
-| **`bare_metal_ssh` context → `wt-local`** | **SSH** to the hypervisor (`ssh` + optional `identity_file`). Owner = SSH user. |
-| **`k8s` context (later)** | Separate context kind; not shoehorned into SSH fields |
+| **`bare_metal_ssh` → `wt-local`** | SSH to hypervisor; owner = SSH user |
+| **`bare_metal_local` → `wt-local`** | Helper on this machine; owner = OS user (workstation-as-site) |
+| **`k8s` (later)** | Separate context kind |
 | Multi-node control plane later | Prefer SSH/VPN to plane host, or a new context kind if needed |
 
 No requirement for a public control-plane HTTP port on bare metal.

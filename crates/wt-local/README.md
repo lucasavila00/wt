@@ -2,13 +2,13 @@
 
 Single-site server: **control-plane API + embedded bare-metal worker**.
 
-Runs on the hypervisor. The CLI runs a **remote command over SSH** (JSON in/out); owner = SSH user. No public control-plane HTTP.
+Runs on the **site** host (remote hypervisor **or** the same Ubuntu workstation as the CLI). Invoked as a **helper command** (JSON in/out)—by `ssh … -- wt-local …` or direct local exec. Owner = SSH user or local OS user. No public control-plane HTTP.
 
 ## Role
 
 | Does | Does not |
 |------|----------|
-| Expose control-plane ops as an SSH-invoked helper (stdio JSON) | Require separate bearer-token product for bare metal |
+| Expose control-plane ops as a CLI-spawned helper (stdio JSON) | Require separate bearer-token product for bare metal |
 | Embedded worker (stub → libvirt) | Multi-node fleet by itself |
 | Local inventory + domain reconcile | |
 
@@ -18,7 +18,8 @@ Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/ar
 
 ```text
 cargo run -p wt-local
-# CLI on Mac: context ssh = user@this-host
+# remote:  context kind = bare_metal_ssh,  ssh = user@this-host
+# local:   context kind = bare_metal_local (helper on PATH)
 ```
 
 ## Status

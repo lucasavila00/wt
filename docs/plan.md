@@ -8,7 +8,7 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 - **Named parallel instances** of an existing `.devcontainer` + Docker Compose recipe.
 - **Mac = cockpit only** (CLI + `ssh`). No Docker on the Mac.
 - **`wt new <source> <name>`** with **`name` = `{repo}-{feature}`** → site runs stock recipe → CLI **prints** guest Host snippet; **`wt sync`** projects **my** worlds into managed ssh config; enter with **`ssh <name>`** / **`wt ssh`**.  
-- **Clusters = contexts (sum type):** v1 kind **`bare_metal_ssh`** (`user@host`, optional key)—CLI talks to the plane over SSH. Later kinds (e.g. **`k8s`**) are separate variants, not extra fields on SSH. Owner = SSH user for the bare-metal kind. Detail: [arch/cli.md](./arch/cli.md).
+- **Clusters = contexts (sum type):** **`bare_metal_ssh`** (CLI → `ssh user@host -- helper`) and **`bare_metal_local`** (CLI → helper on this machine, no SSH)—same `wt-local` JSON API. Later **`k8s`** is another variant. Owner = SSH user or local OS user. Detail: [arch/cli.md](./arch/cli.md).
 - **Isolation** = each instance has its own network identity so stock `"3000:3000"` works N times. **Trusted pool** (solo or same company)—not hostile multi-tenant security.
 
 ## Recipe
@@ -29,11 +29,14 @@ Detail: [arch/control-plane.md](./arch/control-plane.md).
 
 | Piece | Role |
 |-------|------|
-| **CLI (`wt`)** | SSH context → site; logical instance API over that hop |
-| **Control plane** | Create/list/destroy (owner-scoped); loopback/SSH-only access |
+| **CLI (`wt`)** | Context → spawn helper (SSH or local); logical instance API over stdio JSON |
+| **Control plane** | Create/list/destroy (owner-scoped); invoked as helper command |
 | **Worker** | Runs worlds; ground truth; inventory for the control plane |
 
-**Current deploy shape:** **`wt-local`** on the hypervisor; CLI uses **`ssh user@host -- <helper>`** (JSON remote command). No public control-plane HTTP.
+**Current deploy shapes:**  
+- Remote: **`wt-local`** on hypervisor; CLI **`ssh … -- helper`**.  
+- Local workstation: **`wt` + `wt-local`** on the same Ubuntu; context **`bare_metal_local`**.  
+No public control-plane HTTP.
 
 **Multi-node shape (not built yet):** **`wt-control-plane`** + **`wt-worker`**. Prefer SSH (or equivalent private path) to the plane.
 

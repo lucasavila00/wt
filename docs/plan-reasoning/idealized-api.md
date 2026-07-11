@@ -18,9 +18,9 @@ Full CLI: [../arch/cli.md](../arch/cli.md).
 
 ```text
 Mac (CLI + stock OpenSSH)
-   │  wt → context kind bare_metal_ssh (user@host, optional key)
+   │  wt → bare_metal_ssh | bare_metal_local
    ▼
-wt-local on hypervisor  (API over that SSH hop)
+wt-local (via ssh -- helper, or local helper)
    │
    ▼
 guest world: Docker + clone + stock compose

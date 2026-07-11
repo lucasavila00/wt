@@ -6,8 +6,8 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 
 ## Role
 
-- **Contexts** — sum type in config; v1 kind **`bare_metal_ssh`** (`ssh` + optional `identity_file`); later kinds (e.g. `k8s`) without overloading fields; `--context`  
-- **Transport** — **`ssh … -- <helper>`** remote command, JSON stdio (`wt-api`); owner = SSH user  
+- **Contexts** — sum type: **`bare_metal_ssh`** and **`bare_metal_local`**; later `k8s`; `--context`  
+- **Transport** — spawn helper: `ssh … -- wt-local …` **or** local `wt-local …`; same JSON stdio; owner = SSH or OS user  
 - **Instances** — `new` / `ls` / `rm` for **my** envs on a multi-user host  
 - **Names** — `{repo}-{feature}` (e.g. `frontend-checkout-rewrite`)  
 - **World SSH** — print Host on create; **`wt sync`** → managed `~/.config/wt/ssh_config`; optional **`wt ssh`** into the **guest**  

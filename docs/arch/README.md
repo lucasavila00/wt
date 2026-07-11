@@ -12,14 +12,14 @@ Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.m
 ## Current system
 
 ```text
-Mac:  wt  ── ssh user@host -- helper (JSON) ──►  wt-local on site
-Mac:  ssh {repo}-{feature}   after print / wt sync  →  guest world
+Client:  wt  ── ssh user@host -- helper  ──►  wt-local (remote site)
+         wt  ── helper (no ssh)          ──►  wt-local (this workstation)
+Client:  ssh {repo}-{feature}  after print / wt sync  →  guest world
 ```
 
-- One site process: **`wt-local`** (API not exposed on the public internet by default).  
-- CLI context: **sum type**; v1 kind **`bare_metal_ssh`** (SSH target + optional key). Later kinds (e.g. k8s) are separate variants.  
-- Worker: stub → libvirt on the same host.  
-- k8s / multi-node: target shape only for now.
+- Site binary: **`wt-local`** (not a public HTTP API).  
+- CLI contexts: **`bare_metal_ssh`** and **`bare_metal_local`** (same helper JSON); later **`k8s`**.  
+- Worker: stub → libvirt on the site host.
 
 ## Language and crates
 
@@ -42,8 +42,8 @@ Not in the repo yet: `wt-control-plane`, `wt-worker`.
 | list | name, status, endpoint |
 | destroy | tear down world |
 
-Auth to the site: **SSH**. Owner = SSH user. Not a separate token product for bare metal.
+Auth: SSH user (remote) or local OS user (workstation). Not a separate token product for bare metal.
 
 ## One-line summary
 
-**`wt` SSHes into the site to talk to `wt-local`; worlds are separate guest SSH Hosts.**
+**`wt` runs the `wt-local` helper (via SSH or locally); worlds are separate guest SSH Hosts.**

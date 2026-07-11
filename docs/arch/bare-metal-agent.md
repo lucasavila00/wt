@@ -6,16 +6,16 @@ Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-
 ## Deployed shape
 
 ```text
-CLI ── ssh user@hypervisor -- <wt-local helper> ──►  JSON API on host
-                                                       ├─ control-plane ops
-                                                       └─ embedded bare-metal worker
-                                                            libvirt guests, bootstrap, clone, compose
-                                                            reconcile domains vs records
+CLI ── ssh user@host -- wt-local …  ──►  JSON on remote site
+   └─ or  wt-local … (local)        ──►  JSON on this workstation
+                                         ├─ control-plane ops
+                                         └─ embedded bare-metal worker
+                                              libvirt guests, bootstrap, clone, compose
 ```
 
-- **v1 transport:** remote command over SSH (JSON stdio)—see [cli.md](./cli.md).  
-- CLI auth = SSH to this host; **owner** = SSH user.  
-- Guests get their own IPs; **`wt sync`** writes Host entries to reach **guests**, not the hypervisor API.  
+- **v1 transport:** helper command, SSH-wrapped or local—see [cli.md](./cli.md).  
+- **Owner** = SSH user or local OS user.  
+- Guests: **`wt sync`** → Host entries for **guest** IPs.  
 
 Multi-node target: **`wt-worker`** + **`wt-control-plane`** (not implemented).
 
@@ -32,7 +32,7 @@ Multi-node target: **`wt-worker`** + **`wt-control-plane`** (not implemented).
 
 ## Control-plane API surface
 
-Logical ops in `wt-api` (served only via SSH remote command as that user; not a public internet listener):
+Logical ops in `wt-api` (helper as the invoking user; not a public internet listener):
 
 | Op | Behavior |
 |----|----------|
@@ -70,8 +70,8 @@ Reconcile libvirt vs records on startup and periodically (orphans).
 
 - Hypervisor (or nested virt), bridge/network, golden image path configured  
 - Process can use libvirt  
-- Mac can **SSH to the hypervisor** (control plane)  
-- Mac can reach **guest** IPs (worlds)—LAN/mesh/VPN as needed
+- Remote clients can **SSH to the site** host, **or** CLI runs on the site (`bare_metal_local`)  
+- Client can reach **guest** IPs for world SSH (LAN/mesh/VPN/local)
 
 ## Out of scope here
 
