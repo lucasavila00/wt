@@ -1,70 +1,39 @@
 # Bare-metal worlds (one big server)
 
-How to run **N instances** on **one** fat host without port soup.  
-Context: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](../plan.md) — this is the **home / 1–2 server** provider path (not company k8s).
+N instances on one fat host without port soup.  
+Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). Deploy: [../arch/bare-metal-agent.md](../arch/bare-metal-agent.md) (`wt-local`).
 
-## Constraint reminder
+## Constraints
 
-- Need **per-instance network identity** so stock `"3000:3000"` works N times.
-- **Trusted pool** only—not security sandboxing.
-- Planning: **≥16 GB per instance** is normal; app RAM dominates.
-- Create path pays **clone + images + compose/devcontainer up**; empty-world **boot is not the long pole**.
+- Per-instance network identity so stock `"3000:3000"` works N times  
+- Trusted pool  
+- Typical guest **≥16 GB** — app RAM dominates  
+- Wall clock dominated by **clone + images + compose**, not empty-guest boot  
 
-## Options
+## Chosen approach
 
-### 1. One Docker, many IPs (macvlan / host addresses)
+**KVM/libvirt guest per instance** via **`wt-local`**.
 
-One kernel, one Docker. Each instance publishes on **its** IP.
+- Own IP + own Docker → stock compose  
+- Clear `ssh <name>` target  
+- Stable, transparent DX for compose authors  
 
-| + | − |
-|---|---|
-| Max density | One daemon; weaker world boundary |
-| No guest | `ssh <name>` less natural; publish bind-IP may need tool-owned tweak |
+At ≥16 GB/instance, guest OS overhead (~0.5–1 GB class) is minor.
 
-### 2. LXD / Incus system containers
+## Alternatives (not the home path)
 
-System container + Docker **inside**. Can be transparent to compose authors.
+| Approach | Note |
+|----------|------|
+| One Docker, many IPs (macvlan) | Dense; weaker world boundary; Host story messier |
+| LXD + Docker inside | Denser than KVM; nested Docker complexity |
+| Full k8s on the solo home box | Overkill for compose worlds; company path is a separate worker |
 
-| + | − |
-|---|---|
-| Dense | Nested Docker footguns until golden profile is boring |
+## Relation to multi-node / company
 
-### 3. KVM / libvirt guests — **plan default for bare metal**
-
-VM + own IP + own Docker. Closest to mini server.
-
-| + | − |
-|---|---|
-| Most stable stock Docker/compose DX | ~0.5–1 GB OS tax (noise at ≥16 GB/instance) |
-| Obvious `ssh <name>` → guest | Slightly worse density than LXD |
-
-## RAM / boot (decided enough)
-
-- At **≥16 GB/instance**, KVM vs LXD RAM difference **does not drive the choice**.  
-- Faster LXD boot **does not matter**—recipe spin-up dominates.  
-- Prefer **KVM** for simplicity and transparent DX ([plan.md](../plan.md)).
-
-## Relation to k8s
-
-- **Do not** put a solo home box through k8s/minikube just to run compose worlds—**overkill**.  
-- Company horizontal scale = **k8s provider** (DinD pods), separate agent—see plan.  
-- KubeVirt optional later; not required for the bare-metal path.
-
-## Lean
-
-| Priority | Choice |
-|----------|--------|
-| Home bare metal (plan) | **KVM/libvirt** guest per instance |
-| Density later | LXD if willing to own nesting |
-| Max pack | multi-IP Docker (escape hatch) |
-
-**Transparency rule:** world = “small Linux with Docker.” Never special host compose for authors.
-
-## Still open (ops detail)
-
-- Warm pool size vs cold clone-from-template  
-- IP assignment (bridge + DHCP vs static)  
+- Home: **`wt-local`** on the hypervisor  
+- Company multi-node: control plane + workers (including k8s)—see [control-plane](../arch/control-plane.md)  
+- k8s is not required to densify a single trusted bare-metal box  
 
 ## One-line summary
 
-On one fat trusted host, **KVM-per-instance** for stock compose and simple SSH; leave k8s to the company provider, not the home box.
+**On one fat trusted host, KVM-per-instance under `wt-local` for stock compose and simple SSH worlds.**

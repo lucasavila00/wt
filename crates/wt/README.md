@@ -1,31 +1,24 @@
 # wt (CLI)
 
-Local **cockpit** binary: talk to an agent, maintain `~/.ssh/config` Host entries. No Docker.
+Cockpit binary: control-plane client and **printed** SSH Host snippets. No Docker.
 
 ## Role
 
 | Does | Does not |
 |------|----------|
-| `new` / `ls` / `rm` against **control-plane** HTTP API | Run compose, libvirt, or clones |
-| **Print** SSH `Host` snippets (auto-edit later, when stable) | Replace stock `ssh` for daily enter |
-| Use [`wt-api`](../wt-api/) types | Own long-term instance truth (workers + control plane) |
+| `new` / `ls` / `rm` against control-plane API | Run compose or libvirt |
+| Print SSH `Host` blocks | Replace stock `ssh` |
+| Use [`wt-api`](../wt-api/) | Own server-side inventory |
 
 Design: [docs/arch/cli.md](../../docs/arch/cli.md).  
-v1 server to point at: [`wt-local`](../wt-local/).
+Default server: [`wt-local`](../wt-local/).
 
-## Binary
+## Run
 
 ```text
-cargo run -p wt -- --help   # once implemented
+cargo run -p wt
 ```
-
-Install name: `wt`.
-
-## Dependencies (planned)
-
-- `wt-api` — shared types  
-- HTTP client, CLI parser, config — not wired yet  
 
 ## Status
 
-Topology only — no commands implemented yet.
+Topology only; commands not implemented.

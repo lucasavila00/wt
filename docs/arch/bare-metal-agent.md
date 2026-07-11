@@ -1,45 +1,45 @@
-# Bare-metal worker (libvirt) + `wt-local`
+# Bare-metal worker and `wt-local`
 
-Libvirt-backed worlds on a fat host. v1 ships only inside **`wt-local`** (embedded worker).  
-Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-plane.md). CLI: [cli.md](./cli.md). Plan: [plan.md](../plan.md). Worlds: [bare-metal-worlds](../plan-reasoning/bare-metal-worlds.md).
+Libvirt-backed worlds on a fat host. Shipped as the embedded worker inside **`wt-local`**.  
+Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-plane.md). CLI: [cli.md](./cli.md). Plan: [plan.md](../plan.md).
 
-## Role
+## Deployed shape
 
 ```text
 CLI ── control-plane API ──►  wt-local
                                 ├─ control-plane registry
                                 └─ embedded bare-metal worker
-                                     libvirt + bootstrap + clone + compose
-                                     reconcile vs domains (anti-zombie)
+                                     libvirt guests, bootstrap, clone, compose
+                                     reconcile domains vs records
 ```
 
-Later the same worker logic runs as **`wt-worker`** (deferred binary) reporting to **`wt-control-plane`**.
+Multi-node target: same worker logic in **`wt-worker`**, reporting to **`wt-control-plane`** (not implemented).
 
-## World model (v1)
+## World model
 
 | Piece | Choice |
 |-------|--------|
-| Isolation | **KVM guest per instance** (libvirt) |
-| Resources | Large disks/RAM OK (e.g. ≥16 GB class) |
-| Image | Golden qcow2/cloud: Linux + Docker + sshd |
-| Network | Bridge/LAN (or mesh) so Mac can reach guest IP |
-| Recipe | Stock compose / `.devcontainer` inside guest—no port rewrites |
-| Trust | Single user / trusted pool |
+| Isolation | KVM guest per instance (libvirt) |
+| Resources | Large guests OK (e.g. ≥16 GB class) |
+| Image | Golden image: Linux + Docker + sshd |
+| Network | Guest IP reachable from the Mac (LAN/mesh) |
+| Recipe | Stock compose / `.devcontainer` in the guest |
+| Trust | Trusted pool |
 
-## API (served by `wt-local` control-plane half)
+## Control-plane API surface
 
-Shared types in `wt-api`. Conceptual:
+Types in `wt-api`:
 
 | Endpoint | Behavior |
 |----------|----------|
 | `POST /instances` | `{ source, name, ref? }` → provision |
 | `GET /instances` | list |
 | `GET /instances/:name` | detail + endpoint + error |
-| `DELETE /instances/:name` | destroy VM + free name |
+| `DELETE /instances/:name` | destroy + free name |
 
-**Status enum** (example): `Provisioning`, `StartingRecipe`, `Running`, `Error`, `Destroying`.
+Status examples: `Provisioning`, `StartingRecipe`, `Running`, `Error`, `Destroying`.
 
-## Provision pipeline (worker half)
+## Provision pipeline
 
 ```text
 1. Validate name free
@@ -52,28 +52,27 @@ Shared types in `wt-api`. Conceptual:
 8. Running + { user, host, port=22 }
 ```
 
-## State and zombies
+## State
 
 | State | Where |
 |-------|--------|
-| Instance records | `wt-local` process (v1 memory); later mirrored to fleet control plane via reports |
-| Actual domains | libvirt |
-| Git secrets | host env / file |
+| Instance records | `wt-local` process |
+| Domains | libvirt |
+| Git credentials | host env / file |
 
-Worker reconciles libvirt (`wt-*` domains) vs records on startup/periodically.
+Reconcile libvirt vs records on startup and periodically (orphans).
 
-## Language
+## Ops assumptions
 
-- v1 binary: **`wt-local`** (Rust)  
-- Future: extract worker into lib used by `wt-worker`  
-- libvirt bindings or `virsh` for v1  
+- Hypervisor (or nested virt), bridge/network, golden image path configured  
+- Process can use libvirt  
+- Mac can reach guest IPs  
 
-## Explicitly deferred
+## Out of scope here
 
-- `wt-control-plane` / `wt-worker` processes  
-- k8s worker → [k8s-agent.md](./k8s-agent.md)  
+- k8s worker — [k8s-agent.md](./k8s-agent.md)  
 - Multi-tenant authz  
 
 ## One-line summary
 
-**Bare-metal worlds are a worker backend; v1 users only run `wt-local`, which embeds that worker next to the control-plane API.**
+**`wt-local` is the site brain and libvirt worker for single-host deploys.**

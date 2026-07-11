@@ -1,32 +1,24 @@
-# k8s agent (deferred)
+# k8s worker
 
-**Not iteration 1.** Exists so the architecture slot is clear. Do not design or build this until bare-metal path is stable for real use.  
-Parent: [arch README](./README.md). Plan intent: [plan.md](../plan.md).
+Not implemented. Target worker backend for company clusters.  
+Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-plane.md). Plan: [plan.md](../plan.md).
 
-## Intended role (later)
+## Role
 
-A **worker** backend—same model as [control-plane.md](./control-plane.md). CLI still hits the **control-plane** API only (`wt-local` today, later `wt-control-plane`).
-
-Create **long-lived Pod worlds** with Docker-in-Docker (or equivalent) so **stock** `.devcontainer`/compose runs inside; pod netns gives port isolation on shared nodes.
+- **`wt-worker`** (or equivalent) on a **DinD-friendly** dev cluster / node pool.  
+- Long-lived **Pod world** per instance; Docker-in-Docker (or equivalent) runs **stock** `.devcontainer`/compose inside.  
+- Pod netns → stock ports without host port clashes.  
+- CLI still talks only to the **control-plane** API (`wt-local` or later `wt-control-plane`).
 
 ```text
-CLI ──► wt-control-plane ──► wt-worker (k8s) ──► Pod (DinD) per name
+CLI ──► control plane ──► k8s worker ──► Pod (DinD) per name
 ```
 
-Requires a **DinD-friendly** dev cluster/node pool—not every prod cluster.
+## Requirements
 
-## Why deferred
-
-- First prove CLI + SSH Host + recipe via **`wt-local`** / libvirt ([bare-metal-agent.md](./bare-metal-agent.md)).  
-- k8s adds policy, privileges, and cluster variance; wrong place to debug product UX.  
-- Lands as **`wt-worker`** backend (or dedicated bin), not a second CLI protocol.
-
-## Do not decide yet
-
-- DinD image, privileged vs rootless  
-- SSH into pod vs `ProxyCommand`/kubectl  
-- Multi-cluster selection UX  
+- Cluster policy allows DinD-class workloads (often privileged), **or** another world engine (e.g. KubeVirt where available).  
+- Locked-down clusters that forbid that are not a target for this backend.
 
 ## One-line summary
 
-**Same API, later backend—ignore until bare metal is boringly solid.**
+**Same control-plane API; worker runs compose inside pod-isolated worlds on a dev k8s pool.**

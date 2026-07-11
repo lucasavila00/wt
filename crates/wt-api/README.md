@@ -1,28 +1,22 @@
 # wt-api
 
-Shared **control-plane API contract** library for the `wt` CLI and servers.
+Shared **control-plane** HTTP/JSON types for `wt` and site servers.
 
 ## Role
 
-- Request/response types for the control-plane HTTP API  
-- Status and error **enums** (serde-friendly), defined once  
-- No I/O, no libvirt, no SSH — pure data + (later) serialization  
+- Request/response types  
+- Status and error enums (serde)  
+- No I/O, libvirt, or SSH  
 
-See [docs/arch/README.md](../../docs/arch/README.md).
+## Used by
 
-## Consumers
+| Crate | |
+|-------|--|
+| [`wt`](../wt/) | Client decoding |
+| [`wt-local`](../wt-local/) | Server encoding |
 
-| Crate | Use |
-|-------|-----|
-| [`wt`](../wt/) | Decode control-plane responses |
-| [`wt-local`](../wt-local/) | Encode responses (v1 server) |
-| future `wt-control-plane` / `wt-worker` | Same wire types where applicable |
-
-## Non-goals
-
-- Business logic / provision pipeline  
-- Provider-specific types that never cross the wire (keep those in the agent)  
+Future multi-node binaries use the same control-plane types where they expose that API.
 
 ## Status
 
-Topology only — no types implemented yet.
+Library skeleton only; types not defined yet.

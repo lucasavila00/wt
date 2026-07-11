@@ -1,59 +1,49 @@
 # Architecture
 
-Implements [plan.md](../plan.md). First iteration = **single dev + `wt-local` only**. Multi-node control plane / k8s worker deferred.
+Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.md).
 
-| Doc | Status |
+| Doc | Topic |
 |-----|--------|
-| [cli.md](./cli.md) | v1 |
-| [control-plane.md](./control-plane.md) | v1 model + deferred fleet bins |
-| [bare-metal-agent.md](./bare-metal-agent.md) | libvirt worker (embedded in `wt-local`) |
-| [k8s-agent.md](./k8s-agent.md) | deferred stub |
+| [cli.md](./cli.md) | `wt` CLI |
+| [control-plane.md](./control-plane.md) | Control plane, workers, binaries |
+| [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt worker / `wt-local` |
+| [k8s-agent.md](./k8s-agent.md) | k8s worker (not implemented) |
 
-## Iteration 1 scope
-
-```text
-Mac: wt CLI  ── control-plane API ──►  wt-local  (plane + embedded worker)
-Mac: ssh <name>  after pasting printed Host (auto-edit later)
-```
-
-- One developer, one fat hypervisor: run **`wt-local`**.  
-- CLI points at **one URL** = `wt-local`.  
-- No separate central DB/Redis. No k8s.  
-- Success path grows by era ([impl](../impl/README.md)).
-
-## Language
-
-**Rust only** for CLI + server(s)—shared `wt-api` types (serde). No Go+Rust split.
+## Current system
 
 ```text
-crates
-  wt-api       # shared control-plane types
-  wt           # CLI binary
-  wt-local     # v1: control plane + embedded worker
-
-# deferred bins (not in workspace yet)
-  wt-control-plane
-  wt-worker
+Mac:  wt  ── control-plane API ──►  wt-local  (control plane + embedded worker)
+Mac:  ssh <name>   after applying the printed Host snippet
 ```
 
-Wire format: **JSON over HTTP**.
+- One site process: **`wt-local`**.  
+- CLI config: control-plane URL → that process.  
+- Worker backend today: stub → then libvirt on the same host.  
+- k8s worker and multi-node binaries: specified for the target shape, not implemented.
 
-## Shared control-plane contract (conceptual)
+## Language and crates
+
+**Rust** for CLI and server. Shared types in **`wt-api`** (serde JSON over HTTP).
+
+```text
+crates/
+  wt-api
+  wt           # CLI
+  wt-local     # site server
+```
+
+Not in the repo yet: `wt-control-plane`, `wt-worker`.
+
+## Control-plane API (conceptual)
 
 | Verb | Meaning |
 |------|---------|
-| create/ensure instance | source + name → world + recipe; SSH endpoint when ready |
+| create | source + name → world + recipe; SSH endpoint when ready |
 | list | name, status, endpoint |
-| destroy | tear down via owning worker |
+| destroy | tear down world |
 
-Auth for v1: simple shared token or trusted network. Not a tenancy product.
-
-## Explicitly later
-
-- `wt-control-plane` + `wt-worker` binaries ([control-plane.md](./control-plane.md))  
-- k8s worker ([k8s-agent.md](./k8s-agent.md))  
-- Fancy SSH certs, multi-user IAM  
+Auth: simple token or trusted network. Not a tenancy product.
 
 ## One-line summary
 
-**`wt` → control-plane API; v1 server is `wt-local`; fleet splits into `wt-control-plane` + `wt-worker` later without changing the CLI contract.**
+**`wt` talks only to a control-plane URL; that URL is `wt-local` on a single site.**
