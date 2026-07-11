@@ -14,6 +14,12 @@ The first run may add the current user to the `libvirt` and `kvm` groups. If it 
 
 ## Create a world
 
+Once per workstation, add this line at the beginning of `~/.ssh/config`, before any `Host` blocks:
+
+```sshconfig
+Include ~/.ssh/wt/config
+```
+
 The default identity is `~/.ssh/id_ed25519`. If it is encrypted, `wt new` asks for its passphrase.
 
 ```bash
@@ -29,13 +35,19 @@ wt ls
 wt ssh jsdev-manual
 ```
 
-Inside the world, the checkout is at `/workspace`:
+The regular alias opens `/bin/sh` as the devcontainer's configured user in its workspace:
 
 ```bash
-cd /workspace
+pwd
 git status
-devcontainer exec --workspace-folder /workspace node --version
 exit
+```
+
+Use the `-host` alias for a normal guest SSH session, explicit remote commands, SCP, or VS Code Remote SSH:
+
+```bash
+ssh jsdev-manual-host
+ssh jsdev-manual-host git -C /workspace status
 ```
 
 Normal Git commands from the guest or devcontainer use the same SSH identity selected by `wt new`.

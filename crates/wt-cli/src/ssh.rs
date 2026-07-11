@@ -5,9 +5,6 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use wt_api::{Instance, InstanceStatus};
 
-const BEGIN: &str = "# BEGIN wt managed include";
-const END: &str = "# END wt managed include";
-
 pub fn sync(instances: &[Instance]) -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -29,14 +26,17 @@ pub fn sync(instances: &[Instance]) -> Result<PathBuf> {
         if ssh.host_keys.is_empty() {
             bail!("instance {} has no SSH host keys", instance.name);
         }
-        config.push_str(&format!(
-            "\nHost {}\n  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n",
-            instance.name,
+        let common = format!(
+            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n",
             ssh.host,
             ssh.user,
             ssh.port,
             instance.name,
             ssh_quote(&known_hosts_path),
+        );
+        config.push_str(&format!(
+            "\nHost {}-host\n{common}\nHost {}\n{common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n",
+            instance.name, instance.name,
         ));
         let known_name = if ssh.port == 22 {
             instance.name.to_string()
@@ -55,7 +55,6 @@ pub fn sync(instances: &[Instance]) -> Result<PathBuf> {
     }
     atomic_write(&config_path, config.as_bytes())?;
     atomic_write(&known_hosts_path, known_hosts.as_bytes())?;
-    update_main_config(&ssh_dir.join("config"), &config_path)?;
     Ok(config_path)
 }
 
@@ -85,41 +84,6 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     result.with_context(|| format!("atomically update {}", path.display()))
 }
 
-fn update_main_config(path: &Path, managed: &Path) -> Result<()> {
-    let existing = match fs::read_to_string(path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
-    };
-    let mut kept = Vec::new();
-    let mut in_managed = false;
-    for line in existing.lines() {
-        if line == BEGIN {
-            in_managed = true;
-            continue;
-        }
-        if line == END {
-            in_managed = false;
-            continue;
-        }
-        if !in_managed {
-            kept.push(line);
-        }
-    }
-    if in_managed {
-        bail!("unterminated wt managed Include in {}", path.display());
-    }
-    while kept.last().is_some_and(|line| line.is_empty()) {
-        kept.pop();
-    }
-    let mut updated = kept.join("\n");
-    if !updated.is_empty() {
-        updated.push_str("\n\n");
-    }
-    updated.push_str(&format!("{BEGIN}\nInclude {}\n{END}\n", ssh_quote(managed)));
-    atomic_write(path, updated.as_bytes())
-}
-
 fn ssh_quote(path: &Path) -> String {
     format!(
         "\"{}\"",
@@ -137,15 +101,12 @@ mod tests {
     use wt_api::{InstanceName, SshAccess};
 
     #[test]
-    fn sync_preserves_unrelated_config_and_removes_stale_worlds() {
+    fn sync_does_not_touch_main_config_and_removes_stale_worlds() {
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
         fs::create_dir(temp.path().join(".ssh")).unwrap();
-        fs::write(
-            temp.path().join(".ssh/config"),
-            "Host personal\n  HostName example.test\n",
-        )
-        .unwrap();
+        let main_config = "Host personal\n  HostName example.test\n";
+        fs::write(temp.path().join(".ssh/config"), main_config).unwrap();
         let instance = Instance {
             id: Uuid::new_v4(),
             name: InstanceName::parse("repo-feature").unwrap(),
@@ -163,10 +124,15 @@ mod tests {
             }),
         };
         sync(&[instance]).unwrap();
+        let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
+        assert!(managed.contains("Host repo-feature-host\n"));
+        assert!(managed.contains("Host repo-feature\n"));
+        assert_eq!(managed.matches("RemoteCommand ").count(), 1);
+        assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
+        assert_eq!(managed.matches("HostKeyAlias repo-feature").count(), 2);
         sync(&[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
-        assert!(main.contains("Host personal"));
-        assert_eq!(main.matches(BEGIN).count(), 1);
+        assert_eq!(main, main_config);
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(!managed.contains("repo-feature"));
     }

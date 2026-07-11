@@ -8,7 +8,8 @@ pub fn call(request: &ApiRequest) -> Result<Response> {
         .arg("api")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // Provisioning progress belongs on stderr so stdout remains the JSON protocol.
+        .stderr(Stdio::inherit())
         .spawn()
         .context("start wt-local helper")?;
     serde_json::to_writer(
@@ -21,8 +22,7 @@ pub fn call(request: &ApiRequest) -> Result<Response> {
     child.stdin.take().unwrap().flush()?;
     let output = child.wait_with_output()?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        bail!("helper failed: {stderr}");
+        bail!("helper exited with {}", output.status);
     }
     let response: ApiResponse = serde_json::from_slice(&output.stdout).with_context(|| {
         format!(

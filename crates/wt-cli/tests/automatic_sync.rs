@@ -61,7 +61,9 @@ esac
         String::from_utf8_lossy(&created.stderr)
     );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-    assert!(managed.contains("Host repo-feature"));
+    assert!(managed.contains("Host repo-feature\n"));
+    assert!(managed.contains("Host repo-feature-host\n"));
+    assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
 
     let removed = Command::new(env!("CARGO_BIN_EXE_wt"))
         .args(["rm", "repo-feature"])

@@ -72,10 +72,9 @@ fn run() -> Result<()> {
                 instance.guest_ip.as_deref().unwrap_or("-")
             );
             if let Some(ssh) = &instance.ssh {
-                println!("\nHost {}", instance.name);
-                println!("  HostName {}", ssh.host);
-                println!("  User {}", ssh.user);
-                println!("  Port {}", ssh.port);
+                println!("\nApp shell: ssh {}", instance.name);
+                println!("Guest host: ssh {}-host", instance.name);
+                println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             }
         }
         Command::Ls => {

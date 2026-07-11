@@ -1,5 +1,6 @@
 //! Production orchestration for one libvirt/KVM world.
 
+mod devcontainer;
 mod git;
 mod guest_agent;
 mod world;
@@ -41,6 +42,7 @@ impl LibvirtWorker {
         wt_api::validate_ssh_git_source(spec.source)
             .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
         let private_git = git::load_credentials(spec.identity_file)?;
+        eprintln!("Creating KVM guest {}...", spec.name);
         let paths = world::Paths::new(&self.config.worlds_dir, spec.backend_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| worker_error("create world directory", error))?;
@@ -86,11 +88,15 @@ impl LibvirtWorker {
 
         // QEMU guest-agent is the provisioning channel. SSH is exposed to the
         // user, but wt does not depend on it to configure the world.
+        eprintln!("Waiting for the guest agent...");
         self.wait_for_guest_agent(&domain)?;
+        eprintln!("Waiting for guest networking...");
         let guest_ip = self.wait_for_ip(spec.backend_id)?;
         let recipe_deadline = Instant::now() + self.config.recipe_timeout;
+        eprintln!("Waiting for guest SSH...");
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
+        eprintln!("Cloning {}...", spec.source);
         git::clone_and_checkout(
             &domain,
             spec.source,
@@ -98,6 +104,7 @@ impl LibvirtWorker {
             &private_git,
             recipe_deadline,
         )?;
+        eprintln!("Starting the repository devcontainer...");
         guest_agent::run_phase(
             &domain,
             "workspace ownership",
@@ -108,10 +115,21 @@ impl LibvirtWorker {
         guest_agent::run_phase(
             &domain,
             "devcontainer up",
-            "/usr/local/bin/devcontainer",
-            &["up", "--workspace-folder", "/workspace"],
+            "/usr/sbin/runuser",
+            &[
+                "-u",
+                "wt",
+                "--",
+                "/usr/bin/env",
+                "HOME=/home/wt",
+                "/usr/local/bin/devcontainer",
+                "up",
+                "--workspace-folder",
+                "/workspace",
+            ],
             recipe_deadline,
         )?;
+        devcontainer::install_app_shell(&domain, recipe_deadline)?;
         guest_agent::run_phase(
             &domain,
             "devcontainer Git credentials",
@@ -122,10 +140,11 @@ impl LibvirtWorker {
                 "/workspace",
                 "/bin/sh",
                 "-c",
-                "directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
+                "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\" && directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
             ],
             recipe_deadline,
         )?;
+        eprintln!("World {} is ready.", spec.name);
         Ok(World {
             guest_ip: guest_ip.clone(),
             ssh: wt_api::SshAccess {

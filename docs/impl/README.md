@@ -102,9 +102,10 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 - Each world generates unique SSH host keys. After sshd starts, retrieve the public host keys through the QEMU guest agent and persist them with `ssh_user = "wt"`, guest address, and port `22`.
 - Treat the host keys, not a DHCP address, as the world's stable SSH identity. Reconciliation refreshes the persisted address from libvirt; `wt sync` then updates the alias without accepting a different host key.
 - SSH readiness is required before `Running`. Clone, checkout, and devcontainer provisioning continue through the guest agent.
-- `wt new` prints a usable `Host <name>` snippet. `wt ls` shows the SSH target.
-- Every `wt new` and `wt rm` runs sync automatically. Explicit `wt sync` atomically derives dedicated managed SSH config and known-hosts files from running instances, ensures the user's main SSH config contains one bounded `Include`, preserves unrelated configuration, enforces host-key checking, and removes entries for removed worlds.
-- `wt ssh <name>` delegates to stock OpenSSH using the managed alias. VS Code Remote SSH uses that same alias and opens `/workspace`.
+- `wt new` prints the app-shell and guest-host aliases. `wt ls` shows the SSH endpoint.
+- Every `wt new` and `wt rm` runs sync automatically. Explicit `wt sync` atomically derives dedicated managed SSH config and known-hosts files from running instances, enforces host-key checking, and removes entries for removed worlds. The user places `Include ~/.ssh/wt/config` at the beginning of the main SSH config; `wt` never edits that file.
+- `wt sync` emits `<name>` with a forced TTY and a remote app-shell command, plus unrestricted `<name>-host`; both use the same pinned guest host keys. The guest app-shell helper resolves the current primary container by its Dev Container CLI workspace label, maps `/workspace` to the container workspace, honors the configured devcontainer user, and runs `docker exec -it` with `/bin/sh`.
+- `wt ssh <name>` delegates to stock OpenSSH and enters the app container. VS Code Remote SSH, SCP, and explicit SSH commands use `<name>-host`.
 - The repository exists only inside the guest. Era 1.5 adds no virtiofs/9p export, host worktree, or dual host/guest Git state.
 - Agent forwarding is not enabled.
 
@@ -119,7 +120,7 @@ The KVM test clones `git@github.com:lucasavila00/jsdev-sample.git` into a tempor
 
 The test uses temporary SSH server, Git identity, guest-login identity, and host keys. No long-lived provider credential is required.
 
-**Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's devcontainer and SSH are ready; `ssh <name>` and VS Code Remote SSH open `/workspace`; `wt rm` removes the world and automatically removes its access records.
+**Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's devcontainer and SSH are ready; `ssh <name>` opens the primary app container, `<name>-host` provides guest and VS Code access, and `wt rm` removes the world and automatically removes both access records.
 
 ---
 

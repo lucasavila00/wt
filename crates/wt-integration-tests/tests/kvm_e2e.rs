@@ -19,6 +19,12 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let git = GitSshServer::start(temp.path(), bridge_ip);
     config.guest.ssh_authorized_keys_file = git.client_public_key.clone();
     std::env::set_var("HOME", temp.path());
+    fs::create_dir_all(temp.path().join(".ssh")).unwrap();
+    fs::write(
+        temp.path().join(".ssh/config"),
+        format!("Include {}\n", temp.path().join(".ssh/wt/config").display()),
+    )
+    .unwrap();
 
     let worker = LibvirtWorker::new(config.worker_config().unwrap()).unwrap();
     let mut service = Service::new(
@@ -57,20 +63,36 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         };
         assert_eq!(instances.len(), 1);
         wt_cli::ssh::sync(&instances).map_err(|error| error.to_string())?;
-        let branch = format!("wt-e2e-{}", std::process::id());
-        let command = format!(
-            "cd /workspace && /usr/local/bin/devcontainer exec --workspace-folder /workspace /bin/sh -c 'git config user.name wt-e2e && git config user.email wt@example.invalid && git switch -c {branch} && printf pushed\\n > wt-e2e.txt && git add wt-e2e.txt && git commit -m wt-e2e && git push origin HEAD:refs/heads/{branch}'"
-        );
+
+        let host_alias = format!("{}-host", name.as_str());
+        let ssh_config = temp.path().join(".ssh/config");
         let output = Command::new("ssh")
-            .args([
-                "-i",
-                git.client_key.to_str().unwrap(),
-                name.as_str(),
-                &command,
-            ])
+            .arg("-F")
+            .arg(&ssh_config)
+            .args(["-i", git.client_key.to_str().unwrap(), &host_alias])
+            .args(["test", "-d", "/workspace"])
             .output()
             .map_err(|error| error.to_string())?;
-        ensure_success("push from jsdev devcontainer", &output)?;
+        ensure_success("enter jsdev guest host", &output)?;
+
+        let branch = format!("wt-e2e-{}", std::process::id());
+        let app_commands = temp.path().join("app-commands");
+        fs::write(
+            &app_commands,
+            format!(
+                "set -eu\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nexit\n"
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
+        let output = Command::new("ssh")
+            .arg("-F")
+            .arg(&ssh_config)
+            .args(["-i", git.client_key.to_str().unwrap(), name.as_str()])
+            .stdin(Stdio::from(input))
+            .output()
+            .map_err(|error| error.to_string())?;
+        ensure_success("enter and push from jsdev app container", &output)?;
         let pushed = git_output(
             Command::new("git")
                 .arg("--git-dir")

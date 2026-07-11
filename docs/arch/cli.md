@@ -30,7 +30,7 @@ Era 1 is local only. No client config. No context selection. `wt-local` resolves
 | `wt ls` | List my worlds: name, status, IP, and SSH target |
 | `wt rm <name>` | Destroy my world and sync access records |
 | `wt sync` | Atomically rewrite the managed SSH config and known-hosts files from my running instance inventory |
-| `wt ssh <name>` | Execute stock OpenSSH using the synced instance alias |
+| `wt ssh <name>` | Execute stock OpenSSH and enter the primary app container through the synced instance alias |
 
 Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the source/ref form above and adds guest access. The CLI never edits application repositories or mounts their checkout on the host.
 
@@ -39,8 +39,8 @@ Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the 
 - The guest username is the fixed, non-root `wt` user and its working checkout is `/workspace`.
 - `wt-local-setup` requires a public-key file path in strict site config. `wt-local` injects those public keys into every world it creates.
 - Every world has unique SSH host keys. After boot, `wt-libvirt` reads the public host keys through the QEMU guest agent; `wt-local` persists them with the SSH endpoint.
-- `wt sync` manages dedicated config and known-hosts files, ensures the user's main SSH config contains one bounded `Include` for the managed config, and makes `Host <instance-name>` resolve to the recorded guest. It must not weaken host-key checking or overwrite unrelated user SSH configuration.
-- VS Code Remote SSH uses the same instance alias and opens `/workspace`, so the editor terminal and Git operations run inside the world.
+- `wt sync` manages dedicated config and known-hosts files. It creates `<instance-name>` as an interactive `docker exec -it` shell in the primary app container and `<instance-name>-host` as unrestricted guest SSH. Both pin the same guest host-key identity. The user must place `Include ~/.ssh/wt/config` at the beginning of the main SSH config, before any `Host` blocks. `wt` never edits the user's main SSH config and must not weaken host-key checking.
+- VS Code Remote SSH, SCP, and explicit SSH commands use `<instance-name>-host`. Interactive `ssh <instance-name>` and `wt ssh <instance-name>` enter the app container as its configured devcontainer user in the mounted workspace.
 - SSH reachability is part of create readiness. `Running` still additionally requires clone, checkout, and Compose wait to succeed.
 - Git sources are SSH-only. `--identity` defaults to `~/.ssh/id_ed25519`; `wt-local` prompts for a passphrase when required and never stores it. The key and caller's host trust remain under `/workspace/.git/wt`, allowing Git in both the guest and stock devcontainer to fetch and push. It does not use an ssh-agent.
 

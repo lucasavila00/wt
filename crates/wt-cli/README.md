@@ -30,3 +30,16 @@ cargo run -p wt-cli -- …
 ```
 
 `new` and `rm` always synchronize managed SSH access records.
+
+Add this line at the beginning of `~/.ssh/config`, before any `Host` blocks:
+
+```sshconfig
+Include ~/.ssh/wt/config
+```
+
+`wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It never edits the user's main SSH config.
+
+For each world, sync creates two aliases:
+
+- `<name>` allocates a TTY and enters the primary app container with `docker exec -it`.
+- `<name>-host` is unrestricted guest SSH for commands, SCP, and VS Code Remote SSH.

@@ -223,6 +223,8 @@ fn install_persistent_bundle(
         "Git credentials",
         "/usr/bin/git",
         &[
+            "-c",
+            "safe.directory=/workspace",
             "-C",
             "/workspace",
             "config",
