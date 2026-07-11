@@ -12,12 +12,12 @@ Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.m
 ## Current system
 
 ```text
-Mac:  wt  ── SSH (context: user@host, optional key) ──►  wt-local on site
+Mac:  wt  ── ssh user@host -- helper (JSON) ──►  wt-local on site
 Mac:  ssh {repo}-{feature}   after print / wt sync  →  guest world
 ```
 
 - One site process: **`wt-local`** (API not exposed on the public internet by default).  
-- CLI context: **SSH target**, not a control-plane URL + token.  
+- CLI context: **sum type**; v1 kind **`bare_metal_ssh`** (SSH target + optional key). Later kinds (e.g. k8s) are separate variants.  
 - Worker: stub → libvirt on the same host.  
 - k8s / multi-node: target shape only for now.
 

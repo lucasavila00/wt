@@ -18,7 +18,7 @@ Full CLI: [../arch/cli.md](../arch/cli.md).
 
 ```text
 Mac (CLI + stock OpenSSH)
-   │  wt → context (ssh user@host, optional key)
+   │  wt → context kind bare_metal_ssh (user@host, optional key)
    ▼
 wt-local on hypervisor  (API over that SSH hop)
    │

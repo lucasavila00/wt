@@ -2,13 +2,13 @@
 
 Single-site server: **control-plane API + embedded bare-metal worker**.
 
-Runs on the hypervisor. The CLI reaches it **via SSH** to this host (not a public control-plane URL). API is loopback/stdio/socket-oriented; owner = connecting SSH user.
+Runs on the hypervisor. The CLI runs a **remote command over SSH** (JSON in/out); owner = SSH user. No public control-plane HTTP.
 
 ## Role
 
 | Does | Does not |
 |------|----------|
-| Serve control-plane ops to authenticated SSH users | Require separate bearer-token product for bare metal |
+| Expose control-plane ops as an SSH-invoked helper (stdio JSON) | Require separate bearer-token product for bare metal |
 | Embedded worker (stub → libvirt) | Multi-node fleet by itself |
 | Local inventory + domain reconcile | |
 

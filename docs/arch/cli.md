@@ -8,7 +8,7 @@ Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-
 | Does | Does not |
 |------|----------|
 | Select a **cluster context** (**SSH target** + optional key) | Run compose, libvirt, or clones on the Mac |
-| Call the **control-plane API over SSH** as the SSH user | Expose or require a public HTTP control-plane URL |
+| Call the API via **`ssh … -- helper`** (JSON) as the SSH user | Expose or require a public HTTP control-plane URL |
 | Create / list / destroy **my** instances | See other users’ instances (single-tenant client) |
 | **Print** SSH Host snippets; **`wt sync`** into managed ssh config | Treat the laptop as inventory source of truth |
 | Optional **`wt ssh <instance>`** into a **world** | Replace OpenSSH |
@@ -37,17 +37,26 @@ libvirt worlds …   (separate: ssh Host after sync → guest)
 No separate bearer-token product for bare-metal / `wt-local`.  
 World access after provision is still normal **guest** SSH (`Host {repo}-{feature}`)—that is a **second** hop, same OpenSSH tooling.
 
-### How the CLI invokes the API (implementation choices)
+### How the CLI invokes the API (**remote command** — decided)
 
-Any of these is fine; pick one in impl and keep it boring:
+For **`bare_metal_ssh`**, use **Pattern 1: remote command over SSH**. No port-forward and no public HTTP listener required.
 
-| Mechanism | Idea |
-|-----------|------|
-| **Remote subcommand** | `ssh … wt-local-ctl …` or `ssh … -- wt-api` with JSON on stdio |
-| **Local forward** | `ssh -L` to loopback HTTP on the host, CLI talks to `127.0.0.1` |
-| **Unix socket + ssh** | Stream over SSH to a socket only root/service user can open |
+```text
+Mac wt
+  →  ssh [-i identity_file] [-p port] user@host  --  <server helper>
+  →  JSON request on stdin (or argv) / JSON response on stdout
+  →  helper runs on the host next to wt-local state / libvirt
+```
 
-Docs care that **auth and path are SSH**, not which of the three.
+| Piece | Role |
+|-------|------|
+| **OpenSSH** | Auth, encryption, remote user (= owner) |
+| **`wt` (client)** | Build request, run `ssh …`, parse response, print/sync Hosts |
+| **Server helper** | SSH-invoked only; create/list/get/delete; same machine as worker |
+
+Helper name is impl detail (e.g. `wt-local api`). Contract: **JSON in/out over the SSH remote command**, types from `wt-api`.
+
+Port-forward / loopback HTTP are **not** the v1 path.
 
 ## Tenancy model
 
@@ -73,39 +82,82 @@ Instance name = control-plane resource name (unique **per owner** on that cluste
 
 ## Contexts (which cluster)
 
-File-based, kube-like **selection**, but fields are **SSH**, not URL+token.
+File-based, kube-like **selection**. Each context is a **sum type** (tagged variant): how the CLI reaches a control plane. Only one variant is implemented at first; the config shape leaves room for more.
 
 **Path (sketch):** `~/.config/wt/config.toml`
+
+### Sum type (conceptual / serde)
+
+```text
+Context = {
+  name: string,
+  kind: bare_metal_ssh | …   # discriminant
+  // kind-specific fields
+}
+```
+
+| Kind | Status | Meaning |
+|------|--------|---------|
+| **`bare_metal_ssh`** | **v1 — only kind** | SSH to a host that runs `wt-local` (or later a plane reachable that way). Auth = SSH; owner = SSH user. |
+| **`k8s`** (name TBD) | later | Talk to a k8s-backed worker/plane (kubeconfig context, namespace, …)—**not** defined in detail until that backend exists. |
+
+Unknown `kind` in the file → clear error (“unsupported context kind”), not silent ignore.
+
+### `bare_metal_ssh` (explicit, v1)
 
 ```toml
 current_context = "home"
 
 [[contexts]]
 name = "home"
-ssh = "wt@192.168.1.10"          # required: user@host (or SSH Host alias)
-# identity_file = "~/.ssh/id_ed25519_wt"   # optional; else ssh agent / default keys
-# port = 22                                # optional
+kind = "bare_metal_ssh"
+ssh = "wt@192.168.1.10"              # user@host or SSH config Host alias
+# identity_file = "~/.ssh/id_ed25519_wt"  # optional; else agent / defaults
+# port = 22                              # optional
 
 [[contexts]]
 name = "lab"
+kind = "bare_metal_ssh"
 ssh = "me@lab.example"
 identity_file = "~/.ssh/lab_wt"
 ```
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `name` | yes | Context id for `use` / `--context` |
+| `kind` | yes | Must be `bare_metal_ssh` for this variant |
+| `ssh` | yes | OpenSSH target |
+| `identity_file` | no | Key for this site |
+| `port` | no | SSH port if not 22 |
+
+Later kinds get their **own** required fields (e.g. kube context name)—not overloaded onto `ssh`.
+
+### Example of a future kind (placeholder only)
+
+```toml
+# NOT implemented — illustrates sum-type extension only
+[[contexts]]
+name = "work-k8s"
+kind = "k8s"
+# kube_context = "dev-eu"
+# namespace = "wt"
+```
+
+### Selection rules
 
 | Rule | Behavior |
 |------|----------|
 | Exactly one context | Use it; no flag required |
 | Multiple | `current_context`, or `--context <name>`, or `WT_CONTEXT` |
 | None / ambiguous | Error with how to fix |
-| `ssh` value | OpenSSH target: `user@host`, or a `Host` alias from the user’s ssh config |
 
 ### Context commands
 
 | Command | Behavior |
 |---------|----------|
-| `wt context list` | Names, `ssh` targets, mark current |
+| `wt context list` | Names, **kind**, kind-specific summary (e.g. ssh target), mark current |
 | `wt context use <name>` | Set `current_context` |
-| `wt context show` | Active context (ssh target, key path if set) |
+| `wt context show` | Active context including full variant fields |
 
 ## Control-plane API (logical)
 
@@ -138,7 +190,7 @@ JSON request/response types in **`wt-api`**. Carried **over SSH** to `wt-local` 
 | **Get** | Mine by name |
 | **Delete** | Mine by name |
 
-Wire paths (if HTTP-on-loopback behind SSH) may look like `/v1/instances`; if stdio RPC, same payloads without public routes. **Semantics** matter more than URL cosmetics.
+Wire shape for v1: **stdio (or equivalent) JSON RPC** over the SSH remote command—same `wt-api` payloads as a REST sketch, without public HTTP routes.
 
 ## Commands
 
@@ -191,7 +243,7 @@ Convenience into the **world** (same as `ssh <name>` after sync).
 
 ```text
 ~/.config/wt/
-  config.toml       # contexts: name, ssh, optional identity_file
+  config.toml       # contexts: name + kind + kind-specific fields (sum type)
   ssh_config        # managed world Hosts (from sync)
   keys/             # optional; often reuse existing SSH keys
 ```
@@ -217,4 +269,4 @@ Rust (`wt-cli` package, binary `wt`). Shells out to **OpenSSH** for transport an
 
 ## One-line summary
 
-**Context = SSH target (+ optional key); API runs over that SSH hop; owner = SSH user; sync projects my `{repo}-{feature}` guest Hosts for normal `ssh`.**
+**Context is a sum type (`bare_metal_ssh` first); that kind SSHes to the site; owner = SSH user; sync projects my `{repo}-{feature}` guest Hosts.**

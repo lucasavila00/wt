@@ -6,17 +6,20 @@ Parent: [arch README](./README.md). Plan: [plan.md](../plan.md). CLI transport: 
 
 | Role | Job |
 |------|-----|
-| **Control plane** | Instance create/list/destroy; owner-scoped view. May be loopback-only. |
+| **Control plane** | Instance create/list/destroy; owner-scoped view. Invoked as a **remote command** over SSH in v1. |
 | **Worker** | Runs worlds; ground truth for VMs/pods; inventory for the control plane. |
-| **CLI** | Reaches the control plane **via SSH** to the site host (context). See [cli.md](./cli.md). |
+| **CLI** | Reaches the control plane per **context kind** (v1: SSH to site host). Context config is a sum type—[cli.md](./cli.md). |
 
 ```text
-CLI  ── SSH ──►  site host (wt-local)
-                    control plane API (localhost / stdio / socket)
-                         ▲
-                         │
-                      worker → VMs / pods
+CLI  ── ssh user@host -- <helper> ──►  site host
+                                         JSON in/out (wt-api)
+                                         wt-local control plane + worker
+                                              │
+                                              ▼
+                                           VMs / pods
 ```
+
+**v1 transport:** remote command over SSH ([cli.md](./cli.md))—not port-forwarded HTTP.
 
 Ground truth for “does this VM exist?” = **worker + hypervisor**.  
 Mac ssh config for **worlds** is not inventory; `wt sync` projects **my** guest endpoints only.
@@ -25,8 +28,9 @@ Mac ssh config for **worlds** is not inventory; `wt sync` projects **my** guest 
 
 | Deploy | How the CLI authenticates |
 |--------|---------------------------|
-| **`wt-local` (current)** | **SSH** to the hypervisor: context `ssh = user@host`, optional `identity_file`. Owner = SSH user. |
-| Multi-node control plane later | Prefer same pattern (SSH/VPN to plane host) or a documented exception if SSH is impossible |
+| **`bare_metal_ssh` context → `wt-local`** | **SSH** to the hypervisor (`ssh` + optional `identity_file`). Owner = SSH user. |
+| **`k8s` context (later)** | Separate context kind; not shoehorned into SSH fields |
+| Multi-node control plane later | Prefer SSH/VPN to plane host, or a new context kind if needed |
 
 No requirement for a public control-plane HTTP port on bare metal.
 

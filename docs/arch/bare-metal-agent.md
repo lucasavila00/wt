@@ -6,13 +6,14 @@ Parent: [arch README](./README.md). Control plane: [control-plane.md](./control-
 ## Deployed shape
 
 ```text
-CLI ── SSH user@hypervisor ──►  wt-local
-                                  ├─ control-plane API (loopback / stdio / socket)
-                                  └─ embedded bare-metal worker
-                                       libvirt guests, bootstrap, clone, compose
-                                       reconcile domains vs records
+CLI ── ssh user@hypervisor -- <wt-local helper> ──►  JSON API on host
+                                                       ├─ control-plane ops
+                                                       └─ embedded bare-metal worker
+                                                            libvirt guests, bootstrap, clone, compose
+                                                            reconcile domains vs records
 ```
 
+- **v1 transport:** remote command over SSH (JSON stdio)—see [cli.md](./cli.md).  
 - CLI auth = SSH to this host; **owner** = SSH user.  
 - Guests get their own IPs; **`wt sync`** writes Host entries to reach **guests**, not the hypervisor API.  
 
@@ -31,7 +32,7 @@ Multi-node target: **`wt-worker`** + **`wt-control-plane`** (not implemented).
 
 ## Control-plane API surface
 
-Logical ops in `wt-api` (served only to the authenticated SSH user; not a public internet listener by default):
+Logical ops in `wt-api` (served only via SSH remote command as that user; not a public internet listener):
 
 | Op | Behavior |
 |----|----------|
