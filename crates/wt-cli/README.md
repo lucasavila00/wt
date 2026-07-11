@@ -6,23 +6,20 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 
 ## Role
 
-- **Contexts** — sum type: **`bare_metal_ssh`** and **`bare_metal_local`**; later `k8s`; `--context`  
-- **Transport** — spawn helper: `ssh … -- wt-local …` **or** local `wt-local …`; same JSON stdio; owner = SSH or OS user  
-- **Instances** — `new` / `ls` / `rm` for **my** envs on a multi-user host  
+- **Context** — `bare_metal_local` in Era 1  
+- **Transport** — spawn local `wt-local`; JSON over stdio; owner = OS user  
+- **Instances** — `new` / `ls` / `rm`  
 - **Names** — `{repo}-{feature}` (e.g. `frontend-checkout-rewrite`)  
-- **World SSH** — print Host on create; **`wt sync`** → managed `~/.config/wt/ssh_config`; optional **`wt ssh`** into the **guest**  
+- **Output** — name, status, guest IP  
 
 Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
 
 ## Commands (target)
 
 ```text
-wt context list|use|show
 wt new <source> <name>
 wt ls
 wt rm <name>
-wt sync
-wt ssh <name>
 ```
 
 ## Run
@@ -33,4 +30,4 @@ cargo run -p wt-cli -- …
 
 ## Status
 
-Topology only; not implemented yet.
+Era 1 implementation in progress.

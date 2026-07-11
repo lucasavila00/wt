@@ -28,11 +28,6 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: InstanceName },
-    /// Rewrite the managed SSH config.
-    Sync {
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
 }
 
 fn main() {
@@ -65,24 +60,26 @@ fn run() -> Result<()> {
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
-            if let Some(block) = wt_cli::ssh::host_block(&instance) {
-                print!("{block}");
-            } else {
-                println!("{}\t{}", instance.name, instance.status);
-            }
+            println!(
+                "{}\t{}\t{}",
+                instance.name,
+                instance.status,
+                instance.guest_ip.as_deref().unwrap_or("-")
+            );
         }
         Command::Ls => {
             let response = wt_cli::transport::call(context, &ApiRequest::new(Operation::List))?;
             let Response::Instances { instances } = response else {
                 bail!("helper returned the wrong response to list");
             };
-            println!("NAME\tSTATUS\tSSH");
+            println!("NAME\tSTATUS\tIP");
             for instance in instances {
-                let endpoint = instance
-                    .endpoint
-                    .map(|value| format!("{}@{}:{}", value.user, value.host, value.port))
-                    .unwrap_or_else(|| "-".to_owned());
-                println!("{}\t{}\t{}", instance.name, instance.status, endpoint);
+                println!(
+                    "{}\t{}\t{}",
+                    instance.name,
+                    instance.status,
+                    instance.guest_ip.as_deref().unwrap_or("-")
+                );
             }
         }
         Command::Rm { name } => {
@@ -92,15 +89,6 @@ fn run() -> Result<()> {
                 bail!("helper returned the wrong response to delete");
             };
             println!("removed {name}");
-        }
-        Command::Sync { output } => {
-            let response = wt_cli::transport::call(context, &ApiRequest::new(Operation::List))?;
-            let Response::Instances { instances } = response else {
-                bail!("helper returned the wrong response to list");
-            };
-            let path = output.unwrap_or(wt_cli::ssh::default_ssh_config_path()?);
-            wt_cli::ssh::sync(&path, &instances)?;
-            println!("updated {}", path.display());
         }
     }
     Ok(())

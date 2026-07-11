@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, ErrorCode as SqliteErrorCode, OptionalExtensi
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{Instance, InstanceName, InstanceStatus, SshEndpoint};
+use wt_api::{Instance, InstanceName, InstanceStatus};
 
 #[derive(Debug)]
 pub struct Store {
@@ -46,9 +46,7 @@ impl Store {
                  source        TEXT NOT NULL,
                  git_ref       TEXT,
                  status        TEXT NOT NULL,
-                 endpoint_user TEXT,
-                 endpoint_host TEXT,
-                 endpoint_port INTEGER,
+                 guest_ip      TEXT,
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
                  UNIQUE(owner, name)
@@ -88,8 +86,7 @@ impl Store {
         self.connection
             .query_row(
                 "SELECT id, owner, name, source, git_ref, status,
-                        endpoint_user, endpoint_host, endpoint_port,
-                        last_error, backend_id
+                        guest_ip, last_error, backend_id
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -101,8 +98,7 @@ impl Store {
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, source, git_ref, status,
-                    endpoint_user, endpoint_host, endpoint_port,
-                    last_error, backend_id
+                    guest_ip, last_error, backend_id
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -110,8 +106,8 @@ impl Store {
             .map_err(StoreError::from)
     }
 
-    pub fn mark_running(&self, id: Uuid, endpoint: &SshEndpoint) -> Result<(), StoreError> {
-        self.update_state(id, InstanceStatus::Running, Some(endpoint), None)
+    pub fn mark_running(&self, id: Uuid, guest_ip: &str) -> Result<(), StoreError> {
+        self.update_state(id, InstanceStatus::Running, Some(guest_ip), None)
     }
 
     pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
@@ -126,25 +122,16 @@ impl Store {
         &self,
         id: Uuid,
         status: InstanceStatus,
-        endpoint: Option<&SshEndpoint>,
+        guest_ip: Option<&str>,
         last_error: Option<&str>,
     ) -> Result<(), StoreError> {
         let changed = self.connection.execute(
             "UPDATE instances
              SET status = ?2,
-                 endpoint_user = COALESCE(?3, endpoint_user),
-                 endpoint_host = COALESCE(?4, endpoint_host),
-                 endpoint_port = COALESCE(?5, endpoint_port),
-                 last_error = ?6
+                 guest_ip = COALESCE(?3, guest_ip),
+                 last_error = ?4
              WHERE id = ?1",
-            params![
-                id.to_string(),
-                status.to_string(),
-                endpoint.map(|value| value.user.as_str()),
-                endpoint.map(|value| value.host.as_str()),
-                endpoint.map(|value| value.port),
-                last_error,
-            ],
+            params![id.to_string(), status.to_string(), guest_ip, last_error,],
         )?;
         if changed == 0 {
             return Err(StoreError::NotFound);
@@ -168,15 +155,6 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
     let id: String = row.get(0)?;
     let name: String = row.get(2)?;
     let status: String = row.get(5)?;
-    let endpoint_user: Option<String> = row.get(6)?;
-    let endpoint_host: Option<String> = row.get(7)?;
-    let endpoint_port: Option<u16> = row.get(8)?;
-    let endpoint = match (endpoint_user, endpoint_host, endpoint_port) {
-        (Some(user), Some(host), Some(port)) => Some(SshEndpoint { user, host, port }),
-        (None, None, None) => None,
-        _ => return Err(invalid_column("incomplete SSH endpoint")),
-    };
-
     Ok(StoredInstance {
         instance: Instance {
             id: Uuid::parse_str(&id).map_err(|error| invalid_column(&error.to_string()))?,
@@ -187,10 +165,10 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             status: status
                 .parse()
                 .map_err(|error: wt_api::ParseStatusError| invalid_column(&error.to_string()))?,
-            endpoint,
-            last_error: row.get(9)?,
+            guest_ip: row.get(6)?,
+            last_error: row.get(7)?,
         },
-        backend_id: row.get(10)?,
+        backend_id: row.get(8)?,
     })
 }
 

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct LibvirtConfig {
@@ -6,9 +6,6 @@ pub struct LibvirtConfig {
     pub worlds_dir: PathBuf,
     pub libvirt_uri: String,
     pub network: String,
-    pub guest_user: String,
-    pub ssh_public_key: PathBuf,
-    pub ssh_private_key: PathBuf,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
@@ -17,27 +14,14 @@ pub struct LibvirtConfig {
 
 impl LibvirtConfig {
     pub fn from_env() -> Result<Self, String> {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        let repo_image = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("imgs/ubuntu-24.04-server-cloudimg-amd64.img");
-        let state_dir = std::env::var_os("WT_STATE_DIR")
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("XDG_STATE_HOME").map(|path| PathBuf::from(path).join("wt"))
-            })
-            .unwrap_or_else(|| home.join(".local/state/wt"));
-
         Ok(Self {
-            image: env_path("WT_IMAGE", repo_image),
-            worlds_dir: env_path("WT_WORLDS_DIR", state_dir.join("worlds")),
-            ssh_public_key: env_path("WT_SSH_PUBLIC_KEY", home.join(".ssh/id_ed25519.pub")),
-            ssh_private_key: env_path("WT_SSH_PRIVATE_KEY", home.join(".ssh/id_ed25519")),
+            image: env_path(
+                "WT_IMAGE",
+                PathBuf::from("/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"),
+            ),
+            worlds_dir: env_path("WT_WORLDS_DIR", PathBuf::from("/var/lib/libvirt/images/wt")),
             libvirt_uri: env_value("WT_LIBVIRT_URI", "qemu:///system"),
             network: env_value("WT_LIBVIRT_NETWORK", "default"),
-            guest_user: env_value("WT_GUEST_USER", "ubuntu"),
             memory_mib: env_parse("WT_GUEST_MEMORY_MIB", 2048)?,
             vcpus: env_parse("WT_GUEST_VCPUS", 2)?,
             disk_gib: env_parse("WT_GUEST_DISK_GIB", 16)?,

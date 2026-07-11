@@ -2,14 +2,14 @@
 
 Shared **control-plane** request/response types (JSON) for CLI and site servers.
 
-Carried as **JSON over an SSH remote command** to a helper on the `wt-local` host (not a public HTTP API).
+Carried as JSON over stdio to the local `wt-local` helper in Era 1.
 
 ## Role
 
-- Instance payloads (name, owner, source, status, **guest** SSH endpoint, errors)  
+- Instance payloads (name, owner, source, status, guest IP, errors)  
 - Status and error enums (serde)  
 - No I/O, libvirt, or transport  
-- **Client context kinds** (e.g. `bare_metal_ssh`) may live in `wt-cli` config types rather than the wire API—plane does not need the client’s kubeconfig shape
+- Client context config lives in `wt-cli`, not the wire API
 
 CLI behavior: [docs/arch/cli.md](../../docs/arch/cli.md).
 

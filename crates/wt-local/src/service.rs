@@ -37,7 +37,7 @@ impl<W: WorldWorker> Service<W> {
                 source: request.source,
                 git_ref: request.git_ref,
                 status: InstanceStatus::Provisioning,
-                endpoint: None,
+                guest_ip: None,
                 last_error: None,
             },
             backend_id,
@@ -51,13 +51,13 @@ impl<W: WorldWorker> Service<W> {
             name: &stored.instance.name,
         };
         match self.worker.provision(&spec) {
-            Ok(endpoint) => {
+            Ok(world) => {
                 self.store
-                    .mark_running(id, &endpoint)
+                    .mark_running(id, &world.guest_ip)
                     .map_err(map_store_error)?;
                 let mut instance = stored.instance;
                 instance.status = InstanceStatus::Running;
-                instance.endpoint = Some(endpoint);
+                instance.guest_ip = Some(world.guest_ip);
                 Ok(Response::Instance { instance })
             }
             Err(error) => {

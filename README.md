@@ -24,9 +24,9 @@ crates/
 | Package | Kind | Role |
 |---------|------|------|
 | [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt-cli`](./crates/wt-cli/) | bin `wt` | CLI — SSH contexts, API over SSH, world Host sync |
+| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Era 1 local CLI — new, ls, rm |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
-| [`wt-local`](./crates/wt-local/) | bin | Site helper on hypervisor — registry + plane + embedded backend |
+| [`wt-local`](./crates/wt-local/) | bin | Local helper — registry + instance service + embedded backend |
 | [`wt-integration-tests`](./crates/wt-integration-tests/) | tests | Injected service tests + libvirt/KVM acceptance test |
 
 Out of the workspace until multi-node is in scope: `wt-control-plane`, `wt-worker`.

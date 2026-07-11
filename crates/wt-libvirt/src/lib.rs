@@ -6,7 +6,7 @@ pub use worker::LibvirtWorker;
 
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{InstanceName, SshEndpoint};
+use wt_api::InstanceName;
 
 #[derive(Clone, Debug)]
 pub struct ProvisionSpec<'a> {
@@ -16,10 +16,15 @@ pub struct ProvisionSpec<'a> {
     pub name: &'a InstanceName,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct World {
+    pub guest_ip: String,
+}
+
 pub trait WorldWorker {
-    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<SshEndpoint, WorkerError>;
+    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError>;
     fn destroy(&self, backend_id: &str) -> Result<(), WorkerError>;
-    fn inspect(&self, backend_id: &str) -> Result<Option<SshEndpoint>, WorkerError>;
+    fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError>;
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

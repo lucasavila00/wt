@@ -9,17 +9,15 @@ Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.m
 | [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt worker / `wt-local` |
 | [k8s-agent.md](./k8s-agent.md) | k8s worker (not implemented) |
 
-## Current system
+## Era 1
 
 ```text
-Client:  wt  ── ssh user@host -- helper  ──►  wt-local (remote site)
-         wt  ── helper (no ssh)          ──►  wt-local (this workstation)
-Client:  ssh {repo}-{feature}  after print / wt sync  →  guest world
+wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KVM world
 ```
 
-- Site binary: **`wt-local`** (not a public HTTP API).  
-- CLI contexts: **`bare_metal_ssh`** and **`bare_metal_local`** (same helper JSON); later **`k8s`**.  
-- Worker: libvirt on the site host.
+- No listener. No SSH. `wt` spawns `wt-local` directly.
+- Context: `bare_metal_local` only.
+- Guest: Ubuntu 24.04 + Docker Engine + Compose v2 + QEMU guest agent.
 
 ## Language and crates
 
@@ -40,12 +38,12 @@ Not in the repo yet: `wt-control-plane`, `wt-worker`.
 
 | Verb | Meaning |
 |------|---------|
-| create | source + name → world + recipe; SSH endpoint when ready |
-| list | name, status, endpoint |
+| create | source + name → Docker/Compose-ready KVM world + guest IP |
+| list | name, status, guest IP |
 | destroy | tear down world |
 
-Auth: SSH user (remote) or local OS user (workstation). Not a separate token product for bare metal.
+Owner: local OS user.
 
 ## One-line summary
 
-**`wt` runs the `wt-local` helper (via SSH or locally); worlds are separate guest SSH Hosts.**
+**`wt` runs local `wt-local`; `wt-libvirt` manages Docker/Compose-ready KVM worlds.**

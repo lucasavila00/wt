@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source_image="$root/imgs/ubuntu-24.04-server-cloudimg-amd64.img"
+prepared_image="$root/imgs/wt-ubuntu-24.04-amd64.qcow2"
+installed_image="/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+worlds_dir="/var/lib/libvirt/images/wt"
+
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as the site user, not with sudo" >&2
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]]; then
+    echo "Ubuntu 24.04 is required" >&2
+    exit 1
+fi
+if [[ $(dpkg --print-architecture) != amd64 ]]; then
+    echo "amd64 is required" >&2
+    exit 1
+fi
+if ! command -v cargo >/dev/null; then
+    echo "Rust stable via rustup is required" >&2
+    exit 1
+fi
+
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    pkg-config \
+    git \
+    curl \
+    cpu-checker \
+    qemu-system-x86 \
+    qemu-utils \
+    libvirt-daemon-system \
+    libvirt-clients \
+    cloud-image-utils \
+    libguestfs-tools \
+    ovmf \
+    libvirt-dev
+
+sudo usermod -aG libvirt,kvm "$USER"
+
+if ! kvm-ok; then
+    echo "KVM is required. Enable CPU virtualization in firmware, reboot, and rerun." >&2
+    exit 1
+fi
+
+sudo virsh net-start default >/dev/null 2>&1 || true
+sudo virsh net-autostart default >/dev/null
+sudo install -d -o root -g root -m 0755 /var/lib/wt/images
+sudo install -d -o root -g libvirt -m 2770 "$worlds_dir"
+
+mkdir -p "$root/imgs"
+if [[ ! -f "$source_image" ]]; then
+    curl -fL \
+        https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img \
+        -o "$source_image"
+fi
+if [[ ! -f "$prepared_image" ]]; then
+    "$root/scripts/prepare-image"
+fi
+sudo install -o root -g root -m 0644 "$prepared_image" "$installed_image"
+
+cargo build --manifest-path "$root/Cargo.toml" --release -p wt-local
+sudo install -o root -g root -m 0755 "$root/target/release/wt-local" /usr/local/bin/wt-local
+
+echo
+echo "wt-local installed"
+echo "image: $installed_image"
+echo "worlds: $worlds_dir"
+if [[ " $(id -nG) " != *" libvirt "* || " $(id -nG) " != *" kvm "* ]]; then
+    echo "log out and back in before running wt-local"
+fi

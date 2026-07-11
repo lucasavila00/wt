@@ -1,36 +1,45 @@
-use crate::{LibvirtConfig, ProvisionSpec, WorkerError, WorldWorker};
+use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
 use std::fs;
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
 use std::time::{Duration, Instant};
 use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
-use wt_api::SshEndpoint;
 
 pub struct LibvirtWorker {
     config: LibvirtConfig,
+    staged_image: PathBuf,
 }
 
 impl LibvirtWorker {
     pub fn new(config: LibvirtConfig) -> Result<Self, WorkerError> {
-        if !Path::new("/dev/kvm").exists() {
-            return Err(WorkerError::new(
-                "KVM is required but /dev/kvm is unavailable",
-            ));
-        }
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/kvm")
+            .map_err(|error| worker_error("KVM is required but /dev/kvm is unavailable", error))?;
         require_file(&config.image, "guest image")?;
-        require_file(&config.ssh_public_key, "SSH public key")?;
-        require_file(&config.ssh_private_key, "SSH private key")?;
         fs::create_dir_all(&config.worlds_dir)
             .map_err(|error| worker_error("create worlds directory", error))?;
+        let staged_image = config.worlds_dir.join("base.qcow2");
+        if !staged_image.exists() {
+            let temporary = config.worlds_dir.join("base.qcow2.tmp");
+            fs::copy(&config.image, &temporary)
+                .map_err(|error| worker_error("stage prepared image", error))?;
+            fs::rename(&temporary, &staged_image)
+                .map_err(|error| worker_error("publish prepared image", error))?;
+        }
         Connect::open(Some(&config.libvirt_uri))
             .map_err(|error| worker_error("connect to libvirt", error))?;
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            staged_image,
+        })
     }
 
-    fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<SshEndpoint, WorkerError> {
+    fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         let paths = WorldPaths::new(&self.config.worlds_dir, spec.backend_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| worker_error("create world directory", error))?;
@@ -38,18 +47,14 @@ impl LibvirtWorker {
         run(
             Command::new("qemu-img")
                 .args(["create", "-q", "-f", "qcow2", "-F", "qcow2", "-b"])
-                .arg(&self.config.image)
+                .arg(&self.staged_image)
                 .arg(&paths.disk)
                 .arg(format!("{}G", self.config.disk_gib)),
             "create qcow2 overlay",
         )?;
 
-        let public_key = read_public_key(&self.config.ssh_public_key)?;
-        fs::write(
-            &paths.user_data,
-            user_data(&self.config.guest_user, &public_key),
-        )
-        .map_err(|error| worker_error("write cloud-init user-data", error))?;
+        fs::write(&paths.user_data, "#cloud-config\n")
+            .map_err(|error| worker_error("write cloud-init user-data", error))?;
         fs::write(
             &paths.meta_data,
             format!(
@@ -66,35 +71,25 @@ impl LibvirtWorker {
             "create cloud-init seed",
         )?;
 
-        run(
-            Command::new("virt-install")
-                .args(["--connect", &self.config.libvirt_uri])
-                .args(["--name", spec.backend_id])
-                .args(["--memory", &self.config.memory_mib.to_string()])
-                .args(["--vcpus", &self.config.vcpus.to_string()])
-                .args(["--virt-type", "kvm"])
-                .args(["--os-variant", "ubuntu24.04"])
-                .args(["--import", "--boot", "uefi"])
-                .arg("--disk")
-                .arg(format!(
-                    "path={},format=qcow2,bus=virtio",
-                    paths.disk.display()
-                ))
-                .arg("--disk")
-                .arg(format!("path={},device=cdrom", paths.seed.display()))
-                .arg("--network")
-                .arg(format!("network={},model=virtio", self.config.network))
-                .args(["--graphics", "none", "--noautoconsole", "--wait", "0"]),
-            "define and start libvirt domain",
-        )?;
+        let connection = Connect::open(Some(&self.config.libvirt_uri))
+            .map_err(|error| worker_error("connect to libvirt", error))?;
+        let xml = domain_xml(
+            spec.backend_id,
+            &paths.disk,
+            &paths.seed,
+            &self.config.network,
+            self.config.memory_mib,
+            self.config.vcpus,
+        );
+        let domain = Domain::define_xml(&connection, &xml)
+            .map_err(|error| worker_error("define KVM domain", error))?;
+        domain
+            .create()
+            .map_err(|error| worker_error("start KVM domain", error))?;
 
-        let host = self.wait_for_ip(spec.backend_id)?;
-        self.wait_for_guest(&host)?;
-        Ok(SshEndpoint {
-            user: self.config.guest_user.clone(),
-            host,
-            port: 22,
-        })
+        self.wait_for_guest_agent(&domain)?;
+        let guest_ip = self.wait_for_ip(spec.backend_id)?;
+        Ok(World { guest_ip })
     }
 
     fn wait_for_ip(&self, backend_id: &str) -> Result<String, WorkerError> {
@@ -112,41 +107,68 @@ impl LibvirtWorker {
         }
     }
 
-    fn wait_for_guest(&self, host: &str) -> Result<(), WorkerError> {
+    fn wait_for_guest_agent(&self, domain: &Domain) -> Result<(), WorkerError> {
         let deadline = Instant::now() + self.config.boot_timeout;
-        let address = SocketAddr::new(
-            host.parse::<IpAddr>()
-                .map_err(|error| worker_error("parse guest IP", error))?,
-            22,
-        );
         loop {
-            if TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok() {
-                let output = Command::new("ssh")
-                    .args(["-i"])
-                    .arg(&self.config.ssh_private_key)
-                    .args([
-                        "-o",
-                        "BatchMode=yes",
-                        "-o",
-                        "StrictHostKeyChecking=no",
-                        "-o",
-                        "UserKnownHostsFile=/dev/null",
-                        "-o",
-                        "ConnectTimeout=5",
-                    ])
-                    .arg(format!("{}@{host}", self.config.guest_user))
-                    .arg("cloud-init status --wait && sudo docker info >/dev/null")
-                    .output();
-                if output.as_ref().is_ok_and(Output::status_success) {
-                    return Ok(());
-                }
+            if domain
+                .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
+                .is_ok()
+            {
+                return self.verify_guest_tools(domain, deadline);
             }
             if Instant::now() >= deadline {
-                return Err(WorkerError::new(format!(
-                    "timed out waiting for Docker-ready SSH guest at {host}"
-                )));
+                return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
             }
-            std::thread::sleep(Duration::from_secs(3));
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    fn verify_guest_tools(&self, domain: &Domain, deadline: Instant) -> Result<(), WorkerError> {
+        let request = serde_json::json!({
+            "execute": "guest-exec",
+            "arguments": {
+                "path": "/bin/sh",
+                "arg": [
+                    "-lc",
+                    "docker info >/dev/null && docker compose version >/dev/null"
+                ],
+                "capture-output": true
+            }
+        });
+        let response = domain
+            .qemu_agent_command(&request.to_string(), 10, 0)
+            .map_err(|error| worker_error("start guest readiness command", error))?;
+        let response: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|error| worker_error("decode guest agent response", error))?;
+        let pid = response["return"]["pid"]
+            .as_u64()
+            .ok_or_else(|| WorkerError::new("guest agent did not return an execution pid"))?;
+
+        loop {
+            let request = serde_json::json!({
+                "execute": "guest-exec-status",
+                "arguments": { "pid": pid }
+            });
+            let response = domain
+                .qemu_agent_command(&request.to_string(), 10, 0)
+                .map_err(|error| worker_error("read guest readiness command", error))?;
+            let response: serde_json::Value = serde_json::from_str(&response)
+                .map_err(|error| worker_error("decode guest agent response", error))?;
+            let result = &response["return"];
+            if result["exited"].as_bool() == Some(true) {
+                return match result["exitcode"].as_i64() {
+                    Some(0) => Ok(()),
+                    exit_code => Err(WorkerError::new(format!(
+                        "Docker or Compose readiness check failed with exit code {exit_code:?}"
+                    ))),
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err(WorkerError::new(
+                    "timed out waiting for Docker and Compose readiness",
+                ));
+            }
+            std::thread::sleep(Duration::from_secs(1));
         }
     }
 
@@ -159,7 +181,7 @@ impl LibvirtWorker {
             Err(error) => return Err(worker_error("look up libvirt domain", error)),
         };
         let interfaces = domain
-            .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
+            .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, 0)
             .map_err(|error| worker_error("get domain interface addresses", error))?;
         Ok(interfaces
             .into_iter()
@@ -203,7 +225,7 @@ impl LibvirtWorker {
 }
 
 impl WorldWorker for LibvirtWorker {
-    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<SshEndpoint, WorkerError> {
+    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         match self.provision_inner(spec) {
             Ok(endpoint) => Ok(endpoint),
             Err(error) => {
@@ -219,12 +241,10 @@ impl WorldWorker for LibvirtWorker {
         self.remove_files(backend_id)
     }
 
-    fn inspect(&self, backend_id: &str) -> Result<Option<SshEndpoint>, WorkerError> {
-        Ok(self.domain_ip(backend_id)?.map(|host| SshEndpoint {
-            user: self.config.guest_user.clone(),
-            host,
-            port: 22,
-        }))
+    fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError> {
+        Ok(self
+            .domain_ip(backend_id)?
+            .map(|guest_ip| World { guest_ip }))
     }
 }
 
@@ -249,36 +269,60 @@ impl WorldPaths {
     }
 }
 
-fn user_data(user: &str, public_key: &str) -> String {
+fn domain_xml(
+    name: &str,
+    disk: &Path,
+    seed: &Path,
+    network: &str,
+    memory_mib: u64,
+    vcpus: u32,
+) -> String {
+    let disk = disk.to_string_lossy();
+    let seed = seed.to_string_lossy();
+    let name = quick_xml::escape::escape(name);
+    let disk = quick_xml::escape::escape(disk.as_ref());
+    let seed = quick_xml::escape::escape(seed.as_ref());
+    let network = quick_xml::escape::escape(network);
     format!(
-        "#cloud-config\n\
-         users:\n\
-           - name: {user}\n\
-             groups: [adm, sudo, docker]\n\
-             sudo: ALL=(ALL) NOPASSWD:ALL\n\
-             shell: /bin/bash\n\
-             lock_passwd: true\n\
-             ssh_authorized_keys:\n\
-               - {public_key}\n\
-         ssh_pwauth: false\n\
-         package_update: true\n\
-         packages:\n\
-           - docker.io\n\
-         runcmd:\n\
-           - systemctl enable --now docker\n"
+        "<domain type='kvm'>
+  <name>{name}</name>
+  <memory unit='MiB'>{memory_mib}</memory>
+  <vcpu>{vcpus}</vcpu>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <firmware><feature enabled='no' name='secure-boot'/></firmware>
+  </os>
+  <features><acpi/><apic/></features>
+  <cpu mode='host-passthrough' check='none'/>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='{disk}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{seed}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <interface type='network'>
+      <source network='{network}'/>
+      <model type='virtio'/>
+    </interface>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+    <serial type='pty'><target port='0'/></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
+    <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>
+  </devices>
+</domain>"
     )
-}
-
-fn read_public_key(path: &Path) -> Result<String, WorkerError> {
-    let contents = fs::read_to_string(path).map_err(|error| worker_error("read SSH key", error))?;
-    let key = contents.trim();
-    if key.is_empty() || key.contains('\n') || !key.starts_with("ssh-") {
-        return Err(WorkerError::new(format!(
-            "invalid SSH public key {}",
-            path.display()
-        )));
-    }
-    Ok(key.to_owned())
 }
 
 fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {
@@ -305,14 +349,4 @@ fn run(command: &mut Command, action: &str) -> Result<(), WorkerError> {
 
 fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
-}
-
-trait OutputStatus {
-    fn status_success(&self) -> bool;
-}
-
-impl OutputStatus for Output {
-    fn status_success(&self) -> bool {
-        self.status.success()
-    }
 }

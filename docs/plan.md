@@ -66,7 +66,7 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 
 ## Build order
 
-1. Bare-metal vertical slice: `wt-api` + `wt-cli` + `wt-local` + libvirt guest + real SSH ([arch](./arch/README.md), [impl](./impl/README.md))
+1. Local bare-metal vertical slice: `wt-api` + `wt-cli` + `wt-local` + Docker/Compose-ready KVM guest ([arch](./arch/README.md), [impl](./impl/README.md))
 2. Stock recipe in guest + remote context + daily-driver UX
 3. Library seams for multi-node bins; then k8s worker when needed
 

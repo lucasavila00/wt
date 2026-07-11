@@ -89,7 +89,7 @@ pub struct Instance {
     pub git_ref: Option<String>,
     pub status: InstanceStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint: Option<SshEndpoint>,
+    pub guest_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
 }
@@ -132,13 +132,6 @@ impl FromStr for InstanceStatus {
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 #[error("unknown instance status: {0}")]
 pub struct ParseStatusError(String);
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SshEndpoint {
-    pub user: String,
-    pub host: String,
-    pub port: u16,
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiError {

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source_image="$root/imgs/ubuntu-24.04-server-cloudimg-amd64.img"
+output_image="$root/imgs/wt-ubuntu-24.04-amd64.qcow2"
+temporary_image="$output_image.tmp"
+
+if [[ ! -f "$source_image" ]]; then
+    echo "missing source image: $source_image" >&2
+    exit 1
+fi
+
+if [[ -e "$output_image" ]]; then
+    echo "prepared image already exists: $output_image" >&2
+    exit 1
+fi
+
+trap 'rm -f "$temporary_image"' EXIT
+
+qemu-img convert -p -O qcow2 "$source_image" "$temporary_image"
+qemu-img resize "$temporary_image" 16G
+virt-customize -a "$temporary_image" \
+    --install docker.io,docker-compose-v2,qemu-guest-agent \
+    --run-command 'systemctl enable docker.service qemu-guest-agent.service' \
+    --run-command 'cloud-init clean --logs --machine-id'
+qemu-img check "$temporary_image"
+mv "$temporary_image" "$output_image"
+trap - EXIT
+
+echo "prepared $output_image"

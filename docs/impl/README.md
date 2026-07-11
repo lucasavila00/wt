@@ -11,13 +11,13 @@ Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-integrat
 | **`wt-api`** | Shared JSON request/response + status enums |
 | **`wt-local`** | Site brain: helper + registry + instance service. JSON in → work → JSON out |
 | **`wt-libvirt`** | Production libvirt/KVM world backend |
-| **`wt-cli` (`wt`)** | Thin: context → spawn helper (local or `ssh --`) → print / `sync` |
+| **`wt-cli` (`wt`)** | Thin: spawn local helper → print |
 | **`wt-integration-tests`** | Injected service tests + real libvirt/KVM acceptance test |
 
-SSH remote spawn is a small CLI feature. **Real VMs (libvirt) are the hard part.**
+**Real VMs (libvirt/KVM) are the hard part.**
 
 ```text
-wt-cli  →  [optional ssh --]  wt-local helper  →  JSON
+wt-cli  →  wt-local helper  →  JSON
 ```
 
 ## Eras
@@ -28,28 +28,28 @@ Ship the shape around the hard part: types + helper + CLI + real guests on **one
 
 | Deliver | |
 |---------|--|
-| `wt-api` | create / list / get / delete; status; guest `endpoint`; errors |
+| `wt-api` | create / list / get / delete; status; guest IP; errors |
 | `wt-local` | helper entrypoint; durable local registry; owner = process user; instance service; `Provisioning` → `Running` / `Error` |
-| `wt-libvirt` | golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; KVM only |
-| `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print Host; basic `sync` if cheap |
+| `wt-libvirt` | Docker + Compose golden image; define/start/destroy; guest-agent readiness; guest IP; instance↔domain; KVM only |
+| `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print status/IP |
 | ops | image, pool, network/bridge, libvirt permissions |
 
-**Done when:** local `wt new` → print/`sync` → `ssh {repo}-{feature}` reaches a real Docker-ready guest; `wt rm` destroys the domain.
+**Done when:** local `wt new` creates a real KVM guest where the guest agent verifies Docker Engine + Compose; `wt ls` shows it; `wt rm` destroys it.
 
-**Out:** compose, remote SSH (unless free), multi-node, public HTTP.
+**Out:** clone/recipe execution, all SSH, remote contexts, multi-node, public HTTP.
 
 #### Tests
 
 | Lane | Covers |
 |------|--------|
 | **Injected worker** | helper/API, registry, ownership, state transitions, restart/reconcile, failures |
-| **Libvirt/KVM** | production backend: image, disk, domain, boot, network, IP discovery, SSH, destroy |
+| **Libvirt/KVM** | production backend: image, disk, domain, boot, guest agent, Docker + Compose, IP, destroy |
 
 Both lanes live in `wt-integration-tests`. The injected worker is fast and deterministic. It does not imitate libvirt internals.
 
-The libvirt/KVM test is the Era 1 acceptance test: `wt new` → `wt ls` → guest SSH → `wt rm`.
+The libvirt/KVM test is the Era 1 acceptance test: `wt new` → `wt ls` → `wt rm`.
 
-Keep unit tests narrow: validation, wire types, Host rendering.
+Keep unit tests narrow: validation and wire types.
 
 ---
 
@@ -82,8 +82,8 @@ Do not pre-build these.
 
 1. `wt-api` types
 2. `wt-local` helper + durable local registry
-3. `wt-libvirt` KVM guest lifecycle + SSH endpoint
-4. `wt-cli` local spawn + new/ls/rm (+ print/sync)
+3. `wt-libvirt` KVM guest lifecycle + Docker/Compose readiness
+4. `wt-cli` local spawn + new/ls/rm
 5. Recipe + remote SSH + CLI polish
 
 ## Open (pick in code)

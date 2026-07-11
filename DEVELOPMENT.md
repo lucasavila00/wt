@@ -8,10 +8,16 @@ Local target: Ubuntu 24.04, amd64.
 - Ubuntu packages:
 
 ```text
-sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils ovmf libvirt-dev
+sudo apt update && sudo apt install -y build-essential pkg-config git curl openssh-client cpu-checker qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients cloud-image-utils libguestfs-tools ovmf libvirt-dev
 ```
 
 The injected-worker integration tests do not use libvirt/KVM.
+
+For the complete local site setup, run:
+
+```text
+scripts/install-site
+```
 
 ## Libvirt/KVM
 
@@ -25,6 +31,13 @@ Required:
 - `kvm-ok` succeeds.
 - `/dev/kvm` exists.
 - Development user belongs to `kvm` and `libvirt`.
+
+Create the local image directory:
+
+```text
+sudo apt install -y libguestfs-tools
+sudo install -d -o "$USER" -g libvirt -m 2770 /var/lib/libvirt/images/wt
+```
 
 ## Guest image
 
@@ -42,11 +55,37 @@ mkdir -p imgs && curl -fL https://cloud-images.ubuntu.com/releases/24.04/release
 
 `imgs/` is gitignored. Keep the base image unchanged; create per-world qcow2 overlays from it.
 
+Prepare the Docker-ready image once:
+
+```text
+scripts/prepare-image
+```
+
+This creates:
+
+```text
+imgs/wt-ubuntu-24.04-amd64.qcow2
+```
+
+Install it at the site path:
+
+```text
+sudo install -d -o root -g root -m 0755 /var/lib/wt/images
+sudo install -o root -g root -m 0644 imgs/wt-ubuntu-24.04-amd64.qcow2 /var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2
+```
+
+`wt-libvirt` stages the installed image in its world directory and creates per-world qcow2 overlays from it. Docker is not installed during world creation.
+
+Run the real acceptance test:
+
+```text
+cargo build --workspace && cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
+```
+
 ## Runtime
 
-- Test storage pool for qcow2 overlays.
+- Writable libvirt image directory for the staged image and qcow2 overlays.
 - Test libvirt network with DHCP.
-- SSH key injected into guests.
 - Permission to use the system libvirt socket.
 - Disk and memory for one test guest.
 

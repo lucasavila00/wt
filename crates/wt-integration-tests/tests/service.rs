@@ -1,6 +1,6 @@
 use tempfile::TempDir;
 use wt_api::{CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response};
-use wt_libvirt::{ProvisionSpec, WorkerError, WorldWorker};
+use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_local::service::Service;
 use wt_local::store::Store;
 
@@ -10,27 +10,25 @@ struct InjectedWorker {
 }
 
 impl WorldWorker for InjectedWorker {
-    fn provision(&self, _spec: &ProvisionSpec<'_>) -> Result<wt_api::SshEndpoint, WorkerError> {
+    fn provision(&self, _spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         if self.fail_provision {
             return Err(WorkerError::new("injected provision failure"));
         }
-        Ok(endpoint())
+        Ok(world())
     }
 
     fn destroy(&self, _backend_id: &str) -> Result<(), WorkerError> {
         Ok(())
     }
 
-    fn inspect(&self, _backend_id: &str) -> Result<Option<wt_api::SshEndpoint>, WorkerError> {
-        Ok(Some(endpoint()))
+    fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
+        Ok(Some(world()))
     }
 }
 
-fn endpoint() -> wt_api::SshEndpoint {
-    wt_api::SshEndpoint {
-        user: "ubuntu".to_owned(),
-        host: "192.0.2.2".to_owned(),
-        port: 22,
+fn world() -> World {
+    World {
+        guest_ip: "192.0.2.2".to_owned(),
     }
 }
 
@@ -55,7 +53,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
         panic!("expected instance response");
     };
     assert_eq!(instance.status, InstanceStatus::Running);
-    assert_eq!(instance.endpoint.unwrap().host, "192.0.2.2");
+    assert_eq!(instance.guest_ip.as_deref(), Some("192.0.2.2"));
 
     let conflict = service
         .execute(
