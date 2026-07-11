@@ -1,7 +1,8 @@
 # Plan
 
 Decided direction for build. Mental map, not a full design doc.  
-Context: [problem-statement.md](./problem-statement.md), [idealized-api.md](./idealized-api.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md).
+Context (reasoning notes): [problem-statement.md](./plan-reasoning/problem-statement.md), [idealized-api.md](./plan-reasoning/idealized-api.md), [isolation-without-port-overrides.md](./plan-reasoning/isolation-without-port-overrides.md), [the-devcontainer-issue.md](./plan-reasoning/the-devcontainer-issue.md), [bare-metal-worlds.md](./plan-reasoning/bare-metal-worlds.md).  
+**Architecture:** [arch/](./arch/README.md) (v1 = CLI + bare-metal agent; k8s deferred).
 
 ## Product
 
@@ -61,7 +62,7 @@ A **dev/workspaces cluster (or node pool)** that **allows DinD-class worlds** (o
 
 ## Bare metal lean
 
-- Prefer **KVM** over LXD for stable stock Docker DX ([bare-metal-worlds.md](./bare-metal-worlds.md)).
+- Prefer **KVM** over LXD for stable stock Docker DX ([bare-metal-worlds.md](./plan-reasoning/bare-metal-worlds.md)).
 - Assume **≥16 GB/instance** → VM OS tax is noise; empty-world boot ≪ clone + compose up.
 
 ## Explicitly out of scope (we do not care)
@@ -78,10 +79,11 @@ These are **decisions**, not backlog. We are not building toward them later “i
 
 ## Build order (intent)
 
-1. CLI + SSH Host management + agent API shape  
-2. **Bare-metal provider** (libvirt) end-to-end: `new` → `ssh name` → stock compose  
-3. **k8s provider** (DinD pod worlds) against a DinD-friendly cluster  
-4. Polish lifecycle, multi-cluster selector, etc.
+1. Shared **Rust** workspace + `wt-api` + CLI + **bare-metal agent** ([arch](./arch/README.md))  
+2. End-to-end on one hypervisor: `new` → `ssh name` → stock compose  
+3. Stabilize as single-dev daily driver  
+4. **Only then** k8s agent ([arch/k8s-agent.md](./arch/k8s-agent.md))  
+5. Polish lifecycle, multi-cluster selector, etc.
 
 ## One-line summary
 

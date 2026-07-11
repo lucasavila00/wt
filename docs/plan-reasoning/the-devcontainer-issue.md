@@ -1,7 +1,7 @@
 # The devcontainer issue
 
 Why default devcontainers fight **N parallel instances**, whether worktrees help, and reuse vs re-do.  
-Cold-reader: [problem-statement.md](./problem-statement.md). Runtime: **Docker only on remote Linux**; Mac is SSH cockpit. “Host” = remote world, not laptop. Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). UX: [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](./plan.md).
+Cold-reader: [problem-statement.md](./problem-statement.md). Runtime: **Docker only on remote Linux**; Mac is SSH cockpit. “Host” = remote world, not laptop. Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). UX: [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](../plan.md).
 
 ## Default model (“clone mirror”)
 
@@ -62,7 +62,7 @@ one host folder → one mount → one “current” workspace
 
 [Development Container Specification](https://containers.dev/) is still the open **recipe** format. Evolved toward multi-**service** (Compose), not multi-**instance** fleets. Industry added **runners**, not a fleet chapter of the spec.
 
-**Plan:** keep recipe; multiplicity is **worlds + CLI** ([plan.md](./plan.md)), not waiting on the spec. Compose runs **inside** the world (VM or DinD pod)—not translated to native k8s Deployments as the primary path.
+**Plan:** keep recipe; multiplicity is **worlds + CLI** ([plan.md](../plan.md)), not waiting on the spec. Compose runs **inside** the world (VM or DinD pod)—not translated to native k8s Deployments as the primary path.
 
 ## Strategies
 

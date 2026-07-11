@@ -1,7 +1,7 @@
 # Bare-metal worlds (one big server)
 
 How to run **N instances** on **one** fat host without port soup.  
-Context: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](./plan.md) — this is the **home / 1–2 server** provider path (not company k8s).
+Context: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [idealized-api.md](./idealized-api.md). **Plan:** [plan.md](../plan.md) — this is the **home / 1–2 server** provider path (not company k8s).
 
 ## Constraint reminder
 
@@ -42,7 +42,7 @@ VM + own IP + own Docker. Closest to mini server.
 
 - At **≥16 GB/instance**, KVM vs LXD RAM difference **does not drive the choice**.  
 - Faster LXD boot **does not matter**—recipe spin-up dominates.  
-- Prefer **KVM** for simplicity and transparent DX ([plan.md](./plan.md)).
+- Prefer **KVM** for simplicity and transparent DX ([plan.md](../plan.md)).
 
 ## Relation to k8s
 

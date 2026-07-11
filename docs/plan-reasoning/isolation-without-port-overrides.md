@@ -1,7 +1,7 @@
 # Isolation without port / project-name overrides
 
 How to run **N copies** of the same Compose recipe **without** teaching the app about instance ports or `COMPOSE_PROJECT_NAME`.  
-Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md). Bare metal: [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](./plan.md).
+Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md). Bare metal: [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](../plan.md).
 
 ## What “isolation” means here
 
@@ -17,7 +17,7 @@ Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontaine
 
 So “one world per instance” is **L3/L4 identity for stock compose**, not a security boundary. Trust does not fix two stacks publishing `:3000` on the **same** host network—separate world/IP still required for that.
 
-How worlds are supplied (libvirt vs k8s DinD pods): [plan.md](./plan.md).
+How worlds are supplied (libvirt vs k8s DinD pods): [plan.md](../plan.md).
 
 ## Hard constraint
 
@@ -71,7 +71,7 @@ Contrast bad default: “feat-b is this box but port **3001** and project **proj
 |---|--------|----------------|--------------|
 | **0** | One remote, shared Docker, port + project maps | **High** | Best hardware density; config poison—escape hatch, not target arch |
 | **1** | One remote, shared Docker, **no host publish**; proxy/hostname or exec-only | Low–med | One box; still one kernel/daemon; browser needs naming layer |
-| **2** | One remote as **hypervisor**; **KVM guest per instance** | Low | **Plan home path** ([bare-metal-worlds](./bare-metal-worlds.md), [plan](./plan.md)) |
+| **2** | One remote as **hypervisor**; **KVM guest per instance** | Low | **Plan home path** ([bare-metal-worlds](./bare-metal-worlds.md), [plan](../plan.md)) |
 | **3** | **One machine or cloud VM per instance** | **Lowest** | Simplest pure form; $ and fleet/pool |
 | **4** | Strong container isolation (sysbox, etc.) without full VM | Low | Density; more exotic |
 | **5** | **k8s Pod world + DinD** (compose inside pod) | Low | **Plan company path**; pod netns = GitLab-CI-like port free; needs DinD-friendly cluster |
@@ -80,7 +80,7 @@ Contrast bad default: “feat-b is this box but port **3001** and project **proj
 
 **Anti-pattern:** treating “one Colima/Docker on a laptop” as isolation—wrong machine.  
 **Anti-pattern:** designing for malicious neighbors—wrong threat model.  
-**Anti-pattern:** inventing a new recipe format so k8s feels native—compose stays canonical ([plan](./plan.md)).
+**Anti-pattern:** inventing a new recipe format so k8s feels native—compose stays canonical ([plan](../plan.md)).
 
 ## What stays identical inside each world
 
@@ -131,7 +131,7 @@ If isolation is whole Docker host (machine, guest, or DinD-in-pod):
 
 - Isolation = **no port soup**, not sandbox the coworker  
 - One **world** per instance (VM or DinD pod) in a **trusted pool**  
-- Mac = SSH + CLI only; two providers per [plan.md](./plan.md)  
+- Mac = SSH + CLI only; two providers per [plan.md](../plan.md)  
 - Shared-daemon overrides = density escape hatch, not what the repo is written for  
 
 ## One-line summary

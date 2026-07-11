@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wt-api",
+    "crates/wt",
+    "crates/wt-agent",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+wt-api = { path = "crates/wt-api" }

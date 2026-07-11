@@ -1,7 +1,7 @@
 # Idealized API
 
 Perfect **shape** of the product—not a full architecture. Mental map only.  
-Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](./plan.md).
+Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md). **Plan:** [plan.md](../plan.md).
 
 ## The gesture
 
@@ -35,7 +35,7 @@ world: Docker + clone + stock .devcontainer/compose
 | Layer | Job |
 |-------|-----|
 | **CLI** | Talk to agent; keep local SSH Host map; no Docker on Mac |
-| **Agent + provider** | Create/destroy worlds ([plan.md](./plan.md)) |
+| **Agent + provider** | Create/destroy worlds ([plan.md](../plan.md)) |
 | **ssh** | How you live on an instance |
 
 Exact verb set and idempotency: later. Provider choice is **not** later—see plan.
@@ -55,7 +55,7 @@ Illustrative only—not a locked lifecycle.
 
 - Multiplicity = **worlds**, not port overrides in the app ([isolation](./isolation-without-port-overrides.md))
 - **Trusted pool**; isolation = stock ports N times, not multi-tenant security  
-- Recipe = **exact same** `.devcontainer` + compose—no new format ([plan](./plan.md))  
+- Recipe = **exact same** `.devcontainer` + compose—no new format ([plan](../plan.md))  
 - One checkout per world ([devcontainer issue](./the-devcontainer-issue.md))  
 - Session feel = byobu on the world, preferably already in the primary container  
 - Two providers (bare-metal + k8s); not “k8s everywhere including one home box”

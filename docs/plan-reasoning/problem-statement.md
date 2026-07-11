@@ -3,7 +3,7 @@
 Product: **named parallel instances** of an existing Docker/devcontainer recipe, driven from a thin CLI over SSH. (Binary name TBD—not decided yet.)
 
 Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [idealized-api.md](./idealized-api.md), [bare-metal-worlds.md](./bare-metal-worlds.md).  
-**Plan (decisions):** [plan.md](./plan.md).
+**Plan (decisions):** [plan.md](../plan.md).
 
 ## Who / setup
 
@@ -49,7 +49,7 @@ Preferred shape:
 3. Checkout on that remote (normal clone/directory; worktrees only if architecture later proves them worth it—not the identity of the tool)
 4. Session = SSH (+ byobu) **on that world**—plain `ssh <name>` after the tool writes `~/.ssh/config` ([idealized API](./idealized-api.md))
 
-Providers (home bare-metal vs company k8s): [plan.md](./plan.md).
+Providers (home bare-metal vs company k8s): [plan.md](../plan.md).
 
 ## Devcontainer constraint
 
@@ -64,7 +64,7 @@ Typical devcontainer: **one host checkout bind-mounted** into the container → 
 - Being CI system of record
 - Being a git-worktree manager
 - **Hostile multi-tenant isolation** — trusted pool; care about port/network identity only ([isolation](./isolation-without-port-overrides.md))
-- Forcing k8s on a single personal server; requiring KubeVirt on every company cluster ([plan](./plan.md))
+- Forcing k8s on a single personal server; requiring KubeVirt on every company cluster ([plan](../plan.md))
 
 Multiplicity layer only. Other things may compose later.
 
@@ -98,7 +98,7 @@ same recipe (images + compose/devcontainer)
 1. **Problem statement** (this file) — why, constraints  
 2. **Isolation / devcontainer / bare-metal notes** — worlds stay stock  
 3. **Idealized API** — gesture + SSH Host  
-4. **Plan** — providers and build order ([plan.md](./plan.md))  
+4. **Plan** — providers and build order ([plan.md](../plan.md))  
 5. **Build**  
 
 ## One-line summary

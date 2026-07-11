@@ -1,0 +1,15 @@
+[package]
+name = "wt-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bare-metal world agent (libvirt VMs) for wt"
+
+[[bin]]
+name = "wt-agent"
+path = "src/main.rs"
+
+[dependencies]
+wt-api = { workspace = true }
+# axum/hyper, tokio, libvirt or virsh, serde — add when implementing
