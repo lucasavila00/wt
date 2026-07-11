@@ -29,7 +29,7 @@ wt new source name  ──►  local wt-local  ──►  KVM guest
 
 - Same local transport and KVM lifecycle.
 - `Running` means guest SSH and the selected Git revision's devcontainer are ready.
-- The checkout remains inside the guest at `/workspace/repo`; it is not exported to the host.
+- The checkout remains inside the guest at `/workspace`; it is not exported to the host.
 - Each instance records a stable SSH user, endpoint, and host-key identity. `wt sync` projects those records into managed OpenSSH files so the instance name is also the VS Code Remote SSH target.
 - Guest SSH is independent of Era 2's SSH transport to `wt-local`.
 - Private SSH cloning may provisionally use the invoking user's forwarded `ssh-agent`; the self-contained Git/devcontainer path remains the Era 1.5 acceptance contract while the long-term credential model is deferred.

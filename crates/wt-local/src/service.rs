@@ -26,6 +26,12 @@ impl<W: WorldWorker> Service<W> {
     }
 
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
+        if request.source.trim().is_empty() || request.source.contains(['\n', '\r', '\0']) {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, "source must be a non-empty single line"));
+        }
+        if request.git_ref.as_deref().is_some_and(|value| value.is_empty() || value.contains('\0')) {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, "git ref must not be empty or contain NUL"));
+        }
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
@@ -75,10 +81,27 @@ impl<W: WorldWorker> Service<W> {
     }
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
-        let instances = self
-            .store
-            .list(owner)
-            .map_err(map_store_error)?
+        let stored = self.store.list(owner).map_err(map_store_error)?;
+        for instance in stored.iter().filter(|item| item.instance.status == InstanceStatus::Running) {
+            match self.worker.inspect(&instance.backend_id) {
+                Ok(Some(world)) => {
+                    let same_identity = instance.instance.ssh.as_ref()
+                        .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
+                    if same_identity {
+                        self.store.mark_running(instance.instance.id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?;
+                    } else {
+                        self.store.mark_error(instance.instance.id, "SSH host identity changed")
+                            .map_err(map_store_error)?;
+                    }
+                }
+                Ok(None) => self.store.mark_error(instance.instance.id, "guest domain is missing")
+                    .map_err(map_store_error)?,
+                Err(error) => self.store.mark_error(instance.instance.id, &format!("guest reconciliation: {error}"))
+                    .map_err(map_store_error)?,
+            }
+        }
+        let instances = self.store.list(owner).map_err(map_store_error)?
             .into_iter()
             .map(|stored| stored.instance)
             .collect();

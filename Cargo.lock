@@ -894,6 +894,7 @@ version = "0.0.0"
 dependencies = [
  "tempfile",
  "wt-api",
+ "wt-cli",
  "wt-libvirt",
  "wt-local",
 ]
@@ -907,6 +908,7 @@ dependencies = [
  "rpassword",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "toml",
  "uuid",

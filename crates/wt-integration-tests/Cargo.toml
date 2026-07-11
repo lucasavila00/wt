@@ -9,6 +9,7 @@ publish = false
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-local = { workspace = true }
+wt-cli = { path = "../wt-cli" }
 
 [dev-dependencies]
 tempfile = "3.27.0"

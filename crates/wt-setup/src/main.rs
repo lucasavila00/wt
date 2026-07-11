@@ -15,6 +15,8 @@ use wt_libvirt::{SiteConfig, LIBVIRT_URI, SITE_CONFIG_PATH};
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
+const IMAGE_RECIPE_VERSION: u32 = 2;
+const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-setup")]
@@ -48,6 +50,10 @@ enum ImageCommand {
         #[arg(long)]
         config: PathBuf,
     },
+    Rebuild {
+        #[arg(long)]
+        config: PathBuf,
+    },
 }
 
 fn main() {
@@ -67,7 +73,10 @@ fn run() -> Result<()> {
         SetupCommand::Install { config } => install(&runner, &config)?,
         SetupCommand::Image {
             command: ImageCommand::Build { config },
-        } => image_command(&runner, &config)?,
+        } => image_command(&runner, &config, false)?,
+        SetupCommand::Image {
+            command: ImageCommand::Rebuild { config },
+        } => image_command(&runner, &config, true)?,
     }
     Ok(())
 }
@@ -137,14 +146,21 @@ fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn image_command(runner: &impl Runner, config_path: &Path) -> Result<()> {
+fn image_command(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
     require_site_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     preflight_host(runner)?;
     runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
     prepare_host_state(runner, &config)?;
-    ensure_image(runner, &config, &config_bytes)?;
+    if rebuild {
+        refuse_active_worlds(runner)?;
+        let source = source_image(&config, runner)?;
+        let manifest = manifest_path(&config.image.installed_path);
+        build_image(runner, &config, &config_bytes, &source, &manifest)?;
+    } else {
+        ensure_image(runner, &config, &config_bytes)?;
+    }
     println!("image ready: {}", config.image.installed_path.display());
     Ok(())
 }
@@ -354,10 +370,12 @@ fn ensure_directory(
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
     version: u32,
+    recipe_version: u32,
     source_sha256: String,
     config_sha256: String,
     golden_sha256: String,
     packages: Vec<String>,
+    devcontainer_cli: String,
 }
 
 fn ensure_image(runner: &impl Runner, config: &SiteConfig, config_bytes: &[u8]) -> Result<()> {
@@ -565,8 +583,8 @@ fn build_image_inner(
         .filter(|line| !line.trim().is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if packages.len() != 3 {
-        bail!("image package manifest must contain exactly three packages");
+    if packages.len() != 7 {
+        bail!("image package manifest must contain exactly seven packages");
     }
     println!("Verified packages: {}", packages.join(", "));
 
@@ -615,10 +633,12 @@ fn build_image_inner(
     println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
         version: 1,
+        recipe_version: IMAGE_RECIPE_VERSION,
         source_sha256: config.image.source_sha256.to_ascii_lowercase(),
         config_sha256: sha_bytes(config_bytes),
         golden_sha256: sha_file(prepared)?,
         packages,
+        devcontainer_cli: DEVCONTAINER_CLI_VERSION.to_owned(),
     };
     publish_image(runner, config, prepared, manifest_path, &manifest)?;
     fs::remove_dir_all(config.libvirt.worlds_dir.join(BUILD_NAME))
@@ -633,11 +653,17 @@ packages:
   - docker.io
   - docker-compose-v2
   - qemu-guest-agent
+  - git
+  - openssh-server
+  - nodejs
+  - npm
 runcmd:
-  - systemctl enable --now docker.service qemu-guest-agent.service
+  - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
   - docker compose version
-  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent | sort > /var/lib/wt-image-packages
+  - npm install --global @devcontainers/cli@0.80.2
+  - devcontainer --version
+  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
 power_state:
   mode: poweroff
@@ -751,9 +777,11 @@ fn verify_installed_image(
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
     if manifest.version != 1
+        || manifest.recipe_version != IMAGE_RECIPE_VERSION
         || manifest.source_sha256 != config.image.source_sha256.to_ascii_lowercase()
         || manifest.config_sha256 != sha_bytes(config_bytes)
-        || manifest.packages.len() != 3
+        || manifest.packages.len() != 7
+        || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
     {
         bail!("installed image provenance differs from requested config");
     }
@@ -762,6 +790,19 @@ fn verify_installed_image(
         &manifest.golden_sha256,
         "installed golden image",
     )
+}
+
+fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
+    let names = runner.text(
+        "virsh",
+        &args(["-c", LIBVIRT_URI, "list", "--state-running", "--name"]),
+        "list active libvirt domains",
+    )?;
+    let active = names.lines().filter(|name| name.starts_with("wt-")).collect::<Vec<_>>();
+    if !active.is_empty() {
+        bail!("refusing image rebuild while wt domains are active: {}", active.join(", "));
+    }
+    Ok(())
 }
 
 fn build_and_install_binaries(runner: &impl Runner, config: &SiteConfig) -> Result<()> {

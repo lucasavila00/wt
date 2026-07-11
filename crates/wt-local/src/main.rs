@@ -38,7 +38,8 @@ fn run_api() -> Result<()> {
     let config = LocalConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&config.database_path()).context("open instance registry")?;
     let site_config = SiteConfig::load().map_err(anyhow::Error::msg)?;
-    let worker = LibvirtWorker::new(site_config.worker_config()).map_err(anyhow::Error::msg)?;
+    let worker = LibvirtWorker::new(site_config.worker_config().map_err(anyhow::Error::msg)?)
+        .map_err(anyhow::Error::msg)?;
     let owner = process_user()?;
     let mut service = Service::new(store, worker);
 

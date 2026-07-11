@@ -16,8 +16,7 @@ vcpus = 4
 disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-# Replace this development placeholder before installing the site.
-ssh_authorized_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt-development"]
+ssh_authorized_keys_file = "~/.ssh/id_ed25519.pub"
 
 [install]
 binary_dir = "/usr/local/bin"

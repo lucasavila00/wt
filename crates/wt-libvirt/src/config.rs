@@ -40,7 +40,7 @@ pub struct GuestConfig {
     pub disk_gib: u64,
     pub boot_timeout_seconds: u64,
     pub recipe_timeout_seconds: u64,
-    pub ssh_authorized_keys: Vec<String>,
+    pub ssh_authorized_keys_file: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -162,17 +162,18 @@ impl SiteConfig {
         {
             return Err("guest resource values must be greater than zero".to_owned());
         }
-        if self.guest.ssh_authorized_keys.is_empty() {
-            return Err("guest.ssh_authorized_keys must contain at least one public key".to_owned());
+        let keys = self.ssh_authorized_keys()?;
+        if keys.is_empty() {
+            return Err("guest.ssh_authorized_keys_file must contain at least one public key".to_owned());
         }
-        for key in &self.guest.ssh_authorized_keys {
+        for key in &keys {
             validate_public_key(key)?;
         }
         Ok(())
     }
 
-    pub fn worker_config(&self) -> LibvirtConfig {
-        LibvirtConfig {
+    pub fn worker_config(&self) -> Result<LibvirtConfig, String> {
+        Ok(LibvirtConfig {
             image: self.image.installed_path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
@@ -181,8 +182,15 @@ impl SiteConfig {
             disk_gib: self.guest.disk_gib,
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
-            ssh_authorized_keys: self.guest.ssh_authorized_keys.clone(),
-        }
+            ssh_authorized_keys: self.ssh_authorized_keys()?,
+        })
+    }
+
+    pub fn ssh_authorized_keys(&self) -> Result<Vec<String>, String> {
+        let path = expand_home(&self.guest.ssh_authorized_keys_file)?;
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|error| format!("read guest.ssh_authorized_keys_file {}: {error}", path.display()))?;
+        Ok(contents.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_owned).collect())
     }
 }
 
@@ -208,14 +216,18 @@ vcpus = 4
 disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-ssh_authorized_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example"]
+ssh_authorized_keys_file = "KEY_FILE"
 
 [install]
 binary_dir = "/usr/local/bin"
 "#;
 
     fn parse(value: &str) -> Result<SiteConfig, String> {
-        let config: SiteConfig = toml::from_str(value).map_err(|error| error.to_string())?;
+        let key_dir = tempfile::tempdir().unwrap();
+        let key_file = key_dir.path().join("id.pub");
+        std::fs::write(&key_file, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example\n").unwrap();
+        let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
+        let config: SiteConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
         config.validate()?;
         Ok(config)
     }
@@ -242,9 +254,26 @@ binary_dir = "/usr/local/bin"
     }
 }
 
+fn expand_home(path: &Path) -> Result<PathBuf, String> {
+    if path == Path::new("~") {
+        let home = std::env::var_os("HOME").map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_owned())?;
+        return Ok(home);
+    }
+    if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
+        let home = std::env::var_os("HOME").map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_owned())?;
+        return Ok(home.join(relative));
+    }
+    if !path.is_absolute() {
+        return Err("guest.ssh_authorized_keys_file must be absolute or start with ~/".to_owned());
+    }
+    Ok(path.to_owned())
+}
+
 fn validate_public_key(key: &str) -> Result<(), String> {
     if key.contains('\n') || key.contains('\r') || key.contains("PRIVATE KEY") {
-        return Err("guest.ssh_authorized_keys accepts public keys only".to_owned());
+        return Err("guest.ssh_authorized_keys_file accepts public keys only".to_owned());
     }
     let mut fields = key.split_whitespace();
     let kind = fields.next().unwrap_or_default();
@@ -256,7 +285,7 @@ fn validate_public_key(key: &str) -> Result<(), String> {
         || data.len() < 16
         || !data.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'=')
     {
-        return Err("guest.ssh_authorized_keys contains an invalid public key".to_owned());
+        return Err("guest.ssh_authorized_keys_file contains an invalid public key".to_owned());
     }
     Ok(())
 }

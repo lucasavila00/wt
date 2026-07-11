@@ -29,6 +29,7 @@ pub enum StoreError {
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
+        let create = !path.exists();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 StoreError::InvalidData(format!("create state directory: {error}"))
@@ -36,10 +37,10 @@ impl Store {
         }
         let connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
-        connection.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             CREATE TABLE IF NOT EXISTS instances (
+        connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+        if create {
+            connection.execute_batch(
+            "CREATE TABLE instances (
                  id            TEXT PRIMARY KEY,
                  owner         TEXT NOT NULL,
                  name          TEXT NOT NULL,
@@ -56,7 +57,8 @@ impl Store {
                  UNIQUE(owner, name)
              );
              PRAGMA user_version = 2;",
-        )?;
+            )?;
+        }
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version != 2 {
             return Err(StoreError::InvalidData(format!(

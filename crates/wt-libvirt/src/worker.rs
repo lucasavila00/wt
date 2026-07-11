@@ -2,7 +2,6 @@ use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use std::fs;
-use std::io::Write as _;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -92,7 +91,7 @@ impl LibvirtWorker {
                 &domain,
                 "git clone",
                 "/usr/bin/git",
-                &["clone", "--", spec.source, "/workspace/repo"],
+                &["clone", "--", spec.source, "/workspace"],
                 recipe_deadline,
             )?;
         }
@@ -101,22 +100,29 @@ impl LibvirtWorker {
                 &domain,
                 "git fetch ref",
                 "/usr/bin/git",
-                &["-C", "/workspace/repo", "fetch", "origin", git_ref],
+                &["-C", "/workspace", "fetch", "origin", git_ref],
                 recipe_deadline,
             )?;
             self.run_phase(
                 &domain,
                 "git checkout ref",
                 "/usr/bin/git",
-                &["-C", "/workspace/repo", "checkout", "--detach", "FETCH_HEAD"],
+                &["-C", "/workspace", "checkout", "--detach", "FETCH_HEAD"],
                 recipe_deadline,
             )?;
         }
         self.run_phase(
             &domain,
+            "workspace ownership",
+            "/bin/chown",
+            &["-R", "wt:wt", "/workspace"],
+            recipe_deadline,
+        )?;
+        self.run_phase(
+            &domain,
             "devcontainer up",
             "/usr/local/bin/devcontainer",
-            &["up", "--workspace-folder", "/workspace/repo"],
+            &["up", "--workspace-folder", "/workspace"],
             recipe_deadline,
         )?;
         Ok(World {
@@ -240,7 +246,7 @@ impl LibvirtWorker {
                 environment.extend(["SSH_ASKPASS=/run/wt-git/askpass".to_owned(), "SSH_ASKPASS_REQUIRE=force".to_owned(), "DISPLAY=wt:0".to_owned()]);
             }
             let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
-            args.extend(["/usr/bin/git", "clone", "--", source, "/workspace/repo"]);
+            args.extend(["/usr/bin/git", "clone", "--", source, "/workspace"]);
             self.run_phase(domain, "Git clone", "/usr/bin/env", &args, deadline).map(|_| ())
         })();
         let _ = guest_exec(domain, "/bin/rm", &["-rf", "/run/wt-git"], deadline);
