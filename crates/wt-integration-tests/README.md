@@ -15,7 +15,7 @@ The real-system test keeps its complete lifecycle coverage but uses a separate
 cached backing image prepared with:
 
 ```text
-scripts/prepare-test-image --config config/wt-local.development.toml
+scripts/prepare-test-image --config config/wt-server.development.toml
 ```
 
 Run it from the repository root in an interactive terminal. It invokes `sudo`.

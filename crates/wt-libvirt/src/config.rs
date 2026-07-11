@@ -2,17 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
-pub const SITE_CONFIG_PATH: &str = "/etc/wt/local.toml";
+pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 pub const LIBVIRT_URI: &str = "qemu:///system";
 pub const GUEST_ARCHITECTURE: &str = "x86_64";
 pub const GUEST_MACHINE: &str = "q35";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct SiteConfig {
+pub struct ServerConfig {
     pub version: u32,
     pub image: ImageConfig,
-    pub libvirt: SiteLibvirtConfig,
+    pub libvirt: ServerLibvirtConfig,
     pub git: GitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
@@ -35,7 +35,7 @@ pub struct ImageConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct SiteLibvirtConfig {
+pub struct ServerLibvirtConfig {
     pub network: String,
     pub worlds_dir: PathBuf,
 }
@@ -73,9 +73,9 @@ pub struct LibvirtConfig {
     pub ssh_authorized_keys: Vec<String>,
 }
 
-impl SiteConfig {
+impl ServerConfig {
     pub fn load() -> Result<Self, String> {
-        Self::load_from(Path::new(SITE_CONFIG_PATH))
+        Self::load_from(Path::new(SERVER_CONFIG_PATH))
     }
 
     pub fn load_from(path: &Path) -> Result<Self, String> {
@@ -292,7 +292,7 @@ ssh_authorized_keys_file = "KEY_FILE"
 binary_dir = "/usr/local/bin"
 "#;
 
-    fn parse(value: &str) -> Result<(SiteConfig, LibvirtConfig), String> {
+    fn parse(value: &str) -> Result<(ServerConfig, LibvirtConfig), String> {
         let key_dir = tempfile::tempdir().unwrap();
         let key_file = key_dir.path().join("id.pub");
         std::fs::write(
@@ -301,7 +301,7 @@ binary_dir = "/usr/local/bin"
         )
         .unwrap();
         let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
-        let config: SiteConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
+        let config: ServerConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
         config.validate()?;
         let worker = config.worker_config()?;
         Ok((config, worker))

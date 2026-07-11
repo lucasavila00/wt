@@ -1,22 +1,23 @@
 [package]
-name = "wt-local"
+name = "wt-server-setup"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Single-site server: control plane + embedded bare-metal worker"
+description = "Ubuntu 24.04 server installer for wt"
 
 [[bin]]
-name = "wt-local"
+name = "wt-server-setup"
 path = "src/main.rs"
 
 [dependencies]
-wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }
-rusqlite = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-uuid = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"

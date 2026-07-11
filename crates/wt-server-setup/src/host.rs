@@ -4,7 +4,7 @@ use nix::unistd::{getgroups, Gid, Group, Uid, User};
 use std::fs;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
-use wt_libvirt::{SiteConfig, LIBVIRT_URI};
+use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
     require_host_platform()?;
@@ -20,7 +20,7 @@ pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn prepare_state(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
+pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     ensure_network(runner, &config.libvirt.network)?;
     ensure_directories(runner, config)
 }
@@ -114,7 +114,7 @@ fn field_is(line: &str, field: &str, value: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_directories(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
+fn ensure_directories(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let image_dir = config
         .image
         .installed_path
@@ -196,7 +196,7 @@ fn ensure_directory(
     if path.exists() {
         let metadata =
             fs::metadata(path).with_context(|| format!("inspect directory {}", path.display()))?;
-        // Existing site state is evidence of the installed contract. Never silently repair drift.
+        // Existing server state is evidence of the installed contract. Never silently repair drift.
         if !metadata.is_dir()
             || metadata.uid() != uid.as_raw()
             || metadata.gid() != gid.as_raw()
@@ -224,7 +224,7 @@ fn ensure_directory(
             format!("{mode:04o}").into(),
             path.as_os_str().to_owned(),
         ],
-        "create site directory",
+        "create server directory",
     )
 }
 
@@ -303,7 +303,7 @@ mod tests {
             ("", true),
             ("", true),
         ]);
-        ensure_network(&runner, "site").unwrap();
+        ensure_network(&runner, "server").unwrap();
         let calls = runner.calls.borrow();
         assert_eq!(calls.len(), 3);
         assert!(calls[1].1.iter().any(|argument| argument == "net-start"));

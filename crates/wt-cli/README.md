@@ -6,12 +6,12 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 
 ## Role
 
-- **Transport** — dispatch to local or OpenSSH `wt-local`; JSON over stdio; owner = server OS user
+- **Transport** — dispatch to local or OpenSSH `wt-server`; JSON over stdio; owner = server OS user
 - **Instances** — `new` / `ls` / `rm` / `sync` / `ssh`  
 - **Names** — `{repo}-{feature}` (e.g. `frontend-checkout-rewrite`)  
 - **Output** — name, status, guest IP  
 
-Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
+Server helper: [`wt-server`](../wt-server/). Types: [`wt-api`](../wt-api/).
 
 ## Commands
 

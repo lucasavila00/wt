@@ -67,8 +67,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 # Agents
 
 - Read `docs/arch/README.md` and `docs/plan.md` first.
-- Current system: Ubuntu 24.04 amd64 sites, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
-- Guest SSH and OpenSSH transport to `wt-local` are in scope; runtime environment overrides and emulation fallback are not.
-- Keep `wt-local` slim. Host setup belongs in `wt-local-setup`. Real-system tests belong in `wt-integration-tests`.
-- Site config is strict and complete at `/etc/wt/local.toml`. Fail on drift.
+- Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
+- Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
+- Keep `wt-server` slim. Host setup belongs in `wt-server-setup`. Real-system tests belong in `wt-integration-tests`.
+- Server config is strict and complete at `/etc/wt/server.toml`. Fail on drift.
 - Run `cargo fmt --all`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.

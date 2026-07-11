@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+    echo "usage: scripts/clear-server" >&2
+    exit 2
+fi
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as the server user, not with sudo" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication is required" >&2
+    exit 1
+fi
+
+domains=$(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
+if [[ -n $domains ]]; then
+    echo "refusing to clear while wt domains exist:" >&2
+    echo "$domains" >&2
+    exit 1
+fi
+
+rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
+sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/libvirt/images/wt

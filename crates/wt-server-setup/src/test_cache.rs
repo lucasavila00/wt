@@ -12,7 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_libvirt::{SiteConfig, LIBVIRT_URI};
+use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 const BUILD_NAME: &str = "wt-integration-cache-build";
 const BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
@@ -38,7 +38,11 @@ pub(crate) fn installed_path(golden: &Path) -> PathBuf {
     golden.with_file_name(format!("{stem}.integration-tests.qcow2"))
 }
 
-pub(crate) fn ensure(runner: &impl Runner, config: &SiteConfig, config_bytes: &[u8]) -> Result<()> {
+pub(crate) fn ensure(
+    runner: &impl Runner,
+    config: &ServerConfig,
+    config_bytes: &[u8],
+) -> Result<()> {
     let cache = installed_path(&config.image.installed_path);
     let manifest = image::manifest_path(&cache);
     match (cache.exists(), manifest.exists()) {
@@ -57,7 +61,7 @@ pub(crate) fn ensure(runner: &impl Runner, config: &SiteConfig, config_bytes: &[
 
 pub(crate) fn rebuild(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
 ) -> Result<()> {
     image::refuse_active_worlds(runner)?;
@@ -68,7 +72,7 @@ pub(crate) fn rebuild(
 
 fn build(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
     installed: &Path,
     manifest_path: &Path,
@@ -97,7 +101,7 @@ fn build(
 
 fn build_inner(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     installed: &Path,
     manifest_path: &Path,
     build_dir: &Path,
@@ -216,8 +220,8 @@ fn build_inner(
         "sysprep integration test image cache",
     )?;
     let user = User::from_uid(Uid::effective())
-        .context("look up site user")?
-        .context("site user does not exist")?;
+        .context("look up server user")?
+        .context("server user does not exist")?;
     runner.run(
         "sudo",
         &[
@@ -249,7 +253,7 @@ fn build_inner(
 }
 
 fn verify(
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
     installed: &Path,
     manifest_path: &Path,

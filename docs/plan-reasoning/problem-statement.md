@@ -45,7 +45,7 @@ Shape:
 1. Instance name  
 2. One **remote world** per instance (trusted pool)  
 3. Checkout on that world  
-4. Session via **`ssh <name>`** to the **world** after sync ([idealized API](./idealized-api.md)); operate the site via **SSH to the hypervisor** + **`wt-local`** ([plan](../plan.md), [cli](../arch/cli.md))
+4. Session via **`ssh <name>`** to the **world** after sync ([idealized API](./idealized-api.md)); operate the server via **SSH to the hypervisor** + **`wt-server`** ([plan](../plan.md), [cli](../arch/cli.md))
 
 ## Devcontainer constraint
 

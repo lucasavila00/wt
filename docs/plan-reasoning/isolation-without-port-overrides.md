@@ -53,7 +53,7 @@ repository stays instance-blind.
 
 | Setup | Notes |
 |-------|--------|
-| KVM guest per instance on bare metal | Home path; **`wt-local`** ([arch](../arch/bare-metal-agent.md)) |
+| KVM guest per instance on bare metal | Home path; **`wt-server`** ([arch](../arch/bare-metal-agent.md)) |
 | Shared daemon + port maps | Escape hatch only; must not force app-repo port tables |
 
 ## What stays identical inside each world
@@ -68,7 +68,7 @@ repository stays instance-blind.
 | Concern | Lives in |
 |---------|----------|
 | name → guest SSH target | CLI print + `wt sync` managed ssh config |
-| provision / destroy world | CLI over SSH to `wt-local` (control plane + worker) |
+| provision / destroy world | CLI over SSH to `wt-server` (control plane + worker) |
 | checkout + compose | inside world |
 
 ## One-line summary

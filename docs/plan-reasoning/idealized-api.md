@@ -7,7 +7,7 @@ Implemented product workflow. Plan: [../plan.md](../plan.md). Architecture:
 
 ```text
 $ wt new git@github.com:lucasavila00/frontend.git lab.frontend-my-feature
-# CLI invokes the configured site; creates world; prints guest aliases
+# CLI invokes the configured server; creates world; prints guest aliases
 $ wt sync
 $ ssh frontend-my-feature
 # VS Code Remote SSH target: frontend-my-feature
@@ -22,7 +22,7 @@ Full CLI: [../arch/cli.md](../arch/cli.md).
 Client (wt + stock OpenSSH)
    │  wt → bare_metal_ssh | bare_metal_local
    ▼
-wt-local (via ssh -- helper, or local helper)
+wt-server (via ssh -- helper, or local helper)
    │
    ▼
 guest world: Docker + clone + stock compose
@@ -34,9 +34,9 @@ guest world: Docker + clone + stock compose
 |-------|-----|
 | **CLI** | Local and SSH contexts; owner-scoped API over stdio; print and sync guest aliases |
 | **Control plane + worker** | Worlds and inventory ([architecture](../arch/README.md)) |
-| **ssh** | Site hop (API) and world hop (guest) |
+| **ssh** | Server hop (API) and world hop (guest) |
 
-Site SSH transports the helper API. Guest SSH enters a provisioned world. They
+Server SSH transports the helper API. Guest SSH enters a provisioned world. They
 are separate connections with separate authentication and host identities.
 
 ## Example commands
@@ -48,7 +48,7 @@ are separate connections with separate authentication and host identities.
 | `ssh <name>` / `wt ssh <name>` | Enter |
 | `wt rm <name>` | Tear down |
 | `wt ls` | name, status, SSH target |
-| qualified `context.world` name | Select a specific configured site |
+| qualified `context.world` name | Select a specific configured server |
 
 ## What stays true
 

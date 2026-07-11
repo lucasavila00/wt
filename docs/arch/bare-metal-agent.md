@@ -13,7 +13,7 @@ Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
 | Provisioning | QEMU guest agent through libvirt |
 | Network | Configured libvirt network with a guest IP |
 | Interactive access | OpenSSH to fixed non-root user `wt` |
-| Trust | Trusted site and trusted world/container |
+| Trust | Trusted server and trusted world/container |
 
 KVM is required. There is no CPU-emulation fallback.
 
@@ -38,12 +38,12 @@ and ref values as arguments rather than interpolated shell text. One configured
 recipe deadline covers clone, checkout, and devcontainer startup. Output streams
 to helper stderr, while failures retain bounded phase and exit details.
 
-The checkout is never mounted or exported to the site host. The configured Git
+The checkout is never mounted or exported to the server. The configured Git
 identity and known-hosts data are installed under `/workspace/.git/wt`, where Git
-in both the guest and the stock devcontainer can use them. The site, world, and
+in both the guest and the stock devcontainer can use them. The server, world, and
 devcontainer are therefore one trusted credential boundary until deletion.
 
-Guest helpers are compiled on the Ubuntu site host, installed with the WT
+Guest helpers are compiled on the Ubuntu server, installed with the WT
 binaries, and copied into worlds through the guest agent. The golden image does
 not contain a Rust toolchain.
 

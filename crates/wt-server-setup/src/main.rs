@@ -2,7 +2,7 @@ mod files;
 mod host;
 mod image;
 mod runner;
-mod site;
+mod server;
 mod test_cache;
 
 use anyhow::Result;
@@ -11,7 +11,7 @@ use runner::SystemRunner;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-local-setup")]
+#[command(name = "wt-server-setup")]
 struct Cli {
     #[command(subcommand)]
     command: SetupCommand,
@@ -19,12 +19,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum SetupCommand {
-    /// Parse and validate a site config without changing the host.
+    /// Parse and validate a server config without changing the host.
     Validate {
         #[arg(long)]
         config: PathBuf,
     },
-    /// Install a complete local wt site from this source checkout.
+    /// Install a complete local wt server from this source checkout.
     Install {
         #[arg(long)]
         config: PathBuf,
@@ -67,7 +67,7 @@ enum TestCacheCommand {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("wt-local-setup: {error:#}");
+        eprintln!("wt-server-setup: {error:#}");
         std::process::exit(1);
     }
 }
@@ -76,28 +76,28 @@ fn run() -> Result<()> {
     let runner = SystemRunner;
     match Cli::parse().command {
         SetupCommand::Validate { config } => {
-            site::validate(&config)?;
+            server::validate(&config)?;
             println!("valid {}", config.display());
         }
-        SetupCommand::Install { config } => site::install(&runner, &config)?,
+        SetupCommand::Install { config } => server::install(&runner, &config)?,
         SetupCommand::Image {
             command: ImageCommand::Build { config },
-        } => site::image(&runner, &config, false)?,
+        } => server::image(&runner, &config, false)?,
         SetupCommand::Image {
             command: ImageCommand::Rebuild { config },
-        } => site::image(&runner, &config, true)?,
+        } => server::image(&runner, &config, true)?,
         SetupCommand::Image {
             command:
                 ImageCommand::TestCache {
                     command: TestCacheCommand::Build { config },
                 },
-        } => site::test_cache(&runner, &config, false)?,
+        } => server::test_cache(&runner, &config, false)?,
         SetupCommand::Image {
             command:
                 ImageCommand::TestCache {
                     command: TestCacheCommand::Rebuild { config },
                 },
-        } => site::test_cache(&runner, &config, true)?,
+        } => server::test_cache(&runner, &config, true)?,
     }
     Ok(())
 }

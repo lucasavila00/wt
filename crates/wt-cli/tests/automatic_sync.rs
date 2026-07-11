@@ -7,7 +7,7 @@ fn new_and_rm_always_sync_ssh_inventory() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
-    let helper = bin.join("wt-local");
+    let helper = bin.join("wt-server");
     fs::write(
         &helper,
         r#"#!/bin/sh

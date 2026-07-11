@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
-pub struct LocalConfig {
+pub struct StateConfig {
     pub state_dir: PathBuf,
 }
 
-impl LocalConfig {
+impl StateConfig {
     pub fn from_env() -> Result<Self, String> {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)

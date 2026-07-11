@@ -1,7 +1,7 @@
 # wt
 
 Named parallel instances of an existing Docker/devcontainer recipe. The client is
-a thin cockpit (`wt` + `ssh`); worlds run on configured Ubuntu/KVM sites.
+a thin cockpit (`wt` + `ssh`); worlds run on configured Ubuntu/KVM servers.
 
 | Doc | |
 |-----|--|
@@ -20,8 +20,8 @@ crates/
   wt-cli/      CLI package (binary name: `wt`)
   wt-guest/    host-built programs injected into guests
   wt-libvirt/  production libvirt/KVM world backend
-  wt-local/    site helper + registry + control-plane service
-  wt-local-setup/    Ubuntu/KVM local-site installer
+  wt-server/    server helper + registry + control-plane service
+  wt-server-setup/    Ubuntu/KVM server installer
   wt-integration-tests/  injected + real-system tests
 ```
 
@@ -31,8 +31,8 @@ crates/
 | [`wt-cli`](./crates/wt-cli/) | bin `wt` | Context-aware CLI — new, ls, rm, sync, ssh |
 | [`wt-guest`](./crates/wt-guest/) | bin `wt-app-shell` | Host-built devcontainer shell helper injected into guests |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
-| [`wt-local`](./crates/wt-local/) | bin | Local helper — registry + instance service + embedded backend |
-| [`wt-local-setup`](./crates/wt-local-setup/) | bin | Strict Ubuntu/KVM local-site installation and golden image build |
+| [`wt-server`](./crates/wt-server/) | bin | Server helper — registry + instance service + embedded backend |
+| [`wt-server-setup`](./crates/wt-server-setup/) | bin | Strict Ubuntu/KVM server installation and golden image build |
 | [`wt-integration-tests`](./crates/wt-integration-tests/) | tests | Injected service tests + libvirt/KVM acceptance test |
 
 ## Build
@@ -40,7 +40,7 @@ crates/
 ```text
 cargo check --workspace
 cargo run -p wt-cli
-cargo run -p wt-local
+cargo run -p wt-server
 ```
 
 Client configuration and operator usage are documented in

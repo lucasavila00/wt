@@ -1,4 +1,4 @@
-//! Shared control-plane wire types for `wt` and site helpers.
+//! Shared control-plane wire types for `wt` and server helpers.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_site_credentials_shape() {
+    fn create_request_has_server_credentials_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),

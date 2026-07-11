@@ -3,8 +3,8 @@ use wt_api::{
     CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response, SshAccess,
 };
 use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
-use wt_local::service::Service;
-use wt_local::store::Store;
+use wt_server::service::Service;
+use wt_server::store::Store;
 
 #[derive(Clone, Debug, Default)]
 struct InjectedWorker {

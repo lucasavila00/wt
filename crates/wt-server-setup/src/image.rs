@@ -12,7 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_libvirt::{SiteConfig, LIBVIRT_URI};
+use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
@@ -32,7 +32,11 @@ struct ImageManifest {
     devcontainer_cli: String,
 }
 
-pub(crate) fn ensure(runner: &impl Runner, config: &SiteConfig, config_bytes: &[u8]) -> Result<()> {
+pub(crate) fn ensure(
+    runner: &impl Runner,
+    config: &ServerConfig,
+    config_bytes: &[u8],
+) -> Result<()> {
     let manifest_path = manifest_path(&config.image.installed_path);
     match (config.image.installed_path.exists(), manifest_path.exists()) {
         (true, true) => {
@@ -51,7 +55,7 @@ pub(crate) fn ensure(runner: &impl Runner, config: &SiteConfig, config_bytes: &[
 
 pub(crate) fn rebuild(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
 ) -> Result<()> {
     refuse_active_worlds(runner)?;
@@ -60,7 +64,7 @@ pub(crate) fn rebuild(
     build_image(runner, config, config_bytes, &source, &manifest)
 }
 
-fn source_image(config: &SiteConfig, runner: &impl Runner) -> Result<PathBuf> {
+fn source_image(config: &ServerConfig, runner: &impl Runner) -> Result<PathBuf> {
     let path = Path::new("imgs").join(SOURCE_IMAGE_NAME);
     fs::create_dir_all("imgs").context("create imgs directory")?;
     if path.exists() {
@@ -97,7 +101,7 @@ fn source_image(config: &SiteConfig, runner: &impl Runner) -> Result<PathBuf> {
 
 fn build_image(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
     source: &Path,
     manifest_path: &Path,
@@ -139,7 +143,7 @@ fn build_image(
 #[allow(clippy::too_many_arguments)]
 fn build_image_inner(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
     source: &Path,
     manifest_path: &Path,
@@ -270,8 +274,8 @@ fn build_image_inner(
         "sysprep golden image",
     )?;
     let user = User::from_uid(Uid::effective())
-        .context("look up site user")?
-        .context("site user does not exist")?;
+        .context("look up server user")?
+        .context("server user does not exist")?;
     runner.run(
         "sudo",
         &[
@@ -407,7 +411,7 @@ fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
 
 fn publish_image(
     runner: &impl Runner,
-    config: &SiteConfig,
+    config: &ServerConfig,
     prepared: &Path,
     manifest_path: &Path,
     manifest: &ImageManifest,
@@ -435,7 +439,7 @@ fn publish_image(
 }
 
 pub(crate) fn verify_installed_image(
-    config: &SiteConfig,
+    config: &ServerConfig,
     config_bytes: &[u8],
     manifest_path: &Path,
 ) -> Result<()> {

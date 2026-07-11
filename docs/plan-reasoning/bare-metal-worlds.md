@@ -1,7 +1,7 @@
 # Bare-metal worlds (one big server)
 
 N instances on one fat host without port soup.  
-Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). Deploy: [../arch/bare-metal-agent.md](../arch/bare-metal-agent.md) (`wt-local`).
+Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). Deploy: [../arch/bare-metal-agent.md](../arch/bare-metal-agent.md) (`wt-server`).
 
 ## Constraints
 
@@ -12,7 +12,7 @@ Isolation: [isolation-without-port-overrides.md](./isolation-without-port-overri
 
 ## Chosen approach
 
-**KVM/libvirt guest per instance** via **`wt-local`**.
+**KVM/libvirt guest per instance** via **`wt-server`**.
 
 - Own IP + own Docker → stock compose  
 - Clear `ssh <name>` target  
@@ -26,11 +26,11 @@ At ≥16 GB/instance, guest OS overhead (~0.5–1 GB class) is minor.
 |----------|------|
 | One Docker, many IPs (macvlan) | Dense; weaker world boundary; Host story messier |
 | LXD + Docker inside | Denser than KVM; nested Docker complexity |
-| A cluster orchestrator on the site | Unnecessary for the implemented single-site KVM backend |
+| A cluster orchestrator on the server | Unnecessary for the implemented single-server KVM backend |
 
-`wt-local` runs on the hypervisor and combines the site control plane with its
+`wt-server` runs on the hypervisor and combines the server control plane with its
 libvirt worker.
 
 ## One-line summary
 
-**On one fat trusted host, KVM-per-instance under `wt-local` for stock compose and simple SSH worlds.**
+**On one fat trusted host, KVM-per-instance under `wt-server` for stock compose and simple SSH worlds.**

@@ -3,13 +3,13 @@ use clap::{Parser, Subcommand};
 use nix::unistd::{Uid, User};
 use std::io::{Read, Write};
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
-use wt_libvirt::{LibvirtWorker, SiteConfig};
-use wt_local::config::LocalConfig;
-use wt_local::service::Service;
-use wt_local::store::Store;
+use wt_libvirt::{LibvirtWorker, ServerConfig};
+use wt_server::config::StateConfig;
+use wt_server::service::Service;
+use wt_server::store::Store;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-local")]
+#[command(name = "wt-server")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -23,7 +23,7 @@ enum Command {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("wt-local: {error:#}");
+        eprintln!("wt-server: {error:#}");
         std::process::exit(1);
     }
 }
@@ -35,10 +35,10 @@ fn run() -> Result<()> {
 }
 
 fn run_api() -> Result<()> {
-    let config = LocalConfig::from_env().map_err(anyhow::Error::msg)?;
+    let config = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&config.database_path()).context("open instance registry")?;
-    let site_config = SiteConfig::load().map_err(anyhow::Error::msg)?;
-    let worker = LibvirtWorker::new(site_config.worker_config().map_err(anyhow::Error::msg)?)
+    let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
+    let worker = LibvirtWorker::new(server_config.worker_config().map_err(anyhow::Error::msg)?)
         .map_err(anyhow::Error::msg)?;
     let owner = process_user()?;
     let mut service = Service::new(store, worker);
@@ -46,7 +46,7 @@ fn run_api() -> Result<()> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
     let response = match serde_json::from_str::<ApiRequest>(&input) {
-        Ok(request) => wt_local::handle_request(&mut service, &owner, request),
+        Ok(request) => wt_server::handle_request(&mut service, &owner, request),
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,
             format!("invalid JSON request: {error}"),

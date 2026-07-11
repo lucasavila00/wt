@@ -43,7 +43,7 @@ pub(super) fn load_credentials(
         || metadata.mode() & 0o7777 != 0o600
     {
         return Err(WorkerError::new(
-            "Git identity: configured server key must be a regular file owned by the site user with mode 0600",
+            "Git identity: configured server key must be a regular file owned by the server user with mode 0600",
         ));
     }
     let identity = fs::read(identity_file)

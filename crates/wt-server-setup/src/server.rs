@@ -9,10 +9,10 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::process::Command;
-use wt_libvirt::{GitConfig, SiteConfig, SITE_CONFIG_PATH};
+use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
 
 pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
-    require_site_user()?;
+    require_server_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     require_installed_config_compatible(&config_bytes)?;
@@ -20,9 +20,9 @@ pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     image::ensure(runner, &config, &config_bytes)?;
     println!("Building and installing wt binaries...");
     build_and_install_binaries(runner, &config)?;
-    println!("Installing site config at {SITE_CONFIG_PATH}...");
+    println!("Installing server config at {SERVER_CONFIG_PATH}...");
     install_config(runner, &config_bytes)?;
-    println!("installed wt site from {}", config_path.display());
+    println!("installed wt server from {}", config_path.display());
     Ok(())
 }
 
@@ -31,7 +31,7 @@ pub(crate) fn validate(config_path: &Path) -> Result<()> {
 }
 
 pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
-    require_site_user()?;
+    require_server_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     prepare_host(runner, &config)?;
@@ -45,7 +45,7 @@ pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> 
 }
 
 pub(crate) fn test_cache(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
-    require_site_user()?;
+    require_server_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     prepare_host(runner, &config)?;
@@ -62,15 +62,15 @@ pub(crate) fn test_cache(runner: &impl Runner, config_path: &Path, rebuild: bool
     Ok(())
 }
 
-fn prepare_host(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
+fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::preflight(runner)?;
     runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
     host::prepare_state(runner, config)
 }
 
-fn load_config(path: &Path) -> Result<(SiteConfig, Vec<u8>)> {
+fn load_config(path: &Path) -> Result<(ServerConfig, Vec<u8>)> {
     let bytes = fs::read(path).with_context(|| format!("read config {}", path.display()))?;
-    let config = SiteConfig::load_from(path).map_err(anyhow::Error::msg)?;
+    let config = ServerConfig::load_from(path).map_err(anyhow::Error::msg)?;
     validate_git_credentials(&config.git)?;
     Ok((config, bytes))
 }
@@ -84,7 +84,7 @@ fn validate_git_credentials(config: &GitConfig) -> Result<()> {
         || metadata.mode() & 0o7777 != 0o600
     {
         bail!(
-            "git.identity_file {} must be a regular file owned by the site user with mode 0600",
+            "git.identity_file {} must be a regular file owned by the server user with mode 0600",
             identity.display()
         );
     }
@@ -129,9 +129,9 @@ fn validate_git_credentials(config: &GitConfig) -> Result<()> {
     Ok(())
 }
 
-fn require_site_user() -> Result<()> {
+fn require_server_user() -> Result<()> {
     if Uid::effective().is_root() {
-        bail!("run as the site user, not with sudo");
+        bail!("run as the server user, not with sudo");
     }
     Ok(())
 }
@@ -140,14 +140,14 @@ fn require_workspace() -> Result<()> {
     if !Path::new("Cargo.toml").is_file()
         || !Path::new("crates/wt-cli/Cargo.toml").is_file()
         || !Path::new("crates/wt-guest/Cargo.toml").is_file()
-        || !Path::new("crates/wt-local/Cargo.toml").is_file()
+        || !Path::new("crates/wt-server/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");
     }
     Ok(())
 }
 
-fn build_and_install_binaries(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
+fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     runner.run(
         "cargo",
         &args([
@@ -158,11 +158,11 @@ fn build_and_install_binaries(runner: &impl Runner, config: &SiteConfig) -> Resu
             "-p",
             "wt-guest",
             "-p",
-            "wt-local",
+            "wt-server",
         ]),
         "build wt binaries",
     )?;
-    for name in ["wt", "wt-app-shell", "wt-local"] {
+    for name in ["wt", "wt-app-shell", "wt-server"] {
         let source = Path::new("target/release").join(name);
         let destination = config.install.binary_dir.join(name);
         let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));
@@ -176,25 +176,25 @@ fn build_and_install_binaries(runner: &impl Runner, config: &SiteConfig) -> Resu
 }
 
 fn require_installed_config_compatible(config_bytes: &[u8]) -> Result<()> {
-    let path = Path::new(SITE_CONFIG_PATH);
+    let path = Path::new(SERVER_CONFIG_PATH);
     if !path.exists() {
         return Ok(());
     }
-    // The site file is a complete contract. Byte-level differences are drift.
-    let installed = fs::read(path).with_context(|| format!("read {SITE_CONFIG_PATH}"))?;
+    // The server file is a complete contract. Byte-level differences are drift.
+    let installed = fs::read(path).with_context(|| format!("read {SERVER_CONFIG_PATH}"))?;
     if installed != config_bytes {
-        bail!("installed config differs from requested config: {SITE_CONFIG_PATH}");
+        bail!("installed config differs from requested config: {SERVER_CONFIG_PATH}");
     }
     require_root_file(path, 0o644)
 }
 
 fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
-    if Path::new(SITE_CONFIG_PATH).exists() {
+    if Path::new(SERVER_CONFIG_PATH).exists() {
         return require_installed_config_compatible(config_bytes);
     }
-    let directory = Path::new(SITE_CONFIG_PATH)
+    let directory = Path::new(SERVER_CONFIG_PATH)
         .parent()
-        .context("site config has no parent directory")?;
+        .context("server config has no parent directory")?;
     if directory.exists() {
         let metadata = fs::metadata(directory).context("inspect /etc/wt")?;
         if metadata.uid() != 0 || metadata.gid() != 0 || metadata.mode() & 0o7777 != 0o755 {
@@ -209,14 +209,14 @@ fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
             "create /etc/wt",
         )?;
     }
-    let local = Path::new("target").join("wt-local.toml.install");
-    fs::write(&local, config_bytes).context("stage site config")?;
-    let temporary = Path::new("/etc/wt/.local.toml.wt-new");
+    let local = Path::new("target").join("wt-server.toml.install");
+    fs::write(&local, config_bytes).context("stage server config")?;
+    let temporary = Path::new("/etc/wt/.server.toml.wt-new");
     if temporary.exists() {
         bail!("stale config install file exists: {}", temporary.display());
     }
     sudo_install(runner, &local, temporary, 0o644)?;
-    sudo_move(runner, temporary, Path::new(SITE_CONFIG_PATH))?;
+    sudo_move(runner, temporary, Path::new(SERVER_CONFIG_PATH))?;
     let _ = fs::remove_file(local);
     Ok(())
 }
@@ -227,7 +227,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn validates_site_owned_git_credentials() {
+    fn validates_server_owned_git_credentials() {
         let temp = tempfile::tempdir().unwrap();
         let identity = temp.path().join("identity");
         let output = Command::new("ssh-keygen")

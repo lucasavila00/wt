@@ -5,9 +5,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{CreateInstance, InstanceName, InstanceStatus, Operation, Response};
-use wt_libvirt::{LibvirtWorker, SiteConfig};
-use wt_local::service::Service;
-use wt_local::store::Store;
+use wt_libvirt::{LibvirtWorker, ServerConfig};
+use wt_server::service::Service;
+use wt_server::store::Store;
 
 const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 const FIXTURE_IMAGES: &str = include_str!("../fixture-images.txt");
@@ -39,7 +39,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             "build guest helpers",
         )
     });
-    let mut config = SiteConfig::load().unwrap();
+    let mut config = ServerConfig::load().unwrap();
     config.image.installed_path = validate_test_cache(&config.image.installed_path);
     config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
@@ -266,7 +266,7 @@ fn validate_test_cache(golden: &Path) -> PathBuf {
     let cache = golden.with_file_name(format!("{stem}.integration-tests.qcow2"));
     let golden_manifest_path = PathBuf::from(format!("{}.manifest.json", golden.display()));
     let cache_manifest_path = PathBuf::from(format!("{}.manifest.json", cache.display()));
-    let help = "run scripts/prepare-test-image --config config/wt-local.development.toml";
+    let help = "run scripts/prepare-test-image --config config/wt-server.development.toml";
     assert!(
         cache.is_file(),
         "integration test image cache is missing; {help}"

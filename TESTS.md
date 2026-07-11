@@ -4,11 +4,11 @@ All tests always run. No KVM skip path.
 
 ## System requirements
 
-Install the local site first:
+Install the local server first:
 
 ```text
-scripts/install-site --config config/wt-local.development.toml
-scripts/prepare-test-image --config config/wt-local.development.toml
+scripts/install-server --config config/wt-server.development.toml
+scripts/prepare-test-image --config config/wt-server.development.toml
 ```
 
 Run both commands in an interactive terminal because they invoke `sudo`. The
@@ -31,16 +31,16 @@ The KVM E2E test requires:
 |----------|------------------------------|
 | KVM | `/dev/kvm`, readable and writable by the test user |
 | Groups | Active `libvirt` and `kvm` membership |
-| Site config | `/etc/wt/local.toml`, `root:root`, mode `0644` |
+| Server config | `/etc/wt/server.toml`, `root:root`, mode `0644` |
 | Golden image | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2`, `libvirt-qemu:kvm`, mode `0644` |
 | Image manifest | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2.manifest.json`, `root:root`, mode `0644` |
 | Test image cache | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.integration-tests.qcow2` plus its manifest; created by `scripts/prepare-test-image` |
 | Libvirt network | `default`, active, persistent, autostart, DHCP enabled |
-| World directory | `/var/lib/libvirt/images/wt`, site user:`kvm`, mode `2770`, writable, with ACL `user:libvirt-qemu:--x` |
-| SSH Git fixture | Host `openssh-server`; installed by `scripts/install-site` |
+| World directory | `/var/lib/libvirt/images/wt`, server user:`kvm`, mode `2770`, writable, with ACL `user:libvirt-qemu:--x` |
+| SSH Git fixture | Host `openssh-server`; installed by `scripts/install-server` |
 | Git server | SSH access to `git@github.com:lucasavila00/jsdev-sample.git` |
 
-These paths come from `/etc/wt/local.toml`. `wt-local-setup` creates and verifies them. Installation details: [wt-local](./crates/wt-local/README.md#install-on-ubuntu).
+These paths come from `/etc/wt/server.toml`. `wt-server-setup` creates and verifies them. Installation details: [wt-server](./crates/wt-server/README.md#install-on-ubuntu).
 
 ## Run
 
@@ -67,8 +67,8 @@ cargo test -p wt-integration-tests --test kvm_e2e -- --nocapture
 To verify or explicitly rebuild the cache through the setup CLI:
 
 ```text
-cargo run --release -p wt-local-setup -- image test-cache build --config config/wt-local.development.toml
-cargo run --release -p wt-local-setup -- image test-cache rebuild --config config/wt-local.development.toml
+cargo run --release -p wt-server-setup -- image test-cache build --config config/wt-server.development.toml
+cargo run --release -p wt-server-setup -- image test-cache rebuild --config config/wt-server.development.toml
 ```
 
 `build` reuses matching installed state. `rebuild` replaces the cache and

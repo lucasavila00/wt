@@ -1,12 +1,12 @@
 # CLI (`wt`)
 
-Parent: [architecture](./README.md). Helper: [`wt-local`](../../crates/wt-local/).
+Parent: [architecture](./README.md). Helper: [`wt-server`](../../crates/wt-server/).
 
 ## Responsibilities
 
 | Does | Does not |
 |------|----------|
-| Dispatch to local or OpenSSH `wt-local api` | Run libvirt or Docker itself |
+| Dispatch to local or OpenSSH `wt-server api` | Run libvirt or Docker itself |
 | Send one JSON request over stdin | Add a public network protocol |
 | Parse one JSON response from stdout | Provision guests over SSH |
 | Create, list, remove, and enter worlds | Export guest checkouts to the client |
@@ -29,8 +29,8 @@ kind = "bare_metal_ssh"
 host = "wt-lab"
 ```
 
-A local context executes `wt-local api`. An SSH context executes
-`ssh -- <host> wt-local api`, using the user's existing OpenSSH configuration
+A local context executes `wt-server api`. An SSH context executes
+`ssh -- <host> wt-server api`, using the user's existing OpenSSH configuration
 and authentication. Context names contain lowercase letters, digits, and
 internal hyphens. SSH hosts must be non-empty and must not begin with `-`.
 
@@ -42,7 +42,7 @@ context. Aggregate list and sync operations fail if any context is unavailable.
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name> [--ref <ref>]` | Select a context, clone with the site's Git identity, start the devcontainer, sync access, and print status and aliases |
+| `wt new <source> <name> [--ref <ref>]` | Select a context, clone with the server's Git identity, start the devcontainer, sync access, and print status and aliases |
 | `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
 | `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
 | `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |
@@ -57,7 +57,7 @@ on the client host.
 
 - The guest login is the fixed non-root user `wt`; the checkout is `/workspace`.
 - Every world has unique SSH host keys. `wt-libvirt` retrieves their public parts
-  through the QEMU guest agent, and `wt-local` persists them with the endpoint.
+  through the QEMU guest agent, and `wt-server` persists them with the endpoint.
 - `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
   `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
 - Qualified aliases always exist. Short aliases exist only for globally unique

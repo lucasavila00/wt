@@ -1,8 +1,8 @@
-# wt-local
+# wt-server
 
-Single-site helper: **control-plane API + registry + embedded backend**.
+Single-server helper: **control-plane API + registry + embedded backend**.
 
-`wt-local` runs on an Ubuntu/KVM site. `wt` invokes `wt-local api` directly for a
+`wt-server` runs on an Ubuntu/KVM server. `wt` invokes `wt-server api` directly for a
 local context or through OpenSSH for a remote context. One JSON request enters
 over stdin and one JSON response leaves over stdout. The owner is the OS user
 executing the helper.
@@ -12,7 +12,7 @@ executing the helper.
 | Does | Does not |
 |------|----------|
 | Expose control-plane ops over stdio JSON | Listen on a socket |
-| Keep the site user's instance registry | Implement SSH authentication or policy |
+| Keep the server user's instance registry | Implement SSH authentication or policy |
 | Invoke `wt-libvirt` | Implement libvirt/KVM lifecycle |
 
 Design: [architecture](../../docs/arch/README.md),
@@ -23,7 +23,7 @@ Design: [architecture](../../docs/arch/README.md),
 
 Target: Ubuntu 24.04 amd64. KVM required. Source checkout required.
 
-Install stable Rust with rustup. Clone `wt`. Create a complete site config:
+Install stable Rust with rustup. Clone `wt`. Create a complete server config:
 
 ```toml
 version = 1
@@ -38,8 +38,8 @@ network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
 
 [git]
-identity_file = "/home/site-user/.ssh/wt-git"
-known_hosts_file = "/home/site-user/.ssh/known_hosts"
+identity_file = "/home/server-user/.ssh/wt-git"
+known_hosts_file = "/home/server-user/.ssh/known_hosts"
 
 [guest]
 memory_mib = 8192
@@ -58,47 +58,47 @@ Save it outside `config/`. That directory contains development samples only.
 Validate:
 
 ```text
-cargo run --release -p wt-local-setup -- validate --config /path/to/site.toml
+cargo run --release -p wt-server-setup -- validate --config /path/to/server.toml
 ```
 
 Install:
 
 ```text
-scripts/install-site --config /path/to/site.toml
+scripts/install-server --config /path/to/server.toml
 ```
 
-Run as the site user, not with `sudo`. Run in an interactive terminal. The command invokes `sudo` and may ask for the password.
+Run as the server user, not with `sudo`. Run in an interactive terminal. The command invokes `sudo` and may ask for the password.
 
 The installer:
 
 - Installs Ubuntu host packages.
-- Adds the site user to `libvirt` and `kvm`.
+- Adds the server user to `libvirt` and `kvm`.
 - Stops when new group membership requires a new login.
 - Requires working KVM. No emulation fallback.
 - Starts and enables the configured existing libvirt network.
 - Creates and verifies configured directories.
-- Owns the worlds directory as the site user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
+- Owns the worlds directory as the server user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
 - Downloads and verifies the pinned Ubuntu source image.
 - Builds the Docker/Compose-ready golden image in a temporary KVM guest.
-- Installs `wt` and `wt-local` into `install.binary_dir`.
-- Copies the supplied config verbatim to `/etc/wt/local.toml`.
+- Installs `wt` and `wt-server` into `install.binary_dir`.
+- Copies the supplied config verbatim to `/etc/wt/server.toml`.
 
 Matching state is accepted. Differing config, ownership, modes, partial image state, stale build state, or image provenance fails installation.
 
-`/etc/wt/local.toml` is the only runtime site config. The Git identity is a
-dedicated, unencrypted, mode-`0600` key owned by the site user. It is distinct
-from both client-to-site OpenSSH authentication and guest-login authorized
+`/etc/wt/server.toml` is the only runtime server config. The Git identity is a
+dedicated, unencrypted, mode-`0600` key owned by the server user. It is distinct
+from both client-to-server OpenSSH authentication and guest-login authorized
 keys. There are no runtime environment overrides.
 
 Each user registry is fixed at `~/.local/state/wt/instances.db`. Worlds share
 the configured `libvirt.worlds_dir` and system libvirt daemon.
 
-The `libvirt` group controls the host hypervisor. Only grant it to trusted site users.
+The `libvirt` group controls the host hypervisor. Only grant it to trusted server users.
 
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-local api
+printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-server api
 ```
 
 The command writes one JSON response to stdout.

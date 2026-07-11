@@ -4,13 +4,13 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 if [[ $# -ne 2 || $1 != --config ]]; then
-    echo "usage: scripts/install-site --config PATH" >&2
+    echo "usage: scripts/install-server --config PATH" >&2
     exit 2
 fi
 config=$2
 
 if [[ $EUID -eq 0 ]]; then
-    echo "run this script as the site user, not with sudo" >&2
+    echo "run this script as the server user, not with sudo" >&2
     exit 1
 fi
 if [[ ! -t 0 ]]; then
@@ -58,8 +58,8 @@ sudo apt install -y \
     openssh-server
 
 cd "$root"
-cargo build --release -p wt-local-setup
-target/release/wt-local-setup validate --config "$config"
+cargo build --release -p wt-server-setup
+target/release/wt-server-setup validate --config "$config"
 
 sudo usermod -aG libvirt,kvm "$USER"
 groups=" $(id -nG) "
@@ -69,4 +69,4 @@ if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
     exit 1
 fi
 
-target/release/wt-local-setup install --config "$config"
+target/release/wt-server-setup install --config "$config"

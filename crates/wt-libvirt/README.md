@@ -9,7 +9,7 @@ Production libvirt/KVM world backend.
 - QEMU guest agent verifies Docker Engine and Compose readiness through libvirt.
 - SSH Git clone, ref checkout, persistent checkout-local Git credentials, guest SSH, and devcontainer readiness are part of world creation.
 
-Used by [`wt-local`](../wt-local/). Real-system tests live in [`wt-integration-tests`](../wt-integration-tests/).
+Used by [`wt-server`](../wt-server/). Real-system tests live in [`wt-integration-tests`](../wt-integration-tests/).
 
 ## Worker layout
 

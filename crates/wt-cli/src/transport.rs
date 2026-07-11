@@ -47,13 +47,13 @@ pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
 fn helper_command(context: &Context) -> Command {
     match &context.kind {
         ContextKind::BareMetalLocal => {
-            let mut command = Command::new("wt-local");
+            let mut command = Command::new("wt-server");
             command.arg("api");
             command
         }
         ContextKind::BareMetalSsh { host } => {
             let mut command = Command::new("ssh");
-            command.args(["--", host, "wt-local", "api"]);
+            command.args(["--", host, "wt-server", "api"]);
             command
         }
     }
@@ -82,7 +82,7 @@ mod tests {
             kind: ContextKind::BareMetalLocal,
         };
         let command = helper_command(&local);
-        assert_eq!(command.get_program(), OsStr::new("wt-local"));
+        assert_eq!(command.get_program(), OsStr::new("wt-server"));
         assert_eq!(command.get_args().collect::<Vec<_>>(), [OsStr::new("api")]);
 
         let remote = Context {
@@ -98,7 +98,7 @@ mod tests {
             [
                 OsStr::new("--"),
                 OsStr::new("wt-lab"),
-                OsStr::new("wt-local"),
+                OsStr::new("wt-server"),
                 OsStr::new("api")
             ]
         );

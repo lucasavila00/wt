@@ -3,12 +3,12 @@
 This is the normal operator smoke test. Automated and diagnostic tests are
 documented in [TESTS.md](./TESTS.md).
 
-## Install the local site
+## Install the local server
 
 From the `wt` checkout on Ubuntu 24.04 amd64:
 
 ```bash
-scripts/install-site --config config/wt-local.development.toml
+scripts/install-server --config config/wt-server.development.toml
 ```
 
 The first run may add the current user to the `libvirt` and `kvm` groups. If it asks you to log out, log back in and run the same command again.
@@ -21,7 +21,7 @@ Before running `cargo test --workspace` on this workstation, build the separate
 integration-test image cache once:
 
 ```bash
-scripts/prepare-test-image --config config/wt-local.development.toml
+scripts/prepare-test-image --config config/wt-server.development.toml
 ```
 
 Run this command in an interactive terminal because it invokes `sudo`. Re-run
@@ -34,7 +34,7 @@ production golden image or the ordinary `wt new` manual workflow below. See
 
 ## Create a world
 
-Configure a local site in `~/.wt/config.toml`:
+Configure a local server in `~/.wt/config.toml`:
 
 ```toml
 version = 1
