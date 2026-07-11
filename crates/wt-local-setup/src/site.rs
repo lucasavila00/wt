@@ -60,6 +60,7 @@ fn require_site_user() -> Result<()> {
 fn require_workspace() -> Result<()> {
     if !Path::new("Cargo.toml").is_file()
         || !Path::new("crates/wt-cli/Cargo.toml").is_file()
+        || !Path::new("crates/wt-guest/Cargo.toml").is_file()
         || !Path::new("crates/wt-local/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");
@@ -70,10 +71,19 @@ fn require_workspace() -> Result<()> {
 fn build_and_install_binaries(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
     runner.run(
         "cargo",
-        &args(["build", "--release", "-p", "wt-cli", "-p", "wt-local"]),
+        &args([
+            "build",
+            "--release",
+            "-p",
+            "wt-cli",
+            "-p",
+            "wt-guest",
+            "-p",
+            "wt-local",
+        ]),
         "build wt binaries",
     )?;
-    for name in ["wt", "wt-local"] {
+    for name in ["wt", "wt-app-shell", "wt-local"] {
         let source = Path::new("target/release").join(name);
         let destination = config.install.binary_dir.join(name);
         let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));

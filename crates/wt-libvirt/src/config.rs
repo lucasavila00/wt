@@ -52,6 +52,7 @@ pub struct InstallConfig {
 #[derive(Clone, Debug)]
 pub struct LibvirtConfig {
     pub image: PathBuf,
+    pub app_shell_binary: PathBuf,
     pub worlds_dir: PathBuf,
     pub network: String,
     pub memory_mib: u64,
@@ -177,6 +178,7 @@ impl SiteConfig {
     pub fn worker_config(&self) -> Result<LibvirtConfig, String> {
         Ok(LibvirtConfig {
             image: self.image.installed_path.clone(),
+            app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             memory_mib: self.guest.memory_mib,
@@ -272,7 +274,7 @@ ssh_authorized_keys_file = "KEY_FILE"
 binary_dir = "/usr/local/bin"
 "#;
 
-    fn parse(value: &str) -> Result<SiteConfig, String> {
+    fn parse(value: &str) -> Result<(SiteConfig, LibvirtConfig), String> {
         let key_dir = tempfile::tempdir().unwrap();
         let key_file = key_dir.path().join("id.pub");
         std::fs::write(
@@ -283,12 +285,17 @@ binary_dir = "/usr/local/bin"
         let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
         let config: SiteConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
         config.validate()?;
-        Ok(config)
+        let worker = config.worker_config()?;
+        Ok((config, worker))
     }
 
     #[test]
     fn complete_config_is_valid() {
-        parse(VALID).unwrap();
+        let (_, worker) = parse(VALID).unwrap();
+        assert_eq!(
+            worker.app_shell_binary,
+            Path::new("/usr/local/bin/wt-app-shell")
+        );
     }
 
     #[test]

@@ -51,6 +51,7 @@ client wt  ── OpenSSH stdio ──►  site wt-local  ──►  same KVM wo
 crates/
   wt-api
   wt-cli       # package; binary name wt
+  wt-guest     # host-built programs injected into guests
   wt-libvirt   # production libvirt/KVM backend
   wt-local     # site helper + registry + service
   wt-local-setup # Ubuntu/KVM local-site installer

@@ -29,11 +29,14 @@ KVM is required. No CPU-emulation backend.
 8. Era 1.5: generate unique guest SSH host keys and verify sshd readiness
 9. Era 1.5: clone source + checkout ref into `/workspace`
 10. Era 1.5: run `devcontainer up --workspace-folder /workspace`
-11. Read guest IP and public SSH host keys
-12. Running
+11. Era 1.5: inject the host-built Rust app-shell helper
+12. Read guest IP and public SSH host keys
+13. Running
 ```
 
 The QEMU guest agent remains the core provisioning and readiness channel. Clone uses an explicit SSH identity and a temporary passphrase when needed; the key and host trust are then installed under the checkout's `.git/wt` directory for guest/container Git. The guest checkout is never mounted or exported to the host.
+
+Guest helpers are compiled on the Ubuntu 24.04 amd64 site host, installed with the WT binaries, and copied into worlds through the guest agent. The golden image does not contain a Rust toolchain.
 
 ## Destroy
 

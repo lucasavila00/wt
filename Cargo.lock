@@ -889,6 +889,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-guest"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "wt-integration-tests"
 version = "0.0.0"
 dependencies = [

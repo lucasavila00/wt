@@ -17,6 +17,7 @@ use virt::error::ErrorNumber;
 
 pub struct LibvirtWorker {
     config: LibvirtConfig,
+    app_shell: Vec<u8>,
 }
 
 impl LibvirtWorker {
@@ -27,6 +28,9 @@ impl LibvirtWorker {
             .open("/dev/kvm")
             .map_err(|error| worker_error("KVM is required but /dev/kvm is unavailable", error))?;
         require_file(&config.image, "guest image")?;
+        require_file(&config.app_shell_binary, "guest app-shell binary")?;
+        let app_shell = fs::read(&config.app_shell_binary)
+            .map_err(|error| worker_error("read guest app-shell binary", error))?;
         if !config.worlds_dir.is_dir() {
             return Err(WorkerError::new(format!(
                 "worlds directory not found: {}",
@@ -35,7 +39,7 @@ impl LibvirtWorker {
         }
         Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
-        Ok(Self { config })
+        Ok(Self { config, app_shell })
     }
 
     fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
@@ -129,7 +133,7 @@ impl LibvirtWorker {
             ],
             recipe_deadline,
         )?;
-        devcontainer::install_app_shell(&domain, recipe_deadline)?;
+        devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
         guest_agent::run_phase(
             &domain,
             "devcontainer Git credentials",

@@ -14,7 +14,15 @@ const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 #[test]
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let temp = TempDir::new().unwrap();
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    run(
+        Command::new(env!("CARGO"))
+            .current_dir(&workspace)
+            .args(["build", "-p", "wt-guest"]),
+        "build guest helpers",
+    );
     let mut config = SiteConfig::load().unwrap();
+    config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
     let git = GitSshServer::start(temp.path(), bridge_ip);
     config.guest.ssh_authorized_keys_file = git.client_public_key.clone();

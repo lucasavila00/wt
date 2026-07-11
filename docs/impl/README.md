@@ -2,7 +2,7 @@
 
 Order of work. Product: [plan.md](../plan.md). Arch: [arch/](../arch/README.md). CLI: [arch/cli.md](../arch/cli.md).
 
-Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-local-setup`, `wt-integration-tests`.
+Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-guest`, `wt-local-setup`, `wt-integration-tests`.
 
 ## Division of labor
 
@@ -11,6 +11,7 @@ Crates: `wt-api`, `wt-local`, `wt-libvirt`, `wt-cli` (binary `wt`), `wt-local-se
 | **`wt-api`** | Shared JSON request/response + status enums |
 | **`wt-local`** | Site brain: helper + registry + instance service. JSON in → work → JSON out |
 | **`wt-libvirt`** | Production libvirt/KVM world backend |
+| **`wt-guest`** | Host-built programs injected into each guest |
 | **`wt-cli` (`wt`)** | Thin: spawn local helper → print |
 | **`wt-local-setup`** | Strict Ubuntu/KVM local-site config + install + golden image build |
 | **`wt-integration-tests`** | Injected service tests + real libvirt/KVM acceptance test |

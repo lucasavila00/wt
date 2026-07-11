@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/wt-api",
     "crates/wt-cli",
+    "crates/wt-guest",
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
     "crates/wt-local",
