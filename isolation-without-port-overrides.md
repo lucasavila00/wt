@@ -1,7 +1,7 @@
 # Isolation without port / project-name overrides
 
 How to run **N copies** of the same Compose recipe **without** teaching the app about instance ports or `COMPOSE_PROJECT_NAME`.  
-Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer single-workspace constraint: [the-devcontainer-issue.md](./the-devcontainer-issue.md).
+Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer single-workspace constraint: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md).
 
 ## Hard constraint
 

@@ -2,8 +2,8 @@
 
 Product: **named parallel instances** of an existing Docker/devcontainer recipe, driven from a thin CLI over SSH. (Binary name TBD—not decided yet.)
 
-Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md).  
-Next doc (not written yet): architecture → then build.
+Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [idealized-api.md](./idealized-api.md).  
+Next doc: architecture (implements the idealized API) → then build.
 
 ## Who / setup
 
@@ -94,8 +94,10 @@ same recipe (images + compose/devcontainer)
 ## Docs / decision order
 
 1. **Problem statement** (this file) — why, constraints, lifecycle  
-2. **Architecture** — providers (fleet/SSH/VMs), compose vs devcontainer runtime path, state on Mac, what repo must/mustn’t contain  
-3. **Build** — implement against architecture  
+2. **Isolation / devcontainer notes** — how worlds stay stock; recipe constraints  
+3. **Idealized API** — perfect CLI + control-plane surface ([idealized-api.md](./idealized-api.md))  
+4. **Architecture** — providers (k8s agent / fleet / VMs), compose vs devcontainer runtime path, state on Mac  
+5. **Build** — implement against architecture  
 
 ## One-line summary
 

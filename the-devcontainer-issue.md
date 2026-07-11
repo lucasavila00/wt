@@ -1,7 +1,7 @@
 # The devcontainer issue
 
 Why default devcontainers fight **N parallel instances**, whether worktrees help, whether the spec evolved, and reuse vs re-do.  
-Cold-reader context: see [problem-statement.md](./problem-statement.md). Runtime: **Docker only on remote Linux**; Mac is SSH cockpit. “Host” below = that remote (or a VM on it), not the laptop. Isolation preference (one remote world per instance): [isolation-without-port-overrides.md](./isolation-without-port-overrides.md).
+Cold-reader context: see [problem-statement.md](./problem-statement.md). Runtime: **Docker only on remote Linux**; Mac is SSH cockpit. “Host” below = that remote (or a VM on it), not the laptop. Isolation preference (one remote world per instance): [isolation-without-port-overrides.md](./isolation-without-port-overrides.md). Target UX: [idealized-api.md](./idealized-api.md).
 
 ## Default model (“clone mirror”)
 
