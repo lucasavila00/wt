@@ -53,7 +53,8 @@ sudo apt install -y \
     cloud-image-utils \
     libguestfs-tools \
     ovmf \
-    libvirt-dev
+    libvirt-dev \
+    openssh-server
 
 cd "$root"
 cargo build --release -p wt-setup

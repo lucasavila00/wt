@@ -26,7 +26,7 @@ crates/
 | Package | Kind | Role |
 |---------|------|------|
 | [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Era 1 local CLI — new, ls, rm |
+| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Local CLI — new, ls, rm, sync, ssh |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
 | [`wt-local`](./crates/wt-local/) | bin | Local helper — registry + instance service + embedded backend |
 | [`wt-setup`](./crates/wt-setup/) | bin | Strict Ubuntu/KVM site installation and golden image build |
@@ -42,4 +42,4 @@ cargo run -p wt-cli
 cargo run -p wt-local
 ```
 
-Era 1 is complete. Era 1.5 adds Git/devcontainer provisioning and interactive guest access.
+Era 1.5 provides SSH-only Git/devcontainer provisioning and interactive guest access.

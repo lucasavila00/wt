@@ -21,6 +21,8 @@ The KVM E2E test requires:
 | Image manifest | `/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2.manifest.json`, `root:root`, mode `0644` |
 | Libvirt network | `default`, active, persistent, autostart, DHCP enabled |
 | World directory | `/var/lib/libvirt/images/wt`, site user:`kvm`, mode `2770`, writable |
+| SSH Git fixture | Host `openssh-server`; installed by `scripts/install-site` |
+| Sample repository | `/home/lucas/fluff/jsdev`, or host network access for the fallback clone |
 
 These paths come from `/etc/wt/local.toml`. `wt-setup` creates and verifies them. Installation details: [wt-local](./crates/wt-local/README.md#install-on-ubuntu).
 
@@ -35,6 +37,6 @@ The workspace run includes:
 
 - Unit validation and wire tests.
 - Injected worker integration tests.
-- Real `wt new <name>` -> `wt ls` -> `wt rm <name>` against libvirt/KVM.
+- Real SSH clone of the jsdev sample -> requested ref -> stock devcontainer -> push -> strict guest SSH -> remove against libvirt/KVM.
 
 The KVM test uses a temporary user registry. It removes its domain and world directory before returning.

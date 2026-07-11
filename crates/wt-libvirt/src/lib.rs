@@ -19,7 +19,7 @@ pub struct ProvisionSpec<'a> {
     pub name: &'a InstanceName,
     pub source: &'a str,
     pub git_ref: Option<&'a str>,
-    pub identity_file: Option<&'a str>,
+    pub identity_file: &'a str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

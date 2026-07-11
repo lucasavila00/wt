@@ -10,6 +10,23 @@ use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 
+const GIT_BUNDLE_DIR: &str = "/workspace/.git/wt";
+const GIT_SSH_COMMAND: &str =
+    "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
+const GIT_SSH_WRAPPER: &[u8] = br#"#!/bin/sh
+set -eu
+directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+runtime=$(mktemp -d "${TMPDIR:-/tmp}/wt-git.XXXXXX")
+trap 'rm -rf "$runtime"' EXIT HUP INT TERM
+install -m 0600 "$directory/identity" "$runtime/identity"
+/usr/bin/ssh \
+  -i "$runtime/identity" \
+  -o IdentitiesOnly=yes \
+  -o UserKnownHostsFile="$directory/known_hosts" \
+  -o StrictHostKeyChecking=yes \
+  "$@"
+"#;
+
 pub struct LibvirtWorker {
     config: LibvirtConfig,
 }
@@ -34,11 +51,9 @@ impl LibvirtWorker {
     }
 
     fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
-        let private_git = if is_ssh_source(spec.source) {
-            Some(self.load_private_git(spec.identity_file)?)
-        } else {
-            None
-        };
+        wt_api::validate_ssh_git_source(spec.source)
+            .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
+        let private_git = self.load_private_git(spec.identity_file)?;
         let paths = WorldPaths::new(&self.config.worlds_dir, spec.backend_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| worker_error("create world directory", error))?;
@@ -52,8 +67,11 @@ impl LibvirtWorker {
             "create qcow2 overlay",
         )?;
 
-        fs::write(&paths.user_data, cloud_config(&self.config.ssh_authorized_keys))
-            .map_err(|error| worker_error("write cloud-init user-data", error))?;
+        fs::write(
+            &paths.user_data,
+            cloud_config(&self.config.ssh_authorized_keys),
+        )
+        .map_err(|error| worker_error("write cloud-init user-data", error))?;
         fs::write(
             &paths.meta_data,
             format!(
@@ -84,17 +102,7 @@ impl LibvirtWorker {
         let recipe_deadline = Instant::now() + self.config.recipe_timeout;
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
-        if let Some(credentials) = private_git.as_ref() {
-            self.clone_private(&domain, spec.source, credentials, recipe_deadline)?;
-        } else {
-            self.run_phase(
-                &domain,
-                "git clone",
-                "/usr/bin/git",
-                &["clone", "--", spec.source, "/workspace"],
-                recipe_deadline,
-            )?;
-        }
+        self.clone_private(&domain, spec.source, &private_git, recipe_deadline)?;
         if let Some(git_ref) = spec.git_ref {
             self.run_phase(
                 &domain,
@@ -123,6 +131,20 @@ impl LibvirtWorker {
             "devcontainer up",
             "/usr/local/bin/devcontainer",
             &["up", "--workspace-folder", "/workspace"],
+            recipe_deadline,
+        )?;
+        self.run_phase(
+            &domain,
+            "devcontainer Git credentials",
+            "/usr/local/bin/devcontainer",
+            &[
+                "exec",
+                "--workspace-folder",
+                "/workspace",
+                "/bin/sh",
+                "-c",
+                "directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
+            ],
             recipe_deadline,
         )?;
         Ok(World {
@@ -165,13 +187,19 @@ impl LibvirtWorker {
                 return Ok(());
             }
             if Instant::now() >= deadline {
-                return Err(WorkerError::new("SSH readiness: timed out waiting for port 22"));
+                return Err(WorkerError::new(
+                    "SSH readiness: timed out waiting for port 22",
+                ));
             }
             std::thread::sleep(Duration::from_secs(1));
         }
     }
 
-    fn read_host_keys(&self, domain: &Domain, deadline: Instant) -> Result<Vec<String>, WorkerError> {
+    fn read_host_keys(
+        &self,
+        domain: &Domain,
+        deadline: Instant,
+    ) -> Result<Vec<String>, WorkerError> {
         let output = self.run_phase(
             domain,
             "SSH host keys",
@@ -186,32 +214,27 @@ impl LibvirtWorker {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         if keys.is_empty() {
-            return Err(WorkerError::new("SSH host keys: guest returned no public host keys"));
+            return Err(WorkerError::new(
+                "SSH host keys: guest returned no public host keys",
+            ));
         }
         Ok(keys)
     }
 
-    fn load_private_git(&self, identity_file: Option<&str>) -> Result<PrivateGit, WorkerError> {
-        let path = identity_file.ok_or_else(|| {
-            WorkerError::new("Git clone: SSH source requires --identity PATH")
-        })?;
-        let identity = fs::read(path).map_err(|error| worker_error("Git identity: read private key", error))?;
-        let mut probe = Command::new("ssh-keygen");
-        probe.args(["-y", "-P", "", "-f", path]);
-        let unencrypted = probe.output()
-            .map_err(|error| worker_error("Git identity: inspect private key", error))?
-            .status.success();
+    fn load_private_git(&self, identity_file: &str) -> Result<PrivateGit, WorkerError> {
+        let path = identity_file;
+        let identity = fs::read(path)
+            .map_err(|error| worker_error("Git identity: read private key", error))?;
+        let unencrypted = private_key_accepts_passphrase(path, "")?;
         let passphrase = if unencrypted {
             None
         } else {
             let value = rpassword::prompt_password(format!("Passphrase for {path}: "))
                 .map_err(|error| worker_error("Git identity: read passphrase", error))?;
-            let status = Command::new("ssh-keygen")
-                .args(["-y", "-P", &value, "-f", path])
-                .status()
-                .map_err(|error| worker_error("Git identity: validate passphrase", error))?;
-            if !status.success() {
-                return Err(WorkerError::new("Git identity: invalid private key or passphrase"));
+            if !private_key_accepts_passphrase(path, &value)? {
+                return Err(WorkerError::new(
+                    "Git identity: invalid private key or passphrase",
+                ));
             }
             Some(value.into_bytes())
         };
@@ -220,7 +243,11 @@ impl LibvirtWorker {
             .ok_or_else(|| WorkerError::new("Git host trust: HOME is not set"))?;
         let known_hosts = fs::read(home.join(".ssh/known_hosts"))
             .map_err(|error| worker_error("Git host trust: read ~/.ssh/known_hosts", error))?;
-        Ok(PrivateGit { identity, passphrase, known_hosts })
+        Ok(PrivateGit {
+            identity,
+            passphrase,
+            known_hosts,
+        })
     }
 
     fn clone_private(
@@ -230,27 +257,113 @@ impl LibvirtWorker {
         credentials: &PrivateGit,
         deadline: Instant,
     ) -> Result<(), WorkerError> {
-        self.run_phase(domain, "Git credentials", "/usr/bin/install", &["-d", "-m", "0700", "/run/wt-git"], deadline)?;
+        self.run_phase(
+            domain,
+            "Git credentials",
+            "/usr/bin/install",
+            &["-d", "-m", "0700", "/run/wt-git"],
+            deadline,
+        )?;
         let result = (|| {
             guest_write(domain, "/run/wt-git/identity", &credentials.identity)?;
             guest_write(domain, "/run/wt-git/known_hosts", &credentials.known_hosts)?;
             if let Some(passphrase) = &credentials.passphrase {
                 guest_write(domain, "/run/wt-git/passphrase", passphrase)?;
-                guest_write(domain, "/run/wt-git/askpass", b"#!/bin/sh\ncat /run/wt-git/passphrase\n")?;
-                self.run_phase(domain, "Git credentials", "/bin/chmod", &["0700", "/run/wt-git/askpass"], deadline)?;
+                guest_write(
+                    domain,
+                    "/run/wt-git/askpass",
+                    b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
+                )?;
+                self.run_phase(
+                    domain,
+                    "Git credentials",
+                    "/bin/chmod",
+                    &["0700", "/run/wt-git/askpass"],
+                    deadline,
+                )?;
             }
-            self.run_phase(domain, "Git credentials", "/bin/chmod", &["0600", "/run/wt-git/identity", "/run/wt-git/known_hosts"], deadline)?;
+            self.run_phase(
+                domain,
+                "Git credentials",
+                "/bin/chmod",
+                &["0600", "/run/wt-git/identity", "/run/wt-git/known_hosts"],
+                deadline,
+            )?;
             let ssh_command = "ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes";
             let mut environment = vec![format!("GIT_SSH_COMMAND={ssh_command}")];
             if credentials.passphrase.is_some() {
-                environment.extend(["SSH_ASKPASS=/run/wt-git/askpass".to_owned(), "SSH_ASKPASS_REQUIRE=force".to_owned(), "DISPLAY=wt:0".to_owned()]);
+                environment.extend([
+                    "SSH_ASKPASS=/run/wt-git/askpass".to_owned(),
+                    "SSH_ASKPASS_REQUIRE=force".to_owned(),
+                    "DISPLAY=wt:0".to_owned(),
+                ]);
             }
             let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
             args.extend(["/usr/bin/git", "clone", "--", source, "/workspace"]);
-            self.run_phase(domain, "Git clone", "/usr/bin/env", &args, deadline).map(|_| ())
+            self.run_phase(domain, "Git clone", "/usr/bin/env", &args, deadline)?;
+            self.install_git_bundle(domain, credentials, deadline)
         })();
         let _ = guest_exec(domain, "/bin/rm", &["-rf", "/run/wt-git"], deadline);
         result
+    }
+
+    fn install_git_bundle(
+        &self,
+        domain: &Domain,
+        credentials: &PrivateGit,
+        deadline: Instant,
+    ) -> Result<(), WorkerError> {
+        self.run_phase(
+            domain,
+            "Git credentials",
+            "/usr/bin/install",
+            &["-d", "-m", "0755", GIT_BUNDLE_DIR],
+            deadline,
+        )?;
+        guest_write(
+            domain,
+            &format!("{GIT_BUNDLE_DIR}/identity"),
+            &credentials.identity,
+        )?;
+        guest_write(
+            domain,
+            &format!("{GIT_BUNDLE_DIR}/known_hosts"),
+            &credentials.known_hosts,
+        )?;
+        guest_write(domain, &format!("{GIT_BUNDLE_DIR}/ssh"), GIT_SSH_WRAPPER)?;
+        self.run_phase(
+            domain,
+            "Git credentials",
+            "/bin/chmod",
+            &[
+                "0444",
+                &format!("{GIT_BUNDLE_DIR}/identity"),
+                &format!("{GIT_BUNDLE_DIR}/known_hosts"),
+            ],
+            deadline,
+        )?;
+        self.run_phase(
+            domain,
+            "Git credentials",
+            "/bin/chmod",
+            &["0555", &format!("{GIT_BUNDLE_DIR}/ssh")],
+            deadline,
+        )?;
+        self.run_phase(
+            domain,
+            "Git credentials",
+            "/usr/bin/git",
+            &[
+                "-C",
+                "/workspace",
+                "config",
+                "--local",
+                "core.sshCommand",
+                GIT_SSH_COMMAND,
+            ],
+            deadline,
+        )?;
+        Ok(())
     }
 
     fn wait_for_ip(&self, backend_id: &str) -> Result<String, WorkerError> {
@@ -495,11 +608,13 @@ fn guest_write(domain: &Domain, path: &str, contents: &[u8]) -> Result<(), Worke
         "execute": "guest-file-open",
         "arguments": { "path": path, "mode": "w" }
     });
-    let response = domain.qemu_agent_command(&request.to_string(), 10, 0)
+    let response = domain
+        .qemu_agent_command(&request.to_string(), 10, 0)
         .map_err(|error| worker_error("open guest credential file", error))?;
     let response: serde_json::Value = serde_json::from_str(&response)
         .map_err(|error| worker_error("decode guest file response", error))?;
-    let handle = response["return"].as_i64()
+    let handle = response["return"]
+        .as_i64()
         .ok_or_else(|| WorkerError::new("guest agent did not return a file handle"))?;
     let result = (|| {
         for chunk in contents.chunks(48 * 1024) {
@@ -507,7 +622,8 @@ fn guest_write(domain: &Domain, path: &str, contents: &[u8]) -> Result<(), Worke
                 "execute": "guest-file-write",
                 "arguments": { "handle": handle, "buf-b64": BASE64.encode(chunk) }
             });
-            domain.qemu_agent_command(&request.to_string(), 10, 0)
+            domain
+                .qemu_agent_command(&request.to_string(), 10, 0)
                 .map_err(|error| worker_error("write guest credential file", error))?;
         }
         Ok(())
@@ -528,19 +644,20 @@ fn tail_output(stdout: &[u8], stderr: &[u8]) -> String {
     }
     combined.extend_from_slice(stderr);
     let start = combined.len().saturating_sub(LIMIT);
-    String::from_utf8_lossy(&combined[start..]).trim().to_owned()
-}
-
-fn is_ssh_source(source: &str) -> bool {
-    source.starts_with("ssh://")
-        || (!source.contains("://")
-            && source.split_once(':').is_some_and(|(left, right)| left.contains('@') && !right.is_empty()))
+    String::from_utf8_lossy(&combined[start..])
+        .trim()
+        .to_owned()
 }
 
 fn cloud_config(keys: &[String]) -> String {
     let keys = keys
         .iter()
-        .map(|key| format!("      - {}", serde_json::to_string(key).expect("serialize public key")))
+        .map(|key| {
+            format!(
+                "      - {}",
+                serde_json::to_string(key).expect("serialize public key")
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     format!(
@@ -646,4 +763,77 @@ fn run(command: &mut Command, action: &str) -> Result<(), WorkerError> {
 
 fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
+}
+
+fn private_key_accepts_passphrase(path: &str, passphrase: &str) -> Result<bool, WorkerError> {
+    Ok(Command::new("ssh-keygen")
+        .args(["-y", "-P", passphrase, "-f", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|error| worker_error("Git identity: inspect private key", error))?
+        .success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn persistent_ssh_command_resolves_from_nested_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path().join("repo");
+        fs::create_dir(&repository).unwrap();
+        run(
+            Command::new("git").args(["init", "-q"]).arg(&repository),
+            "initialize test repository",
+        )
+        .unwrap();
+        let bundle = repository.join(".git/wt");
+        fs::create_dir(&bundle).unwrap();
+        fs::write(bundle.join("identity"), "not-read-by-ssh-g\n").unwrap();
+        fs::write(bundle.join("known_hosts"), "").unwrap();
+        fs::write(bundle.join("ssh"), GIT_SSH_WRAPPER).unwrap();
+        fs::set_permissions(bundle.join("ssh"), fs::Permissions::from_mode(0o555)).unwrap();
+        run(
+            Command::new("git").args(["-C"]).arg(&repository).args([
+                "config",
+                "core.sshCommand",
+                GIT_SSH_COMMAND,
+            ]),
+            "configure test SSH command",
+        )
+        .unwrap();
+        let nested = repository.join("nested");
+        fs::create_dir(&nested).unwrap();
+        let runtime = temp.path().join("runtime");
+        fs::create_dir(&runtime).unwrap();
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(format!("{GIT_SSH_COMMAND} -G example.test >/dev/null"))
+            .current_dir(&nested)
+            .env("TMPDIR", &runtime)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(fs::read_dir(runtime).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn detects_encrypted_private_key_passphrases() {
+        let temp = tempfile::tempdir().unwrap();
+        let key = temp.path().join("identity");
+        run(
+            Command::new("ssh-keygen")
+                .args(["-q", "-t", "ed25519", "-N", "secret", "-f"])
+                .arg(&key),
+            "generate encrypted key",
+        )
+        .unwrap();
+        let key = key.to_str().unwrap();
+        assert!(!private_key_accepts_passphrase(key, "").unwrap());
+        assert!(!private_key_accepts_passphrase(key, "wrong").unwrap());
+        assert!(private_key_accepts_passphrase(key, "secret").unwrap());
+    }
 }

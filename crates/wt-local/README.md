@@ -37,6 +37,8 @@ memory_mib = 8192
 vcpus = 4
 disk_gib = 32
 boot_timeout_seconds = 300
+recipe_timeout_seconds = 900
+ssh_authorized_keys_file = "~/.ssh/id_ed25519.pub"
 
 [install]
 binary_dir = "/usr/local/bin"
@@ -76,14 +78,14 @@ Matching state is accepted. Differing config, ownership, modes, partial image st
 
 `/etc/wt/local.toml` is the only runtime site config. Era 1 has no runtime environment overrides.
 
-Each user registry is fixed at `~/.local/state/wt/instances.db`. Worlds share the configured `libvirt.worlds_dir` and system libvirt daemon.
+Each user registry is fixed at `~/.local/state/wt/instances-v2.db`. There is no migration from older development registries. Worlds share the configured `libvirt.worlds_dir` and system libvirt daemon.
 
 The `libvirt` group controls the host hypervisor. Only grant it to trusted site users.
 
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-local api
+printf '%s\n' '{"protocol_version":2,"operation":"list"}' | wt-local api
 ```
 
 The command writes one JSON response to stdout.

@@ -164,7 +164,9 @@ impl SiteConfig {
         }
         let keys = self.ssh_authorized_keys()?;
         if keys.is_empty() {
-            return Err("guest.ssh_authorized_keys_file must contain at least one public key".to_owned());
+            return Err(
+                "guest.ssh_authorized_keys_file must contain at least one public key".to_owned(),
+            );
         }
         for key in &keys {
             validate_public_key(key)?;
@@ -188,9 +190,18 @@ impl SiteConfig {
 
     pub fn ssh_authorized_keys(&self) -> Result<Vec<String>, String> {
         let path = expand_home(&self.guest.ssh_authorized_keys_file)?;
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|error| format!("read guest.ssh_authorized_keys_file {}: {error}", path.display()))?;
-        Ok(contents.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_owned).collect())
+        let contents = std::fs::read_to_string(&path).map_err(|error| {
+            format!(
+                "read guest.ssh_authorized_keys_file {}: {error}",
+                path.display()
+            )
+        })?;
+        Ok(contents
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect())
     }
 }
 
@@ -225,7 +236,11 @@ binary_dir = "/usr/local/bin"
     fn parse(value: &str) -> Result<SiteConfig, String> {
         let key_dir = tempfile::tempdir().unwrap();
         let key_file = key_dir.path().join("id.pub");
-        std::fs::write(&key_file, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example\n").unwrap();
+        std::fs::write(
+            &key_file,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example\n",
+        )
+        .unwrap();
         let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
         let config: SiteConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
         config.validate()?;
@@ -256,12 +271,14 @@ binary_dir = "/usr/local/bin"
 
 fn expand_home(path: &Path) -> Result<PathBuf, String> {
     if path == Path::new("~") {
-        let home = std::env::var_os("HOME").map(PathBuf::from)
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
             .ok_or_else(|| "HOME is not set".to_owned())?;
         return Ok(home);
     }
     if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
-        let home = std::env::var_os("HOME").map(PathBuf::from)
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
             .ok_or_else(|| "HOME is not set".to_owned())?;
         return Ok(home.join(relative));
     }
@@ -278,12 +295,13 @@ fn validate_public_key(key: &str) -> Result<(), String> {
     let mut fields = key.split_whitespace();
     let kind = fields.next().unwrap_or_default();
     let data = fields.next().unwrap_or_default();
-    let supported = kind == "ssh-ed25519"
-        || kind == "ssh-rsa"
-        || kind.starts_with("ecdsa-sha2-nistp");
+    let supported =
+        kind == "ssh-ed25519" || kind == "ssh-rsa" || kind.starts_with("ecdsa-sha2-nistp");
     if !supported
         || data.len() < 16
-        || !data.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'=')
+        || !data.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'='
+        })
     {
         return Err("guest.ssh_authorized_keys_file contains an invalid public key".to_owned());
     }

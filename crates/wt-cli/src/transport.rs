@@ -38,7 +38,7 @@ pub fn call(request: &ApiRequest) -> Result<Response> {
         );
     }
     match response.outcome {
-        Outcome::Ok { response } => Ok(response),
+        Outcome::Ok { response } => Ok(*response),
         Outcome::Error { error } => bail!("{}: {}", error_code(error.code), error.message),
     }
 }

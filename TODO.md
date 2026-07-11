@@ -1,0 +1,1 @@
+- rename /home/lucas/fluff/wt/crates/wt-setup to wt-local-setup if it has code specific to local code

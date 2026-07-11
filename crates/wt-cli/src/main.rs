@@ -41,25 +41,36 @@ fn main() {
 
 fn run() -> Result<()> {
     match Cli::parse().command {
-        Command::New { source, name, git_ref, identity } => {
-            if source.trim().is_empty() { bail!("source must not be empty"); }
-            if git_ref.as_deref().is_some_and(str::is_empty) { bail!("--ref must not be empty"); }
-            let response = wt_cli::transport::call(&ApiRequest::new(Operation::Create(
-                CreateInstance {
+        Command::New {
+            source,
+            name,
+            git_ref,
+            identity,
+        } => {
+            wt_api::validate_ssh_git_source(&source)?;
+            if git_ref.as_deref().is_some_and(str::is_empty) {
+                bail!("--ref must not be empty");
+            }
+            let identity_file = resolve_identity(identity)?;
+            let response =
+                wt_cli::transport::call(&ApiRequest::new(Operation::Create(CreateInstance {
                     name,
                     source,
                     git_ref,
-                    identity_file: identity.map(|path| path.to_string_lossy().into_owned()),
-                },
-            )));
+                    identity_file,
+                })));
             let sync = sync_inventory();
             let response = response?;
             sync?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
-            sync_inventory()?;
-            println!("{}\t{}\t{}", instance.name, instance.status, instance.guest_ip.as_deref().unwrap_or("-"));
+            println!(
+                "{}\t{}\t{}",
+                instance.name,
+                instance.status,
+                instance.guest_ip.as_deref().unwrap_or("-")
+            );
             if let Some(ssh) = &instance.ssh {
                 println!("\nHost {}", instance.name);
                 println!("  HostName {}", ssh.host);
@@ -71,11 +82,18 @@ fn run() -> Result<()> {
             let instances = list_and_sync()?;
             println!("NAME\tSTATUS\tIP\tSSH");
             for instance in instances {
-                let target = instance.ssh.as_ref()
+                let target = instance
+                    .ssh
+                    .as_ref()
                     .map(|ssh| format!("{}@{}:{}", ssh.user, ssh.host, ssh.port))
                     .unwrap_or_else(|| "-".to_owned());
-                println!("{}\t{}\t{}\t{}", instance.name, instance.status,
-                    instance.guest_ip.as_deref().unwrap_or("-"), target);
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    instance.name,
+                    instance.status,
+                    instance.guest_ip.as_deref().unwrap_or("-"),
+                    target
+                );
             }
         }
         Command::Rm { name } => {
@@ -100,7 +118,9 @@ fn run() -> Result<()> {
                 bail!("running instance not found: {name}");
             }
             let status = ProcessCommand::new("ssh").arg(name.as_str()).status()?;
-            if !status.success() { bail!("ssh exited with {status}"); }
+            if !status.success() {
+                bail!("ssh exited with {status}");
+            }
         }
     }
     Ok(())
@@ -122,4 +142,20 @@ fn list_and_sync() -> Result<Vec<wt_api::Instance>> {
     let instances = list_instances()?;
     wt_cli::ssh::sync(&instances)?;
     Ok(instances)
+}
+
+fn resolve_identity(identity: Option<PathBuf>) -> Result<String> {
+    let path = match identity {
+        Some(path) => path,
+        None => {
+            let home =
+                std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
+            PathBuf::from(home).join(".ssh/id_ed25519")
+        }
+    };
+    let path = std::fs::canonicalize(&path)
+        .map_err(|error| anyhow::anyhow!("resolve identity {}: {error}", path.display()))?;
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| anyhow::anyhow!("identity path is not valid UTF-8"))
 }

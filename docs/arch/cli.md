@@ -26,9 +26,9 @@ Era 1 is local only. No client config. No context selection. `wt-local` resolves
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name> [--ref <ref>]` | Clone selected revision; start Compose; print name, status, IP, and SSH Host snippet |
+| `wt new <source> <name> [--ref <ref>] [--identity PATH]` | Interactively clone an SSH source; start its devcontainer; sync access; print status and Host snippet |
 | `wt ls` | List my worlds: name, status, IP, and SSH target |
-| `wt rm <name>` | Destroy my world |
+| `wt rm <name>` | Destroy my world and sync access records |
 | `wt sync` | Atomically rewrite the managed SSH config and known-hosts files from my running instance inventory |
 | `wt ssh <name>` | Execute stock OpenSSH using the synced instance alias |
 
@@ -42,7 +42,7 @@ Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the 
 - `wt sync` manages dedicated config and known-hosts files, ensures the user's main SSH config contains one bounded `Include` for the managed config, and makes `Host <instance-name>` resolve to the recorded guest. It must not weaken host-key checking or overwrite unrelated user SSH configuration.
 - VS Code Remote SSH uses the same instance alias and opens `/workspace`, so the editor terminal and Git operations run inside the world.
 - SSH reachability is part of create readiness. `Running` still additionally requires clone, checkout, and Compose wait to succeed.
-- SSH Git sources require `--identity PATH`. `wt-local` prompts for a passphrase when required, uses the caller's existing SSH host trust, and removes credentials from guest tmpfs immediately after clone. It does not use an ssh-agent.
+- Git sources are SSH-only. `--identity` defaults to `~/.ssh/id_ed25519`; `wt-local` prompts for a passphrase when required and never stores it. The key and caller's host trust remain under `/workspace/.git/wt`, allowing Git in both the guest and stock devcontainer to fetch and push. It does not use an ssh-agent.
 
 ## Era 2
 

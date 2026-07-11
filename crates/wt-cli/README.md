@@ -7,7 +7,7 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 ## Role
 
 - **Transport** — spawn local `wt-local`; JSON over stdio; owner = OS user  
-- **Instances** — `new` / `ls` / `rm`  
+- **Instances** — `new` / `ls` / `rm` / `sync` / `ssh`  
 - **Names** — `{repo}-{feature}` (e.g. `frontend-checkout-rewrite`)  
 - **Output** — name, status, guest IP  
 
@@ -16,9 +16,11 @@ Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
 ## Commands (target)
 
 ```text
-wt new <source> <name> [--ref <ref>]
+wt new <ssh-source> <name> [--ref <ref>] [--identity PATH]
 wt ls
 wt rm <name>
+wt sync
+wt ssh <name>
 ```
 
 ## Run
@@ -27,6 +29,4 @@ wt rm <name>
 cargo run -p wt-cli -- …
 ```
 
-## Status
-
-Era 1 implemented. Era 1.5 source/ref + Compose planned.
+`new` and `rm` always synchronize managed SSH access records.

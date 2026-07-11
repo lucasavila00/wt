@@ -26,21 +26,24 @@ impl<W: WorldWorker> Service<W> {
     }
 
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
-        let ssh_source = request.source.starts_with("ssh://")
-            || (!request.source.contains("://")
-                && request.source.split_once(':').is_some_and(|(left, right)| left.contains('@') && !right.is_empty()));
-        let supported = request.source.starts_with("https://") || ssh_source;
-        if !supported || request.source.contains(['\n', '\r', '\0']) {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, "source must be an HTTPS or SSH Git URL"));
+        if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
         }
-        if ssh_source && request.identity_file.is_none() {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, "SSH Git source requires an identity file"));
+        if request.identity_file.is_empty() || request.identity_file.contains('\0') {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "identity file must not be empty or contain NUL",
+            ));
         }
-        if !ssh_source && request.identity_file.is_some() {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, "--identity is valid only for SSH Git sources"));
-        }
-        if request.git_ref.as_deref().is_some_and(|value| value.is_empty() || value.contains('\0')) {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, "git ref must not be empty or contain NUL"));
+        if request
+            .git_ref
+            .as_deref()
+            .is_some_and(|value| value.is_empty() || value.contains('\0'))
+        {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "git ref must not be empty or contain NUL",
+            ));
         }
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
@@ -67,7 +70,7 @@ impl<W: WorldWorker> Service<W> {
             name: &stored.instance.name,
             source: &stored.instance.source,
             git_ref: stored.instance.git_ref.as_deref(),
-            identity_file: request.identity_file.as_deref(),
+            identity_file: &request.identity_file,
         };
         match self.worker.provision(&spec) {
             Ok(world) => {
@@ -78,7 +81,9 @@ impl<W: WorldWorker> Service<W> {
                 instance.status = InstanceStatus::Running;
                 instance.guest_ip = Some(world.guest_ip);
                 instance.ssh = Some(world.ssh);
-                Ok(Response::Instance { instance })
+                Ok(Response::Instance {
+                    instance: Box::new(instance),
+                })
             }
             Err(error) => {
                 let message = error.to_string();
@@ -92,26 +97,44 @@ impl<W: WorldWorker> Service<W> {
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list(owner).map_err(map_store_error)?;
-        for instance in stored.iter().filter(|item| item.instance.status == InstanceStatus::Running) {
+        for instance in stored
+            .iter()
+            .filter(|item| item.instance.status == InstanceStatus::Running)
+        {
             match self.worker.inspect(&instance.backend_id) {
                 Ok(Some(world)) => {
-                    let same_identity = instance.instance.ssh.as_ref()
+                    let same_identity = instance
+                        .instance
+                        .ssh
+                        .as_ref()
                         .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
                     if same_identity {
-                        self.store.mark_running(instance.instance.id, &world.guest_ip, &world.ssh)
+                        self.store
+                            .mark_running(instance.instance.id, &world.guest_ip, &world.ssh)
                             .map_err(map_store_error)?;
                     } else {
-                        self.store.mark_error(instance.instance.id, "SSH host identity changed")
+                        self.store
+                            .mark_error(instance.instance.id, "SSH host identity changed")
                             .map_err(map_store_error)?;
                     }
                 }
-                Ok(None) => self.store.mark_error(instance.instance.id, "guest domain is missing")
+                Ok(None) => self
+                    .store
+                    .mark_error(instance.instance.id, "guest domain is missing")
                     .map_err(map_store_error)?,
-                Err(error) => self.store.mark_error(instance.instance.id, &format!("guest reconciliation: {error}"))
+                Err(error) => self
+                    .store
+                    .mark_error(
+                        instance.instance.id,
+                        &format!("guest reconciliation: {error}"),
+                    )
                     .map_err(map_store_error)?,
             }
         }
-        let instances = self.store.list(owner).map_err(map_store_error)?
+        let instances = self
+            .store
+            .list(owner)
+            .map_err(map_store_error)?
             .into_iter()
             .map(|stored| stored.instance)
             .collect();
@@ -124,7 +147,9 @@ impl<W: WorldWorker> Service<W> {
             .get(owner, name)
             .map_err(map_store_error)?
             .instance;
-        Ok(Response::Instance { instance })
+        Ok(Response::Instance {
+            instance: Box::new(instance),
+        })
     }
 
     fn delete(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {

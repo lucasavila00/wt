@@ -798,9 +798,15 @@ fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
         &args(["-c", LIBVIRT_URI, "list", "--state-running", "--name"]),
         "list active libvirt domains",
     )?;
-    let active = names.lines().filter(|name| name.starts_with("wt-")).collect::<Vec<_>>();
+    let active = names
+        .lines()
+        .filter(|name| name.starts_with("wt-"))
+        .collect::<Vec<_>>();
     if !active.is_empty() {
-        bail!("refusing image rebuild while wt domains are active: {}", active.join(", "));
+        bail!(
+            "refusing image rebuild while wt domains are active: {}",
+            active.join(", ")
+        );
     }
     Ok(())
 }

@@ -39,8 +39,7 @@ pub struct CreateInstance {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity_file: Option<String>,
+    pub identity_file: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -54,7 +53,9 @@ impl ApiResponse {
     pub fn ok(response: Response) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
-            outcome: Outcome::Ok { response },
+            outcome: Outcome::Ok {
+                response: Box::new(response),
+            },
         }
     }
 
@@ -69,14 +70,14 @@ impl ApiResponse {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum Outcome {
-    Ok { response: Response },
+    Ok { response: Box<Response> },
     Error { error: ApiError },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
-    Instance { instance: Instance },
+    Instance { instance: Box<Instance> },
     Instances { instances: Vec<Instance> },
     Deleted { name: InstanceName },
 }
@@ -217,6 +218,39 @@ pub struct InvalidInstanceName {
     reason: &'static str,
 }
 
+pub fn validate_ssh_git_source(value: &str) -> Result<(), InvalidGitSource> {
+    if value.is_empty()
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte == 0)
+    {
+        return Err(InvalidGitSource);
+    }
+    if let Some(rest) = value.strip_prefix("ssh://") {
+        let Some((authority, path)) = rest.split_once('/') else {
+            return Err(InvalidGitSource);
+        };
+        if !authority.is_empty() && !path.is_empty() {
+            return Ok(());
+        }
+        return Err(InvalidGitSource);
+    }
+    let Some((authority, path)) = value.split_once(':') else {
+        return Err(InvalidGitSource);
+    };
+    let Some((user, host)) = authority.split_once('@') else {
+        return Err(InvalidGitSource);
+    };
+    if user.is_empty() || host.is_empty() || host.contains('@') || path.is_empty() {
+        return Err(InvalidGitSource);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("source must be an ssh:// or user@host:path Git URL")]
+pub struct InvalidGitSource;
+
 fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
     if value.is_empty() || value.len() > 63 {
         return Err(InvalidInstanceName {
@@ -261,6 +295,27 @@ mod tests {
     }
 
     #[test]
+    fn validates_only_ssh_git_sources() {
+        for valid in [
+            "git@github.com:example/repo.git",
+            "ssh://git@example.test/repo.git",
+            "ssh://git@example.test:2222/repo.git",
+        ] {
+            assert!(validate_ssh_git_source(valid).is_ok(), "{valid}");
+        }
+        for invalid in [
+            "https://example.test/repo.git",
+            "git://example.test/repo.git",
+            "/tmp/repo.git",
+            "ssh://example.test",
+            "git@:repo.git",
+            "git@example.test:",
+        ] {
+            assert!(validate_ssh_git_source(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn request_has_stable_tagged_shape() {
         let request = ApiRequest::new(Operation::Get {
             name: InstanceName::parse("repo-feature").unwrap(),
@@ -272,6 +327,27 @@ mod tests {
                 "protocol_version": 2,
                 "operation": "get",
                 "name": "repo-feature"
+            })
+        );
+    }
+
+    #[test]
+    fn create_request_has_protocol_v2_ssh_shape() {
+        let request = ApiRequest::new(Operation::Create(CreateInstance {
+            name: InstanceName::parse("repo-feature").unwrap(),
+            source: "git@github.com:example/repo.git".to_owned(),
+            git_ref: Some("feature".to_owned()),
+            identity_file: "/home/user/.ssh/id_ed25519".to_owned(),
+        }));
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 2,
+                "operation": "create",
+                "name": "repo-feature",
+                "source": "git@github.com:example/repo.git",
+                "git_ref": "feature",
+                "identity_file": "/home/user/.ssh/id_ed25519"
             })
         );
     }

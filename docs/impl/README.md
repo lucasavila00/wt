@@ -60,8 +60,8 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 
 | Deliver | |
 |---------|--|
-| `wt-api` | protocol v2; create carries `source`, `name`, optional `git_ref`; instance stores source/ref plus SSH endpoint and public host keys |
-| `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; print status/IP/Host snippet; `wt sync`; `wt ssh` |
+| `wt-api` | protocol v2; create carries SSH `source`, `name`, optional `git_ref`, and identity path; instance stores source/ref plus SSH endpoint and public host keys |
+| `wt-cli` | `wt new <source> <name> [--ref <ref>] [--identity PATH]`; blocking interactive create; automatic sync; `wt ssh` |
 | `wt-local` | versioned SQLite registry; persist source/ref and SSH identity; preserve failure detail |
 | `wt-libvirt` | guest exec helper; SSH setup/readiness; clone; checkout; `devcontainer up`; captured errors |
 | `wt-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI; configure public-key source; record provenance |
@@ -75,12 +75,13 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 
 #### Git contract
 
-- `source` = Git URL reachable from the guest.
+- `source` = `ssh://` or standard scp-style SSH Git URL reachable from the guest. HTTPS, `git://`, and local paths are rejected.
 - No `--ref` = remote default branch.
 - `--ref` = existing branch, tag, or commit. No branch creation. `wt` never pushes; an interactive user may use Git normally after entering the world.
-- The gating Era 1.5 path supports unauthenticated HTTPS and `git://`. It is validated with a self-contained local fixture and does not depend on external credentials.
-- For private repositories, accept `ssh://` and standard scp-style Git sources with `--identity PATH`. `wt-local` prompts on `/dev/tty` for the private-key passphrase only when required.
-- The private key, optional passphrase, and caller's SSH host-trust file exist only under guest tmpfs during clone and are removed immediately. They are not persisted in the API registry, image, cloud-init data, or world disk.
+- `--identity` defaults to `~/.ssh/id_ed25519`. `wt-local` prompts on `/dev/tty` for its passphrase only when required.
+- The passphrase exists only in process memory and guest tmpfs during clone. It is never stored in JSON, SQLite, cloud-init, the image, or the world disk.
+- After clone, the original private key and caller's host trust are installed under `/workspace/.git/wt`. A repository-local `core.sshCommand` uses that bundle from the guest and devcontainer. Encrypted keys remain encrypted and prompt normally during later fetch/push operations.
+- The credential bundle is readable inside the world's trusted devcontainer. Its wrapper makes a mode-`0600` per-command key copy for OpenSSH and deletes that copy afterward. An unencrypted input key therefore grants its full identity to the trusted world/container until `wt rm`.
 - Missing identity, invalid passphrase, authentication failure, or unknown host fails with an actionable Git-phase error. There is no ssh-agent or fallback credential mechanism.
 - Checkout path = `/workspace` inside the guest.
 
@@ -89,6 +90,7 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 - Run the pinned Dev Container CLI as `devcontainer up --workspace-folder /workspace`.
 - The CLI discovers and applies the repository's stock `devcontainer.json`, including its Compose file, workspace mount, Features, users, and lifecycle commands.
 - Add no WT-specific config, generated override, or path rewriting. A relative mount such as `..:/workspaces/repo` resolves from the repository's `.devcontainer` directory.
+- The checkout's `.git/wt` credential bundle is naturally visible through the stock workspace mount. Provisioning verifies it is readable and executable inside the devcontainer before `Running`.
 - `Running` means SSH readiness, clone, checkout, and `devcontainer up` succeeded.
 - Git/devcontainer failure, timeout, or guest loss = `Error`; keep bounded stdout/stderr in `last_error`.
 
@@ -111,11 +113,11 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 | Lane | Covers |
 |------|--------|
 | Injected worker | source/ref and SSH wire shape, persistence, conflicts, sync inventory, Git/devcontainer/SSH failure propagation |
-| KVM | bridge-served jsdev sample → requested ref → devcontainer ready → strict host-key SSH login → command in `/workspace` → list → remove |
+| KVM | SSH-served jsdev sample → requested ref → devcontainer ready → push from container → strict guest SSH → list → remove |
 
-The KVM test serves a temporary bare clone of `/home/lucas/fluff/jsdev` from the host bridge, falling back to `https://github.com/lucasavila00/jsdev-sample`. It runs the repository's stock devcontainer recipe, including normal registry access. Use a test-only SSH keypair, inject only its public key, and verify the reported world host key.
+The KVM test serves a temporary bare clone of `/home/lucas/fluff/jsdev` over SSH from the host bridge, falling back to a host-side clone of `https://github.com/lucasavila00/jsdev-sample`. The world itself always clones through SSH. It runs the stock devcontainer recipe and proves the container can push a branch back through the installed identity.
 
-The bridge-served unauthenticated Git URL is the gating acceptance path. Private SSH clone tests do not require a long-lived credential.
+The test uses temporary SSH server, Git identity, guest-login identity, and host keys. No long-lived provider credential is required.
 
 **Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's devcontainer and SSH are ready; `ssh <name>` and VS Code Remote SSH open `/workspace`; `wt rm` removes the world and automatically removes its access records.
 
@@ -171,7 +173,7 @@ host = "wt-lab"
 ### Later (not an era until needed)
 
 - Standalone Compose recipes without `devcontainer.json`
-- Final private Git credential, host-trust, and agent-forwarding model
+- Shared-site credential lifecycle beyond the trusted Era 1.5 workstation
 - Modules/bins for multi-node (`wt-control-plane`, `wt-worker`)  
 - k8s context kind  
 - Runbook polish, destroy policies, fleets  
@@ -194,7 +196,7 @@ Do not pre-build these.
 
 - Helper argv (`wt-local api` vs flags)  
 - Async create/poll after blocking behavior becomes painful
-- Final private Git credential and agent-forwarding model; Era 1.5 uses the provisional assumptions above
+- Shared-site credential lifecycle; Era 1.5 intentionally copies the selected identity into each trusted world
 
 ## One-line summary
 

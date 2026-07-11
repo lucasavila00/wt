@@ -33,7 +33,7 @@ KVM is required. No CPU-emulation backend.
 12. Running
 ```
 
-The QEMU guest agent remains the core provisioning and readiness channel. An SSH source uses explicit credentials held temporarily in guest tmpfs for clone. The guest checkout is never mounted or exported to the host.
+The QEMU guest agent remains the core provisioning and readiness channel. Clone uses an explicit SSH identity and a temporary passphrase when needed; the key and host trust are then installed under the checkout's `.git/wt` directory for guest/container Git. The guest checkout is never mounted or exported to the host.
 
 ## Destroy
 

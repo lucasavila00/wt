@@ -1,5 +1,7 @@
 use tempfile::TempDir;
-use wt_api::{CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response, SshAccess};
+use wt_api::{
+    CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response, SshAccess,
+};
 use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_local::service::Service;
 use wt_local::store::Store;
@@ -30,7 +32,9 @@ fn world() -> World {
     World {
         guest_ip: "192.0.2.2".to_owned(),
         ssh: SshAccess {
-            user: "wt".to_owned(), host: "192.0.2.2".to_owned(), port: 22,
+            user: "wt".to_owned(),
+            host: "192.0.2.2".to_owned(),
+            port: 22,
             host_keys: vec!["ssh-ed25519 AAAATEST guest".to_owned()],
         },
     }
@@ -39,9 +43,9 @@ fn world() -> World {
 fn create(name: InstanceName) -> CreateInstance {
     CreateInstance {
         name,
-        source: "https://example.test/repo.git".to_owned(),
+        source: "git@example.test:repo.git".to_owned(),
         git_ref: Some("feature".to_owned()),
-        identity_file: None,
+        identity_file: "/home/lucas/.ssh/id_ed25519".to_owned(),
     }
 }
 
@@ -53,25 +57,19 @@ fn lifecycle_persists_and_is_owner_scoped() {
 
     let mut service = Service::new(Store::open(&database).unwrap(), InjectedWorker::default());
     let created = service
-        .execute(
-            "lucas",
-            Operation::Create(create(name.clone())),
-        )
+        .execute("lucas", Operation::Create(create(name.clone())))
         .unwrap();
     let Response::Instance { instance } = created else {
         panic!("expected instance response");
     };
     assert_eq!(instance.status, InstanceStatus::Running);
     assert_eq!(instance.guest_ip.as_deref(), Some("192.0.2.2"));
-    assert_eq!(instance.source, "https://example.test/repo.git");
+    assert_eq!(instance.source, "git@example.test:repo.git");
     assert_eq!(instance.git_ref.as_deref(), Some("feature"));
     assert_eq!(instance.ssh.as_ref().unwrap().user, "wt");
 
     let conflict = service
-        .execute(
-            "lucas",
-            Operation::Create(create(name.clone())),
-        )
+        .execute("lucas", Operation::Create(create(name.clone())))
         .unwrap_err();
     assert_eq!(conflict.code, ErrorCode::Conflict);
 
@@ -125,4 +123,25 @@ fn provision_failure_is_recorded() {
         instances[0].last_error.as_deref(),
         Some("injected provision failure")
     );
+}
+
+#[test]
+fn create_accepts_only_ssh_sources() {
+    let temp = TempDir::new().unwrap();
+    let mut service = Service::new(
+        Store::open(&temp.path().join("instances-v2.db")).unwrap(),
+        InjectedWorker::default(),
+    );
+    for source in [
+        "https://github.com/example/repo.git",
+        "git://example.test/repo.git",
+        "/tmp/repo.git",
+    ] {
+        let mut request = create(InstanceName::parse("repo-invalid").unwrap());
+        request.source = source.to_owned();
+        let error = service
+            .execute("lucas", Operation::Create(request))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest, "{source}");
+    }
 }

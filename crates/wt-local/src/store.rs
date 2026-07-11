@@ -40,7 +40,7 @@ impl Store {
         connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
         if create {
             connection.execute_batch(
-            "CREATE TABLE instances (
+                "CREATE TABLE instances (
                  id            TEXT PRIMARY KEY,
                  owner         TEXT NOT NULL,
                  name          TEXT NOT NULL,
@@ -132,10 +132,19 @@ impl Store {
         let changed = self.connection.execute(
             "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
              ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
-            params![id.to_string(), InstanceStatus::Running.to_string(), guest_ip,
-                ssh.user, ssh.host, ssh.port, host_keys],
+            params![
+                id.to_string(),
+                InstanceStatus::Running.to_string(),
+                guest_ip,
+                ssh.user,
+                ssh.host,
+                ssh.port,
+                host_keys
+            ],
         )?;
-        if changed == 0 { return Err(StoreError::NotFound); }
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
         Ok(())
     }
 
@@ -204,10 +213,12 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
 
 fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
     let user: Option<String> = row.get(9)?;
-    let Some(user) = user else { return Ok(None); };
+    let Some(user) = user else {
+        return Ok(None);
+    };
     let keys: String = row.get(12)?;
-    let host_keys = serde_json::from_str(&keys)
-        .map_err(|error| invalid_column(&error.to_string()))?;
+    let host_keys =
+        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
     Ok(Some(SshAccess {
         user,
         host: row.get(10)?,
@@ -215,7 +226,6 @@ fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> 
         host_keys,
     }))
 }
-
 
 fn invalid_column(message: &str) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(

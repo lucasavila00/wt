@@ -6,6 +6,7 @@ Ubuntu 24.04 amd64 site installer. Source-checkout tool. Not part of `wt-local`.
 wt-setup validate --config PATH
 wt-setup install --config PATH
 wt-setup image build --config PATH
+wt-setup image rebuild --config PATH
 ```
 
 Owns host validation, strict site config, KVM golden image construction, provenance checks, and binary installation.
