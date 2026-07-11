@@ -26,13 +26,10 @@ At ≥16 GB/instance, guest OS overhead (~0.5–1 GB class) is minor.
 |----------|------|
 | One Docker, many IPs (macvlan) | Dense; weaker world boundary; Host story messier |
 | LXD + Docker inside | Denser than KVM; nested Docker complexity |
-| Full k8s on the solo home box | Overkill for compose worlds; company path is a separate worker |
+| A cluster orchestrator on the site | Unnecessary for the implemented single-site KVM backend |
 
-## Relation to multi-node / company
-
-- Home: **`wt-local`** on the hypervisor  
-- Company multi-node: control plane + workers (including k8s)—see [control-plane](../arch/control-plane.md)  
-- k8s is not required to densify a single trusted bare-metal box  
+`wt-local` runs on the hypervisor and combines the site control plane with its
+libvirt worker.
 
 ## One-line summary
 

@@ -46,14 +46,14 @@ Mac ─ssh─► world-A  Docker  :3000  stock compose
 Mac ─ssh─► world-B  Docker  :3000  stock compose
 ```
 
-Tool maps names to SSH endpoints (print Host and apply with `wt sync` in Era 1.5). Repo stays instance-blind.
+The tool maps names to SSH endpoints and applies them with `wt sync`. The
+repository stays instance-blind.
 
 ## How worlds are supplied
 
 | Setup | Notes |
 |-------|--------|
 | KVM guest per instance on bare metal | Home path; **`wt-local`** ([arch](../arch/bare-metal-agent.md)) |
-| k8s Pod + DinD | Company path when cluster allows; own netns |
 | Shared daemon + port maps | Escape hatch only; must not force app-repo port tables |
 
 ## What stays identical inside each world

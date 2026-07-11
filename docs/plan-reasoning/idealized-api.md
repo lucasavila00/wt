@@ -1,12 +1,13 @@
-# Idealized API
+# User workflow
 
-Target product shape. Plan: [../plan.md](../plan.md). Arch: [../arch/](../arch/README.md).
+Implemented product workflow. Plan: [../plan.md](../plan.md). Architecture:
+[../arch/](../arch/README.md).
 
 ## Gesture
 
 ```text
-$ wt new github.com:lucasavila00/frontend frontend-my-feature
-# CLI SSHes to site (context); creates world; prints guest Host snippet
+$ wt new git@github.com:lucasavila00/frontend.git lab.frontend-my-feature
+# CLI invokes the configured site; creates world; prints guest aliases
 $ wt sync
 $ ssh frontend-my-feature
 # VS Code Remote SSH target: frontend-my-feature
@@ -18,7 +19,7 @@ Full CLI: [../arch/cli.md](../arch/cli.md).
 ## Overall arch
 
 ```text
-Mac (CLI + stock OpenSSH)
+Client (wt + stock OpenSSH)
    │  wt → bare_metal_ssh | bare_metal_local
    ▼
 wt-local (via ssh -- helper, or local helper)
@@ -31,11 +32,12 @@ guest world: Docker + clone + stock compose
 
 | Layer | Job |
 |-------|-----|
-| **CLI** | SSH contexts; owner-scoped API over SSH; print + `sync` guest Hosts |
+| **CLI** | Local and SSH contexts; owner-scoped API over stdio; print and sync guest aliases |
 | **Control plane + worker** | Worlds and inventory ([control-plane](../arch/control-plane.md)) |
 | **ssh** | Site hop (API) and world hop (guest) |
 
-Guest SSH arrives with the first usable Git/devcontainer world in Era 1.5. The site hop remains local stdio until Era 2. These are separate transports even when both eventually use OpenSSH.
+Site SSH transports the helper API. Guest SSH enters a provisioned world. They
+are separate connections with separate authentication and host identities.
 
 ## Example commands
 
@@ -46,7 +48,7 @@ Guest SSH arrives with the first usable Git/devcontainer world in Era 1.5. The s
 | `ssh <name>` / `wt ssh <name>` | Enter |
 | `wt rm <name>` | Tear down |
 | `wt ls` | name, status, SSH target |
-| `wt context …` | Which cluster |
+| qualified `context.world` name | Select a specific configured site |
 
 ## What stays true
 

@@ -1,63 +1,58 @@
 # Libvirt/KVM backend
 
-Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent: [arch README](./README.md).
+Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
+[architecture](./README.md).
 
 ## World
 
 | Piece | Choice |
 |-------|--------|
-| Isolation | KVM guest per instance |
-| Image | Ubuntu 24.04 golden image |
-| Runtime | Docker Engine + Docker Compose v2 |
-| Readiness | QEMU guest agent through libvirt |
-| Network | libvirt network; guest IP reported |
+| Isolation | KVM guest per world |
+| Image | Prepared Ubuntu 24.04 amd64 golden image |
+| Runtime | Docker Engine, Compose v2, and pinned Dev Container CLI |
+| Provisioning | QEMU guest agent through libvirt |
+| Network | Configured libvirt network with a guest IP |
 | Interactive access | OpenSSH to fixed non-root user `wt` |
-| Trust | Local trusted workstation |
+| Trust | Trusted site and trusted world/container |
 
-KVM is required. No CPU-emulation backend.
+KVM is required. There is no CPU-emulation fallback.
 
 ## Provision
 
 ```text
-1. Validate prepared image and /dev/kvm
-2. Create qcow2 overlay
-3. Create per-world cloud-init identity
-4. Define + start KVM domain through libvirt
-5. Wait for QEMU guest agent
-6. Run docker info + docker compose version through guest agent
-7. Era 1.5: create the `wt` user and inject configured public keys
-8. Era 1.5: generate unique guest SSH host keys and verify sshd readiness
-9. Era 1.5: clone source + checkout ref into `/workspace`
-10. Era 1.5: run `devcontainer up --workspace-folder /workspace`
-11. Era 1.5: inject the host-built Rust app-shell helper
-12. Read guest IP and public SSH host keys
-13. Running
+1. Validate the prepared image and /dev/kvm
+2. Create the qcow2 overlay and cloud-init seed
+3. Inject guest login keys and generate a unique SSH host identity
+4. Define and start the KVM domain through libvirt
+5. Wait for the QEMU guest agent, Docker, Compose, and sshd
+6. Clone the SSH Git source and check out the requested ref in /workspace
+7. Install the checkout-local Git identity and host-trust bundle
+8. Run devcontainer up --workspace-folder /workspace
+9. Inject and verify the wt-app-shell guest helper
+10. Record the guest IP and public SSH host keys
+11. Report Running
 ```
 
-The QEMU guest agent remains the core provisioning and readiness channel. Clone uses an explicit SSH identity and a temporary passphrase when needed; the key and host trust are then installed under the checkout's `.git/wt` directory for guest/container Git. The guest checkout is never mounted or exported to the host.
+The QEMU guest agent is the provisioning channel. Guest commands receive source
+and ref values as arguments rather than interpolated shell text. One configured
+recipe deadline covers clone, checkout, and devcontainer startup. Output streams
+to helper stderr, while failures retain bounded phase and exit details.
 
-Guest helpers are compiled on the Ubuntu 24.04 amd64 site host, installed with the WT binaries, and copied into worlds through the guest agent. The golden image does not contain a Rust toolchain.
+The checkout is never mounted or exported to the site host. The configured Git
+identity and known-hosts data are installed under `/workspace/.git/wt`, where Git
+in both the guest and the stock devcontainer can use them. The site, world, and
+devcontainer are therefore one trusted credential boundary until deletion.
 
-## Destroy
+Guest helpers are compiled on the Ubuntu site host, installed with the WT
+binaries, and copied into worlds through the guest agent. The golden image does
+not contain a Rust toolchain.
 
-```text
-1. Destroy active domain
-2. Undefine domain + NVRAM
-3. Remove world files
-```
+Any create failure removes the domain and world directory. Destroy stops and
+undefines the domain, including NVRAM, and removes its files.
 
 ## Image
 
-`scripts/prepare-image` bakes for Era 1:
-
-- `docker.io`
-- `docker-compose-v2`
-- `qemu-guest-agent`
-
-World creation does not install packages.
-
-Era 1.5 adds `git`, `openssh-server`, and the pinned Dev Container CLI. The manifest records them. Test/application images do not belong to production setup. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
-
-## One-line summary
-
-**Prepared Ubuntu image → KVM guest → clone + checkout → devcontainer ready.**
+`scripts/prepare-image` builds a golden image containing Docker Engine, Compose
+v2, QEMU guest agent, Git, OpenSSH server, and the pinned Dev Container CLI. The
+manifest records the complete recipe and provenance. World creation does not
+install packages, and golden images do not contain reusable SSH host keys.

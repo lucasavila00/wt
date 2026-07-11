@@ -1,6 +1,7 @@
 # Manual tests
 
-This is the normal Era 1.5 operator smoke test. Automated and diagnostic tests are documented in [TESTS.md](./TESTS.md).
+This is the normal operator smoke test. Automated and diagnostic tests are
+documented in [TESTS.md](./TESTS.md).
 
 ## Install the local site
 
@@ -32,6 +33,16 @@ production golden image or the ordinary `wt new` manual workflow below. See
 [TESTS.md](./TESTS.md) for cache paths, validation, and diagnostic commands.
 
 ## Create a world
+
+Configure a local site in `~/.wt/config.toml`:
+
+```toml
+version = 1
+
+[[contexts]]
+name = "local"
+kind = "bare_metal_local"
+```
 
 Once per workstation, add this line at the beginning of `~/.ssh/config`, before any `Host` blocks:
 

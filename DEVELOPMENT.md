@@ -46,7 +46,8 @@ Review CPU, memory, disk, paths, URL, and SHA before use:
 cargo run -p wt-local-setup -- validate --config config/wt-local.development.toml
 ```
 
-Era 1 has no runtime environment overrides. `wt-local` always reads `/etc/wt/local.toml`.
+There are no runtime environment overrides. `wt-local` always reads
+`/etc/wt/local.toml`.
 
 ## Source image
 

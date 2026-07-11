@@ -13,7 +13,7 @@ Full design: [docs/arch/cli.md](../../docs/arch/cli.md).
 
 Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
 
-## Commands (target)
+## Commands
 
 ```text
 wt new <ssh-source> <context.name> [--ref <ref>]

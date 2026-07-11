@@ -1,8 +1,9 @@
 # wt-api
 
-Shared **control-plane** request/response types (JSON) for CLI and site servers.
+Shared **control-plane** request/response types for the CLI and site helper.
 
-Carried as JSON over stdio to the local `wt-local` helper in Era 1.
+Carried as protocol version 3 JSON over stdio to `wt-local`, either locally or
+through OpenSSH.
 
 ## Role
 
@@ -18,10 +19,4 @@ CLI behavior: [docs/arch/cli.md](../../docs/arch/cli.md).
 | Crate | |
 |-------|--|
 | [`wt-cli`](../wt-cli/) | Client decoding (binary `wt`) |
-| [`wt-local`](../wt-local/) | Server encoding |
-
-Future multi-node binaries use the same control-plane types where they expose that API.
-
-## Status
-
-Era 1 types implemented.
+| [`wt-local`](../wt-local/) | Site-helper decoding and encoding |

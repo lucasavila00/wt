@@ -1,6 +1,6 @@
 # CLI (`wt`)
 
-Era 1/1.5 workstation CLI. Parent: [arch README](./README.md). Helper: [`wt-local`](../../crates/wt-local/).
+Parent: [architecture](./README.md). Helper: [`wt-local`](../../crates/wt-local/).
 
 ## Responsibilities
 
@@ -8,54 +8,20 @@ Era 1/1.5 workstation CLI. Parent: [arch README](./README.md). Helper: [`wt-loca
 |------|----------|
 | Dispatch to local or OpenSSH `wt-local api` | Run libvirt or Docker itself |
 | Send one JSON request over stdin | Add a public network protocol |
-| Parse one JSON response from stdout | Configure or provision guests over SSH |
-| Create / list / remove my worlds | Copy private Git or SSH credentials |
-| Project guest SSH inventory into managed OpenSSH files | Export the guest checkout onto the host |
+| Parse one JSON response from stdout | Provision guests over SSH |
+| Create, list, remove, and enter worlds | Export guest checkouts to the client |
+| Project guest inventory into managed OpenSSH files | Edit the user's main SSH config |
 
-```text
-wt  →  local wt-local api  →  wt-libvirt  →  KVM guest
-```
+## Client contexts
 
-Owner = local OS user running the helper.
-
-## Contexts
-
-The strict client config is `~/.wt/config.toml`. It contains named
-`bare_metal_local` and `bare_metal_ssh` contexts. A qualified world name is
-`context.world`; short names resolve only when globally unambiguous. Aggregate
-list and sync operations fail if any configured context is unavailable.
-
-## Commands
-
-| Command | Behavior |
-|---------|----------|
-| `wt new <source> <context.name> [--ref <ref>]` | Clone using the site's Git identity; start its devcontainer; sync access; print status and Host snippet |
-| `wt ls` | List my worlds: name, status, IP, and SSH target |
-| `wt rm <name>` | Destroy my world and sync access records |
-| `wt sync` | Atomically rewrite the managed SSH config and known-hosts files from my running instance inventory |
-| `wt ssh <name>` | Execute stock OpenSSH and enter the primary app container through the synced instance alias |
-
-Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the source/ref form above and adds guest access. The CLI never edits application repositories or mounts their checkout on the host.
-
-## Era 1.5 guest access
-
-- The guest username is the fixed, non-root `wt` user and its working checkout is `/workspace`.
-- `wt-local-setup` requires a public-key file path in strict site config. `wt-local` injects those public keys into every world it creates.
-- Every world has unique SSH host keys. After boot, `wt-libvirt` reads the public host keys through the QEMU guest agent; `wt-local` persists them with the SSH endpoint.
-- `wt sync` manages dedicated config and known-hosts files. It creates `<instance-name>` as an interactive `docker exec -it` shell in the primary app container and `<instance-name>-host` as unrestricted guest SSH. Both pin the same guest host-key identity. The user must place `Include ~/.ssh/wt/config` at the beginning of the main SSH config, before any `Host` blocks. `wt` never edits the user's main SSH config and must not weaken host-key checking.
-- VS Code Remote SSH, SCP, and explicit SSH commands use `<instance-name>-host`. Interactive `ssh <instance-name>` and `wt ssh <instance-name>` enter the app container as its configured devcontainer user in the mounted workspace.
-- SSH reachability is part of create readiness. `Running` still additionally requires clone, checkout, and Compose wait to succeed.
-- Git sources are SSH-only. Each site configures a dedicated unencrypted Git identity and known-hosts file. The key and site trust remain under `/workspace/.git/wt`, allowing Git in both the guest and stock devcontainer to fetch and push. Client-to-site OpenSSH authentication is separate.
-
-## Era 2
-
-- Dispatch through local and OpenSSH context kinds.
-- Resolve explicit `context.world` names or globally unique short names.
-- Keep request/response behavior identical across transports.
-- Reuse the guest SSH inventory and access behavior introduced in Era 1.5. Do not add public HTTP.
+The strict client config is `~/.wt/config.toml`:
 
 ```toml
 version = 1
+
+[[contexts]]
+name = "local"
+kind = "bare_metal_local"
 
 [[contexts]]
 name = "lab"
@@ -63,8 +29,41 @@ kind = "bare_metal_ssh"
 host = "wt-lab"
 ```
 
-Remote invocation: `ssh -- wt-lab wt-local api`.
+A local context executes `wt-local api`. An SSH context executes
+`ssh -- <host> wt-local api`, using the user's existing OpenSSH configuration
+and authentication. Context names contain lowercase letters, digits, and
+internal hyphens. SSH hosts must be non-empty and must not begin with `-`.
 
-## One-line summary
+`context.world` is the stable qualified name. A short world name resolves only
+when it is globally unique. Short-name creation requires exactly one configured
+context. Aggregate list and sync operations fail if any context is unavailable.
 
-**Run and enter the real recipe locally; then carry the same helper API over OpenSSH.**
+## Commands
+
+| Command | Behavior |
+|---------|----------|
+| `wt new <source> <name> [--ref <ref>]` | Select a context, clone with the site's Git identity, start the devcontainer, sync access, and print status and aliases |
+| `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
+| `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
+| `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |
+| `wt ssh <name>` | Refresh inventory and use stock OpenSSH to enter the primary app container |
+
+Git sources must use `ssh://` or `user@host:path`. With no `--ref`, Git uses the
+remote default branch. A supplied ref may identify an existing branch, tag, or
+commit. The client never edits the application repository or mounts its checkout
+on the client host.
+
+## Guest access
+
+- The guest login is the fixed non-root user `wt`; the checkout is `/workspace`.
+- Every world has unique SSH host keys. `wt-libvirt` retrieves their public parts
+  through the QEMU guest agent, and `wt-local` persists them with the endpoint.
+- `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
+  `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
+- Qualified aliases always exist. Short aliases exist only for globally unique
+  names. The base alias enters the app container; the `-host` alias provides
+  unrestricted guest SSH for commands, SCP, and VS Code Remote SSH.
+- Both aliases enforce the world's recorded host-key identity. A changed DHCP
+  address may be reconciled, but a different host key is never accepted silently.
+- SSH readiness, clone, checkout, and `devcontainer up` must all succeed before a
+  world becomes `Running`.

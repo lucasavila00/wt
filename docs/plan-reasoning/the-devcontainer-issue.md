@@ -46,7 +46,7 @@ Not the product identity. Prefer **clone per world**. Worktrees need explicit gi
 
 - Keep the existing recipe  
 - One world + one clone per instance  
-- Compose runs **inside** the world (VM or DinD pod), not as “rewrite to Deployments” as the primary path  
+- Compose runs **inside** the KVM world, not as a rewrite to another deployment format
 
 ## One-line summary
 

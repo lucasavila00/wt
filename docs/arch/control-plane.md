@@ -1,51 +1,35 @@
-# Control plane and workers
+# Control plane
 
-Parent: [arch README](./README.md). CLI: [cli.md](./cli.md).
-
-## Era 1
+Parent: [architecture](./README.md). CLI: [cli.md](./cli.md).
 
 ```text
-wt  →  local wt-local helper
-             ├─ SQLite instance registry
-             └─ wt-libvirt
-                    └─ libvirt/KVM worlds
+wt  ── local or OpenSSH stdio ──► wt-local api
+                                      ├─ owner-scoped SQLite registry
+                                      └─ wt-libvirt
+                                             └─ libvirt/KVM worlds
 ```
 
 | Piece | Role |
 |-------|------|
-| `wt` | Local stdio client |
-| `wt-local` | Owner-scoped instance service + durable registry |
-| `wt-libvirt` | KVM domain lifecycle, guest agent, inventory |
+| `wt` | Context-aware stdio client and SSH inventory manager |
+| `wt-local` | Owner-scoped instance service and durable registry |
+| `wt-libvirt` | KVM lifecycle, guest-agent provisioning, and inventory |
 
-Owner = local OS user. No public listener. No SSH transport.
+The helper reads one protocol version 3 JSON request from stdin and writes one
+JSON response to stdout. Provisioning output uses stderr so stdout remains a
+machine-readable protocol. There is no socket or HTTP listener.
 
-Ground truth for VM existence = libvirt. SQLite holds requested instance state and backend id.
+The owner is the OS user executing `wt-local`. Local invocation uses the client
+user; remote invocation uses the OpenSSH-authenticated site user. Each owner has
+a registry at `~/.local/state/wt/instances-v2.db`.
 
-## Reconcile
+SQLite stores the request, lifecycle state, final error, backend identifier, and
+SSH inventory. Libvirt is the ground truth for VM existence. On restart, the
+helper reopens the registry and inspects libvirt. If a recorded domain is gone,
+the instance becomes `Error`; if DHCP changes an address, reconciliation updates
+the endpoint while preserving the world's host-key identity.
 
-| Situation | Handling |
-|-----------|----------|
-| Domain exists, no record | Later GC/reconcile policy |
-| Record exists, domain missing | Mark error |
-| Helper restarted | Reopen SQLite; inspect libvirt |
-
-## Era 1.5
-
-Create adds Git source and optional ref. The worker returns success only after guest SSH, checkout, and Compose are ready. SQLite persists the request, final error, and the instance's SSH user, current address, port, and public host keys. Reconciliation refreshes a changed DHCP address from libvirt while the host keys remain the world's stable SSH identity. This inventory is the source for `wt sync`; it does not grant `wt-local` an SSH transport or expose the guest filesystem locally.
-
-## Era 2
-
-```text
-client wt  →  ssh site -- wt-local api  →  same registry + worker
-```
-
-Site SSH changes control transport only. Guest SSH already exists from Era 1.5; the API and ownership model stay the same.
-
-## Later
-
-- Multi-node `wt-control-plane` + `wt-worker`
-- Kubernetes worker
-
-## One-line summary
-
-**`wt-local` owns instance state; `wt-libvirt` owns KVM worlds.**
+Create returns success only after the guest is reachable over SSH, the requested
+Git revision is checked out, and the stock devcontainer is running. Delete tears
+down the domain and world files. The persisted running inventory is the source
+for the client's managed OpenSSH files.

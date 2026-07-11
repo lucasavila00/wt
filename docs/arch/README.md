@@ -1,75 +1,70 @@
 # Architecture
 
-Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.md).
+Current product direction: [plan.md](../plan.md).
 
 | Doc | Topic |
-|-----|--------|
-| [cli.md](./cli.md) | Era 1 local `wt` CLI |
-| [control-plane.md](./control-plane.md) | Control plane, workers, binaries |
-| [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt worker / `wt-local` |
-| [k8s-agent.md](./k8s-agent.md) | k8s worker (not implemented) |
+|-----|-------|
+| [cli.md](./cli.md) | `wt` CLI, contexts, and SSH inventory |
+| [control-plane.md](./control-plane.md) | Site helper, registry, and API |
+| [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt/KVM world backend |
+| [k8s-agent.md](./k8s-agent.md) | Unimplemented backend stub |
 
-## Era 1
-
-```text
-wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KVM world
-```
-
-- No listener or SSH transport. `wt` spawns `wt-local` directly. Era 1 has no guest SSH.
-- Local path only. No client contexts.
-- Guest: Ubuntu 24.04 + Docker Engine + Compose v2 + QEMU guest agent.
-
-## Era 1.5
+## System
 
 ```text
-wt new source name  ──►  local wt-local  ──►  KVM guest
-                                                   ├─ clone → checkout → devcontainer up
-                                                   └─ sshd → shell / VS Code Remote SSH
+client wt
+   ├─ local context ─────────► wt-local api
+   └─ OpenSSH context ───────► wt-local api
+                                  ├─ SQLite registry
+                                  └─ wt-libvirt ──► KVM world
+                                                        ├─ Git checkout
+                                                        ├─ devcontainer
+                                                        └─ guest SSH
 ```
 
-- Same local transport and KVM lifecycle.
-- `Running` means guest SSH and the selected Git revision's devcontainer are ready.
-- The checkout remains inside the guest at `/workspace`; it is not exported to the host.
-- Each instance records a stable SSH user, endpoint, and host-key identity. `wt sync` projects those records into an app-container alias named after the instance and an unrestricted guest/VS Code alias suffixed with `-host`.
-- Guest SSH is independent of Era 2's SSH transport to `wt-local`.
-- Git sources are SSH-only. The selected key is copied into the checkout's private `.git/wt` area for guest/container fetch and push; its passphrase is never stored. No ssh-agent is used.
+The client reads named contexts from `~/.wt/config.toml`. A local context runs
+`wt-local api` from `PATH`; an SSH context runs the same helper on a site through
+stock OpenSSH. Both transports carry one versioned JSON request and response over
+stdio. There is no public control-plane listener.
 
-## Era 2
+Each site runs on Ubuntu 24.04 amd64 with KVM and libvirt. `wt-local` scopes its
+registry to the OS user executing the helper, and `wt-libvirt` creates one guest
+per world. A world is `Running` only after guest SSH, the selected Git revision,
+and the repository's stock devcontainer are ready.
 
-```text
-client wt  ── OpenSSH stdio ──►  site wt-local  ──►  same KVM worker
-```
+The checkout remains inside the guest at `/workspace`. Each world records a
+stable SSH user, endpoint, and unique public host keys. `wt sync` projects that
+inventory into managed app-container and guest-host aliases without editing the
+user's main SSH config.
 
-- Client and site are different machines.
-- Same versioned helper API. Client context routing uses `context.world` FQNs. No HTTP listener.
+Git sources are SSH-only. Each site supplies a dedicated unencrypted Git identity
+and known-hosts file. The identity and trust bundle are copied into the trusted
+world's checkout for Git from both the guest and devcontainer. Client-to-site
+OpenSSH authentication is separate.
 
 ## Language and crates
 
-**Rust** for CLI and server. Shared types in **`wt-api`** (serde JSON over stdio).
+Rust workspace:
 
 ```text
 crates/
-  wt-api
-  wt-cli       # package; binary name wt
-  wt-guest     # host-built programs injected into guests
-  wt-libvirt   # production libvirt/KVM backend
-  wt-local     # site helper + registry + service
-  wt-local-setup # Ubuntu/KVM local-site installer
-  wt-integration-tests
+  wt-api                shared JSON types
+  wt-cli                package for the wt binary
+  wt-guest              injected wt-app-shell helper
+  wt-libvirt            production libvirt/KVM backend
+  wt-local              site helper, registry, and service
+  wt-local-setup        Ubuntu/KVM installer and image builder
+  wt-integration-tests  injected and real-system tests
 ```
 
-Not in the repo yet: `wt-control-plane`, `wt-worker`.
+## Control-plane API
 
-## Control-plane API (conceptual)
+| Operation | Meaning |
+|-----------|---------|
+| create | Provision a devcontainer-ready KVM world |
+| list | Return the caller's worlds and access inventory |
+| get | Return one caller-owned world |
+| delete | Destroy one caller-owned world |
 
-| Verb | Meaning |
-|------|---------|
-| create | name → devcontainer-ready KVM world + guest IP |
-| list | name, status, guest IP |
-| destroy | tear down world |
-
-Owner: local OS user.
-
-## One-line summary
-
-**`wt` runs local `wt-local`; `wt-libvirt` manages devcontainer-ready KVM worlds.**
+The API uses protocol version 3 JSON over helper stdio. The owner is the OS user
+running `wt-local`, whether the helper was started locally or through OpenSSH.

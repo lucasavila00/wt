@@ -1,16 +1,16 @@
 # wt
 
-Named parallel instances of an existing Docker/devcontainer recipe. The Mac is cockpit only (`wt` + `ssh`); worlds run on a remote site server.
+Named parallel instances of an existing Docker/devcontainer recipe. The client is
+a thin cockpit (`wt` + `ssh`); worlds run on configured Ubuntu/KVM sites.
 
 | Doc | |
 |-----|--|
 | [docs/plan.md](./docs/plan.md) | Product plan |
 | [docs/arch/](./docs/arch/README.md) | Architecture |
-| [docs/impl/](./docs/impl/README.md) | Implementation eras |
 | [docs/plan-reasoning/](./docs/plan-reasoning/) | Background notes |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Local development prerequisites |
 | [TESTS.md](./TESTS.md) | Test prerequisites and commands |
-| [MANUAL-TESTS.md](./MANUAL-TESTS.md) | Copy-paste Era 1.5 operator tests |
+| [MANUAL-TESTS.md](./MANUAL-TESTS.md) | Copy-paste operator smoke test |
 
 ## Workspace
 
@@ -28,14 +28,12 @@ crates/
 | Package | Kind | Role |
 |---------|------|------|
 | [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Local CLI — new, ls, rm, sync, ssh |
+| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Context-aware CLI — new, ls, rm, sync, ssh |
 | [`wt-guest`](./crates/wt-guest/) | bin `wt-app-shell` | Host-built devcontainer shell helper injected into guests |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
 | [`wt-local`](./crates/wt-local/) | bin | Local helper — registry + instance service + embedded backend |
 | [`wt-local-setup`](./crates/wt-local-setup/) | bin | Strict Ubuntu/KVM local-site installation and golden image build |
 | [`wt-integration-tests`](./crates/wt-integration-tests/) | tests | Injected service tests + libvirt/KVM acceptance test |
-
-Out of the workspace until multi-node is in scope: `wt-control-plane`, `wt-worker`.
 
 ## Build
 
@@ -45,4 +43,5 @@ cargo run -p wt-cli
 cargo run -p wt-local
 ```
 
-Era 1.5 provides SSH-only Git/devcontainer provisioning and interactive guest access.
+Client configuration and operator usage are documented in
+[`wt-cli`](./crates/wt-cli/README.md) and [MANUAL-TESTS.md](./MANUAL-TESTS.md).

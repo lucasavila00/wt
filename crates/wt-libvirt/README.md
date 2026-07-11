@@ -7,7 +7,7 @@ Production libvirt/KVM world backend.
 - QEMU supplies the userspace VM process and qcow2 support under KVM.
 - Cloud-init injects per-world identity.
 - QEMU guest agent verifies Docker Engine and Compose readiness through libvirt.
-- Era 1.5 adds SSH Git clone, ref checkout, persistent checkout-local Git credentials, guest SSH, and devcontainer readiness.
+- SSH Git clone, ref checkout, persistent checkout-local Git credentials, guest SSH, and devcontainer readiness are part of world creation.
 
 Used by [`wt-local`](../wt-local/). Real-system tests live in [`wt-integration-tests`](../wt-integration-tests/).
 

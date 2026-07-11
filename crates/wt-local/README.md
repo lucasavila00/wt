@@ -2,14 +2,17 @@
 
 Single-site helper: **control-plane API + registry + embedded backend**.
 
-Era 1 runs on the same Ubuntu workstation as the CLI. `wt` invokes `wt-local api` directly. One JSON request in. One JSON response out. Owner = local OS user.
+`wt-local` runs on an Ubuntu/KVM site. `wt` invokes `wt-local api` directly for a
+local context or through OpenSSH for a remote context. One JSON request enters
+over stdin and one JSON response leaves over stdout. The owner is the OS user
+executing the helper.
 
 ## Role
 
 | Does | Does not |
 |------|----------|
 | Expose control-plane ops over stdio JSON | Listen on a socket |
-| Keep the local instance registry | Use SSH |
+| Keep the site user's instance registry | Implement SSH authentication or policy |
 | Invoke `wt-libvirt` | Implement libvirt/KVM lifecycle |
 
 Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/arch/cli.md](../../docs/arch/cli.md), [docs/arch/bare-metal-agent.md](../../docs/arch/bare-metal-agent.md).
