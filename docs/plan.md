@@ -66,11 +66,9 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 
 ## Build order
 
-1. `wt-api` + `wt-cli` (bin `wt`) + `wt-local` ([arch](./arch/README.md), [impl](./impl/README.md))  
-2. Libvirt guest + real SSH  
-3. Stock recipe in guest  
-4. Daily-driver UX (including optional ssh-config apply)  
-5. Library seams for multi-node bins; then k8s worker when needed  
+1. Bare-metal vertical slice: `wt-api` + `wt-cli` + `wt-local` + libvirt guest + real SSH ([arch](./arch/README.md), [impl](./impl/README.md))
+2. Stock recipe in guest + remote context + daily-driver UX
+3. Library seams for multi-node bins; then k8s worker when needed
 
 ## One-line summary
 

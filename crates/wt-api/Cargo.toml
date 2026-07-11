@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Shared HTTP/JSON types for wt CLI and agents"
+description = "Shared JSON types for wt CLI and agents"
 
 [dependencies]
 # serde / serde_json — add when types land

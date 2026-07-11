@@ -19,11 +19,11 @@ Client:  ssh {repo}-{feature}  after print / wt sync  →  guest world
 
 - Site binary: **`wt-local`** (not a public HTTP API).  
 - CLI contexts: **`bare_metal_ssh`** and **`bare_metal_local`** (same helper JSON); later **`k8s`**.  
-- Worker: stub → libvirt on the site host.
+- Worker: libvirt on the site host.
 
 ## Language and crates
 
-**Rust** for CLI and server. Shared types in **`wt-api`** (serde JSON over HTTP).
+**Rust** for CLI and server. Shared types in **`wt-api`** (serde JSON over stdio).
 
 ```text
 crates/

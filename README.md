@@ -13,7 +13,7 @@ Named parallel instances of an existing Docker/devcontainer recipe. The Mac is c
 
 ```text
 crates/
-  wt-api/      shared control-plane HTTP/JSON types (library)
+  wt-api/      shared control-plane JSON types (library)
   wt-cli/      CLI package (binary name: `wt`)
   wt-local/    site server (`wt-local` = control plane + embedded worker)
 ```

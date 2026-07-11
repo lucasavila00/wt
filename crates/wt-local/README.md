@@ -9,7 +9,7 @@ Runs on the **site** host (remote hypervisor **or** the same Ubuntu workstation 
 | Does | Does not |
 |------|----------|
 | Expose control-plane ops as a CLI-spawned helper (stdio JSON) | Require separate bearer-token product for bare metal |
-| Embedded worker (stub → libvirt) | Multi-node fleet by itself |
+| Embedded libvirt worker | Multi-node fleet by itself |
 | Local inventory + domain reconcile | |
 
 Design: [docs/arch/control-plane.md](../../docs/arch/control-plane.md), [docs/arch/cli.md](../../docs/arch/cli.md), [docs/arch/bare-metal-agent.md](../../docs/arch/bare-metal-agent.md).

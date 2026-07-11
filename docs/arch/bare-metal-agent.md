@@ -60,7 +60,7 @@ Status examples: `Provisioning`, `StartingRecipe`, `Running`, `Error`, `Destroyi
 
 | State | Where |
 |-------|--------|
-| Instance records | `wt-local` process |
+| Instance records | Durable local `wt-local` registry |
 | Domains | libvirt |
 | Git credentials | host env / file |
 

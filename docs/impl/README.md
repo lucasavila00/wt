@@ -20,41 +20,24 @@ wt-cli  →  [optional ssh --]  wt-local helper  →  JSON
 
 ## Eras
 
-### 1 — Thin local loop (stub)
+### 1 — Local loop + libvirt VMs
 
-Ship the shape: types + helper + CLI on **one machine**. Stub worker only—keep this short.
+Ship the shape around the hard part: types + helper + CLI + real guests on **one machine**.
 
 | Deliver | |
 |---------|--|
 | `wt-api` | create / list / get / delete; status; guest `endpoint`; errors |
-| `wt-local` | helper entrypoint; in-memory registry; owner = process user; stub create/delete (fake endpoint OK) |
+| `wt-local` | helper entrypoint; durable local registry; owner = process user; golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; `Provisioning` → `Running` / `Error` |
 | `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print Host; basic `sync` if cheap |
-
-**Done when:** local CLI drives helper end-to-end; ready to swap stub for libvirt without redesigning wire types or CLI.
-
-**Out:** libvirt, compose, remote SSH (unless free), multi-node, public HTTP.
-
----
-
-### 2 — Libvirt VMs
-
-**Main risk era.** Real guests you can SSH into.
-
-| Deliver | |
-|---------|--|
-| `wt-local` | golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; `Provisioning` → `Running` / `Error` |
 | ops | image, pool, network/bridge, libvirt permissions |
-| CLI | unchanged path; print/sync hit real endpoints |
 
-**Done when:** `wt new` → print/`sync` → `ssh {repo}-{feature}` works; `wt rm` destroys the domain.
+**Done when:** local `wt new` → print/`sync` → `ssh {repo}-{feature}` reaches a real Docker-ready guest; `wt rm` destroys the domain.
 
-**Out:** full app compose (empty/docker-ready guest is enough).
-
-Also here if it unblocks you: sqlite so instance records survive helper restarts while VMs still exist.
+**Out:** compose, remote SSH (unless free), multi-node, public HTTP.
 
 ---
 
-### 3 — Stock recipe + client completeness
+### 2 — Stock recipe + client completeness
 
 Everything that makes it a daily driver **after** VMs work—one era, not split for ceremony.
 
@@ -81,11 +64,11 @@ Do not pre-build these.
 
 ## First commits
 
-1. `wt-api` types  
-2. `wt-local` helper + memory stub  
-3. `wt-cli` local spawn + new/ls/rm (+ print/sync)  
-4. **Libvirt** (prioritize once the loop exists)  
-5. Recipe + remote SSH + CLI polish  
+1. `wt-api` types
+2. `wt-local` helper + durable local registry
+3. `wt-cli` local spawn + new/ls/rm (+ print/sync)
+4. **Libvirt** guest lifecycle + SSH endpoint
+5. Recipe + remote SSH + CLI polish
 
 ## Open (pick in code)
 
@@ -95,4 +78,4 @@ Do not pre-build these.
 
 ## One-line summary
 
-**Short stub loop → libvirt (hard) → recipe + remote CLI polish; stop inventing eras for easy work.**
+**Real local VM loop first → recipe + remote CLI polish; stop inventing eras for easy work.**
