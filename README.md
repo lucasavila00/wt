@@ -8,9 +8,7 @@ a thin cockpit (`wt` + `ssh`); worlds run on configured Ubuntu/KVM servers.
 | [docs/plan.md](./docs/plan.md) | Product plan |
 | [docs/arch/](./docs/arch/README.md) | Architecture |
 | [docs/plan-reasoning/](./docs/plan-reasoning/) | Background notes |
-| [DEVELOPMENT.md](./DEVELOPMENT.md) | Local development prerequisites |
-| [TESTS.md](./TESTS.md) | Test prerequisites and commands |
-| [MANUAL-TESTS.md](./MANUAL-TESTS.md) | Copy-paste operator smoke test |
+| [DEVELOPMENT.md](./DEVELOPMENT.md) | Local setup, tests, and operator smoke test |
 
 ## Workspace
 
@@ -44,4 +42,4 @@ cargo run -p wt-server
 ```
 
 Client configuration and operator usage are documented in
-[`wt-cli`](./crates/wt-cli/README.md) and [MANUAL-TESTS.md](./MANUAL-TESTS.md).
+[`wt-cli`](./crates/wt-cli/README.md) and [DEVELOPMENT.md](./DEVELOPMENT.md).

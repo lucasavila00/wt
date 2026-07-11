@@ -7,7 +7,8 @@ Cross-crate integration tests. No production code.
 | Injected | Test-only `WorldWorker` implementation |
 | Real system | Production `wt-libvirt` against local libvirt/KVM |
 
-The real-system lane always runs. Requirements and command: [TESTS.md](../../TESTS.md).
+The real-system lane always runs. Local setup and commands are documented in
+[DEVELOPMENT.md](../../DEVELOPMENT.md).
 
 ## KVM image cache
 
@@ -17,10 +18,6 @@ cached backing image prepared with:
 ```text
 scripts/prepare-test-image --config config/wt-server.development.toml
 ```
-
-Run it from the repository root in an interactive terminal. It invokes `sudo`.
-Re-run it after rebuilding the production golden image or changing
-`fixture-images.txt`.
 
 The cache contains the exact container images listed in `fixture-images.txt`.
 Test worlds remain disposable qcow2 overlays. The test refuses a cache whose

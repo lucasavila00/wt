@@ -14,12 +14,14 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-domains=$(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
-if [[ -n $domains ]]; then
-    echo "refusing to clear while wt domains exist:" >&2
-    echo "$domains" >&2
-    exit 1
-fi
+mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
+for domain in "${domains[@]}"; do
+    state=$(virsh -c qemu:///system domstate "$domain")
+    if [[ $state != "shut off" ]]; then
+        virsh -c qemu:///system destroy "$domain"
+    fi
+    virsh -c qemu:///system undefine "$domain" --nvram
+done
 
 rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
 sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/libvirt/images/wt
