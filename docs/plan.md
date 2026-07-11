@@ -8,7 +8,7 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 - **Named parallel instances** of an existing `.devcontainer` + Docker Compose recipe.
 - **Mac = cockpit only** (CLI + `ssh`). No Docker on the Mac.
 - **`wt new <source> <name>`** with **`name` = `{repo}-{feature}`** → site runs stock recipe → CLI **prints** guest Host snippet; **`wt sync`** projects **my** worlds into managed ssh config; enter with **`ssh <name>`** / **`wt ssh`**.  
-- **Clusters = contexts (sum type):** **`bare_metal_ssh`** (CLI → `ssh user@host -- helper`) and **`bare_metal_local`** (CLI → helper on this machine, no SSH)—same `wt-local` JSON API. Later **`k8s`** is another variant. Owner = SSH user or local OS user. Detail: [arch/cli.md](./arch/cli.md).
+- **Clusters = contexts (sum type):** **`bare_metal_ssh`** (CLI → `ssh user@host -- helper`) and **`bare_metal_local`** (CLI → helper on this machine, no SSH)—same `wt-local` JSON API. `context.world` is the stable FQN and short names work when unique. Later **`k8s`** is another variant. Owner = SSH user or local OS user. Detail: [arch/cli.md](./arch/cli.md).
 - **Isolation** = each instance has its own network identity so stock `"3000:3000"` works N times. **Trusted pool** (solo or same company)—not hostile multi-tenant security.
 
 ## Recipe
@@ -16,7 +16,7 @@ Background notes: [plan-reasoning/](./plan-reasoning/).
 - Canonical recipe = the repository’s stock **`devcontainer.json`**, run by the pinned Dev Container CLI. Compose remains an implementation detail of that recipe.
 - `wt` adds no repository config or override. Relative bind mounts work because the repository is cloned inside its world before the recipe starts.
 - GitLab CI stays a separate batch path; shared contract with interactive dev is mainly **images** (+ discipline), not one mega-file.
-- Era 1.5 is SSH-only. It copies the selected key into the trusted world's checkout for guest/devcontainer Git, prompts when an encrypted key is used, and never stores the passphrase. No ssh-agent is used.
+- Each site copies its dedicated unencrypted Git identity into the trusted world's checkout for guest/devcontainer Git. Client-to-site authentication remains OpenSSH-owned. No ssh-agent is used.
 
 ## World
 

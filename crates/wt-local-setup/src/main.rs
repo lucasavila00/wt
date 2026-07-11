@@ -9,7 +9,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use runner::SystemRunner;
 use std::path::PathBuf;
-use wt_libvirt::SiteConfig;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-local-setup")]
@@ -77,7 +76,7 @@ fn run() -> Result<()> {
     let runner = SystemRunner;
     match Cli::parse().command {
         SetupCommand::Validate { config } => {
-            SiteConfig::load_from(&config).map_err(anyhow::Error::msg)?;
+            site::validate(&config)?;
             println!("valid {}", config.display());
         }
         SetupCommand::Install { config } => site::install(&runner, &config)?,

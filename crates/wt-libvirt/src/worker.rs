@@ -18,6 +18,7 @@ use virt::error::ErrorNumber;
 pub struct LibvirtWorker {
     config: LibvirtConfig,
     app_shell: Vec<u8>,
+    git_credentials: git::Credentials,
 }
 
 impl LibvirtWorker {
@@ -39,13 +40,19 @@ impl LibvirtWorker {
         }
         Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
-        Ok(Self { config, app_shell })
+        let git_credentials =
+            git::load_credentials(&config.git_identity_file, &config.git_known_hosts_file)?;
+        Ok(Self {
+            config,
+            app_shell,
+            git_credentials,
+        })
     }
 
     fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         wt_api::validate_ssh_git_source(spec.source)
             .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
-        let private_git = git::load_credentials(spec.identity_file)?;
+        let private_git = &self.git_credentials;
         eprintln!("Creating KVM guest {}...", spec.name);
         let paths = world::Paths::new(&self.config.worlds_dir, spec.backend_id);
         fs::create_dir(&paths.directory)
@@ -112,7 +119,7 @@ impl LibvirtWorker {
             &domain,
             spec.source,
             spec.git_ref,
-            &private_git,
+            private_git,
             recipe_deadline,
         )?;
         report_phase("Git clone and checkout", phase_started);

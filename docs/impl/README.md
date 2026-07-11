@@ -61,8 +61,8 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 
 | Deliver | |
 |---------|--|
-| `wt-api` | protocol v2; create carries SSH `source`, `name`, optional `git_ref`, and identity path; instance stores source/ref plus SSH endpoint and public host keys |
-| `wt-cli` | `wt new <source> <name> [--ref <ref>] [--identity PATH]`; blocking interactive create; automatic sync; `wt ssh` |
+| `wt-api` | protocol v3; create carries SSH `source`, `name`, and optional `git_ref`; instance stores source/ref plus SSH endpoint and public host keys |
+| `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; automatic sync; `wt ssh` |
 | `wt-local` | versioned SQLite registry; persist source/ref and SSH identity; preserve failure detail |
 | `wt-libvirt` | guest exec helper; SSH setup/readiness; clone; checkout; `devcontainer up`; captured errors |
 | `wt-local-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI; configure public-key source; record provenance |
@@ -79,9 +79,8 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 - `source` = `ssh://` or standard scp-style SSH Git URL reachable from the guest. HTTPS, `git://`, and local paths are rejected.
 - No `--ref` = remote default branch.
 - `--ref` = existing branch, tag, or commit. No branch creation. `wt` never pushes; an interactive user may use Git normally after entering the world.
-- `--identity` defaults to `~/.ssh/id_ed25519`. `wt-local` prompts on `/dev/tty` for its passphrase only when required.
-- The passphrase exists only in process memory and guest tmpfs during clone. It is never stored in JSON, SQLite, cloud-init, the image, or the world disk.
-- After clone, the original private key and caller's host trust are installed under `/workspace/.git/wt`. A repository-local `core.sshCommand` uses that bundle from the guest and devcontainer. Encrypted keys remain encrypted and prompt normally during later fetch/push operations.
+- Each site configures a dedicated unencrypted Git identity and known-hosts file. Client-to-site OpenSSH authentication is separate.
+- After clone, the site private key and host trust are installed under `/workspace/.git/wt`. A repository-local `core.sshCommand` uses that bundle from the guest and devcontainer.
 - The credential bundle is readable inside the world's trusted devcontainer. Its wrapper makes a mode-`0600` per-command key copy for OpenSSH and deletes that copy afterward. An unencrypted input key therefore grants its full identity to the trusted world/container until `wt rm`.
 - Missing identity, invalid passphrase, authentication failure, or unknown host fails with an actionable Git-phase error. There is no ssh-agent or fallback credential mechanism.
 - Checkout path = `/workspace` inside the guest.
@@ -131,16 +130,16 @@ Run `wt` and `wt-local` on different machines. Do not change world or recipe sem
 
 | Deliver | |
 |---------|--|
-| Client config | named `bare_metal_local` and `bare_metal_ssh` contexts |
+| Client config | named `bare_metal_local` and `bare_metal_ssh` contexts in `~/.wt/config.toml` |
 | Transport | `ssh -- <site> wt-local api`; same versioned stdio JSON |
-| CLI | context list/use/show; `new` / `ls` / `rm` over selected context |
+| CLI | FQN/unique-name routing; aggregate `ls` / `sync`; local and SSH dispatch |
 | Install | client-only `wt`; server `wt-local` + `wt-libvirt` + existing site setup |
 | Auth | existing OpenSSH config/agent; never generate or copy keys |
 
-Client config: `~/.config/wt/config.toml`.
+Client config: `~/.wt/config.toml`.
 
 ```toml
-current_context = "local"
+version = 1
 
 [[contexts]]
 name = "local"
@@ -155,7 +154,8 @@ host = "wt-lab"
 - `host` = OpenSSH destination or config alias. Reject empty values and values starting with `-`.
 - Local context always runs `wt-local api` from `PATH`.
 - SSH context always runs `ssh -- <host> wt-local api`. No configurable helper argv.
-- `--context <name>` overrides `current_context` for one command. `wt context use <name>` rewrites only `current_context`.
+- `context.world` always selects one server. Short names resolve only when globally unique; short-name create requires exactly one configured context.
+- `wt ls` and `wt sync` query all contexts and fail atomically if any context is unavailable.
 
 - No HTTP listener.
 - Remote owner = OS user executing `wt-local` on the site.

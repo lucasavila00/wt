@@ -47,6 +47,8 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         GitSshServer::start(temp.path(), bridge_ip)
     });
     config.guest.ssh_authorized_keys_file = git.client_public_key.clone();
+    config.git.identity_file = git.client_key.clone();
+    config.git.known_hosts_file = temp.path().join(".ssh/known_hosts");
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
     fs::write(
@@ -76,7 +78,6 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                     name: name.clone(),
                     source: git.url(),
                     git_ref: Some(git.main_commit.clone()),
-                    identity_file: git.client_key.to_string_lossy().into_owned(),
                 }),
             )
             .unwrap()
@@ -94,10 +95,19 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         };
         assert_eq!(instances.len(), 1);
         timings.run("sync SSH inventory", || {
-            wt_cli::ssh::sync(&instances).map_err(|error| error.to_string())
+            wt_cli::ssh::sync(
+                &instances
+                    .into_iter()
+                    .map(|instance| wt_cli::inventory::ContextInstance {
+                        context: "local".into(),
+                        instance,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|error| error.to_string())
         })?;
 
-        let host_alias = format!("{}-host", name.as_str());
+        let host_alias = format!("local.{}-host", name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
             Command::new("ssh")

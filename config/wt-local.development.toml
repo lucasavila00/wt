@@ -1,5 +1,5 @@
 # Development sample only. Cargo builds do not embed or install this file.
-version = 1
+version = 2
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
@@ -9,6 +9,10 @@ installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
+
+[git]
+identity_file = "/home/lucas/.ssh/wt-git"
+known_hosts_file = "/home/lucas/.ssh/known_hosts"
 
 [guest]
 memory_mib = 8192

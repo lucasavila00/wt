@@ -41,7 +41,7 @@ client wt  ── OpenSSH stdio ──►  site wt-local  ──►  same KVM wo
 ```
 
 - Client and site are different machines.
-- Same versioned helper API. No HTTP listener.
+- Same versioned helper API. Client context routing uses `context.world` FQNs. No HTTP listener.
 
 ## Language and crates
 

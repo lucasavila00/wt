@@ -21,7 +21,7 @@ Target: Ubuntu 24.04 amd64. KVM required. Source checkout required.
 Install stable Rust with rustup. Clone `wt`. Create a complete site config:
 
 ```toml
-version = 1
+version = 2
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
@@ -31,6 +31,10 @@ installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
+
+[git]
+identity_file = "/home/site-user/.ssh/wt-git"
+known_hosts_file = "/home/site-user/.ssh/known_hosts"
 
 [guest]
 memory_mib = 8192
@@ -76,7 +80,10 @@ The installer:
 
 Matching state is accepted. Differing config, ownership, modes, partial image state, stale build state, or image provenance fails installation.
 
-`/etc/wt/local.toml` is the only runtime site config. Era 1 has no runtime environment overrides.
+`/etc/wt/local.toml` is the only runtime site config. The Git identity is a
+dedicated, unencrypted, mode-`0600` key owned by the site user. It is distinct
+from both client-to-site OpenSSH authentication and guest-login authorized
+keys. There are no runtime environment overrides.
 
 Each user registry is fixed at `~/.local/state/wt/instances-v2.db`. There is no migration from older development registries. Worlds share the configured `libvirt.worlds_dir` and system libvirt daemon.
 
@@ -85,7 +92,7 @@ The `libvirt` group controls the host hypervisor. Only grant it to trusted site 
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":2,"operation":"list"}' | wt-local api
+printf '%s\n' '{"protocol_version":3,"operation":"list"}' | wt-local api
 ```
 
 The command writes one JSON response to stdout.

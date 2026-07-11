@@ -29,12 +29,6 @@ impl<W: WorldWorker> Service<W> {
         if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
             return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
         }
-        if request.identity_file.is_empty() || request.identity_file.contains('\0') {
-            return Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "identity file must not be empty or contain NUL",
-            ));
-        }
         if request
             .git_ref
             .as_deref()
@@ -70,7 +64,6 @@ impl<W: WorldWorker> Service<W> {
             name: &stored.instance.name,
             source: &stored.instance.source,
             git_ref: stored.instance.git_ref.as_deref(),
-            identity_file: &request.identity_file,
         };
         match self.worker.provision(&spec) {
             Ok(world) => {

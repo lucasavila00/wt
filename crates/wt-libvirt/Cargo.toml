@@ -10,7 +10,7 @@ description = "Libvirt/KVM world backend for wt"
 wt-api = { workspace = true }
 base64 = { workspace = true }
 quick-xml = { workspace = true }
-rpassword = { workspace = true }
+nix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -13,8 +13,16 @@ pub struct SiteConfig {
     pub version: u32,
     pub image: ImageConfig,
     pub libvirt: SiteLibvirtConfig,
+    pub git: GitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitConfig {
+    pub identity_file: PathBuf,
+    pub known_hosts_file: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -55,6 +63,8 @@ pub struct LibvirtConfig {
     pub app_shell_binary: PathBuf,
     pub worlds_dir: PathBuf,
     pub network: String,
+    pub git_identity_file: PathBuf,
+    pub git_known_hosts_file: PathBuf,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
@@ -78,9 +88,9 @@ impl SiteConfig {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != 1 {
+        if self.version != 2 {
             return Err(format!(
-                "unsupported config version {}; expected 1",
+                "unsupported config version {}; expected 2",
                 self.version
             ));
         }
@@ -100,6 +110,8 @@ impl SiteConfig {
             ("image.installed_path", &self.image.installed_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("install.binary_dir", &self.install.binary_dir),
+            ("git.identity_file", &self.git.identity_file),
+            ("git.known_hosts_file", &self.git.known_hosts_file),
         ] {
             if !path.is_absolute() {
                 return Err(format!("{name} must be an absolute path"));
@@ -181,6 +193,8 @@ impl SiteConfig {
             app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
+            git_identity_file: self.git.identity_file.clone(),
+            git_known_hosts_file: self.git.known_hosts_file.clone(),
             memory_mib: self.guest.memory_mib,
             vcpus: self.guest.vcpus,
             disk_gib: self.guest.disk_gib,
@@ -251,7 +265,7 @@ mod tests {
     use super::*;
 
     const VALID: &str = r#"
-version = 1
+version = 2
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"
@@ -261,6 +275,10 @@ installed_path = "/var/lib/wt/images/wt.qcow2"
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
+
+[git]
+identity_file = "/tmp/wt-test-git-identity"
+known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
 memory_mib = 8192

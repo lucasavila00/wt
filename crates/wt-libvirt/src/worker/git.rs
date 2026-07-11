@@ -2,15 +2,16 @@
 
 use super::guest_agent;
 use crate::WorkerError;
+use nix::unistd::Uid;
 use std::fs;
-use std::path::PathBuf;
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 use virt::domain::Domain;
 
 const BUNDLE_DIR: &str = "/workspace/.git/wt";
 const CLONE_CREDENTIALS_DIR: &str = "/run/wt-git";
-const CLONE_ASKPASS: &str = "/tmp/wt-git-askpass";
 const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
 const SSH_WRAPPER: &[u8] = br#"#!/bin/sh
 set -eu
@@ -28,34 +29,36 @@ install -m 0600 "$directory/identity" "$runtime/identity"
 
 pub(super) struct Credentials {
     identity: Vec<u8>,
-    passphrase: Option<Vec<u8>>,
     known_hosts: Vec<u8>,
 }
 
-pub(super) fn load_credentials(identity_file: &str) -> Result<Credentials, WorkerError> {
+pub(super) fn load_credentials(
+    identity_file: &Path,
+    known_hosts_file: &Path,
+) -> Result<Credentials, WorkerError> {
+    let metadata = fs::metadata(identity_file)
+        .map_err(|error| error_context("Git identity: inspect private key", error))?;
+    if !metadata.is_file()
+        || metadata.uid() != Uid::effective().as_raw()
+        || metadata.mode() & 0o7777 != 0o600
+    {
+        return Err(WorkerError::new(
+            "Git identity: configured server key must be a regular file owned by the site user with mode 0600",
+        ));
+    }
     let identity = fs::read(identity_file)
         .map_err(|error| error_context("Git identity: read private key", error))?;
-    let unencrypted = private_key_accepts_passphrase(identity_file, "")?;
-    let passphrase = if unencrypted {
-        None
-    } else {
-        let value = rpassword::prompt_password(format!("Passphrase for {identity_file}: "))
-            .map_err(|error| error_context("Git identity: read passphrase", error))?;
-        if !private_key_accepts_passphrase(identity_file, &value)? {
-            return Err(WorkerError::new(
-                "Git identity: invalid private key or passphrase",
-            ));
-        }
-        Some(value.into_bytes())
-    };
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| WorkerError::new("Git host trust: HOME is not set"))?;
-    let known_hosts = fs::read(home.join(".ssh/known_hosts"))
-        .map_err(|error| error_context("Git host trust: read ~/.ssh/known_hosts", error))?;
+    let identity_path = identity_file.display().to_string();
+    if !private_key_accepts_passphrase(&identity_path, "")? {
+        return Err(WorkerError::new(
+            "Git identity: configured server key must be unencrypted",
+        ));
+    }
+    let known_hosts = fs::read(known_hosts_file).map_err(|error| {
+        error_context("Git host trust: read configured known-hosts file", error)
+    })?;
     Ok(Credentials {
         identity,
-        passphrase,
         known_hosts,
     })
 }
@@ -76,7 +79,7 @@ pub(super) fn clone_and_checkout(
     )?;
     let result = (|| {
         stage_clone_credentials(domain, credentials, deadline)?;
-        let environment = git_environment(credentials.passphrase.is_some());
+        let environment = git_environment();
         run_git(
             domain,
             "Git clone",
@@ -102,13 +105,7 @@ pub(super) fn clone_and_checkout(
         }
         install_persistent_bundle(domain, credentials, deadline)
     })();
-    // The passphrase is allowed only in guest tmpfs for the blocking create.
-    let _ = guest_agent::exec(
-        domain,
-        "/bin/rm",
-        &["-rf", CLONE_CREDENTIALS_DIR, CLONE_ASKPASS],
-        deadline,
-    );
+    let _ = guest_agent::exec(domain, "/bin/rm", &["-rf", CLONE_CREDENTIALS_DIR], deadline);
     result
 }
 
@@ -119,21 +116,6 @@ fn stage_clone_credentials(
 ) -> Result<(), WorkerError> {
     guest_agent::write(domain, "/run/wt-git/identity", &credentials.identity)?;
     guest_agent::write(domain, "/run/wt-git/known_hosts", &credentials.known_hosts)?;
-    if let Some(passphrase) = &credentials.passphrase {
-        guest_agent::write(domain, "/run/wt-git/passphrase", passphrase)?;
-        guest_agent::write(
-            domain,
-            CLONE_ASKPASS,
-            b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
-        )?;
-        guest_agent::run_phase(
-            domain,
-            "Git credentials",
-            "/bin/chmod",
-            &["0700", CLONE_ASKPASS],
-            deadline,
-        )?;
-    }
     guest_agent::run_phase(
         domain,
         "Git credentials",
@@ -144,18 +126,10 @@ fn stage_clone_credentials(
     Ok(())
 }
 
-fn git_environment(has_passphrase: bool) -> Vec<String> {
-    let mut environment = vec![
+fn git_environment() -> Vec<String> {
+    vec![
         "GIT_SSH_COMMAND=ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes".to_owned(),
-    ];
-    if has_passphrase {
-        environment.extend([
-            format!("SSH_ASKPASS={CLONE_ASKPASS}"),
-            "SSH_ASKPASS_REQUIRE=force".to_owned(),
-            "DISPLAY=wt:0".to_owned(),
-        ]);
-    }
-    environment
+    ]
 }
 
 fn run_git(
@@ -308,13 +282,6 @@ mod tests {
         assert!(!private_key_accepts_passphrase(key, "").unwrap());
         assert!(!private_key_accepts_passphrase(key, "wrong").unwrap());
         assert!(private_key_accepts_passphrase(key, "secret").unwrap());
-    }
-
-    #[test]
-    fn encrypted_clone_executes_askpass_outside_noexec_run() {
-        let environment = git_environment(true);
-        assert!(environment.contains(&format!("SSH_ASKPASS={CLONE_ASKPASS}")));
-        assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 
     fn run(command: &mut Command, action: &str) {

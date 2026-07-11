@@ -2,8 +2,8 @@ mod config;
 mod worker;
 
 pub use config::{
-    GuestConfig, ImageConfig, InstallConfig, LibvirtConfig, SiteConfig, SiteLibvirtConfig,
-    GUEST_ARCHITECTURE, GUEST_MACHINE, LIBVIRT_URI, SITE_CONFIG_PATH,
+    GitConfig, GuestConfig, ImageConfig, InstallConfig, LibvirtConfig, SiteConfig,
+    SiteLibvirtConfig, GUEST_ARCHITECTURE, GUEST_MACHINE, LIBVIRT_URI, SITE_CONFIG_PATH,
 };
 pub use worker::LibvirtWorker;
 
@@ -19,7 +19,6 @@ pub struct ProvisionSpec<'a> {
     pub name: &'a InstanceName,
     pub source: &'a str,
     pub git_ref: Option<&'a str>,
-    pub identity_file: &'a str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

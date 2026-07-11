@@ -8,7 +8,8 @@ use nix::unistd::Uid;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
-use wt_libvirt::{SiteConfig, SITE_CONFIG_PATH};
+use std::process::Command;
+use wt_libvirt::{GitConfig, SiteConfig, SITE_CONFIG_PATH};
 
 pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     require_site_user()?;
@@ -23,6 +24,10 @@ pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     install_config(runner, &config_bytes)?;
     println!("installed wt site from {}", config_path.display());
     Ok(())
+}
+
+pub(crate) fn validate(config_path: &Path) -> Result<()> {
+    load_config(config_path).map(|_| ())
 }
 
 pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
@@ -66,7 +71,62 @@ fn prepare_host(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
 fn load_config(path: &Path) -> Result<(SiteConfig, Vec<u8>)> {
     let bytes = fs::read(path).with_context(|| format!("read config {}", path.display()))?;
     let config = SiteConfig::load_from(path).map_err(anyhow::Error::msg)?;
+    validate_git_credentials(&config.git)?;
     Ok((config, bytes))
+}
+
+fn validate_git_credentials(config: &GitConfig) -> Result<()> {
+    let identity = &config.identity_file;
+    let metadata = fs::metadata(identity)
+        .with_context(|| format!("inspect git.identity_file {}", identity.display()))?;
+    if !metadata.is_file()
+        || metadata.uid() != Uid::effective().as_raw()
+        || metadata.mode() & 0o7777 != 0o600
+    {
+        bail!(
+            "git.identity_file {} must be a regular file owned by the site user with mode 0600",
+            identity.display()
+        );
+    }
+    let output = Command::new("ssh-keygen")
+        .args(["-y", "-P", "", "-f"])
+        .arg(identity)
+        .output()
+        .with_context(|| format!("validate git.identity_file {}", identity.display()))?;
+    if !output.status.success() {
+        bail!(
+            "git.identity_file {} must be a valid unencrypted private key",
+            identity.display()
+        );
+    }
+
+    let known_hosts = &config.known_hosts_file;
+    let metadata = fs::metadata(known_hosts)
+        .with_context(|| format!("inspect git.known_hosts_file {}", known_hosts.display()))?;
+    if !metadata.is_file() {
+        bail!(
+            "git.known_hosts_file {} must be a regular file",
+            known_hosts.display()
+        );
+    }
+    let contents = fs::read_to_string(known_hosts)
+        .with_context(|| format!("read git.known_hosts_file {}", known_hosts.display()))?;
+    let has_entries = contents
+        .lines()
+        .map(str::trim)
+        .any(|line| !line.is_empty() && !line.starts_with('#'));
+    let output = Command::new("ssh-keygen")
+        .args(["-l", "-f"])
+        .arg(known_hosts)
+        .output()
+        .with_context(|| format!("validate git.known_hosts_file {}", known_hosts.display()))?;
+    if !has_entries || !output.status.success() {
+        bail!(
+            "git.known_hosts_file {} must contain valid known-hosts entries",
+            known_hosts.display()
+        );
+    }
+    Ok(())
 }
 
 fn require_site_user() -> Result<()> {
@@ -159,4 +219,43 @@ fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
     sudo_move(runner, temporary, Path::new(SITE_CONFIG_PATH))?;
     let _ = fs::remove_file(local);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn validates_site_owned_git_credentials() {
+        let temp = tempfile::tempdir().unwrap();
+        let identity = temp.path().join("identity");
+        let output = Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .arg(&identity)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        fs::set_permissions(&identity, fs::Permissions::from_mode(0o600)).unwrap();
+        let public = fs::read_to_string(identity.with_extension("pub")).unwrap();
+        let mut fields = public.split_whitespace();
+        let known_hosts = temp.path().join("known_hosts");
+        fs::write(
+            &known_hosts,
+            format!(
+                "example.test {} {}\n",
+                fields.next().unwrap(),
+                fields.next().unwrap()
+            ),
+        )
+        .unwrap();
+        let config = GitConfig {
+            identity_file: identity.clone(),
+            known_hosts_file: known_hosts,
+        };
+        validate_git_credentials(&config).unwrap();
+
+        fs::set_permissions(identity, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(validate_git_credentials(&config).is_err());
+    }
 }

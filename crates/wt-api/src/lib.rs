@@ -6,7 +6,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -39,7 +39,6 @@ pub struct CreateInstance {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
-    pub identity_file: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -324,7 +323,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -332,22 +331,20 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_protocol_v2_ssh_shape() {
+    fn create_request_has_protocol_v3_site_credentials_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
             git_ref: Some("feature".to_owned()),
-            identity_file: "/home/user/.ssh/id_ed25519".to_owned(),
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
-                "git_ref": "feature",
-                "identity_file": "/home/user/.ssh/id_ed25519"
+                "git_ref": "feature"
             })
         );
     }

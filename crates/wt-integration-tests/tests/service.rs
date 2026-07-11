@@ -41,15 +41,10 @@ fn world() -> World {
 }
 
 fn create(name: InstanceName) -> CreateInstance {
-    let identity_file = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME is set"))
-        .join(".ssh/id_ed25519")
-        .to_string_lossy()
-        .into_owned();
     CreateInstance {
         name,
         source: "git@example.test:repo.git".to_owned(),
         git_ref: Some("feature".to_owned()),
-        identity_file,
     }
 }
 

@@ -24,7 +24,6 @@ anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 nix = { version = "0.31.2", features = ["user"] }
 quick-xml = "0.39.2"
-rpassword = "7.4.0"
 base64 = "0.22.1"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }

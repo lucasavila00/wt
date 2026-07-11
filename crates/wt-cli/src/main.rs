@@ -1,8 +1,9 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
-use wt_api::{ApiRequest, CreateInstance, InstanceName, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, Operation, Response};
+use wt_cli::config::{ClientConfig, Context};
+use wt_cli::inventory::{self, ContextInstance};
 
 #[derive(Debug, Parser)]
 #[command(name = "wt")]
@@ -16,20 +17,18 @@ enum Command {
     /// Create a devcontainer-ready world.
     New {
         source: String,
-        name: InstanceName,
+        name: String,
         #[arg(long = "ref")]
         git_ref: Option<String>,
-        #[arg(long)]
-        identity: Option<PathBuf>,
     },
-    /// List worlds.
+    /// List worlds across every configured context.
     Ls,
     /// Remove a world.
-    Rm { name: InstanceName },
+    Rm { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
     /// Enter a world through stock OpenSSH.
-    Ssh { name: InstanceName },
+    Ssh { name: String },
 }
 
 fn main() {
@@ -40,54 +39,76 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    let config = ClientConfig::load()?;
     match Cli::parse().command {
         Command::New {
             source,
             name,
             git_ref,
-            identity,
         } => {
             wt_api::validate_ssh_git_source(&source)?;
             if git_ref.as_deref().is_some_and(str::is_empty) {
                 bail!("--ref must not be empty");
             }
-            let identity_file = resolve_identity(identity)?;
-            let response =
-                wt_cli::transport::call(&ApiRequest::new(Operation::Create(CreateInstance {
-                    name,
+            let (qualified_context, world_name) = inventory::parse_target(&config, &name)?;
+            let context = match qualified_context {
+                Some(context) => context,
+                None if config.contexts.len() == 1 => &config.contexts[0],
+                None => bail!(
+                    "world context is ambiguous; use one of: {}",
+                    config
+                        .contexts
+                        .iter()
+                        .map(|context| format!("{}.{}", context.name, world_name))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            };
+            let response = wt_cli::transport::call(
+                context,
+                &ApiRequest::new(Operation::Create(CreateInstance {
+                    name: world_name,
                     source,
                     git_ref,
-                    identity_file,
-                })));
-            let sync = sync_inventory();
-            let response = response?;
-            sync?;
+                })),
+            )?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
+            if let Err(error) = sync_inventory(&config) {
+                bail!(
+                    "created {}.{} but SSH inventory was not changed: {error:#}",
+                    context.name,
+                    instance.name
+                );
+            }
             println!(
-                "{}\t{}\t{}",
+                "{}.{}\t{}\t{}",
+                context.name,
                 instance.name,
                 instance.status,
                 instance.guest_ip.as_deref().unwrap_or("-")
             );
             if let Some(ssh) = &instance.ssh {
-                println!("\nApp shell: ssh {}", instance.name);
-                println!("Guest host: ssh {}-host", instance.name);
+                println!("\nApp shell: ssh {}.{}", context.name, instance.name);
+                println!("Guest host: ssh {}.{}-host", context.name, instance.name);
                 println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             }
         }
         Command::Ls => {
-            let instances = list_and_sync()?;
-            println!("NAME\tSTATUS\tIP\tSSH");
-            for instance in instances {
+            let instances = inventory::list_all(&config)?;
+            wt_cli::ssh::sync(&instances)?;
+            println!("CONTEXT\tNAME\tSTATUS\tIP\tSSH");
+            for item in instances {
+                let instance = item.instance;
                 let target = instance
                     .ssh
                     .as_ref()
                     .map(|ssh| format!("{}@{}:{}", ssh.user, ssh.host, ssh.port))
                     .unwrap_or_else(|| "-".to_owned());
                 println!(
-                    "{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}",
+                    item.context,
                     instance.name,
                     instance.status,
                     instance.guest_ip.as_deref().unwrap_or("-"),
@@ -96,27 +117,48 @@ fn run() -> Result<()> {
             }
         }
         Command::Rm { name } => {
-            let response = wt_cli::transport::call(&ApiRequest::new(Operation::Delete { name }));
-            let sync = sync_inventory();
-            let response = response?;
-            sync?;
-            let Response::Deleted { name } = response else {
+            let instances = inventory::list_all(&config)?;
+            let selected = inventory::resolve(&instances, &name)?;
+            let context = required_context(&config, &selected.context)?;
+            let world_name = selected.instance.name.clone();
+            let response = wt_cli::transport::call(
+                context,
+                &ApiRequest::new(Operation::Delete {
+                    name: world_name.clone(),
+                }),
+            )?;
+            let Response::Deleted { .. } = response else {
                 bail!("helper returned the wrong response to delete");
             };
-            println!("removed {name}");
+            if let Err(error) = sync_inventory(&config) {
+                bail!(
+                    "removed {}.{} but SSH inventory was not changed: {error:#}",
+                    context.name,
+                    world_name
+                );
+            }
+            println!("removed {}.{}", context.name, world_name);
         }
         Command::Sync => {
-            let path = sync_inventory()?;
+            let path = sync_inventory(&config)?;
             println!("updated {}", path.display());
         }
         Command::Ssh { name } => {
-            let instances = list_and_sync()?;
-            if !instances.iter().any(|instance| {
-                instance.name == name && instance.status == wt_api::InstanceStatus::Running
-            }) {
-                bail!("running instance not found: {name}");
+            let instances = inventory::list_all(&config)?;
+            let selected = inventory::resolve(&instances, &name)?;
+            if selected.instance.status != wt_api::InstanceStatus::Running {
+                bail!("world is not running: {}", selected.qualified_name());
             }
-            let status = ProcessCommand::new("ssh").arg(name.as_str()).status()?;
+            if selected.instance.ssh.is_none() {
+                bail!("world has no SSH access: {}", selected.qualified_name());
+            }
+            wt_cli::ssh::sync(&instances)?;
+            let alias = if name.contains('.') {
+                selected.qualified_name()
+            } else {
+                selected.instance.name.to_string()
+            };
+            let status = ProcessCommand::new("ssh").arg(alias).status()?;
             if !status.success() {
                 bail!("ssh exited with {status}");
             }
@@ -125,36 +167,13 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn list_instances() -> Result<Vec<wt_api::Instance>> {
-    let response = wt_cli::transport::call(&ApiRequest::new(Operation::List))?;
-    let Response::Instances { instances } = response else {
-        bail!("helper returned the wrong response to list");
-    };
-    Ok(instances)
+fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Context> {
+    config
+        .context(name)
+        .ok_or_else(|| anyhow::anyhow!("unknown context: {name}"))
 }
 
-fn sync_inventory() -> Result<PathBuf> {
-    wt_cli::ssh::sync(&list_instances()?)
-}
-
-fn list_and_sync() -> Result<Vec<wt_api::Instance>> {
-    let instances = list_instances()?;
-    wt_cli::ssh::sync(&instances)?;
-    Ok(instances)
-}
-
-fn resolve_identity(identity: Option<PathBuf>) -> Result<String> {
-    let path = match identity {
-        Some(path) => path,
-        None => {
-            let home =
-                std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
-            PathBuf::from(home).join(".ssh/id_ed25519")
-        }
-    };
-    let path = std::fs::canonicalize(&path)
-        .map_err(|error| anyhow::anyhow!("resolve identity {}: {error}", path.display()))?;
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| anyhow::anyhow!("identity path is not valid UTF-8"))
+fn sync_inventory(config: &ClientConfig) -> Result<std::path::PathBuf> {
+    let instances: Vec<ContextInstance> = inventory::list_all(config)?;
+    wt_cli::ssh::sync(&instances)
 }

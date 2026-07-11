@@ -17,17 +17,17 @@ state="$HOME/helper-state"
 case "$request" in
   *'"operation":"create"'*)
     : > "$state"
-    printf '%s\n' '{"protocol_version":2,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"delete"'*)
     rm -f "$state"
-    printf '%s\n' '{"protocol_version":2,"outcome":"ok","response":{"response":"deleted","name":"repo-feature"}}'
+    printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"deleted","name":"repo-feature"}}'
     ;;
   *'"operation":"list"'*)
     if [ -f "$state" ]; then
-      printf '%s\n' '{"protocol_version":2,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
+      printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
     else
-      printf '%s\n' '{"protocol_version":2,"outcome":"ok","response":{"response":"instances","instances":[]}}'
+      printf '%s\n' '{"protocol_version":3,"outcome":"ok","response":{"response":"instances","instances":[]}}'
     fi
     ;;
   *) exit 2 ;;
@@ -36,21 +36,19 @@ esac
     )
     .unwrap();
     fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
-    let identity = temp.path().join("identity");
-    fs::write(&identity, "test").unwrap();
+    fs::create_dir(temp.path().join(".wt")).unwrap();
+    fs::write(
+        temp.path().join(".wt/config.toml"),
+        "version = 1\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
+    )
+    .unwrap();
     let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     )))
     .unwrap();
 
     let created = Command::new(env!("CARGO_BIN_EXE_wt"))
-        .args([
-            "new",
-            "git@example.test:repo.git",
-            "repo-feature",
-            "--identity",
-        ])
-        .arg(&identity)
+        .args(["new", "git@example.test:repo.git", "repo-feature"])
         .env("HOME", temp.path())
         .env("PATH", &path)
         .output()
@@ -62,6 +60,7 @@ esac
     );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
     assert!(managed.contains("Host repo-feature\n"));
+    assert!(managed.contains("Host local.repo-feature\n"));
     assert!(managed.contains("Host repo-feature-host\n"));
     assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
 

@@ -1,17 +1,18 @@
+use crate::config::{Context, ContextKind};
 use anyhow::{bail, Context as _, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use wt_api::{ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 
-pub fn call(request: &ApiRequest) -> Result<Response> {
-    let mut child = Command::new("wt-local")
-        .arg("api")
+pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
+    let mut command = helper_command(context);
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         // Provisioning progress belongs on stderr so stdout remains the JSON protocol.
         .stderr(Stdio::inherit())
         .spawn()
-        .context("start wt-local helper")?;
+        .with_context(|| format!("start helper for context {}", context.name))?;
     serde_json::to_writer(
         child
             .stdin
@@ -43,6 +44,21 @@ pub fn call(request: &ApiRequest) -> Result<Response> {
     }
 }
 
+fn helper_command(context: &Context) -> Command {
+    match &context.kind {
+        ContextKind::BareMetalLocal => {
+            let mut command = Command::new("wt-local");
+            command.arg("api");
+            command
+        }
+        ContextKind::BareMetalSsh { host } => {
+            let mut command = Command::new("ssh");
+            command.args(["--", host, "wt-local", "api"]);
+            command
+        }
+    }
+}
+
 fn error_code(code: wt_api::ErrorCode) -> &'static str {
     match code {
         wt_api::ErrorCode::InvalidRequest => "invalid request",
@@ -51,5 +67,40 @@ fn error_code(code: wt_api::ErrorCode) -> &'static str {
         wt_api::ErrorCode::NotFound => "not found",
         wt_api::ErrorCode::Backend => "backend error",
         wt_api::ErrorCode::Internal => "internal error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn builds_exact_local_and_ssh_commands() {
+        let local = Context {
+            name: "local".into(),
+            kind: ContextKind::BareMetalLocal,
+        };
+        let command = helper_command(&local);
+        assert_eq!(command.get_program(), OsStr::new("wt-local"));
+        assert_eq!(command.get_args().collect::<Vec<_>>(), [OsStr::new("api")]);
+
+        let remote = Context {
+            name: "lab".into(),
+            kind: ContextKind::BareMetalSsh {
+                host: "wt-lab".into(),
+            },
+        };
+        let command = helper_command(&remote);
+        assert_eq!(command.get_program(), OsStr::new("ssh"));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("--"),
+                OsStr::new("wt-lab"),
+                OsStr::new("wt-local"),
+                OsStr::new("api")
+            ]
+        );
     }
 }
