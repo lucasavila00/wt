@@ -6,11 +6,12 @@ Local **cockpit** binary: talk to an agent, maintain `~/.ssh/config` Host entrie
 
 | Does | Does not |
 |------|----------|
-| `new` / `ls` / `rm` against agent HTTP API | Run compose, libvirt, or clones |
+| `new` / `ls` / `rm` against **control-plane** HTTP API | Run compose, libvirt, or clones |
 | **Print** SSH `Host` snippets (auto-edit later, when stable) | Replace stock `ssh` for daily enter |
-| Use [`wt-api`](../wt-api/) types | Own long-term instance truth (agent does) |
+| Use [`wt-api`](../wt-api/) types | Own long-term instance truth (workers + control plane) |
 
-Design: [docs/arch/cli.md](../../docs/arch/cli.md).
+Design: [docs/arch/cli.md](../../docs/arch/cli.md).  
+v1 server to point at: [`wt-local`](../wt-local/).
 
 ## Binary
 
@@ -23,7 +24,7 @@ Install name: `wt`.
 ## Dependencies (planned)
 
 - `wt-api` — shared types  
-- HTTP client, CLI parser, config/SSH file editing — not wired yet  
+- HTTP client, CLI parser, config — not wired yet  
 
 ## Status
 

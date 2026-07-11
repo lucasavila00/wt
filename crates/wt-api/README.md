@@ -1,10 +1,10 @@
 # wt-api
 
-Shared **API contract** library for the `wt` CLI and agents.
+Shared **control-plane API contract** library for the `wt` CLI and servers.
 
 ## Role
 
-- Request/response types for the agent HTTP API  
+- Request/response types for the control-plane HTTP API  
 - Status and error **enums** (serde-friendly), defined once  
 - No I/O, no libvirt, no SSH — pure data + (later) serialization  
 
@@ -14,8 +14,9 @@ See [docs/arch/README.md](../../docs/arch/README.md).
 
 | Crate | Use |
 |-------|-----|
-| [`wt`](../wt/) | Decode agent responses; share vocabulary with agent |
-| [`wt-agent`](../wt-agent/) | Encode responses; same types as CLI |
+| [`wt`](../wt/) | Decode control-plane responses |
+| [`wt-local`](../wt-local/) | Encode responses (v1 server) |
+| future `wt-control-plane` / `wt-worker` | Same wire types where applicable |
 
 ## Non-goals
 

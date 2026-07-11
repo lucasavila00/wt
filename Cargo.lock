@@ -10,12 +10,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-agent"
+name = "wt-api"
+version = "0.0.0"
+
+[[package]]
+name = "wt-local"
 version = "0.0.0"
 dependencies = [
  "wt-api",
 ]
-
-[[package]]
-name = "wt-api"
-version = "0.0.0"

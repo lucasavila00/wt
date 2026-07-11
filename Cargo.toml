@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/wt-api",
     "crates/wt",
-    "crates/wt-agent",
+    "crates/wt-local",
 ]
 
 [workspace.package]

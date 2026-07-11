@@ -1,13 +1,13 @@
 [package]
-name = "wt-agent"
+name = "wt-local"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Bare-metal world agent (libvirt VMs) for wt"
+description = "Single-site server: control plane + embedded bare-metal worker"
 
 [[bin]]
-name = "wt-agent"
+name = "wt-local"
 path = "src/main.rs"
 
 [dependencies]

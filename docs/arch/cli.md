@@ -1,16 +1,16 @@
 # Local CLI (`wt`)
 
 Mac (or any cockpit machine) binary. No Docker. Implements the gesture in [idealized-api](../plan-reasoning/idealized-api.md).  
-Parent: [arch README](./README.md). Agent it talks to (v1): [bare-metal-agent.md](./bare-metal-agent.md).
+Parent: [arch README](./README.md). Server it talks to (v1): [`wt-local`](./control-plane.md) / [bare-metal](./bare-metal-agent.md).
 
 ## Responsibilities
 
 | Does | Does not |
 |------|----------|
-| Call agent API (create / list / destroy) | Run compose, libvirt, or clone |
+| Call **control-plane** API (create / list / destroy) | Run compose, libvirt, or clone |
 | **Print** (early) or later **apply** SSH `Host` snippets | Be a custom shell—enter is stock `ssh` |
-| Show status / errors from agent | Own long-term instance state (agent is source of truth) |
-| Point at agent base URL + auth | Know libvirt or k8s details |
+| Show status / errors from control plane | Own long-term instance state (workers + control plane do) |
+| Point at **one** control-plane base URL + auth | Know libvirt, k8s, or worker addresses |
 
 **SSH config:** v1 eras print the delta only; auto-edit of `~/.ssh/config` / managed `Include` is a **later** smoothness feature ([impl](../impl/README.md) Era 4), not a prerequisite for E2E.
 
@@ -23,7 +23,7 @@ Illustrative; match plan gesture.
 | `wt new <source> <name>` | `POST` create; wait or poll until `Running` or `Error`; on success **print** Host snippet + `ssh <name>` hint |
 | `wt ls` | `GET` list; table name / status / ssh target |
 | `wt rm <name>` | `DELETE`; **print** “remove Host \<name\>” guidance (later: apply removal) |
-| `wt config` / flags | Agent URL, token (defaults sane) |
+| `wt config` / flags | Control-plane URL, token (defaults sane) |
 
 No `wt sh` required if Host + `RemoteCommand`/sshd setup is enough—optional sugar later.
 
@@ -53,22 +53,22 @@ Skip fancy `RemoteCommand` (byobu) until landing polish.
 
 ## Language / code layout
 
-**Rust** binary in the same workspace as the agent ([README](./README.md)). Depends on `wt-api` for types. HTTP client (`reqwest` or similar).
+**Rust** binary in the same workspace as `wt-local` ([README](./README.md)). Depends on `wt-api` for types. HTTP client (`reqwest` or similar).
 
 Cross-compile to Mac from CI or build on Mac—fine for v1 single dev.
 
 ## Failure UX
 
-- Agent unreachable → clear error; nothing to print for Host.  
-- Create fails mid-provision → surface agent error; `ls` shows `Error`; `rm` still cleans.  
+- Control plane unreachable → clear error; nothing to print for Host.  
+- Create fails mid-provision → surface error; `ls` shows `Error`; `rm` still cleans.  
 - When auto-edit exists later: no half-written Host (roll back); until then print path has no file consistency risk.
 
 ## Out of scope for CLI (v1)
 
-- Provider-specific flags (`--libvirt-pool`, kubecontext) beyond choosing agent URL  
+- Provider-specific flags (`--libvirt-pool`, kubecontext) beyond choosing control-plane URL  
 - Browser tunnels  
-- Implementing a second protocol for k8s—same HTTP API when that agent exists  
+- Talking to workers directly—same control-plane HTTP API when fleet grows  
 
 ## One-line summary
 
-**Thin Rust CLI: talk to agent, print (later apply) `Host <name>`, get out of the way for `ssh`.**
+**Thin Rust CLI: talk only to the control-plane URL, print (later apply) `Host <name>`, get out of the way for `ssh`.**

@@ -1,7 +1,7 @@
 # Implementation plan
 
 How we build, in order. Product/arch: [plan.md](../plan.md), [arch/](../arch/README.md).  
-Workspace: `crates/wt-api`, `wt`, `wt-agent`.
+Workspace: `crates/wt-api`, `wt`, `wt-local`.
 
 ## Approach: thin end-to-end, then thicken
 
@@ -10,151 +10,143 @@ Full stack on day one (libvirt + golden image + clone + compose + SSH Host) is p
 **Preferred:** one **vertical slice** that exercises the real product gesture as early as possible, with **fake or minimal worlds**, then replace the fake with real layers one by one.
 
 ```text
-Era 1:  CLI ↔ API ↔ agent  +  ssh config   (world = stub)
+Era 1:  CLI ↔ wt-local  (control plane + stub worker)
 Era 2:  real SSH-able guest                (libvirt / golden image)
 Era 3:  stock recipe in guest              (clone + compose)
 Era 4:  status, errors, ops UX             (make it daily-driver)
-Era 5:  harden + provider seam             (ready for a later k8s agent)
+Era 5:  harden + library seams             (ready for wt-control-plane / wt-worker)
 ```
+
+Control plane model: [arch/control-plane.md](../arch/control-plane.md).  
+v1 binary: **`wt-local`** only—not `wt-control-plane` + `wt-worker`.
 
 Gesture we protect every era:
 
 ```text
-wt new <source> <name>  →  agent has instance  →  CLI prints SSH Host snippet
+wt new <source> <name>  →  control plane has instance  →  CLI prints SSH Host snippet
 wt ls / wt rm
 # later (stable path): CLI applies snippet to managed ssh config → ssh <name>
 ```
 
-**SSH config auto-edit is not Era 1.** First only **print** the `Host` block (and any include instructions). Applying edits to `~/.ssh/config` (or an `Include`d file) is a **later smoothness feature**, once create/list/rm and real worlds are boringly reliable.
+**SSH config auto-edit is not Era 1.** First only **print** the `Host` block. Applying edits is a **later smoothness feature**.
 
 ---
 
-## Era 1 — Contract + loopback agent (E2E skeleton)
+## Era 1 — Contract + `wt-local` skeleton
 
-**Delivers:** you can run CLI against a local agent; instances exist in agent state; CLI **prints** the SSH config delta; shared types are real.
+**Delivers:** CLI against `wt-local`; instances in process state; CLI **prints** the SSH config delta; shared types are real.
 
 | Layer | What ships |
 |-------|------------|
 | **wt-api** | Create/list/get/delete types; `InstanceStatus` enum; serde JSON |
-| **wt-agent** | HTTP server; in-memory (or sqlite) store; **stub provision** (no libvirt)—record name/source, fake or fixed endpoint optional |
-| **wt** | `new` / `ls` / `rm`; config (agent URL); on `new`/`rm` **print** suggested `Host` add/remove (stdout)—**do not** edit `~/.ssh/config` yet |
+| **wt-local** | HTTP control-plane server; in-memory registry; **stub embedded worker** (no libvirt) |
+| **wt** | `new` / `ls` / `rm`; config (**control-plane URL** → `wt-local`); **print** Host add/remove—no file edits |
 
 **Done when:**
 
-- `cargo run -p wt-agent` + `cargo run -p wt -- new …` creates a row  
-- `wt ls` shows it; `wt rm` removes agent state and prints “remove this Host” guidance  
-- `wt new` prints a pasteable `Host <name> …` block when an endpoint exists  
-- Types only live in `wt-api` (no duplicate enums in CLI/agent)
+- `cargo run -p wt-local` + `cargo run -p wt -- new …` creates a row  
+- `wt ls` / `wt rm` work; Host snippet printed  
+- Types only in `wt-api`  
+- Internal modules can still say control-plane vs worker; **one binary** ships  
 
-**Explicitly not:** auto-editing ssh config, VMs, git clone, compose, byobu.
+**Explicitly not:** auto ssh config, VMs, `wt-control-plane` / `wt-worker` bins, compose, byobu.
 
 ---
 
 ## Era 2 — Real world shell (libvirt + SSH)
 
-**Delivers:** `ssh <name>` lands on a **real guest** the agent created.
+**Delivers:** `ssh <name>` lands on a **real guest** `wt-local` created.
 
 | Layer | What ships |
 |-------|------------|
-| **wt-agent** | libvirt define/start/destroy from golden image; wait for IP; inject SSH key; status `Provisioning` → `Running` |
-| **wt** | same commands; Host points at real guest IP/user |
-| **ops** | documented golden image + bridge/network assumptions (single-dev) |
+| **wt-local** | libvirt define/start/destroy; golden image; wait for IP; SSH key; `Provisioning` → `Running` |
+| **wt** | same commands; printed Host points at real guest |
+| **ops** | golden image + bridge docs (single-dev) |
 
-**Done when:**
+**Done when:** `wt new …` → paste Host → `ssh <name>` works; `wt rm` destroys domain.
 
-- `wt new …` (source may still be ignored) → wait → `ssh <name>` works on empty Linux with Docker installed (or at least sshd)  
-- `wt rm` destroys the domain  
-
-**Explicitly not:** running the app recipe yet (or only optional manual compose inside).
+**Explicitly not:** full app recipe (optional manual compose inside).
 
 ---
 
 ## Era 3 — Stock recipe inside the world
 
-**Delivers:** create path runs the **canonical** clone + compose/devcontainer flow.
+**Delivers:** clone + stock compose/devcontainer on create.
 
 | Layer | What ships |
 |-------|------------|
-| **wt-agent** | after SSH up: `git clone` source@ref; detect compose / `.devcontainer`; `docker compose up` (stock—no port rewrite) |
-| **wt-api** | optional fields: ref, last_error detail, recipe phase in status |
-| **wt** | pass source/ref through; surface recipe errors from agent |
+| **wt-local** | after SSH up: clone; detect compose/`.devcontainer`; `docker compose up` stock |
+| **wt-api** | ref, last_error, recipe phase as needed |
+| **wt** | pass source/ref; surface errors |
 
-**Done when:**
-
-- `wt new <real-repo> <name>` → `ssh <name>` → stack from that repo’s compose is up (smoke repo OK)  
-- Failure in clone/compose → `Error` + message; `rm` still cleans world  
+**Done when:** real repo `new` → stack up; failures → `Error` + `rm` still cleans.
 
 ---
 
 ## Era 4 — Daily-driver UX
 
-**Delivers:** pleasant iteration without changing the architecture.
-
 | Area | Examples |
 |------|----------|
-| Status | Poll/wait with phases (`Provisioning`, `StartingRecipe`, `Running`, `Error`) |
-| Config | config.toml, tokens, known_hosts handling |
-| **SSH config apply** | Only when path is stable: managed `Include` file / write Host on `new`, remove on `rm` (was print-only before) |
-| Landing | byobu / default `docker exec` feel (if cheap) |
-| Robustness | timeouts, destroy-on-failure policy, `ls` shows errors clearly |
-| DX | progress output on `new`; refuse clobbering names |
+| Status | Poll/wait phases |
+| Config | config.toml, tokens, known_hosts |
+| **SSH config apply** | when stable: managed Include / write on `new` |
+| Landing | byobu / docker exec feel |
+| Robustness | timeouts, destroy policy, clear `ls` errors |
 
-**Done when:** single dev uses it for a real side project without hand-holding libvirt every time; auto Host edit is an opt-in or default only after print path proved correct.
+**Done when:** real side project without hand-holding; auto Host only after print path is trusted.
 
 ---
 
-## Era 5 — Harden + provider seam (not k8s yet)
+## Era 5 — Harden + extractable seams
 
-**Delivers:** clean boundary so a future k8s agent is “another binary on `wt-api`,” not a rewrite.
+**Delivers:** libraries such that **`wt-control-plane`** and **`wt-worker`** can become thin bins later—without shipping them yet.
 
 | Layer | What ships |
 |-------|------------|
-| **wt-agent** | internal `WorldProvider` (or equivalent) trait: stub was Era 1, libvirt is Era 2–4 |
-| **docs / API** | stable HTTP contract; version header or explicit compatibility note |
-| **ops** | minimal runbook: agent install, image refresh, backup of state |
+| **libs** | control-plane + worker traits/modules used by `wt-local` |
+| **docs / API** | stable control-plane HTTP contract; worker id fields ready for fleet list |
+| **ops** | runbook; control-plane state disposable if worker can re-report |
 
-**Explicitly not this era:** implementing the k8s/DinD agent (see [arch/k8s-agent.md](../arch/k8s-agent.md)). Only ensure we did not paint ourselves into bare-metal-only types on the wire.
+**Explicitly not this era:** releasing multi-node binaries or k8s worker ([k8s-agent.md](../arch/k8s-agent.md)).
 
 ---
 
-## Why this order (and why E2E-first still works)
+## Why this order
 
-| Risk if you invert | Mitigation here |
-|--------------------|-----------------|
-| Build libvirt for weeks with no CLI | Era 1 proves gesture + types first |
-| CLI “done” against nothing real | Era 1 agent is real HTTP; Era 2 makes SSH real |
-| Compose before SSH works | Era 2 then 3 |
-| Abstract provider too early | Stub only as thin as needed; trait crystallizes Era 5 |
-
-**Is pure E2E (all features) first possible?** Yes, but first success would take much longer. This plan is **E2E of the product loop** each era, with a growing definition of “world.”
+| Risk if you invert | Mitigation |
+|--------------------|------------|
+| Libvirt for weeks, no CLI | Era 1 first |
+| CLI against nothing | `wt-local` is real HTTP from Era 1 |
+| Compose before SSH | Era 2 then 3 |
+| Abstract fleet too early | One binary until multi-host hurts |
 
 ```text
-Era 1 E2E:  name exists in system + printed Host snippet
-Era 2 E2E:  + real ssh (user may paste Host by hand)
+Era 1 E2E:  name on wt-local + printed Host
+Era 2 E2E:  + real ssh
 Era 3 E2E:  + real stack
-Era 4 E2E:  + not annoying (incl. optional auto ssh config edit when stable)
-Era 5 E2E:  + not a dead-end for the next agent
+Era 4 E2E:  + not annoying
+Era 5 E2E:  + not a dead-end for wt-control-plane / wt-worker
 ```
 
 ---
 
-## Suggested first coding slice (inside Era 1)
+## Suggested first coding slice (Era 1)
 
-1. `wt-api`: `CreateInstanceRequest`, `Instance`, `InstanceStatus`, error body  
-2. `wt-agent`: listen, in-memory map, CRUD  
-3. `wt`: subcommands + HTTP client + **print** SSH Host snippet (no file writes)  
-4. Manual: start agent, `new` / `ls` / `rm`, confirm printed config looks right  
+1. `wt-api`: request/response + `InstanceStatus`  
+2. `wt-local`: listen, in-memory CRUD, stub worker module  
+3. `wt`: subcommands + client + **print** SSH snippet  
+4. Manual smoke: start `wt-local`, `new` / `ls` / `rm`  
 
 No libvirt until Era 1 feels boring.
 
 ---
 
-## Open (small; not blocking Era 1)
+## Open (not blocking Era 1)
 
-- Async create (202 + poll) vs blocking `new` until Running — pick simple for Era 1 (blocking or single-thread fake immediate Running)  
-- sqlite vs memory for agent state — memory fine until Era 2  
-- Exact compose detection order — Era 3  
+- Async create vs blocking `new`  
+- Memory vs sqlite on `wt-local`  
+- Compose detection order — Era 3  
 
 ## One-line summary
 
-**Five eras: skeleton E2E → real SSH VM → stock recipe → daily UX → provider seam; never wait for k8s to learn if the product loop works.**
+**Five eras on `wt` + `wt-local`: skeleton → SSH VM → recipe → UX → library seams; fleet bins stay deferred until needed.**
