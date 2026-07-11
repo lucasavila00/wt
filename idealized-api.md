@@ -1,7 +1,7 @@
 # Idealized API
 
 Perfect **shape** of the product—not a full architecture. Mental map only.  
-Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md).
+Context: [problem-statement.md](./problem-statement.md), [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [bare-metal-worlds.md](./bare-metal-worlds.md).
 
 ## The gesture
 
@@ -53,6 +53,7 @@ Illustrative only—not a locked lifecycle.
 ## What stays true
 
 - Multiplicity = **worlds**, not port/project overrides in the app ([isolation](./isolation-without-port-overrides.md))
+- Worlds from a **trusted pool** (solo or same company)—isolation means stock ports work N times, not hostile multi-tenant security
 - One checkout per world keeps devcontainer-shaped recipes honest ([devcontainer issue](./the-devcontainer-issue.md))
 - Recipe source = existing compose/devcontainer in the git repo; tool does not invent a new env format
 - Session feel = byobu on the world, preferably already in the primary container

@@ -2,7 +2,7 @@
 
 Product: **named parallel instances** of an existing Docker/devcontainer recipe, driven from a thin CLI over SSH. (Binary name TBD—not decided yet.)
 
-Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [idealized-api.md](./idealized-api.md).  
+Related notes: [isolation-without-port-overrides.md](./isolation-without-port-overrides.md), [the-devcontainer-issue.md](./the-devcontainer-issue.md), [idealized-api.md](./idealized-api.md), [bare-metal-worlds.md](./bare-metal-worlds.md).  
 Next doc: architecture (implements the idealized API) → then build.
 
 ## Who / setup
@@ -45,11 +45,9 @@ Industry remote-env products (hosted boxes, agent workspaces) sell compute and a
 Preferred shape:
 
 1. Instance name (e.g. branch or short slug)
-2. One **remote world** for that instance (so ports/project names need not fork the recipe)
+2. One **remote world** for that instance (so ports/project names need not fork the recipe)—worlds come from a **trusted pool** (personal or shared team), not a secure multi-tenant product
 3. Checkout on that remote (normal clone/directory; worktrees only if architecture later proves them worth it—not the identity of the tool)
-4. Session = SSH + byobu (or equivalent) **on that world**
-
-Humans (later: agents) enter only via `sh <name>` so they never hit the wrong world’s containers.
+4. Session = SSH (+ byobu) **on that world**—ideally plain `ssh <name>` after the tool writes `~/.ssh/config` ([idealized API](./idealized-api.md))
 
 ## Devcontainer constraint (flag for architecture)
 
@@ -63,6 +61,7 @@ Typical devcontainer: **one host checkout bind-mounted** into the container → 
 - Agent orchestration, PR automation, full “task runtime”
 - Being CI system of record
 - Being a git-worktree manager
+- **Hostile multi-tenant isolation** — pool is trusted (solo or same-company). Care about separate port/network identity so stock compose works N times, not sandboxing neighbors ([isolation](./isolation-without-port-overrides.md))
 
 Multiplicity layer only. Other things may compose later.
 

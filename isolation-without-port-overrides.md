@@ -1,13 +1,28 @@
 # Isolation without port / project-name overrides
 
 How to run **N copies** of the same Compose recipe **without** teaching the app about instance ports or `COMPOSE_PROJECT_NAME`.  
-Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer single-workspace constraint: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md).
+Cold-reader context: [problem-statement.md](./problem-statement.md). Devcontainer single-workspace constraint: [the-devcontainer-issue.md](./the-devcontainer-issue.md). Target UX: [idealized-api.md](./idealized-api.md). One fat host: [bare-metal-worlds.md](./bare-metal-worlds.md).
+
+## What “isolation” means here
+
+**Care about:** each instance has its own **publish/port space** so stock `"3000:3000"` works N times—no app reconfig, no tribal port tables.
+
+**Do not care about:** hostile multi-tenant security. Pool is **trusted**—one person, or a company team on a shared fleet. Coworkers (or your own other instances) are not treated as attackers.
+
+| In scope | Out of scope |
+|----------|----------------|
+| Network / port multiplicity (own IP or host per world) | Sandboxing neighbors, gVisor, per-user network policy |
+| Stable `ssh <name>` → right world | Assuming malicious access to the pool |
+| Shared golden images, git creds, registry | Strong tenancy / blast-radius product |
+
+So “one world per instance” is **L3/L4 identity for stock compose**, not a security boundary. Trust does not fix two stacks publishing `:3000` on the **same** host network—separate world/IP still required for that.
 
 ## Hard constraint
 
 - **Mac = cockpit only** (ssh, byobu, editor). **No Docker on Mac.**  
 - Compose/devcontainer always on **remote Linux** (author SSHes in).  
-- Design is **not** for Docker Desktop / Colima / OrbStack-on-Mac as the engine.
+- Design is **not** for Docker Desktop / Colima / OrbStack-on-Mac as the engine.  
+- Pool may be personal or shared-company; **not** a multi-tenant SaaS trust model.
 
 ```text
 Mac (no Docker) ──ssh──► remote Linux world(s) ──► docker compose
@@ -58,9 +73,10 @@ Contrast bad default: “feat-b is this box but port **3001** and project **proj
 | **3** | **One machine or cloud VM per instance** | **Lowest** | Simplest pure form; $ and fleet/pool; warm images mitigate latency |
 | **4** | Strong container isolation (sysbox, etc.) without full VM | Low | Density; more exotic |
 
-**Lean:** **3**, or **2** when one physical box must densify. **0** allowed only as density mode that must **not** force app-repo port tables.
+**Lean:** **3**, or **2** when one physical box must densify—see [bare-metal-worlds.md](./bare-metal-worlds.md) (bias **KVM** when instances are large and recipe spin-up dominates). Shared **trusted pool** of workers is the natural ops model (claim a free world). **0** allowed only as density mode that must **not** force app-repo port tables.
 
-**Anti-pattern:** treating “one Colima/Docker on a laptop” as isolation—wrong machine; author doesn’t run Docker there anyway. One Docker host = one publish port space.
+**Anti-pattern:** treating “one Colima/Docker on a laptop” as isolation—wrong machine; author doesn’t run Docker there anyway. One Docker host = one publish port space.  
+**Anti-pattern:** designing for malicious neighbors—wrong threat model; wastes the build on tenancy theater.
 
 ## What stays identical inside each world
 
@@ -113,11 +129,12 @@ Multiplicity always has an identity **somewhere**. Prefer tool/infra, not app:
 
 ## Lean (non-binding)
 
+- Isolation = **no port soup**, not sandbox the coworker  
 - Port/project sprawl is an artifact of **sharing one host network/Docker**  
-- Keep compose + app instance-blind via **one remote world per instance** (machine or VM)  
+- Keep compose + app instance-blind via **one remote world per instance** (machine or VM) in a **trusted pool**  
 - Mac = SSH control plane only  
 - Shared-daemon overrides = density escape hatch, not what the repo is written for  
 
 ## One-line summary
 
-Never run Docker on the Mac—only on SSH remotes; avoid port/project soup by giving each instance its own remote world with stock compose; the CLI maps names to SSH targets, not remapped ports in the app.
+Never run Docker on the Mac—only on SSH remotes; avoid port/project soup by giving each instance its own remote world (trusted pool, not multi-tenant security) with stock compose; the CLI maps names to SSH targets, not remapped ports in the app.
