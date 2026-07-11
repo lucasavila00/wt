@@ -8,9 +8,11 @@ Parent: [arch README](./README.md). Agent it talks to (v1): [bare-metal-agent.md
 | Does | Does not |
 |------|----------|
 | Call agent API (create / list / destroy) | Run compose, libvirt, or clone |
-| Maintain **managed** `~/.ssh/config` Host entries | Be a custom shell—enter is stock `ssh` |
+| **Print** (early) or later **apply** SSH `Host` snippets | Be a custom shell—enter is stock `ssh` |
 | Show status / errors from agent | Own long-term instance state (agent is source of truth) |
 | Point at agent base URL + auth | Know libvirt or k8s details |
+
+**SSH config:** v1 eras print the delta only; auto-edit of `~/.ssh/config` / managed `Include` is a **later** smoothness feature ([impl](../impl/README.md) Era 4), not a prerequisite for E2E.
 
 ## v1 commands
 
@@ -18,30 +20,28 @@ Illustrative; match plan gesture.
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name>` | `POST` create; wait or poll until `Running` or `Error`; on success write Host; print `ssh <name>` |
+| `wt new <source> <name>` | `POST` create; wait or poll until `Running` or `Error`; on success **print** Host snippet + `ssh <name>` hint |
 | `wt ls` | `GET` list; table name / status / ssh target |
-| `wt rm <name>` | `DELETE`; remove Host entry |
-| `wt config` / flags | Agent URL, token, ssh config path (defaults sane) |
+| `wt rm <name>` | `DELETE`; **print** “remove Host \<name\>” guidance (later: apply removal) |
+| `wt config` / flags | Agent URL, token (defaults sane) |
 
 No `wt sh` required if Host + `RemoteCommand`/sshd setup is enough—optional sugar later.
 
 ## SSH config
 
-- Managed block or `Include` file (e.g. `~/.config/wt/ssh_config`) included from `~/.ssh/config`.  
-- On success of `new`:
+**Early (Era 1–3):** print only, e.g.
 
 ```text
+# add to ~/.ssh/config (or Include file):
 Host <name>
   HostName <guest-ip-or-dns>
   User <world-user>
   IdentityFile <key>
-  # optional: StrictHostKeyChecking / known_hosts path under wt state
 ```
 
-- On `rm`: delete that Host.  
-- Do not hand-edit the managed section.
+**Later (when stable):** managed `Include` file or block—write on `new`, remove on `rm`. User never required to trust auto-edit before then.
 
-v1 can skip fancy `RemoteCommand` (byobu); land on guest shell first, improve landing later.
+Skip fancy `RemoteCommand` (byobu) until landing polish.
 
 ## Config / state on Mac
 
@@ -59,9 +59,9 @@ Cross-compile to Mac from CI or build on Mac—fine for v1 single dev.
 
 ## Failure UX
 
-- Agent unreachable → clear error, no half-written Host (or roll back Host write).  
+- Agent unreachable → clear error; nothing to print for Host.  
 - Create fails mid-provision → surface agent error; `ls` shows `Error`; `rm` still cleans.  
-- Do not leave stale Host pointing at dead IP without saying so (`ls` / probe later).
+- When auto-edit exists later: no half-written Host (roll back); until then print path has no file consistency risk.
 
 ## Out of scope for CLI (v1)
 
@@ -71,4 +71,4 @@ Cross-compile to Mac from CI or build on Mac—fine for v1 single dev.
 
 ## One-line summary
 
-**Thin Rust CLI: talk to agent, write `Host <name>`, get out of the way for `ssh`.**
+**Thin Rust CLI: talk to agent, print (later apply) `Host <name>`, get out of the way for `ssh`.**

@@ -3,7 +3,8 @@
 Named parallel instances of an existing Docker/devcontainer recipe. Mac is cockpit (`wt` + `ssh`); worlds run on a remote agent.
 
 **Plan:** [docs/plan.md](./docs/plan.md)  
-**Architecture:** [docs/arch/README.md](./docs/arch/README.md)
+**Architecture:** [docs/arch/README.md](./docs/arch/README.md)  
+**Implementation eras:** [docs/impl/README.md](./docs/impl/README.md)
 
 ## Workspace topology
 

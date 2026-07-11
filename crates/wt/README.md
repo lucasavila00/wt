@@ -7,7 +7,7 @@ Local **cockpit** binary: talk to an agent, maintain `~/.ssh/config` Host entrie
 | Does | Does not |
 |------|----------|
 | `new` / `ls` / `rm` against agent HTTP API | Run compose, libvirt, or clones |
-| Write managed SSH `Host <name>` entries | Replace stock `ssh` for daily enter |
+| **Print** SSH `Host` snippets (auto-edit later, when stable) | Replace stock `ssh` for daily enter |
 | Use [`wt-api`](../wt-api/) types | Own long-term instance truth (agent does) |
 
 Design: [docs/arch/cli.md](../../docs/arch/cli.md).

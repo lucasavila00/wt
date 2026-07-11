@@ -2,7 +2,8 @@
 
 Decided direction for build. Mental map, not a full design doc.  
 Context (reasoning notes): [problem-statement.md](./plan-reasoning/problem-statement.md), [idealized-api.md](./plan-reasoning/idealized-api.md), [isolation-without-port-overrides.md](./plan-reasoning/isolation-without-port-overrides.md), [the-devcontainer-issue.md](./plan-reasoning/the-devcontainer-issue.md), [bare-metal-worlds.md](./plan-reasoning/bare-metal-worlds.md).  
-**Architecture:** [arch/](./arch/README.md) (v1 = CLI + bare-metal agent; k8s deferred).
+**Architecture:** [arch/](./arch/README.md) (v1 = CLI + bare-metal agent; k8s deferred).  
+**Implementation eras:** [impl/](./impl/README.md).
 
 ## Product
 
