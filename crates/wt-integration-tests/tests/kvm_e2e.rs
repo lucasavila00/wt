@@ -4,7 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 
 #[test]
-#[ignore = "requires local libvirt/KVM and prepared image"]
 fn local_cli_manages_docker_ready_kvm_guest() {
     let root = workspace_root();
     let wt = root.join("target/debug/wt");

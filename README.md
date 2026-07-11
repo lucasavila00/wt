@@ -9,6 +9,7 @@ Named parallel instances of an existing Docker/devcontainer recipe. The Mac is c
 | [docs/impl/](./docs/impl/README.md) | Implementation eras |
 | [docs/plan-reasoning/](./docs/plan-reasoning/) | Background notes |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Local development prerequisites |
+| [TESTS.md](./TESTS.md) | Test prerequisites and commands |
 
 ## Workspace
 

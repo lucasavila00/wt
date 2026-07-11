@@ -80,17 +80,9 @@ Matching installed state is reused. Config, permissions, partial files, stale bu
 
 ## Tests
 
-Fast lane:
-
 ```text
+cargo build --workspace
 cargo test --workspace
 ```
 
-Real KVM acceptance:
-
-```text
-cargo build --workspace
-cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
-```
-
-The acceptance test uses `/etc/wt/local.toml` and the installed golden image. It runs `wt new <name>`, `wt ls`, and `wt rm <name>`.
+All tests run, including the real KVM acceptance test. See [TESTS.md](./TESTS.md).
