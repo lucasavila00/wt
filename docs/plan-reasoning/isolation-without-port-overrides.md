@@ -46,7 +46,7 @@ Mac ─ssh─► world-A  Docker  :3000  stock compose
 Mac ─ssh─► world-B  Docker  :3000  stock compose
 ```
 
-Tool maps names to SSH endpoints (print Host / later apply). Repo stays instance-blind.
+Tool maps names to SSH endpoints (print Host and apply with `wt sync` in Era 1.5). Repo stays instance-blind.
 
 ## How worlds are supplied
 

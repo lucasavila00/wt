@@ -54,19 +54,20 @@ Keep unit tests narrow: validation and wire types.
 
 ---
 
-### 1.5 — Local Git + Compose world
+### 1.5 — Local Git + Compose world with interactive access
 
-Make the local VM loop run a real repository. Still one Ubuntu workstation. Still no SSH transport.
+Make the local VM loop run a real repository and expose the resulting usable development environment through guest SSH. Still one Ubuntu workstation. There is still no SSH transport between `wt` and `wt-local`.
 
 | Deliver | |
 |---------|--|
-| `wt-api` | protocol v2; create carries `source`, `name`, optional `git_ref`; instance stores source/ref |
-| `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; print status/IP |
-| `wt-local` | SQLite migration; persist source/ref; preserve failure detail |
-| `wt-libvirt` | guest exec helper; clone; checkout; Compose discovery; `up --build --wait`; captured errors |
-| `wt-setup` | bake `git` + pinned small E2E container image; record package/image provenance |
+| `wt-api` | protocol v2; create carries `source`, `name`, optional `git_ref`; instance stores source/ref plus SSH endpoint and public host keys |
+| `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; print status/IP/Host snippet; `wt sync`; `wt ssh` |
+| `wt-local` | SQLite migration; persist source/ref and SSH identity; preserve failure detail |
+| `wt-libvirt` | guest exec helper; SSH setup/readiness; clone; checkout; Compose discovery; `up --build --wait`; captured errors |
+| `wt-setup` | bake `git` + `openssh-server` + pinned small E2E container image; configure public-key source; record package/image provenance |
 
 - Add required `guest.recipe_timeout_seconds` to site config. Development value: `900`.
+- Add required `guest.ssh_authorized_keys` to site config. It contains one or more public keys to inject per world; private keys are rejected.
 - One recipe deadline covers clone, checkout, build, and Compose wait.
 - Guest commands receive source/ref as argv, never interpolated shell text.
 - Keep the final 64 KiB of command stdout/stderr in errors. Prefix phase + exit code.
@@ -86,20 +87,34 @@ Make the local VM loop run a real repository. Still one Ubuntu workstation. Stil
 - Accepted names: `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`.
 - Zero matches = error. Multiple matches = error. No guessed precedence.
 - Run `docker compose -f <file> up -d --build --wait` from `/workspace/repo`.
-- `Running` means clone + checkout + Compose wait succeeded.
+- `Running` means SSH readiness plus clone + checkout + Compose wait succeeded.
 - Git/Compose nonzero exit, timeout, or guest loss = `Error`; keep bounded stdout/stderr in `last_error`.
 - `.devcontainer` interpretation, overrides, profiles, private credentials, and branch creation are out.
+
+#### Guest access contract
+
+- Guest SSH is an Era 1.5 deliverable. SSH transport from `wt` to `wt-local` remains Era 2.
+- The fixed guest login is non-root user `wt`; its checkout is `/workspace/repo`.
+- `guest.ssh_authorized_keys` is strict site configuration. `wt-setup` validates public-key syntax and `wt-libvirt` injects the keys into each new world's cloud-init data. No private key is copied or generated.
+- Each world generates unique SSH host keys. After sshd starts, retrieve the public host keys through the QEMU guest agent and persist them with `ssh_user = "wt"`, guest address, and port `22`.
+- Treat the host keys, not a DHCP address, as the world's stable SSH identity. Reconciliation refreshes the persisted address from libvirt; `wt sync` then updates the alias without accepting a different host key.
+- SSH readiness is required before `Running`. Clone/checkout/Compose provisioning continues through the guest agent, not SSH.
+- `wt new` prints a usable `Host <name>` snippet. `wt ls` shows the SSH target.
+- `wt sync` atomically derives dedicated managed SSH config and known-hosts files from the caller's running instances. It ensures the user's main SSH config contains one bounded `Include` for the managed file, preserves all unrelated configuration, enforces host-key checking, and removes entries for removed worlds.
+- `wt ssh <name>` delegates to stock OpenSSH using the managed alias. VS Code Remote SSH uses that same alias and opens `/workspace/repo`.
+- The repository exists only inside the guest. Era 1.5 adds no virtiofs/9p export, host worktree, or dual host/guest Git state.
+- Guest login does not imply private Git provisioning credentials. Era 1.5's unauthenticated Git contract remains unchanged.
 
 #### Tests
 
 | Lane | Covers |
 |------|--------|
-| Injected worker | source/ref wire shape, persistence, conflicts, Git/Compose failure propagation |
-| KVM | local Git fixture → requested ref → Compose service ready → list → remove |
+| Injected worker | source/ref and SSH wire shape, persistence, conflicts, sync inventory, Git/Compose/SSH failure propagation |
+| KVM | local Git fixture → requested ref → Compose service ready → strict host-key SSH login → command in `/workspace/repo` → list → remove |
 
-The KVM fixture is self-contained. Serve a temporary bare Git repository from the host bridge. Its Compose file uses the pinned small image cached by image preparation. No public Git or registry dependency during tests.
+The KVM fixture is self-contained. Serve a temporary bare Git repository from the host bridge. Its Compose file uses the pinned small image cached by image preparation. Use a test-only SSH keypair, inject only its public key, and verify the reported world host key. No public Git or registry dependency during tests.
 
-**Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's Compose service is ready; `wt rm` removes containers with the VM.
+**Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's Compose service and SSH are ready; after `wt sync`, `ssh <name>` and VS Code Remote SSH open the usable environment at `/workspace/repo`; `wt rm` removes the world and the next sync removes its access records.
 
 ---
 
@@ -138,15 +153,15 @@ host = "wt-lab"
 - No HTTP listener.
 - Remote owner = OS user executing `wt-local` on the site.
 - Git clone and Compose remain inside the guest on the site.
-- Guest shell access, `wt ssh`, SSH config sync, multi-node workers, and public APIs stay out.
+- Guest shell behavior from Era 1.5 stays unchanged; multi-node workers and public APIs stay out.
 
-**Done when:** a client-only machine creates, lists, and removes a Compose-ready world on an Ubuntu site through OpenSSH.
+**Done when:** a client-only machine creates and lists a Compose-ready world on an Ubuntu site through OpenSSH, syncs its guest SSH target, enters it, and removes it.
 
 #### Tests
 
 - Config parsing: missing current context, duplicate names, unknown kind, invalid host.
 - Transport: exact local/SSH argv, JSON stdin/stdout, remote exit/stderr, protocol mismatch.
-- Acceptance: client-only environment invokes a separate Ubuntu site and completes `new` → `ls` → `rm`.
+- Acceptance: client-only environment invokes a separate Ubuntu site and completes `new` → `ls` → `sync` → guest SSH → `rm`.
 
 ---
 
@@ -154,7 +169,6 @@ host = "wt-lab"
 
 - `.devcontainer` interpretation beyond a root Compose file
 - Private Git credentials
-- Guest SSH, `wt ssh`, and SSH config sync
 - Modules/bins for multi-node (`wt-control-plane`, `wt-worker`)  
 - k8s context kind  
 - Runbook polish, destroy policies, fleets  
@@ -170,7 +184,8 @@ Do not pre-build these.
 3. `wt-libvirt` KVM guest lifecycle + Docker/Compose readiness
 4. `wt-cli` local spawn + new/ls/rm
 5. Git clone + ref checkout + Compose up
-6. Remote context + OpenSSH helper transport
+6. Guest SSH identity + inventory + `wt sync` / `wt ssh`
+7. Remote context + OpenSSH helper transport
 
 ## Open (pick in code)
 
@@ -180,4 +195,4 @@ Do not pre-build these.
 
 ## One-line summary
 
-**Real local VM loop → local Git/Compose world → remote client transport.**
+**Real local VM loop → usable local Git/Compose world over guest SSH → remote client transport.**

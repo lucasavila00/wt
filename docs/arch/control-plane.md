@@ -31,7 +31,7 @@ Ground truth for VM existence = libvirt. SQLite holds requested instance state a
 
 ## Era 1.5
 
-Create adds Git source and optional ref. The worker returns success only after Compose is ready. SQLite persists the request and final error.
+Create adds Git source and optional ref. The worker returns success only after guest SSH, checkout, and Compose are ready. SQLite persists the request, final error, and the instance's SSH user, current address, port, and public host keys. Reconciliation refreshes a changed DHCP address from libvirt while the host keys remain the world's stable SSH identity. This inventory is the source for `wt sync`; it does not grant `wt-local` an SSH transport or expose the guest filesystem locally.
 
 ## Era 2
 
@@ -39,7 +39,7 @@ Create adds Git source and optional ref. The worker returns success only after C
 client wt  →  ssh site -- wt-local api  →  same registry + worker
 ```
 
-SSH changes transport only. The API and ownership model stay the same.
+Site SSH changes control transport only. Guest SSH already exists from Era 1.5; the API and ownership model stay the same.
 
 ## Later
 

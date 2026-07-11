@@ -42,4 +42,4 @@ cargo run -p wt-cli
 cargo run -p wt-local
 ```
 
-Era 1 implementation in progress.
+Era 1 is complete. Era 1.5 adds Git/Compose provisioning and interactive guest access.

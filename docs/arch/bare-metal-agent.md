@@ -11,6 +11,7 @@ Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent: [a
 | Runtime | Docker Engine + Docker Compose v2 |
 | Readiness | QEMU guest agent through libvirt |
 | Network | libvirt network; guest IP reported |
+| Interactive access | OpenSSH to fixed non-root user `wt` |
 | Trust | Local trusted workstation |
 
 KVM is required. No CPU-emulation backend.
@@ -24,11 +25,15 @@ KVM is required. No CPU-emulation backend.
 4. Define + start KVM domain through libvirt
 5. Wait for QEMU guest agent
 6. Run docker info + docker compose version through guest agent
-7. Era 1.5: clone source + checkout ref
-8. Era 1.5: discover one root Compose file + up --build --wait
-9. Read guest IP
-10. Running
+7. Era 1.5: create the `wt` user and inject configured public keys
+8. Era 1.5: generate unique guest SSH host keys and verify sshd readiness
+9. Era 1.5: clone source + checkout ref into `/workspace/repo`
+10. Era 1.5: discover one root Compose file + up --build --wait
+11. Read guest IP and public SSH host keys
+12. Running
 ```
+
+The QEMU guest agent remains the provisioning and readiness channel. SSH is for the human/editor session, not for `wt-local` to configure the guest. The guest checkout is never mounted or exported to the host.
 
 ## Destroy
 
@@ -48,7 +53,7 @@ KVM is required. No CPU-emulation backend.
 
 World creation does not install packages.
 
-Era 1.5 adds `git` and one pinned small container image used by the offline KVM acceptance test. The manifest records both.
+Era 1.5 adds `git`, `openssh-server`, and one pinned small container image used by the offline KVM acceptance test. The manifest records all of them. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
 
 ## One-line summary
 

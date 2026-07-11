@@ -15,7 +15,7 @@ Implements [plan.md](../plan.md). Implementation order: [impl/](../impl/README.m
 wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KVM world
 ```
 
-- No listener. No SSH. `wt` spawns `wt-local` directly.
+- No listener or SSH transport. `wt` spawns `wt-local` directly. Era 1 has no guest SSH.
 - Local path only. No client contexts.
 - Guest: Ubuntu 24.04 + Docker Engine + Compose v2 + QEMU guest agent.
 
@@ -23,11 +23,15 @@ wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KV
 
 ```text
 wt new source name  ──►  local wt-local  ──►  KVM guest
-                                                   └─ clone → checkout → compose up
+                                                   ├─ clone → checkout → compose up
+                                                   └─ sshd → shell / VS Code Remote SSH
 ```
 
 - Same local transport and KVM lifecycle.
-- `Running` means the selected Git revision's Compose project is ready.
+- `Running` means guest SSH and the selected Git revision's Compose project are ready.
+- The checkout remains inside the guest at `/workspace/repo`; it is not exported to the host.
+- Each instance records a stable SSH user, endpoint, and host-key identity. `wt sync` projects those records into managed OpenSSH files so the instance name is also the VS Code Remote SSH target.
+- Guest SSH is independent of Era 2's SSH transport to `wt-local`.
 
 ## Era 2
 

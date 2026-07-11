@@ -67,7 +67,7 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 ## Build order
 
 1. Local bare-metal vertical slice: Docker/Compose-ready KVM guest
-2. Era 1.5: Git clone + ref checkout + Compose up inside the local world
+2. Era 1.5: Git clone + ref checkout + Compose up inside the local world, then SSH/VS Code access to that usable environment
 3. Era 2: remote client → site helper through OpenSSH
 4. Multi-node bins and k8s worker when needed
 

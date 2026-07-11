@@ -9,6 +9,7 @@ $ wt new github.com:lucasavila00/frontend frontend-my-feature
 # CLI SSHes to site (context); creates world; prints guest Host snippet
 $ wt sync
 $ ssh frontend-my-feature
+# VS Code Remote SSH target: frontend-my-feature
 ```
 
 Second stream = another `{repo}-{feature}`, another world. Never another port in the app repo.  
@@ -33,6 +34,8 @@ guest world: Docker + clone + stock compose
 | **CLI** | SSH contexts; owner-scoped API over SSH; print + `sync` guest Hosts |
 | **Control plane + worker** | Worlds and inventory ([control-plane](../arch/control-plane.md)) |
 | **ssh** | Site hop (API) and world hop (guest) |
+
+Guest SSH arrives with the first usable Git/Compose world in Era 1.5. The site hop remains local stdio until Era 2. These are separate transports even when both eventually use OpenSSH.
 
 ## Example commands
 
