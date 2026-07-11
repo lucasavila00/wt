@@ -724,7 +724,14 @@ fn publish_image(
     let local_manifest = prepared.with_extension("manifest.json");
     fs::write(&local_manifest, serde_json::to_vec_pretty(manifest)?)
         .context("write image manifest")?;
-    sudo_install(runner, prepared, &image_temporary, 0o644)?;
+    sudo_install_owned(
+        runner,
+        prepared,
+        &image_temporary,
+        "libvirt-qemu",
+        "kvm",
+        0o644,
+    )?;
     sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
     sudo_move(runner, &image_temporary, &config.image.installed_path)?;
     sudo_move(runner, &manifest_temporary, manifest_path)?;
@@ -736,6 +743,8 @@ fn verify_installed_image(
     config_bytes: &[u8],
     manifest_path: &Path,
 ) -> Result<()> {
+    require_named_file(&config.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
+    require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
         &fs::read(manifest_path)
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
@@ -820,29 +829,53 @@ fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
 }
 
 fn require_root_file(path: &Path, mode: u32) -> Result<()> {
-    let metadata = fs::metadata(path).with_context(|| format!("inspect {}", path.display()))?;
+    require_named_file(path, "root", "root", mode)
+}
+
+fn require_named_file(path: &Path, owner: &str, group: &str, mode: u32) -> Result<()> {
+    let uid = User::from_name(owner)
+        .with_context(|| format!("look up user {owner}"))?
+        .with_context(|| format!("required user does not exist: {owner}"))?
+        .uid;
+    let gid = Group::from_name(group)
+        .with_context(|| format!("look up group {group}"))?
+        .with_context(|| format!("required group does not exist: {group}"))?
+        .gid;
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))?;
     if !metadata.is_file()
-        || metadata.uid() != 0
-        || metadata.gid() != 0
+        || metadata.uid() != uid.as_raw()
+        || metadata.gid() != gid.as_raw()
         || metadata.mode() & 0o7777 != mode
     {
         bail!(
-            "file drift at {}: expected uid=0, gid=0, mode={mode:04o}",
-            path.display()
+            "file drift at {}: expected {owner}:{group}, mode={mode:04o}",
+            path.display(),
         );
     }
     Ok(())
 }
 
 fn sudo_install(runner: &impl Runner, source: &Path, destination: &Path, mode: u32) -> Result<()> {
+    sudo_install_owned(runner, source, destination, "root", "root", mode)
+}
+
+fn sudo_install_owned(
+    runner: &impl Runner,
+    source: &Path,
+    destination: &Path,
+    owner: &str,
+    group: &str,
+    mode: u32,
+) -> Result<()> {
     runner.run(
         "sudo",
         &[
             "install".into(),
             "-o".into(),
-            "root".into(),
+            owner.into(),
             "-g".into(),
-            "root".into(),
+            group.into(),
             "-m".into(),
             format!("{mode:04o}").into(),
             source.as_os_str().to_owned(),
