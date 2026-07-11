@@ -1,6 +1,6 @@
 # CLI (`wt`)
 
-Era 1 workstation CLI. Parent: [arch README](./README.md). Helper: [`wt-local`](../../crates/wt-local/).
+Era 1/1.5 workstation CLI. Parent: [arch README](./README.md). Helper: [`wt-local`](../../crates/wt-local/).
 
 ## Responsibilities
 
@@ -9,7 +9,7 @@ Era 1 workstation CLI. Parent: [arch README](./README.md). Helper: [`wt-local`](
 | Spawn local `wt-local api` | Run libvirt or Docker itself |
 | Send one JSON request over stdin | Use SSH |
 | Parse one JSON response from stdout | Manage guest access |
-| Create / list / remove my worlds | Run repository recipes |
+| Create / list / remove my worlds | Manage Git or SSH credentials |
 
 ```text
 wt  →  local wt-local api  →  wt-libvirt  →  KVM guest
@@ -25,17 +25,30 @@ Era 1 is local only. No client config. No context selection. `wt-local` resolves
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <name>` | Create KVM world; print name, status, IP |
+| `wt new <source> <name> [--ref <ref>]` | Clone selected revision; start Compose; print name, status, IP |
 | `wt ls` | List my worlds: name, status, IP |
 | `wt rm <name>` | Destroy my world |
 
-## Later
+Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the source/ref form above.
 
-- Remote helper transport
-- Guest access
-- Context management commands
-- Recipe execution
+## Era 2
+
+- Add local and OpenSSH context kinds.
+- Select a named context before spawning the helper.
+- Keep request/response behavior identical across transports.
+- Do not add guest SSH or public HTTP.
+
+```toml
+current_context = "lab"
+
+[[contexts]]
+name = "lab"
+kind = "bare_metal_ssh"
+host = "wt-lab"
+```
+
+Remote invocation: `ssh -- wt-lab wt-local api`.
 
 ## One-line summary
 
-**Era 1 `wt` is a thin local stdio client for `wt-local`.**
+**First run the real recipe locally; then carry the same helper API over OpenSSH.**

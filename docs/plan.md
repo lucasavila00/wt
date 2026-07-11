@@ -33,9 +33,9 @@ Detail: [arch/control-plane.md](./arch/control-plane.md).
 | **Control plane** | Create/list/destroy (owner-scoped); invoked as helper command |
 | **Worker** | Runs worlds; ground truth; inventory for the control plane |
 
-**Current deploy shapes:**  
-- Remote: **`wt-local`** on hypervisor; CLI **`ssh … -- helper`**.  
-- Local workstation: **`wt` + `wt-local`** on the same Ubuntu; context **`bare_metal_local`**.  
+**Deploy order:**
+- Era 1/1.5: **`wt` + `wt-local`** on the same Ubuntu workstation.
+- Era 2: client **`wt`** invokes remote **`wt-local`** through OpenSSH.
 No public control-plane HTTP.
 
 **Multi-node shape (not built yet):** **`wt-control-plane`** + **`wt-worker`**. Prefer SSH (or equivalent private path) to the plane.
@@ -66,9 +66,10 @@ Compose authors never target “our platform.” Multiplicity is outside the app
 
 ## Build order
 
-1. Local bare-metal vertical slice: `wt-api` + `wt-cli` + `wt-local` + Docker/Compose-ready KVM guest ([arch](./arch/README.md), [impl](./impl/README.md))
-2. Stock recipe in guest + remote context + daily-driver UX
-3. Library seams for multi-node bins; then k8s worker when needed
+1. Local bare-metal vertical slice: Docker/Compose-ready KVM guest
+2. Era 1.5: Git clone + ref checkout + Compose up inside the local world
+3. Era 2: remote client → site helper through OpenSSH
+4. Multi-node bins and k8s worker when needed
 
 ## One-line summary
 

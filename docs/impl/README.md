@@ -54,23 +54,107 @@ Keep unit tests narrow: validation and wire types.
 
 ---
 
-### 2 — Stock recipe + client completeness
+### 1.5 — Local Git + Compose world
 
-Everything that makes it a daily driver **after** VMs work—one era, not split for ceremony.
+Make the local VM loop run a real repository. Still one Ubuntu workstation. Still no SSH transport.
 
-| Area | Deliver |
-|------|---------|
-| **Recipe** | clone source[@ref]; detect compose / `.devcontainer`; stock `compose up`; phases / `last_error` |
-| **`bare_metal_ssh`** | same helper under `ssh user@host -- …` |
-| **CLI** | context list/use/show; solid `sync`; wait/poll if create is slow; clearer errors; optional `wt ssh` |
-| **Guest access** | known_hosts / key polish |
+| Deliver | |
+|---------|--|
+| `wt-api` | protocol v2; create carries `source`, `name`, optional `git_ref`; instance stores source/ref |
+| `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; print status/IP |
+| `wt-local` | SQLite migration; persist source/ref; preserve failure detail |
+| `wt-libvirt` | guest exec helper; clone; checkout; Compose discovery; `up --build --wait`; captured errors |
+| `wt-setup` | bake `git` + pinned small E2E container image; record package/image provenance |
 
-**Done when:** real repo comes up on `new`; Mac→remote hypervisor works like local workstation; day-to-day commands are usable.
+- Add required `guest.recipe_timeout_seconds` to site config. Development value: `900`.
+- One recipe deadline covers clone, checkout, build, and Compose wait.
+- Guest commands receive source/ref as argv, never interpolated shell text.
+- Keep the final 64 KiB of command stdout/stderr in errors. Prefix phase + exit code.
+- Image recipe version changes. `wt-setup image rebuild --config PATH` refuses active `wt-*` domains, then atomically replaces the golden image and manifest. No automatic replacement during install.
+
+#### Git contract
+
+- `source` = Git URL reachable from the guest.
+- No `--ref` = remote default branch.
+- `--ref` = existing branch, tag, or commit. No branch creation. No push.
+- Era 1.5 supports unauthenticated HTTPS and `git://`. No host credential copying. Private Git auth stays out until designed.
+- Checkout path = `/workspace/repo` inside the guest.
+
+#### Compose contract
+
+- Look only at repository root.
+- Accepted names: `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`.
+- Zero matches = error. Multiple matches = error. No guessed precedence.
+- Run `docker compose -f <file> up -d --build --wait` from `/workspace/repo`.
+- `Running` means clone + checkout + Compose wait succeeded.
+- Git/Compose nonzero exit, timeout, or guest loss = `Error`; keep bounded stdout/stderr in `last_error`.
+- `.devcontainer` interpretation, overrides, profiles, private credentials, and branch creation are out.
+
+#### Tests
+
+| Lane | Covers |
+|------|--------|
+| Injected worker | source/ref wire shape, persistence, conflicts, Git/Compose failure propagation |
+| KVM | local Git fixture → requested ref → Compose service ready → list → remove |
+
+The KVM fixture is self-contained. Serve a temporary bare Git repository from the host bridge. Its Compose file uses the pinned small image cached by image preparation. No public Git or registry dependency during tests.
+
+**Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's Compose service is ready; `wt rm` removes containers with the VM.
+
+---
+
+### 2 — Remote client + site server
+
+Run `wt` and `wt-local` on different machines. Do not change world or recipe semantics.
+
+| Deliver | |
+|---------|--|
+| Client config | named `bare_metal_local` and `bare_metal_ssh` contexts |
+| Transport | `ssh -- <site> wt-local api`; same versioned stdio JSON |
+| CLI | context list/use/show; `new` / `ls` / `rm` over selected context |
+| Install | client-only `wt`; server `wt-local` + `wt-libvirt` + existing site setup |
+| Auth | existing OpenSSH config/agent; never generate or copy keys |
+
+Client config: `~/.config/wt/config.toml`.
+
+```toml
+current_context = "local"
+
+[[contexts]]
+name = "local"
+kind = "bare_metal_local"
+
+[[contexts]]
+name = "lab"
+kind = "bare_metal_ssh"
+host = "wt-lab"
+```
+
+- `host` = OpenSSH destination or config alias. Reject empty values and values starting with `-`.
+- Local context always runs `wt-local api` from `PATH`.
+- SSH context always runs `ssh -- <host> wt-local api`. No configurable helper argv.
+- `--context <name>` overrides `current_context` for one command. `wt context use <name>` rewrites only `current_context`.
+
+- No HTTP listener.
+- Remote owner = OS user executing `wt-local` on the site.
+- Git clone and Compose remain inside the guest on the site.
+- Guest shell access, `wt ssh`, SSH config sync, multi-node workers, and public APIs stay out.
+
+**Done when:** a client-only machine creates, lists, and removes a Compose-ready world on an Ubuntu site through OpenSSH.
+
+#### Tests
+
+- Config parsing: missing current context, duplicate names, unknown kind, invalid host.
+- Transport: exact local/SSH argv, JSON stdin/stdout, remote exit/stderr, protocol mismatch.
+- Acceptance: client-only environment invokes a separate Ubuntu site and completes `new` → `ls` → `rm`.
 
 ---
 
 ### Later (not an era until needed)
 
+- `.devcontainer` interpretation beyond a root Compose file
+- Private Git credentials
+- Guest SSH, `wt ssh`, and SSH config sync
 - Modules/bins for multi-node (`wt-control-plane`, `wt-worker`)  
 - k8s context kind  
 - Runbook polish, destroy policies, fleets  
@@ -85,14 +169,15 @@ Do not pre-build these.
 2. `wt-local` helper + durable local registry
 3. `wt-libvirt` KVM guest lifecycle + Docker/Compose readiness
 4. `wt-cli` local spawn + new/ls/rm
-5. Recipe + remote SSH + CLI polish
+5. Git clone + ref checkout + Compose up
+6. Remote context + OpenSSH helper transport
 
 ## Open (pick in code)
 
 - Helper argv (`wt-local api` vs flags)  
-- Blocking create vs poll (bites once VMs are slow)  
-- Image/network layout for your lab  
+- Async create/poll after blocking behavior becomes painful
+- Private Git credential model
 
 ## One-line summary
 
-**Real local VM loop first → recipe + remote CLI polish; stop inventing eras for easy work.**
+**Real local VM loop → local Git/Compose world → remote client transport.**

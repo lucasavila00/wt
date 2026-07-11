@@ -29,9 +29,20 @@ Ground truth for VM existence = libvirt. SQLite holds requested instance state a
 | Record exists, domain missing | Mark error |
 | Helper restarted | Reopen SQLite; inspect libvirt |
 
+## Era 1.5
+
+Create adds Git source and optional ref. The worker returns success only after Compose is ready. SQLite persists the request and final error.
+
+## Era 2
+
+```text
+client wt  →  ssh site -- wt-local api  →  same registry + worker
+```
+
+SSH changes transport only. The API and ownership model stay the same.
+
 ## Later
 
-- Remote helper transport
 - Multi-node `wt-control-plane` + `wt-worker`
 - Kubernetes worker
 

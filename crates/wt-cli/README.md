@@ -16,7 +16,7 @@ Site server: [`wt-local`](../wt-local/). Types: [`wt-api`](../wt-api/).
 ## Commands (target)
 
 ```text
-wt new <name>
+wt new <source> <name> [--ref <ref>]
 wt ls
 wt rm <name>
 ```
@@ -29,4 +29,4 @@ cargo run -p wt-cli -- …
 
 ## Status
 
-Era 1 implementation in progress.
+Era 1 implemented. Era 1.5 source/ref + Compose planned.

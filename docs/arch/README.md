@@ -19,6 +19,25 @@ wt  ── local stdio ──►  wt-local  ──►  wt-libvirt  ──►  KV
 - Local path only. No client contexts.
 - Guest: Ubuntu 24.04 + Docker Engine + Compose v2 + QEMU guest agent.
 
+## Era 1.5
+
+```text
+wt new source name  ──►  local wt-local  ──►  KVM guest
+                                                   └─ clone → checkout → compose up
+```
+
+- Same local transport and KVM lifecycle.
+- `Running` means the selected Git revision's Compose project is ready.
+
+## Era 2
+
+```text
+client wt  ── OpenSSH stdio ──►  site wt-local  ──►  same KVM worker
+```
+
+- Client and site are different machines.
+- Same versioned helper API. No HTTP listener.
+
 ## Language and crates
 
 **Rust** for CLI and server. Shared types in **`wt-api`** (serde JSON over stdio).
