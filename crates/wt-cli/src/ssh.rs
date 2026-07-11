@@ -28,7 +28,7 @@ pub fn sync(instances: &[Instance]) -> Result<PathBuf> {
             bail!("instance {} has no SSH host keys", instance.name);
         }
         config.push_str(&format!(
-            "\nHost {}\n  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  ForwardAgent yes\n",
+            "\nHost {}\n  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n",
             instance.name,
             ssh.host,
             ssh.user,

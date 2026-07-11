@@ -26,8 +26,18 @@ impl<W: WorldWorker> Service<W> {
     }
 
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
-        if request.source.trim().is_empty() || request.source.contains(['\n', '\r', '\0']) {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, "source must be a non-empty single line"));
+        let ssh_source = request.source.starts_with("ssh://")
+            || (!request.source.contains("://")
+                && request.source.split_once(':').is_some_and(|(left, right)| left.contains('@') && !right.is_empty()));
+        let supported = request.source.starts_with("https://") || ssh_source;
+        if !supported || request.source.contains(['\n', '\r', '\0']) {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, "source must be an HTTPS or SSH Git URL"));
+        }
+        if ssh_source && request.identity_file.is_none() {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, "SSH Git source requires an identity file"));
+        }
+        if !ssh_source && request.identity_file.is_some() {
+            return Err(ApiError::new(ErrorCode::InvalidRequest, "--identity is valid only for SSH Git sources"));
         }
         if request.git_ref.as_deref().is_some_and(|value| value.is_empty() || value.contains('\0')) {
             return Err(ApiError::new(ErrorCode::InvalidRequest, "git ref must not be empty or contain NUL"));

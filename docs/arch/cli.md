@@ -37,12 +37,12 @@ Era 1 keeps the implemented `wt new <name>` shape. Era 1.5 replaces it with the 
 ## Era 1.5 guest access
 
 - The guest username is the fixed, non-root `wt` user and its working checkout is `/workspace`.
-- `wt-setup` requires one or more administrator-selected public keys in strict site config. `wt-local` injects those public keys into every world it creates. Private keys never enter site config, the API, registry, image, or guest.
+- `wt-setup` requires a public-key file path in strict site config. `wt-local` injects those public keys into every world it creates.
 - Every world has unique SSH host keys. After boot, `wt-libvirt` reads the public host keys through the QEMU guest agent; `wt-local` persists them with the SSH endpoint.
 - `wt sync` manages dedicated config and known-hosts files, ensures the user's main SSH config contains one bounded `Include` for the managed config, and makes `Host <instance-name>` resolve to the recorded guest. It must not weaken host-key checking or overwrite unrelated user SSH configuration.
 - VS Code Remote SSH uses the same instance alias and opens `/workspace`, so the editor terminal and Git operations run inside the world.
 - SSH reachability is part of create readiness. `Running` still additionally requires clone, checkout, and Compose wait to succeed.
-- SSH Git sources may rely on an inherited `SSH_AUTH_SOCK` and the invoking owner's existing SSH host trust. This is a provisional environment assumption: `wt` does not discover, generate, store, rotate, or copy private Git credentials, and the final forwarding/credential policy remains undecided.
+- SSH Git sources require `--identity PATH`. `wt-local` prompts for a passphrase when required, uses the caller's existing SSH host trust, and removes credentials from guest tmpfs immediately after clone. It does not use an ssh-agent.
 
 ## Era 2
 

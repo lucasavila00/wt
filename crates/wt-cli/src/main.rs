@@ -51,7 +51,10 @@ fn run() -> Result<()> {
                     git_ref,
                     identity_file: identity.map(|path| path.to_string_lossy().into_owned()),
                 },
-            )))?;
+            )));
+            let sync = sync_inventory();
+            let response = response?;
+            sync?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -76,11 +79,13 @@ fn run() -> Result<()> {
             }
         }
         Command::Rm { name } => {
-            let response = wt_cli::transport::call(&ApiRequest::new(Operation::Delete { name }))?;
+            let response = wt_cli::transport::call(&ApiRequest::new(Operation::Delete { name }));
+            let sync = sync_inventory();
+            let response = response?;
+            sync?;
             let Response::Deleted { name } = response else {
                 bail!("helper returned the wrong response to delete");
             };
-            sync_inventory()?;
             println!("removed {name}");
         }
         Command::Sync => {

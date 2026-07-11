@@ -62,12 +62,12 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 |---------|--|
 | `wt-api` | protocol v2; create carries `source`, `name`, optional `git_ref`; instance stores source/ref plus SSH endpoint and public host keys |
 | `wt-cli` | `wt new <source> <name> [--ref <ref>]`; blocking create; print status/IP/Host snippet; `wt sync`; `wt ssh` |
-| `wt-local` | SQLite migration; persist source/ref and SSH identity; preserve failure detail |
+| `wt-local` | versioned SQLite registry; persist source/ref and SSH identity; preserve failure detail |
 | `wt-libvirt` | guest exec helper; SSH setup/readiness; clone; checkout; `devcontainer up`; captured errors |
-| `wt-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI + pinned small E2E container image; configure public-key source; record provenance |
+| `wt-setup` | bake `git` + `openssh-server` + pinned Dev Container CLI; configure public-key source; record provenance |
 
 - Add required `guest.recipe_timeout_seconds` to site config. Development value: `900`.
-- Add required `guest.ssh_authorized_keys` to site config. It contains one or more public keys to inject per world; private keys are rejected.
+- Add required `guest.ssh_authorized_keys_file` to site config. It points to one or more public keys to inject per world; private keys are rejected.
 - One recipe deadline covers clone, checkout, and `devcontainer up`.
 - Guest commands receive source/ref as argv, never interpolated shell text.
 - Keep the final 64 KiB of command stdout/stderr in errors. Prefix phase + exit code.
@@ -79,9 +79,9 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 - No `--ref` = remote default branch.
 - `--ref` = existing branch, tag, or commit. No branch creation. `wt` never pushes; an interactive user may use Git normally after entering the world.
 - The gating Era 1.5 path supports unauthenticated HTTPS and `git://`. It is validated with a self-contained local fixture and does not depend on external credentials.
-- For early private-repository usage, accept `ssh://` and standard scp-style Git sources and provisionally rely on the invoking site user's loaded `ssh-agent`. Forward agent access into the guest only for the clone; never copy private keys into the API, registry, image, cloud-init data, or world disk.
-- Assume `wt-local` inherits a usable `SSH_AUTH_SOCK`, a matching key is loaded, and the invoking owner's SSH host trust covers the real hostname in `source`. Missing agent, authentication failure, or unknown host fails with an actionable Git-phase error; there is no fallback credential mechanism.
-- This agent behavior is a convenience bridge, not the settled credential architecture. Do not let deploy-key lifecycle, provider integration, shared-site policy, or credential hardening block the core Era 1.5 implementation and acceptance test.
+- For private repositories, accept `ssh://` and standard scp-style Git sources with `--identity PATH`. `wt-local` prompts on `/dev/tty` for the private-key passphrase only when required.
+- The private key, optional passphrase, and caller's SSH host-trust file exist only under guest tmpfs during clone and are removed immediately. They are not persisted in the API registry, image, cloud-init data, or world disk.
+- Missing identity, invalid passphrase, authentication failure, or unknown host fails with an actionable Git-phase error. There is no ssh-agent or fallback credential mechanism.
 - Checkout path = `/workspace` inside the guest.
 
 #### Devcontainer contract
@@ -96,26 +96,26 @@ Make the local VM loop run a real repository and expose the resulting usable dev
 
 - Guest SSH is an Era 1.5 deliverable. SSH transport from `wt` to `wt-local` remains Era 2.
 - The fixed guest login is non-root user `wt`; its checkout is `/workspace`.
-- `guest.ssh_authorized_keys` is strict site configuration. `wt-setup` validates public-key syntax and `wt-libvirt` injects the keys into each new world's cloud-init data. No private key is copied or generated.
+- `guest.ssh_authorized_keys_file` is strict site configuration. `wt-setup` validates the referenced public keys and `wt-libvirt` injects them into each new world's cloud-init data.
 - Each world generates unique SSH host keys. After sshd starts, retrieve the public host keys through the QEMU guest agent and persist them with `ssh_user = "wt"`, guest address, and port `22`.
 - Treat the host keys, not a DHCP address, as the world's stable SSH identity. Reconciliation refreshes the persisted address from libvirt; `wt sync` then updates the alias without accepting a different host key.
-- SSH readiness is required before `Running`. Core clone/checkout/devcontainer provisioning continues through the guest agent; the provisional private-SSH clone path may use narrowly scoped agent forwarding after sshd is ready.
+- SSH readiness is required before `Running`. Clone, checkout, and devcontainer provisioning continue through the guest agent.
 - `wt new` prints a usable `Host <name>` snippet. `wt ls` shows the SSH target.
-- `wt sync` atomically derives dedicated managed SSH config and known-hosts files from the caller's running instances. It ensures the user's main SSH config contains one bounded `Include` for the managed file, preserves all unrelated configuration, enforces host-key checking, and removes entries for removed worlds.
+- Every `wt new` and `wt rm` runs sync automatically. Explicit `wt sync` atomically derives dedicated managed SSH config and known-hosts files from running instances, ensures the user's main SSH config contains one bounded `Include`, preserves unrelated configuration, enforces host-key checking, and removes entries for removed worlds.
 - `wt ssh <name>` delegates to stock OpenSSH using the managed alias. VS Code Remote SSH uses that same alias and opens `/workspace`.
 - The repository exists only inside the guest. Era 1.5 adds no virtiofs/9p export, host worktree, or dual host/guest Git state.
-- The exact private-Git and agent-forwarding model remains explicitly open for later design; Era 1.5 records the assumptions above rather than presenting them as a durable multi-user security contract.
+- Agent forwarding is not enabled.
 
 #### Tests
 
 | Lane | Covers |
 |------|--------|
 | Injected worker | source/ref and SSH wire shape, persistence, conflicts, sync inventory, Git/devcontainer/SSH failure propagation |
-| KVM | local Git fixture → requested ref → devcontainer ready → strict host-key SSH login → command in `/workspace/repo` → list → remove |
+| KVM | bridge-served jsdev sample → requested ref → devcontainer ready → strict host-key SSH login → command in `/workspace` → list → remove |
 
-The KVM fixture is self-contained. Serve a temporary bare Git repository from the host bridge. Its `devcontainer.json` references a Compose file using the pinned small image cached by image preparation and a relative workspace bind mount. Use a test-only SSH keypair, inject only its public key, and verify the reported world host key. No public Git or registry dependency during tests.
+The KVM test serves a temporary bare clone of `/home/lucas/fluff/jsdev` from the host bridge, falling back to `https://github.com/lucasavila00/jsdev-sample`. It runs the repository's stock devcontainer recipe, including normal registry access. Use a test-only SSH keypair, inject only its public key, and verify the reported world host key.
 
-The self-contained fixture is the gating acceptance path. When provisional SSH cloning is implemented, add a focused test with a temporary Git SSH server, temporary agent, and known host; do not make a real Git provider or long-lived credential a test dependency.
+The bridge-served unauthenticated Git URL is the gating acceptance path. Private SSH clone tests do not require a long-lived credential.
 
 **Done when:** local `wt new <source> <name> --ref <ref>` returns `running` only after the selected revision's devcontainer and SSH are ready; `ssh <name>` and VS Code Remote SSH open `/workspace`; `wt rm` removes the world and automatically removes its access records.
 

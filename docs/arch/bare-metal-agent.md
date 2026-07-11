@@ -27,13 +27,13 @@ KVM is required. No CPU-emulation backend.
 6. Run docker info + docker compose version through guest agent
 7. Era 1.5: create the `wt` user and inject configured public keys
 8. Era 1.5: generate unique guest SSH host keys and verify sshd readiness
-9. Era 1.5: clone source + checkout ref into `/workspace/repo`
-10. Era 1.5: run `devcontainer up --workspace-folder /workspace/repo`
+9. Era 1.5: clone source + checkout ref into `/workspace`
+10. Era 1.5: run `devcontainer up --workspace-folder /workspace`
 11. Read guest IP and public SSH host keys
 12. Running
 ```
 
-The QEMU guest agent remains the core provisioning and readiness channel. An SSH source may provisionally use a narrowly scoped, agent-forwarded SSH session for the clone after sshd is ready; this convenience path is not the Era 1.5 acceptance dependency. The guest checkout is never mounted or exported to the host.
+The QEMU guest agent remains the core provisioning and readiness channel. An SSH source uses explicit credentials held temporarily in guest tmpfs for clone. The guest checkout is never mounted or exported to the host.
 
 ## Destroy
 
@@ -53,7 +53,7 @@ The QEMU guest agent remains the core provisioning and readiness channel. An SSH
 
 World creation does not install packages.
 
-Era 1.5 adds `git`, `openssh-server`, the pinned Dev Container CLI, and one pinned small container image used by the offline KVM acceptance test. The manifest records all of them. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
+Era 1.5 adds `git`, `openssh-server`, and the pinned Dev Container CLI. The manifest records them. Test/application images do not belong to production setup. Golden images must not publish reusable SSH host keys; each world gets a unique host identity.
 
 ## One-line summary
 

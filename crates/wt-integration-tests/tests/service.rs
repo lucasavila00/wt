@@ -39,7 +39,7 @@ fn world() -> World {
 fn create(name: InstanceName) -> CreateInstance {
     CreateInstance {
         name,
-        source: "git://192.0.2.1/repo.git".to_owned(),
+        source: "https://example.test/repo.git".to_owned(),
         git_ref: Some("feature".to_owned()),
         identity_file: None,
     }
@@ -63,7 +63,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     };
     assert_eq!(instance.status, InstanceStatus::Running);
     assert_eq!(instance.guest_ip.as_deref(), Some("192.0.2.2"));
-    assert_eq!(instance.source, "git://192.0.2.1/repo.git");
+    assert_eq!(instance.source, "https://example.test/repo.git");
     assert_eq!(instance.git_ref.as_deref(), Some("feature"));
     assert_eq!(instance.ssh.as_ref().unwrap().user, "wt");
 
