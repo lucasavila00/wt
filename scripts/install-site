@@ -55,6 +55,10 @@ sudo apt install -y \
     ovmf \
     libvirt-dev
 
+cd "$root"
+cargo build --release -p wt-setup
+target/release/wt-setup validate --config "$config"
+
 sudo usermod -aG libvirt,kvm "$USER"
 groups=" $(id -nG) "
 if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
@@ -63,7 +67,4 @@ if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
     exit 1
 fi
 
-cd "$root"
-cargo build --release -p wt-setup
-target/release/wt-setup validate --config "$config"
 target/release/wt-setup install --config "$config"

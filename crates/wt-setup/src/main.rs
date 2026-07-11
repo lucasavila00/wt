@@ -125,8 +125,9 @@ fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     require_installed_config_compatible(&config_bytes)?;
+    preflight_host(runner)?;
     runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
-    prepare_host(runner, &config)?;
+    prepare_host_state(runner, &config)?;
     ensure_image(runner, &config, &config_bytes)?;
     build_and_install_binaries(runner, &config)?;
     install_config(runner, &config_bytes)?;
@@ -138,8 +139,9 @@ fn image_command(runner: &impl Runner, config_path: &Path) -> Result<()> {
     require_site_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
+    preflight_host(runner)?;
     runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
-    prepare_host(runner, &config)?;
+    prepare_host_state(runner, &config)?;
     ensure_image(runner, &config, &config_bytes)?;
     println!("image ready: {}", config.image.installed_path.display());
     Ok(())
@@ -168,7 +170,7 @@ fn require_workspace() -> Result<()> {
     Ok(())
 }
 
-fn prepare_host(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
+fn preflight_host(runner: &impl Runner) -> Result<()> {
     require_host_platform()?;
     require_kvm()?;
     require_active_group("kvm")?;
@@ -178,6 +180,10 @@ fn prepare_host(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
         &args(["-c", LIBVIRT_URI, "domcapabilities", "--virttype", "kvm"]),
         "verify libvirt KVM capability",
     )?;
+    Ok(())
+}
+
+fn prepare_host_state(runner: &impl Runner, config: &SiteConfig) -> Result<()> {
     ensure_network(runner, &config.libvirt.network)?;
     ensure_directories(runner, config)?;
     Ok(())
