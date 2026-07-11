@@ -9,137 +9,90 @@ Crates: `wt-api`, `wt-local`, `wt-cli` (binary `wt`).
 | Piece | Role |
 |-------|------|
 | **`wt-api`** | Shared JSON request/response + status enums |
-| **`wt-local`** | Site brain: instance state, worker (stub→libvirt→recipe). **Helper command**: JSON in → work → JSON out |
-| **`wt-cli` (`wt`)** | Thin: read context → build argv → exec helper → print / `sync`. **No** provision logic |
+| **`wt-local`** | Site brain: instances + worker. Helper: JSON in → work → JSON out |
+| **`wt-cli` (`wt`)** | Thin: context → spawn helper (local or `ssh --`) → print / `sync` |
+
+SSH remote spawn is a small CLI feature. **Real VMs (libvirt) are the hard part.**
 
 ```text
 wt-cli  →  [optional ssh --]  wt-local helper  →  JSON
 ```
 
-| Context | Spawn |
-|---------|--------|
-| `bare_metal_local` | `wt-local …` on this machine |
-| `bare_metal_ssh` | `ssh user@host -- wt-local …` |
+## Eras
 
-Same helper either way. CLI without server is useless; server without *some* driver is awkward—so **develop them together**, with **local** as the default dev loop (no SSH required on an Ubuntu workstation).
+### 1 — Thin local loop (stub)
 
-## Approach
+Ship the shape: types + helper + CLI on **one machine**. Stub worker only—keep this short.
 
-One vertical slice early: types + helper + thin CLI on **one machine**. Then deepen the worker. Remote SSH is a small spawn variant, not a separate product phase.
+| Deliver | |
+|---------|--|
+| `wt-api` | create / list / get / delete; status; guest `endpoint`; errors |
+| `wt-local` | helper entrypoint; in-memory registry; owner = process user; stub create/delete (fake endpoint OK) |
+| `wt-cli` | `bare_metal_local`; `new` / `ls` / `rm`; spawn helper; print Host; basic `sync` if cheap |
 
-```text
-Era 1:  wt-api + wt-local helper + wt-cli (bare_metal_local) — stub worlds
-Era 2:  bare_metal_ssh spawn (same helper, wrap in ssh)
-Era 3:  libvirt guests + real guest endpoints
-Era 4:  stock clone + compose in guest
-Era 5:  UX polish + seams for multi-node later
-```
+**Done when:** local CLI drives helper end-to-end; ready to swap stub for libvirt without redesigning wire types or CLI.
 
-Gesture each era protects (once CLI exists):
-
-```text
-wt new / ls / rm / sync   →  helper JSON  →  print or managed Hosts
-```
+**Out:** libvirt, compose, remote SSH (unless free), multi-node, public HTTP.
 
 ---
 
-## Era 1 — Local end-to-end skeleton
+### 2 — Libvirt VMs
 
-**Goal:** on one box (e.g. Ubuntu workstation), install/run **both** binaries; drive stub instances with the real CLI path.
+**Main risk era.** Real guests you can SSH into.
 
-| Deliver | Detail |
-|---------|--------|
-| **`wt-api`** | Create/list/get/delete types; `InstanceStatus`; optional guest `endpoint`; errors |
-| **`wt-local`** | Helper entrypoint (e.g. `wt-local api` or stdin JSON); in-memory registry; owner = process user; **stub** create (record source/name, fake endpoint OK) |
-| **`wt-cli`** | Context sum type with **`bare_metal_local`**; commands `context`, `new`, `ls`, `rm`, `sync`; exec helper; print Host snippet; write managed ssh_config from list |
+| Deliver | |
+|---------|--|
+| `wt-local` | golden image/template; define/start/destroy; wait for IP; inject keys; instance↔domain; `Provisioning` → `Running` / `Error` |
+| ops | image, pool, network/bridge, libvirt permissions |
+| CLI | unchanged path; print/sync hit real endpoints |
 
-**Dev loop:** edit crates → `cargo run -p wt-local` / `cargo run -p wt-cli` on the same machine → no SSH, no second host.
+**Done when:** `wt new` → print/`sync` → `ssh {repo}-{feature}` works; `wt rm` destroys the domain.
 
-**Done when:**
+**Out:** full app compose (empty/docker-ready guest is enough).
 
-- `wt` with `bare_metal_local` can new/ls/rm/sync against local helper  
-- Types only in `wt-api`  
-- CLI has no business logic beyond spawn + format + sync files  
-
-**Not in this era:** real libvirt, compose, multi-node, public HTTP, requirement to use SSH.
-
-Optional: you can still smoke the helper with raw shell (`echo … \| wt-local …`) while debugging, but **Era 1 is not “server without CLI.”**
+Also here if it unblocks you: sqlite so instance records survive helper restarts while VMs still exist.
 
 ---
 
-## Era 2 — Remote spawn (`bare_metal_ssh`)
+### 3 — Stock recipe + client completeness
 
-**Goal:** same CLI + helper, Mac (or laptop) → remote Ubuntu via SSH.
+Everything that makes it a daily driver **after** VMs work—one era, not split for ceremony.
 
-| Deliver | Detail |
-|---------|--------|
-| **`wt-cli`** | Implement **`bare_metal_ssh`** context: build `ssh [-i] [-p] user@host -- wt-local …` with same JSON as local |
-| **Site** | `wt-local` installed on remote; SSH login works as the owner user |
-| **Docs** | Example context for remote lab |
+| Area | Deliver |
+|------|---------|
+| **Recipe** | clone source[@ref]; detect compose / `.devcontainer`; stock `compose up`; phases / `last_error` |
+| **`bare_metal_ssh`** | same helper under `ssh user@host -- …` |
+| **CLI** | context list/use/show; solid `sync`; wait/poll if create is slow; clearer errors; optional `wt ssh` |
+| **Guest access** | known_hosts / key polish |
 
-**Done when:** Mac `wt new/ls/rm/sync` against remote host matches local behavior; owner = SSH user.
-
-**Not in this era:** libvirt (still stub unless already added).
-
----
-
-## Era 3 — Libvirt worlds
-
-**Goal:** helper creates real guests; guest SSH works after sync.
-
-| Deliver | Detail |
-|---------|--------|
-| **`wt-local` only** | Golden image, define/start/destroy, wait for IP, inject keys, real `endpoint` |
-| **CLI** | Unchanged spawn paths; print/sync become useful for real Hosts |
-| **Ops** | Image, network, install notes (local workstation and/or remote hypervisor) |
-
-**Done when:** `wt new` → `wt sync` → `ssh {repo}-{feature}` into guest; `wt rm` destroys domain. Works for both local and SSH contexts if libvirt is on that site.
+**Done when:** real repo comes up on `new`; Mac→remote hypervisor works like local workstation; day-to-day commands are usable.
 
 ---
 
-## Era 4 — Stock recipe
+### Later (not an era until needed)
 
-**Goal:** after guest is up, server runs clone + stock compose/devcontainer.
+- Modules/bins for multi-node (`wt-control-plane`, `wt-worker`)  
+- k8s context kind  
+- Runbook polish, destroy policies, fleets  
 
-| Deliver | Detail |
-|---------|--------|
-| **`wt-local`** | git clone; detect compose / `.devcontainer`; stock `compose up`; status phases / `last_error` |
-| **`wt-api`** | ref, error, phase fields as needed |
-| **CLI** | Pass source/ref; show errors only |
-
-**Done when:** real repo comes up on `new`; failures are clean `Error`; `rm` cleans.
+Do not pre-build these.
 
 ---
 
-## Era 5 — Polish + seams
+## First commits
 
-- Wait/poll UX for long provisions  
-- known_hosts / keys for guests  
-- Sync edge cases  
-- Internal modules reusable by future `wt-control-plane` / `wt-worker` (don’t ship those bins until needed)  
-- Short runbook: local workstation vs remote hypervisor  
+1. `wt-api` types  
+2. `wt-local` helper + memory stub  
+3. `wt-cli` local spawn + new/ls/rm (+ print/sync)  
+4. **Libvirt** (prioritize once the loop exists)  
+5. Recipe + remote SSH + CLI polish  
 
----
+## Open (pick in code)
 
-## Suggested first commits
-
-1. `wt-api` — minimal types + serde  
-2. `wt-local` — helper + in-memory CRUD + stub create  
-3. `wt-cli` — `bare_metal_local` + new/ls/rm + print  
-4. `wt sync`  
-5. `bare_metal_ssh` spawn  
-6. libvirt  
-7. recipe  
-
----
-
-## Open (non-blocking)
-
-- Exact helper argv (`wt-local api` vs flags)  
-- Blocking create vs poll  
-- Memory vs sqlite  
-- Compose detection order (Era 4)  
+- Helper argv (`wt-local api` vs flags)  
+- Blocking create vs poll (bites once VMs are slow)  
+- Image/network layout for your lab  
 
 ## One-line summary
 
-**Ship thin CLI + `wt-local` together on one machine first; SSH is just another way to run the same helper; then libvirt, then recipe.**
+**Short stub loop → libvirt (hard) → recipe + remote CLI polish; stop inventing eras for easy work.**
