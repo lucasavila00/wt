@@ -12,7 +12,7 @@ trap report_failure EXIT
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 if [[ $# -ne 0 ]]; then
-    echo "usage: scripts/clear-server" >&2
+    echo "usage: scripts/clear" >&2
     exit 2
 fi
 if [[ $EUID -eq 0 ]]; then

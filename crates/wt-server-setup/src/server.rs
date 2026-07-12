@@ -202,7 +202,7 @@ Accidental change: re-run with the install input that produced the current serve
   scripts/install-server --config {input_path}
 
 Intentional change: clear WT server state, then reinstall:
-  make clear   # or: scripts/clear-server
+  make clear   # or: scripts/clear
   scripts/install-server --config {input_path}
 
 `make clear` destroys every wt-* domain and removes installed WT state
@@ -337,7 +337,7 @@ mod tests {
           scripts/install-server --config ./server.toml
 
         Intentional change: clear WT server state, then reinstall:
-          make clear   # or: scripts/clear-server
+          make clear   # or: scripts/clear
           scripts/install-server --config ./server.toml
 
         `make clear` destroys every wt-* domain and removes installed WT state
