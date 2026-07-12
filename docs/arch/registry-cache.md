@@ -24,8 +24,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 preload_images = [
-  "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie",
-  "redis:7-alpine",
+  "node:24-bookworm-slim",
 ]
 ```
 
@@ -36,7 +35,7 @@ preload_images = [
 - `preload_images`: images to fetch during server setup.
 
 Other registries pass through without caching. An unqualified image such as
-`redis:7-alpine` means Docker Hub.
+`node:24-bookworm-slim` means Docker Hub.
 
 ## Setup
 

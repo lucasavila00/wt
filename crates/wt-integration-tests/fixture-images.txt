@@ -1,3 +1,2 @@
 # Images referenced by jsdev-sample's stock Compose devcontainer.
-mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie
-redis:7-alpine
+node:24-bookworm-slim

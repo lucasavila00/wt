@@ -14,10 +14,9 @@ worlds_dir = "/var/lib/libvirt/images/wt"
 state_dir = "/var/lib/wt/registry-cache"
 port = 3128
 max_size_gib = 64
-registries = ["docker.io", "mcr.microsoft.com"]
+registries = ["docker.io"]
 preload_images = [
-  "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie",
-  "redis:7-alpine",
+  "node:24-bookworm-slim",
 ]
 
 [git]

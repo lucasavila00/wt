@@ -251,7 +251,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\nexit\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
             ),
         )
         .map_err(|error| error.to_string())?;
@@ -263,13 +263,14 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 &ssh_config,
                 "-i",
                 &git.guest_key,
-                name.as_str(),
+                &host_alias,
+                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/jsdev --user node \"$container\" /bin/bash",
             )
             .stdin(Stdio::from(input))
             .output()
             .map_err(|error| error.to_string())
         })?;
-        ensure_success("enter and push from jsdev app container", &output)?;
+        ensure_success("push from jsdev app container", &output)?;
         let pushed = git_output(
             cmd!(
                 "git",

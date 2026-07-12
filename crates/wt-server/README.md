@@ -43,8 +43,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 preload_images = [
-  "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie",
-  "redis:7-alpine",
+  "node:24-bookworm-slim",
 ]
 
 [git]
