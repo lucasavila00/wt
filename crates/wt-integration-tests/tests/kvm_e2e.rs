@@ -53,6 +53,10 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             .as_secs()
     ))
     .unwrap();
+    let cache_log_since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let created = timings.run("create KVM devcontainer world", || {
         service
             .execute(
@@ -95,6 +99,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         instance.ssh.as_ref().unwrap().host_keys,
         peer_instance.ssh.as_ref().unwrap().host_keys
     );
+    assert_registry_cache_hit(cache_log_since);
 
     let result = (|| {
         let Response::Instances { instances } = service.execute("lucas", Operation::List).unwrap()
@@ -297,6 +302,32 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     });
     assert!(removed.is_ok(), "remove KVM sample world: {removed:?}");
     result.unwrap();
+}
+
+fn assert_registry_cache_hit(since: u64) {
+    let output = cmd!(
+        "docker",
+        "logs",
+        "--since",
+        since.to_string(),
+        "wt-registry-cache",
+    )
+    .output()
+    .expect("read registry cache logs");
+    assert!(
+        output.status.success(),
+        "read registry cache logs: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    let has_hit = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&output.stderr).lines())
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .any(|value| value["upstream_cache_status"].as_str() == Some("HIT"));
+    assert!(
+        has_hit,
+        "registry cache recorded no HIT during world creation"
+    );
 }
 
 struct GitSshServer {

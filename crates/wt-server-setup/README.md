@@ -27,8 +27,8 @@ the same ACL. This gives QEMU traversal without granting access to other local
 users and prevents virt-install path-search warnings.
 
 The installer runs a pinned registry-proxy container on the libvirt bridge,
-installs its CA, and configures host Docker to use it. The cache size and public
-registry hosts are part of the strict server configuration.
+verifies it, and makes its CA available to WT for guest configuration. The cache
+size and public registry hosts are part of the strict server configuration.
 
 Golden-image builds stream the temporary guest's serial console, including
 cloud-init package output, phase timings, and quiet-period heartbeats. A matching

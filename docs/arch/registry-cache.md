@@ -37,8 +37,7 @@ Other registries pass through without caching.
 `wt-server-setup`:
 
 1. Starts the pinned registry-proxy container on the libvirt bridge.
-2. Installs the proxy CA on the host.
-3. Configures host Docker to use the proxy.
+2. Verifies that the proxy is reachable and makes its CA readable to WT.
 
 Manifest caching is off. Tags are checked upstream on every pull. Immutable
 blobs come from the local cache when present. Pushes bypass the cache.
@@ -55,8 +54,7 @@ WT runs:
 devcontainer up --log-level debug --log-format text --workspace-folder /workspace
 ```
 
-The command output is streamed live. After it finishes, WT prints cache hits,
-misses, and byte counts seen during that command.
+The command output is streamed live.
 
 ## Limits
 

@@ -82,7 +82,7 @@ The installer:
 - Stops when new group membership requires a new login.
 - Requires working KVM. No emulation fallback.
 - Starts and enables the configured existing libvirt network.
-- Starts and verifies the pinned registry cache and installs its CA.
+- Starts and verifies the pinned registry cache and reads its CA for guest setup.
 - Creates and verifies configured directories.
 - Owns the worlds directory as the server user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
 - Downloads and verifies the pinned Ubuntu source image.

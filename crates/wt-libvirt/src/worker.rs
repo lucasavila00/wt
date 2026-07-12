@@ -162,7 +162,6 @@ impl LibvirtWorker {
         report_phase("Git clone and checkout", phase_started);
         eprintln!("Starting the repository devcontainer...");
         let phase_started = Instant::now();
-        let cache_log_since = unix_timestamp();
         guest_agent::run_phase(
             &domain,
             "workspace ownership",
@@ -192,7 +191,6 @@ impl LibvirtWorker {
             recipe_deadline,
         )?;
         report_phase("devcontainer up", phase_started);
-        report_registry_cache(cache_log_since, "devcontainer up");
         let phase_started = Instant::now();
         devcontainer::install_app_tools(&domain, &self.app_shell, &self.app_pane, recipe_deadline)?;
         guest_agent::run_phase(
@@ -459,60 +457,6 @@ fn verify_registry_cache(url: &str) -> Result<(), WorkerError> {
         ),
         "verify registry cache",
     )
-}
-
-fn unix_timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-fn report_registry_cache(since: u64, phase: &str) {
-    let output = cmd!(
-        "docker",
-        "logs",
-        "--since",
-        since.to_string(),
-        "wt-registry-cache",
-    )
-    .output();
-    let Ok(output) = output else {
-        eprintln!("Registry cache summary unavailable.");
-        return;
-    };
-    let mut hits = 0_u64;
-    let mut misses = 0_u64;
-    let mut hit_bytes = 0_u64;
-    let mut miss_bytes = 0_u64;
-    for line in String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .chain(String::from_utf8_lossy(&output.stderr).lines())
-    {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let bytes = value["bytes_sent"]
-            .as_str()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0);
-        match value["upstream_cache_status"].as_str() {
-            Some("HIT") => {
-                hits += 1;
-                hit_bytes += bytes;
-            }
-            Some("MISS") => {
-                misses += 1;
-                miss_bytes += bytes;
-            }
-            _ => {}
-        }
-    }
-    eprintln!(
-        "Host registry cache during {phase}: {hits} hits ({} MiB), {misses} misses ({} MiB).",
-        hit_bytes / (1024 * 1024),
-        miss_bytes / (1024 * 1024)
-    );
 }
 
 impl WorldWorker for LibvirtWorker {

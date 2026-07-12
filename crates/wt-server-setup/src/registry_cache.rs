@@ -1,7 +1,5 @@
-use crate::files::sudo_install;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -10,9 +8,6 @@ use wt_libvirt::ServerConfig;
 
 pub(crate) const CONTAINER_NAME: &str = "wt-registry-cache";
 pub(crate) const PROXY_IMAGE: &str = "rpardini/docker-registry-proxy@sha256:b70b2ef2371171a630e3fcbf2217e04057c1dbe114fa46d332ebde67349869e9";
-const CA_INSTALL_PATH: &str = "/usr/local/share/ca-certificates/wt-registry-cache.crt";
-const DOCKER_DROP_IN_DIR: &str = "/etc/systemd/system/docker.service.d";
-const DOCKER_DROP_IN_PATH: &str = "/etc/systemd/system/docker.service.d/wt-registry-cache.conf";
 
 pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let bridge = bridge_address(runner, &config.libvirt.network)?;
@@ -24,8 +19,6 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
         cmd!("sudo", "chmod", "0644", &ca),
         "make registry cache CA readable",
     )?;
-    configure_host_docker(runner, &ca, &bridge, config.registry_cache.port)?;
-    wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
     Ok(())
 }
 
@@ -189,33 +182,6 @@ fn wait_for_ca(state: &Path) -> Result<PathBuf> {
         thread::sleep(Duration::from_millis(500));
     }
     bail!("registry cache did not publish its CA certificate")
-}
-
-fn configure_host_docker(runner: &impl Runner, ca: &Path, bridge: &str, port: u16) -> Result<()> {
-    sudo_install(runner, ca, Path::new(CA_INSTALL_PATH), 0o644)?;
-    runner.run(
-        cmd!("sudo", "install", "-d", "-m", "0755", DOCKER_DROP_IN_DIR),
-        "create Docker systemd drop-in directory",
-    )?;
-    let staged = Path::new("target/wt-registry-cache-docker.conf");
-    fs::write(
-        staged,
-        format!(
-            "[Service]\nEnvironment=\"HTTP_PROXY=http://{bridge}:{port}/\"\nEnvironment=\"HTTPS_PROXY=http://{bridge}:{port}/\"\nEnvironment=\"NO_PROXY=localhost,127.0.0.1,{bridge}\"\n"
-        ),
-    )
-    .context("stage Docker registry cache proxy configuration")?;
-    sudo_install(runner, staged, Path::new(DOCKER_DROP_IN_PATH), 0o644)?;
-    let _ = fs::remove_file(staged);
-    runner.run(
-        cmd!("sudo", "update-ca-certificates"),
-        "trust registry cache CA",
-    )?;
-    runner.run(cmd!("sudo", "systemctl", "daemon-reload"), "reload systemd")?;
-    runner.run(
-        cmd!("sudo", "systemctl", "restart", "docker.service"),
-        "restart Docker with registry cache proxy",
-    )
 }
 
 fn wait_for_proxy(runner: &impl Runner, bridge: &str, port: u16) -> Result<()> {
