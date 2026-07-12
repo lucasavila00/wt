@@ -17,7 +17,7 @@ The implementation follows those responsibilities:
 - `server.rs` orchestrates installation and enforces the complete server config.
 - `host.rs` validates and prepares Ubuntu, KVM, libvirt, and server directories.
 - `image.rs` builds, verifies, and publishes the golden image and its provenance.
-- `registry_cache.rs` installs, preloads, and verifies the shared container registry cache.
+- `registry_cache.rs` installs and verifies the shared container registry cache.
 - `files.rs` contains strict ownership/mode checks and privileged file publication.
 - `runner.rs` is the small command-execution boundary used by the other modules.
 
@@ -27,9 +27,8 @@ the same ACL. This gives QEMU traversal without granting access to other local
 users and prevents virt-install path-search warnings.
 
 The installer runs a pinned registry-proxy container on the libvirt bridge,
-installs its CA, and pulls every configured preload image through it. The cache
-size, public registry hosts, and preload list are all part of the strict server
-configuration.
+installs its CA, and configures host Docker to use it. The cache size and public
+registry hosts are part of the strict server configuration.
 
 Golden-image builds stream the temporary guest's serial console, including
 cloud-init package output, phase timings, and quiet-period heartbeats. A matching

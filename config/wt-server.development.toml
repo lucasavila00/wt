@@ -15,9 +15,6 @@ state_dir = "/var/lib/wt/registry-cache"
 port = 3128
 max_size_gib = 64
 registries = ["docker.io"]
-preload_images = [
-  "node:24-bookworm",
-]
 
 [git]
 identity_file = "~/.ssh/id_ed25519"

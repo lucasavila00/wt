@@ -39,11 +39,9 @@ Check these values:
 - `guest.vcpus`: virtual CPUs per world. Host CPUs are shared.
 - `guest.disk_gib`: maximum disk per world. Disk grows as used.
 - `registry_cache.registries`: registry hosts to cache. Other registries pass
-  through without caching.
-- `registry_cache.preload_images`: images cached during server install and
-  pulled into every world before the devcontainer starts. This list may be
-  empty. Other images from `registry_cache.registries` are cached on first pull.
-  Tags are checked upstream on every pull; image blobs are reused from cache.
+  through without caching. Images from these registries are cached on first
+  pull. Tags are checked upstream on every pull; image blobs are reused from
+  cache.
 
 See [Libvirt/KVM backend](docs/arch/bare-metal-agent.md) and
 [registry cache](docs/arch/registry-cache.md).

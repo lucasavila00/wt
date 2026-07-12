@@ -26,7 +26,6 @@ pub struct RegistryCacheConfig {
     pub port: u16,
     pub max_size_gib: u64,
     pub registries: Vec<String>,
-    pub preload_images: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -77,7 +76,6 @@ pub struct LibvirtConfig {
     pub network: String,
     pub registry_cache_state_dir: PathBuf,
     pub registry_cache_port: u16,
-    pub registry_cache_preload_images: Vec<String>,
     pub git_identity_file: PathBuf,
     pub git_known_hosts_file: PathBuf,
     pub memory_mib: u64,
@@ -234,7 +232,6 @@ impl ServerConfig {
             network: self.libvirt.network.clone(),
             registry_cache_state_dir: self.registry_cache.state_dir.clone(),
             registry_cache_port: self.registry_cache.port,
-            registry_cache_preload_images: self.registry_cache.preload_images.clone(),
             git_identity_file: git.identity_file,
             git_known_hosts_file: git.known_hosts_file,
             memory_mib: self.guest.memory_mib,
@@ -258,17 +255,6 @@ impl ServerConfig {
             if !valid_registry_host(registry) || !registries.insert(registry.as_str()) {
                 return Err(format!(
                     "invalid or duplicate registry cache host: {registry}"
-                ));
-            }
-        }
-        for image in &self.registry_cache.preload_images {
-            if !valid_image_reference(image) {
-                return Err(format!("invalid registry cache preload image: {image}"));
-            }
-            let registry = image_registry(image);
-            if !registries.contains(registry) {
-                return Err(format!(
-                    "preload image registry {registry} is not listed in registry_cache.registries"
                 ));
             }
         }
@@ -310,23 +296,6 @@ fn valid_registry_host(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b':')
         })
-}
-
-fn valid_image_reference(value: &str) -> bool {
-    !value.is_empty()
-        && !value.contains(char::is_whitespace)
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"./:_-@".contains(&byte))
-}
-
-fn image_registry(image: &str) -> &str {
-    let first = image.split('/').next().unwrap_or_default();
-    if image.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost") {
-        first
-    } else {
-        "docker.io"
-    }
 }
 
 fn expand_home(path: &Path, name: &str) -> Result<PathBuf, String> {
@@ -389,7 +358,6 @@ state_dir = "/var/lib/wt/registry-cache"
 port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
-preload_images = ["redis:7-alpine", "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie"]
 
 [git]
 identity_file = "/tmp/wt-test-git-identity"
@@ -440,6 +408,11 @@ binary_dir = "/usr/local/bin"
     fn missing_and_unknown_fields_fail() {
         assert!(parse(&VALID.replace("vcpus = 4\n", "")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 4\nfallback = true")).is_err());
+        assert!(parse(&VALID.replace(
+            "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
+            "registries = [\"docker.io\", \"mcr.microsoft.com\"]\npreload_images = [\"redis:7-alpine\"]"
+        ))
+        .is_err());
     }
 
     #[test]
@@ -454,11 +427,6 @@ binary_dir = "/usr/local/bin"
         assert!(parse(
             &VALID.replace("/tmp/wt-test-git-identity", "relative/wt-test-git-identity")
         )
-        .is_err());
-        assert!(parse(&VALID.replace(
-            "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
-            "registries = [\"docker.io\"]"
-        ))
         .is_err());
     }
 

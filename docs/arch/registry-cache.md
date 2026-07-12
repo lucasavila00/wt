@@ -23,19 +23,14 @@ state_dir = "/var/lib/wt/registry-cache"
 port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
-preload_images = [
-  "node:24-bookworm",
-]
 ```
 
-- `state_dir`: cached blobs, proxy CA, and preload manifest.
+- `state_dir`: cached blobs and proxy CA.
 - `port`: proxy port on the libvirt bridge.
 - `max_size_gib`: hard cache size limit.
 - `registries`: public registries to cache.
-- `preload_images`: images to fetch during server setup.
 
-Other registries pass through without caching. An unqualified image such as
-`node:24-bookworm` means Docker Hub.
+Other registries pass through without caching.
 
 ## Setup
 
@@ -44,10 +39,6 @@ Other registries pass through without caching. An unqualified image such as
 1. Starts the pinned registry-proxy container on the libvirt bridge.
 2. Installs the proxy CA on the host.
 3. Configures host Docker to use the proxy.
-4. Pulls each preload image with `skopeo` into a temporary directory.
-5. Deletes the temporary copy and pulls again.
-6. Requires cache `HIT` records on the second pull.
-7. Stores the resolved image digests in a manifest.
 
 Manifest caching is off. Tags are checked upstream on every pull. Immutable
 blobs come from the local cache when present. Pushes bypass the cache.
@@ -57,10 +48,6 @@ blobs come from the local cache when present. Pushes bypass the cache.
 Cloud-init installs the proxy CA and configures Docker to use the proxy. World
 creation waits for this to finish before running the repository recipe. If the
 proxy is down or the CA setup fails, world creation fails and removes the VM.
-
-Before `devcontainer up`, WT runs `docker pull` for each configured preload
-image. Docker prints layer progress. WT prints the elapsed import time and cache
-HIT/MISS bytes. This also checks mutable tags before use.
 
 WT runs:
 

@@ -1,7 +1,6 @@
 use crate::files::sudo_install;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -15,23 +14,6 @@ const CA_INSTALL_PATH: &str = "/usr/local/share/ca-certificates/wt-registry-cach
 const DOCKER_DROP_IN_DIR: &str = "/etc/systemd/system/docker.service.d";
 const DOCKER_DROP_IN_PATH: &str = "/etc/systemd/system/docker.service.d/wt-registry-cache.conf";
 
-#[derive(Serialize)]
-struct CacheManifest<'a> {
-    version: u32,
-    proxy_image: &'a str,
-    bridge_address: &'a str,
-    port: u16,
-    max_size_gib: u64,
-    registries: &'a [String],
-    images: Vec<CachedImage>,
-}
-
-#[derive(Serialize)]
-struct CachedImage {
-    image: String,
-    repo_digests: Vec<String>,
-}
-
 pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let bridge = bridge_address(runner, &config.libvirt.network)?;
     ensure_state_directories(runner, &config.registry_cache.state_dir)?;
@@ -44,8 +26,6 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     )?;
     configure_host_docker(runner, &ca, &bridge, config.registry_cache.port)?;
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
-    let images = preload(runner, config, &bridge)?;
-    publish_manifest(runner, config, &bridge, images)?;
     Ok(())
 }
 
@@ -248,154 +228,4 @@ fn wait_for_proxy(runner: &impl Runner, bridge: &str, port: u16) -> Result<()> {
         thread::sleep(Duration::from_millis(500));
     }
     bail!("registry cache proxy is not reachable at {url}")
-}
-
-fn preload(runner: &impl Runner, config: &ServerConfig, bridge: &str) -> Result<Vec<CachedImage>> {
-    let mut cached = Vec::new();
-    let proxy = format!("http://{bridge}:{}", config.registry_cache.port);
-    for (index, image) in config.registry_cache.preload_images.iter().enumerate() {
-        println!("Preloading registry cache image {image}...");
-        let image_source = format!("docker://{}", canonical_image(image));
-        let first = Path::new("target").join(format!("wt-cache-preload-{index}-first"));
-        let second = Path::new("target").join(format!("wt-cache-preload-{index}-second"));
-        if first.exists() || second.exists() {
-            bail!("stale registry cache preload state for {image}");
-        }
-        skopeo_copy(
-            runner,
-            &proxy,
-            &image_source,
-            &first,
-            "preload registry cache image",
-        )?;
-        let digests = runner.text(
-            cmd!(
-                "env",
-                format!("HTTP_PROXY={proxy}"),
-                format!("HTTPS_PROXY={proxy}"),
-                "skopeo",
-                "inspect",
-                "--format",
-                "{{.Digest}}",
-                &image_source,
-            ),
-            "inspect preloaded registry cache image",
-        )?;
-        let digest = digests.trim();
-        if !digest.starts_with("sha256:") {
-            bail!("preloaded image has no repository digest: {image}");
-        }
-        fs::remove_dir_all(&first).context("remove first registry cache preload copy")?;
-        let since = unix_timestamp();
-        skopeo_copy(
-            runner,
-            &proxy,
-            &image_source,
-            &second,
-            "verify preloaded registry cache image",
-        )?;
-        if cache_hits_since(runner, since)? == 0 {
-            bail!("preloaded image was not served from the registry cache: {image}");
-        }
-        fs::remove_dir_all(&second).context("remove second registry cache preload copy")?;
-        cached.push(CachedImage {
-            image: image.clone(),
-            repo_digests: vec![format!("{}@{digest}", canonical_image(image))],
-        });
-    }
-    Ok(cached)
-}
-
-fn skopeo_copy(
-    runner: &impl Runner,
-    proxy: &str,
-    source: &str,
-    destination: &Path,
-    action: &str,
-) -> Result<()> {
-    runner.run(
-        cmd!(
-            "env",
-            format!("HTTP_PROXY={proxy}"),
-            format!("HTTPS_PROXY={proxy}"),
-            "skopeo",
-            "copy",
-            "--override-os",
-            "linux",
-            "--override-arch",
-            "amd64",
-            source,
-            format!("dir:{}", destination.display()),
-        ),
-        action,
-    )
-}
-
-fn canonical_image(image: &str) -> String {
-    let first = image.split('/').next().unwrap_or_default();
-    if image.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost") {
-        return image.to_owned();
-    }
-    if image.contains('/') {
-        format!("docker.io/{image}")
-    } else {
-        format!("docker.io/library/{image}")
-    }
-}
-
-fn unix_timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-fn cache_hits_since(runner: &impl Runner, since: u64) -> Result<usize> {
-    let output = runner.output(cmd!(
-        "docker",
-        "logs",
-        "--since",
-        since.to_string(),
-        CONTAINER_NAME,
-    ))?;
-    if !output.status.success() {
-        bail!(
-            "read registry cache logs: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .chain(String::from_utf8_lossy(&output.stderr).lines())
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|value| value["upstream_cache_status"].as_str() == Some("HIT"))
-        .count())
-}
-
-fn publish_manifest(
-    runner: &impl Runner,
-    config: &ServerConfig,
-    bridge: &str,
-    images: Vec<CachedImage>,
-) -> Result<()> {
-    let manifest = CacheManifest {
-        version: 1,
-        proxy_image: PROXY_IMAGE,
-        bridge_address: bridge,
-        port: config.registry_cache.port,
-        max_size_gib: config.registry_cache.max_size_gib,
-        registries: &config.registry_cache.registries,
-        images,
-    };
-    let staged = Path::new("target/wt-registry-cache-manifest.json");
-    fs::write(staged, serde_json::to_vec_pretty(&manifest)?)
-        .context("stage registry cache manifest")?;
-    sudo_install(
-        runner,
-        staged,
-        &config.registry_cache.state_dir.join("manifest.json"),
-        0o644,
-    )?;
-    let _ = fs::remove_file(staged);
-    Ok(())
 }

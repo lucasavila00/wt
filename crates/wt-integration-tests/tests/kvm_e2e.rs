@@ -12,7 +12,6 @@ use wt_server::service::Service;
 use wt_server::store::Store;
 
 const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
-const FIXTURE_IMAGES: &str = include_str!("../fixture-images.txt");
 
 #[test]
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
@@ -25,7 +24,6 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         run(command, "build guest helpers")
     });
     let mut config = ServerConfig::load().unwrap();
-    assert_eq!(config.registry_cache.preload_images, fixture_images());
     config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
     let git = timings.run("prepare SSH Git fixture", || {
@@ -318,7 +316,6 @@ impl GitSshServer {
             cmd!("git", "clone", "--bare", SAMPLE_SOURCE, &repository),
             "create bare jsdev repository",
         );
-        assert_fixture_images(&repository);
         let git_key = root.join("git-client");
         let guest_key = root.join("guest-client");
         let host_key = root.join("ssh-host");
@@ -389,39 +386,6 @@ impl GitSshServer {
             self.repository.display()
         )
     }
-}
-
-fn fixture_images() -> Vec<String> {
-    FIXTURE_IMAGES
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_owned)
-        .collect()
-}
-
-fn assert_fixture_images(repository: &Path) {
-    let compose = git_output(
-        cmd!(
-            "git",
-            "--git-dir",
-            repository,
-            "show",
-            "refs/heads/main:.devcontainer/compose.yaml",
-        ),
-        "read jsdev Compose fixture",
-    );
-    let actual = compose
-        .lines()
-        .map(str::trim)
-        .filter_map(|line| line.strip_prefix("image: "))
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        actual,
-        fixture_images(),
-        "jsdev fixture images changed; update fixture-images.txt and rebuild the integration cache"
-    );
 }
 
 struct Timings {

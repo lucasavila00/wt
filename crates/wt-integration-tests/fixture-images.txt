@@ -1,2 +1,0 @@
-# Images referenced by jsdev-sample's stock Compose devcontainer.
-node:24-bookworm

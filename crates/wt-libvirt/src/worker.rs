@@ -160,22 +160,6 @@ impl LibvirtWorker {
             recipe_deadline,
         )?;
         report_phase("Git clone and checkout", phase_started);
-        if !self.config.registry_cache_preload_images.is_empty() {
-            eprintln!("Importing configured images from the registry cache...");
-            let cache_log_since = unix_timestamp();
-            for image in &self.config.registry_cache_preload_images {
-                let phase_started = Instant::now();
-                guest_agent::run_phase(
-                    &domain,
-                    "registry cache image import",
-                    "/usr/bin/docker",
-                    &["pull", image],
-                    recipe_deadline,
-                )?;
-                report_phase(&format!("image {image}"), phase_started);
-            }
-            report_registry_cache(cache_log_since, "configured image imports");
-        }
         eprintln!("Starting the repository devcontainer...");
         let phase_started = Instant::now();
         let cache_log_since = unix_timestamp();

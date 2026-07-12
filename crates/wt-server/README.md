@@ -42,9 +42,6 @@ state_dir = "/var/lib/wt/registry-cache"
 port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
-preload_images = [
-  "node:24-bookworm",
-]
 
 [git]
 identity_file = "~/.ssh/id_ed25519"
@@ -85,7 +82,7 @@ The installer:
 - Stops when new group membership requires a new login.
 - Requires working KVM. No emulation fallback.
 - Starts and enables the configured existing libvirt network.
-- Starts and verifies the pinned registry cache, installs its CA, and preloads configured images.
+- Starts and verifies the pinned registry cache and installs its CA.
 - Creates and verifies configured directories.
 - Owns the worlds directory as the server user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
 - Downloads and verifies the pinned Ubuntu source image.
