@@ -58,7 +58,8 @@ Short names work when globally unique. Git sources use `ssh://...` or
 ### `ssh NAME`
 
 1. The workstation's SSH connection terminates at the guest SSH server and
-   verifies its host key.
+   verifies its host key. For a remote context, OpenSSH reaches the guest's
+   private address through the context server as a jump host.
 2. The guest runs `wt-app-shell`, which attaches to tmux or Byobu in the guest.
 3. Each pane runs `wt-app-pane`. It finds the current primary devcontainer and
    opens a separate guest-to-app SSH connection with a guest-held session key.
@@ -103,6 +104,9 @@ server and verifies the app host key.
 | `NAME-host` | Guest SSH server | Not applicable | Direct guest SSH |
 
 Remote `wt` commands use the server's existing SSH service to run `wt-server`.
+World SSH connections use the same configured server destination as an
+OpenSSH jump host. The server must allow TCP forwarding and be able to reach
+the guests; the workstation does not need a route to the libvirt network.
 
 ## Git credentials
 

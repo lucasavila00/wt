@@ -47,4 +47,10 @@ Include ~/.ssh/wt/config
 Qualified aliases always exist. Short aliases exist only for globally unique
 names. Host keys are pinned. Non-running worlds have no aliases.
 
+Guest aliases for `bare_metal_ssh` contexts use the context's configured
+OpenSSH host as a `ProxyJump`. OpenSSH connects to that server and asks it to
+forward the connection to the guest's private libvirt address. Local contexts
+connect to guest addresses directly. Direct app aliases retain their guest-side
+proxy command, which composes with the guest's jump host.
+
 Parent: [How WT works](./README.md).

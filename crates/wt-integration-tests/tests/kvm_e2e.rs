@@ -119,7 +119,14 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         };
         assert_eq!(instances.len(), 2);
         timings.run("sync SSH inventory", || {
+            let client_config = wt_cli::config::ClientConfig {
+                contexts: vec![wt_cli::config::Context {
+                    name: "local".into(),
+                    kind: wt_cli::config::ContextKind::BareMetalLocal,
+                }],
+            };
             wt_cli::ssh::sync(
+                &client_config,
                 &instances
                     .into_iter()
                     .map(|instance| wt_cli::inventory::ContextInstance {

@@ -92,7 +92,7 @@ fn run() -> Result<()> {
         }
         Command::Ls => {
             let instances = inventory::list_all(&config)?;
-            wt_cli::ssh::sync(&instances)?;
+            wt_cli::ssh::sync(&config, &instances)?;
             print!("{}", format_instances(&instances));
         }
         Command::Rm { name } => {
@@ -305,7 +305,7 @@ fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Cont
 
 fn sync_inventory(config: &ClientConfig) -> Result<std::path::PathBuf> {
     let instances: Vec<ContextInstance> = inventory::list_all(config)?;
-    wt_cli::ssh::sync(&instances)
+    wt_cli::ssh::sync(config, &instances)
 }
 
 #[cfg(test)]

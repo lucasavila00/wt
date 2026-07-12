@@ -60,9 +60,7 @@ impl ClientConfig {
             let (name, kind) = match entry {
                 ContextFile::BareMetalLocal { name } => (name, ContextKind::BareMetalLocal),
                 ContextFile::BareMetalSsh { name, host } => {
-                    if host.is_empty() || host.starts_with('-') {
-                        bail!("context {name}: SSH host must not be empty or start with '-'");
-                    }
+                    validate_ssh_host(&name, &host)?;
                     (name, ContextKind::BareMetalSsh { host })
                 }
             };
@@ -78,6 +76,19 @@ impl ClientConfig {
     pub fn context(&self, name: &str) -> Option<&Context> {
         self.contexts.iter().find(|context| context.name == name)
     }
+}
+
+pub(crate) fn validate_ssh_host(context: &str, host: &str) -> Result<()> {
+    if host.is_empty() || host.starts_with('-') {
+        bail!("context {context}: SSH host must not be empty or start with '-'");
+    }
+    if host.chars().any(char::is_whitespace) || host.chars().any(char::is_control) {
+        bail!("context {context}: SSH host must be a single OpenSSH destination");
+    }
+    if host.contains(',') {
+        bail!("context {context}: SSH host must not contain multiple jump destinations");
+    }
+    Ok(())
 }
 
 fn validate_context_name(value: &str) -> Result<()> {
@@ -127,6 +138,8 @@ mod tests {
             "version = 1\n[[contexts]]\nname = \"bad.name\"\nkind = \"bare_metal_local\"\n",
             "version = 1\n[[contexts]]\nname = \"same\"\nkind = \"bare_metal_local\"\n[[contexts]]\nname = \"same\"\nkind = \"bare_metal_local\"\n",
             "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"-bad\"\n",
+            "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"wt lab\"\n",
+            "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"jump-one,jump-two\"\n",
         ] {
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().join("config.toml");

@@ -1,3 +1,4 @@
+use crate::config::{validate_ssh_host, ClientConfig, ContextKind};
 use crate::inventory::{name_counts, ContextInstance};
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
@@ -6,7 +7,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use wt_api::InstanceStatus;
 
-pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
+pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .context("HOME is not set")?;
@@ -37,13 +38,24 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
             bail!("instance {} has incomplete SSH host keys", instance.name);
         }
         let qualified = item.qualified_name();
+        let context = client_config
+            .context(&item.context)
+            .with_context(|| format!("missing client context {}", item.context))?;
+        let proxy_jump = match &context.kind {
+            ContextKind::BareMetalLocal => String::new(),
+            ContextKind::BareMetalSsh { host } => {
+                validate_ssh_host(&context.name, host)?;
+                format!("  ProxyJump {host}\n")
+            }
+        };
         let guest_common = format!(
-            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n",
+            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n{}",
             ssh.host,
             ssh.user,
             ssh.port,
             format_args!("{qualified}-host"),
             ssh_quote(&known_hosts_path),
+            proxy_jump,
         );
         let app_common = format!(
             "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-dc\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
@@ -128,11 +140,21 @@ fn ssh_quote(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Context as ClientContext, ContextKind};
     use std::sync::Mutex;
     use uuid::Uuid;
     use wt_api::{AppSshAccess, Instance, InstanceName, SshAccess};
 
     static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+    fn local_config() -> ClientConfig {
+        ClientConfig {
+            contexts: vec![ClientContext {
+                name: "local".into(),
+                kind: ContextKind::BareMetalLocal,
+            }],
+        }
+    }
 
     #[test]
     fn sync_does_not_touch_main_config_and_removes_stale_worlds() {
@@ -166,10 +188,14 @@ mod tests {
         replacement_instance.id = Uuid::new_v4();
         replacement_instance.ssh.as_mut().unwrap().host_keys =
             vec!["ssh-ed25519 AAAAREPLACEMENT guest".into()];
-        sync(&[ContextInstance {
-            context: "local".into(),
-            instance,
-        }])
+        let client_config = local_config();
+        sync(
+            &client_config,
+            &[ContextInstance {
+                context: "local".into(),
+                instance,
+            }],
+        )
         .unwrap();
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host repo-feature-host\n"));
@@ -186,17 +212,20 @@ mod tests {
             managed.matches("HostKeyAlias local.repo-feature").count(),
             6
         );
-        sync(&[ContextInstance {
-            context: "local".into(),
-            instance: replacement_instance,
-        }])
+        sync(
+            &client_config,
+            &[ContextInstance {
+                context: "local".into(),
+                instance: replacement_instance,
+            }],
+        )
         .unwrap();
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
         assert!(known_hosts.contains("AAAAREPLACEMENT"));
         assert!(known_hosts.contains("AAAAAPPLICATION"));
         assert!(known_hosts.contains("local.repo-feature-dc ssh-ed25519"));
         assert!(!known_hosts.contains("AAAATEST"));
-        sync(&[]).unwrap();
+        sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
         assert_eq!(main, main_config);
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
@@ -231,16 +260,95 @@ mod tests {
                 }),
             },
         };
-        sync(&[
-            instance(Uuid::new_v4(), "local"),
-            instance(Uuid::new_v4(), "lab"),
-        ])
+        let client_config = ClientConfig {
+            contexts: vec![
+                ClientContext {
+                    name: "local".into(),
+                    kind: ContextKind::BareMetalLocal,
+                },
+                ClientContext {
+                    name: "lab".into(),
+                    kind: ContextKind::BareMetalSsh {
+                        host: "wt-server".into(),
+                    },
+                },
+            ],
+        };
+        sync(
+            &client_config,
+            &[
+                instance(Uuid::new_v4(), "local"),
+                instance(Uuid::new_v4(), "lab"),
+            ],
+        )
         .unwrap();
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host local.same\n"));
         assert!(managed.contains("Host lab.same\n"));
         assert!(!managed.lines().any(|line| line == "Host same"));
         assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
+        assert_eq!(managed.matches("  ProxyJump wt-server\n").count(), 2);
         assert!(!temp.path().join(".ssh/config").exists());
+    }
+
+    #[test]
+    fn remote_world_aliases_jump_through_the_context_host() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", temp.path());
+        let instance = |name: &str, host: &str| ContextInstance {
+            context: "lab".into(),
+            instance: Instance {
+                id: Uuid::new_v4(),
+                name: InstanceName::parse(name).unwrap(),
+                owner: "lucas".into(),
+                status: InstanceStatus::Running,
+                source: "git@example.test:repo.git".into(),
+                guest_ip: Some(host.into()),
+                last_error: None,
+                ssh: Some(SshAccess {
+                    user: "wt".into(),
+                    host: host.into(),
+                    port: 22,
+                    host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
+                }),
+                app_ssh: Some(AppSshAccess {
+                    user: "vscode".into(),
+                    port: 2222,
+                    host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
+                }),
+            },
+        };
+        let client_config = ClientConfig {
+            contexts: vec![ClientContext {
+                name: "lab".into(),
+                kind: ContextKind::BareMetalSsh {
+                    host: "wt-server".into(),
+                },
+            }],
+        };
+
+        sync(
+            &client_config,
+            &[
+                instance("world-one", "192.0.2.10"),
+                instance("world-two", "192.0.2.11"),
+            ],
+        )
+        .unwrap();
+
+        let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
+        for alias in [
+            "lab.world-one-host",
+            "world-one-host",
+            "lab.world-two-host",
+            "world-two-host",
+        ] {
+            assert!(managed.contains(&format!("Host {alias}\n")));
+        }
+        assert_eq!(managed.matches("  HostName 192.0.2.10\n").count(), 4);
+        assert_eq!(managed.matches("  HostName 192.0.2.11\n").count(), 4);
+        assert_eq!(managed.matches("  ProxyJump wt-server\n").count(), 8);
+        assert_eq!(managed.matches("  ProxyCommand ssh -F ").count(), 4);
     }
 }

@@ -114,6 +114,11 @@ Host wt-server
     User wt
 ```
 
+WT also uses this alias as the OpenSSH jump host for worlds in the remote
+context. The server's SSH service must allow TCP forwarding, and the server
+must be able to reach its libvirt guests. The workstation does not need a route
+to the libvirt network.
+
 Before server setup, copy the client's public key:
 
 ```bash
@@ -153,6 +158,10 @@ Use it:
 wt new git@github.com:org/repo.git lab.repo-feature
 ssh lab.repo-feature
 ```
+
+The resulting connection follows
+`workstation -> wt-server -> guest private address`. WT does not publish a
+per-world port on the server.
 
 Client-to-server, server-to-Git, and client-to-world SSH keys are separate roles.
 The same key may serve more than one role.
