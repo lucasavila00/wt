@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -106,6 +107,73 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 .map_err(|error| error.to_string())
         })?;
         ensure_success("enter jsdev guest host", &output)?;
+
+        let mut persistent = Command::new("ssh")
+            .arg("-F")
+            .arg(&ssh_config)
+            .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|error| format!("start persistent app shell: {error}"))?;
+        persistent
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(
+                b"export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD\"\n",
+            )
+            .map_err(|error| format!("initialize persistent app shell: {error}"))?;
+        wait_for_line(&mut persistent, "retained:/tmp")?;
+        disconnect(&mut persistent, "initial persistent app shell")?;
+
+        let mut reattached = Command::new("ssh")
+            .arg("-F")
+            .arg(&ssh_config)
+            .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|error| format!("reattach persistent app shell: {error}"))?;
+        reattached
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(
+                b"test \"$WT_PERSISTENCE_MARKER\" = retained && test \"$PWD\" = /tmp && printf 'persistence-%s\\n' \"$WT_PERSISTENCE_MARKER\"\n",
+            )
+            .map_err(|error| format!("verify persistent app shell: {error}"))?;
+        wait_for_line(&mut reattached, "persistence-retained")?;
+        disconnect(&mut reattached, "reattached app shell")?;
+
+        let output = Command::new("ssh")
+            .arg("-F")
+            .arg(&ssh_config)
+            .args(["-i", git.guest_key.to_str().unwrap(), &host_alias])
+            .args([
+                "/usr/bin/tmux",
+                "-L",
+                "wt-app",
+                "new-window",
+                "\\;",
+                "list-panes",
+                "-a",
+                "-F",
+                "'#{pane_start_command}'",
+            ])
+            .output()
+            .map_err(|error| error.to_string())?;
+        ensure_success("create persistent app window", &output)?;
+        let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+        if panes.lines().count() != 2
+            || !panes
+                .lines()
+                .all(|command| command == "/usr/local/bin/wt-app-pane")
+        {
+            return Err(format!("unexpected tmux pane commands: {panes:?}"));
+        }
 
         let branch = format!("wt-e2e-{}", std::process::id());
         let app_commands = temp.path().join("app-commands");
@@ -356,6 +424,60 @@ fn git_output(command: &mut Command, action: &str) -> String {
     let output = command.output().unwrap();
     ensure_success(action, &output).unwrap();
     String::from_utf8(output.stdout).unwrap()
+}
+
+fn wait_for_line(child: &mut Child, expected: &str) -> Result<(), String> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "SSH child stdout is not piped".to_owned())?;
+    let expected = expected.to_owned();
+    let reader_expected = expected.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut output = BufReader::new(stdout);
+        let mut line = String::new();
+        let mut found = false;
+        loop {
+            line.clear();
+            match output.read_line(&mut line) {
+                Ok(0) if !found => {
+                    let _ = sender.send(Err(format!(
+                        "app shell closed before printing {reader_expected:?}"
+                    )));
+                    return;
+                }
+                Ok(0) => return,
+                Ok(_) if !found && line.contains(&reader_expected) => {
+                    let _ = sender.send(Ok(()));
+                    found = true;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = sender.send(Err(format!("read app shell output: {error}")));
+                    return;
+                }
+            }
+        }
+    });
+    match receiver.recv_timeout(Duration::from_secs(20)) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(format!("app shell did not print {expected:?} within 20s"))
+        }
+    }
+}
+
+fn disconnect(child: &mut Child, description: &str) -> Result<(), String> {
+    child
+        .kill()
+        .map_err(|error| format!("disconnect {description}: {error}"))?;
+    child
+        .wait()
+        .map_err(|error| format!("wait for disconnected {description}: {error}"))?;
+    Ok(())
 }
 
 fn run(command: &mut Command, action: &str) {

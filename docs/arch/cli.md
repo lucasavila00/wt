@@ -56,13 +56,17 @@ on the client host.
 ## Guest access
 
 - The guest login is the fixed non-root user `wt`; the checkout is `/workspace`.
+- The base alias always attaches to one shared persistent tmux session. Every
+  tmux window and pane enters the primary app container; SSH disconnects do not
+  terminate its shells or processes.
 - Every world has unique SSH host keys. `wt-libvirt` retrieves their public parts
   through the QEMU guest agent, and `wt-server` persists them with the endpoint.
 - `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
   `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
 - Qualified aliases always exist. Short aliases exist only for globally unique
-  names. The base alias enters the app container; the `-host` alias provides
-  unrestricted guest SSH for commands, SCP, and VS Code Remote SSH.
+  names. The base alias enters the persistent app session; the `-host` alias
+  provides unrestricted guest SSH for commands, SCP, VS Code Remote SSH, and
+  recovery when the app-session path cannot start.
 - Both aliases enforce the world's recorded host-key identity. A changed DHCP
   address may be reconciled, but a different host key is never accepted silently.
 - SSH readiness, clone, checkout, and `devcontainer up` must all succeed before a

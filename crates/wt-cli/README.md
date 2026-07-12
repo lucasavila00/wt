@@ -58,6 +58,11 @@ Include ~/.ssh/wt/config
 
 `wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It never edits the user's main SSH config.
 
+The base world alias always attaches to the world's shared tmux session. Shells
+and processes continue running across SSH disconnects; tmux windows and panes
+all enter the primary devcontainer. The `-host` alias remains a plain guest SSH
+login for commands, SCP, VS Code Remote SSH, and debugging.
+
 For each world, sync always creates `<context>.<name>` aliases and also creates
 short aliases when the name is globally unique:
 

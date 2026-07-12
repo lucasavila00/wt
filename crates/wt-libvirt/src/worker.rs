@@ -19,6 +19,7 @@ use virt::network::Network;
 pub struct LibvirtWorker {
     config: LibvirtConfig,
     app_shell: Vec<u8>,
+    app_pane: Vec<u8>,
     git_credentials: git::Credentials,
     registry_cache_url: String,
     registry_cache_ca: Vec<u8>,
@@ -33,8 +34,11 @@ impl LibvirtWorker {
             .map_err(|error| worker_error("KVM is required but /dev/kvm is unavailable", error))?;
         require_file(&config.image, "guest image")?;
         require_file(&config.app_shell_binary, "guest app-shell binary")?;
+        require_file(&config.app_pane_binary, "guest app-pane binary")?;
         let app_shell = fs::read(&config.app_shell_binary)
             .map_err(|error| worker_error("read guest app-shell binary", error))?;
+        let app_pane = fs::read(&config.app_pane_binary)
+            .map_err(|error| worker_error("read guest app-pane binary", error))?;
         if !config.worlds_dir.is_dir() {
             return Err(WorkerError::new(format!(
                 "worlds directory not found: {}",
@@ -53,6 +57,7 @@ impl LibvirtWorker {
         Ok(Self {
             config,
             app_shell,
+            app_pane,
             git_credentials,
             registry_cache_url,
             registry_cache_ca,
@@ -188,7 +193,7 @@ impl LibvirtWorker {
         report_phase("devcontainer up", phase_started);
         report_registry_cache(cache_log_since, "devcontainer up");
         let phase_started = Instant::now();
-        devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
+        devcontainer::install_app_tools(&domain, &self.app_shell, &self.app_pane, recipe_deadline)?;
         guest_agent::run_phase(
             &domain,
             "devcontainer Git credentials",

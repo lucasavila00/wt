@@ -9,7 +9,7 @@ Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
 |-------|--------|
 | Isolation | KVM guest per world |
 | Image | Prepared Ubuntu 24.04 amd64 golden image |
-| Runtime | Docker Engine, Compose v2, pinned Dev Container CLI, and host registry cache |
+| Runtime | Docker Engine, Compose v2, tmux, pinned Dev Container CLI, and host registry cache |
 | Provisioning | QEMU guest agent through libvirt |
 | Network | Configured libvirt network with a guest IP |
 | Interactive access | OpenSSH to fixed non-root user `wt` |
@@ -28,7 +28,7 @@ KVM is required. There is no CPU-emulation fallback.
 6. Clone the SSH Git source and check out the requested ref in /workspace
 7. Install the checkout-local Git identity and host-trust bundle
 8. Run devcontainer up --workspace-folder /workspace
-9. Inject and verify the wt-app-shell guest helper
+9. Inject and verify the persistent app-session guest helpers and tmux configuration
 10. Record the guest IP and public SSH host keys
 11. Report Running
 ```
@@ -56,9 +56,10 @@ undefines the domain, including NVRAM, and removes its files.
 ## Image
 
 `scripts/prepare-image` builds a golden image containing Docker Engine, Compose
-v2, QEMU guest agent, Git, OpenSSH server, and the pinned Dev Container CLI. The
-manifest records the complete recipe and provenance. World creation does not
-install packages, and golden images do not contain reusable SSH host keys.
+v2, tmux, QEMU guest agent, Git, OpenSSH server, and the pinned Dev Container
+CLI. The manifest records the complete recipe and provenance. World creation
+does not install packages, and golden images do not contain reusable SSH host
+keys.
 
 ## Registry cache
 

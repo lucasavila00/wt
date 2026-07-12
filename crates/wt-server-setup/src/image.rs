@@ -257,8 +257,8 @@ fn build_image_inner(
         .filter(|line| !line.trim().is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if packages.len() != 7 {
-        bail!("image package manifest must contain exactly seven packages");
+    if packages.len() != 8 {
+        bail!("image package manifest must contain exactly eight packages");
     }
     println!("Verified packages: {}", packages.join(", "));
 
@@ -331,13 +331,14 @@ packages:
   - openssh-server
   - nodejs
   - npm
+  - tmux
 runcmd:
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
   - docker compose version
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
-  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
 power_state:
   mode: poweroff
@@ -454,7 +455,7 @@ pub(crate) fn verify_installed_image(
         || manifest.recipe_version != IMAGE_RECIPE_VERSION
         || manifest.source_sha256 != config.image.source_sha256.to_ascii_lowercase()
         || manifest.config_sha256 != sha_bytes(config_bytes)
-        || manifest.packages.len() != 7
+        || manifest.packages.len() != 8
         || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
     {
         bail!("installed image provenance differs from requested config");
@@ -537,5 +538,12 @@ mod tests {
         require_sha(&file, &expected, "test image").unwrap();
         fs::write(&file, b"different").unwrap();
         assert!(require_sha(&file, &expected, "test image").is_err());
+    }
+
+    #[test]
+    fn image_recipe_installs_and_records_tmux() {
+        let config = cloud_config();
+        assert!(config.contains("  - tmux\n"));
+        assert!(config.contains("nodejs npm tmux | sort > /var/lib/wt-image-packages"));
     }
 }

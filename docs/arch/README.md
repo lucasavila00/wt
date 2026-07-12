@@ -52,7 +52,7 @@ Rust workspace:
 crates/
   wt-api                shared JSON types
   wt-cli                package for the wt binary
-  wt-guest              injected wt-app-shell helper
+  wt-guest              injected persistent app-session helpers
   wt-libvirt            production libvirt/KVM backend
   wt-server              server helper, registry, and service
   wt-server-setup        Ubuntu/KVM installer and image builder

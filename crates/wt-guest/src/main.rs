@@ -1,4 +1,4 @@
-//! Interactive shell entrypoint for the primary devcontainer.
+//! Interactive tmux pane entrypoint for the primary devcontainer.
 
 use serde::Deserialize;
 use std::collections::HashMap;

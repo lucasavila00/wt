@@ -72,6 +72,7 @@ pub struct InstallConfig {
 pub struct LibvirtConfig {
     pub image: PathBuf,
     pub app_shell_binary: PathBuf,
+    pub app_pane_binary: PathBuf,
     pub worlds_dir: PathBuf,
     pub network: String,
     pub registry_cache_state_dir: PathBuf,
@@ -228,6 +229,7 @@ impl ServerConfig {
         Ok(LibvirtConfig {
             image: self.image.installed_path.clone(),
             app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
+            app_pane_binary: self.install.binary_dir.join("wt-app-pane"),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             registry_cache_state_dir: self.registry_cache.state_dir.clone(),
@@ -426,6 +428,10 @@ binary_dir = "/usr/local/bin"
         assert_eq!(
             worker.app_shell_binary,
             Path::new("/usr/local/bin/wt-app-shell")
+        );
+        assert_eq!(
+            worker.app_pane_binary,
+            Path::new("/usr/local/bin/wt-app-pane")
         );
         assert_eq!(worker.registry_cache_port, 3128);
     }
