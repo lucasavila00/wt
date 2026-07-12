@@ -20,8 +20,7 @@ wt rm lab.repo-feature
 | [Architecture](./docs/arch/README.md) | Components, data flow, and boundaries |
 | [Product](./docs/product.md) | Scope and constraints |
 | [Development](./DEVELOPMENT.md) | Build, test, and local KVM workflow |
-| [Client config](./client-config/) | Client configuration samples |
-| [Server config](./server-config/) | Server install-input samples |
+| [Examples](./examples/) | Client and server configuration samples |
 
 ## Packages
 

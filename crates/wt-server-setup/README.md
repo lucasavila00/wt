@@ -25,4 +25,4 @@ Membership in `libvirt` grants control of the host hypervisor. Limit it to
 trusted server users.
 
 Usage: [Getting started](../../GETTING-STARTED.md). Config samples:
-[`server-config/`](../../server-config/).
+[`examples/server-config/`](../../examples/server-config/).

@@ -1,14 +1,14 @@
-# Server config samples
+# Server config
 
-These files are install inputs for:
+The sample is an install input for:
 
 ```text
 scripts/install-server --config PATH
 ```
 
-Copy a sample outside this directory and review every value. Setup writes the
-strict runtime config to `/etc/wt/server.toml`. Keep the input for reinstalling
-the same configuration.
+Copy it outside this directory and review every value. Setup writes the strict
+runtime config to `/etc/wt/server.toml`. Keep the input for reinstalling the same
+configuration.
 
 `git.identity_file` must be an encrypted OpenSSH private key owned by the server
 user with mode `0600`. Paths may be absolute or start with `~/`.

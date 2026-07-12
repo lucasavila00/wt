@@ -8,7 +8,7 @@ setup as a normal user from a source checkout.
 ```bash
 git clone https://github.com/lucasavila00/wt.git
 cd wt
-cp server-config/wt-server.development.toml ./server.toml
+cp examples/server-config/wt-server.development.toml ./server.toml
 ```
 
 Edit `server.toml`. At minimum, check:
@@ -36,7 +36,7 @@ Install the local client config:
 
 ```bash
 mkdir -p ~/.wt
-cp client-config/wt.development.toml ~/.wt/config.toml
+cp examples/client-config/wt.development.toml ~/.wt/config.toml
 ```
 
 Add this before every `Host` block in `~/.ssh/config`:

@@ -4,10 +4,10 @@ Run development and tests on Ubuntu 24.04 amd64 with KVM enabled.
 
 ## Install the local server
 
-Review `server-config/wt-server.development.toml`, then run:
+Review `examples/server-config/wt-server.development.toml`, then run:
 
 ```bash
-scripts/install-server --config server-config/wt-server.development.toml
+scripts/install-server --config examples/server-config/wt-server.development.toml
 ```
 
 Run as a normal user in an interactive terminal. If setup changes group
@@ -17,7 +17,7 @@ Install the local client config:
 
 ```bash
 mkdir -p ~/.wt
-cp client-config/wt.development.toml ~/.wt/config.toml
+cp examples/client-config/wt.development.toml ~/.wt/config.toml
 ```
 
 Add this before every `Host` block in `~/.ssh/config`:
