@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
 if [[ $# -ne 0 ]]; then
     echo "usage: scripts/clear-server" >&2
     exit 2
@@ -27,7 +29,7 @@ if command -v docker >/dev/null; then
     docker rm -f wt-registry-cache 2>/dev/null || true
 fi
 
-rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
+rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt"
 sudo rm -f /etc/systemd/system/docker.service.d/wt-registry-cache.conf
 sudo rm -f /usr/local/share/ca-certificates/wt-registry-cache.crt
 sudo systemctl daemon-reload

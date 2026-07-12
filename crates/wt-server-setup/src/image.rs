@@ -252,8 +252,12 @@ fn build_image_inner(
         .filter(|line| !line.trim().is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if packages.len() != 9 {
-        bail!("image package manifest must contain exactly nine packages");
+    let expected_packages = expected_package_count(server.guest.session);
+    if packages.len() != expected_packages {
+        bail!(
+            "image package manifest must contain exactly {expected_packages} packages, found {}",
+            packages.len()
+        );
     }
     println!("Verified packages: {}", packages.join(", "));
 
@@ -539,7 +543,7 @@ pub(crate) fn verify_installed_image(
         || manifest.recipe_version != IMAGE_RECIPE_VERSION
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != sha_bytes(server_bytes)
-        || manifest.packages.len() != 9
+        || manifest.packages.len() != expected_package_count(server.guest.session)
         || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
     {
         bail!("installed image provenance differs from the current install input");
@@ -578,6 +582,13 @@ pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
 
 pub(crate) fn manifest_path(image: &Path) -> PathBuf {
     PathBuf::from(format!("{}.manifest.json", image.display()))
+}
+
+fn expected_package_count(session: SessionFrontend) -> usize {
+    match session {
+        SessionFrontend::Tmux => 9,
+        SessionFrontend::Byobu => 10,
+    }
 }
 
 pub(crate) fn sibling_temporary(path: &Path) -> Result<PathBuf> {
@@ -633,6 +644,7 @@ mod tests {
     #[test]
     fn image_recipe_installs_and_records_tmux() {
         let config = cloud_config(SessionFrontend::Tmux);
+        assert_eq!(expected_package_count(SessionFrontend::Tmux), 9);
         assert!(config.contains("  - docker-buildx\n"));
         assert!(config.contains("  - tmux\n"));
         assert!(!config.contains("  - byobu\n"));
@@ -645,6 +657,7 @@ mod tests {
     #[test]
     fn image_recipe_installs_byobu_and_records_its_tmux_backend() {
         let config = cloud_config(SessionFrontend::Byobu);
+        assert_eq!(expected_package_count(SessionFrontend::Byobu), 10);
         assert!(config.contains("  - byobu\n"));
         assert!(!config.contains("  - tmux\n"));
         assert!(config.contains(
