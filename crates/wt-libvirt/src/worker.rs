@@ -6,6 +6,8 @@ mod guest_agent;
 mod world;
 
 use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
+use ssh_key::{HashAlg, PublicKey};
+use std::collections::BTreeSet;
 use std::fs;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::Path;
@@ -108,9 +110,13 @@ impl LibvirtWorker {
             ),
         )
         .map_err(|error| worker_error("write cloud-init meta-data", error))?;
+        fs::write(&paths.network_config, world::network_config())
+            .map_err(|error| worker_error("write cloud-init network-config", error))?;
         run(
             cmd!(
                 "cloud-localds",
+                "--network-config",
+                &paths.network_config,
                 &paths.seed,
                 &paths.user_data,
                 &paths.meta_data
@@ -142,6 +148,7 @@ impl LibvirtWorker {
         let phase_started = Instant::now();
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
+        self.verify_ssh_endpoint(spec.backend_id, &guest_ip, &host_keys)?;
         report_phase("guest SSH readiness", phase_started);
         eprintln!("Cloning {}...", spec.source);
         let phase_started = Instant::now();
@@ -273,6 +280,72 @@ impl LibvirtWorker {
             ));
         }
         Ok(keys)
+    }
+
+    fn verify_ssh_endpoint(
+        &self,
+        backend_id: &str,
+        guest_ip: &str,
+        expected: &[String],
+    ) -> Result<(), WorkerError> {
+        let output = cmd!(
+            "/usr/bin/ssh-keyscan",
+            "-T",
+            "5",
+            "-p",
+            "22",
+            guest_ip,
+        )
+        .output()
+        .map_err(|error| worker_error("scan guest SSH host keys", error))?;
+        let presented = String::from_utf8_lossy(&output.stdout);
+        if host_keys_match(expected, &presented) {
+            return Ok(());
+        }
+        let conflicts = self.domains_with_ip(backend_id, guest_ip)?;
+        Err(endpoint_identity_error(
+            guest_ip,
+            expected,
+            &presented,
+            &conflicts,
+            &self.config.worlds_dir,
+        ))
+    }
+
+    fn domains_with_ip(
+        &self,
+        backend_id: &str,
+        guest_ip: &str,
+    ) -> Result<Vec<String>, WorkerError> {
+        let connection = Connect::open(Some(crate::LIBVIRT_URI))
+            .map_err(|error| worker_error("connect to libvirt", error))?;
+        let domains = connection
+            .list_all_domains(virt::sys::VIR_CONNECT_LIST_DOMAINS_ACTIVE)
+            .map_err(|error| worker_error("list active libvirt domains", error))?;
+        let mut conflicts = Vec::new();
+        for domain in domains {
+            let Ok(name) = domain.get_name() else {
+                continue;
+            };
+            if name == backend_id || !name.starts_with("wt-") {
+                continue;
+            }
+            let Ok(interfaces) = domain.interface_addresses(
+                virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT,
+                0,
+            ) else {
+                continue;
+            };
+            if interfaces
+                .into_iter()
+                .flat_map(|interface| interface.addrs)
+                .any(|address| address.addr == guest_ip)
+            {
+                conflicts.push(name);
+            }
+        }
+        conflicts.sort();
+        Ok(conflicts)
     }
 
     fn wait_for_ip(&self, backend_id: &str) -> Result<String, WorkerError> {
@@ -502,6 +575,7 @@ impl WorldWorker for LibvirtWorker {
             .map_err(|error| worker_error("look up libvirt domain", error))?;
         // DHCP addresses can move; the per-world host keys are the stable SSH identity.
         let host_keys = self.read_host_keys(&domain, Instant::now() + self.config.boot_timeout)?;
+        self.verify_ssh_endpoint(backend_id, &guest_ip, &host_keys)?;
         Ok(Some(World {
             guest_ip: guest_ip.clone(),
             ssh: wt_api::SshAccess {
@@ -512,6 +586,76 @@ impl WorldWorker for LibvirtWorker {
             },
         }))
     }
+}
+
+fn normalized_host_keys(lines: &str) -> BTreeSet<String> {
+    lines
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let first = fields.next()?;
+            let (kind, data) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
+                (first, fields.next()?)
+            } else {
+                (fields.next()?, fields.next()?)
+            };
+            Some(format!("{kind} {data}"))
+        })
+        .collect()
+}
+
+fn host_keys_match(expected: &[String], presented: &str) -> bool {
+    let expected = normalized_host_keys(&expected.join("\n"));
+    let presented = normalized_host_keys(presented);
+    !expected.is_disjoint(&presented)
+}
+
+fn fingerprints(keys: &BTreeSet<String>) -> String {
+    if keys.is_empty() {
+        return "none".to_owned();
+    }
+    keys.iter()
+        .map(|key| {
+            PublicKey::from_openssh(key)
+                .map(|key| key.fingerprint(HashAlg::Sha256).to_string())
+                .unwrap_or_else(|_| "invalid-key".to_owned())
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn endpoint_identity_error(
+    guest_ip: &str,
+    expected: &[String],
+    presented: &str,
+    conflicts: &[String],
+    worlds_dir: &Path,
+) -> WorkerError {
+    let expected = normalized_host_keys(&expected.join("\n"));
+    let presented = normalized_host_keys(presented);
+    let mut message = format!(
+        "SSH endpoint identity mismatch at {guest_ip}:22: expected [{}], presented [{}]. WT refused to publish SSH access because another guest may be using this IP.",
+        fingerprints(&expected),
+        fingerprints(&presented),
+    );
+    if !conflicts.is_empty() {
+        message.push_str(&format!(
+            " Active WT domain(s) reporting {guest_ip}: {}.",
+            conflicts.join(", ")
+        ));
+        let domain = &conflicts[0];
+        message.push_str(&format!(
+            " If `{domain}` is confirmed stale, run on the server: `virsh -c {} destroy {domain}`; `virsh -c {} undefine {domain} --nvram`; `rm -rf -- {}`. Then run `wt sync`. If it is managed, use `wt rm` instead.",
+            crate::LIBVIRT_URI,
+            crate::LIBVIRT_URI,
+            worlds_dir.join(domain).display(),
+        ));
+    } else {
+        message.push_str(
+            " Inspect the server's DHCP and libvirt domain state, remove the stale guest, then run `wt sync`.",
+        );
+    }
+    WorkerError::new(message)
 }
 
 fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {

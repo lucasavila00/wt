@@ -11,6 +11,7 @@ pub(super) struct Paths {
     pub(super) seed: PathBuf,
     pub(super) user_data: PathBuf,
     pub(super) meta_data: PathBuf,
+    pub(super) network_config: PathBuf,
 }
 
 impl Paths {
@@ -21,9 +22,14 @@ impl Paths {
             seed: directory.join("seed.img"),
             user_data: directory.join("user-data"),
             meta_data: directory.join("meta-data"),
+            network_config: directory.join("network-config"),
             directory,
         }
     }
+}
+
+pub(super) fn network_config() -> &'static str {
+    "version: 2\nethernets:\n  primary:\n    match:\n      name: \"en*\"\n    dhcp4: true\n    dhcp-identifier: mac\n"
 }
 
 pub(super) fn cloud_config(keys: &[String], proxy_url: &str, proxy_ca: &[u8]) -> String {
@@ -97,4 +103,15 @@ pub(super) fn domain_xml(name: &str, paths: &Paths, config: &LibvirtConfig) -> S
   </devices>
 </domain>"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guest_dhcp_identity_uses_the_unique_interface_mac() {
+        assert!(network_config().contains("dhcp-identifier: mac\n"));
+        assert!(network_config().contains("dhcp4: true\n"));
+    }
 }

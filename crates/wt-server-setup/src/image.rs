@@ -253,6 +253,24 @@ fn build_image_inner(
         cmd!("sudo", "virt-sysprep", "-a", disk),
         "sysprep golden image",
     )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-customize",
+            "-a",
+            disk,
+            "--run-command",
+            "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id",
+        ),
+        "clear golden image machine identity",
+    )?;
+    let machine_id = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/etc/machine-id"),
+        "verify empty golden image machine identity",
+    )?;
+    if !machine_id.is_empty() {
+        bail!("golden image machine identity was not cleared");
+    }
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;

@@ -183,6 +183,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         "STATUS".to_owned(),
         "IP".to_owned(),
         "SSH".to_owned(),
+        "DETAIL".to_owned(),
     ]);
     rows.extend(instances.iter().map(|item| {
         let instance = &item.instance;
@@ -197,10 +198,11 @@ fn format_instances(instances: &[ContextInstance]) -> String {
             instance.status.to_string(),
             instance.guest_ip.as_deref().unwrap_or("-").to_owned(),
             target,
+            instance.last_error.as_deref().unwrap_or("-").to_owned(),
         ]
     }));
 
-    let mut widths = [0; 4];
+    let mut widths = [0; 5];
     for row in &rows {
         for (width, value) in widths.iter_mut().zip(row) {
             *width = (*width).max(value.chars().count());
@@ -211,16 +213,18 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     for row in rows {
         writeln!(
             output,
-            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<ip_width$}  {}",
+            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<ip_width$}  {:<ssh_width$}  {}",
             row[0],
             row[1],
             row[2],
             row[3],
             row[4],
+            row[5],
             context_width = widths[0],
             name_width = widths[1],
             status_width = widths[2],
             ip_width = widths[3],
+            ssh_width = widths[4],
         )
         .expect("writing to a String cannot fail");
     }
@@ -277,16 +281,27 @@ mod tests {
 
         assert_eq!(
             output,
-            "CONTEXT     NAME          STATUS        IP          SSH\n\
-             local       jsdev-manual  provisioning  -           -\n\
-             remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222\n"
+            "CONTEXT     NAME          STATUS        IP          SSH                   DETAIL\n\
+             local       jsdev-manual  provisioning  -           -                     -\n\
+             remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222  -\n"
         );
         assert!(!output.contains('\t'));
     }
 
     #[test]
     fn formats_header_for_empty_inventory() {
-        assert_eq!(format_instances(&[]), "CONTEXT  NAME  STATUS  IP  SSH\n");
+        assert_eq!(
+            format_instances(&[]),
+            "CONTEXT  NAME  STATUS  IP  SSH  DETAIL\n"
+        );
+    }
+
+    #[test]
+    fn formats_reconciliation_error_details() {
+        let mut failed = item("local", "jsdev", InstanceStatus::Error);
+        failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
+
+        assert!(format_instances(&[failed]).contains("SSH endpoint identity mismatch"));
     }
 
     #[test]
