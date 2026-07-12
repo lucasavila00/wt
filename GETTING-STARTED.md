@@ -21,8 +21,7 @@ Set up GitHub/GitLab SSH access:
 ssh -T git@github.com
 ```
 
-Choose any writable file as the installer input. This guide uses
-`./server.toml`; the input path has no runtime significance.
+Copy a sample config, edit it, then pass it to the installer:
 
 ```bash
 cp config/wt-server.development.toml ./server.toml
@@ -59,8 +58,10 @@ cd ~/wt
 scripts/install-server --config ./server.toml
 ```
 
-Keep the input file until installation finishes. The installer places the
-runtime config at `/etc/wt/server.toml`. Installed server state is strict;
+The installer reads that file and installs the runtime config at
+`/etc/wt/server.toml`. Keep `./server.toml` until install finishes (including
+any re-run after login). After install succeeds, you can delete it; reinstalls
+can use `--config /etc/wt/server.toml`. Installed server state is strict;
 rerunning the installer with conflicting configuration fails.
 
 ## Configure the local client
@@ -137,7 +138,7 @@ Before server installation, copy the client's public key to the server:
 scp ~/.ssh/id_ed25519.pub wt-server:~/.ssh/wt-client.pub
 ```
 
-On the server, set this in the installer input file before installation:
+On the server, set this in `./server.toml` before installation:
 
 ```toml
 [guest]
