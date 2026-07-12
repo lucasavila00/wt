@@ -22,7 +22,7 @@ use wt_libvirt::{ServerConfig, SessionFrontend, LIBVIRT_URI};
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
-const IMAGE_RECIPE_VERSION: u32 = 2;
+const IMAGE_RECIPE_VERSION: u32 = 1;
 const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
 const CLEAR_MACHINE_ID: &str =
     "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
