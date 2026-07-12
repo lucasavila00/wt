@@ -1,6 +1,7 @@
 mod files;
 mod host;
 mod image;
+mod install_input;
 mod registry_cache;
 mod runner;
 mod server;
@@ -19,17 +20,19 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum SetupCommand {
-    /// Parse and validate a server config without changing the host.
+    /// Parse and validate an install input without changing the host.
     Validate {
+        /// Path to the install input TOML.
         #[arg(long)]
         config: PathBuf,
     },
     /// Install a complete local wt server from this source checkout.
     Install {
+        /// Path to the install input TOML.
         #[arg(long)]
         config: PathBuf,
     },
-    /// Build or verify the configured golden image.
+    /// Build or verify the golden image from install input.
     Image {
         #[command(subcommand)]
         command: ImageCommand,
@@ -39,10 +42,12 @@ enum SetupCommand {
 #[derive(Debug, Subcommand)]
 enum ImageCommand {
     Build {
+        /// Path to the install input TOML.
         #[arg(long)]
         config: PathBuf,
     },
     Rebuild {
+        /// Path to the install input TOML.
         #[arg(long)]
         config: PathBuf,
     },

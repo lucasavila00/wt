@@ -16,8 +16,9 @@ The script installs the required host packages and invokes `sudo`. Run it in an
 interactive terminal. If it adds your user to the `docker`, `libvirt`, or `kvm` group, log
 out, log back in, and run the same command again.
 
-The install also starts the shared registry cache. Re-run the installer after a
-full clear when changing the strict server configuration.
+Setup materializes `/etc/wt/server.toml` from the install input and starts the
+shared registry cache. Re-run the installer after a full clear when changing
+configuration.
 
 ## Configure the client
 

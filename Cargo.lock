@@ -1618,6 +1618,7 @@ dependencies = [
  "sha2",
  "ssh-key",
  "tempfile",
+ "toml",
  "wt-command",
  "wt-libvirt",
 ]

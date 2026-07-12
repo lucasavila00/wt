@@ -2,6 +2,7 @@ use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
 use crate::host;
+use crate::install_input::InstallInput;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
@@ -40,14 +41,15 @@ struct ImageManifest {
 
 pub(crate) fn ensure(
     runner: &impl Runner,
-    config: &ServerConfig,
-    config_bytes: &[u8],
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
 ) -> Result<()> {
-    let manifest_path = manifest_path(&config.image.installed_path);
-    match (config.image.installed_path.exists(), manifest_path.exists()) {
+    let manifest_path = manifest_path(&server.image.installed_path);
+    match (server.image.installed_path.exists(), manifest_path.exists()) {
         (true, true) => {
             println!("Verifying installed golden image and provenance...");
-            verify_installed_image(config, config_bytes, &manifest_path)?;
+            verify_installed_image(input, server, server_bytes, &manifest_path)?;
             println!("Reusing verified golden image.");
             return Ok(());
         }
@@ -55,27 +57,28 @@ pub(crate) fn ensure(
         _ => bail!("image drift: image and manifest must either both exist or both be absent"),
     }
 
-    let source = source_image(config, runner)?;
-    build_image(runner, config, config_bytes, &source, &manifest_path)
+    let source = source_image(input, runner)?;
+    build_image(runner, input, server, server_bytes, &source, &manifest_path)
 }
 
 pub(crate) fn rebuild(
     runner: &impl Runner,
-    config: &ServerConfig,
-    config_bytes: &[u8],
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
 ) -> Result<()> {
     refuse_active_worlds(runner)?;
-    let source = source_image(config, runner)?;
-    let manifest = manifest_path(&config.image.installed_path);
-    build_image(runner, config, config_bytes, &source, &manifest)
+    let source = source_image(input, runner)?;
+    let manifest = manifest_path(&server.image.installed_path);
+    build_image(runner, input, server, server_bytes, &source, &manifest)
 }
 
-fn source_image(config: &ServerConfig, runner: &impl Runner) -> Result<PathBuf> {
+fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
     let path = Path::new("imgs").join(SOURCE_IMAGE_NAME);
     fs::create_dir_all("imgs").context("create imgs directory")?;
     if path.exists() {
         println!("Verifying cached Ubuntu source image...");
-        require_sha(&path, &config.image.source_sha256, "source image")?;
+        require_sha(&path, input.source_sha256(), "source image")?;
         println!("Reusing verified source image: {}", path.display());
         return Ok(path);
     }
@@ -88,16 +91,10 @@ fn source_image(config: &ServerConfig, runner: &impl Runner) -> Result<PathBuf> 
     }
     println!("Downloading pinned Ubuntu source image...");
     runner.run(
-        cmd!(
-            "curl",
-            "-fL",
-            "--output",
-            &temporary,
-            &config.image.source_url,
-        ),
+        cmd!("curl", "-fL", "--output", &temporary, input.source_url(),),
         "download pinned Ubuntu image",
     )?;
-    if let Err(error) = require_sha(&temporary, &config.image.source_sha256, "downloaded image") {
+    if let Err(error) = require_sha(&temporary, input.source_sha256(), "downloaded image") {
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
@@ -107,12 +104,13 @@ fn source_image(config: &ServerConfig, runner: &impl Runner) -> Result<PathBuf> 
 
 fn build_image(
     runner: &impl Runner,
-    config: &ServerConfig,
-    config_bytes: &[u8],
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
     source: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
-    let build_dir = config.libvirt.worlds_dir.join(BUILD_NAME);
+    let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
     let disk = build_dir.join("disk.qcow2");
     let seed = build_dir.join("seed.img");
     let user_data = build_dir.join("user-data");
@@ -130,8 +128,9 @@ fn build_image(
         host::ensure_qemu_search_acl(runner, &build_dir)?;
         build_image_inner(
             runner,
-            config,
-            config_bytes,
+            input,
+            server,
+            server_bytes,
             source,
             manifest_path,
             &disk,
@@ -151,8 +150,9 @@ fn build_image(
 #[allow(clippy::too_many_arguments)]
 fn build_image_inner(
     runner: &impl Runner,
-    config: &ServerConfig,
-    config_bytes: &[u8],
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
     source: &Path,
     manifest_path: &Path,
     disk: &Path,
@@ -172,7 +172,7 @@ fn build_image_inner(
             "qemu-img",
             "resize",
             disk,
-            format!("{}G", config.guest.disk_gib),
+            format!("{}G", server.guest.disk_gib),
         ),
         "resize image build disk",
     )?;
@@ -197,9 +197,9 @@ fn build_image_inner(
             "--name",
             BUILD_NAME,
             "--memory",
-            config.guest.memory_mib.to_string(),
+            server.guest.memory_mib.to_string(),
             "--vcpus",
-            config.guest.vcpus.to_string(),
+            server.guest.vcpus.to_string(),
             "--virt-type",
             "kvm",
             "--os-variant",
@@ -212,7 +212,7 @@ fn build_image_inner(
             "--disk",
             format!("path={},device=cdrom", seed.display()),
             "--network",
-            format!("network={},model=virtio", config.libvirt.network),
+            format!("network={},model=virtio", server.libvirt.network),
             "--serial",
             format!("file,path={}", console.display()),
             "--graphics",
@@ -303,14 +303,14 @@ fn build_image_inner(
     let manifest = ImageManifest {
         version: 1,
         recipe_version: IMAGE_RECIPE_VERSION,
-        source_sha256: config.image.source_sha256.to_ascii_lowercase(),
-        config_sha256: sha_bytes(config_bytes),
+        source_sha256: input.source_sha256().to_ascii_lowercase(),
+        config_sha256: sha_bytes(server_bytes),
         golden_sha256: sha_file(prepared)?,
         packages,
         devcontainer_cli: DEVCONTAINER_CLI_VERSION.to_owned(),
     };
-    publish_image(runner, config, prepared, manifest_path, &manifest)?;
-    fs::remove_dir_all(config.libvirt.worlds_dir.join(BUILD_NAME))
+    publish_image(runner, server, prepared, manifest_path, &manifest)?;
+    fs::remove_dir_all(server.libvirt.worlds_dir.join(BUILD_NAME))
         .context("remove image build directory")?;
     Ok(())
 }
@@ -488,12 +488,12 @@ fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
 
 fn publish_image(
     runner: &impl Runner,
-    config: &ServerConfig,
+    server: &ServerConfig,
     prepared: &Path,
     manifest_path: &Path,
     manifest: &ImageManifest,
 ) -> Result<()> {
-    let image_temporary = sibling_temporary(&config.image.installed_path)?;
+    let image_temporary = sibling_temporary(&server.image.installed_path)?;
     let manifest_temporary = sibling_temporary(manifest_path)?;
     if image_temporary.exists() || manifest_temporary.exists() {
         bail!("stale temporary installed image state exists");
@@ -510,17 +510,18 @@ fn publish_image(
         0o644,
     )?;
     sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
-    sudo_move(runner, &image_temporary, &config.image.installed_path)?;
+    sudo_move(runner, &image_temporary, &server.image.installed_path)?;
     sudo_move(runner, &manifest_temporary, manifest_path)?;
     Ok(())
 }
 
 pub(crate) fn verify_installed_image(
-    config: &ServerConfig,
-    config_bytes: &[u8],
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
     manifest_path: &Path,
 ) -> Result<()> {
-    require_named_file(&config.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
+    require_named_file(&server.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
         &fs::read(manifest_path)
@@ -529,15 +530,15 @@ pub(crate) fn verify_installed_image(
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
     if manifest.version != 1
         || manifest.recipe_version != IMAGE_RECIPE_VERSION
-        || manifest.source_sha256 != config.image.source_sha256.to_ascii_lowercase()
-        || manifest.config_sha256 != sha_bytes(config_bytes)
+        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
+        || manifest.config_sha256 != sha_bytes(server_bytes)
         || manifest.packages.len() != 9
         || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
     {
-        bail!("installed image provenance differs from requested config");
+        bail!("installed image provenance differs from the current install input");
     }
     require_sha(
-        &config.image.installed_path,
+        &server.image.installed_path,
         &manifest.golden_sha256,
         "installed golden image",
     )

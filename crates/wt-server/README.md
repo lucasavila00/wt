@@ -23,7 +23,7 @@ Design: [architecture](../../docs/arch/README.md),
 
 Target: Ubuntu 24.04 amd64. KVM required. Source checkout required.
 
-Install stable Rust with rustup. Clone `wt`. Create a complete server config:
+Install stable Rust with rustup. Clone `wt`. Create a complete install input:
 
 ```toml
 version = 1
@@ -59,18 +59,18 @@ ssh_authorized_keys_file = "~/.ssh/id_ed25519.pub"
 binary_dir = "/usr/local/bin"
 ```
 
-Save it outside `config/`. That directory contains development samples only.
+Save it outside `config/`.
 
 Validate:
 
 ```text
-cargo run --release -p wt-server-setup -- validate --config /path/to/server.toml
+cargo run --release -p wt-server-setup -- validate --config /path/to/install-input.toml
 ```
 
 Install:
 
 ```text
-scripts/install-server --config /path/to/server.toml
+scripts/install-server --config /path/to/install-input.toml
 ```
 
 Run as the server user, not with `sudo`. Run in an interactive terminal. The command invokes `sudo` and may ask for the password.
@@ -85,18 +85,20 @@ The installer:
 - Starts and verifies the pinned registry cache and reads its CA for guest setup.
 - Creates and verifies configured directories.
 - Owns the worlds directory as the server user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
-- Downloads and verifies the pinned Ubuntu source image.
+- Downloads and verifies the pinned Ubuntu source image from the install input.
 - Builds the Docker/Compose-ready golden image in a temporary KVM guest and
   streams its cloud-init console output with phase timings.
 - Installs `wt` and `wt-server` into `install.binary_dir`.
-- Installs the validated server config at `/etc/wt/server.toml`.
+- Materializes the runtime server config at `/etc/wt/server.toml`.
 
-Matching state is accepted. Differing config, ownership, modes, partial image state, stale build state, or image provenance fails installation.
+Matching state is accepted. Differing materialized config, ownership, modes,
+partial image state, stale build state, or image provenance fails installation.
 
-`/etc/wt/server.toml` is the only runtime server config. The Git identity must be
-an encrypted OpenSSH private key, mode `0600`, owned by the server user. `wt new`
-prompts on the client terminal; the passphrase is never stored in server config.
-The Git, client-to-server, and guest-login identities have separate roles, but a
+`/etc/wt/server.toml` is the runtime server config. Install input is the setup
+document passed to `--config`. The Git identity must be an encrypted OpenSSH
+private key, mode `0600`, owned by the server user. `wt new` prompts on the
+client terminal; the passphrase is never stored in server config. The Git,
+client-to-server, and guest-login identities have separate roles, but a
 deployment may point the first two roles at the same key. There are no runtime
 environment overrides.
 

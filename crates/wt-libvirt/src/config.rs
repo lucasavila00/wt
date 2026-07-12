@@ -7,7 +7,7 @@ pub const LIBVIRT_URI: &str = "qemu:///system";
 pub const GUEST_ARCHITECTURE: &str = "x86_64";
 pub const GUEST_MACHINE: &str = "q35";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub version: u32,
@@ -19,7 +19,7 @@ pub struct ServerConfig {
     pub install: InstallConfig,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegistryCacheConfig {
     pub state_dir: PathBuf,
@@ -28,29 +28,28 @@ pub struct RegistryCacheConfig {
     pub registries: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GitConfig {
     pub identity_file: PathBuf,
     pub known_hosts_file: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// Golden image path used by the server at runtime.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
-    pub source_url: String,
-    pub source_sha256: String,
     pub installed_path: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerLibvirtConfig {
     pub network: String,
     pub worlds_dir: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
     pub memory_mib: u64,
@@ -61,7 +60,7 @@ pub struct GuestConfig {
     pub ssh_authorized_keys_file: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
     pub binary_dir: PathBuf,
@@ -106,18 +105,6 @@ impl ServerConfig {
                 "unsupported config version {}; expected 1",
                 self.version
             ));
-        }
-        if !self.image.source_url.starts_with("https://") {
-            return Err("image.source_url must be an https URL".to_owned());
-        }
-        if self.image.source_sha256.len() != 64
-            || !self
-                .image
-                .source_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err("image.source_sha256 must contain 64 hexadecimal characters".to_owned());
         }
         let git_identity_file = expand_home(&self.git.identity_file, "git.identity_file")?;
         let git_known_hosts_file = expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?;
@@ -345,8 +332,6 @@ mod tests {
 version = 1
 
 [image]
-source_url = "https://cloud-images.ubuntu.com/image.img"
-source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 installed_path = "/var/lib/wt/images/wt.qcow2"
 
 [libvirt]
@@ -417,7 +402,6 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn invalid_values_fail() {
-        assert!(parse(&VALID.replace(&"a".repeat(64), "not-a-sha")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "relative/bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
@@ -427,6 +411,11 @@ binary_dir = "/usr/local/bin"
         assert!(parse(
             &VALID.replace("/tmp/wt-test-git-identity", "relative/wt-test-git-identity")
         )
+        .is_err());
+        assert!(parse(&VALID.replace(
+            "installed_path = \"/var/lib/wt/images/wt.qcow2\"",
+            "installed_path = \"/var/lib/wt/images/wt.qcow2\"\nsource_url = \"https://example.com/img\""
+        ))
         .is_err());
     }
 

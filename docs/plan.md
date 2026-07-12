@@ -18,7 +18,8 @@ worlds on Ubuntu servers.
 - App aliases always attach to one persistent, multiplexed tmux session per world.
 - Servers are trusted credential boundaries, not hostile multi-tenant sandboxes.
 - There is no public control-plane listener and no runtime configuration override;
-  each server uses the complete strict config at `/etc/wt/server.toml`.
+  each server uses the complete strict runtime config at `/etc/wt/server.toml`,
+  materialized from install input by setup.
 
 ## Product constraints
 

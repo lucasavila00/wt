@@ -1,6 +1,7 @@
 use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
+use crate::install_input::{serialize_server_config, InstallInput};
 use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
@@ -12,38 +13,41 @@ use std::path::Path;
 use wt_command::cmd;
 use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
 
-pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
+pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     require_server_user()?;
-    let (config, config_bytes) = load_config(config_path)?;
+    let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
-    require_installed_config_compatible(config_path, &config_bytes)?;
-    prepare_host(runner, &config)?;
-    registry_cache::ensure(runner, &config)?;
-    image::ensure(runner, &config, &config_bytes)?;
+    require_installed_config_compatible(input_path, &server)?;
+    prepare_host(runner, &server)?;
+    registry_cache::ensure(runner, &server)?;
+    image::ensure(runner, &input, &server, &server_bytes)?;
     println!("Building and installing wt binaries...");
-    build_and_install_binaries(runner, &config)?;
+    build_and_install_binaries(runner, &server)?;
     println!("Installing server config at {SERVER_CONFIG_PATH}...");
-    install_config(runner, config_path, &config_bytes)?;
-    println!("installed wt server from {}", config_path.display());
+    install_server_config(runner, input_path, &server, &server_bytes)?;
+    println!(
+        "installed wt server from install input {}",
+        input_path.display()
+    );
     Ok(())
 }
 
-pub(crate) fn validate(config_path: &Path) -> Result<()> {
-    load_config(config_path).map(|_| ())
+pub(crate) fn validate(input_path: &Path) -> Result<()> {
+    load_install_input(input_path).map(|_| ())
 }
 
-pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
+pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> Result<()> {
     require_server_user()?;
-    let (config, config_bytes) = load_config(config_path)?;
+    let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
-    prepare_host(runner, &config)?;
-    registry_cache::ensure(runner, &config)?;
+    prepare_host(runner, &server)?;
+    registry_cache::ensure(runner, &server)?;
     if rebuild {
-        image::rebuild(runner, &config, &config_bytes)?;
+        image::rebuild(runner, &input, &server, &server_bytes)?;
     } else {
-        image::ensure(runner, &config, &config_bytes)?;
+        image::ensure(runner, &input, &server, &server_bytes)?;
     }
-    println!("image ready: {}", config.image.installed_path.display());
+    println!("image ready: {}", server.image.installed_path.display());
     Ok(())
 }
 
@@ -53,12 +57,13 @@ fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::prepare_state(runner, config)
 }
 
-fn load_config(path: &Path) -> Result<(ServerConfig, Vec<u8>)> {
-    let bytes = fs::read(path).with_context(|| format!("read config {}", path.display()))?;
-    let config = ServerConfig::load_from(path).map_err(anyhow::Error::msg)?;
-    let git = config.resolved_git_config().map_err(anyhow::Error::msg)?;
+fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8>)> {
+    let input = InstallInput::load_from(path).map_err(anyhow::Error::msg)?;
+    let server = input.materialize();
+    let server_bytes = serialize_server_config(&server).map_err(anyhow::Error::msg)?;
+    let git = server.resolved_git_config().map_err(anyhow::Error::msg)?;
     validate_git_credentials(&git)?;
-    Ok((config, bytes))
+    Ok((input, server, server_bytes))
 }
 
 fn validate_git_credentials(config: &GitConfig) -> Result<()> {
@@ -158,49 +163,51 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
     Ok(())
 }
 
-fn require_installed_config_compatible(config_path: &Path, config_bytes: &[u8]) -> Result<()> {
+fn require_installed_config_compatible(input_path: &Path, requested: &ServerConfig) -> Result<()> {
     let path = Path::new(SERVER_CONFIG_PATH);
     if !path.exists() {
         return Ok(());
     }
-    // The server file is a complete contract. Byte-level differences are drift.
-    let installed = fs::read(path).with_context(|| format!("read {SERVER_CONFIG_PATH}"))?;
-    if installed != config_bytes {
-        bail!("{}", config_drift_message(config_path));
+    let installed = ServerConfig::load_from(path).map_err(anyhow::Error::msg)?;
+    if installed != *requested {
+        bail!("{}", config_drift_message(input_path));
     }
     require_root_file(path, 0o644)
 }
 
-fn config_drift_message(requested: &Path) -> String {
-    let requested = requested.display();
+fn config_drift_message(input_path: &Path) -> String {
+    let input_path = input_path.display();
     format!(
         "\
-installed config differs from requested config
+installed server config differs from install input
 
-Installed: {SERVER_CONFIG_PATH}
-Requested: {requested}
+Installed runtime config: {SERVER_CONFIG_PATH}
+Install input: {input_path}
 
-{SERVER_CONFIG_PATH} is a complete contract. Byte-level differences are drift;
-the installer will not overwrite or merge it.
+{SERVER_CONFIG_PATH} is the runtime contract, materialized from install input.
+The installer leaves a differing file in place.
 
-If the change was accidental, reinstall with the installed file (or make your
-input match it byte-for-byte):
-  scripts/install-server --config {SERVER_CONFIG_PATH}
-  # or: diff -u {SERVER_CONFIG_PATH} {requested}
+Accidental change: re-run with the install input that produced the current server:
+  scripts/install-server --config {input_path}
 
-If you intentionally changed the config, clear all WT server state, then reinstall:
+Intentional change: clear WT server state, then reinstall:
   make clear   # or: scripts/clear-server
-  scripts/install-server --config {requested}
+  scripts/install-server --config {input_path}
 
 `make clear` destroys every wt-* domain and removes installed WT state
 (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
-It does not uninstall packages or binaries."
+Packages and binaries stay installed."
     )
 }
 
-fn install_config(runner: &impl Runner, config_path: &Path, config_bytes: &[u8]) -> Result<()> {
+fn install_server_config(
+    runner: &impl Runner,
+    input_path: &Path,
+    server: &ServerConfig,
+    server_bytes: &[u8],
+) -> Result<()> {
     if Path::new(SERVER_CONFIG_PATH).exists() {
-        return require_installed_config_compatible(config_path, config_bytes);
+        return require_installed_config_compatible(input_path, server);
     }
     let directory = Path::new(SERVER_CONFIG_PATH)
         .parent()
@@ -217,7 +224,7 @@ fn install_config(runner: &impl Runner, config_path: &Path, config_bytes: &[u8])
         )?;
     }
     let local = Path::new("target").join("wt-server.toml.install");
-    fs::write(&local, config_bytes).context("stage server config")?;
+    fs::write(&local, server_bytes).context("stage server config")?;
     let temporary = Path::new("/etc/wt/.server.toml.wt-new");
     if temporary.exists() {
         bail!("stale config install file exists: {}", temporary.display());
@@ -238,26 +245,24 @@ mod tests {
         insta::assert_snapshot!(
             config_drift_message(Path::new("./server.toml")),
             @"
-        installed config differs from requested config
+        installed server config differs from install input
 
-        Installed: /etc/wt/server.toml
-        Requested: ./server.toml
+        Installed runtime config: /etc/wt/server.toml
+        Install input: ./server.toml
 
-        /etc/wt/server.toml is a complete contract. Byte-level differences are drift;
-        the installer will not overwrite or merge it.
+        /etc/wt/server.toml is the runtime contract, materialized from install input.
+        The installer leaves a differing file in place.
 
-        If the change was accidental, reinstall with the installed file (or make your
-        input match it byte-for-byte):
-          scripts/install-server --config /etc/wt/server.toml
-          # or: diff -u /etc/wt/server.toml ./server.toml
+        Accidental change: re-run with the install input that produced the current server:
+          scripts/install-server --config ./server.toml
 
-        If you intentionally changed the config, clear all WT server state, then reinstall:
+        Intentional change: clear WT server state, then reinstall:
           make clear   # or: scripts/clear-server
           scripts/install-server --config ./server.toml
 
         `make clear` destroys every wt-* domain and removes installed WT state
         (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
-        It does not uninstall packages or binaries.
+        Packages and binaries stay installed.
         "
         );
     }

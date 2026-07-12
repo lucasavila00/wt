@@ -21,7 +21,7 @@ Set up GitHub/GitLab SSH access:
 ssh -T git@github.com
 ```
 
-Copy a sample config, edit it, then pass it to the installer:
+Copy the sample, edit it, then pass it to the installer:
 
 ```bash
 cp config/wt-server.development.toml ./server.toml
@@ -58,11 +58,10 @@ cd ~/wt
 scripts/install-server --config ./server.toml
 ```
 
-The installer reads that file and installs the runtime config at
-`/etc/wt/server.toml`. Keep `./server.toml` until install finishes (including
-any re-run after login). After install succeeds, you can delete it; reinstalls
-can use `--config /etc/wt/server.toml`. Installed server state is strict;
-rerunning the installer with conflicting configuration fails.
+The installer materializes `/etc/wt/server.toml` from `./server.toml`. Keep
+`./server.toml` until install finishes (including any re-run after login), and
+for a later clear + reinstall if you want the same settings. Installed server
+state is strict; a differing materialized config fails reinstall.
 
 ## Configure the local client
 
@@ -145,7 +144,7 @@ On the server, set this in `./server.toml` before installation:
 ssh_authorized_keys_file = "~/.ssh/wt-client.pub"
 ```
 
-Keep the other `[guest]` values from the copied config.
+Keep the other `[guest]` values from the sample.
 
 On the client, install Git, stable Rust, and an OpenSSH client. Then install WT:
 

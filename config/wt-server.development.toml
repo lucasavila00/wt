@@ -1,4 +1,4 @@
-# Development sample only. Cargo builds do not embed or install this file.
+# Install-input sample for scripts/install-server --config PATH.
 version = 1
 
 [image]

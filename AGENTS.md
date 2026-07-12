@@ -70,5 +70,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-setup`. Real-system tests belong in `wt-integration-tests`.
-- Server config is strict and complete at `/etc/wt/server.toml`. Fail on drift.
+- Install input is the path to `scripts/install-server --config`. Setup
+  materializes the strict runtime config at `/etc/wt/server.toml`. Fail on drift.
 - Run `cargo fmt --all`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.
