@@ -35,4 +35,4 @@ printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-server api
 ```
 
 Install: [Getting started](../../GETTING-STARTED.md). System flow:
-[architecture](../../docs/arch/README.md).
+[How WT works](../../docs/how/README.md).

@@ -11,4 +11,4 @@ Versioned control-plane types shared by `wt` and `wt-server`.
 
 This crate performs no I/O and owns no transport or server configuration.
 
-Protocol flow: [architecture](../../docs/arch/README.md#control-plane).
+Protocol flow: [How WT works](../../docs/how/README.md#control-plane).

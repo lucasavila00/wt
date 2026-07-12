@@ -13,4 +13,4 @@ Production libvirt/KVM backend.
 Create succeeds only after guest SSH, Git, and app SSH are ready. Failure removes
 the domain and world directory.
 
-Lifecycle: [Libvirt/KVM backend](../../docs/arch/bare-metal-agent.md).
+Lifecycle: [Libvirt/KVM backend](../../docs/how/bare-metal-agent.md).

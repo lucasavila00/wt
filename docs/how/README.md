@@ -1,4 +1,4 @@
-# Architecture
+# How WT works
 
 ```text
 client: wt + OpenSSH
@@ -59,8 +59,8 @@ resources remain until `wt rm`.
 
 | Document | Contents |
 |----------|----------|
-| [CLI and SSH](./cli.md) | Contexts, naming, commands, and aliases |
+| [Client and SSH](./cli.md) | Context transport and SSH inventory generation |
 | [Libvirt/KVM](./bare-metal-agent.md) | World lifecycle |
 | [Registry cache](./registry-cache.md) | Shared image-blob cache |
 
-Product scope: [product.md](../product.md).
+User-visible behavior: [What WT does](../what/README.md).

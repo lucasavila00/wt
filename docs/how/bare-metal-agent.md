@@ -32,4 +32,4 @@ source image, build config, recipe, packages, Dev Container CLI, and result
 digest. The image contains no reusable machine ID or SSH host keys.
 
 Implementation: [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
-[architecture](./README.md).
+[How WT works](./README.md).

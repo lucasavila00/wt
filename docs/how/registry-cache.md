@@ -31,4 +31,4 @@ Unlisted registries and pushes bypass the cache.
 Each world retains separate containers, volumes, networks, writable layers,
 local images, and build cache. Private-image caching is unsupported.
 
-Parent: [architecture](./README.md).
+Parent: [How WT works](./README.md).

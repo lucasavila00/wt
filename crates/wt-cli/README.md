@@ -18,5 +18,5 @@ The client does not run libvirt, Docker, or provisioning.
 cargo run -p wt-cli -- --help
 ```
 
-Configuration, command behavior, and SSH aliases:
-[CLI and SSH](../../docs/arch/cli.md).
+User-visible behavior: [What WT does](../../docs/what/README.md). Transport and
+SSH generation: [How WT works](../../docs/how/cli.md).
