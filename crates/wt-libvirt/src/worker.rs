@@ -169,7 +169,7 @@ impl LibvirtWorker {
             recipe_deadline,
         )?;
         report_phase("devcontainer up", phase_started);
-        report_registry_cache(cache_log_since);
+        report_registry_cache(cache_log_since, &guest_ip);
         let phase_started = Instant::now();
         devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
         guest_agent::run_phase(
@@ -354,7 +354,7 @@ fn network_address(connection: &Connect, name: &str) -> Result<String, WorkerErr
         .map_err(|error| worker_error("read libvirt network XML", error))?;
     for quote in ['\'', '"'] {
         let needle = format!("address={quote}");
-        if let Some(rest) = xml.split_once(&needle).map(|(_, rest)| rest) {
+        for rest in xml.split(&needle).skip(1) {
             if let Some(address) = rest.split(quote).next() {
                 if address.parse::<std::net::Ipv4Addr>().is_ok() {
                     return Ok(address.to_owned());
@@ -381,7 +381,7 @@ fn unix_timestamp() -> u64 {
         .as_secs()
 }
 
-fn report_registry_cache(since: u64) {
+fn report_registry_cache(since: u64, guest_ip: &str) {
     let output = Command::new("docker")
         .args(["logs", "--since", &since.to_string(), "wt-registry-cache"])
         .output();
@@ -400,6 +400,9 @@ fn report_registry_cache(since: u64) {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
+        if value["client_address"].as_str() != Some(guest_ip) {
+            continue;
+        }
         let bytes = value["bytes_sent"]
             .as_str()
             .and_then(|value| value.parse::<u64>().ok())

@@ -37,10 +37,62 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     ensure_state_directories(runner, &config.registry_cache.state_dir)?;
     ensure_container(runner, config, &bridge)?;
     let ca = wait_for_ca(&config.registry_cache.state_dir)?;
+    wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
+    ensure_client_address_logging(runner)?;
+    runner.run(
+        "sudo",
+        &["chmod".into(), "0644".into(), ca.as_os_str().to_owned()],
+        "make registry cache CA readable",
+    )?;
     configure_host_docker(runner, &ca, &bridge, config.registry_cache.port)?;
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
     let images = preload(runner, config)?;
     publish_manifest(runner, config, &bridge, images)?;
+    Ok(())
+}
+
+fn ensure_client_address_logging(runner: &impl Runner) -> Result<()> {
+    let staged = Path::new("target/wt-registry-cache-nginx.conf");
+    runner.run(
+        "docker",
+        &[
+            "cp".into(),
+            format!("{CONTAINER_NAME}:/etc/nginx/nginx.conf").into(),
+            staged.as_os_str().to_owned(),
+        ],
+        "read registry cache nginx configuration",
+    )?;
+    let contents = fs::read_to_string(staged).context("read staged registry cache nginx config")?;
+    if !contents.contains("\"client_address\":\"$remote_addr\"") {
+        let needle = "        '\"access_time\":\"$time_local\",'\n";
+        if !contents.contains(needle) {
+            bail!("pinned registry cache nginx log format is unexpected");
+        }
+        let replacement = format!("{needle}        '\"client_address\":\"$remote_addr\",'\n");
+        fs::write(staged, contents.replace(needle, &replacement))
+            .context("stage registry cache client-address log format")?;
+        runner.run(
+            "docker",
+            &[
+                "cp".into(),
+                staged.as_os_str().to_owned(),
+                format!("{CONTAINER_NAME}:/etc/nginx/nginx.conf").into(),
+            ],
+            "install registry cache nginx configuration",
+        )?;
+    }
+    runner.run(
+        "docker",
+        &[
+            "exec".into(),
+            CONTAINER_NAME.into(),
+            "nginx".into(),
+            "-s".into(),
+            "reload".into(),
+        ],
+        "reload registry cache nginx",
+    )?;
+    let _ = fs::remove_file(staged);
     Ok(())
 }
 
@@ -52,7 +104,7 @@ fn bridge_address(runner: &impl Runner, network: &str) -> Result<String> {
     )?;
     for quote in ['\'', '"'] {
         let needle = format!("address={quote}");
-        if let Some(rest) = xml.split_once(&needle).map(|(_, rest)| rest) {
+        for rest in xml.split(&needle).skip(1) {
             if let Some(address) = rest.split(quote).next() {
                 if address.parse::<std::net::Ipv4Addr>().is_ok() {
                     return Ok(address.to_owned());
@@ -100,8 +152,48 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
             .first()
             .and_then(|value| value.pointer("/Config/Image"))
             .and_then(serde_json::Value::as_str);
-        if image != Some(PROXY_IMAGE) {
-            bail!("registry cache container image drift");
+        let value = inspect
+            .first()
+            .context("empty registry cache container inspection")?;
+        let expected_port = config.registry_cache.port.to_string();
+        let expected_cache = format!(
+            "{}:/docker_mirror_cache",
+            config.registry_cache.state_dir.join("cache").display()
+        );
+        let expected_ca = format!(
+            "{}:/ca",
+            config.registry_cache.state_dir.join("ca").display()
+        );
+        let env = value
+            .pointer("/Config/Env")
+            .and_then(serde_json::Value::as_array)
+            .context("registry cache container has no environment")?;
+        let binds = value
+            .pointer("/HostConfig/Binds")
+            .and_then(serde_json::Value::as_array)
+            .context("registry cache container has no bind mounts")?;
+        let host_port = value
+            .pointer("/HostConfig/PortBindings/3128~1tcp/0/HostPort")
+            .and_then(serde_json::Value::as_str);
+        let host_ip = value
+            .pointer("/HostConfig/PortBindings/3128~1tcp/0/HostIp")
+            .and_then(serde_json::Value::as_str);
+        let has = |values: &[serde_json::Value], expected: &str| {
+            values.iter().any(|value| value.as_str() == Some(expected))
+        };
+        if image != Some(PROXY_IMAGE)
+            || host_port != Some(expected_port.as_str())
+            || host_ip != Some(bridge)
+            || !has(binds, &expected_cache)
+            || !has(binds, &expected_ca)
+            || !has(env, "ALLOW_PUSH=true")
+            || !has(env, "ENABLE_MANIFEST_CACHE=false")
+            || !has(
+                env,
+                &format!("CACHE_MAX_SIZE={}g", config.registry_cache.max_size_gib),
+            )
+        {
+            bail!("registry cache container configuration drift");
         }
         runner.run(
             "docker",
@@ -256,12 +348,57 @@ fn preload(runner: &impl Runner, config: &ServerConfig) -> Result<Vec<CachedImag
             &["image".into(), "rm".into(), image.into()],
             "remove host-local preloaded image",
         )?;
+        let since = unix_timestamp();
+        runner.run(
+            "docker",
+            &["pull".into(), image.into()],
+            "verify preloaded registry cache image",
+        )?;
+        if cache_hits_since(runner, since)? == 0 {
+            bail!("preloaded image was not served from the registry cache: {image}");
+        }
+        runner.run(
+            "docker",
+            &["image".into(), "rm".into(), image.into()],
+            "remove verified host-local preloaded image",
+        )?;
         cached.push(CachedImage {
             image: image.clone(),
             repo_digests,
         });
     }
     Ok(cached)
+}
+
+fn unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn cache_hits_since(runner: &impl Runner, since: u64) -> Result<usize> {
+    let output = runner.output(
+        "docker",
+        &[
+            "logs".into(),
+            "--since".into(),
+            since.to_string().into(),
+            CONTAINER_NAME.into(),
+        ],
+    )?;
+    if !output.status.success() {
+        bail!(
+            "read registry cache logs: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&output.stderr).lines())
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|value| value["upstream_cache_status"].as_str() == Some("HIT"))
+        .count())
 }
 
 fn publish_manifest(
