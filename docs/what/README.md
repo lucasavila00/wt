@@ -150,7 +150,7 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 
 | Property | Enforcement |
 |----------|-------------|
-| Control-plane exposure | WT opens no control-plane port. Local contexts execute `wt-server`; remote contexts execute it through OpenSSH. |
+| Control-plane exposure | WT opens no control-plane port. A mode-`0600` Unix socket serves local bridges; remote contexts reach a bridge through OpenSSH. |
 | World isolation | Every world is a separate KVM guest with its own kernel, disk overlay, network identity, and Docker daemon. Worlds share no host Docker daemon, container namespace, writable layer, or checkout. |
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |

@@ -5,13 +5,15 @@ use crate::install_input::{serialize_server_config, InstallInput};
 use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
-use nix::unistd::Uid;
+use nix::unistd::{Uid, User};
 use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use wt_command::cmd;
 use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
+
+const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     require_server_user()?;
@@ -25,6 +27,8 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     build_and_install_binaries(runner, &server)?;
     println!("Installing server config at {SERVER_CONFIG_PATH}...");
     install_server_config(runner, input_path, &server, &server_bytes)?;
+    println!("Installing and starting wt-server.service...");
+    install_server_service(runner, &server)?;
     println!(
         "installed wt server from install input {}",
         input_path.display()
@@ -242,6 +246,75 @@ fn install_server_config(
     Ok(())
 }
 
+fn install_server_service(runner: &impl Runner, server: &ServerConfig) -> Result<()> {
+    let user = User::from_uid(Uid::effective())
+        .context("look up server user")?
+        .context("server user does not exist")?;
+    let bytes = server_service(&user, server);
+    let destination = Path::new(SERVER_SERVICE_PATH);
+    if destination.exists() {
+        require_root_file(destination, 0o644)?;
+        if fs::read(destination).context("read installed wt-server service")? != bytes {
+            bail!(
+                "service unit drift at {SERVER_SERVICE_PATH}; remove it only when intentionally reinstalling the WT server"
+            );
+        }
+    } else {
+        let local = Path::new("target").join("wt-server.service.install");
+        fs::write(&local, &bytes).context("stage wt-server service")?;
+        let temporary = Path::new("/etc/systemd/system/.wt-server.service.wt-new");
+        if temporary.exists() {
+            bail!("stale service install file exists: {}", temporary.display());
+        }
+        sudo_install(runner, &local, temporary, 0o644)?;
+        sudo_move(runner, temporary, destination)?;
+        let _ = fs::remove_file(local);
+    }
+    runner.run(
+        cmd!("sudo", "systemctl", "daemon-reload"),
+        "reload systemd units",
+    )?;
+    runner.run(
+        cmd!("sudo", "systemctl", "enable", "wt-server.service"),
+        "enable wt-server service",
+    )?;
+    runner.run(
+        cmd!("sudo", "systemctl", "restart", "wt-server.service"),
+        "restart wt-server service",
+    )
+}
+
+fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
+    let executable = server.install.binary_dir.join("wt-server");
+    format!(
+        "[Unit]\n\
+Description=WT control-plane daemon\n\
+Wants=network-online.target\n\
+After=network-online.target docker.service libvirtd.service\n\
+\n\
+[Service]\n\
+Type=simple\n\
+User={}\n\
+Environment={}\n\
+ExecStart={} serve\n\
+Restart=on-failure\n\
+RuntimeDirectory=wt\n\
+RuntimeDirectoryMode=0700\n\
+UMask=0077\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n",
+        user.name,
+        systemd_quote(&format!("HOME={}", user.dir.display())),
+        systemd_quote(&executable.display().to_string()),
+    )
+    .into_bytes()
+}
+
+fn systemd_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,5 +385,46 @@ mod tests {
 
         fs::set_permissions(identity, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(validate_git_credentials(&config).is_err());
+    }
+
+    #[test]
+    fn service_runs_as_the_installing_user() {
+        let user = User::from_uid(Uid::effective()).unwrap().unwrap();
+        let server = toml::from_str::<InstallInput>(
+            r#"
+version = 1
+[image]
+source_url = "https://example.test/image"
+source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+installed_path = "/var/lib/wt/image.qcow2"
+[libvirt]
+network = "default"
+worlds_dir = "/var/lib/wt/worlds"
+[registry_cache]
+state_dir = "/var/lib/wt/cache"
+port = 3128
+max_size_gib = 1
+registries = ["docker.io"]
+[git]
+identity_file = "~/.ssh/id"
+known_hosts_file = "~/.ssh/known_hosts"
+[guest]
+session = "tmux"
+memory_mib = 1024
+vcpus = 1
+disk_gib = 8
+boot_timeout_seconds = 30
+recipe_timeout_seconds = 30
+ssh_authorized_keys_file = "~/.ssh/id.pub"
+[install]
+binary_dir = "/opt/wt bin"
+"#,
+        )
+        .unwrap()
+        .materialize();
+        let unit = String::from_utf8(server_service(&user, &server)).unwrap();
+        assert!(unit.contains(&format!("User={}\n", user.name)));
+        assert!(unit.contains("ExecStart=\"/opt/wt bin/wt-server\" serve\n"));
+        assert!(unit.contains("RuntimeDirectory=wt\nRuntimeDirectoryMode=0700\n"));
     }
 }

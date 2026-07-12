@@ -24,6 +24,8 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
+sudo systemctl disable --now wt-server.service 2>/dev/null || true
+
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do
     state=$(virsh -c qemu:///system domstate "$domain")
@@ -37,6 +39,7 @@ if command -v docker >/dev/null; then
     docker rm -f wt-registry-cache 2>/dev/null || true
 fi
 
+sudo rm -f /etc/systemd/system/wt-server.service
 rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt"
 sudo rm -f /etc/systemd/system/docker.service.d/wt-registry-cache.conf
 sudo rm -f /usr/local/share/ca-certificates/wt-registry-cache.crt

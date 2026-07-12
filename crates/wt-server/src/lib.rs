@@ -1,4 +1,5 @@
 pub mod config;
+pub mod daemon;
 pub mod jobs;
 pub mod service;
 pub mod store;

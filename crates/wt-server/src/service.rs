@@ -65,7 +65,6 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                 app_ssh: None,
             },
             backend_id,
-            job_acknowledged: false,
         };
         let lock = self
             .jobs

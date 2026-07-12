@@ -6,7 +6,11 @@ client: wt + OpenSSH
    ├─ local ────────────────┐
    └─ ssh SERVER ───────────┤
                             ▼
-                     wt-server api
+                     wt-server api bridge
+                            │
+                     Unix socket (0600)
+                            │
+                     wt-server daemon
                        ├─ SQLite registry and logs
                        └─ wt-libvirt
                             └─ KVM world
@@ -20,29 +24,30 @@ client: wt + OpenSSH
 | Component | Owns |
 |-----------|------|
 | `wt` | Contexts, API transport, names, and managed SSH inventory |
-| `wt-server` | Owner-scoped API, registry, durable jobs, and logs |
+| `wt-server` | Unix-socket API daemon, registry, durable jobs, and logs |
 | `wt-libvirt` | KVM world creation, inspection, and destruction |
 | `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 
 ## Control plane
 
-Local and remote contexts invoke `wt-server api`. The transport carries one
-versioned JSON request and response over stdio. There is no control-plane socket.
-The OS user running `wt-server` owns the request and registry records.
+Local and remote contexts invoke `wt-server api`. The bridge carries one
+versioned JSON request and response over stdio to the daemon's protected Unix
+socket. There is no TCP control-plane listener. The installed server user owns
+the daemon and registry records.
 
 | Operation | Result |
 |-----------|--------|
-| `create` | Reserve and start detached provisioning |
+| `create` | Reserve and start background provisioning |
 | `list` | Return the owner's worlds and SSH inventory |
 | `get` | Return one owned world |
 | `delete` | Destroy one owned world |
 | `logs` | Read provisioning output from a byte offset |
 
-Provisioning is acknowledged after SQLite records the job and the detached
-worker accepts it. Client disconnects after acknowledgement do not stop the job.
-A worker crash changes the world to `error` on the next API operation; partial
-resources remain until `wt rm`.
+Provisioning is acknowledged after SQLite records the job and the daemon starts
+its background worker. Client disconnects after acknowledgement do not stop the
+job. A daemon crash or restart changes interrupted worlds to `error` during
+startup; partial resources remain until `wt rm`.
 
 ## Data and trust
 

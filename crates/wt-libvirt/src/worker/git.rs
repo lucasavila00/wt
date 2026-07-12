@@ -32,6 +32,7 @@ install -m 0600 "$directory/identity" "$runtime/identity"
   "$@"
 "#;
 
+#[derive(Clone)]
 pub(super) struct Credentials {
     identity: Vec<u8>,
     private_key: PrivateKey,

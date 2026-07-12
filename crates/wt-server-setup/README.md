@@ -17,6 +17,7 @@ wt-server-setup image rebuild --config PATH
 - Registry-cache installation and verification.
 - Golden-image build, provenance, and verification.
 - `wt` and `wt-server` binary installation.
+- `wt-server.service` installation and startup under the installing user.
 
 `PATH` is the install input. It is not the runtime config. Setup accepts matching
 installed state and fails on drift or partial state.

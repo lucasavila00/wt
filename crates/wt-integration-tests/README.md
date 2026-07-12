@@ -7,7 +7,7 @@ Cross-crate tests. This package contains no production code.
 | Service behavior | Injected `WorldWorker` |
 | Full lifecycle | Production `wt-libvirt` and local KVM |
 
-Tests use the production API, reservation, detached job, lock, registry, log,
+Tests use the production API, reservation, background job, lock, registry, log,
 and recovery paths. The KVM test uses the installed golden image and registry
 cache.
 

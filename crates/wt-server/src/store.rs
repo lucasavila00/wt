@@ -8,13 +8,13 @@ use wt_api::{AppSshAccess, Instance, InstanceName, InstanceStatus, SshAccess};
 #[derive(Debug)]
 pub struct Store {
     connection: Connection,
+    path: std::path::PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
-    pub job_acknowledged: bool,
 }
 
 #[derive(Debug, Error)]
@@ -58,7 +58,6 @@ impl Store {
                  app_ssh_user      TEXT,
                  app_ssh_port      INTEGER,
                  app_ssh_host_keys TEXT NOT NULL,
-                 job_acknowledged INTEGER NOT NULL DEFAULT 0,
                  UNIQUE(owner, name)
              );
              CREATE TABLE job_log_chunks (
@@ -67,16 +66,23 @@ impl Store {
                  data BLOB NOT NULL,
                  PRIMARY KEY(instance_id, byte_offset)
              );
-             PRAGMA user_version = 2;",
+             PRAGMA user_version = 1;",
             )?;
         }
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version != 2 {
+        if version != 1 {
             return Err(StoreError::InvalidData(format!(
-                "unsupported registry schema version {version}; expected 2; run make clear before reinstalling this pre-release build"
+                "unsupported registry schema version {version}; expected 1; run make clear before reinstalling"
             )));
         }
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            path: path.to_owned(),
+        })
+    }
+
+    pub fn reopen(&self) -> Result<Self, StoreError> {
+        Self::open(&self.path)
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
@@ -111,7 +117,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -125,7 +131,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -139,7 +145,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys
                  FROM instances WHERE id = ?1",
                 [id.to_string()],
                 row_to_instance,
@@ -153,7 +159,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys
              FROM instances WHERE status IN ('provisioning', 'destroying')",
         )?;
         let rows = statement
@@ -161,29 +167,6 @@ impl Store {
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::from)?;
         Ok(rows)
-    }
-
-    pub fn acknowledge_job(&self, id: Uuid) -> Result<(), StoreError> {
-        let changed = self.connection.execute(
-            "UPDATE instances SET job_acknowledged = 1
-             WHERE id = ?1 AND status = 'provisioning'",
-            [id.to_string()],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound);
-        }
-        Ok(())
-    }
-
-    pub fn job_acknowledged(&self, id: Uuid) -> Result<bool, StoreError> {
-        self.connection
-            .query_row(
-                "SELECT job_acknowledged FROM instances WHERE id = ?1",
-                [id.to_string()],
-                |row| row.get(0),
-            )
-            .optional()?
-            .ok_or(StoreError::NotFound)
     }
 
     pub fn log_writer(&self, id: Uuid) -> JobLog<'_> {
@@ -394,7 +377,6 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             app_ssh: app_ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
-        job_acknowledged: row.get(15)?,
     })
 }
 
@@ -498,8 +480,29 @@ mod tests {
                 app_ssh: None,
             },
             backend_id: format!("wt-{}", id.simple()),
-            job_acknowledged: false,
         }
+    }
+
+    #[test]
+    fn fresh_registry_uses_daemon_native_schema_version_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let version: u32 = store
+            .connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let mut statement = store
+            .connection
+            .prepare("PRAGMA table_info(instances)")
+            .unwrap();
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(version, 1);
+        assert!(!columns.iter().any(|name| name == "job_acknowledged"));
     }
 
     #[test]

@@ -8,7 +8,7 @@ use wt_api::{
     Operation, Response, SshAccess,
 };
 use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
-use wt_server::jobs::{run_provision, JobError, JobLock, Jobs, ProcessLauncher, ProvisionLauncher};
+use wt_server::jobs::{run_provision, JobError, JobLock, Jobs, ProvisionLauncher, ThreadLauncher};
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
 
@@ -35,7 +35,9 @@ impl ProvisionLauncher<InjectedWorker> for FailingLauncher {
         _passphrase: &GitPassphrase,
         _lock: JobLock,
     ) -> Result<(), JobError> {
-        Err(JobError::Exited)
+        Err(JobError::Io(std::io::Error::other(
+            "injected launch failure",
+        )))
     }
 }
 
@@ -263,22 +265,18 @@ fn create_accepts_only_ssh_sources() {
 }
 
 #[test]
-fn detached_worker_survives_the_acknowledged_service_and_streams_sqlite_logs() {
+fn thread_launcher_finishes_after_create_returns() {
     let temp = TempDir::new().unwrap();
-    let state = temp.path().join(".local/state/wt");
-    let database = state.join("instances.db");
-    let jobs_dir = state.join("jobs");
-    let launcher = ProcessLauncher::new(
-        env!("CARGO_BIN_EXE_wt-test-server").into(),
-        vec!["fake-provision".to_owned()],
-    )
-    .with_env("HOME", temp.path());
-    let name = InstanceName::parse("detached").unwrap();
+    let name = InstanceName::parse("background-thread").unwrap();
+    let provision_calls = Arc::new(AtomicUsize::new(0));
     let mut service = Service::new(
-        Store::open(&database).unwrap(),
-        InjectedWorker::default(),
-        Jobs::open(jobs_dir.clone()).unwrap(),
-        launcher.clone(),
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        InjectedWorker {
+            provision_calls: Arc::clone(&provision_calls),
+            ..InjectedWorker::default()
+        },
+        Jobs::open(temp.path().join("jobs")).unwrap(),
+        ThreadLauncher,
     );
 
     let Response::Instance { instance } = service
@@ -289,61 +287,24 @@ fn detached_worker_survives_the_acknowledged_service_and_streams_sqlite_logs() {
     };
     assert_eq!(instance.status, InstanceStatus::Provisioning);
 
-    let Response::Logs {
-        chunk,
-        next_offset,
-        status,
-        ..
-    } = service
-        .execute(
-            "lucas",
-            Operation::Logs {
-                name: name.clone(),
-                offset: 0,
-            },
-        )
-        .unwrap()
-    else {
-        panic!("expected logs response");
-    };
-    assert_eq!(status, InstanceStatus::Provisioning);
-    assert_eq!(
-        base64::engine::general_purpose::STANDARD
-            .decode(chunk)
-            .unwrap(),
-        b"first chunk\n"
-    );
-
-    drop(service);
-    std::thread::sleep(std::time::Duration::from_millis(600));
-    let mut reattached = Service::new(
-        Store::open(&database).unwrap(),
-        InjectedWorker::default(),
-        Jobs::open(jobs_dir).unwrap(),
-        launcher,
-    );
-    let Response::Logs { chunk, status, .. } = reattached
-        .execute(
-            "lucas",
-            Operation::Logs {
-                name,
-                offset: next_offset,
-            },
-        )
-        .unwrap()
-    else {
-        panic!("expected logs response");
-    };
-    assert_eq!(status, InstanceStatus::Running);
-    assert_eq!(
-        String::from_utf8(
-            base64::engine::general_purpose::STANDARD
-                .decode(chunk)
-                .unwrap()
-        )
-        .unwrap(),
-        "second chunk\nSUCCESS: fake world is running\n"
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        let Response::Instance { instance } = service
+            .execute("lucas", Operation::Get { name: name.clone() })
+            .unwrap()
+        else {
+            panic!("expected instance response");
+        };
+        if instance.status == InstanceStatus::Running {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "provisioning timed out"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(provision_calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -361,75 +322,9 @@ fn launch_failure_removes_the_reservation() {
         .execute("lucas", Operation::Create(create(name.clone())))
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
-    assert!(error.message.contains("before acknowledgement"));
+    assert!(error.message.contains("injected launch failure"));
     let missing = service
         .execute("lucas", Operation::Get { name })
         .unwrap_err();
     assert_eq!(missing.code, ErrorCode::NotFound);
 }
-
-#[test]
-fn exited_worker_is_recovered_to_error_and_removed_explicitly() {
-    let temp = TempDir::new().unwrap();
-    let state = temp.path().join(".local/state/wt");
-    let database = state.join("instances.db");
-    let jobs_dir = state.join("jobs");
-    let launcher = ProcessLauncher::new(
-        env!("CARGO_BIN_EXE_wt-test-server").into(),
-        vec!["fake-interrupted".to_owned()],
-    )
-    .with_env("HOME", temp.path());
-    let destroy_calls = Arc::new(AtomicUsize::new(0));
-    let worker = InjectedWorker {
-        destroy_calls: Arc::clone(&destroy_calls),
-        ..InjectedWorker::default()
-    };
-    let name = InstanceName::parse("interrupted").unwrap();
-    let mut service = Service::new(
-        Store::open(&database).unwrap(),
-        worker.clone(),
-        Jobs::open(jobs_dir.clone()).unwrap(),
-        launcher.clone(),
-    );
-    let Response::Instance { instance } = service
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap()
-    else {
-        panic!("expected instance response");
-    };
-    assert_eq!(instance.status, InstanceStatus::Provisioning);
-    drop(service);
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    let mut recovered = Service::new(
-        Store::open(&database).unwrap(),
-        worker,
-        Jobs::open(jobs_dir).unwrap(),
-        launcher,
-    );
-    let Response::Instance { instance } = recovered
-        .execute("lucas", Operation::Get { name: name.clone() })
-        .unwrap()
-    else {
-        panic!("expected instance response");
-    };
-    assert_eq!(instance.status, InstanceStatus::Error);
-    assert!(instance.last_error.unwrap().contains("interrupted"));
-
-    let conflict = recovered
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap_err();
-    assert_eq!(conflict.code, ErrorCode::Conflict);
-    recovered
-        .execute("lucas", Operation::Delete { name: name.clone() })
-        .unwrap();
-    assert_eq!(destroy_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        recovered
-            .execute("lucas", Operation::Get { name })
-            .unwrap_err()
-            .code,
-        ErrorCode::NotFound
-    );
-}
-use base64::Engine as _;

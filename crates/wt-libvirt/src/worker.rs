@@ -21,6 +21,7 @@ use virt::error::ErrorNumber;
 use virt::network::Network;
 use wt_command::cmd;
 
+#[derive(Clone)]
 pub struct LibvirtWorker {
     config: LibvirtConfig,
     app_shell: Vec<u8>,

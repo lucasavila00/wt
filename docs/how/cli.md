@@ -27,7 +27,7 @@ the name is unique across all contexts.
 
 ## Create observation
 
-After the server acknowledges a detached create job, the client follows its
+After the daemon acknowledges a background create job, the client follows its
 stored log. Ctrl-C stops observation, not provisioning. `wt logs` resumes from
 stored output. If transport fails before acknowledgement, the client checks no
 outcome automatically.

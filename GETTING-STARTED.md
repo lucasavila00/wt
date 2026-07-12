@@ -53,8 +53,10 @@ scripts/install-server --config ./server.toml
 ```
 
 If setup changes group membership, log out, log back in, and run the same command
-again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`.
-Keep the install input for future reinstalls.
+again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`
+and installs and starts `wt-server.service`. Keep the install input for future
+reinstalls. Reinstalling restarts the daemon; do not reinstall while a world is
+provisioning.
 
 ## Configure a local client
 
