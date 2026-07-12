@@ -31,10 +31,10 @@ registry to the OS user executing the helper, and `wt-libvirt` creates one guest
 per world. A world is `Running` only after guest SSH, the selected Git revision,
 and the repository's stock devcontainer are ready.
 
-The checkout remains inside the guest at `/workspace`. Each world records a
-stable SSH user, endpoint, and unique public host keys. `wt sync` projects that
-inventory into managed app-container and guest-host aliases without editing the
-user's main SSH config.
+The checkout remains inside the guest at `/workspace`. Each world records stable
+guest and app SSH users and unique public host keys. `wt sync` projects that
+inventory into managed session, raw app-container, and guest-host aliases without
+editing the user's main SSH config.
 
 Git sources are SSH-only. Each server supplies an encrypted Git identity and a
 known-hosts file. `wt new` reads the passphrase on the client terminal and sends

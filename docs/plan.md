@@ -14,9 +14,10 @@ worlds on Ubuntu servers.
 - Each world has its own VM, network identity, checkout, and stock devcontainer.
 - Named local and OpenSSH contexts carry the same versioned `wt-server` JSON API.
 - `context.world` is the stable name; short names work when globally unique.
-- `wt sync` creates strict managed OpenSSH aliases for the app container and guest.
-- App aliases attach to one persistent tmux or Byobu session per world, selected
-  by the strict server install config.
+- `wt sync` creates strict managed OpenSSH aliases for the app container, persistent
+  app session, and guest.
+- The base alias attaches to one guest-hosted tmux or Byobu session whose panes
+  enter the app over SSH; the `-dc` alias is raw app SSH for VS Code.
 - Servers are trusted credential boundaries, not hostile multi-tenant sandboxes.
 - There is no public control-plane listener and no runtime configuration override;
   each server uses the complete strict runtime config at `/etc/wt/server.toml`,
@@ -24,8 +25,9 @@ worlds on Ubuntu servers.
 
 ## Product constraints
 
-- The repository's stock `devcontainer.json` is the recipe contract. WT adds no
-  repository configuration, generated override, or path rewriting.
+- The repository's stock `devcontainer.json` is the recipe contract. WT does not
+  edit it; provisioning injects a pinned SSHD feature and key/config mounts.
+- App images must be Debian/Ubuntu-derived and support `apt`.
 - Each world owns a network namespace, so stock published ports work across
   parallel instances without application-specific port matrices.
 - Git checkout and credentials remain inside the trusted world. Client-to-server

@@ -62,6 +62,7 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
+                app_ssh: None,
             },
             backend_id,
             job_acknowledged: false,
@@ -103,14 +104,24 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
         {
             match self.worker.inspect(&instance.backend_id) {
                 Ok(Some(world)) => {
-                    let same_identity = instance
+                    let same_guest_identity = instance
                         .instance
                         .ssh
                         .as_ref()
                         .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-                    if same_identity {
+                    let same_app_identity = instance
+                        .instance
+                        .app_ssh
+                        .as_ref()
+                        .is_some_and(|ssh| ssh.host_keys == world.app_ssh.host_keys);
+                    if same_guest_identity && same_app_identity {
                         self.store
-                            .mark_running(instance.instance.id, &world.guest_ip, &world.ssh)
+                            .mark_running(
+                                instance.instance.id,
+                                &world.guest_ip,
+                                &world.ssh,
+                                &world.app_ssh,
+                            )
                             .map_err(map_store_error)?;
                     } else {
                         self.store

@@ -128,12 +128,21 @@ pub struct Instance {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshAccess>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_ssh: Option<AppSshAccess>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SshAccess {
     pub user: String,
     pub host: String,
+    pub port: u16,
+    pub host_keys: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AppSshAccess {
+    pub user: String,
     pub port: u16,
     pub host_keys: Vec<String>,
 }

@@ -37,7 +37,11 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
     fs::write(
         temp.path().join(".ssh/config"),
-        format!("Include {}\n", temp.path().join(".ssh/wt/config").display()),
+        format!(
+            "Include {}\nHost *\n  IdentityFile {}\n  IdentitiesOnly yes\n",
+            temp.path().join(".ssh/wt/config").display(),
+            git.guest_key.display(),
+        ),
     )
     .unwrap();
 
@@ -101,6 +105,10 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         instance.ssh.as_ref().unwrap().host_keys,
         peer_instance.ssh.as_ref().unwrap().host_keys
     );
+    assert_ne!(
+        instance.app_ssh.as_ref().unwrap().host_keys,
+        peer_instance.app_ssh.as_ref().unwrap().host_keys
+    );
     assert_registry_cache_hit(cache_log_since);
 
     let result = (|| {
@@ -124,6 +132,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         })?;
 
         let host_alias = format!("local.{}-host", name.as_str());
+        let dc_alias = format!("local.{}-dc", name.as_str());
         let peer_host_alias = format!("local.{}-host", peer_name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
@@ -142,6 +151,20 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .map_err(|error| error.to_string())
         })?;
         ensure_success("enter fixture guest host", &output)?;
+        let output = timings.run("verify direct devcontainer SSH", || {
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                &dc_alias,
+                "test",
+                "-d",
+                "/workspaces/small-devcontainer-fixture",
+            )
+            .output()
+            .map_err(|error| error.to_string())
+        })?;
+        ensure_success("enter fixture devcontainer over SSH", &output)?;
         let (frontend, executable) = match config.guest.session {
             SessionFrontend::Tmux => ("tmux", "/usr/bin/tmux"),
             SessionFrontend::Byobu => ("byobu", "/usr/bin/byobu-tmux"),
@@ -313,8 +336,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 &ssh_config,
                 "-i",
                 &git.guest_key,
-                &host_alias,
-                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/small-devcontainer-fixture \"$container\" /bin/bash",
+                &dc_alias,
+                "cd /workspaces/small-devcontainer-fixture && exec /bin/bash",
             )
             .stdin(Stdio::from(input))
             .output()

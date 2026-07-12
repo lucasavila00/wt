@@ -82,6 +82,10 @@ fn run() -> Result<()> {
             );
             if let Some(ssh) = &instance.ssh {
                 println!("\nApp shell: ssh {}.{}", context.name, instance.name);
+                println!(
+                    "VS Code / raw app SSH: ssh {}.{}-dc",
+                    context.name, instance.name
+                );
                 println!("Guest host: ssh {}.{}-host", context.name, instance.name);
                 println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             }
@@ -322,6 +326,7 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
+                app_ssh: None,
             },
         }
     }

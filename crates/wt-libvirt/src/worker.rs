@@ -6,6 +6,7 @@ mod guest_agent;
 mod world;
 
 use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
+use serde::Deserialize;
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
 use std::fs;
@@ -24,9 +25,17 @@ pub struct LibvirtWorker {
     config: LibvirtConfig,
     app_shell: Vec<u8>,
     app_pane: Vec<u8>,
+    app_info: Vec<u8>,
+    app_proxy: Vec<u8>,
     git_credentials: git::Credentials,
     registry_cache_url: String,
     registry_cache_ca: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct AppTarget {
+    user: String,
+    address: String,
 }
 
 impl LibvirtWorker {
@@ -39,10 +48,16 @@ impl LibvirtWorker {
         require_file(&config.image, "guest image")?;
         require_file(&config.app_shell_binary, "guest app-shell binary")?;
         require_file(&config.app_pane_binary, "guest app-pane binary")?;
+        require_file(&config.app_info_binary, "guest app-info binary")?;
+        require_file(&config.app_proxy_binary, "guest app-proxy binary")?;
         let app_shell = fs::read(&config.app_shell_binary)
             .map_err(|error| worker_error("read guest app-shell binary", error))?;
         let app_pane = fs::read(&config.app_pane_binary)
             .map_err(|error| worker_error("read guest app-pane binary", error))?;
+        let app_info = fs::read(&config.app_info_binary)
+            .map_err(|error| worker_error("read guest app-info binary", error))?;
+        let app_proxy = fs::read(&config.app_proxy_binary)
+            .map_err(|error| worker_error("read guest app-proxy binary", error))?;
         if !config.worlds_dir.is_dir() {
             return Err(WorkerError::new(format!(
                 "worlds directory not found: {}",
@@ -62,6 +77,8 @@ impl LibvirtWorker {
             config,
             app_shell,
             app_pane,
+            app_info,
+            app_proxy,
             git_credentials,
             registry_cache_url,
             registry_cache_ca,
@@ -176,6 +193,17 @@ impl LibvirtWorker {
             recipe_deadline,
             log,
         )?;
+        devcontainer::prepare_app_ssh(&domain, recipe_deadline, log)?;
+        let additional_features = format!(r#"{{"{}":{{}}}}"#, devcontainer::SSHD_FEATURE);
+        let app_ssh_mount = format!(
+            "type=bind,source={},target={}",
+            devcontainer::APP_SSH_PUBLIC_DIR,
+            devcontainer::APP_SSH_MOUNT
+        );
+        let sshd_config_mount = format!(
+            "type=bind,source={}/sshd_config,target=/etc/ssh/sshd_config",
+            devcontainer::APP_SSH_PUBLIC_DIR
+        );
         guest_agent::run_phase(
             &domain,
             "devcontainer up",
@@ -194,6 +222,12 @@ impl LibvirtWorker {
                 "text",
                 "--workspace-folder",
                 "/workspace",
+                "--additional-features",
+                &additional_features,
+                "--mount",
+                &app_ssh_mount,
+                "--mount",
+                &sshd_config_mount,
             ],
             recipe_deadline,
             log,
@@ -202,12 +236,19 @@ impl LibvirtWorker {
         let phase_started = Instant::now();
         devcontainer::install_app_tools(
             &domain,
-            &self.app_shell,
-            &self.app_pane,
+            &devcontainer::AppTools {
+                app_shell: &self.app_shell,
+                app_pane: &self.app_pane,
+                app_info: &self.app_info,
+                app_proxy: &self.app_proxy,
+            },
             self.config.session,
             recipe_deadline,
             log,
         )?;
+        let app_target = self.read_app_target(&domain, recipe_deadline)?;
+        let app_host_keys =
+            self.configure_and_verify_app_ssh(&domain, &app_target, recipe_deadline, log)?;
         guest_agent::run_phase(
             &domain,
             "devcontainer Git credentials",
@@ -237,6 +278,11 @@ impl LibvirtWorker {
                 port: 22,
                 host_keys,
             },
+            app_ssh: wt_api::AppSshAccess {
+                user: app_target.user,
+                port: devcontainer::APP_SSH_PORT,
+                host_keys: app_host_keys,
+            },
         })
     }
 
@@ -255,6 +301,185 @@ impl LibvirtWorker {
             }
             std::thread::sleep(Duration::from_secs(1));
         }
+    }
+
+    fn read_app_target(
+        &self,
+        domain: &Domain,
+        deadline: Instant,
+    ) -> Result<AppTarget, WorkerError> {
+        let output = guest_agent::capture_phase(
+            domain,
+            "devcontainer app discovery",
+            devcontainer::APP_INFO_PATH,
+            &[],
+            deadline,
+        )?;
+        let target: AppTarget = serde_json::from_slice(&output)
+            .map_err(|error| worker_error("decode devcontainer app discovery", error))?;
+        if target.user.is_empty()
+            || !target
+                .user
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        {
+            return Err(WorkerError::new(
+                "devcontainer app discovery: invalid remote user",
+            ));
+        }
+        target
+            .address
+            .parse::<IpAddr>()
+            .map_err(|error| worker_error("parse devcontainer app address", error))?;
+        Ok(target)
+    }
+
+    fn configure_and_verify_app_ssh(
+        &self,
+        domain: &Domain,
+        target: &AppTarget,
+        deadline: Instant,
+        log: &mut dyn Write,
+    ) -> Result<Vec<String>, WorkerError> {
+        let session_public = guest_agent::capture_phase(
+            domain,
+            "app session public key",
+            "/bin/cat",
+            &["/var/lib/wt-app-ssh/session_identity.pub"],
+            deadline,
+        )?;
+        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
+        authorized_keys.push(b'\n');
+        authorized_keys.extend_from_slice(&session_public);
+        if !authorized_keys.ends_with(b"\n") {
+            authorized_keys.push(b'\n');
+        }
+        let authorized_path = format!(
+            "{}/authorized_keys/{}",
+            devcontainer::APP_SSH_PUBLIC_DIR,
+            target.user
+        );
+        guest_agent::write(domain, &authorized_path, &authorized_keys)?;
+        guest_agent::run_phase(
+            domain,
+            "app authorized-key permissions",
+            "/bin/chmod",
+            &["0644", &authorized_path],
+            deadline,
+            log,
+        )?;
+
+        let expected_bytes = guest_agent::capture_phase(
+            domain,
+            "app SSH host keys",
+            "/bin/cat",
+            &["/var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub"],
+            deadline,
+        )?;
+        let expected = String::from_utf8_lossy(&expected_bytes)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if expected.is_empty() {
+            return Err(WorkerError::new("app SSH host keys: no public keys"));
+        }
+        let scanned = guest_agent::capture_phase(
+            domain,
+            "app SSH readiness",
+            "/usr/bin/ssh-keyscan",
+            &[
+                "-T",
+                "5",
+                "-p",
+                &devcontainer::APP_SSH_PORT.to_string(),
+                &target.address,
+            ],
+            deadline,
+        )?;
+        if !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
+            return Err(WorkerError::new(
+                "app SSH readiness: presented host keys do not match the per-world identity",
+            ));
+        }
+        let known_hosts = normalized_host_keys(&expected.join("\n"))
+            .into_iter()
+            .map(|key| format!("wt-app {key}\n"))
+            .collect::<String>();
+        guest_agent::write(
+            domain,
+            "/var/lib/wt-app-ssh/known_hosts",
+            known_hosts.as_bytes(),
+        )?;
+        guest_agent::run_phase(
+            domain,
+            "app SSH authentication",
+            "/usr/bin/ssh",
+            &[
+                "-p",
+                &devcontainer::APP_SSH_PORT.to_string(),
+                "-i",
+                "/var/lib/wt-app-ssh/session_identity",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-o",
+                "UserKnownHostsFile=/var/lib/wt-app-ssh/known_hosts",
+                "-o",
+                "StrictHostKeyChecking=yes",
+                "-o",
+                "HostKeyAlias=wt-app",
+                &format!("{}@{}", target.user, target.address),
+                "true",
+            ],
+            deadline,
+            log,
+        )?;
+        Ok(expected)
+    }
+
+    fn inspect_app_ssh(
+        &self,
+        domain: &Domain,
+        deadline: Instant,
+    ) -> Result<wt_api::AppSshAccess, WorkerError> {
+        let target = self.read_app_target(domain, deadline)?;
+        let expected_bytes = guest_agent::capture_phase(
+            domain,
+            "app SSH host keys",
+            "/bin/cat",
+            &["/var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub"],
+            deadline,
+        )?;
+        let expected = String::from_utf8_lossy(&expected_bytes)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let scanned = guest_agent::capture_phase(
+            domain,
+            "app SSH readiness",
+            "/usr/bin/ssh-keyscan",
+            &[
+                "-T",
+                "5",
+                "-p",
+                &devcontainer::APP_SSH_PORT.to_string(),
+                &target.address,
+            ],
+            deadline,
+        )?;
+        if expected.is_empty() || !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
+            return Err(WorkerError::new("app SSH host identity changed"));
+        }
+        Ok(wt_api::AppSshAccess {
+            user: target.user,
+            port: devcontainer::APP_SSH_PORT,
+            host_keys: expected,
+        })
     }
 
     fn read_host_keys(
@@ -530,6 +755,7 @@ impl WorldWorker for LibvirtWorker {
         // DHCP addresses can move; the per-world host keys are the stable SSH identity.
         let host_keys = self.read_host_keys(&domain, Instant::now() + self.config.boot_timeout)?;
         self.verify_ssh_endpoint(backend_id, &guest_ip, &host_keys)?;
+        let app_ssh = self.inspect_app_ssh(&domain, Instant::now() + self.config.boot_timeout)?;
         Ok(Some(World {
             guest_ip: guest_ip.clone(),
             ssh: wt_api::SshAccess {
@@ -538,6 +764,7 @@ impl WorldWorker for LibvirtWorker {
                 port: 22,
                 host_keys,
             },
+            app_ssh,
         }))
     }
 }

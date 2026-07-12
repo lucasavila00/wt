@@ -110,6 +110,16 @@ Enter the guest instead of the devcontainer:
 ssh local.jsdev-manual-host
 ```
 
+For VS Code Remote-SSH or a non-persistent app login, connect directly to the
+devcontainer and open its mounted workspace folder:
+
+```bash
+ssh local.jsdev-manual-dc
+```
+
+WT app containers must be Debian/Ubuntu-derived and support `apt`; provisioning
+installs the pinned SSHD feature when building the devcontainer.
+
 Remove the world:
 
 ```bash

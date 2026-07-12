@@ -65,7 +65,16 @@ git status
 exit
 ```
 
-Use the host alias for guest SSH, explicit commands, SCP, or VS Code Remote SSH:
+Use the raw devcontainer alias for VS Code Remote-SSH or explicit app commands:
+
+```bash
+ssh jsdev-manual-dc
+```
+
+In VS Code, choose `jsdev-manual-dc` as the Remote-SSH host and open the mounted
+workspace path reported by the devcontainer (typically `/workspaces/<repo>`).
+
+Use the host alias for guest SSH and recovery:
 
 ```bash
 ssh jsdev-manual-host

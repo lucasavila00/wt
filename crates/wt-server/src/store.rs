@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{Instance, InstanceName, InstanceStatus, SshAccess};
+use wt_api::{AppSshAccess, Instance, InstanceName, InstanceStatus, SshAccess};
 
 #[derive(Debug)]
 pub struct Store {
@@ -55,6 +55,9 @@ impl Store {
                  ssh_host      TEXT,
                  ssh_port      INTEGER,
                  ssh_host_keys TEXT NOT NULL,
+                 app_ssh_user      TEXT,
+                 app_ssh_port      INTEGER,
+                 app_ssh_host_keys TEXT NOT NULL,
                  job_acknowledged INTEGER NOT NULL DEFAULT 0,
                  UNIQUE(owner, name)
              );
@@ -64,13 +67,13 @@ impl Store {
                  data BLOB NOT NULL,
                  PRIMARY KEY(instance_id, byte_offset)
              );
-             PRAGMA user_version = 1;",
+             PRAGMA user_version = 2;",
             )?;
         }
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version != 1 {
+        if version != 2 {
             return Err(StoreError::InvalidData(format!(
-                "unsupported registry schema version {version}; expected 1"
+                "unsupported registry schema version {version}; expected 2; run make clear before reinstalling this pre-release build"
             )));
         }
         Ok(Self { connection })
@@ -80,8 +83,8 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id, source, ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]')",
+             (id, owner, name, status, backend_id, source, ssh_host_keys, app_ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]', '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
@@ -107,7 +110,8 @@ impl Store {
             .query_row(
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
-                        ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+                        ssh_user, ssh_host, ssh_port, ssh_host_keys,
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -120,7 +124,8 @@ impl Store {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
-                    ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+                    ssh_user, ssh_host, ssh_port, ssh_host_keys,
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -133,7 +138,8 @@ impl Store {
             .query_row(
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
-                        ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+                        ssh_user, ssh_host, ssh_port, ssh_host_keys,
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
                  FROM instances WHERE id = ?1",
                 [id.to_string()],
                 row_to_instance,
@@ -146,7 +152,8 @@ impl Store {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
-                    ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+                    ssh_user, ssh_host, ssh_port, ssh_host_keys,
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, job_acknowledged
              FROM instances WHERE status IN ('provisioning', 'destroying')",
         )?;
         let rows = statement
@@ -241,15 +248,19 @@ impl Store {
         id: Uuid,
         guest_ip: &str,
         ssh: &SshAccess,
+        app_ssh: &AppSshAccess,
         terminal_log: &[u8],
     ) -> Result<(), StoreError> {
         let transaction = self.connection.unchecked_transaction()?;
         append_log_transaction(&transaction, id, terminal_log)?;
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let changed = transaction.execute(
             "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
-             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
+             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7,
+             app_ssh_user = ?8, app_ssh_port = ?9, app_ssh_host_keys = ?10 WHERE id = ?1",
             params![
                 id.to_string(),
                 InstanceStatus::Running.to_string(),
@@ -257,7 +268,10 @@ impl Store {
                 ssh.user,
                 ssh.host,
                 ssh.port,
-                host_keys
+                host_keys,
+                app_ssh.user,
+                app_ssh.port,
+                app_host_keys,
             ],
         )?;
         if changed == 0 {
@@ -291,12 +305,16 @@ impl Store {
         id: Uuid,
         guest_ip: &str,
         ssh: &SshAccess,
+        app_ssh: &AppSshAccess,
     ) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let changed = self.connection.execute(
             "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
-             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
+             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7,
+             app_ssh_user = ?8, app_ssh_port = ?9, app_ssh_host_keys = ?10 WHERE id = ?1",
             params![
                 id.to_string(),
                 InstanceStatus::Running.to_string(),
@@ -304,7 +322,10 @@ impl Store {
                 ssh.user,
                 ssh.host,
                 ssh.port,
-                host_keys
+                host_keys,
+                app_ssh.user,
+                app_ssh.port,
+                app_host_keys,
             ],
         )?;
         if changed == 0 {
@@ -370,9 +391,10 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             last_error: row.get(5)?,
             source: row.get(7)?,
             ssh: ssh_from_row(row)?,
+            app_ssh: app_ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
-        job_acknowledged: row.get(12)?,
+        job_acknowledged: row.get(15)?,
     })
 }
 
@@ -431,6 +453,21 @@ fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> 
     }))
 }
 
+fn app_ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<AppSshAccess>> {
+    let user: Option<String> = row.get(12)?;
+    let Some(user) = user else {
+        return Ok(None);
+    };
+    let keys: String = row.get(14)?;
+    let host_keys =
+        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
+    Ok(Some(AppSshAccess {
+        user,
+        port: row.get(13)?,
+        host_keys,
+    }))
+}
+
 fn invalid_column(message: &str) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
         0,
@@ -458,6 +495,7 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
+                app_ssh: None,
             },
             backend_id: format!("wt-{}", id.simple()),
             job_acknowledged: false,

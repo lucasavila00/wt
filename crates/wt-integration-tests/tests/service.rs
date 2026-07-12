@@ -4,8 +4,8 @@ use std::sync::{
 };
 use tempfile::TempDir;
 use wt_api::{
-    CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus, Operation, Response,
-    SshAccess,
+    AppSshAccess, CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus,
+    Operation, Response, SshAccess,
 };
 use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::jobs::{run_provision, JobError, JobLock, Jobs, ProcessLauncher, ProvisionLauncher};
@@ -94,6 +94,11 @@ fn world() -> World {
             port: 22,
             host_keys: vec!["ssh-ed25519 AAAATEST guest".to_owned()],
         },
+        app_ssh: AppSshAccess {
+            user: "vscode".to_owned(),
+            port: 2222,
+            host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".to_owned()],
+        },
     }
 }
 
@@ -145,6 +150,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     assert_eq!(instance.status, InstanceStatus::Running);
     assert_eq!(instance.guest_ip.as_deref(), Some("192.0.2.2"));
     assert_eq!(instance.ssh.as_ref().unwrap().user, "wt");
+    assert_eq!(instance.app_ssh.as_ref().unwrap().user, "vscode");
 
     let conflict = service
         .execute("lucas", Operation::Create(create(name.clone())))

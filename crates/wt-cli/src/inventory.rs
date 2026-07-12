@@ -105,6 +105,7 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
+                app_ssh: None,
             },
         }
     }

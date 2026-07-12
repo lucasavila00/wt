@@ -20,7 +20,9 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
     let running = instances
         .iter()
         .filter(|item| {
-            item.instance.status == InstanceStatus::Running && item.instance.ssh.is_some()
+            item.instance.status == InstanceStatus::Running
+                && item.instance.ssh.is_some()
+                && item.instance.app_ssh.is_some()
         })
         .collect::<Vec<_>>();
     let counts = name_counts(instances);
@@ -29,33 +31,37 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
     for item in running {
         let instance = &item.instance;
         let ssh = instance.ssh.as_ref().expect("filtered SSH access");
-        if ssh.host_keys.is_empty() {
-            bail!("instance {} has no SSH host keys", instance.name);
+        let app_ssh = instance.app_ssh.as_ref().expect("filtered app SSH access");
+        if ssh.host_keys.is_empty() || app_ssh.host_keys.is_empty() {
+            bail!("instance {} has incomplete SSH host keys", instance.name);
         }
         let qualified = item.qualified_name();
-        let common = format!(
+        let guest_common = format!(
             "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n",
             ssh.host,
             ssh.user,
             ssh.port,
-            qualified,
+            format_args!("{qualified}-host"),
             ssh_quote(&known_hosts_path),
         );
+        let app_common = format!(
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-dc\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh {}-host /usr/local/bin/wt-app-proxy\n",
+            app_ssh.user,
+            app_ssh.port,
+            qualified,
+            ssh_quote(&known_hosts_path),
+            qualified,
+        );
         config.push_str(&format!(
-            "\nHost {}-host\n{common}\nHost {}\n{common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n",
-            qualified, qualified,
+            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-dc\n{app_common}",
+            qualified, qualified, qualified,
         ));
         if counts.get(instance.name.as_str()) == Some(&1) {
             config.push_str(&format!(
-                "\nHost {}-host\n{common}\nHost {}\n{common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n",
-                instance.name, instance.name,
+                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-dc\n{app_common}",
+                instance.name, instance.name, instance.name,
             ));
         }
-        let known_name = if ssh.port == 22 {
-            qualified
-        } else {
-            format!("[{qualified}]:{}", ssh.port)
-        };
         for key in &ssh.host_keys {
             let mut fields = key.split_whitespace();
             let kind = fields.next().unwrap_or_default();
@@ -63,7 +69,21 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
             if kind.is_empty() || data.is_empty() {
                 bail!("instance {} has an invalid SSH host key", instance.name);
             }
-            known_hosts.push_str(&format!("{known_name} {kind} {data}\n"));
+            known_hosts.push_str(&format!("{qualified}-host {kind} {data}\n"));
+        }
+        let app_known_name = if app_ssh.port == 22 {
+            format!("{qualified}-dc")
+        } else {
+            format!("[{qualified}-dc]:{}", app_ssh.port)
+        };
+        for key in &app_ssh.host_keys {
+            let mut fields = key.split_whitespace();
+            let kind = fields.next().unwrap_or_default();
+            let data = fields.next().unwrap_or_default();
+            if kind.is_empty() || data.is_empty() {
+                bail!("instance {} has an invalid app SSH host key", instance.name);
+            }
+            known_hosts.push_str(&format!("{app_known_name} {kind} {data}\n"));
         }
     }
     atomic_write(&config_path, config.as_bytes())?;
@@ -112,7 +132,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use uuid::Uuid;
-    use wt_api::{Instance, InstanceName, SshAccess};
+    use wt_api::{AppSshAccess, Instance, InstanceName, SshAccess};
 
     static HOME_LOCK: Mutex<()> = Mutex::new(());
 
@@ -138,6 +158,11 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
+            app_ssh: Some(AppSshAccess {
+                user: "vscode".into(),
+                port: 2222,
+                host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
+            }),
         };
         let mut replacement_instance = instance.clone();
         replacement_instance.id = Uuid::new_v4();
@@ -151,12 +176,15 @@ mod tests {
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host repo-feature-host\n"));
         assert!(managed.contains("Host repo-feature\n"));
+        assert!(managed.contains("Host repo-feature-dc\n"));
         assert_eq!(managed.matches("RemoteCommand ").count(), 2);
         assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
-        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 4);
+        assert!(managed
+            .contains("ProxyCommand ssh local.repo-feature-host /usr/local/bin/wt-app-proxy"));
+        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
         assert_eq!(
             managed.matches("HostKeyAlias local.repo-feature").count(),
-            4
+            6
         );
         sync(&[ContextInstance {
             context: "local".into(),
@@ -165,6 +193,7 @@ mod tests {
         .unwrap();
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
         assert!(known_hosts.contains("AAAAREPLACEMENT"));
+        assert!(known_hosts.contains("AAAAAPPLICATION"));
         assert!(!known_hosts.contains("AAAATEST"));
         sync(&[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
@@ -194,6 +223,11 @@ mod tests {
                     port: 22,
                     host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
                 }),
+                app_ssh: Some(AppSshAccess {
+                    user: "vscode".into(),
+                    port: 2222,
+                    host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
+                }),
             },
         };
         sync(&[
@@ -205,7 +239,7 @@ mod tests {
         assert!(managed.contains("Host local.same\n"));
         assert!(managed.contains("Host lab.same\n"));
         assert!(!managed.lines().any(|line| line == "Host same"));
-        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 4);
+        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
         assert!(!temp.path().join(".ssh/config").exists());
     }
 }

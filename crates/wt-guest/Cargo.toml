@@ -14,6 +14,14 @@ path = "src/bin/wt-app-shell.rs"
 name = "wt-app-pane"
 path = "src/main.rs"
 
+[[bin]]
+name = "wt-app-proxy"
+path = "src/bin/wt-app-proxy.rs"
+
+[[bin]]
+name = "wt-app-info"
+path = "src/bin/wt-app-info.rs"
+
 [dependencies]
 wt-command = { workspace = true }
 serde = { workspace = true }

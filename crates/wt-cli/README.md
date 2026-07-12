@@ -64,12 +64,13 @@ After syncing, use stock OpenSSH to enter a world: `ssh <name>`.
 
 The base world alias always attaches to the world's shared tmux or Byobu session,
 as selected by the server install config. Shells and processes continue running
-across SSH disconnects; all windows and panes enter the primary devcontainer.
-The `-host` alias remains a plain guest SSH login for commands, SCP, VS Code
-Remote SSH, and debugging.
+across SSH disconnects; all windows and panes enter the primary devcontainer over
+SSH. The `-dc` alias is a plain app-container login for VS Code Remote-SSH,
+commands, SFTP, and forwarding. The `-host` alias remains a guest recovery login.
 
 For each world, sync always creates `<context>.<name>` aliases and also creates
 short aliases when the name is globally unique:
 
-- `<name>` allocates a TTY and enters the primary app container with `docker exec -it`.
-- `<name>-host` is unrestricted guest SSH for commands, SCP, and VS Code Remote SSH.
+- `<name>` allocates a TTY and attaches to the persistent app session.
+- `<name>-dc` is unrestricted app-container SSH and the VS Code Remote-SSH target.
+- `<name>-host` is unrestricted guest SSH for recovery.

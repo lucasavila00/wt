@@ -26,8 +26,9 @@ No KVM emulation fallback. No public control-plane listener.
 5. Clone the SSH Git source into `/workspace`.
 6. Install the encrypted Git identity and known-hosts bundle.
 7. Run the repository's stock devcontainer.
-8. Install the configured persistent app-session helpers.
-9. Record the guest IP and SSH keys; mark the world `Running`.
+8. Inject the pinned SSHD feature, per-world app keys, and strict app SSH config.
+9. Install the persistent app-session and dynamic proxy helpers.
+10. Verify guest and app SSH identities; mark the world `Running`.
 
 One deadline covers clone and recipe startup. Any create failure removes the
 domain and files.

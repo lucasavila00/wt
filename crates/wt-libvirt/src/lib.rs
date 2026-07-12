@@ -10,7 +10,7 @@ pub use worker::LibvirtWorker;
 
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{InstanceName, SshAccess};
+use wt_api::{AppSshAccess, InstanceName, SshAccess};
 
 #[derive(Clone, Debug)]
 pub struct ProvisionSpec<'a> {
@@ -26,6 +26,7 @@ pub struct ProvisionSpec<'a> {
 pub struct World {
     pub guest_ip: String,
     pub ssh: SshAccess,
+    pub app_ssh: AppSshAccess,
 }
 
 pub trait WorldWorker {

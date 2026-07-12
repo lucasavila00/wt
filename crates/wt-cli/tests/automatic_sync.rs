@@ -40,7 +40,7 @@ case "$request" in
     printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"logs","chunk":"","next_offset":9,"status":"running"}}'
     ;;
   *'"operation":"get"'*)
-    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}}}'
     ;;
   *'"operation":"delete"'*)
     rm -f "$state"
@@ -48,7 +48,7 @@ case "$request" in
     ;;
   *'"operation":"list"'*)
     if [ -f "$state" ]; then
-      printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
+      printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}]}}'
     else
       printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instances","instances":[]}}'
     fi
@@ -136,6 +136,10 @@ esac
     assert!(managed.contains("Host repo-feature\n"));
     assert!(managed.contains("Host local.repo-feature\n"));
     assert!(managed.contains("Host repo-feature-host\n"));
+    assert!(managed.contains("Host repo-feature-dc\n"));
+    assert!(
+        managed.contains("ProxyCommand ssh local.repo-feature-host /usr/local/bin/wt-app-proxy")
+    );
     assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
 
     let logs = cmd!(env!("CARGO_BIN_EXE_wt"), "logs", "repo-feature")

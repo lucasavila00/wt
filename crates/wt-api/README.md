@@ -7,7 +7,7 @@ through OpenSSH.
 
 ## Role
 
-- Instance payloads (name, owner, status, guest IP, errors)
+- Instance payloads (name, owner, status, guest IP, guest/app SSH access, errors)
 - Status and error enums (serde)  
 - No I/O, libvirt, or transport  
 - No transport or server configuration

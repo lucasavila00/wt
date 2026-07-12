@@ -3,7 +3,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use wt_api::{
-    ApiError, ApiRequest, ApiResponse, ErrorCode, GitPassphrase, InstanceStatus, SshAccess,
+    ApiError, ApiRequest, ApiResponse, AppSshAccess, ErrorCode, GitPassphrase, InstanceStatus,
+    SshAccess,
 };
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::config::StateConfig;
@@ -132,6 +133,11 @@ fn run_fake_provision(id: Uuid, finish: bool) -> Result<()> {
             host: "192.0.2.2".to_owned(),
             port: 22,
             host_keys: vec!["ssh-ed25519 AAAATEST guest".to_owned()],
+        },
+        &AppSshAccess {
+            user: "vscode".to_owned(),
+            port: 2222,
+            host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".to_owned()],
         },
         b"SUCCESS: fake world is running\n",
     )?;

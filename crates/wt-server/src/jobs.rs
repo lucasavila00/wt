@@ -225,6 +225,7 @@ pub fn run_provision<W: WorldWorker>(
             stored.instance.id,
             &world.guest_ip,
             &world.ssh,
+            &world.app_ssh,
             format!("SUCCESS: world {} is running\n", stored.instance.name).as_bytes(),
         ),
         Err(error) => {
@@ -269,6 +270,7 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
+                app_ssh: None,
             },
             backend_id: format!("wt-{}", id.simple()),
             job_acknowledged: false,

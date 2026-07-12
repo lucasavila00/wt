@@ -150,7 +150,14 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         ),
         "build wt binaries",
     )?;
-    for name in ["wt", "wt-app-pane", "wt-app-shell", "wt-server"] {
+    for name in [
+        "wt",
+        "wt-app-pane",
+        "wt-app-info",
+        "wt-app-proxy",
+        "wt-app-shell",
+        "wt-server",
+    ] {
         let source = Path::new("target/release").join(name);
         let destination = config.install.binary_dir.join(name);
         let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));
