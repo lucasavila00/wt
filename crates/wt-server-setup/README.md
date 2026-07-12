@@ -31,4 +31,8 @@ installs its CA, and pulls every configured preload image through it. The cache
 size, public registry hosts, and preload list are all part of the strict server
 configuration.
 
+Golden-image builds stream the temporary guest's serial console, including
+cloud-init package output, phase timings, and quiet-period heartbeats. A matching
+installed image is verified and reused without starting the build guest.
+
 Production instructions: [`wt-server` Install on Ubuntu](../wt-server/README.md#install-on-ubuntu).

@@ -8,6 +8,7 @@ use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -112,6 +113,7 @@ fn build_image(
     let seed = build_dir.join("seed.img");
     let user_data = build_dir.join("user-data");
     let meta_data = build_dir.join("meta-data");
+    let console = build_dir.join("console.log");
     let prepared = build_dir.join("golden.qcow2");
 
     if build_dir.exists() || domain_exists(runner)? {
@@ -132,6 +134,7 @@ fn build_image(
             &seed,
             &user_data,
             &meta_data,
+            &console,
             &prepared,
         )
     })();
@@ -152,6 +155,7 @@ fn build_image_inner(
     seed: &Path,
     user_data: &Path,
     meta_data: &Path,
+    console: &Path,
     prepared: &Path,
 ) -> Result<()> {
     println!("Preparing temporary KVM build disk...");
@@ -178,6 +182,9 @@ fn build_image_inner(
         cmd!("cloud-localds", seed, user_data, meta_data),
         "create image build seed",
     )?;
+    fs::File::create_new(console).context("create image build console log")?;
+    fs::set_permissions(console, fs::Permissions::from_mode(0o660))
+        .context("set image build console log permissions")?;
     runner.run(
         cmd!(
             "virt-install",
@@ -202,6 +209,8 @@ fn build_image_inner(
             format!("path={},device=cdrom", seed.display()),
             "--network",
             format!("network={},model=virtio", config.libvirt.network),
+            "--serial",
+            format!("file,path={}", console.display()),
             "--graphics",
             "none",
             "--noautoconsole",
@@ -214,7 +223,7 @@ fn build_image_inner(
         "KVM build guest started. Waiting for cloud-init to install Docker, Compose, and guest agent."
     );
     println!("The guest will power off when ready. Timeout: 30 minutes.");
-    wait_for_shutdown(runner)?;
+    wait_for_shutdown(runner, console)?;
 
     println!("Guest powered off. Verifying readiness and package versions...");
     let marker = runner.text(
@@ -281,6 +290,10 @@ fn build_image_inner(
 
 fn cloud_config() -> &'static str {
     r#"#cloud-config
+output:
+  all: '| tee -a /var/log/cloud-init-output.log'
+bootcmd:
+  - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
 package_update: true
 packages:
   - docker.io
@@ -292,13 +305,17 @@ packages:
   - npm
   - tmux
 runcmd:
+  - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
   - docker compose version
+  - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
+  - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
   - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
+  - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
   mode: poweroff
   timeout: 60
@@ -306,31 +323,107 @@ power_state:
 "#
 }
 
-fn wait_for_shutdown(runner: &impl Runner) -> Result<()> {
+struct ConsoleLog {
+    file: fs::File,
+    pending_line: Vec<u8>,
+}
+
+impl ConsoleLog {
+    fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            file: fs::File::open(path).context("open image build console log")?,
+            pending_line: Vec::new(),
+        })
+    }
+
+    fn drain(&mut self, output: &mut impl Write) -> Result<(bool, Vec<String>)> {
+        let mut bytes = Vec::new();
+        self.file
+            .read_to_end(&mut bytes)
+            .context("read image build console log")?;
+        if bytes.is_empty() {
+            return Ok((false, Vec::new()));
+        }
+
+        output
+            .write_all(&bytes)
+            .context("forward image build console output")?;
+        output.flush().context("flush image build console output")?;
+        let phases = extract_phase_markers(&mut self.pending_line, &bytes);
+        Ok((true, phases))
+    }
+}
+
+fn extract_phase_markers(pending_line: &mut Vec<u8>, bytes: &[u8]) -> Vec<String> {
+    const PREFIX: &str = "WT_IMAGE_PHASE=";
+
+    pending_line.extend_from_slice(bytes);
+    let mut phases = Vec::new();
+    let mut consumed = 0;
+    for (index, byte) in pending_line.iter().enumerate() {
+        if *byte != b'\n' {
+            continue;
+        }
+        let line = String::from_utf8_lossy(&pending_line[consumed..index]);
+        if let Some((_, phase)) = line.split_once(PREFIX) {
+            phases.push(phase.trim_end_matches('\r').to_owned());
+        }
+        consumed = index + 1;
+    }
+    pending_line.drain(..consumed);
+    phases
+}
+
+fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<bool> {
+    let (had_output, phases) = console.drain(&mut std::io::stdout().lock())?;
+    for phase in phases {
+        println!(
+            "Image build phase: {phase} (elapsed={}s)",
+            started.elapsed().as_secs()
+        );
+    }
+    Ok(had_output)
+}
+
+fn wait_for_shutdown(runner: &impl Runner, console_path: &Path) -> Result<()> {
     let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
-    let mut next_report = Duration::from_secs(15);
+    let mut console = ConsoleLog::open(console_path)?;
+    let mut last_console_output = Instant::now();
+    let mut next_state_check = Instant::now();
+    let mut state = String::from("starting");
     loop {
-        let state = runner.text(
-            cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
-            "read image build domain state",
-        )?;
-        if state.trim() == "shut off" {
-            return Ok(());
+        if drain_console(&mut console, started)? {
+            last_console_output = Instant::now();
         }
-        let elapsed = started.elapsed();
-        if elapsed >= next_report {
+
+        let now = Instant::now();
+        if now >= next_state_check {
+            state = runner.text(
+                cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
+                "read image build domain state",
+            )?;
+            if state.trim() == "shut off" {
+                drain_console(&mut console, started)?;
+                println!("Guest powered off after {}s.", started.elapsed().as_secs());
+                return Ok(());
+            }
+            next_state_check = now + Duration::from_secs(3);
+        }
+
+        if last_console_output.elapsed() >= Duration::from_secs(15) {
             println!(
-                "Still building guest: elapsed={}s, domain_state={}",
-                elapsed.as_secs(),
+                "Still building guest: no console output for {}s, elapsed={}s, domain_state={}",
+                last_console_output.elapsed().as_secs(),
+                started.elapsed().as_secs(),
                 state.trim()
             );
-            next_report = elapsed + Duration::from_secs(15);
+            last_console_output = Instant::now();
         }
-        if Instant::now() >= deadline {
+        if now >= deadline {
             bail!("timed out waiting for KVM image build guest");
         }
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_millis(250));
     }
 }
 
@@ -513,5 +606,66 @@ mod tests {
         let config = cloud_config();
         assert!(config.contains("  - tmux\n"));
         assert!(config.contains("nodejs npm tmux | sort > /var/lib/wt-image-packages"));
+    }
+
+    #[test]
+    fn image_recipe_reports_build_phases() {
+        let config = cloud_config();
+        for phase in [
+            "updating package indexes and installing guest packages",
+            "validating guest services",
+            "installing and validating Dev Container CLI",
+            "recording installed package versions",
+            "build ready; requesting shutdown",
+        ] {
+            assert!(config.contains(&format!("WT_IMAGE_PHASE={phase}")));
+        }
+    }
+
+    #[test]
+    fn phase_markers_are_extracted_across_partial_writes() {
+        let mut pending = Vec::new();
+        assert!(extract_phase_markers(&mut pending, b"booting\nWT_IMAGE_PH").is_empty());
+        assert_eq!(
+            extract_phase_markers(
+                &mut pending,
+                b"ASE=installing packages\r\nordinary output\nWT_IMAGE_PHASE=validating"
+            ),
+            ["installing packages"]
+        );
+        assert_eq!(
+            extract_phase_markers(&mut pending, b" services\n"),
+            ["validating services"]
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn console_log_forwards_only_appended_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("console.log");
+        fs::write(&path, b"first\nWT_IMAGE_PHASE=booting\n").unwrap();
+        let mut console = ConsoleLog::open(&path).unwrap();
+        let mut output = Vec::new();
+
+        let (had_output, phases) = console.drain(&mut output).unwrap();
+        assert!(had_output);
+        assert_eq!(output, b"first\nWT_IMAGE_PHASE=booting\n");
+        assert_eq!(phases, ["booting"]);
+
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"second")
+            .unwrap();
+        let (had_output, phases) = console.drain(&mut output).unwrap();
+        assert!(had_output);
+        assert!(phases.is_empty());
+        assert_eq!(output, b"first\nWT_IMAGE_PHASE=booting\nsecond");
+
+        let (had_output, phases) = console.drain(&mut output).unwrap();
+        assert!(!had_output);
+        assert!(phases.is_empty());
     }
 }

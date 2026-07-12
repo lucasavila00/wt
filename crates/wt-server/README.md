@@ -90,7 +90,8 @@ The installer:
 - Creates and verifies configured directories.
 - Owns the worlds directory as the server user and `kvm`, mode `2770`, with search-only ACL access for `libvirt-qemu`.
 - Downloads and verifies the pinned Ubuntu source image.
-- Builds the Docker/Compose-ready golden image in a temporary KVM guest.
+- Builds the Docker/Compose-ready golden image in a temporary KVM guest and
+  streams its cloud-init console output with phase timings.
 - Installs `wt` and `wt-server` into `install.binary_dir`.
 - Installs the validated server config at `/etc/wt/server.toml`.
 
