@@ -1604,6 +1604,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "insta",
  "nix",
  "serde",
  "serde_json",

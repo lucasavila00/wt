@@ -16,14 +16,14 @@ pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     require_server_user()?;
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
-    require_installed_config_compatible(&config_bytes)?;
+    require_installed_config_compatible(config_path, &config_bytes)?;
     prepare_host(runner, &config)?;
     registry_cache::ensure(runner, &config)?;
     image::ensure(runner, &config, &config_bytes)?;
     println!("Building and installing wt binaries...");
     build_and_install_binaries(runner, &config)?;
     println!("Installing server config at {SERVER_CONFIG_PATH}...");
-    install_config(runner, &config_bytes)?;
+    install_config(runner, config_path, &config_bytes)?;
     println!("installed wt server from {}", config_path.display());
     Ok(())
 }
@@ -158,7 +158,7 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
     Ok(())
 }
 
-fn require_installed_config_compatible(config_bytes: &[u8]) -> Result<()> {
+fn require_installed_config_compatible(config_path: &Path, config_bytes: &[u8]) -> Result<()> {
     let path = Path::new(SERVER_CONFIG_PATH);
     if !path.exists() {
         return Ok(());
@@ -166,14 +166,41 @@ fn require_installed_config_compatible(config_bytes: &[u8]) -> Result<()> {
     // The server file is a complete contract. Byte-level differences are drift.
     let installed = fs::read(path).with_context(|| format!("read {SERVER_CONFIG_PATH}"))?;
     if installed != config_bytes {
-        bail!("installed config differs from requested config: {SERVER_CONFIG_PATH}");
+        bail!("{}", config_drift_message(config_path));
     }
     require_root_file(path, 0o644)
 }
 
-fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
+fn config_drift_message(requested: &Path) -> String {
+    let requested = requested.display();
+    format!(
+        "\
+installed config differs from requested config
+
+Installed: {SERVER_CONFIG_PATH}
+Requested: {requested}
+
+{SERVER_CONFIG_PATH} is a complete contract. Byte-level differences are drift;
+the installer will not overwrite or merge it.
+
+If the change was accidental, reinstall with the installed file (or make your
+input match it byte-for-byte):
+  scripts/install-server --config {SERVER_CONFIG_PATH}
+  # or: diff -u {SERVER_CONFIG_PATH} {requested}
+
+If you intentionally changed the config, clear all WT server state, then reinstall:
+  make clear   # or: scripts/clear-server
+  scripts/install-server --config {requested}
+
+`make clear` destroys every wt-* domain and removes installed WT state
+(config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
+It does not uninstall packages or binaries."
+    )
+}
+
+fn install_config(runner: &impl Runner, config_path: &Path, config_bytes: &[u8]) -> Result<()> {
     if Path::new(SERVER_CONFIG_PATH).exists() {
-        return require_installed_config_compatible(config_bytes);
+        return require_installed_config_compatible(config_path, config_bytes);
     }
     let directory = Path::new(SERVER_CONFIG_PATH)
         .parent()
@@ -205,6 +232,35 @@ fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn config_drift_message_explains_recovery() {
+        insta::assert_snapshot!(
+            config_drift_message(Path::new("./server.toml")),
+            @"
+        installed config differs from requested config
+
+        Installed: /etc/wt/server.toml
+        Requested: ./server.toml
+
+        /etc/wt/server.toml is a complete contract. Byte-level differences are drift;
+        the installer will not overwrite or merge it.
+
+        If the change was accidental, reinstall with the installed file (or make your
+        input match it byte-for-byte):
+          scripts/install-server --config /etc/wt/server.toml
+          # or: diff -u /etc/wt/server.toml ./server.toml
+
+        If you intentionally changed the config, clear all WT server state, then reinstall:
+          make clear   # or: scripts/clear-server
+          scripts/install-server --config ./server.toml
+
+        `make clear` destroys every wt-* domain and removes installed WT state
+        (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
+        It does not uninstall packages or binaries.
+        "
+        );
+    }
 
     #[test]
     fn validates_server_owned_git_credentials() {
