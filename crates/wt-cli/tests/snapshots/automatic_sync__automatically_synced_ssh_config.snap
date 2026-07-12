@@ -24,7 +24,7 @@ Host local.repo-feature
   RequestTTY force
   RemoteCommand /usr/local/bin/wt-app-shell
 
-Host local.repo-feature-vs local.repo-feature-vc
+Host local.repo-feature-vs
   HostName wt-app
   User vscode
   Port 2222
@@ -54,7 +54,7 @@ Host repo-feature
   RequestTTY force
   RemoteCommand /usr/local/bin/wt-app-shell
 
-Host repo-feature-vs repo-feature-vc
+Host repo-feature-vs
   HostName wt-app
   User vscode
   Port 2222

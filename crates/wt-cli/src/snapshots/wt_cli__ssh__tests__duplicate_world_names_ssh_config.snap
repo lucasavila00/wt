@@ -24,7 +24,7 @@ Host local.same
   RequestTTY force
   RemoteCommand /usr/local/bin/wt-app-shell
 
-Host local.same-vs local.same-vc
+Host local.same-vs
   HostName wt-app
   User vscode
   Port 2222
@@ -56,7 +56,7 @@ Host lab.same
   RequestTTY force
   RemoteCommand /usr/local/bin/wt-app-shell
 
-Host lab.same-vs lab.same-vc
+Host lab.same-vs
   HostName wt-app
   User vscode
   Port 2222
