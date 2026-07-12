@@ -16,6 +16,8 @@ const BUNDLE_DIR: &str = "/workspace/.git/wt";
 const CLONE_CREDENTIALS_DIR: &str = "/run/wt-git";
 const CLONE_ASKPASS: &str = "/tmp/wt-git-askpass";
 const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
+const STAGE_CREDENTIAL_MODES: &str = "chmod 0700 \"$1\" && chmod 0600 \"$2\" \"$3\" \"$4\"";
+const FINALIZE_BUNDLE: &str = "chmod 0444 \"$1\" \"$2\" && chmod 0555 \"$3\" && exec /usr/bin/git -c safe.directory=/workspace -C /workspace config --local core.sshCommand \"$4\"";
 const SSH_WRAPPER: &[u8] = br#"#!/bin/sh
 set -eu
 directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -144,17 +146,12 @@ fn stage_clone_credentials(
     guest_agent::run_phase(
         domain,
         "Git credentials",
-        "/bin/chmod",
-        &["0700", CLONE_ASKPASS],
-        deadline,
-        log,
-    )?;
-    guest_agent::run_phase(
-        domain,
-        "Git credentials",
-        "/bin/chmod",
+        "/bin/sh",
         &[
-            "0600",
+            "-c",
+            STAGE_CREDENTIAL_MODES,
+            "wt-git-credentials",
+            CLONE_ASKPASS,
             "/run/wt-git/identity",
             "/run/wt-git/known_hosts",
             "/run/wt-git/passphrase",
@@ -222,35 +219,14 @@ fn install_persistent_bundle(
     guest_agent::run_phase(
         domain,
         "Git credentials",
-        "/bin/chmod",
-        &[
-            "0444",
-            &format!("{BUNDLE_DIR}/identity"),
-            &format!("{BUNDLE_DIR}/known_hosts"),
-        ],
-        deadline,
-        log,
-    )?;
-    guest_agent::run_phase(
-        domain,
-        "Git credentials",
-        "/bin/chmod",
-        &["0555", &format!("{BUNDLE_DIR}/ssh")],
-        deadline,
-        log,
-    )?;
-    guest_agent::run_phase(
-        domain,
-        "Git credentials",
-        "/usr/bin/git",
+        "/bin/sh",
         &[
             "-c",
-            "safe.directory=/workspace",
-            "-C",
-            "/workspace",
-            "config",
-            "--local",
-            "core.sshCommand",
+            FINALIZE_BUNDLE,
+            "wt-git-bundle",
+            &format!("{BUNDLE_DIR}/identity"),
+            &format!("{BUNDLE_DIR}/known_hosts"),
+            &format!("{BUNDLE_DIR}/ssh"),
             SSH_COMMAND,
         ],
         deadline,

@@ -10,6 +10,7 @@ use virt::domain::Domain;
 
 const OUTPUT_TAIL_LIMIT: usize = 64 * 1024;
 const FILE_READ_SIZE: usize = 48 * 1024;
+const EXEC_POLL_DELAYS_MS: [u64; 5] = [50, 100, 200, 400, 500];
 
 pub(super) struct Output {
     exit_code: i64,
@@ -81,6 +82,7 @@ fn exec_streaming(
         shell_args.extend_from_slice(args);
         let pid = start_exec(domain, "/bin/sh", &shell_args, false)?;
         let mut tail = TailBuffer::default();
+        let mut poll = PollBackoff::default();
 
         loop {
             let exit_code = exec_status(domain, pid)?;
@@ -95,7 +97,7 @@ fn exec_streaming(
                 return Err(WorkerError::new("recipe deadline exceeded"));
             }
             clear_file_eof(domain, handle)?;
-            std::thread::sleep(Duration::from_millis(500));
+            poll.sleep();
         }
     })();
     close_file(domain, handle);
@@ -115,6 +117,7 @@ pub(super) fn exec(
         return Err(WorkerError::new("recipe deadline exceeded"));
     }
     let pid = start_exec(domain, path, args, true)?;
+    let mut poll = PollBackoff::default();
 
     loop {
         if let Some(result) = read_exec_status(domain, pid)? {
@@ -127,7 +130,24 @@ pub(super) fn exec(
         if Instant::now() >= deadline {
             return Err(WorkerError::new("recipe deadline exceeded"));
         }
-        std::thread::sleep(Duration::from_millis(500));
+        poll.sleep();
+    }
+}
+
+#[derive(Default)]
+struct PollBackoff {
+    index: usize,
+}
+
+impl PollBackoff {
+    fn next_delay(&mut self) -> Duration {
+        let delay = EXEC_POLL_DELAYS_MS[self.index.min(EXEC_POLL_DELAYS_MS.len() - 1)];
+        self.index = self.index.saturating_add(1);
+        Duration::from_millis(delay)
+    }
+
+    fn sleep(&mut self) {
+        std::thread::sleep(self.next_delay());
     }
 }
 
@@ -320,7 +340,17 @@ fn error_context(action: &str, error: impl std::fmt::Display) -> WorkerError {
 
 #[cfg(test)]
 mod tests {
-    use super::{forward_chunk, tail_output, TailBuffer, OUTPUT_TAIL_LIMIT};
+    use super::{forward_chunk, tail_output, PollBackoff, TailBuffer, OUTPUT_TAIL_LIMIT};
+
+    #[test]
+    fn command_polling_backs_off_to_500_milliseconds() {
+        let mut poll = PollBackoff::default();
+        let delays = (0..7)
+            .map(|_| poll.next_delay().as_millis())
+            .collect::<Vec<_>>();
+
+        assert_eq!(delays, [50, 100, 200, 400, 500, 500, 500]);
+    }
 
     #[test]
     fn rolling_tail_keeps_only_the_last_64_kib() {
