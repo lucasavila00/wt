@@ -36,8 +36,7 @@ fn daemon_connection_error(socket_path: &Path, error: std::io::Error) -> anyhow:
             "permission denied connecting to wt-server daemon at {path}: {error}\n\
              run the command as the user that owns wt-server.service and {path}"
         ),
-        _ => anyhow::Error::new(error)
-            .context(format!("connect to wt-server daemon at {path}")),
+        _ => anyhow::Error::new(error).context(format!("connect to wt-server daemon at {path}")),
     }
 }
 
