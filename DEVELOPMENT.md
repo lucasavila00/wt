@@ -13,14 +13,11 @@ scripts/install-server --config server-config/wt-server.development.toml
 Run as a normal user in an interactive terminal. If setup changes group
 membership, log out, log back in, and rerun it.
 
-Create `~/.wt/config.toml`:
+Install the local client config:
 
-```toml
-version = 1
-
-[[contexts]]
-name = "local"
-kind = "bare_metal_local"
+```bash
+mkdir -p ~/.wt
+cp client-config/wt.development.toml ~/.wt/config.toml
 ```
 
 Add this before every `Host` block in `~/.ssh/config`:

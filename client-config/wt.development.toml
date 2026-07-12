@@ -1,0 +1,5 @@
+version = 1
+
+[[contexts]]
+name = "local"
+kind = "bare_metal_local"

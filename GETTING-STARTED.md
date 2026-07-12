@@ -32,18 +32,11 @@ Keep the install input for future reinstalls.
 
 ## Configure a local client
 
-Create `~/.wt/config.toml`:
+Install the local client config:
 
 ```bash
 mkdir -p ~/.wt
-```
-
-```toml
-version = 1
-
-[[contexts]]
-name = "local"
-kind = "bare_metal_local"
+cp client-config/wt.development.toml ~/.wt/config.toml
 ```
 
 Add this before every `Host` block in `~/.ssh/config`:
