@@ -1,6 +1,7 @@
-FROM mcr.microsoft.com/devcontainers/rust:2-1-bookworm
+FROM rust:1-bookworm
 
-RUN apt-get update \
+RUN rustup component add clippy rustfmt \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         libvirt-dev \
         pkg-config \
