@@ -352,7 +352,10 @@ $SUDO rm -f /var/lib/wt/claim.json
             return Err(WorkerError::new("WT claim mismatch"));
         }
         let host_keys = lines(&self.capture("cat /etc/ssh/ssh_host_*_key.pub\n", &[])?);
-        let info = self.capture("/usr/local/bin/wt-app-info\n", &[])?;
+        let info = self.capture(
+            "if [ \"$(id -u)\" -ne 0 ]; then exec sudo -n /usr/local/bin/wt-app-info; else exec /usr/local/bin/wt-app-info; fi\n",
+            &[],
+        )?;
         let target: serde_json::Value = serde_json::from_slice(&info)
             .map_err(|e| WorkerError::new(format!("decode app target: {e}")))?;
         let user = target["user"]
@@ -407,7 +410,7 @@ Subsystem sftp internal-sftp
 EOF
 features='{"ghcr.io/devcontainers/features/sshd:1.1.0":{}}'
 $SUDO -u wt env HOME=/home/wt devcontainer up --log-level debug --log-format text --workspace-folder /workspace --additional-features "$features" --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config
-info=$(/usr/local/bin/wt-app-info)
+info=$($SUDO /usr/local/bin/wt-app-info)
 user=$(printf '%s' "$info" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).user))')
 test -n "$user"
 cat /home/wt/.ssh/authorized_keys /var/lib/wt-app-ssh/session_identity.pub | $SUDO tee "/var/lib/wt-app-ssh/public/authorized_keys/$user" >/dev/null
