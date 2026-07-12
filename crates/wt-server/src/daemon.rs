@@ -16,13 +16,29 @@ pub fn proxy(socket_path: &Path, mut input: impl Read, mut output: impl Write) -
         .read_to_end(&mut request)
         .context("read API request")?;
     let mut stream = UnixStream::connect(socket_path)
-        .with_context(|| format!("connect to wt-server daemon at {}", socket_path.display()))?;
+        .map_err(|error| daemon_connection_error(socket_path, error))?;
     stream.write_all(&request).context("send API request")?;
     stream
         .shutdown(std::net::Shutdown::Write)
         .context("finish API request")?;
     std::io::copy(&mut stream, &mut output).context("receive API response")?;
     Ok(())
+}
+
+fn daemon_connection_error(socket_path: &Path, error: std::io::Error) -> anyhow::Error {
+    let path = socket_path.display();
+    match error.kind() {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => anyhow::anyhow!(
+            "wt-server daemon is unavailable at {path}: {error}\n\
+             check `systemctl status wt-server.service` and `journalctl -u wt-server.service`"
+        ),
+        std::io::ErrorKind::PermissionDenied => anyhow::anyhow!(
+            "permission denied connecting to wt-server daemon at {path}: {error}\n\
+             run the command as the user that owns wt-server.service and {path}"
+        ),
+        _ => anyhow::Error::new(error)
+            .context(format!("connect to wt-server daemon at {path}")),
+    }
 }
 
 pub fn serve(
@@ -151,5 +167,21 @@ mod tests {
             wt_api::Outcome::Error { error } if error.code == ErrorCode::InvalidRequest
         ));
         thread.join().unwrap();
+    }
+
+    #[test]
+    fn missing_daemon_socket_has_actionable_diagnostics() {
+        let temp = tempfile::tempdir().unwrap();
+        let error = proxy(
+            &temp.path().join("missing.sock"),
+            std::io::empty(),
+            std::io::sink(),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("wt-server daemon is unavailable"));
+        assert!(error.contains("systemctl status wt-server.service"));
+        assert!(error.contains("journalctl -u wt-server.service"));
     }
 }

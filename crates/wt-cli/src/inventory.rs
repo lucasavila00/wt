@@ -1,5 +1,5 @@
 use crate::config::{ClientConfig, Context};
-use crate::transport;
+use crate::transport::{self, ContextError};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use wt_api::{ApiRequest, Instance, InstanceName, Operation, Response};
@@ -10,22 +10,32 @@ pub struct ContextInstance {
     pub instance: Instance,
 }
 
+#[derive(Debug)]
+pub struct InventoryReport {
+    pub instances: Vec<ContextInstance>,
+    pub failures: Vec<ContextError>,
+}
+
 impl ContextInstance {
     pub fn qualified_name(&self) -> String {
         format!("{}.{}", self.context, self.instance.name)
     }
 }
 
-pub fn list_all(config: &ClientConfig) -> Result<Vec<ContextInstance>> {
+pub fn list_all(config: &ClientConfig) -> InventoryReport {
     let mut all = Vec::new();
+    let mut failures = Vec::new();
     for context in &config.contexts {
-        let response = transport::call(context, &ApiRequest::new(Operation::List))
-            .map_err(|error| anyhow::anyhow!("context {}: {error:#}", context.name))?;
+        let response = match transport::call(context, &ApiRequest::new(Operation::List)) {
+            Ok(response) => response,
+            Err(error) => {
+                failures.push(error);
+                continue;
+            }
+        };
         let Response::Instances { instances } = response else {
-            bail!(
-                "context {} returned the wrong response to list",
-                context.name
-            );
+            failures.push(transport::wrong_response(context, "list"));
+            continue;
         };
         all.extend(instances.into_iter().map(|instance| ContextInstance {
             context: context.name.clone(),
@@ -35,7 +45,10 @@ pub fn list_all(config: &ClientConfig) -> Result<Vec<ContextInstance>> {
     all.sort_by(|left, right| {
         (&left.context, &left.instance.name).cmp(&(&right.context, &right.instance.name))
     });
-    Ok(all)
+    InventoryReport {
+        instances: all,
+        failures,
+    }
 }
 
 pub fn parse_target<'a>(

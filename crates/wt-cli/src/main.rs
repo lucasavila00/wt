@@ -6,6 +6,7 @@ use std::io::Write as _;
 use wt_api::{ApiRequest, CreateInstance, ErrorCode, GitPassphrase, Operation, Outcome, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
+use wt_cli::transport::ContextError;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt")]
@@ -66,13 +67,7 @@ fn run() -> Result<()> {
             } else {
                 *instance
             };
-            if let Err(error) = sync_inventory(&config) {
-                bail!(
-                    "created {}.{} but SSH inventory was not changed: {error:#}",
-                    context.name,
-                    instance.name
-                );
-            }
+            warn_if_sync_skipped(&config)?;
             println!(
                 "{}.{}\t{}\t{}",
                 context.name,
@@ -91,15 +86,27 @@ fn run() -> Result<()> {
             }
         }
         Command::Ls => {
-            let instances = inventory::list_all(&config)?;
-            wt_cli::ssh::sync(&config, &instances)?;
-            print!("{}", format_instances(&instances));
+            let report = inventory::list_all(&config);
+            if report.failures.len() == config.contexts.len() {
+                return Err(context_failures(
+                    "could not list worlds because every context failed",
+                    &report.failures,
+                    None,
+                ));
+            }
+            print!("{}", format_instances(&report.instances));
+            std::io::stdout().flush()?;
+            if report.failures.is_empty() {
+                wt_cli::ssh::sync(&config, &report.instances)?;
+            } else {
+                print_context_warnings(&report.failures);
+                eprintln!(
+                    "warning: SSH inventory was not updated because the complete world list is unavailable"
+                );
+            }
         }
         Command::Rm { name } => {
-            let instances = inventory::list_all(&config)?;
-            let selected = inventory::resolve(&instances, &name)?;
-            let context = required_context(&config, &selected.context)?;
-            let world_name = selected.instance.name.clone();
+            let (context, world_name) = resolve_operation_target(&config, &name)?;
             let response = wt_cli::transport::call(
                 context,
                 &ApiRequest::new(Operation::Delete {
@@ -109,23 +116,23 @@ fn run() -> Result<()> {
             let Response::Deleted { .. } = response else {
                 bail!("helper returned the wrong response to delete");
             };
-            if let Err(error) = sync_inventory(&config) {
-                bail!(
-                    "removed {}.{} but SSH inventory was not changed: {error:#}",
-                    context.name,
-                    world_name
-                );
-            }
+            warn_if_sync_skipped(&config)?;
             println!("removed {}.{}", context.name, world_name);
         }
         Command::Logs { name } => {
-            let instances = inventory::list_all(&config)?;
-            let selected = inventory::resolve(&instances, &name)?;
-            let context = required_context(&config, &selected.context)?;
-            follow_logs(context, &selected.instance.name)?;
+            let (context, world_name) = resolve_operation_target(&config, &name)?;
+            follow_logs(context, &world_name)?;
         }
         Command::Sync => {
-            let path = sync_inventory(&config)?;
+            let report = inventory::list_all(&config);
+            if !report.failures.is_empty() {
+                return Err(context_failures(
+                    "SSH inventory was not updated because the complete world list is unavailable",
+                    &report.failures,
+                    None,
+                ));
+            }
+            let path = wt_cli::ssh::sync(&config, &report.instances)?;
             println!("updated {}", path.display());
         }
     }
@@ -303,9 +310,64 @@ fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Cont
         .ok_or_else(|| anyhow::anyhow!("unknown context: {name}"))
 }
 
-fn sync_inventory(config: &ClientConfig) -> Result<std::path::PathBuf> {
-    let instances: Vec<ContextInstance> = inventory::list_all(config)?;
-    wt_cli::ssh::sync(config, &instances)
+fn resolve_operation_target<'a>(
+    config: &'a ClientConfig,
+    target: &str,
+) -> Result<(&'a Context, wt_api::InstanceName)> {
+    let (qualified_context, world_name) = inventory::parse_target(config, target)?;
+    if let Some(context) = qualified_context {
+        return Ok((context, world_name));
+    }
+    if config.contexts.len() == 1 {
+        return Ok((&config.contexts[0], world_name));
+    }
+
+    let report = inventory::list_all(config);
+    if !report.failures.is_empty() {
+        return Err(context_failures(
+            &format!("cannot safely resolve {target:?} while a context is unavailable"),
+            &report.failures,
+            Some("use a qualified name such as `context.world` to contact one context directly"),
+        ));
+    }
+    let selected = inventory::resolve(&report.instances, target)?;
+    let context = required_context(config, &selected.context)?;
+    Ok((context, selected.instance.name.clone()))
+}
+
+fn warn_if_sync_skipped(config: &ClientConfig) -> Result<()> {
+    let report = inventory::list_all(config);
+    if report.failures.is_empty() {
+        wt_cli::ssh::sync(config, &report.instances)?;
+    } else {
+        print_context_warnings(&report.failures);
+        eprintln!(
+            "warning: SSH inventory was not updated because the complete world list is unavailable"
+        );
+    }
+    Ok(())
+}
+
+fn print_context_warnings(failures: &[ContextError]) {
+    for failure in failures {
+        eprint!("{}", failure.diagnostic("warning"));
+    }
+}
+
+fn context_failures(
+    summary: &str,
+    failures: &[ContextError],
+    hint: Option<&str>,
+) -> anyhow::Error {
+    let mut message = summary.to_owned();
+    for failure in failures {
+        write!(message, "\n\n{}", failure.diagnostic("error").trim_end())
+            .expect("writing to a String cannot fail");
+    }
+    if let Some(hint) = hint {
+        write!(message, "\n\nhint: {hint}").expect("writing to a String cannot fail");
+    }
+    anyhow::Error::msg(message)
 }
 
 #[cfg(test)]

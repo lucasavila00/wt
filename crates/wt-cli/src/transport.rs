@@ -1,52 +1,209 @@
 use crate::config::{Context, ContextKind};
-use anyhow::{bail, Context as _, Result};
+use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use wt_api::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 use wt_command::cmd;
 
-pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
-    match call_outcome(context, request)? {
-        Outcome::Ok { response } => Ok(*response),
-        Outcome::Error { error } => bail!(format_api_error(&error)),
+#[derive(Debug)]
+pub struct ContextError {
+    pub context: String,
+    summary: String,
+    detail: Option<String>,
+    hint: String,
+}
+
+impl ContextError {
+    fn body(&self) -> String {
+        let mut output = format!(
+            "context {} could not be queried: {}\n",
+            self.context, self.summary
+        );
+        if let Some(detail) = &self.detail {
+            for line in detail.lines() {
+                writeln!(output, "  {line}").expect("writing to a String cannot fail");
+            }
+        }
+        write!(output, "  hint: {}", self.hint).expect("writing to a String cannot fail");
+        output
+    }
+
+    pub fn diagnostic(&self, level: &str) -> String {
+        let body = self.body();
+        let mut lines = body.lines();
+        let mut output = format!("{level}: {}\n", lines.next().unwrap_or_default());
+        for line in lines {
+            writeln!(output, "{line}").expect("writing to a String cannot fail");
+        }
+        output
     }
 }
 
-pub fn call_outcome(context: &Context, request: &ApiRequest) -> Result<Outcome> {
+impl std::fmt::Display for ContextError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.body())
+    }
+}
+
+impl std::error::Error for ContextError {}
+
+pub fn call(
+    context: &Context,
+    request: &ApiRequest,
+) -> std::result::Result<Response, ContextError> {
+    match call_outcome(context, request)? {
+        Outcome::Ok { response } => Ok(*response),
+        Outcome::Error { error } => Err(context_error(
+            context,
+            "server rejected the request",
+            Some(format_api_error(&error)),
+            server_hint(context),
+        )),
+    }
+}
+
+pub fn call_outcome(
+    context: &Context,
+    request: &ApiRequest,
+) -> std::result::Result<Outcome, ContextError> {
     let mut command = helper_command(context);
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // Provisioning progress belongs on stderr so stdout remains the JSON protocol.
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("start helper for context {}", context.name))?;
-    serde_json::to_writer(
-        child
-            .stdin
-            .as_mut()
-            .context("helper stdin is unavailable")?,
-        request,
-    )?;
-    child.stdin.take().unwrap().flush()?;
-    let output = child.wait_with_output()?;
+        .map_err(|error| {
+            context_error(
+                context,
+                "could not start the context helper",
+                Some(error.to_string()),
+                start_hint(context),
+            )
+        })?;
+    let Some(stdin) = child.stdin.as_mut() else {
+        return Err(context_error(
+            context,
+            "context helper stdin is unavailable",
+            None,
+            retry_hint(context),
+        ));
+    };
+    serde_json::to_writer(stdin, request).map_err(|error| {
+        context_error(
+            context,
+            "could not send the API request",
+            Some(error.to_string()),
+            retry_hint(context),
+        )
+    })?;
+    child
+        .stdin
+        .take()
+        .expect("helper stdin was checked above")
+        .flush()
+        .map_err(|error| {
+            context_error(
+                context,
+                "could not finish the API request",
+                Some(error.to_string()),
+                retry_hint(context),
+            )
+        })?;
+    let output = child.wait_with_output().map_err(|error| {
+        context_error(
+            context,
+            "could not wait for the context helper",
+            Some(error.to_string()),
+            retry_hint(context),
+        )
+    })?;
     if !output.status.success() {
-        bail!("helper exited with {}", output.status);
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(context_error(
+            context,
+            format!("context helper exited with {}", output.status),
+            (!detail.is_empty()).then_some(detail),
+            server_hint(context),
+        ));
     }
-    let response: ApiResponse = serde_json::from_slice(&output.stdout).with_context(|| {
-        format!(
-            "decode helper response: {}",
-            String::from_utf8_lossy(&output.stdout)
+    let response: ApiResponse = serde_json::from_slice(&output.stdout).map_err(|error| {
+        context_error(
+            context,
+            "context helper returned an invalid response",
+            Some(format!(
+                "{error}; response: {}",
+                String::from_utf8_lossy(&output.stdout).trim()
+            )),
+            version_hint(context),
         )
     })?;
     if response.protocol_version != PROTOCOL_VERSION {
-        bail!(
-            "helper returned protocol version {}; expected {}",
-            response.protocol_version,
-            PROTOCOL_VERSION
-        );
+        return Err(context_error(
+            context,
+            format!(
+                "context helper returned protocol version {}; expected {}",
+                response.protocol_version, PROTOCOL_VERSION
+            ),
+            None,
+            version_hint(context),
+        ));
     }
     Ok(response.outcome)
+}
+
+fn context_error(
+    context: &Context,
+    summary: impl Into<String>,
+    detail: Option<String>,
+    hint: String,
+) -> ContextError {
+    ContextError {
+        context: context.name.clone(),
+        summary: summary.into(),
+        detail,
+        hint,
+    }
+}
+
+pub fn wrong_response(context: &Context, operation: &str) -> ContextError {
+    context_error(
+        context,
+        format!("server returned the wrong response to {operation}"),
+        None,
+        version_hint(context),
+    )
+}
+
+fn start_hint(context: &Context) -> String {
+    match &context.kind {
+        ContextKind::BareMetalLocal => {
+            "verify that `wt-server` is installed and available in PATH".to_owned()
+        }
+        ContextKind::BareMetalSsh { host } => {
+            format!("verify that OpenSSH is installed and `ssh {host}` works")
+        }
+    }
+}
+
+fn retry_hint(context: &Context) -> String {
+    match &context.kind {
+        ContextKind::BareMetalLocal => "retry the command; if it fails again, check `systemctl status wt-server.service`".to_owned(),
+        ContextKind::BareMetalSsh { host } => format!("retry the command; if it fails again, check `ssh {host}`"),
+    }
+}
+
+fn server_hint(context: &Context) -> String {
+    match &context.kind {
+        ContextKind::BareMetalLocal => "check `systemctl status wt-server.service` and `journalctl -u wt-server.service`".to_owned(),
+        ContextKind::BareMetalSsh { host } => format!("check `ssh {host}` and `ssh {host} systemctl status wt-server.service`"),
+    }
+}
+
+fn version_hint(context: &Context) -> String {
+    match &context.kind {
+        ContextKind::BareMetalLocal => "install matching `wt` and `wt-server` versions".to_owned(),
+        ContextKind::BareMetalSsh { host } => format!("install matching `wt` and `wt-server` versions on {host}"),
+    }
 }
 
 pub fn format_api_error(error: &ApiError) -> String {

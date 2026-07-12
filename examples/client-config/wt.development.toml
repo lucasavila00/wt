@@ -3,3 +3,8 @@ version = 1
 [[contexts]]
 name = "local"
 kind = "bare_metal_local"
+
+[[contexts]]
+name = "lab"
+kind = "bare_metal_ssh"
+host = "wt-server"
