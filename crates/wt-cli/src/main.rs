@@ -354,11 +354,7 @@ fn print_context_warnings(failures: &[ContextError]) {
     }
 }
 
-fn context_failures(
-    summary: &str,
-    failures: &[ContextError],
-    hint: Option<&str>,
-) -> anyhow::Error {
+fn context_failures(summary: &str, failures: &[ContextError], hint: Option<&str>) -> anyhow::Error {
     let mut message = summary.to_owned();
     for failure in failures {
         write!(message, "\n\n{}", failure.diagnostic("error").trim_end())

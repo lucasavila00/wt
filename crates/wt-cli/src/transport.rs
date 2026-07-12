@@ -187,22 +187,34 @@ fn start_hint(context: &Context) -> String {
 
 fn retry_hint(context: &Context) -> String {
     match &context.kind {
-        ContextKind::BareMetalLocal => "retry the command; if it fails again, check `systemctl status wt-server.service`".to_owned(),
-        ContextKind::BareMetalSsh { host } => format!("retry the command; if it fails again, check `ssh {host}`"),
+        ContextKind::BareMetalLocal => {
+            "retry the command; if it fails again, check `systemctl status wt-server.service`"
+                .to_owned()
+        }
+        ContextKind::BareMetalSsh { host } => {
+            format!("retry the command; if it fails again, check `ssh {host}`")
+        }
     }
 }
 
 fn server_hint(context: &Context) -> String {
     match &context.kind {
-        ContextKind::BareMetalLocal => "check `systemctl status wt-server.service` and `journalctl -u wt-server.service`".to_owned(),
-        ContextKind::BareMetalSsh { host } => format!("check `ssh {host}` and `ssh {host} systemctl status wt-server.service`"),
+        ContextKind::BareMetalLocal => {
+            "check `systemctl status wt-server.service` and `journalctl -u wt-server.service`"
+                .to_owned()
+        }
+        ContextKind::BareMetalSsh { host } => {
+            format!("check `ssh {host}` and `ssh {host} systemctl status wt-server.service`")
+        }
     }
 }
 
 fn version_hint(context: &Context) -> String {
     match &context.kind {
         ContextKind::BareMetalLocal => "install matching `wt` and `wt-server` versions".to_owned(),
-        ContextKind::BareMetalSsh { host } => format!("install matching `wt` and `wt-server` versions on {host}"),
+        ContextKind::BareMetalSsh { host } => {
+            format!("install matching `wt` and `wt-server` versions on {host}")
+        }
     }
 }
 
