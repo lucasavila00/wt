@@ -222,7 +222,11 @@ impl LibvirtWorker {
             recipe_deadline,
             log,
         )?;
-        report_phase(log, "app shell and Git credential verification", phase_started)?;
+        report_phase(
+            log,
+            "app shell and Git credential verification",
+            phase_started,
+        )?;
         log_line(log, &format!("World {} is ready.", spec.name))?;
         Ok(World {
             guest_ip: guest_ip.clone(),
@@ -637,11 +641,7 @@ fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
 }
 
-fn report_phase(
-    log: &mut dyn Write,
-    label: &str,
-    started: Instant,
-) -> Result<(), WorkerError> {
+fn report_phase(log: &mut dyn Write, label: &str, started: Instant) -> Result<(), WorkerError> {
     log_line(
         log,
         &format!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64()),

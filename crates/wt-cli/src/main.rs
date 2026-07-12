@@ -183,10 +183,7 @@ fn create_with_passphrase_attempts(
     unreachable!("the final passphrase attempt always returns")
 }
 
-fn follow_logs(
-    context: &Context,
-    name: &wt_api::InstanceName,
-) -> Result<wt_api::Instance> {
+fn follow_logs(context: &Context, name: &wt_api::InstanceName) -> Result<wt_api::Instance> {
     let mut offset = 0_u64;
     loop {
         let response = wt_cli::transport::call(

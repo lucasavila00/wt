@@ -13,7 +13,7 @@ Parent: [architecture](./README.md). Implementation:
 | Provisioning | QEMU guest agent |
 | Network | Libvirt DHCP identified by guest MAC |
 | Access | OpenSSH as non-root user `wt` |
-| Runtime | Docker, Compose, tmux, Dev Container CLI |
+| Runtime | Docker, Buildx, Compose, tmux, Dev Container CLI |
 
 No KVM emulation fallback. No public control-plane listener.
 

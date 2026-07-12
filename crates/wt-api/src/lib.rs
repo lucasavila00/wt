@@ -97,9 +97,15 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
-    Instance { instance: Box<Instance> },
-    Instances { instances: Vec<Instance> },
-    Deleted { name: InstanceName },
+    Instance {
+        instance: Box<Instance>,
+    },
+    Instances {
+        instances: Vec<Instance>,
+    },
+    Deleted {
+        name: InstanceName,
+    },
     Logs {
         chunk: String,
         next_offset: u64,

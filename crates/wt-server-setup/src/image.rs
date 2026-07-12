@@ -251,8 +251,8 @@ fn build_image_inner(
         .filter(|line| !line.trim().is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if packages.len() != 8 {
-        bail!("image package manifest must contain exactly eight packages");
+    if packages.len() != 9 {
+        bail!("image package manifest must contain exactly nine packages");
     }
     println!("Verified packages: {}", packages.join(", "));
 
@@ -324,6 +324,7 @@ bootcmd:
 package_update: true
 packages:
   - docker.io
+  - docker-buildx
   - docker-compose-v2
   - qemu-guest-agent
   - git
@@ -335,12 +336,13 @@ runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
+  - docker buildx version
   - docker compose version
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -529,7 +531,7 @@ pub(crate) fn verify_installed_image(
         || manifest.recipe_version != IMAGE_RECIPE_VERSION
         || manifest.source_sha256 != config.image.source_sha256.to_ascii_lowercase()
         || manifest.config_sha256 != sha_bytes(config_bytes)
-        || manifest.packages.len() != 8
+        || manifest.packages.len() != 9
         || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
     {
         bail!("installed image provenance differs from requested config");
@@ -621,10 +623,14 @@ mod tests {
     }
 
     #[test]
-    fn image_recipe_installs_and_records_tmux() {
+    fn image_recipe_installs_and_records_runtime_tools() {
         let config = cloud_config();
+        assert!(config.contains("  - docker-buildx\n"));
         assert!(config.contains("  - tmux\n"));
-        assert!(config.contains("nodejs npm tmux | sort > /var/lib/wt-image-packages"));
+        assert!(config.contains("  - docker buildx version\n"));
+        assert!(config.contains(
+            "docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages"
+        ));
     }
 
     #[test]

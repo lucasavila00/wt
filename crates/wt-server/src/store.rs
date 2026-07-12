@@ -250,8 +250,15 @@ impl Store {
         let changed = transaction.execute(
             "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
              ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
-            params![id.to_string(), InstanceStatus::Running.to_string(), guest_ip,
-                ssh.user, ssh.host, ssh.port, host_keys],
+            params![
+                id.to_string(),
+                InstanceStatus::Running.to_string(),
+                guest_ip,
+                ssh.user,
+                ssh.host,
+                ssh.port,
+                host_keys
+            ],
         )?;
         if changed == 0 {
             return Err(StoreError::NotFound);
