@@ -78,7 +78,7 @@ fn run() -> Result<()> {
             if let Some(ssh) = &instance.ssh {
                 println!("\nApp shell: ssh {}.{}", context.name, instance.name);
                 println!(
-                    "VS Code / raw app SSH: ssh {}.{}-dc",
+                    "VS Code / raw app SSH: ssh {}.{}-vs",
                     context.name, instance.name
                 );
                 println!("Guest host: ssh {}.{}-host", context.name, instance.name);

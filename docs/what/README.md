@@ -65,7 +65,7 @@ Short names work when globally unique. Git sources use `ssh://...` or
    opens a separate guest-to-app SSH connection with a guest-held session key.
 4. The pane opens a login shell at the mounted workspace.
 
-Both `NAME` and `NAME-dc` require the injected app SSH server. `NAME` does not
+Both `NAME` and `NAME-vs` require the injected app SSH server. `NAME` does not
 need a TCP proxy: `wt-app-pane` runs inside the guest, where it can connect
 directly to the app's private Docker address.
 
@@ -74,7 +74,7 @@ session programs do not need to be provided by the devcontainer. If the
 devcontainer stops, the pane's SSH connection ends; new panes resolve the
 current container when it is running again.
 
-### `ssh NAME-dc`
+### `ssh NAME-vs`
 
 1. The workstation's main OpenSSH client starts a proxy command.
 2. The proxy command opens its own SSH connection to the guest and runs
@@ -100,7 +100,7 @@ server and verifies the app host key.
 | Alias | Main SSH endpoint | App login key | Behavior |
 |-------|-------------------|---------------|----------|
 | `NAME` | Guest SSH server | Guest-held session key | Guest-hosted persistent session; panes enter the app |
-| `NAME-dc` | App SSH server through the guest proxy | Workstation's world key | Direct app SSH |
+| `NAME-vs` | App SSH server through the guest proxy | Workstation's world key | Direct app SSH |
 | `NAME-host` | Guest SSH server | Not applicable | Direct guest SSH |
 
 Remote `wt` commands use the server's existing SSH service to run `wt-server`.

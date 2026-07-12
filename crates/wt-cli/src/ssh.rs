@@ -58,7 +58,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             proxy_jump,
         );
         let app_common = format!(
-            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-dc\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
             app_ssh.user,
             app_ssh.port,
             qualified,
@@ -67,12 +67,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             qualified,
         );
         config.push_str(&format!(
-            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-dc\n{app_common}",
+            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
             qualified, qualified, qualified,
         ));
         if counts.get(instance.name.as_str()) == Some(&1) {
             config.push_str(&format!(
-                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-dc\n{app_common}",
+                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
                 instance.name, instance.name, instance.name,
             ));
         }
@@ -85,7 +85,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             }
             known_hosts.push_str(&format!("{qualified}-host {kind} {data}\n"));
         }
-        let app_known_name = format!("{qualified}-dc");
+        let app_known_name = format!("{qualified}-vs");
         for key in &app_ssh.host_keys {
             let mut fields = key.split_whitespace();
             let kind = fields.next().unwrap_or_default();
@@ -200,7 +200,7 @@ mod tests {
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host repo-feature-host\n"));
         assert!(managed.contains("Host repo-feature\n"));
-        assert!(managed.contains("Host repo-feature-dc\n"));
+        assert!(managed.contains("Host repo-feature-vs\n"));
         assert_eq!(managed.matches("RemoteCommand ").count(), 2);
         assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
         assert!(managed.contains(&format!(
@@ -223,7 +223,7 @@ mod tests {
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
         assert!(known_hosts.contains("AAAAREPLACEMENT"));
         assert!(known_hosts.contains("AAAAAPPLICATION"));
-        assert!(known_hosts.contains("local.repo-feature-dc ssh-ed25519"));
+        assert!(known_hosts.contains("local.repo-feature-vs ssh-ed25519"));
         assert!(!known_hosts.contains("AAAATEST"));
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();

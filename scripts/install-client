@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if ! command -v cargo >/dev/null; then
+    echo "Rust stable via rustup is required" >&2
+    exit 1
+fi
+
+cd "$root"
+cargo install --locked --force --path crates/wt-cli

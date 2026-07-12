@@ -91,7 +91,7 @@ Managed aliases:
 | Alias | Target |
 |-------|--------|
 | `NAME` | Persistent app session |
-| `NAME-dc` | Devcontainer; use for VS Code Remote-SSH |
+| `NAME-vs` | Devcontainer; use for VS Code Remote-SSH |
 | `NAME-host` | Guest shell and recovery |
 
 Remove the world:
@@ -138,8 +138,12 @@ Install the client:
 
 ```bash
 git clone https://github.com/lucasavila00/wt.git
-cargo install --path wt/crates/wt-cli
+wt/scripts/install-client
 ```
+
+Rerun `scripts/install-client` from the checkout after updating it. The script
+builds and replaces only the local `wt` client; it does not require KVM or alter
+the remote server.
 
 Create `~/.wt/config.toml`:
 

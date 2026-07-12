@@ -12,6 +12,17 @@ The `wt` client.
 
 The client does not run libvirt, Docker, or provisioning.
 
+## Install
+
+From the workspace checkout:
+
+```text
+scripts/install-client
+```
+
+The script builds and replaces only the `wt` client in Cargo's binary directory.
+It does not install or change the server.
+
 ## Run
 
 ```text

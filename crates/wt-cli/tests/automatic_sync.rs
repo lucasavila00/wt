@@ -136,7 +136,7 @@ esac
     assert!(managed.contains("Host repo-feature\n"));
     assert!(managed.contains("Host local.repo-feature\n"));
     assert!(managed.contains("Host repo-feature-host\n"));
-    assert!(managed.contains("Host repo-feature-dc\n"));
+    assert!(managed.contains("Host repo-feature-vs\n"));
     assert!(managed.contains("ProxyCommand ssh -F"));
     assert!(managed.contains("local.repo-feature-host /usr/local/bin/wt-app-proxy"));
     assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
