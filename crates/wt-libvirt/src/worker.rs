@@ -288,16 +288,9 @@ impl LibvirtWorker {
         guest_ip: &str,
         expected: &[String],
     ) -> Result<(), WorkerError> {
-        let output = cmd!(
-            "/usr/bin/ssh-keyscan",
-            "-T",
-            "5",
-            "-p",
-            "22",
-            guest_ip,
-        )
-        .output()
-        .map_err(|error| worker_error("scan guest SSH host keys", error))?;
+        let output = cmd!("/usr/bin/ssh-keyscan", "-T", "5", "-p", "22", guest_ip,)
+            .output()
+            .map_err(|error| worker_error("scan guest SSH host keys", error))?;
         let presented = String::from_utf8_lossy(&output.stdout);
         if host_keys_match(expected, &presented) {
             return Ok(());
@@ -330,10 +323,9 @@ impl LibvirtWorker {
             if name == backend_id || !name.starts_with("wt-") {
                 continue;
             }
-            let Ok(interfaces) = domain.interface_addresses(
-                virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT,
-                0,
-            ) else {
+            let Ok(interfaces) =
+                domain.interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, 0)
+            else {
                 continue;
             };
             if interfaces
@@ -594,14 +586,18 @@ fn normalized_host_keys(lines: &str) -> BTreeSet<String> {
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
             let first = fields.next()?;
-            let (kind, data) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
+            let (kind, data) = if is_host_key_kind(first) {
                 (first, fields.next()?)
             } else {
                 (fields.next()?, fields.next()?)
             };
-            Some(format!("{kind} {data}"))
+            is_host_key_kind(kind).then(|| format!("{kind} {data}"))
         })
         .collect()
+}
+
+fn is_host_key_kind(value: &str) -> bool {
+    value.starts_with("ssh-") || value.starts_with("ecdsa-") || value.starts_with("sk-")
 }
 
 fn host_keys_match(expected: &[String], presented: &str) -> bool {
@@ -686,4 +682,56 @@ fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
 
 fn report_phase(label: &str, started: Instant) {
     eprintln!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHIcU8rr2qppQ5sRKTKPoEp4dPLr+d1F7Eqog+U8AJbK";
+
+    #[test]
+    fn endpoint_keys_match_keyscan_output_without_comments() {
+        let expected = vec![format!("{KEY} guest-comment")];
+        let presented = format!("# banner\n192.0.2.2 {KEY}\n");
+
+        assert!(host_keys_match(&expected, &presented));
+        assert_eq!(
+            normalized_host_keys(&presented),
+            BTreeSet::from([KEY.to_owned()])
+        );
+    }
+
+    #[test]
+    fn mismatch_names_conflicting_domain_and_safe_recovery() {
+        let error = endpoint_identity_error(
+            "192.0.2.2",
+            &[KEY.to_owned()],
+            "",
+            &["wt-deadbeef".to_owned()],
+            Path::new("/var/lib/libvirt/images/wt"),
+        )
+        .to_string();
+
+        assert!(error.contains("SSH endpoint identity mismatch at 192.0.2.2:22"));
+        assert!(error.contains("Active WT domain(s) reporting 192.0.2.2: wt-deadbeef"));
+        assert!(error.contains("undefine wt-deadbeef --nvram"));
+        assert!(error.contains("/var/lib/libvirt/images/wt/wt-deadbeef"));
+        assert!(error.contains("use `wt rm` instead"));
+    }
+
+    #[test]
+    fn mismatch_without_known_conflict_requests_network_inspection() {
+        let error = endpoint_identity_error(
+            "192.0.2.2",
+            &[KEY.to_owned()],
+            "",
+            &[],
+            Path::new("/worlds"),
+        )
+        .to_string();
+
+        assert!(error.contains("Inspect the server's DHCP and libvirt domain state"));
+    }
 }

@@ -21,6 +21,8 @@ const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
 const IMAGE_RECIPE_VERSION: u32 = 1;
 const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
+const CLEAR_MACHINE_ID: &str =
+    "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -185,6 +187,8 @@ fn build_image_inner(
     fs::File::create_new(console).context("create image build console log")?;
     fs::set_permissions(console, fs::Permissions::from_mode(0o660))
         .context("set image build console log permissions")?;
+    // Keep the reader open before libvirt takes ownership of the serial log.
+    let mut console_log = ConsoleLog::open(console)?;
     runner.run(
         cmd!(
             "virt-install",
@@ -223,7 +227,7 @@ fn build_image_inner(
         "KVM build guest started. Waiting for cloud-init to install Docker, Compose, and guest agent."
     );
     println!("The guest will power off when ready. Timeout: 30 minutes.");
-    wait_for_shutdown(runner, console)?;
+    wait_for_shutdown(runner, &mut console_log)?;
 
     println!("Guest powered off. Verifying readiness and package versions...");
     let marker = runner.text(
@@ -260,7 +264,7 @@ fn build_image_inner(
             "-a",
             disk,
             "--run-command",
-            "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id",
+            CLEAR_MACHINE_ID,
         ),
         "clear golden image machine identity",
     )?;
@@ -403,15 +407,14 @@ fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<bool> {
     Ok(had_output)
 }
 
-fn wait_for_shutdown(runner: &impl Runner, console_path: &Path) -> Result<()> {
+fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) -> Result<()> {
     let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
-    let mut console = ConsoleLog::open(console_path)?;
     let mut last_console_output = Instant::now();
     let mut next_state_check = Instant::now();
     let mut state = String::from("starting");
     loop {
-        if drain_console(&mut console, started)? {
+        if drain_console(console, started)? {
             last_console_output = Instant::now();
         }
 
@@ -422,7 +425,7 @@ fn wait_for_shutdown(runner: &impl Runner, console_path: &Path) -> Result<()> {
                 "read image build domain state",
             )?;
             if state.trim() == "shut off" {
-                drain_console(&mut console, started)?;
+                drain_console(console, started)?;
                 println!("Guest powered off after {}s.", started.elapsed().as_secs());
                 return Ok(());
             }
@@ -624,6 +627,14 @@ mod tests {
         let config = cloud_config();
         assert!(config.contains("  - tmux\n"));
         assert!(config.contains("nodejs npm tmux | sort > /var/lib/wt-image-packages"));
+    }
+
+    #[test]
+    fn image_recipe_clears_reusable_machine_identity() {
+        assert_eq!(
+            CLEAR_MACHINE_ID,
+            "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id"
+        );
     }
 
     #[test]

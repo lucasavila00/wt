@@ -140,6 +140,10 @@ mod tests {
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
         };
+        let mut replacement_instance = instance.clone();
+        replacement_instance.id = Uuid::new_v4();
+        replacement_instance.ssh.as_mut().unwrap().host_keys =
+            vec!["ssh-ed25519 AAAAREPLACEMENT guest".into()];
         sync(&[ContextInstance {
             context: "local".into(),
             instance,
@@ -155,6 +159,14 @@ mod tests {
             managed.matches("HostKeyAlias local.repo-feature").count(),
             4
         );
+        sync(&[ContextInstance {
+            context: "local".into(),
+            instance: replacement_instance,
+        }])
+        .unwrap();
+        let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
+        assert!(known_hosts.contains("AAAAREPLACEMENT"));
+        assert!(!known_hosts.contains("AAAATEST"));
         sync(&[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
         assert_eq!(main, main_config);

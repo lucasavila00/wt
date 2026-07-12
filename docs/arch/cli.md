@@ -1,20 +1,19 @@
 # CLI (`wt`)
 
-Parent: [architecture](./README.md). Helper: [`wt-server`](../../crates/wt-server/).
+Parent: [architecture](./README.md). Server:
+[`wt-server`](../../crates/wt-server/).
 
-## Responsibilities
+## Contract
 
-| Does | Does not |
-|------|----------|
-| Dispatch to local or OpenSSH `wt-server api` | Run libvirt or Docker itself |
-| Send one JSON request over stdin | Add a public network protocol |
-| Parse one JSON response from stdout | Provision guests over SSH |
-| Create, list, and remove worlds | Export guest checkouts to the client |
-| Project guest inventory into managed OpenSSH files | Edit the user's main SSH config |
+- Local context: run `wt-server api`.
+- SSH context: run `ssh -- HOST wt-server api`.
+- Protocol: one JSON request and response over stdio.
+- Client never runs libvirt, Docker, or guest provisioning.
+- Client never edits the application checkout or main SSH config.
 
-## Client contexts
+## Config
 
-The strict client config is `~/.wt/config.toml`:
+Path: `~/.wt/config.toml`.
 
 ```toml
 version = 1
@@ -29,52 +28,30 @@ kind = "bare_metal_ssh"
 host = "wt-lab"
 ```
 
-A local context executes `wt-server api`. An SSH context executes
-`ssh -- <host> wt-server api`, using the user's existing OpenSSH configuration
-and authentication. Context names contain lowercase letters, digits, and
-internal hyphens. SSH hosts must be non-empty and must not begin with `-`.
-
-`context.world` is the stable qualified name. A short world name resolves only
-when it is globally unique. Short-name creation requires exactly one configured
-context. Aggregate list and sync operations fail if any context is unavailable.
+`context.world` is stable. Short names work only when globally unique. Creating
+with a short name requires one configured context. Multi-context operations fail
+if any context fails.
 
 ## Commands
 
-| Command | Behavior |
-|---------|----------|
-| `wt new <source> <name> [--ref <ref>]` | Select a context, allow three local passphrase attempts, clone, start the devcontainer, sync access, and print status and aliases |
-| `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
-| `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
-| `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |
+| Command | Result |
+|---------|--------|
+| `wt new SOURCE NAME [--ref REF]` | Create, sync SSH, print aliases |
+| `wt ls` | List and sync |
+| `wt rm NAME` | Destroy and sync |
+| `wt sync` | Rewrite managed SSH files |
 
-Git sources must use `ssh://` or `user@host:path`. With no `--ref`, Git uses the
-remote default branch. A supplied ref may identify an existing branch, tag, or
-commit. The client never edits the application repository or mounts its checkout
-on the client host.
+Sources are SSH only: `ssh://...` or `user@host:path`. WT retries only an invalid
+Git-key passphrase.
 
-The server validates each submitted Git-key passphrase before reserving a world
-name or starting a guest. Only passphrase rejection is retried; all other helper
-and provisioning failures end the command immediately.
+## SSH
 
-## Guest access
-
-- The guest login is the fixed non-root user `wt`; the checkout is `/workspace`.
-- The base alias always attaches to one shared persistent tmux session. Every
-  tmux window and pane enters the primary app container; SSH disconnects do not
-  terminate its shells or processes.
-- Every world has unique SSH host keys. `wt-libvirt` retrieves their public parts
-  through the QEMU guest agent, and `wt-server` persists them with the endpoint.
-- `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
-  `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
-- Managed aliases set `TERM=xterm-256color`, a broadly supported fallback for
-  clients such as Ghostty whose native terminfo may not exist in the guest.
-- After syncing, users enter a world with stock OpenSSH: `ssh <name>` or
-  `ssh <context>.<name>`.
-- Qualified aliases always exist. Short aliases exist only for globally unique
-  names. The base alias enters the persistent app session; the `-host` alias
-  provides unrestricted guest SSH for commands, SCP, VS Code Remote SSH, and
-  recovery when the app-session path cannot start.
-- Both aliases enforce the world's recorded host-key identity. A changed DHCP
-  address may be reconciled, but a different host key is never accepted silently.
-- SSH readiness, clone, checkout, and `devcontainer up` must all succeed before a
-  world becomes `Running`.
+- Managed files: `~/.ssh/wt/config`, `~/.ssh/wt/known_hosts`.
+- Main config must include `Include ~/.ssh/wt/config` first.
+- `ssh NAME`: persistent tmux session in the app container.
+- `ssh NAME-host`: guest shell, commands, SCP, VS Code, recovery.
+- Qualified aliases always exist. Short aliases require a unique name.
+- Login user: `wt`. Checkout: `/workspace`.
+- Aliases use `TERM=xterm-256color`.
+- Host keys are pinned. Changed identity is never accepted.
+- Error worlds have no alias. `wt ls` prints the reconciliation error.

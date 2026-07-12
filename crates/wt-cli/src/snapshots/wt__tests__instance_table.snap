@@ -1,0 +1,7 @@
+---
+source: crates/wt-cli/src/main.rs
+expression: output
+---
+CONTEXT     NAME          STATUS        IP          SSH                 DETAIL
+local       jsdev-manual  provisioning  -           -                   -
+remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222  -

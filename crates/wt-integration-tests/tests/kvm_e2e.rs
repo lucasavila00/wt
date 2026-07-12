@@ -73,13 +73,39 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     };
     assert_eq!(instance.status, InstanceStatus::Running);
     assert!(!instance.ssh.as_ref().unwrap().host_keys.is_empty());
+    let peer_name = InstanceName::parse(format!("{}-peer", name.as_str())).unwrap();
+    let peer_created = timings.run("create peer KVM world", || {
+        service
+            .execute(
+                "lucas",
+                Operation::Create(CreateInstance {
+                    name: peer_name.clone(),
+                    source: git.url(),
+                    git_ref: Some(git.main_commit.clone()),
+                    git_passphrase: GitPassphrase::new("secret".to_owned()),
+                }),
+            )
+            .unwrap()
+    });
+    let Response::Instance {
+        instance: peer_instance,
+    } = peer_created
+    else {
+        panic!("expected peer instance");
+    };
+    assert_eq!(peer_instance.status, InstanceStatus::Running);
+    assert_ne!(instance.guest_ip, peer_instance.guest_ip);
+    assert_ne!(
+        instance.ssh.as_ref().unwrap().host_keys,
+        peer_instance.ssh.as_ref().unwrap().host_keys
+    );
 
     let result = (|| {
         let Response::Instances { instances } = service.execute("lucas", Operation::List).unwrap()
         else {
             return Err("expected list response".to_owned());
         };
-        assert_eq!(instances.len(), 1);
+        assert_eq!(instances.len(), 2);
         timings.run("sync SSH inventory", || {
             wt_cli::ssh::sync(
                 &instances
@@ -94,6 +120,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         })?;
 
         let host_alias = format!("local.{}-host", name.as_str());
+        let peer_host_alias = format!("local.{}-host", peer_name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
             cmd!(
@@ -111,6 +138,38 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             .map_err(|error| error.to_string())
         })?;
         ensure_success("enter jsdev guest host", &output)?;
+        let machine_id = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "cat",
+                "/etc/machine-id",
+            ),
+            "read jsdev machine ID",
+        );
+        let peer_machine_id = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &peer_host_alias,
+                "cat",
+                "/etc/machine-id",
+            ),
+            "read peer machine ID",
+        );
+        if machine_id.trim().is_empty() || peer_machine_id.trim().is_empty() {
+            return Err("guest machine ID is empty".to_owned());
+        }
+        if machine_id.trim() == peer_machine_id.trim() {
+            return Err(format!("guest machine IDs are duplicated: {machine_id:?}"));
+        }
 
         let mut persistent = cmd!(
             "ssh",
@@ -194,7 +253,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nsecret\nexit\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\nexit\n"
             ),
         )
         .map_err(|error| error.to_string())?;
@@ -229,6 +288,13 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         Ok(())
     })();
 
+    let peer_removed = timings.run("remove peer KVM world", || {
+        service.execute("lucas", Operation::Delete { name: peer_name })
+    });
+    assert!(
+        peer_removed.is_ok(),
+        "remove peer KVM sample world: {peer_removed:?}"
+    );
     let removed = timings.run("remove KVM world", || {
         service.execute("lucas", Operation::Delete { name })
     });
