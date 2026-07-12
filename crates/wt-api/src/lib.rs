@@ -40,6 +40,10 @@ pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
     pub git_passphrase: GitPassphrase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_email: Option<String>,
 }
 
 #[derive(Deserialize, Eq, PartialEq, Serialize, Zeroize, ZeroizeOnDrop)]
@@ -378,6 +382,8 @@ mod tests {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
             git_passphrase: GitPassphrase::new("secret".to_owned()),
+            git_user_name: Some("Lucas Ávila".to_owned()),
+            git_user_email: Some("lucaxx@gmail.com".to_owned()),
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -386,9 +392,28 @@ mod tests {
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
-                "git_passphrase": "secret"
+                "git_passphrase": "secret",
+                "git_user_name": "Lucas Ávila",
+                "git_user_email": "lucaxx@gmail.com"
             })
         );
+    }
+
+    #[test]
+    fn create_request_accepts_missing_git_author_identity() {
+        let request = serde_json::from_value::<ApiRequest>(serde_json::json!({
+            "protocol_version": 1,
+            "operation": "create",
+            "name": "repo-feature",
+            "source": "git@github.com:example/repo.git",
+            "git_passphrase": "secret"
+        }))
+        .unwrap();
+        let Operation::Create(create) = request.operation else {
+            panic!("expected create request");
+        };
+        assert_eq!(create.git_user_name, None);
+        assert_eq!(create.git_user_email, None);
     }
 
     #[test]

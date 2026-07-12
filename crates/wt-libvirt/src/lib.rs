@@ -20,6 +20,8 @@ pub struct ProvisionSpec<'a> {
     pub name: &'a InstanceName,
     pub source: &'a str,
     pub git_passphrase: &'a wt_api::GitPassphrase,
+    pub git_user_name: Option<&'a str>,
+    pub git_user_email: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

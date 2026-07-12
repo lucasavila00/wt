@@ -17,6 +17,12 @@ pub struct JobLock {
     _file: File,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GitAuthor<'a> {
+    pub name: Option<&'a str>,
+    pub email: Option<&'a str>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThreadLauncher;
 
@@ -27,6 +33,7 @@ pub trait ProvisionLauncher<W> {
         worker: &W,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
+        git_author: GitAuthor<'_>,
         lock: JobLock,
     ) -> Result<(), JobError>;
 }
@@ -115,17 +122,29 @@ where
         worker: &W,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
+        git_author: GitAuthor<'_>,
         lock: JobLock,
     ) -> Result<(), JobError> {
         let store = store.reopen().map_err(std::io::Error::other)?;
         let worker = worker.clone();
         let stored = stored.clone();
         let passphrase = GitPassphrase::new(passphrase.expose_secret().to_owned());
+        let git_user_name = git_author.name.map(str::to_owned);
+        let git_user_email = git_author.email.map(str::to_owned);
         std::thread::Builder::new()
             .name(format!("wt-provision-{}", stored.instance.id))
             .spawn(move || {
                 let _lock = lock;
-                if let Err(error) = run_provision(&store, &worker, stored.clone(), &passphrase) {
+                if let Err(error) = run_provision(
+                    &store,
+                    &worker,
+                    stored.clone(),
+                    &passphrase,
+                    GitAuthor {
+                        name: git_user_name.as_deref(),
+                        email: git_user_email.as_deref(),
+                    },
+                ) {
                     let message = error.to_string();
                     let _ = store.finish_error(
                         stored.instance.id,
@@ -143,6 +162,7 @@ pub fn run_provision<W: WorldWorker>(
     worker: &W,
     stored: StoredInstance,
     passphrase: &GitPassphrase,
+    git_author: GitAuthor<'_>,
 ) -> Result<(), StoreError> {
     let spec = ProvisionSpec {
         id: stored.instance.id,
@@ -151,6 +171,8 @@ pub fn run_provision<W: WorldWorker>(
         name: &stored.instance.name,
         source: &stored.instance.source,
         git_passphrase: passphrase,
+        git_user_name: git_author.name,
+        git_user_email: git_author.email,
     };
     let mut log = store.log_writer(stored.instance.id);
     match worker.provision(&spec, &mut log) {

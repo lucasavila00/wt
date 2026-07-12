@@ -1,4 +1,4 @@
-use crate::jobs::{Jobs, ProvisionLauncher};
+use crate::jobs::{GitAuthor, Jobs, ProvisionLauncher};
 use crate::store::{Store, StoreError, StoredInstance};
 use base64::Engine as _;
 use std::time::{Duration, Instant};
@@ -81,6 +81,10 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
             &self.worker,
             &stored,
             &request.git_passphrase,
+            GitAuthor {
+                name: request.git_user_name.as_deref(),
+                email: request.git_user_email.as_deref(),
+            },
             lock,
         ) {
             let _ = self.store.delete(id);

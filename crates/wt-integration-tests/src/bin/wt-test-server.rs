@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, GitPassphrase};
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::config::StateConfig;
-use wt_server::jobs::{run_provision, JobError, JobLock, Jobs, ProvisionLauncher};
+use wt_server::jobs::{run_provision, GitAuthor, JobError, JobLock, Jobs, ProvisionLauncher};
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
 
@@ -57,9 +57,10 @@ impl ProvisionLauncher<LibvirtWorker> for InlineLauncher {
         worker: &LibvirtWorker,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
+        git_author: GitAuthor<'_>,
         _lock: JobLock,
     ) -> Result<(), JobError> {
-        run_provision(store, worker, stored.clone(), passphrase)
+        run_provision(store, worker, stored.clone(), passphrase, git_author)
             .map_err(|error| JobError::Io(std::io::Error::other(error)))
     }
 }

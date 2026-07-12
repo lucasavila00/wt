@@ -113,6 +113,11 @@ the guests; the workstation does not need a route to the libvirt network.
 The server config points to an encrypted OpenSSH private key and a known-hosts
 file. The key must belong to the server user and have mode `0600`.
 
+When creating a world, `wt` also reads the workstation's global Git `user.name`
+and `user.email`. Values that exist are sent in the create request and written
+to the checkout's local Git config. Missing values do not stop world creation;
+`wt` prints a warning instead. WT does not copy other Git configuration.
+
 ### Initial clone
 
 1. `wt new` asks for the server Git key's passphrase on the workstation.
