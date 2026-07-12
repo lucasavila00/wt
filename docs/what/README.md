@@ -64,10 +64,14 @@ Short names work when globally unique. Git sources use `ssh://...` or
    opens a separate guest-to-app SSH connection with a guest-held session key.
 4. The pane opens a login shell at the mounted workspace.
 
-tmux or Byobu stays in the guest when the workstation disconnects. The
-devcontainer does not need to provide either program. If the devcontainer stops,
-the pane's SSH connection ends; new panes resolve the current container when it
-is running again.
+Both `NAME` and `NAME-dc` require the injected app SSH server. `NAME` does not
+need a TCP proxy: `wt-app-pane` runs inside the guest, where it can connect
+directly to the app's private Docker address.
+
+tmux or Byobu stays in the guest when the workstation disconnects. Only those
+session programs do not need to be provided by the devcontainer. If the
+devcontainer stops, the pane's SSH connection ends; new panes resolve the
+current container when it is running again.
 
 ### `ssh NAME-dc`
 
@@ -81,6 +85,16 @@ is running again.
 
 This connection has no forced session command. Use it for VS Code Remote-SSH,
 commands, SFTP, and forwarding.
+
+The proxy is required because the app has a private Docker address inside the
+guest. That address is not directly reachable from the workstation and may
+change when Docker recreates the container. WT does not publish an app SSH port
+or modify the repository's port configuration.
+
+On each connection, `wt-app-proxy` finds the current devcontainer, connects to
+its private address on port 2222, and relays bytes. It does not terminate the app
+SSH connection: the workstation still authenticates directly to the app SSH
+server and verifies the app host key.
 
 | Alias | Main SSH endpoint | App login key | Behavior |
 |-------|-------------------|---------------|----------|
