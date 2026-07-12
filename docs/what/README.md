@@ -53,16 +53,84 @@ A context identifies a WT server. `context.world` is the stable world name.
 Short names work when globally unique. Git sources use `ssh://...` or
 `user@host:path`.
 
-## Connections
+## SSH access
 
-| Action | Route | Result |
-|--------|-------|--------|
-| Local `wt` command | `wt` → local `wt-server` | Manage worlds on the same Ubuntu/KVM machine |
-| Remote `wt` command | Workstation → server SSH → `wt-server` | Manage worlds without a WT network service |
-| `ssh NAME-host` | Workstation → guest SSH | Guest shell and recovery |
-| `ssh NAME` | Workstation → guest SSH → tmux/Byobu → app SSH | Persistent session inside the primary devcontainer |
-| `ssh NAME-dc` | Workstation → guest proxy → app SSH | Direct devcontainer access for VS Code, commands, and file transfer |
-| Git operation | Guest or app → Git host SSH | Clone, fetch, and push repository data |
+### `ssh NAME`
+
+1. The workstation's SSH connection terminates at the guest SSH server and
+   verifies its host key.
+2. The guest runs `wt-app-shell`, which attaches to tmux or Byobu in the guest.
+3. Each pane runs `wt-app-pane`. It finds the current primary devcontainer and
+   opens a separate guest-to-app SSH connection with a guest-held session key.
+4. The pane opens a login shell at the mounted workspace.
+
+tmux or Byobu stays in the guest when the workstation disconnects. The
+devcontainer does not need to provide either program. If the devcontainer stops,
+the pane's SSH connection ends; new panes resolve the current container when it
+is running again.
+
+### `ssh NAME-dc`
+
+1. The workstation's main OpenSSH client starts a proxy command.
+2. The proxy command opens its own SSH connection to the guest and runs
+   `wt-app-proxy`.
+3. The proxy forwards bytes to the app SSH server inside the primary
+   devcontainer.
+4. The main OpenSSH connection terminates at the app SSH server. It verifies the
+   app host key and authenticates with the workstation's configured world key.
+
+This connection has no forced session command. Use it for VS Code Remote-SSH,
+commands, SFTP, and forwarding.
+
+| Alias | Main SSH endpoint | App login key | Behavior |
+|-------|-------------------|---------------|----------|
+| `NAME` | Guest SSH server | Guest-held session key | Guest-hosted persistent session; panes enter the app |
+| `NAME-dc` | App SSH server through the guest proxy | Workstation's world key | Direct app SSH |
+| `NAME-host` | Guest SSH server | Not applicable | Direct guest SSH |
+
+Remote `wt` commands use the server's existing SSH service to run `wt-server`.
+
+## Git credentials
+
+The server config points to an encrypted OpenSSH private key and a known-hosts
+file. The key must belong to the server user and have mode `0600`.
+
+### Initial clone
+
+1. `wt new` asks for the server Git key's passphrase on the workstation.
+2. The passphrase travels in the create request over local stdio or the remote
+   OpenSSH connection. The server validates it before reserving the world.
+3. The provisioning worker sends the encrypted key, known hosts, and passphrase
+   into temporary files in the guest.
+4. Git clones into `/workspace` with that key and strict host-key checking.
+5. WT deletes the temporary passphrase, key, known hosts, and askpass helper.
+
+The passphrase is not stored in server config, SQLite, provisioning logs, or the
+finished world.
+
+### Later Git commands
+
+After cloning, WT creates `/workspace/.git/wt/`:
+
+| File | Contents |
+|------|----------|
+| `identity` | The encrypted private key; no passphrase |
+| `known_hosts` | Pinned Git server host keys |
+| `ssh` | Wrapper that uses only that key and known-hosts file |
+
+The checkout's local `core.sshCommand` points to the wrapper. `/workspace` is
+mounted into the devcontainer, so Git in the guest and Git in the devcontainer
+use the same bundle. WT does not copy another key into the container.
+
+For each `fetch`, `pull`, or `push`, the wrapper copies the encrypted key to a
+temporary mode-`0600` file, enables strict host-key checking, runs OpenSSH, then
+deletes the temporary file. OpenSSH asks the user for the passphrase. WT does not
+retain it or run an agent that remembers it.
+
+This makes Git available in both environments without leaving a decrypted key
+or passphrase behind. The encrypted key is readable inside the trusted world and
+devcontainer; compromised code could copy it for offline passphrase guessing.
+Use a strong passphrase and treat repository and devcontainer code as trusted.
 
 ## Safety model
 
@@ -73,7 +141,7 @@ Short names work when globally unique. Git sources use `ssh://...` or
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | The server key must be encrypted. The passphrase is read on the workstation, used for provisioning, and never persisted. Git host keys are pinned. |
+| Git credentials | Only the encrypted key persists. The passphrase is transient, and Git host keys are pinned. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries
