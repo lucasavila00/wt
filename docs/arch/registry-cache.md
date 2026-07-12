@@ -24,7 +24,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 preload_images = [
-  "node:24-bookworm-slim",
+  "node:24-bookworm",
 ]
 ```
 
@@ -35,7 +35,7 @@ preload_images = [
 - `preload_images`: images to fetch during server setup.
 
 Other registries pass through without caching. An unqualified image such as
-`node:24-bookworm-slim` means Docker Hub.
+`node:24-bookworm` means Docker Hub.
 
 ## Setup
 

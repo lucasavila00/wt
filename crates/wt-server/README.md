@@ -43,7 +43,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 preload_images = [
-  "node:24-bookworm-slim",
+  "node:24-bookworm",
 ]
 
 [git]
