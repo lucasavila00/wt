@@ -62,6 +62,8 @@ on the client host.
   through the QEMU guest agent, and `wt-server` persists them with the endpoint.
 - `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
   `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
+- Managed aliases set `TERM=xterm-256color`, a broadly supported fallback for
+  clients such as Ghostty whose native terminfo may not exist in the guest.
 - After syncing, users enter a world with stock OpenSSH: `ssh <name>` or
   `ssh <context>.<name>`.
 - Qualified aliases always exist. Short aliases exist only for globally unique

@@ -34,7 +34,7 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
         }
         let qualified = item.qualified_name();
         let common = format!(
-            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n",
+            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n",
             ssh.host,
             ssh.user,
             ssh.port,
@@ -150,6 +150,7 @@ mod tests {
         assert!(managed.contains("Host repo-feature\n"));
         assert_eq!(managed.matches("RemoteCommand ").count(), 2);
         assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
+        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 4);
         assert_eq!(
             managed.matches("HostKeyAlias local.repo-feature").count(),
             4
@@ -194,6 +195,7 @@ mod tests {
         assert!(managed.contains("Host local.same\n"));
         assert!(managed.contains("Host lab.same\n"));
         assert!(!managed.lines().any(|line| line == "Host same"));
+        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 4);
         assert!(!temp.path().join(".ssh/config").exists());
     }
 }
