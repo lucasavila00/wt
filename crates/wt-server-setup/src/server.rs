@@ -56,7 +56,8 @@ fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
 fn load_config(path: &Path) -> Result<(ServerConfig, Vec<u8>)> {
     let bytes = fs::read(path).with_context(|| format!("read config {}", path.display()))?;
     let config = ServerConfig::load_from(path).map_err(anyhow::Error::msg)?;
-    validate_git_credentials(&config.git)?;
+    let git = config.resolved_git_config().map_err(anyhow::Error::msg)?;
+    validate_git_credentials(&git)?;
     Ok((config, bytes))
 }
 

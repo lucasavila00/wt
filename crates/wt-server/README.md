@@ -48,8 +48,8 @@ preload_images = [
 ]
 
 [git]
-identity_file = "/home/server-user/.ssh/id_ed25519"
-known_hosts_file = "/home/server-user/.ssh/known_hosts"
+identity_file = "~/.ssh/id_ed25519"
+known_hosts_file = "~/.ssh/known_hosts"
 
 [guest]
 memory_mib = 8192

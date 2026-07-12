@@ -120,13 +120,15 @@ impl ServerConfig {
         {
             return Err("image.source_sha256 must contain 64 hexadecimal characters".to_owned());
         }
+        let git_identity_file = expand_home(&self.git.identity_file, "git.identity_file")?;
+        let git_known_hosts_file = expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?;
         for (name, path) in [
             ("image.installed_path", &self.image.installed_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
-            ("git.identity_file", &self.git.identity_file),
-            ("git.known_hosts_file", &self.git.known_hosts_file),
+            ("git.identity_file", &git_identity_file),
+            ("git.known_hosts_file", &git_known_hosts_file),
         ] {
             if !path.is_absolute() {
                 return Err(format!("{name} must be an absolute path"));
@@ -222,6 +224,7 @@ impl ServerConfig {
     }
 
     pub fn worker_config(&self) -> Result<LibvirtConfig, String> {
+        let git = self.resolved_git_config()?;
         Ok(LibvirtConfig {
             image: self.image.installed_path.clone(),
             app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
@@ -230,8 +233,8 @@ impl ServerConfig {
             registry_cache_state_dir: self.registry_cache.state_dir.clone(),
             registry_cache_port: self.registry_cache.port,
             registry_cache_preload_images: self.registry_cache.preload_images.clone(),
-            git_identity_file: self.git.identity_file.clone(),
-            git_known_hosts_file: self.git.known_hosts_file.clone(),
+            git_identity_file: git.identity_file,
+            git_known_hosts_file: git.known_hosts_file,
             memory_mib: self.guest.memory_mib,
             vcpus: self.guest.vcpus,
             disk_gib: self.guest.disk_gib,
@@ -271,7 +274,10 @@ impl ServerConfig {
     }
 
     pub fn ssh_authorized_keys(&self) -> Result<Vec<String>, String> {
-        let path = expand_home(&self.guest.ssh_authorized_keys_file)?;
+        let path = expand_home(
+            &self.guest.ssh_authorized_keys_file,
+            "guest.ssh_authorized_keys_file",
+        )?;
         let contents = std::fs::read_to_string(&path).map_err(|error| {
             format!(
                 "read guest.ssh_authorized_keys_file {}: {error}",
@@ -284,6 +290,13 @@ impl ServerConfig {
             .filter(|line| !line.is_empty())
             .map(str::to_owned)
             .collect())
+    }
+
+    pub fn resolved_git_config(&self) -> Result<GitConfig, String> {
+        Ok(GitConfig {
+            identity_file: expand_home(&self.git.identity_file, "git.identity_file")?,
+            known_hosts_file: expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?,
+        })
     }
 }
 
@@ -314,7 +327,7 @@ fn image_registry(image: &str) -> &str {
     }
 }
 
-fn expand_home(path: &Path) -> Result<PathBuf, String> {
+fn expand_home(path: &Path, name: &str) -> Result<PathBuf, String> {
     if path == Path::new("~") {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
@@ -328,7 +341,7 @@ fn expand_home(path: &Path) -> Result<PathBuf, String> {
         return Ok(home.join(relative));
     }
     if !path.is_absolute() {
-        return Err("guest.ssh_authorized_keys_file must be absolute or start with ~/".to_owned());
+        return Err(format!("{name} must be absolute or start with ~/"));
     }
     Ok(path.to_owned())
 }
@@ -432,10 +445,23 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
+        assert!(parse(
+            &VALID.replace("/tmp/wt-test-git-identity", "relative/wt-test-git-identity")
+        )
+        .is_err());
         assert!(parse(&VALID.replace(
             "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
             "registries = [\"docker.io\"]"
         ))
         .is_err());
+    }
+
+    #[test]
+    fn git_paths_expand_home() {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        assert_eq!(
+            expand_home(Path::new("~/.ssh/id_ed25519"), "git.identity_file").unwrap(),
+            home.join(".ssh/id_ed25519")
+        );
     }
 }
