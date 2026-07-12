@@ -204,6 +204,7 @@ impl LibvirtWorker {
             &domain,
             &self.app_shell,
             &self.app_pane,
+            self.config.session,
             recipe_deadline,
             log,
         )?;

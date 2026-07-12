@@ -62,10 +62,11 @@ Include ~/.ssh/wt/config
 
 After syncing, use stock OpenSSH to enter a world: `ssh <name>`.
 
-The base world alias always attaches to the world's shared tmux session. Shells
-and processes continue running across SSH disconnects; tmux windows and panes
-all enter the primary devcontainer. The `-host` alias remains a plain guest SSH
-login for commands, SCP, VS Code Remote SSH, and debugging.
+The base world alias always attaches to the world's shared tmux or Byobu session,
+as selected by the server install config. Shells and processes continue running
+across SSH disconnects; all windows and panes enter the primary devcontainer.
+The `-host` alias remains a plain guest SSH login for commands, SCP, VS Code
+Remote SSH, and debugging.
 
 For each world, sync always creates `<context>.<name>` aliases and also creates
 short aliases when the name is globally unique:

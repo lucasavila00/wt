@@ -52,12 +52,20 @@ pub struct ServerLibvirtConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
+    pub session: SessionFrontend,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
     pub boot_timeout_seconds: u64,
     pub recipe_timeout_seconds: u64,
     pub ssh_authorized_keys_file: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionFrontend {
+    Tmux,
+    Byobu,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -83,6 +91,7 @@ pub struct LibvirtConfig {
     pub boot_timeout: Duration,
     pub recipe_timeout: Duration,
     pub ssh_authorized_keys: Vec<String>,
+    pub session: SessionFrontend,
 }
 
 impl ServerConfig {
@@ -227,6 +236,7 @@ impl ServerConfig {
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             ssh_authorized_keys: self.ssh_authorized_keys()?,
+            session: self.guest.session,
         })
     }
 
@@ -349,6 +359,7 @@ identity_file = "/tmp/wt-test-git-identity"
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
+session = "tmux"
 memory_mib = 8192
 vcpus = 4
 disk_gib = 32
@@ -387,11 +398,13 @@ binary_dir = "/usr/local/bin"
             Path::new("/usr/local/bin/wt-app-pane")
         );
         assert_eq!(worker.registry_cache_port, 3128);
+        assert_eq!(worker.session, SessionFrontend::Tmux);
     }
 
     #[test]
     fn missing_and_unknown_fields_fail() {
         assert!(parse(&VALID.replace("vcpus = 4\n", "")).is_err());
+        assert!(parse(&VALID.replace("session = \"tmux\"\n", "")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 4\nfallback = true")).is_err());
         assert!(parse(&VALID.replace(
             "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
@@ -407,6 +420,7 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
+        assert!(parse(&VALID.replace("session = \"tmux\"", "session = \"screen\"")).is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(
             &VALID.replace("/tmp/wt-test-git-identity", "relative/wt-test-git-identity")

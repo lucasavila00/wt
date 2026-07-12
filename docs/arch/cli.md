@@ -55,7 +55,7 @@ the outcome is unknown and must be checked with `wt ls` or `wt logs`.
 
 - Managed files: `~/.ssh/wt/config`, `~/.ssh/wt/known_hosts`.
 - Main config must include `Include ~/.ssh/wt/config` first.
-- `ssh NAME`: persistent tmux session in the app container.
+- `ssh NAME`: persistent server-configured tmux or Byobu session in the app container.
 - `ssh NAME-host`: guest shell, commands, SCP, VS Code, recovery.
 - Qualified aliases always exist. Short aliases require a unique name.
 - Login user: `wt`. Checkout: `/workspace`.

@@ -141,10 +141,12 @@ On the server, set this in `./server.toml` before installation:
 
 ```toml
 [guest]
+session = "byobu"
 ssh_authorized_keys_file = "~/.ssh/wt-client.pub"
 ```
 
-Keep the other `[guest]` values from the sample.
+Choose `byobu` or `tmux` for `session` and keep the other `[guest]` values from
+the sample.
 
 On the client, install Git, stable Rust, and an OpenSSH client. Then install WT:
 

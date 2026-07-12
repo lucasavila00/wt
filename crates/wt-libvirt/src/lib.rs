@@ -3,8 +3,8 @@ mod worker;
 
 pub use config::{
     GitConfig, GuestConfig, ImageConfig, InstallConfig, LibvirtConfig, RegistryCacheConfig,
-    ServerConfig, ServerLibvirtConfig, GUEST_ARCHITECTURE, GUEST_MACHINE, LIBVIRT_URI,
-    SERVER_CONFIG_PATH,
+    ServerConfig, ServerLibvirtConfig, SessionFrontend, GUEST_ARCHITECTURE, GUEST_MACHINE,
+    LIBVIRT_URI, SERVER_CONFIG_PATH,
 };
 pub use worker::LibvirtWorker;
 

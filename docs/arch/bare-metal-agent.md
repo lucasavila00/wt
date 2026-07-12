@@ -13,7 +13,7 @@ Parent: [architecture](./README.md). Implementation:
 | Provisioning | QEMU guest agent |
 | Network | Libvirt DHCP identified by guest MAC |
 | Access | OpenSSH as non-root user `wt` |
-| Runtime | Docker, Buildx, Compose, tmux, Dev Container CLI |
+| Runtime | Docker, Buildx, Compose, configured tmux/Byobu frontend, Dev Container CLI |
 
 No KVM emulation fallback. No public control-plane listener.
 
@@ -26,7 +26,7 @@ No KVM emulation fallback. No public control-plane listener.
 5. Clone the SSH Git source into `/workspace`.
 6. Install the encrypted Git identity and known-hosts bundle.
 7. Run the repository's stock devcontainer.
-8. Install the persistent tmux app-session helpers.
+8. Install the configured persistent app-session helpers.
 9. Record the guest IP and SSH keys; mark the world `Running`.
 
 One deadline covers clone and recipe startup. Any create failure removes the

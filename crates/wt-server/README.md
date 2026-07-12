@@ -48,6 +48,7 @@ identity_file = "~/.ssh/id_ed25519"
 known_hosts_file = "~/.ssh/known_hosts"
 
 [guest]
+session = "byobu"
 memory_mib = 8192
 vcpus = 4
 disk_gib = 32
@@ -60,6 +61,9 @@ binary_dir = "/usr/local/bin"
 ```
 
 Save it outside `config/`.
+
+`guest.session` is the persistent app-session frontend and must be either
+`tmux` or `byobu`. The Byobu package uses tmux as its backend.
 
 Validate:
 

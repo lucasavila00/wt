@@ -17,12 +17,12 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
-use wt_libvirt::{ServerConfig, LIBVIRT_URI};
+use wt_libvirt::{ServerConfig, SessionFrontend, LIBVIRT_URI};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
-const IMAGE_RECIPE_VERSION: u32 = 1;
+const IMAGE_RECIPE_VERSION: u32 = 2;
 const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
 const CLEAR_MACHINE_ID: &str =
     "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
@@ -176,7 +176,8 @@ fn build_image_inner(
         ),
         "resize image build disk",
     )?;
-    fs::write(user_data, cloud_config()).context("write image cloud-init user-data")?;
+    fs::write(user_data, cloud_config(server.guest.session))
+        .context("write image cloud-init user-data")?;
     fs::write(
         meta_data,
         format!("instance-id: {BUILD_NAME}\nlocal-hostname: {BUILD_NAME}\n"),
@@ -315,7 +316,11 @@ fn build_image_inner(
     Ok(())
 }
 
-fn cloud_config() -> &'static str {
+fn cloud_config(session: SessionFrontend) -> String {
+    let (install_package, recorded_packages) = match session {
+        SessionFrontend::Tmux => ("tmux", "tmux"),
+        SessionFrontend::Byobu => ("byobu", "byobu tmux"),
+    };
     r#"#cloud-config
 output:
   all: '| tee -a /var/log/cloud-init-output.log'
@@ -331,7 +336,7 @@ packages:
   - openssh-server
   - nodejs
   - npm
-  - tmux
+  - SESSION_PACKAGE
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -342,7 +347,7 @@ runcmd:
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm RECORDED_SESSION_PACKAGES | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -350,6 +355,8 @@ power_state:
   timeout: 60
   condition: true
 "#
+    .replace("RECORDED_SESSION_PACKAGES", recorded_packages)
+    .replace("SESSION_PACKAGE", install_package)
 }
 
 struct ConsoleLog {
@@ -624,13 +631,24 @@ mod tests {
     }
 
     #[test]
-    fn image_recipe_installs_and_records_runtime_tools() {
-        let config = cloud_config();
+    fn image_recipe_installs_and_records_tmux() {
+        let config = cloud_config(SessionFrontend::Tmux);
         assert!(config.contains("  - docker-buildx\n"));
         assert!(config.contains("  - tmux\n"));
+        assert!(!config.contains("  - byobu\n"));
         assert!(config.contains("  - docker buildx version\n"));
         assert!(config.contains(
             "docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages"
+        ));
+    }
+
+    #[test]
+    fn image_recipe_installs_byobu_and_records_its_tmux_backend() {
+        let config = cloud_config(SessionFrontend::Byobu);
+        assert!(config.contains("  - byobu\n"));
+        assert!(!config.contains("  - tmux\n"));
+        assert!(config.contains(
+            "docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm byobu tmux | sort > /var/lib/wt-image-packages"
         ));
     }
 
@@ -644,7 +662,7 @@ mod tests {
 
     #[test]
     fn image_recipe_reports_build_phases() {
-        let config = cloud_config();
+        let config = cloud_config(SessionFrontend::Tmux);
         for phase in [
             "updating package indexes and installing guest packages",
             "validating guest services",

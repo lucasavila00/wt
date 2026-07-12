@@ -10,7 +10,7 @@ use wt_api::{
     Operation, Outcome, Response,
 };
 use wt_command::cmd;
-use wt_libvirt::ServerConfig;
+use wt_libvirt::{ServerConfig, SessionFrontend};
 
 const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
 
@@ -142,6 +142,24 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .map_err(|error| error.to_string())
         })?;
         ensure_success("enter fixture guest host", &output)?;
+        let (frontend, executable) = match config.guest.session {
+            SessionFrontend::Tmux => ("tmux", "/usr/bin/tmux"),
+            SessionFrontend::Byobu => ("byobu", "/usr/bin/byobu-tmux"),
+        };
+        let output = cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            &host_alias,
+            format!(
+                "test \"$(cat /usr/local/share/wt-session-frontend)\" = {frontend} && test -x {executable}"
+            ),
+        )
+        .output()
+        .map_err(|error| error.to_string())?;
+        ensure_success("verify configured session frontend", &output)?;
         let machine_id = git_output(
             cmd!(
                 "ssh",
@@ -250,6 +268,32 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 .all(|command| command == "/usr/local/bin/wt-app-pane")
         {
             return Err(format!("unexpected tmux pane commands: {panes:?}"));
+        }
+        let prefix = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "-L",
+                "wt-app",
+                "show-options",
+                "-gv",
+                "prefix",
+            ),
+            "read persistent session prefix",
+        );
+        let expected_prefix = match config.guest.session {
+            SessionFrontend::Tmux => "C-b",
+            SessionFrontend::Byobu => "C-a",
+        };
+        if prefix.trim() != expected_prefix {
+            return Err(format!(
+                "unexpected {frontend} session prefix: {prefix:?}; expected {expected_prefix}"
+            ));
         }
 
         let branch = format!("wt-e2e-{}", std::process::id());

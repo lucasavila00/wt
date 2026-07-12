@@ -15,7 +15,8 @@ worlds on Ubuntu servers.
 - Named local and OpenSSH contexts carry the same versioned `wt-server` JSON API.
 - `context.world` is the stable name; short names work when globally unique.
 - `wt sync` creates strict managed OpenSSH aliases for the app container and guest.
-- App aliases always attach to one persistent, multiplexed tmux session per world.
+- App aliases attach to one persistent tmux or Byobu session per world, selected
+  by the strict server install config.
 - Servers are trusted credential boundaries, not hostile multi-tenant sandboxes.
 - There is no public control-plane listener and no runtime configuration override;
   each server uses the complete strict runtime config at `/etc/wt/server.toml`,

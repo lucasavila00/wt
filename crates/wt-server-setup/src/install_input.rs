@@ -116,6 +116,7 @@ identity_file = "/tmp/wt-test-git-identity"
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
+session = "tmux"
 memory_mib = 8192
 vcpus = 4
 disk_gib = 32

@@ -9,3 +9,7 @@ for a later clear + reinstall if you want the same settings.
 `git.identity_file` must point to an encrypted OpenSSH private key owned by the
 server user with mode `0600`. Git paths may be absolute or start with `~/`.
 `wt new` prompts for the passphrase.
+
+`guest.session` selects the persistent app-session UX: `tmux` or `byobu`.
+Byobu uses tmux as its backend. Like every strict server setting, changing this
+value requires clearing server state and reinstalling from the updated input.

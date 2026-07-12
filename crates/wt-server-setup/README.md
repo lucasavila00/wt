@@ -38,5 +38,7 @@ size and public registry hosts are part of the strict runtime server configurati
 Golden-image builds stream the temporary guest's serial console, including
 cloud-init package output, phase timings, and quiet-period heartbeats. A matching
 installed image is verified and reused without starting the build guest.
+The required `guest.session` setting selects `tmux` or Byobu for the golden
+image and is preserved in the strict runtime configuration and image provenance.
 
 Production instructions: [`wt-server` Install on Ubuntu](../wt-server/README.md#install-on-ubuntu).
