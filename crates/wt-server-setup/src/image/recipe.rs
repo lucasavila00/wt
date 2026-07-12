@@ -277,10 +277,7 @@ power_state:
         packages.insert("screen".to_owned(), "4.9.1".to_owned());
 
         let error = recipe.validate_package_versions(&packages).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "image package manifest differs from recipe: missing tmux; unexpected screen"
-        );
+        insta::assert_snapshot!(error.to_string(), @"image package manifest differs from recipe: missing tmux; unexpected screen");
     }
 
     #[test]

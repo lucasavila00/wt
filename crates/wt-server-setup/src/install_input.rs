@@ -144,7 +144,7 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn materialize_drops_image_source_fields() {
-        let (input, _keys) = parse(VALID).unwrap();
+        let (input, keys) = parse(VALID).unwrap();
         let server = input.materialize();
         assert_eq!(
             server.image.installed_path,
@@ -152,9 +152,10 @@ binary_dir = "/usr/local/bin"
         );
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();
-        assert!(!text.contains("source_url"));
-        assert!(!text.contains("source_sha256"));
-        assert!(text.contains("installed_path"));
+        insta::assert_snapshot!(
+            "materialized_server_config",
+            text.replace(&keys.path().display().to_string(), "[KEY_DIR]")
+        );
     }
 
     #[test]

@@ -413,7 +413,7 @@ mod tests {
         let passphrase = GitPassphrase::new("do-not-print".to_owned());
         let debug = format!("{passphrase:?}");
         assert!(!debug.contains(passphrase.expose_secret()));
-        assert!(debug.contains("REDACTED"));
+        insta::assert_snapshot!(debug, @"GitPassphrase([REDACTED])");
     }
 
     #[test]
@@ -424,6 +424,6 @@ mod tests {
             "name": "Not-Valid"
         }))
         .unwrap_err();
-        assert!(error.to_string().contains("invalid instance name"));
+        insta::assert_snapshot!(error.to_string(), @"invalid instance name: must start with a lowercase letter or digit");
     }
 }

@@ -134,7 +134,6 @@ mod tests {
     fn ambiguous_short_name_lists_fqns() {
         let inventory = vec![item("local", "same"), item("lab", "same")];
         let error = resolve(&inventory, "same").unwrap_err().to_string();
-        assert!(error.contains("local.same"));
-        assert!(error.contains("lab.same"));
+        insta::assert_snapshot!(error, @"world name is ambiguous: same; use one of: local.same, lab.same");
     }
 }

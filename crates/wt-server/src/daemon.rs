@@ -180,8 +180,12 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        assert!(error.contains("wt-server daemon is unavailable"));
-        assert!(error.contains("systemctl status wt-server.service"));
-        assert!(error.contains("journalctl -u wt-server.service"));
+        insta::assert_snapshot!(
+            error.replace(&temp.path().display().to_string(), "[TEMP]"),
+            @r###"
+            wt-server daemon is unavailable at [TEMP]/missing.sock: No such file or directory (os error 2)
+            check `systemctl status wt-server.service` and `journalctl -u wt-server.service`
+            "###
+        );
     }
 }

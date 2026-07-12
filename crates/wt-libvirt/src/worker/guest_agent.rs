@@ -366,7 +366,10 @@ mod tests {
 
     #[test]
     fn captured_failure_tail_combines_stdout_and_stderr() {
-        assert_eq!(tail_output(b"stdout", b"stderr"), "stdout\nstderr");
+        insta::assert_snapshot!(tail_output(b"stdout", b"stderr"), @r###"
+        stdout
+        stderr
+        "###);
     }
 
     #[test]

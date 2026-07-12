@@ -1,5 +1,0 @@
----
-source: crates/wt-cli/src/main.rs
-expression: "format_instances(&[])"
----
-CONTEXT  NAME  STATUS  IP  SSH  DETAIL

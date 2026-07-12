@@ -122,12 +122,29 @@ esac
     assert!(!transcript.contains("wrong-one"));
     assert!(!transcript.contains("wrong-two"));
     assert!(!transcript.contains("secret"));
-    assert!(transcript.contains(
-        "To clone git@example.test:repo.git into local.repo-feature, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server."
-    ));
-    assert!(transcript.contains("2 attempts remaining"));
-    assert!(transcript.contains("1 attempt remaining"));
-    assert!(transcript.contains("building"));
+    let normalized_transcript = transcript
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(
+        normalized_transcript,
+        @r###"
+        To clone git@example.test:repo.git into local.repo-feature, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server.
+        Server Git SSH key passphrase:
+        Git identity: invalid private key passphrase; 2 attempts remaining.
+        Server Git SSH key passphrase:
+        Git identity: invalid private key passphrase; 1 attempt remaining.
+        Server Git SSH key passphrase:
+        building
+        local.repo-feature	running	192.0.2.2
+
+        App shell: ssh local.repo-feature
+        Editor / raw app SSH: ssh local.repo-feature-vs (also local.repo-feature-vc)
+        Guest host: ssh local.repo-feature-host
+        Endpoint: wt@192.0.2.2:22
+        "###
+    );
     assert_eq!(
         fs::read_to_string(temp.path().join("helper-attempts")).unwrap(),
         "3\n"
@@ -148,7 +165,7 @@ esac
         "{}",
         String::from_utf8_lossy(&logs.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&logs.stdout), "building\n");
+    insta::assert_snapshot!(String::from_utf8_lossy(&logs.stdout), @"building");
 
     let removed = cmd!(env!("CARGO_BIN_EXE_wt"), "rm", "repo-feature")
         .env("HOME", temp.path())

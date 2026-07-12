@@ -322,7 +322,14 @@ mod tests {
     #[test]
     fn clone_askpass_executes_outside_noexec_run() {
         let environment = git_environment();
-        assert!(environment.contains(&format!("SSH_ASKPASS={CLONE_ASKPASS}")));
+        insta::assert_debug_snapshot!(environment, @r###"
+        [
+            "GIT_SSH_COMMAND=ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes",
+            "SSH_ASKPASS=/tmp/wt-git-askpass",
+            "SSH_ASKPASS_REQUIRE=force",
+            "DISPLAY=wt:0",
+        ]
+        "###);
         assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 

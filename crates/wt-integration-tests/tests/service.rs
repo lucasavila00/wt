@@ -322,7 +322,7 @@ fn launch_failure_removes_the_reservation() {
         .execute("lucas", Operation::Create(create(name.clone())))
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
-    assert!(error.message.contains("injected launch failure"));
+    insta::assert_snapshot!(error.message, @"launch provisioning worker: job I/O: injected launch failure");
     let missing = service
         .execute("lucas", Operation::Get { name })
         .unwrap_err();

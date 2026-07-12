@@ -21,6 +21,7 @@ name = "wt-test-server"
 path = "src/bin/wt-test-server.rs"
 
 [dev-dependencies]
+insta = { workspace = true }
 serde = { workspace = true }
 tempfile = "3.27.0"
 toml = { workspace = true }

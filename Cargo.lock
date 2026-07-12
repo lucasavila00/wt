@@ -1513,6 +1513,7 @@ checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
 name = "wt-api"
 version = "0.0.0"
 dependencies = [
+ "insta",
  "serde",
  "serde_json",
  "thiserror",
@@ -1557,6 +1558,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "base64",
+ "insta",
  "serde",
  "serde_json",
  "tempfile",
@@ -1574,6 +1576,7 @@ name = "wt-libvirt"
 version = "0.0.0"
 dependencies = [
  "base64",
+ "insta",
  "nix",
  "quick-xml",
  "serde",
@@ -1595,6 +1598,7 @@ dependencies = [
  "anyhow",
  "base64",
  "clap",
+ "insta",
  "nix",
  "rusqlite",
  "serde_json",

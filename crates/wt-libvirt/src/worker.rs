@@ -928,11 +928,7 @@ mod tests {
         )
         .to_string();
 
-        assert!(error.contains("SSH endpoint identity mismatch at 192.0.2.2:22"));
-        assert!(error.contains("Active WT domain(s) reporting 192.0.2.2: wt-deadbeef"));
-        assert!(error.contains("undefine wt-deadbeef --nvram"));
-        assert!(error.contains("/var/lib/libvirt/images/wt/wt-deadbeef"));
-        assert!(error.contains("use `wt rm` instead"));
+        insta::assert_snapshot!(error, @"SSH endpoint identity mismatch at 192.0.2.2:22: expected [SHA256:3SPHBfpn7yLeGxYWnQdql8lUltQOR/yFUwLufJnKxiI], presented [none]. WT refused to publish SSH access because another guest may be using this IP. Active WT domain(s) reporting 192.0.2.2: wt-deadbeef. If `wt-deadbeef` is confirmed stale, run on the server: `virsh -c qemu:///system destroy wt-deadbeef`; `virsh -c qemu:///system undefine wt-deadbeef --nvram`; `rm -rf -- /var/lib/libvirt/images/wt/wt-deadbeef`. Then run `wt sync`. If it is managed, use `wt rm` instead.");
     }
 
     #[test]
@@ -946,7 +942,7 @@ mod tests {
         )
         .to_string();
 
-        assert!(error.contains("Inspect the server's DHCP and libvirt domain state"));
+        insta::assert_snapshot!(error, @"SSH endpoint identity mismatch at 192.0.2.2:22: expected [SHA256:3SPHBfpn7yLeGxYWnQdql8lUltQOR/yFUwLufJnKxiI], presented [none]. WT refused to publish SSH access because another guest may be using this IP. Inspect the server's DHCP and libvirt domain state, remove the stale guest, then run `wt sync`.");
     }
 
     #[test]

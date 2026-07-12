@@ -1,0 +1,34 @@
+---
+source: crates/wt-server-setup/src/install_input.rs
+expression: "text.replace(&keys.path().display().to_string(), \"[KEY_DIR]\")"
+---
+version = 1
+
+[image]
+installed_path = "/var/lib/wt/images/wt.qcow2"
+
+[libvirt]
+network = "default"
+worlds_dir = "/var/lib/libvirt/images/wt"
+
+[registry_cache]
+state_dir = "/var/lib/wt/registry-cache"
+port = 3128
+max_size_gib = 64
+registries = ["docker.io"]
+
+[git]
+identity_file = "/tmp/wt-test-git-identity"
+known_hosts_file = "/tmp/wt-test-git-known-hosts"
+
+[guest]
+session = "tmux"
+memory_mib = 8192
+vcpus = 4
+disk_gib = 32
+boot_timeout_seconds = 300
+recipe_timeout_seconds = 900
+ssh_authorized_keys_file = "[KEY_DIR]/id.pub"
+
+[install]
+binary_dir = "/usr/local/bin"

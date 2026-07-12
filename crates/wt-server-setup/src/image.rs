@@ -669,7 +669,6 @@ mod tests {
     #[test]
     fn progress_output_is_phase_based() {
         let message = progress_message("installing packages", Duration::from_secs(60));
-        assert_eq!(message, "Image build: installing packages (elapsed=60s)");
-        assert!(!message.contains("no console output"));
+        insta::assert_snapshot!(message, @"Image build: installing packages (elapsed=60s)");
     }
 }

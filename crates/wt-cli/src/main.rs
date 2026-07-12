@@ -407,13 +407,17 @@ mod tests {
 
         let output = format_instances(&[provisioning, running]);
 
-        insta::assert_snapshot!("instance_table", output);
+        insta::assert_snapshot!(output, @r###"
+        CONTEXT     NAME          STATUS        IP          SSH                 DETAIL
+        local       jsdev-manual  provisioning  -           -                   -
+        remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222  -
+        "###);
         assert!(!output.contains('\t'));
     }
 
     #[test]
     fn formats_header_for_empty_inventory() {
-        insta::assert_snapshot!("empty_instance_table", format_instances(&[]));
+        insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  IP  SSH  DETAIL");
     }
 
     #[test]
@@ -421,7 +425,10 @@ mod tests {
         let mut failed = item("local", "jsdev", InstanceStatus::Error);
         failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
-        insta::assert_snapshot!("instance_table_with_error", format_instances(&[failed]));
+        insta::assert_snapshot!(format_instances(&[failed]), @r###"
+        CONTEXT  NAME   STATUS  IP  SSH  DETAIL
+        local    jsdev  error   -   -    SSH endpoint identity mismatch
+        "###);
     }
 
     #[test]

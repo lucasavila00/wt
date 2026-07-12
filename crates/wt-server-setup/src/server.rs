@@ -423,9 +423,27 @@ binary_dir = "/opt/wt bin"
         .unwrap()
         .materialize();
         let unit = String::from_utf8(server_service(&user, &server)).unwrap();
-        assert!(unit.contains(&format!("User={}\n", user.name)));
-        assert!(unit.contains("ExecStart=\"/opt/wt bin/wt-server\" serve\n"));
-        assert!(unit.contains("RuntimeDirectory=wt\nRuntimeDirectoryMode=0700\n"));
-        assert!(unit.contains("UMask=0077\n"));
+        let unit = unit
+            .replace(&user.dir.display().to_string(), "[HOME]")
+            .replace(&user.name, "[USER]");
+        insta::assert_snapshot!(unit, @r###"
+        [Unit]
+        Description=WT control-plane daemon
+        Wants=network-online.target
+        After=network-online.target docker.service libvirtd.service
+
+        [Service]
+        Type=simple
+        User=[USER]
+        Environment="HOME=[HOME]"
+        ExecStart="/opt/wt bin/wt-server" serve
+        Restart=on-failure
+        RuntimeDirectory=wt
+        RuntimeDirectoryMode=0700
+        UMask=0077
+
+        [Install]
+        WantedBy=multi-user.target
+        "###);
     }
 }

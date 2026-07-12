@@ -225,9 +225,10 @@ mod tests {
         jobs.reconcile(&store).unwrap();
         let recovered = store.get_by_id(id).unwrap().instance;
         assert_eq!(recovered.status, InstanceStatus::Error);
-        assert!(recovered.last_error.unwrap().contains("interrupted"));
-        assert!(String::from_utf8(store.read_log(id, 0, 1024).unwrap().0)
-            .unwrap()
-            .contains("ERROR: provisioning was interrupted"));
+        insta::assert_snapshot!(recovered.last_error.unwrap(), @"provisioning was interrupted; remove the world with wt rm");
+        insta::assert_snapshot!(
+            String::from_utf8(store.read_log(id, 0, 1024).unwrap().0).unwrap(),
+            @"ERROR: provisioning was interrupted; remove the world with wt rm"
+        );
     }
 }

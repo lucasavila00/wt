@@ -23,4 +23,5 @@ uuid = { workspace = true }
 base64 = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = "3.27.0"

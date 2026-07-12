@@ -76,5 +76,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - For Rust changes, run `cargo fmt --all --check` plus tests and Clippy for the
   affected crates. Use workspace-wide Rust checks only for cross-crate changes or
   when explicitly requested.
+- Prefer Insta snapshots for stable user-visible text, diagnostics, generated
+  configuration, scripts and service units, serialized text, and multiline
+  output. Snapshot the complete normalized value instead of checking fragments
+  with `contains`. Favor inline snapshots; use external snapshot files when the
+  expected output would dominate the test source. Keep direct assertions for
+  secrets, status codes, parsed semantics, filesystem state, and other behavioral
+  invariants. Review generated snapshots and ensure no `.snap.new` files remain
+  before finishing.
 - Do not run real-system KVM tests for unrelated changes. Run them only when the
   affected behavior requires them or when explicitly requested.

@@ -94,9 +94,6 @@ mod tests {
         let error = anyhow!("image package manifest must contain exactly nine packages")
             .context("server installation stopped");
 
-        assert_eq!(
-            failure_message(&error),
-            "ERROR: wt-server-setup: server installation stopped: image package manifest must contain exactly nine packages"
-        );
+        insta::assert_snapshot!(failure_message(&error), @"ERROR: wt-server-setup: server installation stopped: image package manifest must contain exactly nine packages");
     }
 }

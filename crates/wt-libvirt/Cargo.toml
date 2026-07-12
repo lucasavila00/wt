@@ -21,4 +21,5 @@ uuid = { workspace = true }
 virt = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = "3.27.0"

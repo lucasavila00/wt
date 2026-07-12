@@ -111,7 +111,14 @@ mod tests {
 
     #[test]
     fn guest_dhcp_identity_uses_the_unique_interface_mac() {
-        assert!(network_config().contains("dhcp-identifier: mac\n"));
-        assert!(network_config().contains("dhcp4: true\n"));
+        insta::assert_snapshot!(network_config(), @r###"
+        version: 2
+        ethernets:
+          primary:
+            match:
+              name: "en*"
+            dhcp4: true
+            dhcp-identifier: mac
+        "###);
     }
 }
