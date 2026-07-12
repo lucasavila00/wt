@@ -67,13 +67,13 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             qualified,
         );
         config.push_str(&format!(
-            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs {}-vc\n{app_common}",
-            qualified, qualified, qualified, qualified,
+            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
+            qualified, qualified, qualified,
         ));
         if counts.get(instance.name.as_str()) == Some(&1) {
             config.push_str(&format!(
-                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs {}-vc\n{app_common}",
-                instance.name, instance.name, instance.name, instance.name,
+                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
+                instance.name, instance.name, instance.name,
             ));
         }
         for key in &ssh.host_keys {

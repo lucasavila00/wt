@@ -91,7 +91,7 @@ Managed aliases:
 | Alias | Target |
 |-------|--------|
 | `NAME` | Persistent app session |
-| `NAME-vs`, `NAME-vc` | Devcontainer; use for editor Remote-SSH |
+| `NAME-vs` | Devcontainer; use for editor Remote-SSH |
 | `NAME-host` | Guest shell and recovery |
 
 Remove the world:

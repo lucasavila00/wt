@@ -145,7 +145,7 @@ esac
         local.repo-feature	running	192.0.2.2
 
         App shell: ssh local.repo-feature
-        Editor / raw app SSH: ssh local.repo-feature-vs (also local.repo-feature-vc)
+        Editor / raw app SSH: ssh local.repo-feature-vs
         Guest host: ssh local.repo-feature-host
         Endpoint: wt@192.0.2.2:22
         "###

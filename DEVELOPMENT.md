@@ -56,13 +56,11 @@ wt new git@github.com:lucasavila00/jsdev-sample.git jsdev-manual
 wt ls
 ssh jsdev-manual
 ssh jsdev-manual-vs
-ssh jsdev-manual-vc
 ssh jsdev-manual-host git -C /workspace status
 wt rm jsdev-manual
 ```
 
-Use either the `-vs` or `-vc` alias for editor Remote-SSH and open the mounted
-workspace path.
+Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 
 ## Reset
 
