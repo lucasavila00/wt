@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/wt-api",
     "crates/wt-cli",
+    "crates/wt-command",
     "crates/wt-guest",
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
@@ -18,6 +19,7 @@ publish = false
 
 [workspace.dependencies]
 wt-api = { path = "crates/wt-api" }
+wt-command = { path = "crates/wt-command" }
 wt-libvirt = { path = "crates/wt-libvirt" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"

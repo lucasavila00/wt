@@ -11,6 +11,7 @@ name = "wt-server-setup"
 path = "src/main.rs"
 
 [dependencies]
+wt-command = { workspace = true }
 wt-libvirt = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }

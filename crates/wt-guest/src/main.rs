@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
+use wt_command::cmd;
 
 const WORKSPACE: &str = "/workspace";
 
@@ -70,7 +71,7 @@ fn shell_target() -> Result<ShellTarget, String> {
 }
 
 fn docker(args: &[&str]) -> Result<String, String> {
-    let output = Command::new("docker")
+    let output = cmd!("docker")
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -142,8 +143,7 @@ fn metadata_user(metadata: &str) -> Result<Option<String>, String> {
 }
 
 fn command(target: &ShellTarget) -> Command {
-    let mut command = Command::new("docker");
-    command.args(["exec", "-it", "--workdir", &target.workspace]);
+    let mut command = cmd!("docker", "exec", "-it", "--workdir", &target.workspace);
     if let Some(user) = &target.user {
         command.args(["--user", user]);
     }

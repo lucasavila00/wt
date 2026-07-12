@@ -1,0 +1,7 @@
+[package]
+name = "wt-command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Local process command builder for wt"

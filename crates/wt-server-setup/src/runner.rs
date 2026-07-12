@@ -1,12 +1,11 @@
 use anyhow::{bail, Context, Result};
-use std::ffi::OsString;
 use std::process::{Command, Output};
 
 pub(crate) trait Runner {
-    fn output(&self, program: &str, args: &[OsString]) -> Result<Output>;
+    fn output(&self, command: Command) -> Result<Output>;
 
-    fn run(&self, program: &str, args: &[OsString], action: &str) -> Result<()> {
-        let output = self.output(program, args)?;
+    fn run(&self, command: Command, action: &str) -> Result<()> {
+        let output = self.output(command)?;
         if output.status.success() {
             return Ok(());
         }
@@ -16,8 +15,8 @@ pub(crate) trait Runner {
         )
     }
 
-    fn text(&self, program: &str, args: &[OsString], action: &str) -> Result<String> {
-        let output = self.output(program, args)?;
+    fn text(&self, command: Command, action: &str) -> Result<String> {
+        let output = self.output(command)?;
         if !output.status.success() {
             bail!(
                 "{action}: {}",
@@ -31,25 +30,17 @@ pub(crate) trait Runner {
 pub(crate) struct SystemRunner;
 
 impl Runner for SystemRunner {
-    fn output(&self, program: &str, args: &[OsString]) -> Result<Output> {
-        Command::new(program)
-            .args(args)
-            .output()
-            .with_context(|| format!("run {program}"))
+    fn output(&self, mut command: Command) -> Result<Output> {
+        let program = command.get_program().to_string_lossy().into_owned();
+        command.output().with_context(|| format!("run {program}"))
     }
 
-    fn run(&self, program: &str, args: &[OsString], action: &str) -> Result<()> {
-        let status = Command::new(program)
-            .args(args)
-            .status()
-            .with_context(|| format!("run {program}"))?;
+    fn run(&self, mut command: Command, action: &str) -> Result<()> {
+        let program = command.get_program().to_string_lossy().into_owned();
+        let status = command.status().with_context(|| format!("run {program}"))?;
         if !status.success() {
             bail!("{action}: command exited with {status}");
         }
         Ok(())
     }
-}
-
-pub(crate) fn args<const N: usize>(values: [&str; N]) -> Vec<OsString> {
-    values.into_iter().map(OsString::from).collect()
 }

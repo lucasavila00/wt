@@ -15,5 +15,6 @@ name = "wt-app-pane"
 path = "src/main.rs"
 
 [dependencies]
+wt-command = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 wt-api = { workspace = true }
+wt-command = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-server = { workspace = true }
 wt-cli = { path = "../wt-cli" }

@@ -52,6 +52,7 @@ Rust workspace:
 crates/
   wt-api                shared JSON types
   wt-cli                package for the wt binary
+  wt-command            shared local process command builder
   wt-guest              injected persistent app-session helpers
   wt-libvirt            production libvirt/KVM backend
   wt-server              server helper, registry, and service

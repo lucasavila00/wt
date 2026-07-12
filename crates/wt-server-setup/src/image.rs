@@ -2,7 +2,7 @@ use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
 use crate::host;
-use crate::runner::{args, Runner};
+use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
+use wt_command::cmd;
 use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
@@ -82,13 +83,13 @@ fn source_image(config: &ServerConfig, runner: &impl Runner) -> Result<PathBuf> 
     }
     println!("Downloading pinned Ubuntu source image...");
     runner.run(
-        "curl",
-        &[
-            "-fL".into(),
-            "--output".into(),
-            temporary.as_os_str().to_owned(),
-            config.image.source_url.clone().into(),
-        ],
+        cmd!(
+            "curl",
+            "-fL",
+            "--output",
+            &temporary,
+            &config.image.source_url,
+        ),
         "download pinned Ubuntu image",
     )?;
     if let Err(error) = require_sha(&temporary, &config.image.source_sha256, "downloaded image") {
@@ -155,24 +156,16 @@ fn build_image_inner(
 ) -> Result<()> {
     println!("Preparing temporary KVM build disk...");
     runner.run(
-        "qemu-img",
-        &[
-            "convert".into(),
-            "-p".into(),
-            "-O".into(),
-            "qcow2".into(),
-            source.as_os_str().to_owned(),
-            disk.as_os_str().to_owned(),
-        ],
+        cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, disk),
         "copy source image",
     )?;
     runner.run(
-        "qemu-img",
-        &[
-            "resize".into(),
-            disk.as_os_str().to_owned(),
-            format!("{}G", config.guest.disk_gib).into(),
-        ],
+        cmd!(
+            "qemu-img",
+            "resize",
+            disk,
+            format!("{}G", config.guest.disk_gib),
+        ),
         "resize image build disk",
     )?;
     fs::write(user_data, cloud_config()).context("write image cloud-init user-data")?;
@@ -182,44 +175,39 @@ fn build_image_inner(
     )
     .context("write image cloud-init meta-data")?;
     runner.run(
-        "cloud-localds",
-        &[
-            seed.as_os_str().to_owned(),
-            user_data.as_os_str().to_owned(),
-            meta_data.as_os_str().to_owned(),
-        ],
+        cmd!("cloud-localds", seed, user_data, meta_data),
         "create image build seed",
     )?;
     runner.run(
-        "virt-install",
-        &[
-            "--connect".into(),
-            LIBVIRT_URI.into(),
-            "--name".into(),
-            BUILD_NAME.into(),
-            "--memory".into(),
-            config.guest.memory_mib.to_string().into(),
-            "--vcpus".into(),
-            config.guest.vcpus.to_string().into(),
-            "--virt-type".into(),
-            "kvm".into(),
-            "--os-variant".into(),
-            "ubuntu24.04".into(),
-            "--import".into(),
-            "--boot".into(),
-            "uefi".into(),
-            "--disk".into(),
-            format!("path={},format=qcow2,bus=virtio", disk.display()).into(),
-            "--disk".into(),
-            format!("path={},device=cdrom", seed.display()).into(),
-            "--network".into(),
-            format!("network={},model=virtio", config.libvirt.network).into(),
-            "--graphics".into(),
-            "none".into(),
-            "--noautoconsole".into(),
-            "--wait".into(),
-            "0".into(),
-        ],
+        cmd!(
+            "virt-install",
+            "--connect",
+            LIBVIRT_URI,
+            "--name",
+            BUILD_NAME,
+            "--memory",
+            config.guest.memory_mib.to_string(),
+            "--vcpus",
+            config.guest.vcpus.to_string(),
+            "--virt-type",
+            "kvm",
+            "--os-variant",
+            "ubuntu24.04",
+            "--import",
+            "--boot",
+            "uefi",
+            "--disk",
+            format!("path={},format=qcow2,bus=virtio", disk.display()),
+            "--disk",
+            format!("path={},device=cdrom", seed.display()),
+            "--network",
+            format!("network={},model=virtio", config.libvirt.network),
+            "--graphics",
+            "none",
+            "--noautoconsole",
+            "--wait",
+            "0",
+        ),
         "start KVM image build guest",
     )?;
     println!(
@@ -230,13 +218,7 @@ fn build_image_inner(
 
     println!("Guest powered off. Verifying readiness and package versions...");
     let marker = runner.text(
-        "sudo",
-        &[
-            "virt-cat".into(),
-            "-a".into(),
-            disk.as_os_str().to_owned(),
-            "/var/lib/wt-image-ready".into(),
-        ],
+        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-ready",),
         "verify image readiness marker",
     )?;
     if marker.trim() != "ready" {
@@ -244,13 +226,7 @@ fn build_image_inner(
     }
     let packages = runner
         .text(
-            "sudo",
-            &[
-                "virt-cat".into(),
-                "-a".into(),
-                disk.as_os_str().to_owned(),
-                "/var/lib/wt-image-packages".into(),
-            ],
+            cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
             "read installed guest package versions",
         )?
         .lines()
@@ -265,44 +241,27 @@ fn build_image_inner(
     undefine_build_domain(runner)?;
     println!("Sysprepping golden image...");
     runner.run(
-        "sudo",
-        &[
-            "virt-sysprep".into(),
-            "-a".into(),
-            disk.as_os_str().to_owned(),
-        ],
+        cmd!("sudo", "virt-sysprep", "-a", disk),
         "sysprep golden image",
     )?;
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
     runner.run(
-        "sudo",
-        &[
-            "chown".into(),
-            format!("{}:{}", user.uid.as_raw(), user.gid.as_raw()).into(),
-            disk.as_os_str().to_owned(),
-        ],
+        cmd!(
+            "sudo",
+            "chown",
+            format!("{}:{}", user.uid.as_raw(), user.gid.as_raw()),
+            disk,
+        ),
         "restore image build disk ownership",
     )?;
     println!("Compacting golden image...");
     runner.run(
-        "qemu-img",
-        &[
-            "convert".into(),
-            "-p".into(),
-            "-O".into(),
-            "qcow2".into(),
-            disk.as_os_str().to_owned(),
-            prepared.as_os_str().to_owned(),
-        ],
+        cmd!("qemu-img", "convert", "-p", "-O", "qcow2", disk, prepared,),
         "compact golden image",
     )?;
-    runner.run(
-        "qemu-img",
-        &["check".into(), prepared.as_os_str().to_owned()],
-        "check golden image",
-    )?;
+    runner.run(cmd!("qemu-img", "check", prepared), "check golden image")?;
 
     println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
@@ -353,8 +312,7 @@ fn wait_for_shutdown(runner: &impl Runner) -> Result<()> {
     let mut next_report = Duration::from_secs(15);
     loop {
         let state = runner.text(
-            "virsh",
-            &args(["-c", LIBVIRT_URI, "domstate", BUILD_NAME]),
+            cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
             "read image build domain state",
         )?;
         if state.trim() == "shut off" {
@@ -377,14 +335,20 @@ fn wait_for_shutdown(runner: &impl Runner) -> Result<()> {
 }
 
 fn domain_exists(runner: &impl Runner) -> Result<bool> {
-    let output = runner.output("virsh", &args(["-c", LIBVIRT_URI, "dominfo", BUILD_NAME]))?;
+    let output = runner.output(cmd!("virsh", "-c", LIBVIRT_URI, "dominfo", BUILD_NAME))?;
     Ok(output.status.success())
 }
 
 fn undefine_build_domain(runner: &impl Runner) -> Result<()> {
     runner.run(
-        "virsh",
-        &args(["-c", LIBVIRT_URI, "undefine", BUILD_NAME, "--nvram"]),
+        cmd!(
+            "virsh",
+            "-c",
+            LIBVIRT_URI,
+            "undefine",
+            BUILD_NAME,
+            "--nvram",
+        ),
         "undefine image build domain",
     )
 }
@@ -393,15 +357,13 @@ fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
     if domain_exists(runner).unwrap_or(false) {
         let state = runner
             .text(
-                "virsh",
-                &args(["-c", LIBVIRT_URI, "domstate", BUILD_NAME]),
+                cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
                 "read failed build domain state",
             )
             .unwrap_or_default();
         if state.trim() != "shut off" {
             let _ = runner.run(
-                "virsh",
-                &args(["-c", LIBVIRT_URI, "destroy", BUILD_NAME]),
+                cmd!("virsh", "-c", LIBVIRT_URI, "destroy", BUILD_NAME),
                 "destroy failed build domain",
             );
         }
@@ -469,8 +431,14 @@ pub(crate) fn verify_installed_image(
 
 pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
     let names = runner.text(
-        "virsh",
-        &args(["-c", LIBVIRT_URI, "list", "--state-running", "--name"]),
+        cmd!(
+            "virsh",
+            "-c",
+            LIBVIRT_URI,
+            "list",
+            "--state-running",
+            "--name",
+        ),
         "list active libvirt domains",
     )?;
     let active = names

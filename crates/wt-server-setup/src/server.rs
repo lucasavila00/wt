@@ -2,14 +2,14 @@ use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
 use crate::registry_cache;
-use crate::runner::{args, Runner};
+use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::Uid;
 use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
-use std::process::Command;
+use wt_command::cmd;
 use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
 
 pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
@@ -49,7 +49,7 @@ pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> 
 
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::preflight(runner)?;
-    runner.run("sudo", &args(["-v"]), "authenticate sudo")?;
+    runner.run(cmd!("sudo", "-v"), "authenticate sudo")?;
     host::prepare_state(runner, config)
 }
 
@@ -100,9 +100,7 @@ fn validate_git_credentials(config: &GitConfig) -> Result<()> {
         .lines()
         .map(str::trim)
         .any(|line| !line.is_empty() && !line.starts_with('#'));
-    let output = Command::new("ssh-keygen")
-        .args(["-l", "-f"])
-        .arg(known_hosts)
+    let output = cmd!("ssh-keygen", "-l", "-f", known_hosts)
         .output()
         .with_context(|| format!("validate git.known_hosts_file {}", known_hosts.display()))?;
     if !has_entries || !output.status.success() {
@@ -134,8 +132,8 @@ fn require_workspace() -> Result<()> {
 
 fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     runner.run(
-        "cargo",
-        &args([
+        cmd!(
+            "cargo",
             "build",
             "--release",
             "-p",
@@ -144,7 +142,7 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
             "wt-guest",
             "-p",
             "wt-server",
-        ]),
+        ),
         "build wt binaries",
     )?;
     for name in ["wt", "wt-app-pane", "wt-app-shell", "wt-server"] {
@@ -187,10 +185,7 @@ fn install_config(runner: &impl Runner, config_bytes: &[u8]) -> Result<()> {
         }
     } else {
         runner.run(
-            "sudo",
-            &args([
-                "install", "-d", "-o", "root", "-g", "root", "-m", "0755", "/etc/wt",
-            ]),
+            cmd!("sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", "/etc/wt",),
             "create /etc/wt",
         )?;
     }
@@ -215,11 +210,18 @@ mod tests {
     fn validates_server_owned_git_credentials() {
         let temp = tempfile::tempdir().unwrap();
         let identity = temp.path().join("identity");
-        let output = Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", "secret", "-f"])
-            .arg(&identity)
-            .output()
-            .unwrap();
+        let output = cmd!(
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "secret",
+            "-f",
+            &identity,
+        )
+        .output()
+        .unwrap();
         assert!(output.status.success());
         fs::set_permissions(&identity, fs::Permissions::from_mode(0o600)).unwrap();
         let public = fs::read_to_string(identity.with_extension("pub")).unwrap();

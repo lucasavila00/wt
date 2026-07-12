@@ -1,9 +1,10 @@
-use crate::runner::{args, Runner};
+use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{getgroups, Gid, Group, Uid, User};
 use std::fs;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
+use wt_command::cmd;
 use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
@@ -14,8 +15,14 @@ pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
     require_active_group("docker")?;
     require_libvirt_qemu_identity()?;
     runner.text(
-        "virsh",
-        &args(["-c", LIBVIRT_URI, "domcapabilities", "--virttype", "kvm"]),
+        cmd!(
+            "virsh",
+            "-c",
+            LIBVIRT_URI,
+            "domcapabilities",
+            "--virttype",
+            "kvm",
+        ),
         "verify libvirt KVM capability",
     )?;
     Ok(())
@@ -88,21 +95,18 @@ fn require_active_group(name: &str) -> Result<()> {
 
 fn ensure_network(runner: &impl Runner, network: &str) -> Result<()> {
     let info = runner.text(
-        "virsh",
-        &args(["-c", LIBVIRT_URI, "net-info", network]),
+        cmd!("virsh", "-c", LIBVIRT_URI, "net-info", network),
         "inspect configured libvirt network",
     )?;
     if !info.lines().any(|line| field_is(line, "Active", "yes")) {
         runner.run(
-            "virsh",
-            &args(["-c", LIBVIRT_URI, "net-start", network]),
+            cmd!("virsh", "-c", LIBVIRT_URI, "net-start", network),
             "start configured libvirt network",
         )?;
     }
     if !info.lines().any(|line| field_is(line, "Autostart", "yes")) {
         runner.run(
-            "virsh",
-            &args(["-c", LIBVIRT_URI, "net-autostart", network]),
+            cmd!("virsh", "-c", LIBVIRT_URI, "net-autostart", network),
             "enable configured libvirt network",
         )?;
     }
@@ -153,8 +157,7 @@ fn ensure_directories(runner: &impl Runner, config: &ServerConfig) -> Result<()>
 
 pub(crate) fn ensure_qemu_search_acl(runner: &impl Runner, path: &Path) -> Result<()> {
     let output = runner.text(
-        "getfacl",
-        &["-cp".into(), "--".into(), path.as_os_str().to_owned()],
+        cmd!("getfacl", "-cp", "--", path),
         "inspect libvirt-qemu directory ACL",
     )?;
     let entries = acl_entries(&output);
@@ -171,14 +174,7 @@ pub(crate) fn ensure_qemu_search_acl(runner: &impl Runner, path: &Path) -> Resul
         );
     }
     runner.run(
-        "sudo",
-        &[
-            "setfacl".into(),
-            "-m".into(),
-            "u:libvirt-qemu:--x".into(),
-            "--".into(),
-            path.as_os_str().to_owned(),
-        ],
+        cmd!("sudo", "setfacl", "-m", "u:libvirt-qemu:--x", "--", path),
         "grant libvirt-qemu search access to directory",
     )
 }
@@ -220,18 +216,18 @@ fn ensure_directory(
         return Ok(());
     }
     runner.run(
-        "sudo",
-        &[
-            "install".into(),
-            "-d".into(),
-            "-o".into(),
-            uid.as_raw().to_string().into(),
-            "-g".into(),
-            gid.as_raw().to_string().into(),
-            "-m".into(),
-            format!("{mode:04o}").into(),
-            path.as_os_str().to_owned(),
-        ],
+        cmd!(
+            "sudo",
+            "install",
+            "-d",
+            "-o",
+            uid.as_raw().to_string(),
+            "-g",
+            gid.as_raw().to_string(),
+            "-m",
+            format!("{mode:04o}"),
+            path,
+        ),
         "create server directory",
     )
 }
@@ -243,7 +239,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::ffi::OsString;
     use std::os::unix::process::ExitStatusExt;
-    use std::process::Output;
+    use std::process::{Command, Output};
 
     struct FakeRunner {
         outputs: RefCell<VecDeque<Output>>,
@@ -269,10 +265,11 @@ mod tests {
     }
 
     impl Runner for FakeRunner {
-        fn output(&self, program: &str, args: &[OsString]) -> Result<Output> {
-            self.calls
-                .borrow_mut()
-                .push((program.to_owned(), args.to_vec()));
+        fn output(&self, command: Command) -> Result<Output> {
+            self.calls.borrow_mut().push((
+                command.get_program().to_string_lossy().into_owned(),
+                command.get_args().map(OsString::from).collect(),
+            ));
             self.outputs
                 .borrow_mut()
                 .pop_front()

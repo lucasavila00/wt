@@ -15,6 +15,7 @@ use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use virt::network::Network;
+use wt_command::cmd;
 
 pub struct LibvirtWorker {
     config: LibvirtConfig,
@@ -74,11 +75,19 @@ impl LibvirtWorker {
             .map_err(|error| worker_error("create world directory", error))?;
 
         run(
-            Command::new("qemu-img")
-                .args(["create", "-q", "-f", "qcow2", "-F", "qcow2", "-b"])
-                .arg(&self.config.image)
-                .arg(&paths.disk)
-                .arg(format!("{}G", self.config.disk_gib)),
+            cmd!(
+                "qemu-img",
+                "create",
+                "-q",
+                "-f",
+                "qcow2",
+                "-F",
+                "qcow2",
+                "-b",
+                &self.config.image,
+                &paths.disk,
+                format!("{}G", self.config.disk_gib),
+            ),
             "create qcow2 overlay",
         )?;
 
@@ -100,10 +109,12 @@ impl LibvirtWorker {
         )
         .map_err(|error| worker_error("write cloud-init meta-data", error))?;
         run(
-            Command::new("cloud-localds")
-                .arg(&paths.seed)
-                .arg(&paths.user_data)
-                .arg(&paths.meta_data),
+            cmd!(
+                "cloud-localds",
+                &paths.seed,
+                &paths.user_data,
+                &paths.meta_data
+            ),
             "create cloud-init seed",
         )?;
 
@@ -391,7 +402,13 @@ fn network_address(connection: &Connect, name: &str) -> Result<String, WorkerErr
 
 fn verify_registry_cache(url: &str) -> Result<(), WorkerError> {
     run(
-        Command::new("curl").args(["-fsS", "--output", "/dev/null", &format!("{url}/ca.crt")]),
+        cmd!(
+            "curl",
+            "-fsS",
+            "--output",
+            "/dev/null",
+            format!("{url}/ca.crt")
+        ),
         "verify registry cache",
     )
 }
@@ -404,9 +421,14 @@ fn unix_timestamp() -> u64 {
 }
 
 fn report_registry_cache(since: u64, phase: &str) {
-    let output = Command::new("docker")
-        .args(["logs", "--since", &since.to_string(), "wt-registry-cache"])
-        .output();
+    let output = cmd!(
+        "docker",
+        "logs",
+        "--since",
+        since.to_string(),
+        "wt-registry-cache",
+    )
+    .output();
     let Ok(output) = output else {
         eprintln!("Registry cache summary unavailable.");
         return;
@@ -496,7 +518,7 @@ fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {
     }
 }
 
-fn run(command: &mut Command, action: &str) -> Result<(), WorkerError> {
+fn run(mut command: Command, action: &str) -> Result<(), WorkerError> {
     let output = command
         .output()
         .map_err(|error| worker_error(action, error))?;

@@ -1,12 +1,12 @@
 use crate::files::sudo_install;
-use crate::runner::{args, Runner};
+use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
+use wt_command::cmd;
 use wt_libvirt::ServerConfig;
 
 pub(crate) const CONTAINER_NAME: &str = "wt-registry-cache";
@@ -39,8 +39,7 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     let ca = wait_for_ca(&config.registry_cache.state_dir)?;
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
     runner.run(
-        "sudo",
-        &["chmod".into(), "0644".into(), ca.as_os_str().to_owned()],
+        cmd!("sudo", "chmod", "0644", &ca),
         "make registry cache CA readable",
     )?;
     configure_host_docker(runner, &ca, &bridge, config.registry_cache.port)?;
@@ -52,8 +51,13 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
 
 fn bridge_address(runner: &impl Runner, network: &str) -> Result<String> {
     let xml = runner.text(
-        "virsh",
-        &args(["-c", wt_libvirt::LIBVIRT_URI, "net-dumpxml", network]),
+        cmd!(
+            "virsh",
+            "-c",
+            wt_libvirt::LIBVIRT_URI,
+            "net-dumpxml",
+            network,
+        ),
         "read libvirt network XML",
     )?;
     for quote in ['\'', '"'] {
@@ -79,18 +83,7 @@ fn ensure_state_directories(runner: &impl Runner, state: &Path) -> Result<()> {
             continue;
         }
         runner.run(
-            "sudo",
-            &[
-                "install".into(),
-                "-d".into(),
-                "-o".into(),
-                "root".into(),
-                "-g".into(),
-                "root".into(),
-                "-m".into(),
-                "0755".into(),
-                path.as_os_str().to_owned(),
-            ],
+            cmd!("sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", &path,),
             "create registry cache state directory",
         )?;
     }
@@ -98,7 +91,7 @@ fn ensure_state_directories(runner: &impl Runner, state: &Path) -> Result<()> {
 }
 
 fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -> Result<()> {
-    let existing = runner.output("docker", &args(["container", "inspect", CONTAINER_NAME]))?;
+    let existing = runner.output(cmd!("docker", "container", "inspect", CONTAINER_NAME))?;
     if existing.status.success() {
         let inspect: Vec<serde_json::Value> = serde_json::from_slice(&existing.stdout)
             .context("parse registry cache container inspection")?;
@@ -150,16 +143,14 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
             bail!("registry cache container configuration drift");
         }
         runner.run(
-            "docker",
-            &args(["container", "start", CONTAINER_NAME]),
+            cmd!("docker", "container", "start", CONTAINER_NAME),
             "start registry cache container",
         )?;
         return Ok(());
     }
 
     runner.run(
-        "docker",
-        &["pull".into(), PROXY_IMAGE.into()],
+        cmd!("docker", "pull", PROXY_IMAGE),
         "pull pinned registry cache image",
     )?;
     let registries = config
@@ -180,7 +171,8 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
         config.registry_cache.state_dir.join("ca").display()
     );
     let size = format!("CACHE_MAX_SIZE={}g", config.registry_cache.max_size_gib);
-    let mut command: Vec<OsString> = [
+    let mut command = cmd!(
+        "docker",
         "run",
         "--detach",
         "--name",
@@ -199,15 +191,12 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
         &cache,
         "--volume",
         &ca,
-    ]
-    .into_iter()
-    .map(OsString::from)
-    .collect();
+    );
     if !registries.is_empty() {
-        command.extend(["--env".into(), format!("REGISTRIES={registries}").into()]);
+        command.arg("--env").arg(format!("REGISTRIES={registries}"));
     }
-    command.push(PROXY_IMAGE.into());
-    runner.run("docker", &command, "create registry cache container")
+    command.arg(PROXY_IMAGE);
+    runner.run(command, "create registry cache container")
 }
 
 fn wait_for_ca(state: &Path) -> Result<PathBuf> {
@@ -225,8 +214,7 @@ fn wait_for_ca(state: &Path) -> Result<PathBuf> {
 fn configure_host_docker(runner: &impl Runner, ca: &Path, bridge: &str, port: u16) -> Result<()> {
     sudo_install(runner, ca, Path::new(CA_INSTALL_PATH), 0o644)?;
     runner.run(
-        "sudo",
-        &args(["install", "-d", "-m", "0755", DOCKER_DROP_IN_DIR]),
+        cmd!("sudo", "install", "-d", "-m", "0755", DOCKER_DROP_IN_DIR),
         "create Docker systemd drop-in directory",
     )?;
     let staged = Path::new("target/wt-registry-cache-docker.conf");
@@ -240,18 +228,12 @@ fn configure_host_docker(runner: &impl Runner, ca: &Path, bridge: &str, port: u1
     sudo_install(runner, staged, Path::new(DOCKER_DROP_IN_PATH), 0o644)?;
     let _ = fs::remove_file(staged);
     runner.run(
-        "sudo",
-        &args(["update-ca-certificates"]),
+        cmd!("sudo", "update-ca-certificates"),
         "trust registry cache CA",
     )?;
+    runner.run(cmd!("sudo", "systemctl", "daemon-reload"), "reload systemd")?;
     runner.run(
-        "sudo",
-        &args(["systemctl", "daemon-reload"]),
-        "reload systemd",
-    )?;
-    runner.run(
-        "sudo",
-        &args(["systemctl", "restart", "docker.service"]),
+        cmd!("sudo", "systemctl", "restart", "docker.service"),
         "restart Docker with registry cache proxy",
     )
 }
@@ -260,11 +242,7 @@ fn wait_for_proxy(runner: &impl Runner, bridge: &str, port: u16) -> Result<()> {
     let url = format!("http://{bridge}:{port}/ca.crt");
     let deadline = Instant::now() + Duration::from_secs(60);
     while Instant::now() < deadline {
-        if runner
-            .output("curl", &["-fsS".into(), url.clone().into()])?
-            .status
-            .success()
-        {
+        if runner.output(cmd!("curl", "-fsS", &url))?.status.success() {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(500));
@@ -291,16 +269,16 @@ fn preload(runner: &impl Runner, config: &ServerConfig, bridge: &str) -> Result<
             "preload registry cache image",
         )?;
         let digests = runner.text(
-            "env",
-            &[
-                format!("HTTP_PROXY={proxy}").into(),
-                format!("HTTPS_PROXY={proxy}").into(),
-                "skopeo".into(),
-                "inspect".into(),
-                "--format".into(),
-                "{{.Digest}}".into(),
-                image_source.clone().into(),
-            ],
+            cmd!(
+                "env",
+                format!("HTTP_PROXY={proxy}"),
+                format!("HTTPS_PROXY={proxy}"),
+                "skopeo",
+                "inspect",
+                "--format",
+                "{{.Digest}}",
+                &image_source,
+            ),
             "inspect preloaded registry cache image",
         )?;
         let digest = digests.trim();
@@ -336,19 +314,19 @@ fn skopeo_copy(
     action: &str,
 ) -> Result<()> {
     runner.run(
-        "env",
-        &[
-            format!("HTTP_PROXY={proxy}").into(),
-            format!("HTTPS_PROXY={proxy}").into(),
-            "skopeo".into(),
-            "copy".into(),
-            "--override-os".into(),
-            "linux".into(),
-            "--override-arch".into(),
-            "amd64".into(),
-            source.into(),
-            format!("dir:{}", destination.display()).into(),
-        ],
+        cmd!(
+            "env",
+            format!("HTTP_PROXY={proxy}"),
+            format!("HTTPS_PROXY={proxy}"),
+            "skopeo",
+            "copy",
+            "--override-os",
+            "linux",
+            "--override-arch",
+            "amd64",
+            source,
+            format!("dir:{}", destination.display()),
+        ),
         action,
     )
 }
@@ -373,15 +351,13 @@ fn unix_timestamp() -> u64 {
 }
 
 fn cache_hits_since(runner: &impl Runner, since: u64) -> Result<usize> {
-    let output = runner.output(
+    let output = runner.output(cmd!(
         "docker",
-        &[
-            "logs".into(),
-            "--since".into(),
-            since.to_string().into(),
-            CONTAINER_NAME.into(),
-        ],
-    )?;
+        "logs",
+        "--since",
+        since.to_string(),
+        CONTAINER_NAME,
+    ))?;
     if !output.status.success() {
         bail!(
             "read registry cache logs: {}",

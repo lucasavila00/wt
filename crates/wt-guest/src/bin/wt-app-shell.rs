@@ -2,6 +2,7 @@
 
 use std::os::unix::process::CommandExt;
 use std::process::Command;
+use wt_command::cmd;
 
 const TMUX_CONFIG: &str = "/usr/local/share/wt-tmux.conf";
 
@@ -12,8 +13,8 @@ fn main() {
 }
 
 fn command() -> Command {
-    let mut command = Command::new("/usr/bin/tmux");
-    command.args([
+    cmd!(
+        "/usr/bin/tmux",
         "-L",
         "wt-app",
         "-f",
@@ -22,8 +23,7 @@ fn command() -> Command {
         "-A",
         "-s",
         "wt-app",
-    ]);
-    command
+    )
 }
 
 #[cfg(test)]

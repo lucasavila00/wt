@@ -4,6 +4,7 @@ use nix::unistd::{Group, User};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+use wt_command::cmd;
 
 pub(crate) fn require_root_file(path: &Path, mode: u32) -> Result<()> {
     require_named_file(path, "root", "root", mode)
@@ -51,31 +52,25 @@ pub(crate) fn sudo_install_owned(
     mode: u32,
 ) -> Result<()> {
     runner.run(
-        "sudo",
-        &[
-            "install".into(),
-            "-o".into(),
-            owner.into(),
-            "-g".into(),
-            group.into(),
-            "-m".into(),
-            format!("{mode:04o}").into(),
-            source.as_os_str().to_owned(),
-            destination.as_os_str().to_owned(),
-        ],
+        cmd!(
+            "sudo",
+            "install",
+            "-o",
+            owner,
+            "-g",
+            group,
+            "-m",
+            format!("{mode:04o}"),
+            source,
+            destination,
+        ),
         "install file",
     )
 }
 
 pub(crate) fn sudo_move(runner: &impl Runner, source: &Path, destination: &Path) -> Result<()> {
     runner.run(
-        "sudo",
-        &[
-            "mv".into(),
-            "--".into(),
-            source.as_os_str().to_owned(),
-            destination.as_os_str().to_owned(),
-        ],
+        cmd!("sudo", "mv", "--", source, destination),
         "publish installed file",
     )
 }

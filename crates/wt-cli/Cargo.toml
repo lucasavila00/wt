@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 wt-api = { workspace = true }
+wt-command = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 rpassword = { workspace = true }

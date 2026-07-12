@@ -6,6 +6,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{CreateInstance, GitPassphrase, InstanceName, InstanceStatus, Operation, Response};
+use wt_command::cmd;
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::service::Service;
 use wt_server::store::Store;
@@ -19,12 +20,9 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let temp = TempDir::new().unwrap();
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     timings.run("build guest helpers", || {
-        run(
-            Command::new(env!("CARGO"))
-                .current_dir(&workspace)
-                .args(["build", "-p", "wt-guest"]),
-            "build guest helpers",
-        )
+        let mut command = cmd!(env!("CARGO"), "build", "-p", "wt-guest");
+        command.current_dir(&workspace);
+        run(command, "build guest helpers")
     });
     let mut config = ServerConfig::load().unwrap();
     assert_eq!(config.registry_cache.preload_images, fixture_images());
@@ -98,25 +96,35 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         let host_alias = format!("local.{}-host", name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
-            Command::new("ssh")
-                .arg("-F")
-                .arg(&ssh_config)
-                .args(["-i", git.guest_key.to_str().unwrap(), &host_alias])
-                .args(["test", "-d", "/workspace"])
-                .output()
-                .map_err(|error| error.to_string())
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "test",
+                "-d",
+                "/workspace",
+            )
+            .output()
+            .map_err(|error| error.to_string())
         })?;
         ensure_success("enter jsdev guest host", &output)?;
 
-        let mut persistent = Command::new("ssh")
-            .arg("-F")
-            .arg(&ssh_config)
-            .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| format!("start persistent app shell: {error}"))?;
+        let mut persistent = cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            name.as_str(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| format!("start persistent app shell: {error}"))?;
         persistent
             .stdin
             .as_mut()
@@ -128,15 +136,19 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         wait_for_line(&mut persistent, "retained:/tmp")?;
         disconnect(&mut persistent, "initial persistent app shell")?;
 
-        let mut reattached = Command::new("ssh")
-            .arg("-F")
-            .arg(&ssh_config)
-            .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| format!("reattach persistent app shell: {error}"))?;
+        let mut reattached = cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            name.as_str(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| format!("reattach persistent app shell: {error}"))?;
         reattached
             .stdin
             .as_mut()
@@ -148,23 +160,25 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         wait_for_line(&mut reattached, "persistence-retained")?;
         disconnect(&mut reattached, "reattached app shell")?;
 
-        let output = Command::new("ssh")
-            .arg("-F")
-            .arg(&ssh_config)
-            .args(["-i", git.guest_key.to_str().unwrap(), &host_alias])
-            .args([
-                "/usr/bin/tmux",
-                "-L",
-                "wt-app",
-                "new-window",
-                "\\;",
-                "list-panes",
-                "-a",
-                "-F",
-                "'#{pane_start_command}'",
-            ])
-            .output()
-            .map_err(|error| error.to_string())?;
+        let output = cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            &host_alias,
+            "/usr/bin/tmux",
+            "-L",
+            "wt-app",
+            "new-window",
+            "\\;",
+            "list-panes",
+            "-a",
+            "-F",
+            "'#{pane_start_command}'",
+        )
+        .output()
+        .map_err(|error| error.to_string())?;
         ensure_success("create persistent app window", &output)?;
         let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
         if panes.lines().count() != 2
@@ -186,20 +200,27 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         .map_err(|error| error.to_string())?;
         let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
         let output = timings.run("push from app container", || {
-            Command::new("ssh")
-                .arg("-F")
-                .arg(&ssh_config)
-                .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
-                .stdin(Stdio::from(input))
-                .output()
-                .map_err(|error| error.to_string())
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                name.as_str(),
+            )
+            .stdin(Stdio::from(input))
+            .output()
+            .map_err(|error| error.to_string())
         })?;
         ensure_success("enter and push from jsdev app container", &output)?;
         let pushed = git_output(
-            Command::new("git")
-                .arg("--git-dir")
-                .arg(&git.repository)
-                .args(["rev-parse", &format!("refs/heads/{branch}")]),
+            cmd!(
+                "git",
+                "--git-dir",
+                &git.repository,
+                "rev-parse",
+                format!("refs/heads/{branch}"),
+            ),
             "verify pushed branch",
         );
         if pushed.trim().is_empty() {
@@ -230,17 +251,18 @@ impl GitSshServer {
     fn start(root: &Path, address: IpAddr) -> Self {
         let repository = root.join("jsdev-sample.git");
         run(
-            Command::new("git")
-                .args(["clone", "--bare", SAMPLE_SOURCE])
-                .arg(&repository),
+            cmd!("git", "clone", "--bare", SAMPLE_SOURCE, &repository),
             "create bare jsdev repository",
         );
         assert_fixture_images(&repository);
         let main_commit = git_output(
-            Command::new("git")
-                .arg("--git-dir")
-                .arg(&repository)
-                .args(["rev-parse", "refs/heads/main"]),
+            cmd!(
+                "git",
+                "--git-dir",
+                &repository,
+                "rev-parse",
+                "refs/heads/main",
+            ),
             "resolve jsdev main",
         )
         .trim()
@@ -272,9 +294,7 @@ impl GitSshServer {
             ),
         )
         .unwrap();
-        let mut child = Command::new("/usr/sbin/sshd")
-            .args(["-D", "-e", "-f"])
-            .arg(&config)
+        let mut child = cmd!("/usr/sbin/sshd", "-D", "-e", "-f", &config)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -332,10 +352,13 @@ fn fixture_images() -> Vec<String> {
 
 fn assert_fixture_images(repository: &Path) {
     let compose = git_output(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(repository)
-            .args(["show", "refs/heads/main:.devcontainer/compose.yaml"]),
+        cmd!(
+            "git",
+            "--git-dir",
+            repository,
+            "show",
+            "refs/heads/main:.devcontainer/compose.yaml",
+        ),
         "read jsdev Compose fixture",
     );
     let actual = compose
@@ -391,9 +414,16 @@ impl Drop for GitSshServer {
 
 fn generate_key(path: &Path, passphrase: &str) {
     run(
-        Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", passphrase, "-f"])
-            .arg(path),
+        cmd!(
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            passphrase,
+            "-f",
+            path,
+        ),
         "generate test SSH key",
     );
 }
@@ -403,10 +433,15 @@ fn current_user() -> String {
 }
 
 fn network_address(network: &str) -> IpAddr {
-    let output = Command::new("virsh")
-        .args(["-c", wt_libvirt::LIBVIRT_URI, "net-dumpxml", network])
-        .output()
-        .unwrap();
+    let output = cmd!(
+        "virsh",
+        "-c",
+        wt_libvirt::LIBVIRT_URI,
+        "net-dumpxml",
+        network,
+    )
+    .output()
+    .unwrap();
     ensure_success("inspect libvirt network", &output).unwrap();
     let xml = String::from_utf8(output.stdout).unwrap();
     for quote in ['\'', '"'] {
@@ -420,7 +455,7 @@ fn network_address(network: &str) -> IpAddr {
     panic!("configured libvirt network has no host address");
 }
 
-fn git_output(command: &mut Command, action: &str) -> String {
+fn git_output(mut command: Command, action: &str) -> String {
     let output = command.output().unwrap();
     ensure_success(action, &output).unwrap();
     String::from_utf8(output.stdout).unwrap()
@@ -480,7 +515,7 @@ fn disconnect(child: &mut Child, description: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run(command: &mut Command, action: &str) {
+fn run(mut command: Command, action: &str) {
     let output = command.output().unwrap();
     ensure_success(action, &output).unwrap();
 }

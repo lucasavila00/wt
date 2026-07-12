@@ -3,6 +3,7 @@ use anyhow::{bail, Context as _, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use wt_api::{ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
+use wt_command::cmd;
 
 pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
     let mut command = helper_command(context);
@@ -46,16 +47,8 @@ pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
 
 fn helper_command(context: &Context) -> Command {
     match &context.kind {
-        ContextKind::BareMetalLocal => {
-            let mut command = Command::new("wt-server");
-            command.arg("api");
-            command
-        }
-        ContextKind::BareMetalSsh { host } => {
-            let mut command = Command::new("ssh");
-            command.args(["--", host, "wt-server", "api"]);
-            command
-        }
+        ContextKind::BareMetalLocal => cmd!("wt-server", "api"),
+        ContextKind::BareMetalSsh { host } => cmd!("ssh", "--", host, "wt-server", "api"),
     }
 }
 

@@ -269,6 +269,7 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
+    use wt_command::cmd;
 
     #[test]
     fn persistent_ssh_command_resolves_from_nested_workspace() {
@@ -276,7 +277,7 @@ mod tests {
         let repository = temp.path().join("repo");
         fs::create_dir(&repository).unwrap();
         run(
-            Command::new("git").args(["init", "-q"]).arg(&repository),
+            cmd!("git", "init", "-q", &repository),
             "initialize test repository",
         );
         let bundle = repository.join(".git/wt");
@@ -286,24 +287,29 @@ mod tests {
         fs::write(bundle.join("ssh"), SSH_WRAPPER).unwrap();
         fs::set_permissions(bundle.join("ssh"), fs::Permissions::from_mode(0o555)).unwrap();
         run(
-            Command::new("git").args(["-C"]).arg(&repository).args([
+            cmd!(
+                "git",
+                "-C",
+                &repository,
                 "config",
                 "core.sshCommand",
                 SSH_COMMAND,
-            ]),
+            ),
             "configure test SSH command",
         );
         let nested = repository.join("nested");
         fs::create_dir(&nested).unwrap();
         let runtime = temp.path().join("runtime");
         fs::create_dir(&runtime).unwrap();
-        let status = Command::new("sh")
-            .arg("-c")
-            .arg(format!("{SSH_COMMAND} -T -G example.test >/dev/null"))
-            .current_dir(&nested)
-            .env("TMPDIR", &runtime)
-            .status()
-            .unwrap();
+        let status = cmd!(
+            "sh",
+            "-c",
+            format!("{SSH_COMMAND} -T -G example.test >/dev/null"),
+        )
+        .current_dir(&nested)
+        .env("TMPDIR", &runtime)
+        .status()
+        .unwrap();
         assert!(status.success());
         assert_eq!(fs::read_dir(runtime).unwrap().count(), 0);
     }
@@ -313,9 +319,16 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let key = temp.path().join("identity");
         run(
-            Command::new("ssh-keygen")
-                .args(["-q", "-t", "ed25519", "-N", "secret", "-f"])
-                .arg(&key),
+            cmd!(
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "secret",
+                "-f",
+                &key,
+            ),
             "generate encrypted key",
         );
         fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
@@ -337,7 +350,7 @@ mod tests {
         assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 
-    fn run(command: &mut Command, action: &str) {
+    fn run(mut command: Command, action: &str) {
         let output = command.output().unwrap();
         assert!(
             output.status.success(),

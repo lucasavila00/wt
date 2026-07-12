@@ -1,7 +1,8 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use wt_command::cmd;
 
 #[test]
 fn new_and_rm_always_sync_ssh_inventory() {
@@ -48,24 +49,24 @@ esac
     )))
     .unwrap();
 
-    let mut created = Command::new("script")
-        .args([
-            "-q",
-            "-e",
-            "-c",
-            &format!(
-                "{} new git@example.test:repo.git repo-feature",
-                env!("CARGO_BIN_EXE_wt")
-            ),
-            "/dev/null",
-        ])
-        .env("HOME", temp.path())
-        .env("PATH", &path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut created = cmd!(
+        "script",
+        "-q",
+        "-e",
+        "-c",
+        &format!(
+            "{} new git@example.test:repo.git repo-feature",
+            env!("CARGO_BIN_EXE_wt")
+        ),
+        "/dev/null",
+    )
+    .env("HOME", temp.path())
+    .env("PATH", &path)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .unwrap();
     let mut stdout = created.stdout.take().unwrap();
     let mut prompt = Vec::new();
     loop {
@@ -99,8 +100,7 @@ esac
     assert!(managed.contains("Host repo-feature-host\n"));
     assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
 
-    let removed = Command::new(env!("CARGO_BIN_EXE_wt"))
-        .args(["rm", "repo-feature"])
+    let removed = cmd!(env!("CARGO_BIN_EXE_wt"), "rm", "repo-feature")
         .env("HOME", temp.path())
         .env("PATH", &path)
         .output()
