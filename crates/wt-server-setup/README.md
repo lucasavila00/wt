@@ -22,6 +22,8 @@ The implementation follows those responsibilities:
 - `server.rs` orchestrates installation and enforces the runtime server config.
 - `host.rs` validates and prepares Ubuntu, KVM, libvirt, and server directories.
 - `image.rs` builds, verifies, and publishes the golden image and its provenance.
+- `image/recipe.rs` defines package requirements, renders cloud-init, and validates
+  recorded guest package versions.
 - `registry_cache.rs` installs and verifies the shared container registry cache.
 - `files.rs` contains strict ownership/mode checks and privileged file publication.
 - `runner.rs` is the small command-execution boundary used by the other modules.

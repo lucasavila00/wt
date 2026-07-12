@@ -1,3 +1,6 @@
+mod recipe;
+
+use self::recipe::{ImageRecipe, PackageVersions};
 use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
@@ -17,13 +20,12 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
-use wt_libvirt::{ServerConfig, SessionFrontend, LIBVIRT_URI};
+use wt_libvirt::{ServerConfig, LIBVIRT_URI};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
-const IMAGE_RECIPE_VERSION: u32 = 1;
-const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
+const IMAGE_MANIFEST_VERSION: u32 = 1;
 const CLEAR_MACHINE_ID: &str =
     "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
 
@@ -35,7 +37,7 @@ struct ImageManifest {
     source_sha256: String,
     config_sha256: String,
     golden_sha256: String,
-    packages: Vec<String>,
+    packages: PackageVersions,
     devcontainer_cli: String,
 }
 
@@ -162,6 +164,7 @@ fn build_image_inner(
     console: &Path,
     prepared: &Path,
 ) -> Result<()> {
+    let recipe = ImageRecipe::new(server.guest.session);
     println!("Preparing temporary KVM build disk...");
     runner.run(
         cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, disk),
@@ -176,8 +179,7 @@ fn build_image_inner(
         ),
         "resize image build disk",
     )?;
-    fs::write(user_data, cloud_config(server.guest.session))
-        .context("write image cloud-init user-data")?;
+    fs::write(user_data, recipe.cloud_config()).context("write image cloud-init user-data")?;
     fs::write(
         meta_data,
         format!("instance-id: {BUILD_NAME}\nlocal-hostname: {BUILD_NAME}\n"),
@@ -243,23 +245,17 @@ fn build_image_inner(
     if marker.trim() != "ready" {
         bail!("image build finished without the expected readiness marker");
     }
-    let packages = runner
-        .text(
-            cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
-            "read installed guest package versions",
-        )?
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let expected_packages = expected_package_count(server.guest.session);
-    if packages.len() != expected_packages {
-        bail!(
-            "image package manifest must contain exactly {expected_packages} packages, found {}",
-            packages.len()
-        );
-    }
-    println!("Verified packages: {}", packages.join(", "));
+    let package_output = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
+        "read installed guest package versions",
+    )?;
+    let packages = recipe.parse_package_versions(&package_output)?;
+    let package_summary = packages
+        .iter()
+        .map(|(name, version)| format!("{name}={version}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("Verified packages: {package_summary}");
 
     undefine_build_domain(runner)?;
     println!("Sysprepping golden image...");
@@ -306,61 +302,18 @@ fn build_image_inner(
 
     println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
-        version: 1,
-        recipe_version: IMAGE_RECIPE_VERSION,
+        version: IMAGE_MANIFEST_VERSION,
+        recipe_version: recipe::RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: sha_bytes(server_bytes),
         golden_sha256: sha_file(prepared)?,
         packages,
-        devcontainer_cli: DEVCONTAINER_CLI_VERSION.to_owned(),
+        devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
     };
     publish_image(runner, server, prepared, manifest_path, &manifest)?;
     fs::remove_dir_all(server.libvirt.worlds_dir.join(BUILD_NAME))
         .context("remove image build directory")?;
     Ok(())
-}
-
-fn cloud_config(session: SessionFrontend) -> String {
-    let (install_package, recorded_packages) = match session {
-        SessionFrontend::Tmux => ("tmux", "tmux"),
-        SessionFrontend::Byobu => ("byobu", "byobu tmux"),
-    };
-    r#"#cloud-config
-output:
-  all: '| tee -a /var/log/cloud-init-output.log'
-bootcmd:
-  - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
-package_update: true
-packages:
-  - docker.io
-  - docker-buildx
-  - docker-compose-v2
-  - qemu-guest-agent
-  - git
-  - openssh-server
-  - nodejs
-  - npm
-  - SESSION_PACKAGE
-runcmd:
-  - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
-  - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
-  - docker info
-  - docker buildx version
-  - docker compose version
-  - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
-  - npm install --global @devcontainers/cli@0.80.2
-  - devcontainer --version
-  - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}=${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm RECORDED_SESSION_PACKAGES | sort > /var/lib/wt-image-packages
-  - printf 'ready\n' > /var/lib/wt-image-ready
-  - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
-power_state:
-  mode: poweroff
-  timeout: 60
-  condition: true
-"#
-    .replace("RECORDED_SESSION_PACKAGES", recorded_packages)
-    .replace("SESSION_PACKAGE", install_package)
 }
 
 struct ConsoleLog {
@@ -532,6 +485,7 @@ pub(crate) fn verify_installed_image(
     server_bytes: &[u8],
     manifest_path: &Path,
 ) -> Result<()> {
+    let recipe = ImageRecipe::new(server.guest.session);
     require_named_file(&server.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
@@ -539,15 +493,17 @@ pub(crate) fn verify_installed_image(
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    if manifest.version != 1
-        || manifest.recipe_version != IMAGE_RECIPE_VERSION
+    if manifest.version != IMAGE_MANIFEST_VERSION
+        || manifest.recipe_version != recipe::RECIPE_VERSION
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != sha_bytes(server_bytes)
-        || manifest.packages.len() != expected_package_count(server.guest.session)
-        || manifest.devcontainer_cli != DEVCONTAINER_CLI_VERSION
+        || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
     {
         bail!("installed image provenance differs from the current install input");
     }
+    recipe
+        .validate_package_versions(&manifest.packages)
+        .context("installed image package provenance differs")?;
     require_sha(
         &server.image.installed_path,
         &manifest.golden_sha256,
@@ -582,13 +538,6 @@ pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
 
 pub(crate) fn manifest_path(image: &Path) -> PathBuf {
     PathBuf::from(format!("{}.manifest.json", image.display()))
-}
-
-fn expected_package_count(session: SessionFrontend) -> usize {
-    match session {
-        SessionFrontend::Tmux => 9,
-        SessionFrontend::Byobu => 10,
-    }
 }
 
 pub(crate) fn sibling_temporary(path: &Path) -> Result<PathBuf> {
@@ -642,27 +591,21 @@ mod tests {
     }
 
     #[test]
-    fn image_recipe_installs_and_records_tmux() {
-        let config = cloud_config(SessionFrontend::Tmux);
-        assert_eq!(expected_package_count(SessionFrontend::Tmux), 9);
-        assert!(config.contains("  - docker-buildx\n"));
-        assert!(config.contains("  - tmux\n"));
-        assert!(!config.contains("  - byobu\n"));
-        assert!(config.contains("  - docker buildx version\n"));
-        assert!(config.contains(
-            "docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages"
-        ));
-    }
+    fn image_manifest_records_structured_package_versions() {
+        let manifest = ImageManifest {
+            version: IMAGE_MANIFEST_VERSION,
+            recipe_version: recipe::RECIPE_VERSION,
+            source_sha256: "source".to_owned(),
+            config_sha256: "config".to_owned(),
+            golden_sha256: "golden".to_owned(),
+            packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
+            devcontainer_cli: recipe::DEVCONTAINER_CLI_VERSION.to_owned(),
+        };
 
-    #[test]
-    fn image_recipe_installs_byobu_and_records_its_tmux_backend() {
-        let config = cloud_config(SessionFrontend::Byobu);
-        assert_eq!(expected_package_count(SessionFrontend::Byobu), 10);
-        assert!(config.contains("  - byobu\n"));
-        assert!(!config.contains("  - tmux\n"));
-        assert!(config.contains(
-            "docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm byobu tmux | sort > /var/lib/wt-image-packages"
-        ));
+        let json = serde_json::to_value(manifest).unwrap();
+        assert_eq!(json["version"], 1);
+        assert_eq!(json["recipe_version"], 1);
+        assert_eq!(json["packages"]["tmux"], "3.4-1");
     }
 
     #[test]
@@ -671,20 +614,6 @@ mod tests {
             CLEAR_MACHINE_ID,
             "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id"
         );
-    }
-
-    #[test]
-    fn image_recipe_reports_build_phases() {
-        let config = cloud_config(SessionFrontend::Tmux);
-        for phase in [
-            "updating package indexes and installing guest packages",
-            "validating guest services",
-            "installing and validating Dev Container CLI",
-            "recording installed package versions",
-            "build ready; requesting shutdown",
-        ] {
-            assert!(config.contains(&format!("WT_IMAGE_PHASE={phase}")));
-        }
     }
 
     #[test]
