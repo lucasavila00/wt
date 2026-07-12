@@ -1,87 +1,66 @@
 # Architecture
 
-Current product direction: [plan.md](../plan.md).
-
-| Doc | Topic |
-|-----|-------|
-| [cli.md](./cli.md) | `wt` CLI, contexts, and SSH inventory |
-| [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt/KVM world backend |
-| [registry-cache.md](./registry-cache.md) | Shared Docker/OCI pull cache for KVM worlds |
-
-## System
-
 ```text
-client wt
-   ├─ local context ─────────► wt-server api
-   └─ OpenSSH context ───────► wt-server api
-                                  ├─ SQLite registry
-                                  └─ wt-libvirt ──► KVM world
-                                                        ├─ Git checkout
-                                                        ├─ devcontainer
-                                                        └─ guest SSH
+client: wt + OpenSSH
+   │
+   ├─ local ────────────────┐
+   └─ ssh SERVER ───────────┤
+                            ▼
+                     wt-server api
+                       ├─ SQLite registry and logs
+                       └─ wt-libvirt
+                            └─ KVM world
+                                ├─ /workspace Git checkout
+                                ├─ Docker + devcontainer
+                                └─ guest and app SSH
 ```
 
-The client reads named contexts from `~/.wt/config.toml`. A local context runs
-`wt-server api` from `PATH`; an SSH context runs the same helper on a server through
-stock OpenSSH. Both transports carry one versioned JSON request and response over
-stdio. There is no public control-plane listener.
+## Components
 
-Each server runs on Ubuntu 24.04 amd64 with KVM and libvirt. `wt-server` scopes its
-registry to the OS user executing the helper, and `wt-libvirt` creates one guest
-per world. A world is `Running` only after guest SSH, the selected Git revision,
-and the repository's stock devcontainer are ready.
+| Component | Owns |
+|-----------|------|
+| `wt` | Contexts, API transport, names, and managed SSH inventory |
+| `wt-server` | Owner-scoped API, registry, durable jobs, and logs |
+| `wt-libvirt` | KVM world creation, inspection, and destruction |
+| `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
+| `wt-guest` | Persistent app session and app SSH proxy helpers |
 
-The checkout remains inside the guest at `/workspace`. Each world records stable
-guest and app SSH users and unique public host keys. `wt sync` projects that
-inventory into managed session, raw app-container, and guest-host aliases without
-editing the user's main SSH config.
+## Control plane
 
-Git sources are SSH-only. Each server supplies an encrypted Git identity and a
-known-hosts file. `wt new` reads the passphrase on the client terminal and sends
-it through the local/OpenSSH helper request. The server validates it before
-reserving or provisioning a world, and the client allows three attempts. The
-encrypted identity and trust bundle are copied into the trusted world's checkout
-for Git from both the guest and devcontainer; the passphrase is not persisted.
-Client-to-server OpenSSH authentication is a separate role, though deployments
-may configure the same identity for both roles.
+Local and remote contexts invoke `wt-server api`. The transport carries one
+versioned JSON request and response over stdio. There is no control-plane socket.
+The OS user running `wt-server` owns the request and registry records.
 
-Create acceptance is durable. The API reserves the world as `provisioning`,
-hands its lock and passphrase pipe to a detached worker, and responds only after
-the worker acknowledges the job in SQLite. Client Ctrl-C or loss of the local or
-OpenSSH transport after that response stops observation but not provisioning.
-Provisioning output is stored in SQLite and can be resumed with `wt logs`.
+| Operation | Result |
+|-----------|--------|
+| `create` | Reserve and start detached provisioning |
+| `list` | Return the owner's worlds and SSH inventory |
+| `get` | Return one owned world |
+| `delete` | Destroy one owned world |
+| `logs` | Read provisioning output from a byte offset |
 
-A server or worker crash is not resumed because the Git passphrase is never
-persisted. On the next API operation, an abandoned `provisioning` or `destroying`
-world becomes `error`; partial backend resources remain for inspection and
-explicit `wt rm`. A transport failure before create acknowledgement has an
-unknown outcome, so the client directs the user to `wt ls` or `wt logs`.
+Provisioning is acknowledged after SQLite records the job and the detached
+worker accepts it. Client disconnects after acknowledgement do not stop the job.
+A worker crash changes the world to `error` on the next API operation; partial
+resources remain until `wt rm`.
 
-## Language and crates
+## Data and trust
 
-Rust workspace:
+- Client contexts: `~/.wt/config.toml`.
+- Managed SSH files: `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`.
+- Runtime server config: `/etc/wt/server.toml`.
+- User registry: `~/.local/state/wt/instances.db`.
+- Checkout in each world: `/workspace`.
+- Git passphrases cross the API for provisioning and are never persisted.
+- Client-to-server, server-to-Git, guest, and app SSH identities have distinct
+  roles.
 
-```text
-crates/
-  wt-api                shared JSON types
-  wt-cli                package for the wt binary
-  wt-command            shared local process command builder
-  wt-guest              injected persistent app-session helpers
-  wt-libvirt            production libvirt/KVM backend
-  wt-server              server helper, registry, and service
-  wt-server-setup        Ubuntu/KVM installer and image builder
-  wt-integration-tests  injected and real-system tests
-```
+## Details
 
-## Control-plane API
+| Document | Contents |
+|----------|----------|
+| [CLI and SSH](./cli.md) | Contexts, naming, commands, and aliases |
+| [Libvirt/KVM](./bare-metal-agent.md) | World lifecycle |
+| [Registry cache](./registry-cache.md) | Shared image-blob cache |
 
-| Operation | Meaning |
-|-----------|---------|
-| create | Provision a devcontainer-ready KVM world |
-| list | Return the caller's worlds and access inventory |
-| get | Return one caller-owned world |
-| delete | Destroy one caller-owned world |
-| logs | Read and follow durable provisioning output from a byte offset |
-
-The API uses protocol version 1 JSON over helper stdio. The owner is the OS user
-running `wt-server`, whether the helper was started locally or through OpenSSH.
+Product scope: [product.md](../product.md).

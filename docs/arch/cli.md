@@ -1,19 +1,8 @@
-# CLI (`wt`)
+# CLI and SSH
 
-Parent: [architecture](./README.md). Server:
-[`wt-server`](../../crates/wt-server/).
+## Contexts
 
-## Contract
-
-- Local context: run `wt-server api`.
-- SSH context: run `ssh -- HOST wt-server api`.
-- Protocol: one JSON request and response over stdio.
-- Client never runs libvirt, Docker, or guest provisioning.
-- Client never edits the application checkout or main SSH config.
-
-## Config
-
-Path: `~/.wt/config.toml`.
+`~/.wt/config.toml` names local and OpenSSH servers:
 
 ```toml
 version = 1
@@ -25,41 +14,49 @@ kind = "bare_metal_local"
 [[contexts]]
 name = "lab"
 kind = "bare_metal_ssh"
-host = "wt-lab"
+host = "wt-server"
 ```
 
-`context.world` is stable. Short names work only when globally unique. Creating
-with a short name requires one configured context. Multi-context operations fail
-if any context fails.
+- Local: `wt-server api`.
+- Remote: `ssh -- HOST wt-server api`.
+- Stable world name: `context.world`.
+- Short names require global uniqueness.
+- Multi-context operations fail if any context fails.
 
 ## Commands
 
 | Command | Result |
 |---------|--------|
-| `wt new SOURCE NAME` | Create, sync SSH, print aliases |
-| `wt ls` | List and sync |
-| `wt rm NAME` | Destroy and sync |
-| `wt logs NAME` | Replay and follow provisioning output |
+| `wt new SOURCE NAME` | Create, follow logs, then sync SSH inventory |
+| `wt logs NAME` | Replay and follow provisioning logs |
+| `wt ls` | List worlds and sync inventory |
+| `wt rm NAME` | Destroy a world and sync inventory |
 | `wt sync` | Rewrite managed SSH files |
 
-Sources are SSH only: `ssh://...` or `user@host:path`. WT retries only an invalid
-Git-key passphrase.
+Git sources must use `ssh://...` or `user@host:path`.
 
-`wt new` returns from create acknowledgement into a log-following wait. Ctrl-C
-or a dropped OpenSSH connection stops only that wait; `wt logs NAME` replays from
-the beginning and follows until the world is `running` or `error`. SSH inventory
-is written only after `running`. If transport is lost before acknowledgement,
-the outcome is unknown and must be checked with `wt ls` or `wt logs`.
+`wt new` follows a detached job after acknowledgement. Ctrl-C stops following,
+not provisioning. Resume with `wt logs`. If transport fails before
+acknowledgement, check `wt ls` or `wt logs`.
 
-## SSH
+## Managed SSH
 
-- Managed files: `~/.ssh/wt/config`, `~/.ssh/wt/known_hosts`.
-- Main config must include `Include ~/.ssh/wt/config` first.
-- `ssh NAME`: persistent server-configured tmux or Byobu session whose panes use app SSH.
-- `ssh NAME-dc`: raw app-container SSH for VS Code, commands, SFTP, and forwarding.
-- `ssh NAME-host`: guest shell, commands, SCP, and recovery.
-- Qualified aliases always exist. Short aliases require a unique name.
-- Login user: `wt`. Checkout: `/workspace`.
-- Aliases use `TERM=xterm-256color`.
-- Host keys are pinned. Changed identity is never accepted.
-- Error worlds have no alias. `wt ls` prints the reconciliation error.
+Place this before every `Host` block in `~/.ssh/config`:
+
+```sshconfig
+Include ~/.ssh/wt/config
+```
+
+`wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It does not edit
+the main SSH config.
+
+| Alias | Behavior |
+|-------|----------|
+| `NAME` | Attach to the guest-hosted tmux or Byobu app session |
+| `NAME-dc` | Direct app SSH for VS Code, commands, SFTP, and forwarding |
+| `NAME-host` | Direct guest SSH for commands and recovery |
+
+Qualified aliases always exist. Short aliases exist for globally unique names.
+Host keys are pinned. Non-running worlds have no aliases.
+
+Parent: [architecture](./README.md).

@@ -1,16 +1,12 @@
 # wt-command
 
-Shared local process command builder for WT crates.
+Shared builder for local process commands.
 
-The `cmd!` macro builds an owned [`std::process::Command`] from a program and
-heterogeneous argument expressions. It only constructs the command; callers
-remain responsible for configuring and executing it.
+`cmd!` accepts heterogeneous argument expressions and returns an owned
+`std::process::Command`. It does not execute the command.
 
 ```rust
 use wt_command::cmd;
 
 let command = cmd!("install", "-m", format!("{:04o}", 0o640), destination);
 ```
-
-Used by the CLI, guest helpers, libvirt backend, server setup, and integration
-tests.

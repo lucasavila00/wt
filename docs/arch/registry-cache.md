@@ -1,21 +1,11 @@
 # Registry cache
 
-Parent: [architecture](./README.md).
-
-Each KVM world has its own Docker daemon. Worlds do not share
-`/var/lib/docker`.
-
-The KVM host runs one registry proxy. Docker pulls go through it. The proxy
-caches image blobs on the host. Worlds still have separate containers, volumes,
-networks, and writable layers.
+The KVM host runs one registry proxy for all worlds. It shares public image
+blobs, not Docker state.
 
 ```text
-world Docker ──► host registry cache ──► public registry
+world Docker ──► host cache ──► public registry
 ```
-
-## Config
-
-The cache is part of the strict server config:
 
 ```toml
 [registry_cache]
@@ -25,42 +15,20 @@ max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 ```
 
-- `state_dir`: cached blobs and proxy CA.
-- `port`: proxy port on the libvirt bridge.
-- `max_size_gib`: hard cache size limit.
-- `registries`: public registries to cache.
+| Setting | Meaning |
+|---------|---------|
+| `state_dir` | Cached blobs and proxy CA |
+| `port` | Proxy port on the libvirt bridge |
+| `max_size_gib` | Cache limit |
+| `registries` | Registry hosts to cache |
 
-Other registries pass through without caching.
+Setup starts and verifies the pinned proxy, then makes its CA available to world
+creation. Cloud-init installs the CA and configures Docker.
 
-## Setup
+Tags and manifests are checked upstream. Cached immutable blobs are reused.
+Unlisted registries and pushes bypass the cache.
 
-`wt-server-setup`:
+Each world retains separate containers, volumes, networks, writable layers,
+local images, and build cache. Private-image caching is unsupported.
 
-1. Starts the pinned registry-proxy container on the libvirt bridge.
-2. Verifies that the proxy is reachable and makes its CA readable to WT.
-
-Manifest caching is off. Tags are checked upstream on every pull. Immutable
-blobs come from the local cache when present. Pushes bypass the cache.
-
-## Worlds
-
-Cloud-init installs the proxy CA and configures Docker to use the proxy. World
-creation waits for this to finish before running the repository recipe. If the
-proxy is down or the CA setup fails, world creation fails and removes the VM.
-
-WT runs:
-
-```text
-devcontainer up --log-level debug --log-format text --workspace-folder /workspace
-```
-
-The command output is streamed live.
-
-## Limits
-
-- Public images only.
-- Configured registry hosts only.
-- The proxy CA is trusted by every world.
-- The cache does not share containers, volumes, local images, or Docker build
-  cache.
-- Private registry credentials and private-image isolation are out of scope.
+Parent: [architecture](./README.md).

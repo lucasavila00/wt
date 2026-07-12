@@ -1,22 +1,14 @@
 # wt-api
 
-Shared **control-plane** request/response types for the CLI and server helper.
+Versioned control-plane types shared by `wt` and `wt-server`.
 
-Carried as protocol version 1 JSON over stdio to `wt-server`, either locally or
-through OpenSSH.
+## Owns
 
-## Role
+- Protocol version 1 requests and responses.
+- World state, SSH inventory, and error payloads.
+- Instance name and SSH Git source validation.
+- Passphrase redaction.
 
-- Instance payloads (name, owner, status, guest IP, guest/app SSH access, errors)
-- Status and error enums (serde)  
-- No I/O, libvirt, or transport  
-- No transport or server configuration
+This crate performs no I/O and owns no transport or server configuration.
 
-CLI behavior: [docs/arch/cli.md](../../docs/arch/cli.md).
-
-## Used by
-
-| Crate | |
-|-------|--|
-| [`wt-cli`](../wt-cli/) | Client decoding (binary `wt`) |
-| [`wt-server`](../wt-server/) | Server-helper decoding and encoding |
+Protocol flow: [architecture](../../docs/arch/README.md#control-plane).

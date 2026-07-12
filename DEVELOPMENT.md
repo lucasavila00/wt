@@ -1,26 +1,17 @@
-# Local development
+# Development
 
-Run these commands from the repository root on Ubuntu 24.04 amd64 with hardware
-virtualization enabled. KVM is required.
+Run development and tests on Ubuntu 24.04 amd64 with KVM enabled.
 
-## Install the server
+## Install the local server
 
-Review the Git identity, SSH keys, resource sizes, and paths in
-`config/wt-server.development.toml`, then run:
+Review `server-config/wt-server.development.toml`, then run:
 
 ```bash
-scripts/install-server --config config/wt-server.development.toml
+scripts/install-server --config server-config/wt-server.development.toml
 ```
 
-The script installs the required host packages and invokes `sudo`. Run it in an
-interactive terminal. If it adds your user to the `docker`, `libvirt`, or `kvm` group, log
-out, log back in, and run the same command again.
-
-Setup materializes `/etc/wt/server.toml` from the install input and starts the
-shared registry cache. Re-run the installer after a full clear when changing
-configuration.
-
-## Configure the client
+Run as a normal user in an interactive terminal. If setup changes group
+membership, log out, log back in, and rerun it.
 
 Create `~/.wt/config.toml`:
 
@@ -32,13 +23,13 @@ name = "local"
 kind = "bare_metal_local"
 ```
 
-Add this before any `Host` blocks in `~/.ssh/config`:
+Add this before every `Host` block in `~/.ssh/config`:
 
 ```sshconfig
 Include ~/.ssh/wt/config
 ```
 
-## Run the checks
+## Checks
 
 ```bash
 cargo fmt --all
@@ -46,55 +37,26 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The workspace test always includes the real KVM acceptance test.
+`cargo test --workspace` includes the real libvirt/KVM test.
 
-## Exercise a world
+## Manual test
 
 ```bash
 wt new git@github.com:lucasavila00/jsdev-sample.git jsdev-manual
 wt ls
-wt sync
 ssh jsdev-manual
-```
-
-Inside the devcontainer:
-
-```bash
-pwd
-git status
-exit
-```
-
-Use the raw devcontainer alias for VS Code Remote-SSH or explicit app commands:
-
-```bash
 ssh jsdev-manual-dc
-```
-
-In VS Code, choose `jsdev-manual-dc` as the Remote-SSH host and open the mounted
-workspace path reported by the devcontainer (typically `/workspaces/<repo>`).
-
-Use the host alias for guest SSH and recovery:
-
-```bash
-ssh jsdev-manual-host
 ssh jsdev-manual-host git -C /workspace status
-```
-
-Remove the world when finished:
-
-```bash
 wt rm jsdev-manual
-wt ls
 ```
 
-## Reset the server
+Use the `-dc` alias for VS Code Remote-SSH and open the mounted workspace path.
 
-To destroy every `wt-*` domain and remove all installed WT development state:
+## Reset
 
 ```bash
 make clear
 ```
 
-Re-run the install command afterward. `make clear` delegates to
-`scripts/clear-server`; it does not uninstall packages or binaries.
+This destroys `wt-*` domains and removes WT development state. It does not
+uninstall packages or binaries.

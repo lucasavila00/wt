@@ -1,22 +1,20 @@
 # wt-integration-tests
 
-Cross-crate integration tests. No production code.
+Cross-crate tests. This package contains no production code.
 
-| Lane | Backend |
+| Test | Backend |
 |------|---------|
-| Injected | Test-only `WorldWorker` implementation |
-| Real system | Production `wt-libvirt` against local libvirt/KVM |
+| Service behavior | Injected `WorldWorker` |
+| Full lifecycle | Production `wt-libvirt` and local KVM |
 
-The real-system lane always runs. Local setup and commands are documented in
-[DEVELOPMENT.md](../../DEVELOPMENT.md).
+Tests use the production API, reservation, detached job, lock, registry, log,
+and recovery paths. The KVM test uses the installed golden image and registry
+cache.
 
-Integration support binaries may supply temporary server configuration, but
-tests use the production reservation, detached launcher, lock, SQLite log, API,
-and recovery paths. There is no synchronous test-only service lifecycle.
+Run from the workspace root:
 
-## Registry cache
+```text
+cargo test --workspace
+```
 
-The real-system test uses the production golden image and the host registry
-cache installed by `scripts/install-server`. Each test world keeps an independent
-Docker daemon and qcow2 overlay while image blobs are served by the shared
-network cache.
+Host setup: [Development](../../DEVELOPMENT.md).

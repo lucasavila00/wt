@@ -1,45 +1,42 @@
 # wt
 
-Named parallel instances of an existing Docker/devcontainer recipe. The client is
-a thin cockpit (`wt` + `ssh`); worlds run on configured Ubuntu/KVM servers.
-
-| Doc | |
-|-----|--|
-| [docs/plan.md](./docs/plan.md) | Product plan |
-| [docs/arch/](./docs/arch/README.md) | Architecture |
-| [docs/plan-reasoning/](./docs/plan-reasoning/) | Background notes |
-| [DEVELOPMENT.md](./DEVELOPMENT.md) | Local setup, tests, and operator smoke test |
-
-## Workspace
+WT creates named, parallel devcontainer environments on Ubuntu/KVM servers.
+Each world has its own VM, Git checkout, Docker daemon, network, and stock
+devcontainer recipe. The client uses `wt` to manage worlds and OpenSSH to enter
+them.
 
 ```text
-crates/
-  wt-api/      shared control-plane JSON types (library)
-  wt-cli/      CLI package (binary name: `wt`)
-  wt-guest/    host-built programs injected into guests
-  wt-libvirt/  production libvirt/KVM world backend
-  wt-server/    server helper + registry + control-plane service
-  wt-server-setup/    Ubuntu/KVM server installer
-  wt-integration-tests/  injected + real-system tests
+wt new git@github.com:org/repo.git lab.repo-feature
+wt ls
+ssh lab.repo-feature
+wt rm lab.repo-feature
 ```
 
-| Package | Kind | Role |
-|---------|------|------|
-| [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Context-aware CLI — new, ls, rm, sync |
-| [`wt-guest`](./crates/wt-guest/) | bins | Host-built app session and SSH proxy helpers injected into guests |
-| [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
-| [`wt-server`](./crates/wt-server/) | bin | Server helper — registry + instance service + embedded backend |
-| [`wt-server-setup`](./crates/wt-server-setup/) | bin | Strict Ubuntu/KVM server installation and golden image build |
-| [`wt-integration-tests`](./crates/wt-integration-tests/) | tests | Injected service tests + libvirt/KVM acceptance test |
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [Getting started](./GETTING-STARTED.md) | Install and use WT |
+| [Architecture](./docs/arch/README.md) | Components, data flow, and boundaries |
+| [Product](./docs/product.md) | Scope and constraints |
+| [Development](./DEVELOPMENT.md) | Build, test, and local KVM workflow |
+
+## Packages
+
+| Package | Role |
+|---------|------|
+| [`wt-api`](./crates/wt-api/) | Control-plane JSON types |
+| [`wt-cli`](./crates/wt-cli/) | `wt` client |
+| [`wt-command`](./crates/wt-command/) | Process command builder |
+| [`wt-guest`](./crates/wt-guest/) | Guest session and SSH helpers |
+| [`wt-libvirt`](./crates/wt-libvirt/) | Libvirt/KVM backend |
+| [`wt-server`](./crates/wt-server/) | Server API, registry, and jobs |
+| [`wt-server-setup`](./crates/wt-server-setup/) | Server installer and image builder |
+| [`wt-integration-tests`](./crates/wt-integration-tests/) | Cross-crate and KVM tests |
 
 ## Build
 
 ```text
 cargo check --workspace
-cargo run -p wt-cli
-cargo run -p wt-server
+cargo run -p wt-cli -- --help
 ```
-
-Client configuration and operator usage are documented in
-[`wt-cli`](./crates/wt-cli/README.md) and [DEVELOPMENT.md](./DEVELOPMENT.md).
