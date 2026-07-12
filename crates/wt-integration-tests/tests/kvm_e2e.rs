@@ -434,7 +434,13 @@ fn call_api(home: &Path, config: &Path, operation: Operation) -> Response {
 }
 
 fn call_api_result(home: &Path, config: &Path, operation: Operation) -> Result<Response, String> {
+    // Match the restrictive umask of the installed wt-server.service. QEMU must
+    // still be able to traverse the world directory and open its disk images.
     let mut child = cmd!(
+        "/bin/sh",
+        "-c",
+        "umask 077; exec \"$@\"",
+        "sh",
         env!("CARGO_BIN_EXE_wt-test-server"),
         "--config",
         config,

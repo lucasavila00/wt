@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -146,6 +147,7 @@ impl LibvirtWorker {
             ),
             "create cloud-init seed",
         )?;
+        prepare_qemu_file_access(&paths)?;
 
         let connection = Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
@@ -855,6 +857,18 @@ fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {
     }
 }
 
+fn prepare_qemu_file_access(paths: &world::Paths) -> Result<(), WorkerError> {
+    for (path, mode, action) in [
+        (&paths.directory, 0o2770, "set world directory permissions"),
+        (&paths.disk, 0o660, "set qcow2 overlay permissions"),
+        (&paths.seed, 0o640, "set cloud-init seed permissions"),
+    ] {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+            .map_err(|error| worker_error(action, error))?;
+    }
+    Ok(())
+}
+
 fn run(mut command: Command, action: &str) -> Result<(), WorkerError> {
     let output = command
         .output()
@@ -886,6 +900,7 @@ fn log_line(log: &mut dyn Write, message: &str) -> Result<(), WorkerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::MetadataExt;
 
     const KEY: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHIcU8rr2qppQ5sRKTKPoEp4dPLr+d1F7Eqog+U8AJbK";
@@ -932,5 +947,26 @@ mod tests {
         .to_string();
 
         assert!(error.contains("Inspect the server's DHCP and libvirt domain state"));
+    }
+
+    #[test]
+    fn qemu_files_get_explicit_access_under_a_restrictive_umask() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = world::Paths::new(temp.path(), "wt-permissions");
+        fs::create_dir(&paths.directory).unwrap();
+        fs::write(&paths.disk, []).unwrap();
+        fs::write(&paths.seed, []).unwrap();
+        for path in [&paths.disk, &paths.seed, &paths.directory] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+
+        prepare_qemu_file_access(&paths).unwrap();
+
+        assert_eq!(
+            fs::metadata(&paths.directory).unwrap().mode() & 0o7777,
+            0o2770
+        );
+        assert_eq!(fs::metadata(&paths.disk).unwrap().mode() & 0o7777, 0o660);
+        assert_eq!(fs::metadata(&paths.seed).unwrap().mode() & 0o7777, 0o640);
     }
 }

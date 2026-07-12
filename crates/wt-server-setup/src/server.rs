@@ -426,5 +426,6 @@ binary_dir = "/opt/wt bin"
         assert!(unit.contains(&format!("User={}\n", user.name)));
         assert!(unit.contains("ExecStart=\"/opt/wt bin/wt-server\" serve\n"));
         assert!(unit.contains("RuntimeDirectory=wt\nRuntimeDirectoryMode=0700\n"));
+        assert!(unit.contains("UMask=0077\n"));
     }
 }
