@@ -91,7 +91,7 @@ Managed aliases:
 | Alias | Target |
 |-------|--------|
 | `NAME` | Persistent app session |
-| `NAME-vs` | Devcontainer; use for VS Code Remote-SSH |
+| `NAME-vs`, `NAME-vc` | Devcontainer; use for editor Remote-SSH |
 | `NAME-host` | Guest shell and recovery |
 
 Remove the world:

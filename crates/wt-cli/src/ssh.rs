@@ -67,13 +67,13 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             qualified,
         );
         config.push_str(&format!(
-            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
-            qualified, qualified, qualified,
+            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs {}-vc\n{app_common}",
+            qualified, qualified, qualified, qualified,
         ));
         if counts.get(instance.name.as_str()) == Some(&1) {
             config.push_str(&format!(
-                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
-                instance.name, instance.name, instance.name,
+                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs {}-vc\n{app_common}",
+                instance.name, instance.name, instance.name, instance.name,
             ));
         }
         for key in &ssh.host_keys {
@@ -200,7 +200,7 @@ mod tests {
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host repo-feature-host\n"));
         assert!(managed.contains("Host repo-feature\n"));
-        assert!(managed.contains("Host repo-feature-vs\n"));
+        assert!(managed.contains("Host repo-feature-vs repo-feature-vc\n"));
         assert_eq!(managed.matches("RemoteCommand ").count(), 2);
         assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
         assert!(managed.contains(&format!(
@@ -211,6 +211,12 @@ mod tests {
         assert_eq!(
             managed.matches("HostKeyAlias local.repo-feature").count(),
             6
+        );
+        assert_eq!(
+            managed
+                .matches("HostKeyAlias local.repo-feature-vs")
+                .count(),
+            2
         );
         sync(
             &client_config,
@@ -224,6 +230,7 @@ mod tests {
         assert!(known_hosts.contains("AAAAREPLACEMENT"));
         assert!(known_hosts.contains("AAAAAPPLICATION"));
         assert!(known_hosts.contains("local.repo-feature-vs ssh-ed25519"));
+        assert!(!known_hosts.contains("local.repo-feature-vc"));
         assert!(!known_hosts.contains("AAAATEST"));
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
@@ -285,7 +292,10 @@ mod tests {
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(managed.contains("Host local.same\n"));
         assert!(managed.contains("Host lab.same\n"));
+        assert!(managed.contains("Host local.same-vs local.same-vc\n"));
+        assert!(managed.contains("Host lab.same-vs lab.same-vc\n"));
         assert!(!managed.lines().any(|line| line == "Host same"));
+        assert!(!managed.lines().any(|line| line == "Host same-vs same-vc"));
         assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
         assert_eq!(managed.matches("  ProxyJump wt-server\n").count(), 2);
         assert!(!temp.path().join(".ssh/config").exists());

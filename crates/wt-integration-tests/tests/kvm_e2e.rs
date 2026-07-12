@@ -140,6 +140,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
 
         let host_alias = format!("local.{}-host", name.as_str());
         let vs_alias = format!("local.{}-vs", name.as_str());
+        let vc_alias = format!("local.{}-vc", name.as_str());
         let peer_host_alias = format!("local.{}-host", peer_name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
@@ -163,7 +164,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 "ssh",
                 "-F",
                 &ssh_config,
-                &vs_alias,
+                &vc_alias,
                 "test",
                 "-d",
                 "/workspaces/small-devcontainer-fixture",
