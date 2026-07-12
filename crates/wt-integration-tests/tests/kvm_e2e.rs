@@ -12,10 +12,10 @@ use wt_api::{
 use wt_command::cmd;
 use wt_libvirt::ServerConfig;
 
-const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
+const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
 
 #[test]
-fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
+fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();
     let workspace = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
@@ -141,7 +141,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             .output()
             .map_err(|error| error.to_string())
         })?;
-        ensure_success("enter jsdev guest host", &output)?;
+        ensure_success("enter fixture guest host", &output)?;
         let machine_id = git_output(
             cmd!(
                 "ssh",
@@ -153,7 +153,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 "cat",
                 "/etc/machine-id",
             ),
-            "read jsdev machine ID",
+            "read fixture machine ID",
         );
         let peer_machine_id = git_output(
             cmd!(
@@ -257,7 +257,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
             ),
         )
         .map_err(|error| error.to_string())?;
@@ -270,13 +270,13 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/jsdev \"$container\" /bin/bash",
+                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/small-devcontainer-fixture \"$container\" /bin/bash",
             )
             .stdin(Stdio::from(input))
             .output()
             .map_err(|error| error.to_string())
         })?;
-        ensure_success("push from jsdev app container", &output)?;
+        ensure_success("push from fixture app container", &output)?;
         let pushed = git_output(
             cmd!(
                 "git",
@@ -431,10 +431,10 @@ struct GitSshServer {
 
 impl GitSshServer {
     fn start(root: &Path, address: IpAddr) -> Self {
-        let repository = root.join("jsdev-sample.git");
+        let repository = root.join("small-devcontainer-fixture.git");
         run(
-            cmd!("git", "clone", "--bare", SAMPLE_SOURCE, &repository),
-            "create bare jsdev repository",
+            cmd!("git", "clone", "--bare", FIXTURE_SOURCE, &repository),
+            "create bare fixture repository",
         );
         let git_key = root.join("git-client");
         let guest_key = root.join("guest-client");
