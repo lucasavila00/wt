@@ -1,0 +1,6 @@
+{
+  "name": "wt",
+  "build": {
+    "dockerfile": "Dockerfile"
+  }
+}

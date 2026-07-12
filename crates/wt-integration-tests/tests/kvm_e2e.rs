@@ -15,6 +15,7 @@ use wt_libvirt::{ServerConfig, SessionFrontend};
 const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
 
 #[test]
+#[ignore = "requires a configured Ubuntu/KVM host"]
 fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();

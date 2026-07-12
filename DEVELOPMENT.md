@@ -1,6 +1,8 @@
 # Development
 
-Run development and tests on Ubuntu 24.04 amd64 with KVM enabled.
+Use the devcontainer for normal Rust development and tests. Installing a local
+server and running the end-to-end test require Ubuntu 24.04 amd64 with KVM
+enabled.
 
 ## Install the local server
 
@@ -40,7 +42,12 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-`cargo test --workspace` includes the real libvirt/KVM test.
+`cargo test --workspace` skips the ignored real-system KVM test. Run it only on
+a configured Ubuntu/KVM host:
+
+```bash
+make e2e-tests
+```
 
 ## Manual test
 

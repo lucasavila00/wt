@@ -17,4 +17,11 @@ Run from the workspace root:
 cargo test --workspace
 ```
 
+The workspace command skips the ignored full-lifecycle test. Run that test on a
+configured Ubuntu/KVM host with:
+
+```text
+make e2e-tests
+```
+
 Host setup: [Development](../../DEVELOPMENT.md).
