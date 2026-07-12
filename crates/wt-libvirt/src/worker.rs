@@ -155,7 +155,6 @@ impl LibvirtWorker {
         git::clone_and_checkout(
             &domain,
             spec.source,
-            spec.git_ref,
             private_git,
             spec.git_passphrase,
             recipe_deadline,

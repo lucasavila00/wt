@@ -29,16 +29,6 @@ impl<W: WorldWorker> Service<W> {
         if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
             return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
         }
-        if request
-            .git_ref
-            .as_deref()
-            .is_some_and(|value| value.is_empty() || value.contains('\0'))
-        {
-            return Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "git ref must not be empty or contain NUL",
-            ));
-        }
         if request.git_passphrase.expose_secret().is_empty() {
             return Err(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -57,7 +47,6 @@ impl<W: WorldWorker> Service<W> {
                 owner: owner.to_owned(),
                 status: InstanceStatus::Provisioning,
                 source: request.source,
-                git_ref: request.git_ref,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
@@ -72,7 +61,6 @@ impl<W: WorldWorker> Service<W> {
             owner,
             name: &stored.instance.name,
             source: &stored.instance.source,
-            git_ref: stored.instance.git_ref.as_deref(),
             git_passphrase: &request.git_passphrase,
         };
         match self.worker.provision(&spec) {

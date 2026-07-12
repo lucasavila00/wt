@@ -85,7 +85,6 @@ impl Credentials {
 pub(super) fn clone_and_checkout(
     domain: &Domain,
     source: &str,
-    git_ref: Option<&str>,
     credentials: &Credentials,
     passphrase: &GitPassphrase,
     deadline: Instant,
@@ -108,22 +107,6 @@ pub(super) fn clone_and_checkout(
             &["clone", "--", source, "/workspace"],
             deadline,
         )?;
-        if let Some(git_ref) = git_ref {
-            run_git(
-                domain,
-                "Git fetch ref",
-                &environment,
-                &["-C", "/workspace", "fetch", "origin", git_ref],
-                deadline,
-            )?;
-            run_git(
-                domain,
-                "Git checkout ref",
-                &environment,
-                &["-C", "/workspace", "checkout", "--detach", "FETCH_HEAD"],
-                deadline,
-            )?;
-        }
         install_persistent_bundle(domain, credentials, deadline)
     })();
     let _ = guest_agent::exec(

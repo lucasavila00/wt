@@ -130,7 +130,6 @@ mod tests {
             owner: "lucas".into(),
             status: InstanceStatus::Running,
             source: "git@example.test:repo.git".into(),
-            git_ref: None,
             guest_ip: Some("192.0.2.2".into()),
             last_error: None,
             ssh: Some(SshAccess {
@@ -187,7 +186,6 @@ mod tests {
                 owner: "lucas".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
-                git_ref: None,
                 guest_ip: Some("192.0.2.2".into()),
                 last_error: None,
                 ssh: Some(SshAccess {

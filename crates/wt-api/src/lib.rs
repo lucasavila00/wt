@@ -38,8 +38,6 @@ pub enum Operation {
 pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
     pub git_passphrase: GitPassphrase,
 }
 
@@ -110,8 +108,6 @@ pub struct Instance {
     pub owner: String,
     pub status: InstanceStatus,
     pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -358,7 +354,6 @@ mod tests {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
-            git_ref: Some("feature".to_owned()),
             git_passphrase: GitPassphrase::new("secret".to_owned()),
         }));
         assert_eq!(
@@ -368,7 +363,6 @@ mod tests {
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
-                "git_ref": "feature",
                 "git_passphrase": "secret"
             })
         );

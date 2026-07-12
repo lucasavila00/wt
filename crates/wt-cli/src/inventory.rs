@@ -102,7 +102,6 @@ mod tests {
                 owner: "tester".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
-                git_ref: None,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,

@@ -62,7 +62,6 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 Operation::Create(CreateInstance {
                     name: name.clone(),
                     source: git.url(),
-                    git_ref: Some(git.main_commit.clone()),
                     git_passphrase: GitPassphrase::new("secret".to_owned()),
                 }),
             )
@@ -81,7 +80,6 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 Operation::Create(CreateInstance {
                     name: peer_name.clone(),
                     source: git.url(),
-                    git_ref: Some(git.main_commit.clone()),
                     git_passphrase: GitPassphrase::new("secret".to_owned()),
                 }),
             )
@@ -310,7 +308,6 @@ struct GitSshServer {
     git_key: PathBuf,
     guest_key: PathBuf,
     guest_public_key: PathBuf,
-    main_commit: String,
 }
 
 impl GitSshServer {
@@ -321,19 +318,6 @@ impl GitSshServer {
             "create bare jsdev repository",
         );
         assert_fixture_images(&repository);
-        let main_commit = git_output(
-            cmd!(
-                "git",
-                "--git-dir",
-                &repository,
-                "rev-parse",
-                "refs/heads/main",
-            ),
-            "resolve jsdev main",
-        )
-        .trim()
-        .to_owned();
-
         let git_key = root.join("git-client");
         let guest_key = root.join("guest-client");
         let host_key = root.join("ssh-host");
@@ -386,7 +370,6 @@ impl GitSshServer {
                     git_key,
                     guest_key,
                     guest_public_key,
-                    main_commit,
                 };
             }
             std::thread::sleep(Duration::from_millis(100));

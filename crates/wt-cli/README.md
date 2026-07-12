@@ -16,7 +16,7 @@ Server helper: [`wt-server`](../wt-server/). Types: [`wt-api`](../wt-api/).
 ## Commands
 
 ```text
-wt new <ssh-source> <context.name> [--ref <ref>]
+wt new <ssh-source> <context.name>
 wt ls
 wt rm <name>
 wt sync

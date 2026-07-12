@@ -36,7 +36,7 @@ if any context fails.
 
 | Command | Result |
 |---------|--------|
-| `wt new SOURCE NAME [--ref REF]` | Create, sync SSH, print aliases |
+| `wt new SOURCE NAME` | Create, sync SSH, print aliases |
 | `wt ls` | List and sync |
 | `wt rm NAME` | Destroy and sync |
 | `wt sync` | Rewrite managed SSH files |

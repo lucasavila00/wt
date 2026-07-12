@@ -49,7 +49,6 @@ impl Store {
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
                  source        TEXT NOT NULL,
-                 git_ref       TEXT,
                  ssh_user      TEXT,
                  ssh_host      TEXT,
                  ssh_port      INTEGER,
@@ -72,8 +71,8 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id, source, git_ref, ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]')",
+             (id, owner, name, status, backend_id, source, ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
@@ -81,7 +80,6 @@ impl Store {
                 instance.status.to_string(),
                 stored.backend_id,
                 instance.source,
-                instance.git_ref,
             ],
         );
         match result {
@@ -99,7 +97,7 @@ impl Store {
         self.connection
             .query_row(
                 "SELECT id, owner, name, status,
-                        guest_ip, last_error, backend_id, source, git_ref,
+                        guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
@@ -112,7 +110,7 @@ impl Store {
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
-                    guest_ip, last_error, backend_id, source, git_ref,
+                    guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
@@ -204,7 +202,6 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             guest_ip: row.get(4)?,
             last_error: row.get(5)?,
             source: row.get(7)?,
-            git_ref: row.get(8)?,
             ssh: ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
@@ -212,17 +209,17 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
 }
 
 fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
-    let user: Option<String> = row.get(9)?;
+    let user: Option<String> = row.get(8)?;
     let Some(user) = user else {
         return Ok(None);
     };
-    let keys: String = row.get(12)?;
+    let keys: String = row.get(11)?;
     let host_keys =
         serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
     Ok(Some(SshAccess {
         user,
-        host: row.get(10)?,
-        port: row.get(11)?,
+        host: row.get(9)?,
+        port: row.get(10)?,
         host_keys,
     }))
 }

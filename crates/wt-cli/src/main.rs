@@ -15,12 +15,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a devcontainer-ready world.
-    New {
-        source: String,
-        name: String,
-        #[arg(long = "ref")]
-        git_ref: Option<String>,
-    },
+    New { source: String, name: String },
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -39,15 +34,8 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New {
-            source,
-            name,
-            git_ref,
-        } => {
+        Command::New { source, name } => {
             wt_api::validate_ssh_git_source(&source)?;
-            if git_ref.as_deref().is_some_and(str::is_empty) {
-                bail!("--ref must not be empty");
-            }
             let (qualified_context, world_name) = inventory::parse_target(&config, &name)?;
             let context = match qualified_context {
                 Some(context) => context,
@@ -63,7 +51,7 @@ fn run() -> Result<()> {
                 ),
             };
             let response =
-                create_with_passphrase_attempts(context, world_name, source, git_ref, |prompt| {
+                create_with_passphrase_attempts(context, world_name, source, |prompt| {
                     rpassword::prompt_password(prompt).map_err(Into::into)
                 })?;
             let Response::Instance { instance } = response else {
@@ -129,7 +117,6 @@ fn create_with_passphrase_attempts(
     context: &Context,
     world_name: wt_api::InstanceName,
     source: String,
-    git_ref: Option<String>,
     mut prompt_password: impl FnMut(String) -> Result<String>,
 ) -> Result<Response> {
     const MAX_ATTEMPTS: usize = 3;
@@ -153,7 +140,6 @@ fn create_with_passphrase_attempts(
             &ApiRequest::new(Operation::Create(CreateInstance {
                 name: world_name.clone(),
                 source: source.clone(),
-                git_ref: git_ref.clone(),
                 git_passphrase: GitPassphrase::new(passphrase),
             })),
         )?;
@@ -257,7 +243,6 @@ mod tests {
                 owner: "tester".to_owned(),
                 status,
                 source: "git@example.test:repo.git".to_owned(),
-                git_ref: None,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
