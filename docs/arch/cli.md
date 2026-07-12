@@ -42,7 +42,7 @@ context. Aggregate list and sync operations fail if any context is unavailable.
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name> [--ref <ref>]` | Select a context, clone with the server's Git identity, start the devcontainer, sync access, and print status and aliases |
+| `wt new <source> <name> [--ref <ref>]` | Select a context, prompt locally for the server Git identity's passphrase, clone, start the devcontainer, sync access, and print status and aliases |
 | `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
 | `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
 | `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |

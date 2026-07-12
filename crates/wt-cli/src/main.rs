@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
 use std::process::Command as ProcessCommand;
-use wt_api::{ApiRequest, CreateInstance, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, GitPassphrase, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 
@@ -65,12 +65,20 @@ fn run() -> Result<()> {
                         .join(", ")
                 ),
             };
+            let passphrase = rpassword::prompt_password(format!(
+                "Git key passphrase for context {}: ",
+                context.name
+            ))?;
+            if passphrase.is_empty() {
+                bail!("Git key passphrase must not be empty");
+            }
             let response = wt_cli::transport::call(
                 context,
                 &ApiRequest::new(Operation::Create(CreateInstance {
                     name: world_name,
                     source,
                     git_ref,
+                    git_passphrase: GitPassphrase::new(passphrase),
                 })),
             )?;
             let Response::Instance { instance } = response else {

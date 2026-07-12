@@ -39,6 +39,12 @@ impl<W: WorldWorker> Service<W> {
                 "git ref must not be empty or contain NUL",
             ));
         }
+        if request.git_passphrase.expose_secret().is_empty() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Git key passphrase must not be empty",
+            ));
+        }
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
@@ -64,6 +70,7 @@ impl<W: WorldWorker> Service<W> {
             name: &stored.instance.name,
             source: &stored.instance.source,
             git_ref: stored.instance.git_ref.as_deref(),
+            git_passphrase: &request.git_passphrase,
         };
         match self.worker.provision(&spec) {
             Ok(world) => {

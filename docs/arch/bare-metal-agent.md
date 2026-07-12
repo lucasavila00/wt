@@ -42,6 +42,9 @@ The checkout is never mounted or exported to the server. The configured Git
 identity and known-hosts data are installed under `/workspace/.git/wt`, where Git
 in both the guest and the stock devcontainer can use them. The server, world, and
 devcontainer are therefore one trusted credential boundary until deletion.
+The identity remains encrypted. Its passphrase travels only in the create request
+and guest tmpfs for the initial clone, then later interactive Git commands prompt
+for it through the world terminal.
 
 Guest helpers are compiled on the Ubuntu server, installed with the WT
 binaries, and copied into worlds through the guest agent. The golden image does

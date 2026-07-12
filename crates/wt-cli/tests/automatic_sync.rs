@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn new_and_rm_always_sync_ssh_inventory() {
@@ -47,17 +48,51 @@ esac
     )))
     .unwrap();
 
-    let created = Command::new(env!("CARGO_BIN_EXE_wt"))
-        .args(["new", "git@example.test:repo.git", "repo-feature"])
+    let mut created = Command::new("script")
+        .args([
+            "-q",
+            "-e",
+            "-c",
+            &format!(
+                "{} new git@example.test:repo.git repo-feature",
+                env!("CARGO_BIN_EXE_wt")
+            ),
+            "/dev/null",
+        ])
         .env("HOME", temp.path())
         .env("PATH", &path)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .unwrap();
+    let mut stdout = created.stdout.take().unwrap();
+    let mut prompt = Vec::new();
+    loop {
+        let mut byte = [0];
+        assert_eq!(stdout.read(&mut byte).unwrap(), 1);
+        prompt.push(byte[0]);
+        if prompt.ends_with(b": ") {
+            break;
+        }
+    }
+    created
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"secret\n")
+        .unwrap();
+    let mut remaining = Vec::new();
+    stdout.read_to_end(&mut remaining).unwrap();
+    prompt.extend(remaining);
+    let output = created.wait_with_output().unwrap();
     assert!(
-        created.status.success(),
-        "{}",
-        String::from_utf8_lossy(&created.stderr)
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&prompt),
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert!(!String::from_utf8_lossy(&prompt).contains("secret"));
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
     assert!(managed.contains("Host repo-feature\n"));
     assert!(managed.contains("Host local.repo-feature\n"));

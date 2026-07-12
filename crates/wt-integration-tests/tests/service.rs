@@ -1,6 +1,7 @@
 use tempfile::TempDir;
 use wt_api::{
-    CreateInstance, ErrorCode, InstanceName, InstanceStatus, Operation, Response, SshAccess,
+    CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus, Operation, Response,
+    SshAccess,
 };
 use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::service::Service;
@@ -45,6 +46,7 @@ fn create(name: InstanceName) -> CreateInstance {
         name,
         source: "git@example.test:repo.git".to_owned(),
         git_ref: Some("feature".to_owned()),
+        git_passphrase: GitPassphrase::new("secret".to_owned()),
     }
 }
 

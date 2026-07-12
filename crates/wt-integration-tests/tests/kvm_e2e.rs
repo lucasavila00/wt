@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_api::{CreateInstance, InstanceName, InstanceStatus, Operation, Response};
+use wt_api::{CreateInstance, GitPassphrase, InstanceName, InstanceStatus, Operation, Response};
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::service::Service;
 use wt_server::store::Store;
@@ -32,8 +32,8 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let git = timings.run("prepare SSH Git fixture", || {
         GitSshServer::start(temp.path(), bridge_ip)
     });
-    config.guest.ssh_authorized_keys_file = git.client_public_key.clone();
-    config.git.identity_file = git.client_key.clone();
+    config.guest.ssh_authorized_keys_file = git.guest_public_key.clone();
+    config.git.identity_file = git.git_key.clone();
     config.git.known_hosts_file = temp.path().join(".ssh/known_hosts");
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
@@ -64,6 +64,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                     name: name.clone(),
                     source: git.url(),
                     git_ref: Some(git.main_commit.clone()),
+                    git_passphrase: GitPassphrase::new("secret".to_owned()),
                 }),
             )
             .unwrap()
@@ -99,7 +100,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             Command::new("ssh")
                 .arg("-F")
                 .arg(&ssh_config)
-                .args(["-i", git.client_key.to_str().unwrap(), &host_alias])
+                .args(["-i", git.guest_key.to_str().unwrap(), &host_alias])
                 .args(["test", "-d", "/workspace"])
                 .output()
                 .map_err(|error| error.to_string())
@@ -111,7 +112,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nexit\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nsecret\nexit\n"
             ),
         )
         .map_err(|error| error.to_string())?;
@@ -120,7 +121,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
             Command::new("ssh")
                 .arg("-F")
                 .arg(&ssh_config)
-                .args(["-i", git.client_key.to_str().unwrap(), name.as_str()])
+                .args(["-i", git.guest_key.to_str().unwrap(), name.as_str()])
                 .stdin(Stdio::from(input))
                 .output()
                 .map_err(|error| error.to_string())
@@ -151,8 +152,9 @@ struct GitSshServer {
     address: IpAddr,
     port: u16,
     repository: PathBuf,
-    client_key: PathBuf,
-    client_public_key: PathBuf,
+    git_key: PathBuf,
+    guest_key: PathBuf,
+    guest_public_key: PathBuf,
     main_commit: String,
 }
 
@@ -176,13 +178,16 @@ impl GitSshServer {
         .trim()
         .to_owned();
 
-        let client_key = root.join("git-client");
+        let git_key = root.join("git-client");
+        let guest_key = root.join("guest-client");
         let host_key = root.join("ssh-host");
-        generate_key(&client_key);
-        generate_key(&host_key);
-        let client_public_key = client_key.with_extension("pub");
+        generate_key(&git_key, "secret");
+        generate_key(&guest_key, "");
+        generate_key(&host_key, "");
+        let git_public_key = git_key.with_extension("pub");
+        let guest_public_key = guest_key.with_extension("pub");
         let authorized_keys = root.join("authorized_keys");
-        fs::copy(&client_public_key, &authorized_keys).unwrap();
+        fs::copy(&git_public_key, &authorized_keys).unwrap();
 
         let listener = TcpListener::bind((address, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -224,8 +229,9 @@ impl GitSshServer {
                     address,
                     port,
                     repository,
-                    client_key,
-                    client_public_key,
+                    git_key,
+                    guest_key,
+                    guest_public_key,
                     main_commit,
                 };
             }
@@ -315,10 +321,10 @@ impl Drop for GitSshServer {
     }
 }
 
-fn generate_key(path: &Path) {
+fn generate_key(path: &Path, passphrase: &str) {
     run(
         Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .args(["-q", "-t", "ed25519", "-N", passphrase, "-f"])
             .arg(path),
         "generate test SSH key",
     );

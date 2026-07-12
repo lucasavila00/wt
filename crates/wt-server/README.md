@@ -48,7 +48,7 @@ preload_images = [
 ]
 
 [git]
-identity_file = "/home/server-user/.ssh/wt-git"
+identity_file = "/home/server-user/.ssh/id_ed25519"
 known_hosts_file = "/home/server-user/.ssh/known_hosts"
 
 [guest]
@@ -96,10 +96,12 @@ The installer:
 
 Matching state is accepted. Differing config, ownership, modes, partial image state, stale build state, or image provenance fails installation.
 
-`/etc/wt/server.toml` is the only runtime server config. The Git identity is a
-dedicated, unencrypted, mode-`0600` key owned by the server user. It is distinct
-from both client-to-server OpenSSH authentication and guest-login authorized
-keys. There are no runtime environment overrides.
+`/etc/wt/server.toml` is the only runtime server config. The Git identity must be
+an encrypted OpenSSH private key, mode `0600`, owned by the server user. `wt new`
+prompts on the client terminal; the passphrase is never stored in server config.
+The Git, client-to-server, and guest-login identities have separate roles, but a
+deployment may point the first two roles at the same key. There are no runtime
+environment overrides.
 
 Each user registry is fixed at `~/.local/state/wt/instances.db`. Worlds share
 the configured `libvirt.worlds_dir` and system libvirt daemon.

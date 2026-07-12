@@ -36,10 +36,13 @@ stable SSH user, endpoint, and unique public host keys. `wt sync` projects that
 inventory into managed app-container and guest-host aliases without editing the
 user's main SSH config.
 
-Git sources are SSH-only. Each server supplies a dedicated unencrypted Git identity
-and known-hosts file. The identity and trust bundle are copied into the trusted
-world's checkout for Git from both the guest and devcontainer. Client-to-server
-OpenSSH authentication is separate.
+Git sources are SSH-only. Each server supplies an encrypted Git identity and a
+known-hosts file. `wt new` reads the passphrase on the client terminal and sends
+it through the local/OpenSSH helper request for the blocking clone. The encrypted
+identity and trust bundle are copied into the trusted world's checkout for Git
+from both the guest and devcontainer; the passphrase is not persisted.
+Client-to-server OpenSSH authentication is a separate role, though deployments
+may configure the same identity for both roles.
 
 ## Language and crates
 

@@ -3,15 +3,17 @@
 use super::guest_agent;
 use crate::WorkerError;
 use nix::unistd::Uid;
+use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
-use std::process::Command;
 use std::time::Instant;
 use virt::domain::Domain;
+use wt_api::GitPassphrase;
 
 const BUNDLE_DIR: &str = "/workspace/.git/wt";
 const CLONE_CREDENTIALS_DIR: &str = "/run/wt-git";
+const CLONE_ASKPASS: &str = "/tmp/wt-git-askpass";
 const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
 const SSH_WRAPPER: &[u8] = br#"#!/bin/sh
 set -eu
@@ -29,6 +31,7 @@ install -m 0600 "$directory/identity" "$runtime/identity"
 
 pub(super) struct Credentials {
     identity: Vec<u8>,
+    private_key: PrivateKey,
     known_hosts: Vec<u8>,
 }
 
@@ -48,10 +51,13 @@ pub(super) fn load_credentials(
     }
     let identity = fs::read(identity_file)
         .map_err(|error| error_context("Git identity: read private key", error))?;
-    let identity_path = identity_file.display().to_string();
-    if !private_key_accepts_passphrase(&identity_path, "")? {
+    let encoded = std::str::from_utf8(&identity)
+        .map_err(|error| error_context("Git identity: decode private key", error))?;
+    let private_key = PrivateKey::from_openssh(encoded)
+        .map_err(|error| error_context("Git identity: parse private key", error))?;
+    if !private_key.is_encrypted() {
         return Err(WorkerError::new(
-            "Git identity: configured server key must be unencrypted",
+            "Git identity: configured server key must be encrypted",
         ));
     }
     let known_hosts = fs::read(known_hosts_file).map_err(|error| {
@@ -59,8 +65,18 @@ pub(super) fn load_credentials(
     })?;
     Ok(Credentials {
         identity,
+        private_key,
         known_hosts,
     })
+}
+
+impl Credentials {
+    fn validate_passphrase(&self, passphrase: &GitPassphrase) -> Result<(), WorkerError> {
+        self.private_key
+            .decrypt(passphrase.expose_secret())
+            .map(|_| ())
+            .map_err(|_| WorkerError::new("Git identity: invalid private key passphrase"))
+    }
 }
 
 pub(super) fn clone_and_checkout(
@@ -68,8 +84,10 @@ pub(super) fn clone_and_checkout(
     source: &str,
     git_ref: Option<&str>,
     credentials: &Credentials,
+    passphrase: &GitPassphrase,
     deadline: Instant,
 ) -> Result<(), WorkerError> {
+    credentials.validate_passphrase(passphrase)?;
     guest_agent::run_phase(
         domain,
         "Git credentials",
@@ -78,7 +96,7 @@ pub(super) fn clone_and_checkout(
         deadline,
     )?;
     let result = (|| {
-        stage_clone_credentials(domain, credentials, deadline)?;
+        stage_clone_credentials(domain, credentials, passphrase, deadline)?;
         let environment = git_environment();
         run_git(
             domain,
@@ -105,22 +123,50 @@ pub(super) fn clone_and_checkout(
         }
         install_persistent_bundle(domain, credentials, deadline)
     })();
-    let _ = guest_agent::exec(domain, "/bin/rm", &["-rf", CLONE_CREDENTIALS_DIR], deadline);
+    let _ = guest_agent::exec(
+        domain,
+        "/bin/rm",
+        &["-rf", CLONE_CREDENTIALS_DIR, CLONE_ASKPASS],
+        deadline,
+    );
     result
 }
 
 fn stage_clone_credentials(
     domain: &Domain,
     credentials: &Credentials,
+    passphrase: &GitPassphrase,
     deadline: Instant,
 ) -> Result<(), WorkerError> {
     guest_agent::write(domain, "/run/wt-git/identity", &credentials.identity)?;
     guest_agent::write(domain, "/run/wt-git/known_hosts", &credentials.known_hosts)?;
+    guest_agent::write(
+        domain,
+        "/run/wt-git/passphrase",
+        passphrase.expose_secret().as_bytes(),
+    )?;
+    guest_agent::write(
+        domain,
+        CLONE_ASKPASS,
+        b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
+    )?;
     guest_agent::run_phase(
         domain,
         "Git credentials",
         "/bin/chmod",
-        &["0600", "/run/wt-git/identity", "/run/wt-git/known_hosts"],
+        &["0700", CLONE_ASKPASS],
+        deadline,
+    )?;
+    guest_agent::run_phase(
+        domain,
+        "Git credentials",
+        "/bin/chmod",
+        &[
+            "0600",
+            "/run/wt-git/identity",
+            "/run/wt-git/known_hosts",
+            "/run/wt-git/passphrase",
+        ],
         deadline,
     )?;
     Ok(())
@@ -129,6 +175,9 @@ fn stage_clone_credentials(
 fn git_environment() -> Vec<String> {
     vec![
         "GIT_SSH_COMMAND=ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes".to_owned(),
+        format!("SSH_ASKPASS={CLONE_ASKPASS}"),
+        "SSH_ASKPASS_REQUIRE=force".to_owned(),
+        "DISPLAY=wt:0".to_owned(),
     ]
 }
 
@@ -211,16 +260,6 @@ fn install_persistent_bundle(
     Ok(())
 }
 
-fn private_key_accepts_passphrase(path: &str, passphrase: &str) -> Result<bool, WorkerError> {
-    Ok(Command::new("ssh-keygen")
-        .args(["-y", "-P", passphrase, "-f", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|error| error_context("Git identity: inspect private key", error))?
-        .success())
-}
-
 fn error_context(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
 }
@@ -229,6 +268,7 @@ fn error_context(action: &str, error: impl std::fmt::Display) -> WorkerError {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
 
     #[test]
     fn persistent_ssh_command_resolves_from_nested_workspace() {
@@ -269,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_encrypted_private_key_passphrases() {
+    fn validates_encrypted_private_key_passphrases() {
         let temp = tempfile::tempdir().unwrap();
         let key = temp.path().join("identity");
         run(
@@ -278,10 +318,23 @@ mod tests {
                 .arg(&key),
             "generate encrypted key",
         );
-        let key = key.to_str().unwrap();
-        assert!(!private_key_accepts_passphrase(key, "").unwrap());
-        assert!(!private_key_accepts_passphrase(key, "wrong").unwrap());
-        assert!(private_key_accepts_passphrase(key, "secret").unwrap());
+        fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+        let known_hosts = temp.path().join("known_hosts");
+        fs::write(&known_hosts, "example.test ssh-ed25519 AAAATEST\n").unwrap();
+        let credentials = load_credentials(&key, &known_hosts).unwrap();
+        assert!(credentials
+            .validate_passphrase(&GitPassphrase::new("wrong".to_owned()))
+            .is_err());
+        credentials
+            .validate_passphrase(&GitPassphrase::new("secret".to_owned()))
+            .unwrap();
+    }
+
+    #[test]
+    fn clone_askpass_executes_outside_noexec_run() {
+        let environment = git_environment();
+        assert!(environment.contains(&format!("SSH_ASKPASS={CLONE_ASKPASS}")));
+        assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 
     fn run(command: &mut Command, action: &str) {

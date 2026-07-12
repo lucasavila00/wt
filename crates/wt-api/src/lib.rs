@@ -5,10 +5,11 @@ use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
     pub protocol_version: u32,
     #[serde(flatten)]
@@ -24,7 +25,7 @@ impl ApiRequest {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Operation {
     Create(CreateInstance),
@@ -33,12 +34,33 @@ pub enum Operation {
     Delete { name: InstanceName },
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
+    pub git_passphrase: GitPassphrase,
+}
+
+#[derive(Deserialize, Eq, PartialEq, Serialize, Zeroize, ZeroizeOnDrop)]
+#[serde(transparent)]
+pub struct GitPassphrase(String);
+
+impl GitPassphrase {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for GitPassphrase {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GitPassphrase([REDACTED])")
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -336,6 +358,7 @@ mod tests {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
             git_ref: Some("feature".to_owned()),
+            git_passphrase: GitPassphrase::new("secret".to_owned()),
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -344,9 +367,18 @@ mod tests {
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
-                "git_ref": "feature"
+                "git_ref": "feature",
+                "git_passphrase": "secret"
             })
         );
+    }
+
+    #[test]
+    fn git_passphrase_debug_is_redacted() {
+        let passphrase = GitPassphrase::new("do-not-print".to_owned());
+        let debug = format!("{passphrase:?}");
+        assert!(!debug.contains(passphrase.expose_secret()));
+        assert!(debug.contains("REDACTED"));
     }
 
     #[test]

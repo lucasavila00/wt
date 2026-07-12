@@ -134,6 +134,7 @@ impl LibvirtWorker {
             spec.source,
             spec.git_ref,
             private_git,
+            spec.git_passphrase,
             recipe_deadline,
         )?;
         report_phase("Git clone and checkout", phase_started);

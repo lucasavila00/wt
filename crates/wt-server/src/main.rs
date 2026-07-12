@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nix::unistd::{Uid, User};
-use std::io::{Read, Write};
+use std::io::Write;
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::config::StateConfig;
@@ -43,9 +43,8 @@ fn run_api() -> Result<()> {
     let owner = process_user()?;
     let mut service = Service::new(store, worker);
 
-    let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input)?;
-    let response = match serde_json::from_str::<ApiRequest>(&input) {
+    let stdin = std::io::stdin();
+    let response = match serde_json::from_reader::<_, ApiRequest>(stdin.lock()) {
         Ok(request) => wt_server::handle_request(&mut service, &owner, request),
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,

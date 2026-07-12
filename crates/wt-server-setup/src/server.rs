@@ -5,6 +5,7 @@ use crate::registry_cache;
 use crate::runner::{args, Runner};
 use anyhow::{bail, Context, Result};
 use nix::unistd::Uid;
+use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -72,14 +73,13 @@ fn validate_git_credentials(config: &GitConfig) -> Result<()> {
             identity.display()
         );
     }
-    let output = Command::new("ssh-keygen")
-        .args(["-y", "-P", "", "-f"])
-        .arg(identity)
-        .output()
-        .with_context(|| format!("validate git.identity_file {}", identity.display()))?;
-    if !output.status.success() {
+    let encoded = fs::read_to_string(identity)
+        .with_context(|| format!("read git.identity_file {}", identity.display()))?;
+    let private_key = PrivateKey::from_openssh(&encoded)
+        .with_context(|| format!("parse git.identity_file {}", identity.display()))?;
+    if !private_key.is_encrypted() {
         bail!(
-            "git.identity_file {} must be a valid unencrypted private key",
+            "git.identity_file {} must be an encrypted OpenSSH private key",
             identity.display()
         );
     }
@@ -215,7 +215,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let identity = temp.path().join("identity");
         let output = Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .args(["-q", "-t", "ed25519", "-N", "secret", "-f"])
             .arg(&identity)
             .output()
             .unwrap();
