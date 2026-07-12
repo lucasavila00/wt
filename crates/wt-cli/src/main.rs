@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
-use std::process::Command as ProcessCommand;
 use wt_api::{ApiRequest, CreateInstance, GitPassphrase, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
@@ -28,8 +27,6 @@ enum Command {
     Rm { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
-    /// Enter a world through stock OpenSSH.
-    Ssh { name: String },
 }
 
 fn main() {
@@ -135,26 +132,6 @@ fn run() -> Result<()> {
         Command::Sync => {
             let path = sync_inventory(&config)?;
             println!("updated {}", path.display());
-        }
-        Command::Ssh { name } => {
-            let instances = inventory::list_all(&config)?;
-            let selected = inventory::resolve(&instances, &name)?;
-            if selected.instance.status != wt_api::InstanceStatus::Running {
-                bail!("world is not running: {}", selected.qualified_name());
-            }
-            if selected.instance.ssh.is_none() {
-                bail!("world has no SSH access: {}", selected.qualified_name());
-            }
-            wt_cli::ssh::sync(&instances)?;
-            let alias = if name.contains('.') {
-                selected.qualified_name()
-            } else {
-                selected.instance.name.to_string()
-            };
-            let status = ProcessCommand::new("ssh").arg(alias).status()?;
-            if !status.success() {
-                bail!("ssh exited with {status}");
-            }
         }
     }
     Ok(())
@@ -272,5 +249,10 @@ mod tests {
     #[test]
     fn formats_header_for_empty_inventory() {
         assert_eq!(format_instances(&[]), "CONTEXT  NAME  STATUS  IP  SSH\n");
+    }
+
+    #[test]
+    fn rejects_removed_ssh_subcommand() {
+        assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
     }
 }

@@ -26,7 +26,7 @@ crates/
 | Package | Kind | Role |
 |---------|------|------|
 | [`wt-api`](./crates/wt-api/) | lib | Control-plane wire types |
-| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Context-aware CLI — new, ls, rm, sync, ssh |
+| [`wt-cli`](./crates/wt-cli/) | bin `wt` | Context-aware CLI — new, ls, rm, sync |
 | [`wt-guest`](./crates/wt-guest/) | bin `wt-app-shell` | Host-built devcontainer shell helper injected into guests |
 | [`wt-libvirt`](./crates/wt-libvirt/) | lib | Libvirt/KVM world lifecycle |
 | [`wt-server`](./crates/wt-server/) | bin | Server helper — registry + instance service + embedded backend |

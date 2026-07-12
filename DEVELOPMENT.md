@@ -53,7 +53,8 @@ The workspace test always includes the real KVM acceptance test.
 ```bash
 wt new git@github.com:lucasavila00/jsdev-sample.git jsdev-manual
 wt ls
-wt ssh jsdev-manual
+wt sync
+ssh jsdev-manual
 ```
 
 Inside the devcontainer:

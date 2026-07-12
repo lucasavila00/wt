@@ -9,7 +9,7 @@ Parent: [architecture](./README.md). Helper: [`wt-server`](../../crates/wt-serve
 | Dispatch to local or OpenSSH `wt-server api` | Run libvirt or Docker itself |
 | Send one JSON request over stdin | Add a public network protocol |
 | Parse one JSON response from stdout | Provision guests over SSH |
-| Create, list, remove, and enter worlds | Export guest checkouts to the client |
+| Create, list, and remove worlds | Export guest checkouts to the client |
 | Project guest inventory into managed OpenSSH files | Edit the user's main SSH config |
 
 ## Client contexts
@@ -46,7 +46,6 @@ context. Aggregate list and sync operations fail if any context is unavailable.
 | `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
 | `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
 | `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |
-| `wt ssh <name>` | Refresh inventory and use stock OpenSSH to enter the primary app container |
 
 Git sources must use `ssh://` or `user@host:path`. With no `--ref`, Git uses the
 remote default branch. A supplied ref may identify an existing branch, tag, or
@@ -63,6 +62,8 @@ on the client host.
   through the QEMU guest agent, and `wt-server` persists them with the endpoint.
 - `wt sync` writes `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. The user adds
   `Include ~/.ssh/wt/config` at the beginning of the main OpenSSH config.
+- After syncing, users enter a world with stock OpenSSH: `ssh <name>` or
+  `ssh <context>.<name>`.
 - Qualified aliases always exist. Short aliases exist only for globally unique
   names. The base alias enters the persistent app session; the `-host` alias
   provides unrestricted guest SSH for commands, SCP, VS Code Remote SSH, and

@@ -45,7 +45,7 @@ are separate connections with separate authentication and host identities.
 |---------|---------|
 | `wt new <source> <name>` | Create; print SSH Host snippet (`name` = `{repo}-{feature}`) |
 | `wt sync` | Rewrite managed ssh config from **my** instances on this cluster |
-| `ssh <name>` / `wt ssh <name>` | Enter |
+| `ssh <name>` | Enter |
 | `wt rm <name>` | Tear down |
 | `wt ls` | name, status, SSH target |
 | qualified `context.world` name | Select a specific configured server |
