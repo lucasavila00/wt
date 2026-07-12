@@ -79,10 +79,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Prefer Insta snapshots for stable user-visible text, diagnostics, generated
   configuration, scripts and service units, serialized text, and multiline
   output. Snapshot the complete normalized value instead of checking fragments
-  with `contains`. Favor inline snapshots; use external snapshot files when the
-  expected output would dominate the test source. Keep direct assertions for
-  secrets, status codes, parsed semantics, filesystem state, and other behavioral
-  invariants. Review generated snapshots and ensure no `.snap.new` files remain
-  before finishing.
+  with `contains`. Favor inline snapshots for compact expected output. Keep large
+  generated artifacts—especially full SSH inventories and long rendered
+  configurations—in external `.snap` files when embedding them would dominate
+  the test source. Apply that choice consistently based on output size and
+  readability, not test location. Keep direct assertions for secrets, status
+  codes, parsed semantics, filesystem state, and other behavioral invariants.
+  Review generated snapshots and ensure no `.snap.new` or `.pending-snap` files
+  remain before finishing.
 - Do not run real-system KVM tests for unrelated changes. Run them only when the
   affected behavior requires them or when explicitly requested.
