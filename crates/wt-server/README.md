@@ -92,7 +92,7 @@ The installer:
 - Downloads and verifies the pinned Ubuntu source image.
 - Builds the Docker/Compose-ready golden image in a temporary KVM guest.
 - Installs `wt` and `wt-server` into `install.binary_dir`.
-- Copies the supplied config verbatim to `/etc/wt/server.toml`.
+- Installs the validated server config at `/etc/wt/server.toml`.
 
 Matching state is accepted. Differing config, ownership, modes, partial image state, stale build state, or image provenance fails installation.
 

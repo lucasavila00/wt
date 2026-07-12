@@ -21,11 +21,12 @@ Set up GitHub/GitLab SSH access:
 ssh -T git@github.com
 ```
 
-Copy the server config:
+Choose any writable file as the installer input. This guide uses
+`./server.toml`; the input path has no runtime significance.
 
 ```bash
-cp config/wt-server.development.toml ~/wt-server.toml
-nano ~/wt-server.toml
+cp config/wt-server.development.toml ./server.toml
+nano ./server.toml
 ```
 
 Check these values:
@@ -50,18 +51,19 @@ See [Libvirt/KVM backend](docs/arch/bare-metal-agent.md) and
 Install:
 
 ```bash
-scripts/install-server --config ~/wt-server.toml
+scripts/install-server --config ./server.toml
 ```
 
 If it tells you to log out, log out. Log back in. Run it again:
 
 ```bash
 cd ~/wt
-scripts/install-server --config ~/wt-server.toml
+scripts/install-server --config ./server.toml
 ```
 
-The installed config is strict. Do not edit `~/wt-server.toml` and rerun the
-installer unless you are rebuilding the server state.
+Keep the input file until installation finishes. The installer places the
+runtime config at `/etc/wt/server.toml`. Installed server state is strict;
+rerunning the installer with conflicting configuration fails.
 
 ## Configure the local client
 
@@ -137,7 +139,7 @@ Before server installation, copy the client's public key to the server:
 scp ~/.ssh/id_ed25519.pub wt-server:~/.ssh/wt-client.pub
 ```
 
-On the server, set this in `~/wt-server.toml`:
+On the server, set this in the installer input file before installation:
 
 ```toml
 [guest]
