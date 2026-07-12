@@ -441,3 +441,78 @@ fn invalid_column(message: &str) -> rusqlite::Error {
         )),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored(name: &str) -> StoredInstance {
+        let id = Uuid::new_v4();
+        StoredInstance {
+            instance: Instance {
+                id,
+                name: InstanceName::parse(name).unwrap(),
+                owner: "tester".to_owned(),
+                status: InstanceStatus::Provisioning,
+                source: "git@example.test:repo.git".to_owned(),
+                guest_ip: None,
+                last_error: None,
+                ssh: None,
+            },
+            backend_id: format!("wt-{}", id.simple()),
+            job_acknowledged: false,
+        }
+    }
+
+    #[test]
+    fn log_chunks_replay_from_bounded_byte_offsets() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let instance = stored("chunked");
+        store.insert(&instance).unwrap();
+        store.append_log(instance.instance.id, b"abc").unwrap();
+        store.append_log(instance.instance.id, b"def").unwrap();
+
+        assert_eq!(
+            store.read_log(instance.instance.id, 0, 4).unwrap(),
+            (b"abcd".to_vec(), 4)
+        );
+        assert_eq!(
+            store.read_log(instance.instance.id, 4, 64).unwrap(),
+            (b"ef".to_vec(), 6)
+        );
+        assert_eq!(
+            store.read_log(instance.instance.id, 99, 64).unwrap(),
+            (Vec::new(), 6)
+        );
+    }
+
+    #[test]
+    fn terminal_log_and_state_are_committed_together() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let instance = stored("failed");
+        store.insert(&instance).unwrap();
+        store.append_log(instance.instance.id, b"working\n").unwrap();
+
+        store
+            .finish_error(instance.instance.id, "injected failure", b"ERROR: injected failure\n")
+            .unwrap();
+
+        let current = store
+            .get("tester", &instance.instance.name)
+            .unwrap()
+            .instance;
+        assert_eq!(current.status, InstanceStatus::Error);
+        assert_eq!(current.last_error.as_deref(), Some("injected failure"));
+        assert_eq!(
+            store.read_log(instance.instance.id, 0, 1024).unwrap().0,
+            b"working\nERROR: injected failure\n"
+        );
+        store.delete(instance.instance.id).unwrap();
+        assert_eq!(
+            store.read_log(instance.instance.id, 0, 1024).unwrap().0,
+            Vec::<u8>::new()
+        );
+    }
+}

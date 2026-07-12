@@ -112,10 +112,19 @@ impl<W: WorldWorker> Service<W> {
             source: &stored.instance.source,
             git_passphrase: &request.git_passphrase,
         };
-        match self.worker.provision(&spec, &mut std::io::sink()) {
+        let provisioned = {
+            let mut log = self.store.log_writer(id);
+            self.worker.provision(&spec, &mut log)
+        };
+        match provisioned {
             Ok(world) => {
                 self.store
-                    .mark_running(id, &world.guest_ip, &world.ssh)
+                    .finish_running(
+                        id,
+                        &world.guest_ip,
+                        &world.ssh,
+                        format!("SUCCESS: world {} is running\n", stored.instance.name).as_bytes(),
+                    )
                     .map_err(map_store_error)?;
                 let mut instance = stored.instance;
                 instance.status = InstanceStatus::Running;
@@ -128,7 +137,7 @@ impl<W: WorldWorker> Service<W> {
             Err(error) => {
                 let message = error.to_string();
                 self.store
-                    .mark_error(id, &message)
+                    .finish_error(id, &message, format!("ERROR: {message}\n").as_bytes())
                     .map_err(map_store_error)?;
                 Err(ApiError::new(ErrorCode::Backend, message))
             }
@@ -241,12 +250,6 @@ impl<W: WorldWorker> Service<W> {
     ) -> Result<Response, ApiError> {
         const CHUNK_SIZE: usize = 64 * 1024;
         const LONG_POLL: Duration = Duration::from_secs(15);
-        if self.jobs.is_none() {
-            return Err(ApiError::new(
-                ErrorCode::Internal,
-                "job logs are unavailable",
-            ));
-        }
         let deadline = Instant::now() + LONG_POLL;
         loop {
             let stored = self.store.get(owner, name).map_err(map_store_error)?;

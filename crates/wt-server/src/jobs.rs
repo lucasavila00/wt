@@ -132,6 +132,7 @@ impl Jobs {
     fn open_lock(&self, id: Uuid) -> Result<File, JobError> {
         Ok(OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .mode(0o600)
@@ -189,5 +190,55 @@ fn map_lock_error(error: std::fs::TryLockError) -> JobError {
             std::io::ErrorKind::WouldBlock,
             "job lock is held",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wt_api::{Instance, InstanceName};
+
+    fn insert_provisioning(store: &Store, id: Uuid) -> StoredInstance {
+        let stored = StoredInstance {
+            instance: Instance {
+                id,
+                name: InstanceName::parse("recovery").unwrap(),
+                owner: "tester".to_owned(),
+                status: InstanceStatus::Provisioning,
+                source: "git@example.test:repo.git".to_owned(),
+                guest_ip: None,
+                last_error: None,
+                ssh: None,
+            },
+            backend_id: format!("wt-{}", id.simple()),
+            job_acknowledged: false,
+        };
+        store.insert(&stored).unwrap();
+        stored
+    }
+
+    #[test]
+    fn active_lock_prevents_false_abandonment_then_recovery_records_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let jobs = Jobs::open(temp.path().join("jobs")).unwrap();
+        let id = Uuid::new_v4();
+        let lock = jobs.lock(id).unwrap();
+        insert_provisioning(&store, id);
+
+        jobs.reconcile(&store).unwrap();
+        assert_eq!(
+            store.get_by_id(id).unwrap().instance.status,
+            InstanceStatus::Provisioning
+        );
+
+        drop(lock);
+        jobs.reconcile(&store).unwrap();
+        let recovered = store.get_by_id(id).unwrap().instance;
+        assert_eq!(recovered.status, InstanceStatus::Error);
+        assert!(recovered.last_error.unwrap().contains("interrupted"));
+        assert!(String::from_utf8(store.read_log(id, 0, 1024).unwrap().0)
+            .unwrap()
+            .contains("ERROR: provisioning was interrupted"));
     }
 }
