@@ -39,10 +39,17 @@ if any context fails.
 | `wt new SOURCE NAME` | Create, sync SSH, print aliases |
 | `wt ls` | List and sync |
 | `wt rm NAME` | Destroy and sync |
+| `wt logs NAME` | Replay and follow provisioning output |
 | `wt sync` | Rewrite managed SSH files |
 
 Sources are SSH only: `ssh://...` or `user@host:path`. WT retries only an invalid
 Git-key passphrase.
+
+`wt new` returns from create acknowledgement into a log-following wait. Ctrl-C
+or a dropped OpenSSH connection stops only that wait; `wt logs NAME` replays from
+the beginning and follows until the world is `running` or `error`. SSH inventory
+is written only after `running`. If transport is lost before acknowledgement,
+the outcome is unknown and must be checked with `wt ls` or `wt logs`.
 
 ## SSH
 

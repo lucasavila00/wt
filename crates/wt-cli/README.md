@@ -17,6 +17,7 @@ Server helper: [`wt-server`](../wt-server/). Types: [`wt-api`](../wt-api/).
 
 ```text
 wt new <ssh-source> <context.name>
+wt logs <name>
 wt ls
 wt rm <name>
 wt sync
@@ -28,7 +29,9 @@ wt sync
 cargo run -p wt-cli -- …
 ```
 
-`new` and `rm` always synchronize managed SSH access records.
+`new` follows durable provisioning logs and synchronizes managed SSH access only
+after the world reaches `running`. `logs` replays and resumes the same output.
+`rm` synchronizes after successful deletion.
 
 Configure one or more WT servers in `~/.wt/config.toml`:
 

@@ -10,6 +10,10 @@ Cross-crate integration tests. No production code.
 The real-system lane always runs. Local setup and commands are documented in
 [DEVELOPMENT.md](../../DEVELOPMENT.md).
 
+Integration support binaries may supply temporary server configuration, but
+tests use the production reservation, detached launcher, lock, SQLite log, API,
+and recovery paths. There is no synchronous test-only service lifecycle.
+
 ## Registry cache
 
 The real-system test uses the production golden image and the host registry

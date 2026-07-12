@@ -103,6 +103,12 @@ environment overrides.
 Each user registry is fixed at `~/.local/state/wt/instances.db`. Worlds share
 the configured `libvirt.worlds_dir` and system libvirt daemon.
 
+Provisioning runs in a detached internal `wt-server` process. SQLite stores both
+world state and append-only provisioning log chunks; there are no job log files.
+Per-world files under `~/.local/state/wt/jobs` exist only for OS locks. Accepted
+jobs survive client and OpenSSH disconnects. Worker crashes become `error` on
+the next API operation and require explicit `wt rm`.
+
 The `libvirt` group controls the host hypervisor. Only grant it to trusted server users.
 
 ## Smoke test

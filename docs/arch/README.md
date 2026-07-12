@@ -45,6 +45,18 @@ for Git from both the guest and devcontainer; the passphrase is not persisted.
 Client-to-server OpenSSH authentication is a separate role, though deployments
 may configure the same identity for both roles.
 
+Create acceptance is durable. The API reserves the world as `provisioning`,
+hands its lock and passphrase pipe to a detached worker, and responds only after
+the worker acknowledges the job in SQLite. Client Ctrl-C or loss of the local or
+OpenSSH transport after that response stops observation but not provisioning.
+Provisioning output is stored in SQLite and can be resumed with `wt logs`.
+
+A server or worker crash is not resumed because the Git passphrase is never
+persisted. On the next API operation, an abandoned `provisioning` or `destroying`
+world becomes `error`; partial backend resources remain for inspection and
+explicit `wt rm`. A transport failure before create acknowledgement has an
+unknown outcome, so the client directs the user to `wt ls` or `wt logs`.
+
 ## Language and crates
 
 Rust workspace:
@@ -69,6 +81,7 @@ crates/
 | list | Return the caller's worlds and access inventory |
 | get | Return one caller-owned world |
 | delete | Destroy one caller-owned world |
+| logs | Read and follow durable provisioning output from a byte offset |
 
 The API uses protocol version 1 JSON over helper stdio. The owner is the OS user
 running `wt-server`, whether the helper was started locally or through OpenSSH.

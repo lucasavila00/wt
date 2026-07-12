@@ -1,38 +1,30 @@
-use crate::jobs::Jobs;
+use crate::jobs::{Jobs, ProvisionLauncher};
 use crate::store::{Store, StoreError, StoredInstance};
 use base64::Engine as _;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
-use wt_libvirt::{ProvisionSpec, WorldWorker};
+use wt_libvirt::WorldWorker;
 
-pub struct Service<W> {
+pub struct Service<W, L> {
     store: Store,
     worker: W,
-    jobs: Option<Jobs>,
+    jobs: Jobs,
+    launcher: L,
 }
 
-impl<W: WorldWorker> Service<W> {
-    pub fn new(store: Store, worker: W) -> Self {
+impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
+    pub fn new(store: Store, worker: W, jobs: Jobs, launcher: L) -> Self {
         Self {
             store,
             worker,
-            jobs: None,
-        }
-    }
-
-    pub fn new_detached(store: Store, worker: W, jobs: Jobs) -> Self {
-        Self {
-            store,
-            worker,
-            jobs: Some(jobs),
+            jobs,
+            launcher,
         }
     }
 
     pub fn execute(&mut self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
-        if let Some(jobs) = &self.jobs {
-            jobs.reconcile(&self.store).map_err(map_store_error)?;
-        }
+        self.jobs.reconcile(&self.store).map_err(map_store_error)?;
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
@@ -76,72 +68,31 @@ impl<W: WorldWorker> Service<W> {
         };
         let lock = self
             .jobs
-            .as_ref()
-            .map(|jobs| {
-                jobs.lock(id)
-                    .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))
-            })
-            .transpose()?;
+            .lock(id)
+            .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         if let Err(error) = self.store.insert(&stored) {
             drop(lock);
-            if let Some(jobs) = &self.jobs {
-                let _ = jobs.remove(id);
-            }
+            let _ = self.jobs.remove(id);
             return Err(map_store_error(error));
         }
 
-        if let (Some(jobs), Some(lock)) = (&self.jobs, lock) {
-            if let Err(error) = jobs.launch(&self.store, id, &request.git_passphrase, lock) {
-                let _ = self.store.delete(id);
-                let _ = jobs.remove(id);
-                return Err(ApiError::new(
-                    ErrorCode::Internal,
-                    format!("launch provisioning worker: {error}"),
-                ));
-            }
-            return Ok(Response::Instance {
-                instance: Box::new(stored.instance),
-            });
+        if let Err(error) = self.launcher.launch(
+            &self.store,
+            &self.worker,
+            &stored,
+            &request.git_passphrase,
+            lock,
+        ) {
+            let _ = self.store.delete(id);
+            let _ = self.jobs.remove(id);
+            return Err(ApiError::new(
+                ErrorCode::Internal,
+                format!("launch provisioning worker: {error}"),
+            ));
         }
-
-        let spec = ProvisionSpec {
-            id,
-            backend_id: &stored.backend_id,
-            owner,
-            name: &stored.instance.name,
-            source: &stored.instance.source,
-            git_passphrase: &request.git_passphrase,
-        };
-        let provisioned = {
-            let mut log = self.store.log_writer(id);
-            self.worker.provision(&spec, &mut log)
-        };
-        match provisioned {
-            Ok(world) => {
-                self.store
-                    .finish_running(
-                        id,
-                        &world.guest_ip,
-                        &world.ssh,
-                        format!("SUCCESS: world {} is running\n", stored.instance.name).as_bytes(),
-                    )
-                    .map_err(map_store_error)?;
-                let mut instance = stored.instance;
-                instance.status = InstanceStatus::Running;
-                instance.guest_ip = Some(world.guest_ip);
-                instance.ssh = Some(world.ssh);
-                Ok(Response::Instance {
-                    instance: Box::new(instance),
-                })
-            }
-            Err(error) => {
-                let message = error.to_string();
-                self.store
-                    .finish_error(id, &message, format!("ERROR: {message}\n").as_bytes())
-                    .map_err(map_store_error)?;
-                Err(ApiError::new(ErrorCode::Backend, message))
-            }
-        }
+        Ok(Response::Instance {
+            instance: Box::new(stored.instance),
+        })
     }
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
@@ -203,24 +154,21 @@ impl<W: WorldWorker> Service<W> {
 
     fn delete(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        let lock = if let Some(jobs) = &self.jobs {
-            if stored.instance.status == InstanceStatus::Provisioning
-                && jobs
-                    .is_locked(stored.instance.id)
-                    .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?
-            {
-                return Err(ApiError::new(
-                    ErrorCode::Conflict,
-                    "instance is still provisioning",
-                ));
-            }
-            Some(
-                jobs.lock(stored.instance.id)
-                    .map_err(|_| ApiError::new(ErrorCode::Conflict, "instance job is active"))?,
-            )
-        } else {
-            None
-        };
+        if stored.instance.status == InstanceStatus::Provisioning
+            && self
+                .jobs
+                .is_locked(stored.instance.id)
+                .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?
+        {
+            return Err(ApiError::new(
+                ErrorCode::Conflict,
+                "instance is still provisioning",
+            ));
+        }
+        let lock = self
+            .jobs
+            .lock(stored.instance.id)
+            .map_err(|_| ApiError::new(ErrorCode::Conflict, "instance job is active"))?;
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;
@@ -235,10 +183,9 @@ impl<W: WorldWorker> Service<W> {
             .delete(stored.instance.id)
             .map_err(map_store_error)?;
         drop(lock);
-        if let Some(jobs) = &self.jobs {
-            jobs.remove(stored.instance.id)
-                .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
-        }
+        self.jobs
+            .remove(stored.instance.id)
+            .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         Ok(Response::Deleted { name: name.clone() })
     }
 

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, GitPassphrase, InstanceStatus};
 use wt_libvirt::{LibvirtWorker, ServerConfig};
 use wt_server::config::StateConfig;
-use wt_server::jobs::{run_provision, Jobs};
+use wt_server::jobs::{run_provision, Jobs, ProcessLauncher};
 use wt_server::service::Service;
 use wt_server::store::Store;
 
@@ -52,8 +52,9 @@ fn run_api() -> Result<()> {
     let worker = LibvirtWorker::new(server_config.worker_config().map_err(anyhow::Error::msg)?)
         .map_err(anyhow::Error::msg)?;
     let jobs = Jobs::open(config.jobs_dir()).context("open provisioning jobs")?;
+    let launcher = ProcessLauncher::server().context("configure provisioning launcher")?;
     let owner = process_user()?;
-    let mut service = Service::new_detached(store, worker, jobs);
+    let mut service = Service::new(store, worker, jobs, launcher);
 
     let stdin = std::io::stdin();
     let response = match serde_json::from_reader::<_, ApiRequest>(stdin.lock()) {

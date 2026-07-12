@@ -5,8 +5,8 @@ pub mod store;
 
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_libvirt::WorldWorker>(
-    service: &mut service::Service<W>,
+pub fn handle_request<W: wt_libvirt::WorldWorker, L: jobs::ProvisionLauncher<W>>(
+    service: &mut service::Service<W, L>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {

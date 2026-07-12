@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_api::{CreateInstance, GitPassphrase, InstanceName, InstanceStatus, Operation, Response};
+use wt_api::{
+    ApiRequest, ApiResponse, CreateInstance, GitPassphrase, InstanceName, InstanceStatus,
+    Operation, Outcome, Response,
+};
 use wt_command::cmd;
-use wt_libvirt::{LibvirtWorker, ServerConfig};
-use wt_server::service::Service;
-use wt_server::store::Store;
+use wt_libvirt::ServerConfig;
 
 const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 
@@ -17,7 +18,7 @@ const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let workspace = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
     timings.run("build guest helpers", || {
         let mut command = cmd!(env!("CARGO"), "build", "-p", "wt-guest");
         command.current_dir(&workspace);
@@ -40,11 +41,8 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     )
     .unwrap();
 
-    let worker = LibvirtWorker::new(config.worker_config().unwrap()).unwrap();
-    let mut service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
-        worker,
-    );
+    let server_config_path = temp.path().join("server.toml");
+    fs::write(&server_config_path, toml::to_string(&config).unwrap()).unwrap();
     let name = InstanceName::parse(format!(
         "era15-kvm-{}",
         SystemTime::now()
@@ -58,34 +56,35 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         .unwrap()
         .as_secs();
     let created = timings.run("create KVM devcontainer world", || {
-        service
-            .execute(
-                "lucas",
-                Operation::Create(CreateInstance {
-                    name: name.clone(),
-                    source: git.url(),
-                    git_passphrase: GitPassphrase::new("secret".to_owned()),
-                }),
-            )
-            .unwrap()
+        call_api(
+            temp.path(),
+            &server_config_path,
+            Operation::Create(CreateInstance {
+                name: name.clone(),
+                source: git.url(),
+                git_passphrase: GitPassphrase::new("secret".to_owned()),
+            }),
+        )
     });
     let Response::Instance { instance } = created else {
         panic!("expected instance");
     };
-    assert_eq!(instance.status, InstanceStatus::Running);
+    assert_eq!(instance.status, InstanceStatus::Provisioning);
+    let instance = timings.run("reattach to provisioning logs", || {
+        wait_for_world(temp.path(), &server_config_path, &name)
+    });
     assert!(!instance.ssh.as_ref().unwrap().host_keys.is_empty());
     let peer_name = InstanceName::parse(format!("{}-peer", name.as_str())).unwrap();
     let peer_created = timings.run("create peer KVM world", || {
-        service
-            .execute(
-                "lucas",
-                Operation::Create(CreateInstance {
-                    name: peer_name.clone(),
-                    source: git.url(),
-                    git_passphrase: GitPassphrase::new("secret".to_owned()),
-                }),
-            )
-            .unwrap()
+        call_api(
+            temp.path(),
+            &server_config_path,
+            Operation::Create(CreateInstance {
+                name: peer_name.clone(),
+                source: git.url(),
+                git_passphrase: GitPassphrase::new("secret".to_owned()),
+            }),
+        )
     });
     let Response::Instance {
         instance: peer_instance,
@@ -93,7 +92,10 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     else {
         panic!("expected peer instance");
     };
-    assert_eq!(peer_instance.status, InstanceStatus::Running);
+    assert_eq!(peer_instance.status, InstanceStatus::Provisioning);
+    let peer_instance = timings.run("follow peer provisioning logs", || {
+        wait_for_world(temp.path(), &server_config_path, &peer_name)
+    });
     assert_ne!(instance.guest_ip, peer_instance.guest_ip);
     assert_ne!(
         instance.ssh.as_ref().unwrap().host_keys,
@@ -102,7 +104,8 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     assert_registry_cache_hit(cache_log_since);
 
     let result = (|| {
-        let Response::Instances { instances } = service.execute("lucas", Operation::List).unwrap()
+        let Response::Instances { instances } =
+            call_api(temp.path(), &server_config_path, Operation::List)
         else {
             return Err("expected list response".to_owned());
         };
@@ -254,7 +257,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/jsdev\nprintf 'cwd=%s\\n' \"$(pwd)\"\nls -la\ngit status\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
             ),
         )
         .map_err(|error| error.to_string())?;
@@ -267,7 +270,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/jsdev --user node \"$container\" /bin/bash",
+                "container=$(docker ps -q --filter label=devcontainer.local_folder=/workspace); test -n \"$container\"; exec docker exec -i --workdir /workspaces/jsdev \"$container\" /bin/bash",
             )
             .stdin(Stdio::from(input))
             .output()
@@ -291,17 +294,103 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     })();
 
     let peer_removed = timings.run("remove peer KVM world", || {
-        service.execute("lucas", Operation::Delete { name: peer_name })
+        call_api_result(
+            temp.path(),
+            &server_config_path,
+            Operation::Delete { name: peer_name },
+        )
     });
     assert!(
         peer_removed.is_ok(),
         "remove peer KVM sample world: {peer_removed:?}"
     );
     let removed = timings.run("remove KVM world", || {
-        service.execute("lucas", Operation::Delete { name })
+        call_api_result(temp.path(), &server_config_path, Operation::Delete { name })
     });
     assert!(removed.is_ok(), "remove KVM sample world: {removed:?}");
     result.unwrap();
+}
+
+fn wait_for_world(home: &Path, config: &Path, name: &InstanceName) -> wt_api::Instance {
+    let mut offset = 0_u64;
+    loop {
+        let Response::Logs {
+            chunk,
+            next_offset,
+            status,
+            last_error,
+        } = call_api(
+            home,
+            config,
+            Operation::Logs {
+                name: name.clone(),
+                offset,
+            },
+        )
+        else {
+            panic!("expected logs response");
+        };
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(chunk)
+            .unwrap();
+        std::io::stderr().write_all(&bytes).unwrap();
+        std::io::stderr().flush().unwrap();
+        offset = next_offset;
+        if status == InstanceStatus::Provisioning || !bytes.is_empty() {
+            continue;
+        }
+        assert_ne!(
+            status,
+            InstanceStatus::Error,
+            "provisioning failed: {}",
+            last_error.as_deref().unwrap_or("unknown error")
+        );
+        let Response::Instance { instance } =
+            call_api(home, config, Operation::Get { name: name.clone() })
+        else {
+            panic!("expected instance response");
+        };
+        assert_eq!(instance.status, InstanceStatus::Running);
+        return *instance;
+    }
+}
+
+fn call_api(home: &Path, config: &Path, operation: Operation) -> Response {
+    call_api_result(home, config, operation).unwrap()
+}
+
+fn call_api_result(home: &Path, config: &Path, operation: Operation) -> Result<Response, String> {
+    let mut child = cmd!(
+        env!("CARGO_BIN_EXE_wt-test-server"),
+        "--config",
+        config,
+        "api",
+    )
+    .env("HOME", home)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .map_err(|error| error.to_string())?;
+    serde_json::to_writer(
+        child
+            .stdin
+            .as_mut()
+            .ok_or("test server stdin unavailable")?,
+        &ApiRequest::new(operation),
+    )
+    .map_err(|error| error.to_string())?;
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
+    ensure_success("call test server API", &output)?;
+    let response: ApiResponse =
+        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    match response.outcome {
+        Outcome::Ok { response } => Ok(*response),
+        Outcome::Error { error } => Err(format!("{}: {}", error.code as u8, error.message)),
+    }
 }
 
 fn assert_registry_cache_hit(since: u64) {
@@ -576,3 +665,4 @@ fn ensure_success(action: &str, output: &Output) -> Result<(), String> {
         ))
     }
 }
+use base64::Engine as _;

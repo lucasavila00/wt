@@ -1555,9 +1555,13 @@ dependencies = [
 name = "wt-integration-tests"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
+ "base64",
  "serde",
  "serde_json",
  "tempfile",
+ "toml",
+ "uuid",
  "wt-api",
  "wt-cli",
  "wt-command",

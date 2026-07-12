@@ -493,10 +493,16 @@ mod tests {
         let store = Store::open(&temp.path().join("instances.db")).unwrap();
         let instance = stored("failed");
         store.insert(&instance).unwrap();
-        store.append_log(instance.instance.id, b"working\n").unwrap();
+        store
+            .append_log(instance.instance.id, b"working\n")
+            .unwrap();
 
         store
-            .finish_error(instance.instance.id, "injected failure", b"ERROR: injected failure\n")
+            .finish_error(
+                instance.instance.id,
+                "injected failure",
+                b"ERROR: injected failure\n",
+            )
             .unwrap();
 
         let current = store

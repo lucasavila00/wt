@@ -19,6 +19,24 @@ pub struct JobLock {
     file: File,
 }
 
+#[derive(Clone, Debug)]
+pub struct ProcessLauncher {
+    program: PathBuf,
+    arguments: Vec<String>,
+    environment: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+}
+
+pub trait ProvisionLauncher<W> {
+    fn launch(
+        &self,
+        store: &Store,
+        worker: &W,
+        stored: &StoredInstance,
+        passphrase: &GitPassphrase,
+        lock: JobLock,
+    ) -> Result<(), JobError>;
+}
+
 #[derive(Debug, Error)]
 pub enum JobError {
     #[error("job I/O: {0}")]
@@ -52,48 +70,11 @@ impl Jobs {
         }
     }
 
-    pub fn launch(
-        &self,
-        store: &Store,
-        id: Uuid,
-        passphrase: &GitPassphrase,
-        lock: JobLock,
-    ) -> Result<(), JobError> {
-        let lock_output = lock.file.try_clone()?;
-        let mut child = Command::new("setsid")
-            .arg("--")
-            .arg(std::env::current_exe()?)
-            .arg("provision")
-            .arg("--id")
-            .arg(id.to_string())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::from(lock_output))
-            .stderr(Stdio::null())
-            .spawn()?;
-        serde_json::to_writer(
-            child.stdin.as_mut().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "worker stdin unavailable")
-            })?,
-            passphrase,
-        )?;
-        drop(child.stdin.take());
-
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            match store.job_acknowledged(id) {
-                Ok(true) => return Ok(()),
-                Ok(false) => {}
-                Err(StoreError::NotFound) => return Err(JobError::Exited),
-                Err(error) => return Err(std::io::Error::other(error).into()),
-            }
-            if child.try_wait()?.is_some() {
-                return Err(JobError::Exited);
-            }
-            if Instant::now() >= deadline {
-                terminate(&mut child);
-                return Err(JobError::AckTimeout);
-            }
-            std::thread::sleep(Duration::from_millis(50));
+    pub fn remove(&self, id: Uuid) -> Result<(), JobError> {
+        match std::fs::remove_file(self.lock_path(id)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -121,14 +102,6 @@ impl Jobs {
         Ok(())
     }
 
-    pub fn remove(&self, id: Uuid) -> Result<(), JobError> {
-        match std::fs::remove_file(self.lock_path(id)) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     fn open_lock(&self, id: Uuid) -> Result<File, JobError> {
         Ok(OpenOptions::new()
             .create(true)
@@ -141,6 +114,93 @@ impl Jobs {
 
     fn lock_path(&self, id: Uuid) -> PathBuf {
         self.directory.join(format!("{id}.lock"))
+    }
+}
+
+impl ProcessLauncher {
+    pub fn server() -> Result<Self, JobError> {
+        Ok(Self {
+            program: std::env::current_exe()?,
+            arguments: vec!["provision".to_owned()],
+            environment: Vec::new(),
+        })
+    }
+
+    pub fn new(program: PathBuf, arguments: Vec<String>) -> Self {
+        Self {
+            program,
+            arguments,
+            environment: Vec::new(),
+        }
+    }
+
+    pub fn with_env(
+        mut self,
+        name: impl Into<std::ffi::OsString>,
+        value: impl Into<std::ffi::OsString>,
+    ) -> Self {
+        self.environment.push((name.into(), value.into()));
+        self
+    }
+}
+
+impl<W> ProvisionLauncher<W> for ProcessLauncher {
+    fn launch(
+        &self,
+        store: &Store,
+        _worker: &W,
+        stored: &StoredInstance,
+        passphrase: &GitPassphrase,
+        lock: JobLock,
+    ) -> Result<(), JobError> {
+        let id = stored.instance.id;
+        let lock_output = lock.file.try_clone()?;
+        let mut child = Command::new("setsid")
+            .arg("--")
+            .arg(&self.program)
+            .args(&self.arguments)
+            .arg("--id")
+            .arg(id.to_string())
+            .envs(self.environment.iter().cloned())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::from(lock_output))
+            .stderr(Stdio::null())
+            .spawn()?;
+        let secret_result = serde_json::to_writer(
+            child
+                .stdin
+                .as_mut()
+                .expect("piped provisioning worker stdin is available"),
+            passphrase,
+        );
+        drop(child.stdin.take());
+        if let Err(error) = secret_result {
+            terminate(&mut child);
+            return Err(error.into());
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let result = loop {
+            match store.job_acknowledged(id) {
+                Ok(true) => break Ok(()),
+                Ok(false) => {}
+                Err(StoreError::NotFound) => break Err(JobError::Exited),
+                Err(error) => break Err(std::io::Error::other(error).into()),
+            }
+            match child.try_wait() {
+                Ok(Some(_)) => break Err(JobError::Exited),
+                Ok(None) => {}
+                Err(error) => break Err(error.into()),
+            }
+            if Instant::now() >= deadline {
+                break Err(JobError::AckTimeout);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        if result.is_err() {
+            terminate(&mut child);
+        }
+        result
     }
 }
 

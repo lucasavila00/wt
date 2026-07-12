@@ -383,6 +383,23 @@ mod tests {
     }
 
     #[test]
+    fn logs_request_keeps_protocol_v1_offset_shape() {
+        let request = ApiRequest::new(Operation::Logs {
+            name: InstanceName::parse("repo-feature").unwrap(),
+            offset: 4096,
+        });
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 1,
+                "operation": "logs",
+                "name": "repo-feature",
+                "offset": 4096
+            })
+        );
+    }
+
+    #[test]
     fn git_passphrase_debug_is_redacted() {
         let passphrase = GitPassphrase::new("do-not-print".to_owned());
         let debug = format!("{passphrase:?}");

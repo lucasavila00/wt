@@ -10,6 +10,7 @@ client is a thin cockpit; repositories, Docker, and devcontainers run inside KVM
 worlds on Ubuntu servers.
 
 - `wt new <source> <name>` creates a world from an SSH Git source.
+- Creates are durable detached jobs; `wt logs <name>` resumes their output.
 - Each world has its own VM, network identity, checkout, and stock devcontainer.
 - Named local and OpenSSH contexts carry the same versioned `wt-server` JSON API.
 - `context.world` is the stable name; short names work when globally unique.

@@ -11,8 +11,16 @@ wt-command = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-server = { workspace = true }
 wt-cli = { path = "../wt-cli" }
+anyhow = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[[bin]]
+name = "wt-test-server"
+path = "src/bin/wt-test-server.rs"
 
 [dev-dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 tempfile = "3.27.0"
+toml = { workspace = true }

@@ -26,12 +26,21 @@ case "$request" in
     case "$request" in
       *'"git_passphrase":"secret"'*)
         : > "$state"
-        printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+        printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"provisioning","source":"git@example.test:repo.git"}}}'
         ;;
       *)
         printf '%s\n' '{"protocol_version":1,"outcome":"error","error":{"code":"invalid_git_passphrase","message":"Git identity: invalid private key passphrase"}}'
         ;;
     esac
+    ;;
+  *'"operation":"logs"'*'"offset":0'*)
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"logs","chunk":"YnVpbGRpbmcK","next_offset":9,"status":"running"}}'
+    ;;
+  *'"operation":"logs"'*)
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"logs","chunk":"","next_offset":9,"status":"running"}}'
+    ;;
+  *'"operation":"get"'*)
+    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"delete"'*)
     rm -f "$state"
@@ -115,6 +124,7 @@ esac
     assert!(!transcript.contains("secret"));
     assert!(transcript.contains("2 attempts remaining"));
     assert!(transcript.contains("1 attempt remaining"));
+    assert!(transcript.contains("building"));
     assert_eq!(
         fs::read_to_string(temp.path().join("helper-attempts")).unwrap(),
         "3\n"
@@ -124,6 +134,18 @@ esac
     assert!(managed.contains("Host local.repo-feature\n"));
     assert!(managed.contains("Host repo-feature-host\n"));
     assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
+
+    let logs = cmd!(env!("CARGO_BIN_EXE_wt"), "logs", "repo-feature")
+        .env("HOME", temp.path())
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(
+        logs.status.success(),
+        "{}",
+        String::from_utf8_lossy(&logs.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&logs.stdout), "building\n");
 
     let removed = cmd!(env!("CARGO_BIN_EXE_wt"), "rm", "repo-feature")
         .env("HOME", temp.path())
