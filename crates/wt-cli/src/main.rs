@@ -3,6 +3,7 @@ use base64::Engine as _;
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
 use std::io::Write as _;
+use std::process::Command as ProcessCommand;
 use wt_api::{ApiRequest, CreateInstance, ErrorCode, GitPassphrase, Operation, Outcome, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
@@ -55,10 +56,15 @@ fn run() -> Result<()> {
                         .join(", ")
                 ),
             };
-            let response =
-                create_with_passphrase_attempts(context, world_name, source, |prompt| {
-                    rpassword::prompt_password(prompt).map_err(Into::into)
-                })?;
+            let git_author = read_git_author();
+            let response = create_with_passphrase_attempts(
+                context,
+                world_name,
+                source,
+                &git_author,
+                |prompt| rpassword::prompt_password(prompt).map_err(Into::into),
+            )?;
+            print_git_author_warnings(&git_author);
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -143,6 +149,7 @@ fn create_with_passphrase_attempts(
     context: &Context,
     world_name: wt_api::InstanceName,
     source: String,
+    git_author: &GitAuthor,
     mut prompt_password: impl FnMut(String) -> Result<String>,
 ) -> Result<Response> {
     const MAX_ATTEMPTS: usize = 3;
@@ -171,6 +178,8 @@ fn create_with_passphrase_attempts(
                 name: world_name.clone(),
                 source: source.clone(),
                 git_passphrase: GitPassphrase::new(passphrase),
+                git_user_name: git_author.name.clone(),
+                git_user_email: git_author.email.clone(),
             })),
         )
         .map_err(|error| {
@@ -196,6 +205,86 @@ fn create_with_passphrase_attempts(
         }
     }
     unreachable!("the final passphrase attempt always returns")
+}
+
+#[derive(Debug)]
+struct GitAuthorValue {
+    value: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug)]
+struct GitAuthor {
+    name: Option<String>,
+    email: Option<String>,
+    warnings: Vec<String>,
+}
+
+fn read_git_author() -> GitAuthor {
+    let name = read_global_git_config("user.name");
+    let email = read_global_git_config("user.email");
+    let mut warnings = Vec::new();
+    collect_git_author_warning("user.name", &name, &mut warnings);
+    collect_git_author_warning("user.email", &email, &mut warnings);
+    GitAuthor {
+        name: name.value,
+        email: email.value,
+        warnings,
+    }
+}
+
+fn read_global_git_config(key: &str) -> GitAuthorValue {
+    match ProcessCommand::new("git")
+        .args(["config", "--global", "--null", "--get", key])
+        .output()
+    {
+        Ok(output) if output.status.success() => match parse_git_config_value(&output.stdout) {
+            Ok(value) => GitAuthorValue { value, error: None },
+            Err(error) => GitAuthorValue {
+                value: None,
+                error: Some(error.to_string()),
+            },
+        },
+        Ok(output) if output.status.code() == Some(1) => GitAuthorValue {
+            value: None,
+            error: None,
+        },
+        Ok(output) => GitAuthorValue {
+            value: None,
+            error: Some(String::from_utf8_lossy(&output.stderr).trim().to_owned()),
+        },
+        Err(error) => GitAuthorValue {
+            value: None,
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+fn parse_git_config_value(stdout: &[u8]) -> Result<Option<String>> {
+    let value = stdout.strip_suffix(b"\0").unwrap_or(stdout);
+    let value = std::str::from_utf8(value).map_err(|error| anyhow::anyhow!(error))?;
+    Ok((!value.is_empty()).then(|| value.to_owned()))
+}
+
+fn collect_git_author_warning(key: &str, result: &GitAuthorValue, warnings: &mut Vec<String>) {
+    if result.value.is_some() {
+        return;
+    }
+    let detail = result
+        .error
+        .as_deref()
+        .filter(|detail| !detail.is_empty())
+        .map(|detail| format!(": {detail}"))
+        .unwrap_or_default();
+    warnings.push(format!(
+        "Git {key} was not copied because it is not configured on this workstation{detail}"
+    ));
+}
+
+fn print_git_author_warnings(git_author: &GitAuthor) {
+    for warning in &git_author.warnings {
+        eprintln!("warning: {warning}");
+    }
 }
 
 fn follow_logs(context: &Context, name: &wt_api::InstanceName) -> Result<wt_api::Instance> {
@@ -434,5 +523,28 @@ mod tests {
     #[test]
     fn rejects_removed_ssh_subcommand() {
         assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
+    }
+
+    #[test]
+    fn parses_git_author_values_without_losing_spaces_or_unicode() {
+        assert_eq!(
+            parse_git_config_value("Lucas Ávila \0".as_bytes()).unwrap(),
+            Some("Lucas Ávila ".to_owned())
+        );
+        assert_eq!(parse_git_config_value(b"\0").unwrap(), None);
+    }
+
+    #[test]
+    fn explains_missing_git_author_value() {
+        let mut warnings = Vec::new();
+        collect_git_author_warning(
+            "user.email",
+            &GitAuthorValue {
+                value: None,
+                error: None,
+            },
+            &mut warnings,
+        );
+        insta::assert_snapshot!(warnings.join("\n"), @"Git user.email was not copied because it is not configured on this workstation");
     }
 }

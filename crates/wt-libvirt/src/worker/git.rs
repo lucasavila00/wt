@@ -125,6 +125,29 @@ pub(super) fn clone_and_checkout(
     result
 }
 
+pub(super) fn configure_author(
+    domain: &Domain,
+    name: Option<&str>,
+    email: Option<&str>,
+    deadline: Instant,
+    log: &mut dyn Write,
+) -> Result<(), WorkerError> {
+    for (key, value) in [("user.name", name), ("user.email", email)] {
+        let Some(value) = value else {
+            continue;
+        };
+        run_git(
+            domain,
+            "Git author identity",
+            &[],
+            &["-C", "/workspace", "config", "--local", key, value],
+            deadline,
+            log,
+        )?;
+    }
+    Ok(())
+}
+
 fn stage_clone_credentials(
     domain: &Domain,
     credentials: &Credentials,

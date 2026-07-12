@@ -185,6 +185,13 @@ impl LibvirtWorker {
             recipe_deadline,
             log,
         )?;
+        git::configure_author(
+            &domain,
+            spec.git_user_name,
+            spec.git_user_email,
+            recipe_deadline,
+            log,
+        )?;
         report_phase(log, "Git clone and checkout", phase_started)?;
         log_line(log, "Starting the repository devcontainer...")?;
         let phase_started = Instant::now();

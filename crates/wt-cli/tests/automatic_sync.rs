@@ -24,7 +24,7 @@ case "$request" in
     count=$((count + 1))
     printf '%s\n' "$count" > "$attempts"
     case "$request" in
-      *'"git_passphrase":"secret"'*)
+      *'"git_passphrase":"secret"'*'"git_user_name":"Lucas Ávila"'*'"git_user_email":"lucaxx@gmail.com"'*)
         : > "$state"
         printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"provisioning","source":"git@example.test:repo.git"}}}'
         ;;
@@ -60,6 +60,11 @@ esac
     .unwrap();
     fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
     fs::create_dir(temp.path().join(".wt")).unwrap();
+    fs::write(
+        temp.path().join(".gitconfig"),
+        "[user]\n\tname = Lucas Ávila\n\temail = lucaxx@gmail.com\n",
+    )
+    .unwrap();
     fs::write(
         temp.path().join(".wt/config.toml"),
         "version = 1\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
