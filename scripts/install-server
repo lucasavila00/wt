@@ -18,7 +18,8 @@ fi
 config=$2
 
 if [[ $EUID -eq 0 ]]; then
-    echo "run this script as the server user, not with sudo" >&2
+    echo "run this script as the dedicated wt user, not as root or with sudo" >&2
+    echo "on a fresh server, first run scripts/bootstrap-server-user as root" >&2
     exit 1
 fi
 if [[ ! -t 0 ]]; then

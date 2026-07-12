@@ -1,13 +1,39 @@
 # Getting started
 
-WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust. Run
-setup as a normal user from a source checkout.
+WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust. Install
+and run WT as a normal server user, never as root.
+
+## Prepare a fresh hosted server
+
+Fresh hosted servers often provide only root SSH access. From a WT source
+checkout on that server, run:
+
+```bash
+scripts/bootstrap-server-user
+```
+
+The bootstrap must run directly from a root shell. It creates the fixed `wt`
+login account, copies `/root/.ssh/authorized_keys` for SSH access, and grants the
+trusted account passwordless sudo. The account is intentionally privileged:
+server setup also grants it Docker, libvirt, and KVM access.
+
+Reconnect as `wt`, clone a new checkout under `/home/wt`, and continue with the
+installation below:
+
+```bash
+ssh wt@SERVER_ADDRESS
+git clone https://github.com/lucasavila00/wt.git
+cd wt
+```
+
+The bootstrap does not transfer the root checkout, private Git keys, or server
+configuration. A matching rerun is safe; conflicting account, authorized-key,
+or sudoers state is reported and left unchanged. Existing servers that already
+have a suitable normal server user do not need the bootstrap.
 
 ## Install a server
 
 ```bash
-git clone https://github.com/lucasavila00/wt.git
-cd wt
 cp examples/server-config/wt-server.development.toml ./server.toml
 ```
 
@@ -83,7 +109,7 @@ Include ~/.ssh/wt/config
 
 Host wt-server
     HostName SERVER_ADDRESS
-    User SERVER_USER
+    User wt
 ```
 
 Before server setup, copy the client's public key:

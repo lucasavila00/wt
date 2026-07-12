@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+server_user=wt
+server_group=wt
+server_home=/home/wt
+authorized_keys_source=/root/.ssh/authorized_keys
+authorized_keys_destination=$server_home/.ssh/authorized_keys
+sudoers_path=/etc/sudoers.d/wt-server
+sudoers_rule='wt ALL=(ALL:ALL) NOPASSWD: ALL'
+
+if [[ $# -ne 0 ]]; then
+    echo "usage: scripts/bootstrap-server-user" >&2
+    exit 2
+fi
+if [[ $EUID -ne 0 || ${SUDO_USER:-root} != root ]]; then
+    echo "run this script as root, not with sudo" >&2
+    exit 1
+fi
+if ! command -v visudo >/dev/null; then
+    echo "sudo is required" >&2
+    exit 1
+fi
+if [[ ! -s $authorized_keys_source ]]; then
+    echo "$authorized_keys_source must contain an SSH public key" >&2
+    exit 1
+fi
+if ! ssh-keygen -l -f "$authorized_keys_source" >/dev/null; then
+    echo "$authorized_keys_source must contain a valid SSH public key" >&2
+    exit 1
+fi
+
+if getent group "$server_group" >/dev/null; then
+    group_gid=$(getent group "$server_group" | cut -d: -f3)
+else
+    groupadd "$server_group"
+    group_gid=$(getent group "$server_group" | cut -d: -f3)
+fi
+
+if getent passwd "$server_user" >/dev/null; then
+    IFS=: read -r _ _ _ user_gid _ user_home user_shell < <(getent passwd "$server_user")
+    if [[ $user_gid != "$group_gid" || $user_home != "$server_home" || $user_shell != /bin/bash ]]; then
+        echo "existing user $server_user must have primary group $server_group, home $server_home, and shell /bin/bash" >&2
+        exit 1
+    fi
+    if [[ $(passwd --status "$server_user" | awk '{print $2}') != L ]]; then
+        echo "existing user $server_user must have password authentication locked" >&2
+        exit 1
+    fi
+else
+    useradd --create-home --gid "$server_group" --shell /bin/bash "$server_user"
+fi
+
+if [[ -d $server_home/.ssh ]]; then
+    read -r ssh_owner ssh_group ssh_mode < <(stat --format='%U %G %a' "$server_home/.ssh")
+    if [[ $ssh_owner != "$server_user" || $ssh_group != "$server_group" || $ssh_mode != 700 ]]; then
+        echo "directory drift at $server_home/.ssh: expected $server_user:$server_group, mode=0700" >&2
+        exit 1
+    fi
+else
+    install -d -o "$server_user" -g "$server_group" -m 0700 "$server_home/.ssh"
+fi
+
+if [[ -e $authorized_keys_destination ]]; then
+    if [[ ! -f $authorized_keys_destination ]] || ! cmp --silent "$authorized_keys_source" "$authorized_keys_destination"; then
+        echo "authorized keys conflict at $authorized_keys_destination; refusing to overwrite" >&2
+        exit 1
+    fi
+    read -r keys_owner keys_group keys_mode < <(stat --format='%U %G %a' "$authorized_keys_destination")
+    if [[ $keys_owner != "$server_user" || $keys_group != "$server_group" || $keys_mode != 600 ]]; then
+        echo "file drift at $authorized_keys_destination: expected $server_user:$server_group, mode=0600" >&2
+        exit 1
+    fi
+else
+    install -o "$server_user" -g "$server_group" -m 0600 \
+        "$authorized_keys_source" "$authorized_keys_destination"
+fi
+
+temporary_sudoers=$(mktemp)
+trap 'rm -f "$temporary_sudoers"' EXIT
+printf '%s\n' "$sudoers_rule" >"$temporary_sudoers"
+chmod 0440 "$temporary_sudoers"
+visudo -cf "$temporary_sudoers" >/dev/null
+
+if [[ -e $sudoers_path ]]; then
+    if [[ ! -f $sudoers_path ]] || ! cmp --silent "$temporary_sudoers" "$sudoers_path"; then
+        echo "sudoers conflict at $sudoers_path; refusing to overwrite" >&2
+        exit 1
+    fi
+    read -r sudoers_owner sudoers_group sudoers_mode < <(stat --format='%U %G %a' "$sudoers_path")
+    if [[ $sudoers_owner != root || $sudoers_group != root || $sudoers_mode != 440 ]]; then
+        echo "file drift at $sudoers_path: expected root:root, mode=0440" >&2
+        exit 1
+    fi
+else
+    install -o root -g root -m 0440 "$temporary_sudoers" "$sudoers_path"
+fi
+visudo -cf "$sudoers_path" >/dev/null
+
+cat <<'EOF'
+The wt server user is ready.
+
+Continue from your workstation:
+  ssh wt@SERVER_ADDRESS
+
+Then, as wt:
+  git clone https://github.com/lucasavila00/wt.git
+  cd wt
+  cp examples/server-config/wt-server.development.toml ./server.toml
+
+Install stable Rust with rustup, place the encrypted server Git key and known-hosts
+file under ~/.ssh, review server.toml, then run:
+  scripts/install-server --config ./server.toml
+EOF

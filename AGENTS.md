@@ -70,4 +70,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-setup`. Real-system tests belong in `wt-integration-tests`.
-- Run `cargo fmt --all`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.
+- Match verification to the files changed. Documentation-only changes need no Rust
+  checks. For shell scripts, run `bash -n` on the changed scripts and targeted
+  behavior checks; run ShellCheck when available.
+- For Rust changes, run `cargo fmt --all --check` plus tests and Clippy for the
+  affected crates. Use workspace-wide Rust checks only for cross-crate changes or
+  when explicitly requested.
+- Do not run real-system KVM tests for unrelated changes. Run them only when the
+  affected behavior requires them or when explicitly requested.
