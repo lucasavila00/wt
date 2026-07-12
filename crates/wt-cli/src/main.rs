@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
+use base64::Engine as _;
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
+use std::io::Write as _;
 use wt_api::{ApiRequest, CreateInstance, ErrorCode, GitPassphrase, Operation, Outcome, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
@@ -20,6 +22,8 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: String },
+    /// Replay and follow a world's provisioning log.
+    Logs { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
 }
@@ -56,6 +60,11 @@ fn run() -> Result<()> {
                 })?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
+            };
+            let instance = if instance.status == wt_api::InstanceStatus::Provisioning {
+                follow_logs(context, &instance.name)?
+            } else {
+                *instance
             };
             if let Err(error) = sync_inventory(&config) {
                 bail!(
@@ -105,6 +114,12 @@ fn run() -> Result<()> {
             }
             println!("removed {}.{}", context.name, world_name);
         }
+        Command::Logs { name } => {
+            let instances = inventory::list_all(&config)?;
+            let selected = inventory::resolve(&instances, &name)?;
+            let context = required_context(&config, &selected.context)?;
+            follow_logs(context, &selected.instance.name)?;
+        }
         Command::Sync => {
             let path = sync_inventory(&config)?;
             println!("updated {}", path.display());
@@ -142,7 +157,14 @@ fn create_with_passphrase_attempts(
                 source: source.clone(),
                 git_passphrase: GitPassphrase::new(passphrase),
             })),
-        )?;
+        )
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "create acknowledgement was not received; the outcome is unknown. Run `wt ls` or `wt logs {}.{}` to check: {error:#}",
+                context.name,
+                world_name
+            )
+        })?;
         match outcome {
             Outcome::Ok { response } => return Ok(*response),
             Outcome::Error { error }
@@ -159,6 +181,59 @@ fn create_with_passphrase_attempts(
         }
     }
     unreachable!("the final passphrase attempt always returns")
+}
+
+fn follow_logs(
+    context: &Context,
+    name: &wt_api::InstanceName,
+) -> Result<wt_api::Instance> {
+    let mut offset = 0_u64;
+    loop {
+        let response = wt_cli::transport::call(
+            context,
+            &ApiRequest::new(Operation::Logs {
+                name: name.clone(),
+                offset,
+            }),
+        )?;
+        let Response::Logs {
+            chunk,
+            next_offset,
+            status,
+            last_error,
+        } = response
+        else {
+            bail!("helper returned the wrong response to logs");
+        };
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(chunk)
+            .map_err(|error| anyhow::anyhow!("decode provisioning log: {error}"))?;
+        std::io::stdout().write_all(&bytes)?;
+        std::io::stdout().flush()?;
+        offset = next_offset;
+        if status == wt_api::InstanceStatus::Provisioning || !bytes.is_empty() {
+            continue;
+        }
+        if status == wt_api::InstanceStatus::Error {
+            bail!(
+                "provisioning {}.{} failed: {}",
+                context.name,
+                name,
+                last_error.as_deref().unwrap_or("unknown error")
+            );
+        }
+        let response = wt_cli::transport::call(
+            context,
+            &ApiRequest::new(Operation::Get { name: name.clone() }),
+        )?;
+        let Response::Instance { instance } = response else {
+            bail!("helper returned the wrong response to get");
+        };
+        if instance.status != wt_api::InstanceStatus::Running {
+            bail!("world reached unexpected status: {}", instance.status);
+        }
+        return Ok(*instance);
+    }
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

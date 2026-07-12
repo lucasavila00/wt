@@ -5,6 +5,7 @@ use crate::WorkerError;
 use nix::unistd::Uid;
 use ssh_key::PrivateKey;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::time::Instant;
@@ -88,6 +89,7 @@ pub(super) fn clone_and_checkout(
     credentials: &Credentials,
     passphrase: &GitPassphrase,
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     credentials.validate_passphrase(passphrase)?;
     guest_agent::run_phase(
@@ -96,9 +98,10 @@ pub(super) fn clone_and_checkout(
         "/usr/bin/install",
         &["-d", "-m", "0700", CLONE_CREDENTIALS_DIR],
         deadline,
+        log,
     )?;
     let result = (|| {
-        stage_clone_credentials(domain, credentials, passphrase, deadline)?;
+        stage_clone_credentials(domain, credentials, passphrase, deadline, log)?;
         let environment = git_environment();
         run_git(
             domain,
@@ -106,8 +109,9 @@ pub(super) fn clone_and_checkout(
             &environment,
             &["clone", "--", source, "/workspace"],
             deadline,
+            log,
         )?;
-        install_persistent_bundle(domain, credentials, deadline)
+        install_persistent_bundle(domain, credentials, deadline, log)
     })();
     let _ = guest_agent::exec(
         domain,
@@ -123,6 +127,7 @@ fn stage_clone_credentials(
     credentials: &Credentials,
     passphrase: &GitPassphrase,
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     guest_agent::write(domain, "/run/wt-git/identity", &credentials.identity)?;
     guest_agent::write(domain, "/run/wt-git/known_hosts", &credentials.known_hosts)?;
@@ -142,6 +147,7 @@ fn stage_clone_credentials(
         "/bin/chmod",
         &["0700", CLONE_ASKPASS],
         deadline,
+        log,
     )?;
     guest_agent::run_phase(
         domain,
@@ -154,6 +160,7 @@ fn stage_clone_credentials(
             "/run/wt-git/passphrase",
         ],
         deadline,
+        log,
     )?;
     Ok(())
 }
@@ -173,13 +180,14 @@ fn run_git(
     environment: &[String],
     git_args: &[&str],
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
     args.push("/usr/bin/git");
     // cloud-init creates /workspace for wt, while guest-agent provisioning runs as root.
     args.extend(["-c", "safe.directory=/workspace"]);
     args.extend_from_slice(git_args);
-    guest_agent::run_phase(domain, phase, "/usr/bin/env", &args, deadline)?;
+    guest_agent::run_phase(domain, phase, "/usr/bin/env", &args, deadline, log)?;
     Ok(())
 }
 
@@ -187,6 +195,7 @@ fn install_persistent_bundle(
     domain: &Domain,
     credentials: &Credentials,
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     guest_agent::run_phase(
         domain,
@@ -194,6 +203,7 @@ fn install_persistent_bundle(
         "/usr/bin/install",
         &["-d", "-m", "0755", BUNDLE_DIR],
         deadline,
+        log,
     )?;
     guest_agent::write(
         domain,
@@ -219,6 +229,7 @@ fn install_persistent_bundle(
             &format!("{BUNDLE_DIR}/known_hosts"),
         ],
         deadline,
+        log,
     )?;
     guest_agent::run_phase(
         domain,
@@ -226,6 +237,7 @@ fn install_persistent_bundle(
         "/bin/chmod",
         &["0555", &format!("{BUNDLE_DIR}/ssh")],
         deadline,
+        log,
     )?;
     guest_agent::run_phase(
         domain,
@@ -242,6 +254,7 @@ fn install_persistent_bundle(
             SSH_COMMAND,
         ],
         deadline,
+        log,
     )?;
     Ok(())
 }

@@ -17,4 +17,8 @@ impl StateConfig {
     pub fn database_path(&self) -> PathBuf {
         self.state_dir.join("instances.db")
     }
+
+    pub fn jobs_dir(&self) -> PathBuf {
+        self.state_dir.join("jobs")
+    }
 }

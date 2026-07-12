@@ -32,7 +32,11 @@ pub trait WorldWorker {
         &self,
         passphrase: &wt_api::GitPassphrase,
     ) -> Result<(), WorkerError>;
-    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError>;
+    fn provision(
+        &self,
+        spec: &ProvisionSpec<'_>,
+        log: &mut dyn std::io::Write,
+    ) -> Result<World, WorkerError>;
     fn destroy(&self, backend_id: &str) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError>;
 }

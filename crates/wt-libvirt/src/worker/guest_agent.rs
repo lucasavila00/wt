@@ -23,10 +23,9 @@ pub(super) fn run_phase(
     path: &str,
     args: &[&str],
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    let stderr = std::io::stderr();
-    let mut stderr = stderr.lock();
-    let output = exec_streaming(domain, path, args, deadline, &mut stderr)
+    let output = exec_streaming(domain, path, args, deadline, log)
         .map_err(|error| WorkerError::new(format!("{phase}: {error}")))?;
     if output.exit_code != 0 {
         return Err(WorkerError::new(format!(
@@ -67,7 +66,7 @@ fn exec_streaming(
     path: &str,
     args: &[&str],
     deadline: Instant,
-    destination: &mut impl Write,
+    destination: &mut dyn Write,
 ) -> Result<StreamOutput, WorkerError> {
     if Instant::now() >= deadline {
         return Err(WorkerError::new("recipe deadline exceeded"));
@@ -176,7 +175,7 @@ fn open_file(domain: &Domain, path: &str, mode: &str) -> Result<i64, WorkerError
 fn drain_file(
     domain: &Domain,
     handle: i64,
-    destination: &mut impl Write,
+    destination: &mut dyn Write,
     tail: &mut TailBuffer,
 ) -> Result<(), WorkerError> {
     loop {
@@ -197,7 +196,7 @@ fn drain_file(
 }
 
 fn forward_chunk(
-    destination: &mut impl Write,
+    destination: &mut dyn Write,
     tail: &mut TailBuffer,
     chunk: &[u8],
 ) -> Result<(), WorkerError> {

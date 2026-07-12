@@ -28,7 +28,11 @@ impl WorldWorker for InjectedWorker {
         Ok(())
     }
 
-    fn provision(&self, _spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
+    fn provision(
+        &self,
+        _spec: &ProvisionSpec<'_>,
+        _log: &mut dyn std::io::Write,
+    ) -> Result<World, WorkerError> {
         self.provision_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_provision {
             return Err(WorkerError::new("injected provision failure"));

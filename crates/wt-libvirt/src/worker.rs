@@ -9,6 +9,7 @@ use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::Command;
@@ -67,11 +68,15 @@ impl LibvirtWorker {
         })
     }
 
-    fn provision_inner(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
+    fn provision_inner(
+        &self,
+        spec: &ProvisionSpec<'_>,
+        log: &mut dyn Write,
+    ) -> Result<World, WorkerError> {
         wt_api::validate_ssh_git_source(spec.source)
             .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
         let private_git = &self.git_credentials;
-        eprintln!("Creating KVM guest {}...", spec.name);
+        log_line(log, &format!("Creating KVM guest {}...", spec.name))?;
         let paths = world::Paths::new(&self.config.worlds_dir, spec.backend_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| worker_error("create world directory", error))?;
@@ -135,22 +140,22 @@ impl LibvirtWorker {
 
         // QEMU guest-agent is the provisioning channel. SSH is exposed to the
         // user, but wt does not depend on it to configure the world.
-        eprintln!("Waiting for the guest agent...");
+        log_line(log, "Waiting for the guest agent...")?;
         let phase_started = Instant::now();
-        self.wait_for_guest_agent(&domain)?;
-        report_phase("guest agent and Docker readiness", phase_started);
-        eprintln!("Waiting for guest networking...");
+        self.wait_for_guest_agent(&domain, log)?;
+        report_phase(log, "guest agent and Docker readiness", phase_started)?;
+        log_line(log, "Waiting for guest networking...")?;
         let phase_started = Instant::now();
         let guest_ip = self.wait_for_ip(spec.backend_id)?;
-        report_phase("guest networking", phase_started);
+        report_phase(log, "guest networking", phase_started)?;
         let recipe_deadline = Instant::now() + self.config.recipe_timeout;
-        eprintln!("Waiting for guest SSH...");
+        log_line(log, "Waiting for guest SSH...")?;
         let phase_started = Instant::now();
         self.wait_for_ssh(&guest_ip, recipe_deadline)?;
         let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
         self.verify_ssh_endpoint(spec.backend_id, &guest_ip, &host_keys)?;
-        report_phase("guest SSH readiness", phase_started);
-        eprintln!("Cloning {}...", spec.source);
+        report_phase(log, "guest SSH readiness", phase_started)?;
+        log_line(log, &format!("Cloning {}...", spec.source))?;
         let phase_started = Instant::now();
         git::clone_and_checkout(
             &domain,
@@ -158,9 +163,10 @@ impl LibvirtWorker {
             private_git,
             spec.git_passphrase,
             recipe_deadline,
+            log,
         )?;
-        report_phase("Git clone and checkout", phase_started);
-        eprintln!("Starting the repository devcontainer...");
+        report_phase(log, "Git clone and checkout", phase_started)?;
+        log_line(log, "Starting the repository devcontainer...")?;
         let phase_started = Instant::now();
         guest_agent::run_phase(
             &domain,
@@ -168,6 +174,7 @@ impl LibvirtWorker {
             "/bin/chown",
             &["-R", "wt:wt", "/workspace"],
             recipe_deadline,
+            log,
         )?;
         guest_agent::run_phase(
             &domain,
@@ -189,10 +196,17 @@ impl LibvirtWorker {
                 "/workspace",
             ],
             recipe_deadline,
+            log,
         )?;
-        report_phase("devcontainer up", phase_started);
+        report_phase(log, "devcontainer up", phase_started)?;
         let phase_started = Instant::now();
-        devcontainer::install_app_tools(&domain, &self.app_shell, &self.app_pane, recipe_deadline)?;
+        devcontainer::install_app_tools(
+            &domain,
+            &self.app_shell,
+            &self.app_pane,
+            recipe_deadline,
+            log,
+        )?;
         guest_agent::run_phase(
             &domain,
             "devcontainer Git credentials",
@@ -206,9 +220,10 @@ impl LibvirtWorker {
                 "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\" && directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
             ],
             recipe_deadline,
+            log,
         )?;
-        report_phase("app shell and Git credential verification", phase_started);
-        eprintln!("World {} is ready.", spec.name);
+        report_phase(log, "app shell and Git credential verification", phase_started)?;
+        log_line(log, &format!("World {} is ready.", spec.name))?;
         Ok(World {
             guest_ip: guest_ip.clone(),
             ssh: wt_api::SshAccess {
@@ -336,14 +351,18 @@ impl LibvirtWorker {
         }
     }
 
-    fn wait_for_guest_agent(&self, domain: &Domain) -> Result<(), WorkerError> {
+    fn wait_for_guest_agent(
+        &self,
+        domain: &Domain,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
         let deadline = Instant::now() + self.config.boot_timeout;
         loop {
             if domain
                 .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
                 .is_ok()
             {
-                return self.verify_guest_tools(domain, deadline);
+                return self.verify_guest_tools(domain, deadline, log);
             }
             if Instant::now() >= deadline {
                 return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
@@ -352,13 +371,19 @@ impl LibvirtWorker {
         }
     }
 
-    fn verify_guest_tools(&self, domain: &Domain, deadline: Instant) -> Result<(), WorkerError> {
+    fn verify_guest_tools(
+        &self,
+        domain: &Domain,
+        deadline: Instant,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
         guest_agent::run_phase(
             domain,
             "cloud-init readiness",
             "/usr/bin/cloud-init",
             &["status", "--wait"],
             deadline,
+            log,
         )?;
         guest_agent::run_phase(
             domain,
@@ -369,6 +394,7 @@ impl LibvirtWorker {
                 "test -f /var/lib/wt-registry-cache-ready && docker info >/dev/null && docker compose version >/dev/null",
             ],
             deadline,
+            log,
         )?;
         Ok(())
     }
@@ -467,8 +493,12 @@ impl WorldWorker for LibvirtWorker {
         self.git_credentials.validate_passphrase(passphrase)
     }
 
-    fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
-        match self.provision_inner(spec) {
+    fn provision(
+        &self,
+        spec: &ProvisionSpec<'_>,
+        log: &mut dyn Write,
+    ) -> Result<World, WorkerError> {
+        match self.provision_inner(spec, log) {
             Ok(world) => Ok(world),
             Err(error) => {
                 // A failed create must not leave a domain or overlay behind.
@@ -607,8 +637,21 @@ fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
 }
 
-fn report_phase(label: &str, started: Instant) {
-    eprintln!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64());
+fn report_phase(
+    log: &mut dyn Write,
+    label: &str,
+    started: Instant,
+) -> Result<(), WorkerError> {
+    log_line(
+        log,
+        &format!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64()),
+    )
+}
+
+fn log_line(log: &mut dyn Write, message: &str) -> Result<(), WorkerError> {
+    writeln!(log, "{message}")
+        .and_then(|()| log.flush())
+        .map_err(|error| WorkerError::new(format!("write provisioning log: {error}")))
 }
 
 #[cfg(test)]

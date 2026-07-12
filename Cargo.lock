@@ -1525,6 +1525,7 @@ name = "wt-cli"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "insta",
  "rpassword",
@@ -1588,6 +1589,7 @@ name = "wt-server"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "nix",
  "rusqlite",

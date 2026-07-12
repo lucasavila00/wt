@@ -2,6 +2,7 @@
 
 use super::guest_agent;
 use crate::WorkerError;
+use std::io::Write;
 use std::time::Instant;
 use virt::domain::Domain;
 
@@ -16,6 +17,7 @@ pub(super) fn install_app_tools(
     app_shell: &[u8],
     app_pane: &[u8],
     deadline: Instant,
+    log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     guest_agent::write(domain, APP_SHELL_PATH, app_shell)?;
     guest_agent::write(domain, APP_PANE_PATH, app_pane)?;
@@ -26,6 +28,7 @@ pub(super) fn install_app_tools(
         "/bin/chmod",
         &["0755", APP_SHELL_PATH, APP_PANE_PATH],
         deadline,
+        log,
     )?;
     guest_agent::run_phase(
         domain,
@@ -33,6 +36,7 @@ pub(super) fn install_app_tools(
         "/bin/chmod",
         &["0644", TMUX_CONFIG_PATH],
         deadline,
+        log,
     )?;
     Ok(())
 }

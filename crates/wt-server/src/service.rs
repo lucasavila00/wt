@@ -1,4 +1,7 @@
+use crate::jobs::Jobs;
 use crate::store::{Store, StoreError, StoredInstance};
+use base64::Engine as _;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
 use wt_libvirt::{ProvisionSpec, WorldWorker};
@@ -6,14 +9,30 @@ use wt_libvirt::{ProvisionSpec, WorldWorker};
 pub struct Service<W> {
     store: Store,
     worker: W,
+    jobs: Option<Jobs>,
 }
 
 impl<W: WorldWorker> Service<W> {
     pub fn new(store: Store, worker: W) -> Self {
-        Self { store, worker }
+        Self {
+            store,
+            worker,
+            jobs: None,
+        }
+    }
+
+    pub fn new_detached(store: Store, worker: W, jobs: Jobs) -> Self {
+        Self {
+            store,
+            worker,
+            jobs: Some(jobs),
+        }
     }
 
     pub fn execute(&mut self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
+        if let Some(jobs) = &self.jobs {
+            jobs.reconcile(&self.store).map_err(map_store_error)?;
+        }
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
@@ -22,6 +41,7 @@ impl<W: WorldWorker> Service<W> {
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
+            Operation::Logs { name, offset } => self.logs(owner, &name, offset),
         }
     }
 
@@ -52,8 +72,37 @@ impl<W: WorldWorker> Service<W> {
                 ssh: None,
             },
             backend_id,
+            job_acknowledged: false,
         };
-        self.store.insert(&stored).map_err(map_store_error)?;
+        let lock = self
+            .jobs
+            .as_ref()
+            .map(|jobs| {
+                jobs.lock(id)
+                    .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))
+            })
+            .transpose()?;
+        if let Err(error) = self.store.insert(&stored) {
+            drop(lock);
+            if let Some(jobs) = &self.jobs {
+                let _ = jobs.remove(id);
+            }
+            return Err(map_store_error(error));
+        }
+
+        if let (Some(jobs), Some(lock)) = (&self.jobs, lock) {
+            if let Err(error) = jobs.launch(&self.store, id, &request.git_passphrase, lock) {
+                let _ = self.store.delete(id);
+                let _ = jobs.remove(id);
+                return Err(ApiError::new(
+                    ErrorCode::Internal,
+                    format!("launch provisioning worker: {error}"),
+                ));
+            }
+            return Ok(Response::Instance {
+                instance: Box::new(stored.instance),
+            });
+        }
 
         let spec = ProvisionSpec {
             id,
@@ -63,7 +112,7 @@ impl<W: WorldWorker> Service<W> {
             source: &stored.instance.source,
             git_passphrase: &request.git_passphrase,
         };
-        match self.worker.provision(&spec) {
+        match self.worker.provision(&spec, &mut std::io::sink()) {
             Ok(world) => {
                 self.store
                     .mark_running(id, &world.guest_ip, &world.ssh)
@@ -145,6 +194,24 @@ impl<W: WorldWorker> Service<W> {
 
     fn delete(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        let lock = if let Some(jobs) = &self.jobs {
+            if stored.instance.status == InstanceStatus::Provisioning
+                && jobs
+                    .is_locked(stored.instance.id)
+                    .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?
+            {
+                return Err(ApiError::new(
+                    ErrorCode::Conflict,
+                    "instance is still provisioning",
+                ));
+            }
+            Some(
+                jobs.lock(stored.instance.id)
+                    .map_err(|_| ApiError::new(ErrorCode::Conflict, "instance job is active"))?,
+            )
+        } else {
+            None
+        };
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;
@@ -158,7 +225,48 @@ impl<W: WorldWorker> Service<W> {
         self.store
             .delete(stored.instance.id)
             .map_err(map_store_error)?;
+        drop(lock);
+        if let Some(jobs) = &self.jobs {
+            jobs.remove(stored.instance.id)
+                .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
+        }
         Ok(Response::Deleted { name: name.clone() })
+    }
+
+    fn logs(
+        &self,
+        owner: &str,
+        name: &wt_api::InstanceName,
+        offset: u64,
+    ) -> Result<Response, ApiError> {
+        const CHUNK_SIZE: usize = 64 * 1024;
+        const LONG_POLL: Duration = Duration::from_secs(15);
+        if self.jobs.is_none() {
+            return Err(ApiError::new(
+                ErrorCode::Internal,
+                "job logs are unavailable",
+            ));
+        }
+        let deadline = Instant::now() + LONG_POLL;
+        loop {
+            let stored = self.store.get(owner, name).map_err(map_store_error)?;
+            let (chunk, next_offset) = self
+                .store
+                .read_log(stored.instance.id, offset, CHUNK_SIZE)
+                .map_err(map_store_error)?;
+            if !chunk.is_empty()
+                || stored.instance.status != InstanceStatus::Provisioning
+                || Instant::now() >= deadline
+            {
+                return Ok(Response::Logs {
+                    chunk: base64::engine::general_purpose::STANDARD.encode(chunk),
+                    next_offset,
+                    status: stored.instance.status,
+                    last_error: stored.instance.last_error,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 }
 

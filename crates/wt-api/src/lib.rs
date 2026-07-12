@@ -32,6 +32,7 @@ pub enum Operation {
     List,
     Get { name: InstanceName },
     Delete { name: InstanceName },
+    Logs { name: InstanceName, offset: u64 },
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -99,6 +100,13 @@ pub enum Response {
     Instance { instance: Box<Instance> },
     Instances { instances: Vec<Instance> },
     Deleted { name: InstanceName },
+    Logs {
+        chunk: String,
+        next_offset: u64,
+        status: InstanceStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_error: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

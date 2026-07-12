@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection, ErrorCode as SqliteErrorCode, OptionalExtension};
+use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
@@ -13,6 +14,7 @@ pub struct Store {
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
+    pub job_acknowledged: bool,
 }
 
 #[derive(Debug, Error)]
@@ -53,7 +55,14 @@ impl Store {
                  ssh_host      TEXT,
                  ssh_port      INTEGER,
                  ssh_host_keys TEXT NOT NULL,
+                 job_acknowledged INTEGER NOT NULL DEFAULT 0,
                  UNIQUE(owner, name)
+             );
+             CREATE TABLE job_log_chunks (
+                 instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+                 byte_offset INTEGER NOT NULL,
+                 data BLOB NOT NULL,
+                 PRIMARY KEY(instance_id, byte_offset)
              );
              PRAGMA user_version = 1;",
             )?;
@@ -98,7 +107,7 @@ impl Store {
             .query_row(
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
-                        ssh_user, ssh_host, ssh_port, ssh_host_keys
+                        ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -111,12 +120,163 @@ impl Store {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
-                    ssh_user, ssh_host, ssh_port, ssh_host_keys
+                    ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::from)
+    }
+
+    pub fn get_by_id(&self, id: Uuid) -> Result<StoredInstance, StoreError> {
+        self.connection
+            .query_row(
+                "SELECT id, owner, name, status,
+                        guest_ip, last_error, backend_id, source,
+                        ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+                 FROM instances WHERE id = ?1",
+                [id.to_string()],
+                row_to_instance,
+            )
+            .optional()?
+            .ok_or(StoreError::NotFound)
+    }
+
+    pub fn transitional(&self) -> Result<Vec<StoredInstance>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, owner, name, status,
+                    guest_ip, last_error, backend_id, source,
+                    ssh_user, ssh_host, ssh_port, ssh_host_keys, job_acknowledged
+             FROM instances WHERE status IN ('provisioning', 'destroying')",
+        )?;
+        let rows = statement
+            .query_map([], row_to_instance)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)?;
+        Ok(rows)
+    }
+
+    pub fn acknowledge_job(&self, id: Uuid) -> Result<(), StoreError> {
+        let changed = self.connection.execute(
+            "UPDATE instances SET job_acknowledged = 1
+             WHERE id = ?1 AND status = 'provisioning'",
+            [id.to_string()],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn job_acknowledged(&self, id: Uuid) -> Result<bool, StoreError> {
+        self.connection
+            .query_row(
+                "SELECT job_acknowledged FROM instances WHERE id = ?1",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(StoreError::NotFound)
+    }
+
+    pub fn log_writer(&self, id: Uuid) -> JobLog<'_> {
+        JobLog { store: self, id }
+    }
+
+    pub fn append_log(&self, id: Uuid, data: &[u8]) -> Result<(), StoreError> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        let transaction = self.connection.unchecked_transaction()?;
+        let offset: u64 = transaction.query_row(
+            "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
+             FROM job_log_chunks WHERE instance_id = ?1",
+            [id.to_string()],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "INSERT INTO job_log_chunks (instance_id, byte_offset, data)
+             VALUES (?1, ?2, ?3)",
+            params![id.to_string(), offset, data],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn read_log(
+        &self,
+        id: Uuid,
+        offset: u64,
+        limit: usize,
+    ) -> Result<(Vec<u8>, u64), StoreError> {
+        let length: u64 = self.connection.query_row(
+            "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
+             FROM job_log_chunks WHERE instance_id = ?1",
+            [id.to_string()],
+            |row| row.get(0),
+        )?;
+        let start = offset.min(length);
+        let mut statement = self.connection.prepare(
+            "SELECT byte_offset, data FROM job_log_chunks
+             WHERE instance_id = ?1 AND byte_offset + length(data) > ?2
+             ORDER BY byte_offset",
+        )?;
+        let mut rows = statement.query(params![id.to_string(), start])?;
+        let mut output = Vec::with_capacity(limit);
+        while output.len() < limit {
+            let Some(row) = rows.next()? else { break };
+            let chunk_offset: u64 = row.get(0)?;
+            let data: Vec<u8> = row.get(1)?;
+            let skip = start.saturating_sub(chunk_offset) as usize;
+            let available = &data[skip.min(data.len())..];
+            let take = available.len().min(limit - output.len());
+            output.extend_from_slice(&available[..take]);
+        }
+        let next_offset = start + output.len() as u64;
+        Ok((output, next_offset))
+    }
+
+    pub fn finish_running(
+        &self,
+        id: Uuid,
+        guest_ip: &str,
+        ssh: &SshAccess,
+        terminal_log: &[u8],
+    ) -> Result<(), StoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        append_log_transaction(&transaction, id, terminal_log)?;
+        let host_keys = serde_json::to_string(&ssh.host_keys)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let changed = transaction.execute(
+            "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
+             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
+            params![id.to_string(), InstanceStatus::Running.to_string(), guest_ip,
+                ssh.user, ssh.host, ssh.port, host_keys],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn finish_error(
+        &self,
+        id: Uuid,
+        message: &str,
+        terminal_log: &[u8],
+    ) -> Result<(), StoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        append_log_transaction(&transaction, id, terminal_log)?;
+        let changed = transaction.execute(
+            "UPDATE instances SET status = ?2, last_error = ?3 WHERE id = ?1",
+            params![id.to_string(), InstanceStatus::Error.to_string(), message],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn mark_running(
@@ -205,7 +365,47 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             ssh: ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
+        job_acknowledged: row.get(12)?,
     })
+}
+
+pub struct JobLog<'a> {
+    store: &'a Store,
+    id: Uuid,
+}
+
+impl Write for JobLog<'_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.store
+            .append_log(self.id, buffer)
+            .map_err(std::io::Error::other)?;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn append_log_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    id: Uuid,
+    data: &[u8],
+) -> Result<(), StoreError> {
+    if data.is_empty() {
+        return Ok(());
+    }
+    let offset: u64 = transaction.query_row(
+        "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
+         FROM job_log_chunks WHERE instance_id = ?1",
+        [id.to_string()],
+        |row| row.get(0),
+    )?;
+    transaction.execute(
+        "INSERT INTO job_log_chunks (instance_id, byte_offset, data) VALUES (?1, ?2, ?3)",
+        params![id.to_string(), offset, data],
+    )?;
+    Ok(())
 }
 
 fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
