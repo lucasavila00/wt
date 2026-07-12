@@ -156,6 +156,10 @@ mod tests {
         }
     }
 
+    fn normalize_home(contents: &str, home: &Path) -> String {
+        contents.replace(&home.display().to_string(), "[HOME]")
+    }
+
     #[test]
     fn sync_does_not_touch_main_config_and_removes_stale_worlds() {
         let _lock = HOME_LOCK.lock().unwrap();
@@ -198,25 +202,9 @@ mod tests {
         )
         .unwrap();
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-        assert!(managed.contains("Host repo-feature-host\n"));
-        assert!(managed.contains("Host repo-feature\n"));
-        assert!(managed.contains("Host repo-feature-vs repo-feature-vc\n"));
-        assert_eq!(managed.matches("RemoteCommand ").count(), 2);
-        assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
-        assert!(managed.contains(&format!(
-            "ProxyCommand ssh -F {} local.repo-feature-host /usr/local/bin/wt-app-proxy",
-            ssh_quote(&temp.path().join(".ssh/config"))
-        )));
-        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
-        assert_eq!(
-            managed.matches("HostKeyAlias local.repo-feature").count(),
-            6
-        );
-        assert_eq!(
-            managed
-                .matches("HostKeyAlias local.repo-feature-vs")
-                .count(),
-            2
+        insta::assert_snapshot!(
+            "unique_world_ssh_config",
+            normalize_home(&managed, temp.path())
         );
         sync(
             &client_config,
@@ -227,11 +215,7 @@ mod tests {
         )
         .unwrap();
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
-        assert!(known_hosts.contains("AAAAREPLACEMENT"));
-        assert!(known_hosts.contains("AAAAAPPLICATION"));
-        assert!(known_hosts.contains("local.repo-feature-vs ssh-ed25519"));
-        assert!(!known_hosts.contains("local.repo-feature-vc"));
-        assert!(!known_hosts.contains("AAAATEST"));
+        insta::assert_snapshot!("updated_world_known_hosts", known_hosts);
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
         assert_eq!(main, main_config);
@@ -290,14 +274,10 @@ mod tests {
         )
         .unwrap();
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-        assert!(managed.contains("Host local.same\n"));
-        assert!(managed.contains("Host lab.same\n"));
-        assert!(managed.contains("Host local.same-vs local.same-vc\n"));
-        assert!(managed.contains("Host lab.same-vs lab.same-vc\n"));
-        assert!(!managed.lines().any(|line| line == "Host same"));
-        assert!(!managed.lines().any(|line| line == "Host same-vs same-vc"));
-        assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
-        assert_eq!(managed.matches("  ProxyJump wt-server\n").count(), 2);
+        insta::assert_snapshot!(
+            "duplicate_world_names_ssh_config",
+            normalize_home(&managed, temp.path())
+        );
         assert!(!temp.path().join(".ssh/config").exists());
     }
 
@@ -348,17 +328,9 @@ mod tests {
         .unwrap();
 
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-        for alias in [
-            "lab.world-one-host",
-            "world-one-host",
-            "lab.world-two-host",
-            "world-two-host",
-        ] {
-            assert!(managed.contains(&format!("Host {alias}\n")));
-        }
-        assert_eq!(managed.matches("  HostName 192.0.2.10\n").count(), 4);
-        assert_eq!(managed.matches("  HostName 192.0.2.11\n").count(), 4);
-        assert_eq!(managed.matches("  ProxyJump wt-server\n").count(), 8);
-        assert_eq!(managed.matches("  ProxyCommand ssh -F ").count(), 4);
+        insta::assert_snapshot!(
+            "remote_worlds_ssh_config",
+            normalize_home(&managed, temp.path())
+        );
     }
 }

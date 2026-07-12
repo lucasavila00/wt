@@ -133,14 +133,10 @@ esac
         "3\n"
     );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-    assert!(managed.contains("Host repo-feature\n"));
-    assert!(managed.contains("Host local.repo-feature\n"));
-    assert!(managed.contains("Host repo-feature-host\n"));
-    assert!(managed.contains("Host repo-feature-vs repo-feature-vc\n"));
-    assert!(managed.contains("Host local.repo-feature-vs local.repo-feature-vc\n"));
-    assert!(managed.contains("ProxyCommand ssh -F"));
-    assert!(managed.contains("local.repo-feature-host /usr/local/bin/wt-app-proxy"));
-    assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
+    insta::assert_snapshot!(
+        "automatically_synced_ssh_config",
+        managed.replace(&temp.path().display().to_string(), "[HOME]")
+    );
 
     let logs = cmd!(env!("CARGO_BIN_EXE_wt"), "logs", "repo-feature")
         .env("HOME", temp.path())
