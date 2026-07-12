@@ -66,7 +66,7 @@ devcontainer up --log-level debug --log-format text --workspace-folder /workspac
 ```
 
 The command output is streamed live. After it finishes, WT prints cache hits,
-misses, and byte counts for that world.
+misses, and byte counts seen during that command.
 
 ## Limits
 

@@ -38,7 +38,6 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     ensure_container(runner, config, &bridge)?;
     let ca = wait_for_ca(&config.registry_cache.state_dir)?;
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
-    ensure_client_address_logging(runner)?;
     runner.run(
         "sudo",
         &["chmod".into(), "0644".into(), ca.as_os_str().to_owned()],
@@ -48,51 +47,6 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
     let images = preload(runner, config, &bridge)?;
     publish_manifest(runner, config, &bridge, images)?;
-    Ok(())
-}
-
-fn ensure_client_address_logging(runner: &impl Runner) -> Result<()> {
-    let staged = Path::new("target/wt-registry-cache-nginx.conf");
-    runner.run(
-        "docker",
-        &[
-            "cp".into(),
-            format!("{CONTAINER_NAME}:/etc/nginx/nginx.conf").into(),
-            staged.as_os_str().to_owned(),
-        ],
-        "read registry cache nginx configuration",
-    )?;
-    let contents = fs::read_to_string(staged).context("read staged registry cache nginx config")?;
-    if !contents.contains("\"client_address\":\"$remote_addr\"") {
-        let needle = "        '\"access_time\":\"$time_local\",'\n";
-        if !contents.contains(needle) {
-            bail!("pinned registry cache nginx log format is unexpected");
-        }
-        let replacement = format!("{needle}        '\"client_address\":\"$remote_addr\",'\n");
-        fs::write(staged, contents.replace(needle, &replacement))
-            .context("stage registry cache client-address log format")?;
-        runner.run(
-            "docker",
-            &[
-                "cp".into(),
-                staged.as_os_str().to_owned(),
-                format!("{CONTAINER_NAME}:/etc/nginx/nginx.conf").into(),
-            ],
-            "install registry cache nginx configuration",
-        )?;
-    }
-    runner.run(
-        "docker",
-        &[
-            "exec".into(),
-            CONTAINER_NAME.into(),
-            "nginx".into(),
-            "-s".into(),
-            "reload".into(),
-        ],
-        "reload registry cache nginx",
-    )?;
-    let _ = fs::remove_file(staged);
     Ok(())
 }
 
