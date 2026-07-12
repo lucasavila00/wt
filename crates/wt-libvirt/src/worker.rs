@@ -468,6 +468,13 @@ fn report_registry_cache(since: u64, phase: &str) {
 }
 
 impl WorldWorker for LibvirtWorker {
+    fn validate_git_passphrase(
+        &self,
+        passphrase: &wt_api::GitPassphrase,
+    ) -> Result<(), WorkerError> {
+        self.git_credentials.validate_passphrase(passphrase)
+    }
+
     fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
         match self.provision_inner(spec) {
             Ok(world) => Ok(world),

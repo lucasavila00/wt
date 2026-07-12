@@ -18,8 +18,20 @@ request=$(cat)
 state="$HOME/helper-state"
 case "$request" in
   *'"operation":"create"'*)
-    : > "$state"
-    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    attempts="$HOME/helper-attempts"
+    count=0
+    test ! -f "$attempts" || count=$(cat "$attempts")
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$attempts"
+    case "$request" in
+      *'"git_passphrase":"secret"'*)
+        : > "$state"
+        printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+        ;;
+      *)
+        printf '%s\n' '{"protocol_version":1,"outcome":"error","error":{"code":"invalid_git_passphrase","message":"Git identity: invalid private key passphrase"}}'
+        ;;
+    esac
     ;;
   *'"operation":"delete"'*)
     rm -f "$state"
@@ -68,32 +80,45 @@ esac
     .spawn()
     .unwrap();
     let mut stdout = created.stdout.take().unwrap();
-    let mut prompt = Vec::new();
-    loop {
-        let mut byte = [0];
-        assert_eq!(stdout.read(&mut byte).unwrap(), 1);
-        prompt.push(byte[0]);
-        if prompt.ends_with(b": ") {
-            break;
+    let mut transcript = Vec::new();
+    let prompt = b"Git key passphrase for context local: ";
+    for passphrase in [b"wrong-one\n".as_slice(), b"wrong-two\n", b"secret\n"] {
+        loop {
+            let mut byte = [0];
+            assert_eq!(stdout.read(&mut byte).unwrap(), 1);
+            transcript.push(byte[0]);
+            if transcript.ends_with(prompt) {
+                break;
+            }
         }
+        created
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(passphrase)
+            .unwrap();
     }
-    created
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"secret\n")
-        .unwrap();
+    drop(created.stdin.take());
     let mut remaining = Vec::new();
     stdout.read_to_end(&mut remaining).unwrap();
-    prompt.extend(remaining);
+    transcript.extend(remaining);
     let output = created.wait_with_output().unwrap();
     assert!(
         output.status.success(),
         "{}{}",
-        String::from_utf8_lossy(&prompt),
+        String::from_utf8_lossy(&transcript),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!String::from_utf8_lossy(&prompt).contains("secret"));
+    let transcript = String::from_utf8_lossy(&transcript);
+    assert!(!transcript.contains("wrong-one"));
+    assert!(!transcript.contains("wrong-two"));
+    assert!(!transcript.contains("secret"));
+    assert!(transcript.contains("2 attempts remaining"));
+    assert!(transcript.contains("1 attempt remaining"));
+    assert_eq!(
+        fs::read_to_string(temp.path().join("helper-attempts")).unwrap(),
+        "3\n"
+    );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
     assert!(managed.contains("Host repo-feature\n"));
     assert!(managed.contains("Host local.repo-feature\n"));

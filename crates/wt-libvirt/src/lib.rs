@@ -29,6 +29,10 @@ pub struct World {
 }
 
 pub trait WorldWorker {
+    fn validate_git_passphrase(
+        &self,
+        passphrase: &wt_api::GitPassphrase,
+    ) -> Result<(), WorkerError>;
     fn provision(&self, spec: &ProvisionSpec<'_>) -> Result<World, WorkerError>;
     fn destroy(&self, backend_id: &str) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError>;

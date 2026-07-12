@@ -19,6 +19,9 @@ KVM is required. There is no CPU-emulation fallback.
 
 ## Provision
 
+The service validates the submitted Git-key passphrase before inserting the
+world into its registry or entering this provisioning sequence.
+
 ```text
 1. Validate the prepared image and /dev/kvm
 2. Create the qcow2 overlay and cloud-init seed

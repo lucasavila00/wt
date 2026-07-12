@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
-use wt_api::{ApiRequest, CreateInstance, GitPassphrase, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, ErrorCode, GitPassphrase, Operation, Outcome, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 
@@ -62,22 +62,10 @@ fn run() -> Result<()> {
                         .join(", ")
                 ),
             };
-            let passphrase = rpassword::prompt_password(format!(
-                "Git key passphrase for context {}: ",
-                context.name
-            ))?;
-            if passphrase.is_empty() {
-                bail!("Git key passphrase must not be empty");
-            }
-            let response = wt_cli::transport::call(
-                context,
-                &ApiRequest::new(Operation::Create(CreateInstance {
-                    name: world_name,
-                    source,
-                    git_ref,
-                    git_passphrase: GitPassphrase::new(passphrase),
-                })),
-            )?;
+            let response =
+                create_with_passphrase_attempts(context, world_name, source, git_ref, |prompt| {
+                    rpassword::prompt_password(prompt).map_err(Into::into)
+                })?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -135,6 +123,56 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn create_with_passphrase_attempts(
+    context: &Context,
+    world_name: wt_api::InstanceName,
+    source: String,
+    git_ref: Option<String>,
+    mut prompt_password: impl FnMut(String) -> Result<String>,
+) -> Result<Response> {
+    const MAX_ATTEMPTS: usize = 3;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let passphrase =
+            prompt_password(format!("Git key passphrase for context {}: ", context.name))?;
+        if passphrase.is_empty() {
+            if attempt == MAX_ATTEMPTS {
+                bail!("Git key passphrase must not be empty");
+            }
+            let remaining = MAX_ATTEMPTS - attempt;
+            eprintln!(
+                "Git key passphrase must not be empty; {remaining} attempt{} remaining.",
+                if remaining == 1 { "" } else { "s" }
+            );
+            continue;
+        }
+        let outcome = wt_cli::transport::call_outcome(
+            context,
+            &ApiRequest::new(Operation::Create(CreateInstance {
+                name: world_name.clone(),
+                source: source.clone(),
+                git_ref: git_ref.clone(),
+                git_passphrase: GitPassphrase::new(passphrase),
+            })),
+        )?;
+        match outcome {
+            Outcome::Ok { response } => return Ok(*response),
+            Outcome::Error { error }
+                if error.code == ErrorCode::InvalidGitPassphrase && attempt < MAX_ATTEMPTS =>
+            {
+                let remaining = MAX_ATTEMPTS - attempt;
+                eprintln!(
+                    "{}; {remaining} attempt{} remaining.",
+                    error.message,
+                    if remaining == 1 { "" } else { "s" }
+                );
+            }
+            Outcome::Error { error } => bail!(wt_cli::transport::format_api_error(&error)),
+        }
+    }
+    unreachable!("the final passphrase attempt always returns")
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

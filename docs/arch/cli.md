@@ -42,7 +42,7 @@ context. Aggregate list and sync operations fail if any context is unavailable.
 
 | Command | Behavior |
 |---------|----------|
-| `wt new <source> <name> [--ref <ref>]` | Select a context, prompt locally for the server Git identity's passphrase, clone, start the devcontainer, sync access, and print status and aliases |
+| `wt new <source> <name> [--ref <ref>]` | Select a context, allow three local passphrase attempts, clone, start the devcontainer, sync access, and print status and aliases |
 | `wt ls` | List worlds across all contexts and refresh managed SSH inventory |
 | `wt rm <name>` | Resolve and destroy a world, then refresh managed SSH inventory |
 | `wt sync` | Atomically rewrite managed SSH config and known-hosts files from all running worlds |
@@ -51,6 +51,10 @@ Git sources must use `ssh://` or `user@host:path`. With no `--ref`, Git uses the
 remote default branch. A supplied ref may identify an existing branch, tag, or
 commit. The client never edits the application repository or mounts its checkout
 on the client host.
+
+The server validates each submitted Git-key passphrase before reserving a world
+name or starting a guest. Only passphrase rejection is retried; all other helper
+and provisioning failures end the command immediately.
 
 ## Guest access
 

@@ -1,3 +1,7 @@
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use tempfile::TempDir;
 use wt_api::{
     CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus, Operation, Response,
@@ -10,10 +14,22 @@ use wt_server::store::Store;
 #[derive(Clone, Debug, Default)]
 struct InjectedWorker {
     fail_provision: bool,
+    reject_passphrase: bool,
+    provision_calls: Arc<AtomicUsize>,
 }
 
 impl WorldWorker for InjectedWorker {
+    fn validate_git_passphrase(&self, _passphrase: &GitPassphrase) -> Result<(), WorkerError> {
+        if self.reject_passphrase {
+            return Err(WorkerError::new(
+                "Git identity: invalid private key passphrase",
+            ));
+        }
+        Ok(())
+    }
+
     fn provision(&self, _spec: &ProvisionSpec<'_>) -> Result<World, WorkerError> {
+        self.provision_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_provision {
             return Err(WorkerError::new("injected provision failure"));
         }
@@ -104,6 +120,7 @@ fn provision_failure_is_recorded() {
         Store::open(&temp.path().join("instances.db")).unwrap(),
         InjectedWorker {
             fail_provision: true,
+            ..InjectedWorker::default()
         },
     );
 
@@ -124,6 +141,32 @@ fn provision_failure_is_recorded() {
         instances[0].last_error.as_deref(),
         Some("injected provision failure")
     );
+}
+
+#[test]
+fn invalid_git_passphrase_does_not_reserve_instance() {
+    let temp = TempDir::new().unwrap();
+    let provision_calls = Arc::new(AtomicUsize::new(0));
+    let mut service = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        InjectedWorker {
+            reject_passphrase: true,
+            provision_calls: Arc::clone(&provision_calls),
+            ..InjectedWorker::default()
+        },
+    );
+    let name = InstanceName::parse("repo-passphrase").unwrap();
+
+    let error = service
+        .execute("lucas", Operation::Create(create(name.clone())))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidGitPassphrase);
+    assert_eq!(provision_calls.load(Ordering::SeqCst), 0);
+
+    let missing = service
+        .execute("lucas", Operation::Get { name })
+        .unwrap_err();
+    assert_eq!(missing.code, ErrorCode::NotFound);
 }
 
 #[test]

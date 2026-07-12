@@ -45,6 +45,9 @@ impl<W: WorldWorker> Service<W> {
                 "Git key passphrase must not be empty",
             ));
         }
+        self.worker
+            .validate_git_passphrase(&request.git_passphrase)
+            .map_err(|error| ApiError::new(ErrorCode::InvalidGitPassphrase, error.to_string()))?;
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {

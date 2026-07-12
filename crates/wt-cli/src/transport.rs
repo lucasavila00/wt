@@ -2,10 +2,17 @@ use crate::config::{Context, ContextKind};
 use anyhow::{bail, Context as _, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
-use wt_api::{ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
+use wt_api::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 use wt_command::cmd;
 
 pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
+    match call_outcome(context, request)? {
+        Outcome::Ok { response } => Ok(*response),
+        Outcome::Error { error } => bail!(format_api_error(&error)),
+    }
+}
+
+pub fn call_outcome(context: &Context, request: &ApiRequest) -> Result<Outcome> {
     let mut command = helper_command(context);
     let mut child = command
         .stdin(Stdio::piped())
@@ -39,10 +46,11 @@ pub fn call(context: &Context, request: &ApiRequest) -> Result<Response> {
             PROTOCOL_VERSION
         );
     }
-    match response.outcome {
-        Outcome::Ok { response } => Ok(*response),
-        Outcome::Error { error } => bail!("{}: {}", error_code(error.code), error.message),
-    }
+    Ok(response.outcome)
+}
+
+pub fn format_api_error(error: &ApiError) -> String {
+    format!("{}: {}", error_code(error.code), error.message)
 }
 
 fn helper_command(context: &Context) -> Command {
@@ -55,6 +63,7 @@ fn helper_command(context: &Context) -> Command {
 fn error_code(code: wt_api::ErrorCode) -> &'static str {
     match code {
         wt_api::ErrorCode::InvalidRequest => "invalid request",
+        wt_api::ErrorCode::InvalidGitPassphrase => "invalid Git passphrase",
         wt_api::ErrorCode::UnsupportedProtocol => "unsupported protocol",
         wt_api::ErrorCode::Conflict => "conflict",
         wt_api::ErrorCode::NotFound => "not found",

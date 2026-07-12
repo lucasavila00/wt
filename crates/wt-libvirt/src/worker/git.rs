@@ -71,7 +71,10 @@ pub(super) fn load_credentials(
 }
 
 impl Credentials {
-    fn validate_passphrase(&self, passphrase: &GitPassphrase) -> Result<(), WorkerError> {
+    pub(super) fn validate_passphrase(
+        &self,
+        passphrase: &GitPassphrase,
+    ) -> Result<(), WorkerError> {
         self.private_key
             .decrypt(passphrase.expose_secret())
             .map(|_| ())

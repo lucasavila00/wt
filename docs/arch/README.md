@@ -38,9 +38,10 @@ user's main SSH config.
 
 Git sources are SSH-only. Each server supplies an encrypted Git identity and a
 known-hosts file. `wt new` reads the passphrase on the client terminal and sends
-it through the local/OpenSSH helper request for the blocking clone. The encrypted
-identity and trust bundle are copied into the trusted world's checkout for Git
-from both the guest and devcontainer; the passphrase is not persisted.
+it through the local/OpenSSH helper request. The server validates it before
+reserving or provisioning a world, and the client allows three attempts. The
+encrypted identity and trust bundle are copied into the trusted world's checkout
+for Git from both the guest and devcontainer; the passphrase is not persisted.
 Client-to-server OpenSSH authentication is a separate role, though deployments
 may configure the same identity for both roles.
 
