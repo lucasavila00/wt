@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::thread;
 
@@ -21,8 +21,20 @@ fn proxy() -> Result<(), String> {
         io::copy(&mut io::stdin().lock(), &mut outgoing)?;
         outgoing.shutdown(Shutdown::Write)
     });
-    io::copy(&mut incoming, &mut io::stdout().lock())
-        .map_err(|error| format!("read app SSH stream: {error}"))?;
+    let mut stdout = io::stdout().lock();
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = incoming
+            .read(&mut buffer)
+            .map_err(|error| format!("read app SSH stream: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        stdout
+            .write_all(&buffer[..read])
+            .and_then(|()| stdout.flush())
+            .map_err(|error| format!("write app SSH stream: {error}"))?;
+    }
     input
         .join()
         .map_err(|_| "write app SSH stream thread panicked".to_owned())?

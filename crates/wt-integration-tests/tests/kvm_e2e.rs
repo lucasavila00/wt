@@ -311,7 +311,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         );
         let expected_prefix = match config.guest.session {
             SessionFrontend::Tmux => "C-b",
-            SessionFrontend::Byobu => "C-a",
+            SessionFrontend::Byobu => "F12",
         };
         if prefix.trim() != expected_prefix {
             return Err(format!(

@@ -16,6 +16,7 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
     ensure_directory(&managed_dir)?;
     let config_path = managed_dir.join("config");
     let known_hosts_path = managed_dir.join("known_hosts");
+    let main_config_path = ssh_dir.join("config");
 
     let running = instances
         .iter()
@@ -45,11 +46,12 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
             ssh_quote(&known_hosts_path),
         );
         let app_common = format!(
-            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-dc\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh {}-host /usr/local/bin/wt-app-proxy\n",
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-dc\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
             app_ssh.user,
             app_ssh.port,
             qualified,
             ssh_quote(&known_hosts_path),
+            ssh_quote(&main_config_path),
             qualified,
         );
         config.push_str(&format!(
@@ -71,11 +73,7 @@ pub fn sync(instances: &[ContextInstance]) -> Result<PathBuf> {
             }
             known_hosts.push_str(&format!("{qualified}-host {kind} {data}\n"));
         }
-        let app_known_name = if app_ssh.port == 22 {
-            format!("{qualified}-dc")
-        } else {
-            format!("[{qualified}-dc]:{}", app_ssh.port)
-        };
+        let app_known_name = format!("{qualified}-dc");
         for key in &app_ssh.host_keys {
             let mut fields = key.split_whitespace();
             let kind = fields.next().unwrap_or_default();
@@ -179,8 +177,10 @@ mod tests {
         assert!(managed.contains("Host repo-feature-dc\n"));
         assert_eq!(managed.matches("RemoteCommand ").count(), 2);
         assert!(managed.contains("RemoteCommand /usr/local/bin/wt-app-shell"));
-        assert!(managed
-            .contains("ProxyCommand ssh local.repo-feature-host /usr/local/bin/wt-app-proxy"));
+        assert!(managed.contains(&format!(
+            "ProxyCommand ssh -F {} local.repo-feature-host /usr/local/bin/wt-app-proxy",
+            ssh_quote(&temp.path().join(".ssh/config"))
+        )));
         assert_eq!(managed.matches("  SetEnv TERM=xterm-256color\n").count(), 6);
         assert_eq!(
             managed.matches("HostKeyAlias local.repo-feature").count(),
@@ -194,6 +194,7 @@ mod tests {
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
         assert!(known_hosts.contains("AAAAREPLACEMENT"));
         assert!(known_hosts.contains("AAAAAPPLICATION"));
+        assert!(known_hosts.contains("local.repo-feature-dc ssh-ed25519"));
         assert!(!known_hosts.contains("AAAATEST"));
         sync(&[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
