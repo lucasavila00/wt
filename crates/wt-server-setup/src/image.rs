@@ -187,8 +187,6 @@ fn build_image_inner(
     fs::File::create_new(console).context("create image build console log")?;
     fs::set_permissions(console, fs::Permissions::from_mode(0o660))
         .context("set image build console log permissions")?;
-    // Keep the reader open before libvirt takes ownership of the serial log.
-    let mut console_log = ConsoleLog::open(console)?;
     runner.run(
         cmd!(
             "virt-install",
@@ -223,6 +221,11 @@ fn build_image_inner(
         ),
         "start KVM image build guest",
     )?;
+    runner.run(
+        cmd!("sudo", "chmod", "0640", console),
+        "permit image build console reading",
+    )?;
+    let mut console_log = ConsoleLog::open(console)?;
     println!(
         "KVM build guest started. Waiting for cloud-init to install Docker, Compose, and guest agent."
     );
@@ -358,21 +361,15 @@ impl ConsoleLog {
         })
     }
 
-    fn drain(&mut self, output: &mut impl Write) -> Result<(bool, Vec<String>)> {
+    fn drain(&mut self) -> Result<Vec<String>> {
         let mut bytes = Vec::new();
         self.file
             .read_to_end(&mut bytes)
             .context("read image build console log")?;
         if bytes.is_empty() {
-            return Ok((false, Vec::new()));
+            return Ok(Vec::new());
         }
-
-        output
-            .write_all(&bytes)
-            .context("forward image build console output")?;
-        output.flush().context("flush image build console output")?;
-        let phases = extract_phase_markers(&mut self.pending_line, &bytes);
-        Ok((true, phases))
+        Ok(extract_phase_markers(&mut self.pending_line, &bytes))
     }
 }
 
@@ -396,31 +393,35 @@ fn extract_phase_markers(pending_line: &mut Vec<u8>, bytes: &[u8]) -> Vec<String
     phases
 }
 
-fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<bool> {
-    let (had_output, phases) = console.drain(&mut std::io::stdout().lock())?;
+fn progress_message(phase: &str, elapsed: Duration) -> String {
+    format!("Image build: {phase} (elapsed={}s)", elapsed.as_secs())
+}
+
+fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<Option<String>> {
+    let phases = console.drain()?;
+    let mut last_phase = None;
     for phase in phases {
-        println!(
-            "Image build phase: {phase} (elapsed={}s)",
-            started.elapsed().as_secs()
-        );
+        println!("{}", progress_message(&phase, started.elapsed()));
+        last_phase = Some(phase);
     }
-    Ok(had_output)
+    Ok(last_phase)
 }
 
 fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) -> Result<()> {
     let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
-    let mut last_console_output = Instant::now();
     let mut next_state_check = Instant::now();
-    let mut state = String::from("starting");
+    let mut next_heartbeat = Instant::now() + Duration::from_secs(60);
+    let mut phase = String::from("starting cloud-init");
     loop {
-        if drain_console(console, started)? {
-            last_console_output = Instant::now();
+        if let Some(next_phase) = drain_console(console, started)? {
+            phase = next_phase;
+            next_heartbeat = Instant::now() + Duration::from_secs(60);
         }
 
         let now = Instant::now();
         if now >= next_state_check {
-            state = runner.text(
+            let state = runner.text(
                 cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
                 "read image build domain state",
             )?;
@@ -432,14 +433,9 @@ fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) -> Result<(
             next_state_check = now + Duration::from_secs(3);
         }
 
-        if last_console_output.elapsed() >= Duration::from_secs(15) {
-            println!(
-                "Still building guest: no console output for {}s, elapsed={}s, domain_state={}",
-                last_console_output.elapsed().as_secs(),
-                started.elapsed().as_secs(),
-                state.trim()
-            );
-            last_console_output = Instant::now();
+        if now >= next_heartbeat {
+            println!("{}", progress_message(&phase, started.elapsed()));
+            next_heartbeat = now + Duration::from_secs(60);
         }
         if now >= deadline {
             bail!("timed out waiting for KVM image build guest");
@@ -670,16 +666,13 @@ mod tests {
     }
 
     #[test]
-    fn console_log_forwards_only_appended_bytes() {
+    fn console_log_reads_only_appended_phase_markers() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("console.log");
         fs::write(&path, b"first\nWT_IMAGE_PHASE=booting\n").unwrap();
         let mut console = ConsoleLog::open(&path).unwrap();
-        let mut output = Vec::new();
 
-        let (had_output, phases) = console.drain(&mut output).unwrap();
-        assert!(had_output);
-        assert_eq!(output, b"first\nWT_IMAGE_PHASE=booting\n");
+        let phases = console.drain().unwrap();
         assert_eq!(phases, ["booting"]);
 
         fs::OpenOptions::new()
@@ -688,13 +681,26 @@ mod tests {
             .unwrap()
             .write_all(b"second")
             .unwrap();
-        let (had_output, phases) = console.drain(&mut output).unwrap();
-        assert!(had_output);
-        assert!(phases.is_empty());
-        assert_eq!(output, b"first\nWT_IMAGE_PHASE=booting\nsecond");
+        assert!(console.drain().unwrap().is_empty());
+        assert!(console.drain().unwrap().is_empty());
+    }
 
-        let (had_output, phases) = console.drain(&mut output).unwrap();
-        assert!(!had_output);
-        assert!(phases.is_empty());
+    #[test]
+    fn console_reader_opens_the_replaced_log() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("console.log");
+        fs::write(&path, b"old inode\n").unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, b"WT_IMAGE_PHASE=installing packages\n").unwrap();
+
+        let mut console = ConsoleLog::open(&path).unwrap();
+        assert_eq!(console.drain().unwrap(), ["installing packages"]);
+    }
+
+    #[test]
+    fn progress_output_is_phase_based() {
+        let message = progress_message("installing packages", Duration::from_secs(60));
+        assert_eq!(message, "Image build: installing packages (elapsed=60s)");
+        assert!(!message.contains("no console output"));
     }
 }
