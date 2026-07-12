@@ -6,7 +6,7 @@ mod registry_cache;
 mod runner;
 mod server;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use runner::SystemRunner;
 use std::path::PathBuf;
@@ -55,25 +55,48 @@ enum ImageCommand {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("wt-server-setup: {error:#}");
+        eprintln!("\n{}", failure_message(&error));
         std::process::exit(1);
     }
+}
+
+fn failure_message(error: &anyhow::Error) -> String {
+    format!("ERROR: wt-server-setup: {error:#}")
 }
 
 fn run() -> Result<()> {
     let runner = SystemRunner;
     match Cli::parse().command {
         SetupCommand::Validate { config } => {
-            server::validate(&config)?;
+            server::validate(&config).context("configuration validation stopped")?;
             println!("valid {}", config.display());
         }
-        SetupCommand::Install { config } => server::install(&runner, &config)?,
+        SetupCommand::Install { config } => {
+            server::install(&runner, &config).context("server installation stopped")?
+        }
         SetupCommand::Image {
             command: ImageCommand::Build { config },
-        } => server::image(&runner, &config, false)?,
+        } => server::image(&runner, &config, false).context("image preparation stopped")?,
         SetupCommand::Image {
             command: ImageCommand::Rebuild { config },
-        } => server::image(&runner, &config, true)?,
+        } => server::image(&runner, &config, true).context("image preparation stopped")?,
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+
+    #[test]
+    fn failure_message_identifies_error_operation_and_cause() {
+        let error = anyhow!("image package manifest must contain exactly nine packages")
+            .context("server installation stopped");
+
+        assert_eq!(
+            failure_message(&error),
+            "ERROR: wt-server-setup: server installation stopped: image package manifest must contain exactly nine packages"
+        );
+    }
 }
