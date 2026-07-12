@@ -10,17 +10,10 @@ Cross-crate integration tests. No production code.
 The real-system lane always runs. Local setup and commands are documented in
 [DEVELOPMENT.md](../../DEVELOPMENT.md).
 
-## KVM image cache
+## Registry cache
 
-The real-system test keeps its complete lifecycle coverage but uses a separate
-cached backing image prepared with:
-
-```text
-scripts/prepare-test-image --config config/wt-server.development.toml
-```
-
-The cache contains the exact container images listed in `fixture-images.txt`.
-Test worlds remain disposable qcow2 overlays. The test refuses a cache whose
-production-image digest or fixture image list has drifted, rather than silently
-falling back to slow network pulls. The cache consumes additional disk space
-next to the production golden image and survives normal test cleanup.
+The real-system test uses the production golden image and the host registry
+cache installed by `scripts/install-server`. The strict development config
+preloads the exact images listed in `fixture-images.txt`; each test world keeps
+an independent Docker daemon and qcow2 overlay while image blobs are served by
+the shared network cache.

@@ -466,15 +466,6 @@ pub(crate) fn verify_installed_image(
     )
 }
 
-pub(crate) fn installed_golden_sha(manifest_path: &Path) -> Result<String> {
-    let manifest: ImageManifest = serde_json::from_slice(
-        &fs::read(manifest_path)
-            .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
-    )
-    .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    Ok(manifest.golden_sha256)
-}
-
 pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
     let names = runner.text(
         "virsh",

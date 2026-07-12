@@ -1,6 +1,8 @@
 //! Files and libvirt XML that define one KVM world.
 
 use crate::LibvirtConfig;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use std::path::{Path, PathBuf};
 
 pub(super) struct Paths {
@@ -24,7 +26,7 @@ impl Paths {
     }
 }
 
-pub(super) fn cloud_config(keys: &[String]) -> String {
+pub(super) fn cloud_config(keys: &[String], proxy_url: &str, proxy_ca: &[u8]) -> String {
     let keys = keys
         .iter()
         .map(|key| {
@@ -35,8 +37,12 @@ pub(super) fn cloud_config(keys: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let ca = BASE64.encode(proxy_ca);
+    let drop_in = BASE64.encode(format!(
+        "[Service]\nEnvironment=\"HTTP_PROXY={proxy_url}\"\nEnvironment=\"HTTPS_PROXY={proxy_url}\"\nEnvironment=\"NO_PROXY=localhost,127.0.0.1\"\n"
+    ));
     format!(
-        "#cloud-config\nssh_deletekeys: true\nssh_genkeytypes: [rsa, ecdsa, ed25519]\nusers:\n  - default\n  - name: wt\n    groups: [docker]\n    shell: /bin/bash\n    lock_passwd: true\n    ssh_authorized_keys:\n{keys}\nruncmd:\n  - [install, -d, -o, wt, -g, wt, /workspace]\n  - [systemctl, enable, --now, ssh.service]\n"
+        "#cloud-config\nssh_deletekeys: true\nssh_genkeytypes: [rsa, ecdsa, ed25519]\nusers:\n  - default\n  - name: wt\n    groups: [docker]\n    shell: /bin/bash\n    lock_passwd: true\n    ssh_authorized_keys:\n{keys}\nwrite_files:\n  - path: /usr/local/share/ca-certificates/wt-registry-cache.crt\n    owner: root:root\n    permissions: '0644'\n    encoding: b64\n    content: {ca}\n  - path: /etc/systemd/system/docker.service.d/wt-registry-cache.conf\n    owner: root:root\n    permissions: '0644'\n    encoding: b64\n    content: {drop_in}\nruncmd:\n  - [install, -d, -o, wt, -g, wt, /workspace]\n  - [update-ca-certificates]\n  - [systemctl, daemon-reload]\n  - [systemctl, restart, docker.service]\n  - [systemctl, enable, --now, ssh.service]\n  - [sh, -c, \"printf 'ready\\n' > /var/lib/wt-registry-cache-ready\"]\n"
     )
 }
 

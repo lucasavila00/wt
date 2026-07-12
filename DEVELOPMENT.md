@@ -13,19 +13,12 @@ scripts/install-server --config config/wt-server.development.toml
 ```
 
 The script installs the required host packages and invokes `sudo`. Run it in an
-interactive terminal. If it adds your user to the `libvirt` or `kvm` group, log
+interactive terminal. If it adds your user to the `docker`, `libvirt`, or `kvm` group, log
 out, log back in, and run the same command again.
 
-## Prepare the test image
-
-The real KVM test uses a separate image with its container images preloaded:
-
-```bash
-scripts/prepare-test-image --config config/wt-server.development.toml
-```
-
-Run this again after rebuilding the golden image or changing
-`crates/wt-integration-tests/fixture-images.txt`.
+The install also starts the shared registry cache and preloads the images listed
+in `registry_cache.preload_images`. Re-run the installer after a full clear when
+changing the strict server configuration.
 
 ## Configure the client
 
@@ -93,5 +86,5 @@ To destroy every `wt-*` domain and remove all installed WT development state:
 make clear
 ```
 
-Re-run the install and test-image commands afterward. `make clear` delegates to
+Re-run the install command afterward. `make clear` delegates to
 `scripts/clear-server`; it does not uninstall packages or binaries.

@@ -23,5 +23,16 @@ for domain in "${domains[@]}"; do
     virsh -c qemu:///system undefine "$domain" --nvram
 done
 
+if command -v docker >/dev/null; then
+    docker rm -f wt-registry-cache 2>/dev/null || true
+fi
+
 rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
-sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/libvirt/images/wt
+sudo rm -f /etc/systemd/system/docker.service.d/wt-registry-cache.conf
+sudo rm -f /usr/local/share/ca-certificates/wt-registry-cache.crt
+sudo systemctl daemon-reload
+if systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    sudo systemctl restart docker.service
+fi
+sudo update-ca-certificates
+sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/wt/registry-cache /var/lib/libvirt/images/wt

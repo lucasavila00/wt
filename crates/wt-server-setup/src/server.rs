@@ -1,8 +1,8 @@
 use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
+use crate::registry_cache;
 use crate::runner::{args, Runner};
-use crate::test_cache;
 use anyhow::{bail, Context, Result};
 use nix::unistd::Uid;
 use std::fs;
@@ -17,6 +17,7 @@ pub(crate) fn install(runner: &impl Runner, config_path: &Path) -> Result<()> {
     require_workspace()?;
     require_installed_config_compatible(&config_bytes)?;
     prepare_host(runner, &config)?;
+    registry_cache::ensure(runner, &config)?;
     image::ensure(runner, &config, &config_bytes)?;
     println!("Building and installing wt binaries...");
     build_and_install_binaries(runner, &config)?;
@@ -35,30 +36,13 @@ pub(crate) fn image(runner: &impl Runner, config_path: &Path, rebuild: bool) -> 
     let (config, config_bytes) = load_config(config_path)?;
     require_workspace()?;
     prepare_host(runner, &config)?;
+    registry_cache::ensure(runner, &config)?;
     if rebuild {
         image::rebuild(runner, &config, &config_bytes)?;
     } else {
         image::ensure(runner, &config, &config_bytes)?;
     }
     println!("image ready: {}", config.image.installed_path.display());
-    Ok(())
-}
-
-pub(crate) fn test_cache(runner: &impl Runner, config_path: &Path, rebuild: bool) -> Result<()> {
-    require_server_user()?;
-    let (config, config_bytes) = load_config(config_path)?;
-    require_workspace()?;
-    prepare_host(runner, &config)?;
-    image::ensure(runner, &config, &config_bytes)?;
-    if rebuild {
-        test_cache::rebuild(runner, &config, &config_bytes)?;
-    } else {
-        test_cache::ensure(runner, &config, &config_bytes)?;
-    }
-    println!(
-        "integration test image cache ready: {}",
-        test_cache::installed_path(&config.image.installed_path).display()
-    );
     Ok(())
 }
 

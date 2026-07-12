@@ -14,11 +14,14 @@ use std::time::{Duration, Instant};
 use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
+use virt::network::Network;
 
 pub struct LibvirtWorker {
     config: LibvirtConfig,
     app_shell: Vec<u8>,
     git_credentials: git::Credentials,
+    registry_cache_url: String,
+    registry_cache_ca: Vec<u8>,
 }
 
 impl LibvirtWorker {
@@ -38,14 +41,21 @@ impl LibvirtWorker {
                 config.worlds_dir.display()
             )));
         }
-        Connect::open(Some(crate::LIBVIRT_URI))
+        let connection = Connect::open(Some(crate::LIBVIRT_URI))
             .map_err(|error| worker_error("connect to libvirt", error))?;
+        let bridge = network_address(&connection, &config.network)?;
+        let registry_cache_url = format!("http://{bridge}:{}", config.registry_cache_port);
+        verify_registry_cache(&registry_cache_url)?;
+        let registry_cache_ca = fs::read(config.registry_cache_state_dir.join("ca/ca.crt"))
+            .map_err(|error| worker_error("read registry cache CA", error))?;
         let git_credentials =
             git::load_credentials(&config.git_identity_file, &config.git_known_hosts_file)?;
         Ok(Self {
             config,
             app_shell,
             git_credentials,
+            registry_cache_url,
+            registry_cache_ca,
         })
     }
 
@@ -69,7 +79,11 @@ impl LibvirtWorker {
 
         fs::write(
             &paths.user_data,
-            world::cloud_config(&self.config.ssh_authorized_keys),
+            world::cloud_config(
+                &self.config.ssh_authorized_keys,
+                &self.registry_cache_url,
+                &self.registry_cache_ca,
+            ),
         )
         .map_err(|error| worker_error("write cloud-init user-data", error))?;
         fs::write(
@@ -125,6 +139,7 @@ impl LibvirtWorker {
         report_phase("Git clone and checkout", phase_started);
         eprintln!("Starting the repository devcontainer...");
         let phase_started = Instant::now();
+        let cache_log_since = unix_timestamp();
         guest_agent::run_phase(
             &domain,
             "workspace ownership",
@@ -144,12 +159,17 @@ impl LibvirtWorker {
                 "HOME=/home/wt",
                 "/usr/local/bin/devcontainer",
                 "up",
+                "--log-level",
+                "debug",
+                "--log-format",
+                "text",
                 "--workspace-folder",
                 "/workspace",
             ],
             recipe_deadline,
         )?;
         report_phase("devcontainer up", phase_started);
+        report_registry_cache(cache_log_since);
         let phase_started = Instant::now();
         devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
         guest_agent::run_phase(
@@ -256,11 +276,18 @@ impl LibvirtWorker {
     fn verify_guest_tools(&self, domain: &Domain, deadline: Instant) -> Result<(), WorkerError> {
         guest_agent::run_phase(
             domain,
+            "cloud-init readiness",
+            "/usr/bin/cloud-init",
+            &["status", "--wait"],
+            deadline,
+        )?;
+        guest_agent::run_phase(
+            domain,
             "Docker and Compose readiness",
             "/bin/sh",
             &[
                 "-lc",
-                "docker info >/dev/null && docker compose version >/dev/null",
+                "test -f /var/lib/wt-registry-cache-ready && docker info >/dev/null && docker compose version >/dev/null",
             ],
             deadline,
         )?;
@@ -317,6 +344,83 @@ impl LibvirtWorker {
         }
         Ok(())
     }
+}
+
+fn network_address(connection: &Connect, name: &str) -> Result<String, WorkerError> {
+    let network = Network::lookup_by_name(connection, name)
+        .map_err(|error| worker_error("look up libvirt network", error))?;
+    let xml = network
+        .get_xml_desc(0)
+        .map_err(|error| worker_error("read libvirt network XML", error))?;
+    for quote in ['\'', '"'] {
+        let needle = format!("address={quote}");
+        if let Some(rest) = xml.split_once(&needle).map(|(_, rest)| rest) {
+            if let Some(address) = rest.split(quote).next() {
+                if address.parse::<std::net::Ipv4Addr>().is_ok() {
+                    return Ok(address.to_owned());
+                }
+            }
+        }
+    }
+    Err(WorkerError::new(
+        "configured libvirt network has no IPv4 bridge address",
+    ))
+}
+
+fn verify_registry_cache(url: &str) -> Result<(), WorkerError> {
+    run(
+        Command::new("curl").args(["-fsS", "--output", "/dev/null", &format!("{url}/ca.crt")]),
+        "verify registry cache",
+    )
+}
+
+fn unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn report_registry_cache(since: u64) {
+    let output = Command::new("docker")
+        .args(["logs", "--since", &since.to_string(), "wt-registry-cache"])
+        .output();
+    let Ok(output) = output else {
+        eprintln!("Registry cache summary unavailable.");
+        return;
+    };
+    let mut hits = 0_u64;
+    let mut misses = 0_u64;
+    let mut hit_bytes = 0_u64;
+    let mut miss_bytes = 0_u64;
+    for line in String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&output.stderr).lines())
+    {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let bytes = value["bytes_sent"]
+            .as_str()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        match value["upstream_cache_status"].as_str() {
+            Some("HIT") => {
+                hits += 1;
+                hit_bytes += bytes;
+            }
+            Some("MISS") => {
+                misses += 1;
+                miss_bytes += bytes;
+            }
+            _ => {}
+        }
+    }
+    eprintln!(
+        "Registry cache during devcontainer up: {hits} hits ({} MiB), {misses} misses ({} MiB).",
+        hit_bytes / (1024 * 1024),
+        miss_bytes / (1024 * 1024)
+    );
 }
 
 impl WorldWorker for LibvirtWorker {

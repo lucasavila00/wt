@@ -9,7 +9,7 @@ Production world backend in [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
 |-------|--------|
 | Isolation | KVM guest per world |
 | Image | Prepared Ubuntu 24.04 amd64 golden image |
-| Runtime | Docker Engine, Compose v2, and pinned Dev Container CLI |
+| Runtime | Docker Engine, Compose v2, pinned Dev Container CLI, and host registry cache |
 | Provisioning | QEMU guest agent through libvirt |
 | Network | Configured libvirt network with a guest IP |
 | Interactive access | OpenSSH to fixed non-root user `wt` |
@@ -24,7 +24,7 @@ KVM is required. There is no CPU-emulation fallback.
 2. Create the qcow2 overlay and cloud-init seed
 3. Inject guest login keys and generate a unique SSH host identity
 4. Define and start the KVM domain through libvirt
-5. Wait for the QEMU guest agent, Docker, Compose, and sshd
+5. Install registry-cache trust/proxy settings and wait for Docker, Compose, and sshd
 6. Clone the SSH Git source and check out the requested ref in /workspace
 7. Install the checkout-local Git identity and host-trust bundle
 8. Run devcontainer up --workspace-folder /workspace
@@ -56,3 +56,11 @@ undefines the domain, including NVRAM, and removes its files.
 v2, QEMU guest agent, Git, OpenSSH server, and the pinned Dev Container CLI. The
 manifest records the complete recipe and provenance. World creation does not
 install packages, and golden images do not contain reusable SSH host keys.
+
+## Registry cache
+
+`wt-server-setup` runs a pinned caching proxy on the libvirt bridge. Every world
+trusts its private CA and configures Docker's HTTP/HTTPS proxy before recipes
+start. Configured public registries are cached across worlds; configured images
+are preloaded during server setup. Mutable manifests are checked upstream while
+content-addressed layers remain cached until the configured size cap evicts them.

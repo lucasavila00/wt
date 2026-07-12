@@ -12,20 +12,6 @@ use wt_server::store::Store;
 const SAMPLE_SOURCE: &str = "git@github.com:lucasavila00/jsdev-sample.git";
 const FIXTURE_IMAGES: &str = include_str!("../fixture-images.txt");
 
-#[derive(serde::Deserialize)]
-struct GoldenManifest {
-    golden_sha256: String,
-}
-
-#[derive(serde::Deserialize)]
-struct CacheManifest {
-    version: u32,
-    recipe_version: u32,
-    base_golden_sha256: String,
-    images: Vec<String>,
-    resolved_images: Vec<String>,
-}
-
 #[test]
 fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
     let mut timings = Timings::new();
@@ -40,7 +26,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         )
     });
     let mut config = ServerConfig::load().unwrap();
-    config.image.installed_path = validate_test_cache(&config.image.installed_path);
+    assert_eq!(config.registry_cache.preload_images, fixture_images());
     config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
     let git = timings.run("prepare SSH Git fixture", || {
@@ -259,50 +245,6 @@ impl GitSshServer {
             self.repository.display()
         )
     }
-}
-
-fn validate_test_cache(golden: &Path) -> PathBuf {
-    let stem = golden.file_stem().unwrap().to_string_lossy();
-    let cache = golden.with_file_name(format!("{stem}.integration-tests.qcow2"));
-    let golden_manifest_path = PathBuf::from(format!("{}.manifest.json", golden.display()));
-    let cache_manifest_path = PathBuf::from(format!("{}.manifest.json", cache.display()));
-    let help = "run scripts/prepare-test-image --config config/wt-server.development.toml";
-    assert!(
-        cache.is_file(),
-        "integration test image cache is missing; {help}"
-    );
-    let golden_manifest: GoldenManifest = serde_json::from_slice(
-        &fs::read(&golden_manifest_path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", golden_manifest_path.display())),
-    )
-    .unwrap_or_else(|error| panic!("parse {}: {error}", golden_manifest_path.display()));
-    let cache_manifest: CacheManifest =
-        serde_json::from_slice(&fs::read(&cache_manifest_path).unwrap_or_else(|error| {
-            panic!("read {}: {error}; {help}", cache_manifest_path.display())
-        }))
-        .unwrap_or_else(|error| panic!("parse {}: {error}; {help}", cache_manifest_path.display()));
-    let expected_images = fixture_images();
-    assert!(
-        cache_manifest.version == 1
-            && cache_manifest.recipe_version == 1
-            && cache_manifest.base_golden_sha256 == golden_manifest.golden_sha256
-            && cache_manifest.images == expected_images
-            && cache_manifest.resolved_images.len() == expected_images.len(),
-        "integration test image cache is stale; {help}"
-    );
-    let info = git_output(
-        Command::new("qemu-img")
-            .args(["info", "--output=json"])
-            .arg(&cache),
-        "inspect integration test image cache",
-    );
-    let info: serde_json::Value = serde_json::from_str(&info).unwrap();
-    assert_eq!(
-        info["backing-filename"].as_str(),
-        golden.to_str(),
-        "integration test image cache has the wrong backing image; {help}"
-    );
-    cache
 }
 
 fn fixture_images() -> Vec<String> {

@@ -55,16 +55,17 @@ sudo apt install -y \
     ovmf \
     libvirt-dev \
     acl \
+    docker.io \
     openssh-server
 
 cd "$root"
 cargo build --release -p wt-server-setup
 target/release/wt-server-setup validate --config "$config"
 
-sudo usermod -aG libvirt,kvm "$USER"
+sudo usermod -aG docker,libvirt,kvm "$USER"
 groups=" $(id -nG) "
-if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
-    echo "libvirt/kvm group membership was added but is not active" >&2
+if [[ $groups != *" docker "* || $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
+    echo "docker/libvirt/kvm group membership was added but is not active" >&2
     echo "log out, log back in, then rerun this command" >&2
     exit 1
 fi

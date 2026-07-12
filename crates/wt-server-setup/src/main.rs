@@ -1,9 +1,9 @@
 mod files;
 mod host;
 mod image;
+mod registry_cache;
 mod runner;
 mod server;
-mod test_cache;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -46,23 +46,6 @@ enum ImageCommand {
         #[arg(long)]
         config: PathBuf,
     },
-    /// Build or verify the Docker image cache used by the KVM integration test.
-    TestCache {
-        #[command(subcommand)]
-        command: TestCacheCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum TestCacheCommand {
-    Build {
-        #[arg(long)]
-        config: PathBuf,
-    },
-    Rebuild {
-        #[arg(long)]
-        config: PathBuf,
-    },
 }
 
 fn main() {
@@ -86,18 +69,6 @@ fn run() -> Result<()> {
         SetupCommand::Image {
             command: ImageCommand::Rebuild { config },
         } => server::image(&runner, &config, true)?,
-        SetupCommand::Image {
-            command:
-                ImageCommand::TestCache {
-                    command: TestCacheCommand::Build { config },
-                },
-        } => server::test_cache(&runner, &config, false)?,
-        SetupCommand::Image {
-            command:
-                ImageCommand::TestCache {
-                    command: TestCacheCommand::Rebuild { config },
-                },
-        } => server::test_cache(&runner, &config, true)?,
     }
     Ok(())
 }

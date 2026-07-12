@@ -11,6 +11,7 @@ pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
     require_kvm()?;
     require_active_group("kvm")?;
     require_active_group("libvirt")?;
+    require_active_group("docker")?;
     require_libvirt_qemu_identity()?;
     runner.text(
         "virsh",
@@ -139,6 +140,13 @@ fn ensure_directories(runner: &impl Runner, config: &ServerConfig) -> Result<()>
         Uid::effective(),
         kvm_gid,
         0o2770,
+    )?;
+    ensure_directory(
+        runner,
+        &config.registry_cache.state_dir,
+        Uid::from_raw(0),
+        Gid::from_raw(0),
+        0o755,
     )?;
     ensure_qemu_search_acl(runner, &config.libvirt.worlds_dir)
 }

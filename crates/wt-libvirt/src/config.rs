@@ -13,9 +13,20 @@ pub struct ServerConfig {
     pub version: u32,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
+    pub registry_cache: RegistryCacheConfig,
     pub git: GitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryCacheConfig {
+    pub state_dir: PathBuf,
+    pub port: u16,
+    pub max_size_gib: u64,
+    pub registries: Vec<String>,
+    pub preload_images: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,6 +74,8 @@ pub struct LibvirtConfig {
     pub app_shell_binary: PathBuf,
     pub worlds_dir: PathBuf,
     pub network: String,
+    pub registry_cache_state_dir: PathBuf,
+    pub registry_cache_port: u16,
     pub git_identity_file: PathBuf,
     pub git_known_hosts_file: PathBuf,
     pub memory_mib: u64,
@@ -109,6 +122,7 @@ impl ServerConfig {
         for (name, path) in [
             ("image.installed_path", &self.image.installed_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
+            ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
             ("git.identity_file", &self.git.identity_file),
             ("git.known_hosts_file", &self.git.known_hosts_file),
@@ -159,6 +173,24 @@ impl ServerConfig {
                 "install.binary_dir",
                 self.install.binary_dir.as_path(),
             ),
+            (
+                "registry_cache.state_dir",
+                self.registry_cache.state_dir.as_path(),
+                "image directory",
+                image_dir,
+            ),
+            (
+                "registry_cache.state_dir",
+                self.registry_cache.state_dir.as_path(),
+                "libvirt.worlds_dir",
+                self.libvirt.worlds_dir.as_path(),
+            ),
+            (
+                "registry_cache.state_dir",
+                self.registry_cache.state_dir.as_path(),
+                "install.binary_dir",
+                self.install.binary_dir.as_path(),
+            ),
         ] {
             if left.starts_with(right) || right.starts_with(left) {
                 return Err(format!("{left_name} and {right_name} must not overlap"));
@@ -167,6 +199,7 @@ impl ServerConfig {
         if self.libvirt.network.trim().is_empty() {
             return Err("libvirt.network must not be empty".to_owned());
         }
+        self.validate_registry_cache()?;
         if self.guest.memory_mib == 0
             || self.guest.vcpus == 0
             || self.guest.disk_gib == 0
@@ -193,6 +226,8 @@ impl ServerConfig {
             app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
+            registry_cache_state_dir: self.registry_cache.state_dir.clone(),
+            registry_cache_port: self.registry_cache.port,
             git_identity_file: self.git.identity_file.clone(),
             git_known_hosts_file: self.git.known_hosts_file.clone(),
             memory_mib: self.guest.memory_mib,
@@ -202,6 +237,35 @@ impl ServerConfig {
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             ssh_authorized_keys: self.ssh_authorized_keys()?,
         })
+    }
+
+    fn validate_registry_cache(&self) -> Result<(), String> {
+        if self.registry_cache.port == 0 || self.registry_cache.max_size_gib == 0 {
+            return Err("registry cache port and size must be greater than zero".to_owned());
+        }
+        if self.registry_cache.registries.is_empty() {
+            return Err("registry_cache.registries must not be empty".to_owned());
+        }
+        let mut registries = std::collections::BTreeSet::new();
+        for registry in &self.registry_cache.registries {
+            if !valid_registry_host(registry) || !registries.insert(registry.as_str()) {
+                return Err(format!(
+                    "invalid or duplicate registry cache host: {registry}"
+                ));
+            }
+        }
+        for image in &self.registry_cache.preload_images {
+            if !valid_image_reference(image) {
+                return Err(format!("invalid registry cache preload image: {image}"));
+            }
+            let registry = image_registry(image);
+            if !registries.contains(registry) {
+                return Err(format!(
+                    "preload image registry {registry} is not listed in registry_cache.registries"
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn ssh_authorized_keys(&self) -> Result<Vec<String>, String> {
@@ -218,6 +282,33 @@ impl ServerConfig {
             .filter(|line| !line.is_empty())
             .map(str::to_owned)
             .collect())
+    }
+}
+
+fn valid_registry_host(value: &str) -> bool {
+    !value.is_empty()
+        && value == value.to_ascii_lowercase()
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b':')
+        })
+}
+
+fn valid_image_reference(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains(char::is_whitespace)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"./:_-@".contains(&byte))
+}
+
+fn image_registry(image: &str) -> &str {
+    let first = image.split('/').next().unwrap_or_default();
+    if image.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost") {
+        first
+    } else {
+        "docker.io"
     }
 }
 
@@ -276,6 +367,13 @@ installed_path = "/var/lib/wt/images/wt.qcow2"
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
 
+[registry_cache]
+state_dir = "/var/lib/wt/registry-cache"
+port = 3128
+max_size_gib = 64
+registries = ["docker.io", "mcr.microsoft.com"]
+preload_images = ["redis:7-alpine", "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie"]
+
 [git]
 identity_file = "/tmp/wt-test-git-identity"
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
@@ -314,6 +412,7 @@ binary_dir = "/usr/local/bin"
             worker.app_shell_binary,
             Path::new("/usr/local/bin/wt-app-shell")
         );
+        assert_eq!(worker.registry_cache_port, 3128);
     }
 
     #[test]
@@ -330,5 +429,11 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
+        assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
+        assert!(parse(&VALID.replace(
+            "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
+            "registries = [\"docker.io\"]"
+        ))
+        .is_err());
     }
 }
