@@ -51,6 +51,13 @@ struct DevcontainerMetadata {
     remote_user: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DevcontainerMetadataLabel {
+    One(DevcontainerMetadata),
+    Many(Vec<DevcontainerMetadata>),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AppTarget {
     pub container: String,
@@ -142,8 +149,12 @@ fn inspect_target(container: String, output: &str) -> Result<AppTarget, String> 
 }
 
 fn metadata_user(metadata: &str) -> Result<Option<String>, String> {
-    let entries: Vec<DevcontainerMetadata> = serde_json::from_str(metadata)
+    let entries = serde_json::from_str(metadata)
         .map_err(|error| format!("wt: read devcontainer metadata: {error}"))?;
+    let entries = match entries {
+        DevcontainerMetadataLabel::One(entry) => vec![entry],
+        DevcontainerMetadataLabel::Many(entries) => entries,
+    };
     let mut container_user = None;
     let mut remote_user = None;
     for entry in entries {
@@ -223,6 +234,14 @@ mod tests {
                 user: "vscode".to_owned(),
                 address: "172.18.0.3".to_owned(),
             }
+        );
+    }
+
+    #[test]
+    fn reads_object_devcontainer_metadata() {
+        assert_eq!(
+            metadata_user(r#"{"containerUser":"node","remoteUser":"vscode"}"#).unwrap(),
+            Some("vscode".to_owned())
         );
     }
 
