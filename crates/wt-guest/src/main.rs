@@ -147,7 +147,7 @@ fn command(target: &ShellTarget) -> Command {
     if let Some(user) = &target.user {
         command.args(["--user", user]);
     }
-    command.args([&target.container, "/bin/sh"]);
+    command.args([&target.container, "/bin/bash"]);
     command
 }
 
@@ -212,7 +212,7 @@ mod tests {
                 "--user",
                 "vscode",
                 "abc",
-                "/bin/sh",
+                "/bin/bash",
             ]
         );
     }

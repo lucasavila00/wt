@@ -194,5 +194,6 @@ mod tests {
         assert!(managed.contains("Host local.same\n"));
         assert!(managed.contains("Host lab.same\n"));
         assert!(!managed.lines().any(|line| line == "Host same"));
+        assert!(!temp.path().join(".ssh/config").exists());
     }
 }

@@ -111,7 +111,7 @@ fn local_service_runs_and_pushes_from_jsdev_devcontainer() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nexit\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -ne 0\ntest \"$(pwd)\" = /workspaces/jsdev\ngit config user.name wt-e2e\ngit config user.email wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\ngit push origin HEAD:refs/heads/{branch}\nexit\n"
             ),
         )
         .map_err(|error| error.to_string())?;

@@ -137,6 +137,22 @@ impl LibvirtWorker {
             recipe_deadline,
         )?;
         report_phase("Git clone and checkout", phase_started);
+        if !self.config.registry_cache_preload_images.is_empty() {
+            eprintln!("Importing configured images from the registry cache...");
+            let cache_log_since = unix_timestamp();
+            for image in &self.config.registry_cache_preload_images {
+                let phase_started = Instant::now();
+                guest_agent::run_phase(
+                    &domain,
+                    "registry cache image import",
+                    "/usr/bin/docker",
+                    &["pull", image],
+                    recipe_deadline,
+                )?;
+                report_phase(&format!("image {image}"), phase_started);
+            }
+            report_registry_cache(cache_log_since, "configured image imports");
+        }
         eprintln!("Starting the repository devcontainer...");
         let phase_started = Instant::now();
         let cache_log_since = unix_timestamp();
@@ -169,7 +185,7 @@ impl LibvirtWorker {
             recipe_deadline,
         )?;
         report_phase("devcontainer up", phase_started);
-        report_registry_cache(cache_log_since);
+        report_registry_cache(cache_log_since, "devcontainer up");
         let phase_started = Instant::now();
         devcontainer::install_app_shell(&domain, &self.app_shell, recipe_deadline)?;
         guest_agent::run_phase(
@@ -381,7 +397,7 @@ fn unix_timestamp() -> u64 {
         .as_secs()
 }
 
-fn report_registry_cache(since: u64) {
+fn report_registry_cache(since: u64, phase: &str) {
     let output = Command::new("docker")
         .args(["logs", "--since", &since.to_string(), "wt-registry-cache"])
         .output();
@@ -417,7 +433,7 @@ fn report_registry_cache(since: u64) {
         }
     }
     eprintln!(
-        "Host registry cache during devcontainer up: {hits} hits ({} MiB), {misses} misses ({} MiB).",
+        "Host registry cache during {phase}: {hits} hits ({} MiB), {misses} misses ({} MiB).",
         hit_bytes / (1024 * 1024),
         miss_bytes / (1024 * 1024)
     );

@@ -59,6 +59,10 @@ Cloud-init installs the proxy CA and configures Docker to use the proxy. World
 creation waits for this to finish before running the repository recipe. If the
 proxy is down or the CA setup fails, world creation fails and removes the VM.
 
+Before `devcontainer up`, WT runs `docker pull` for each configured preload
+image. Docker prints layer progress. WT prints the elapsed import time and cache
+HIT/MISS bytes. This also checks mutable tags before use.
+
 WT runs:
 
 ```text
