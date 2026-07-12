@@ -26,6 +26,8 @@ client: wt + OpenSSH
 | `wt` | Contexts, API transport, names, and managed SSH inventory |
 | `wt-server` | Unix-socket API daemon, registry, durable jobs, and logs |
 | `wt-libvirt` | KVM world creation, inspection, and destruction |
+| `wt-provider` | Provider-neutral world lifecycle contract |
+| `wt-static-ssh` | Existing-machine lifecycle and pinned OpenSSH transport |
 | `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 
@@ -59,6 +61,12 @@ startup; partial resources remain until `wt rm`.
 - Git passphrases cross the API for provisioning and are never persisted.
 - Client-to-server, server-to-Git, guest, and app SSH identities have distinct
   roles.
+
+The server selects one backend. The libvirt backend creates KVM guests. The
+`static_ssh` backend claims one existing Ubuntu 24.04 VM and permits zero or one
+world on it; deletion removes WT-owned resources but never stops or deletes the
+VM. Static-machine access is carried through `wt-server proxy`, keeping the
+machine destination and bootstrap identity on the server.
 
 ## Details
 

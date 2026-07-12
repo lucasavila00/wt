@@ -53,4 +53,9 @@ forward the connection to the guest's private libvirt address. Local contexts
 connect to guest addresses directly. Direct app aliases retain their guest-side
 proxy command, which composes with the guest's jump host.
 
+Static SSH worlds use `wt-server proxy WORLD_ID` instead of a direct address or
+`ProxyJump`. For remote contexts the client invokes that proxy through the
+context server. The workstation's outer SSH connection still authenticates
+directly to and verifies the guest or app SSH endpoint.
+
 Parent: [How WT works](./README.md).

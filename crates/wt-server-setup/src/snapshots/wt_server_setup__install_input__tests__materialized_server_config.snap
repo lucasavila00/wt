@@ -4,6 +4,9 @@ expression: "text.replace(&keys.path().display().to_string(), \"[KEY_DIR]\")"
 ---
 version = 1
 
+[backend]
+kind = "libvirt"
+
 [image]
 installed_path = "/var/lib/wt/images/wt.qcow2"
 

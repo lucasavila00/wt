@@ -6,16 +6,21 @@ use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
+use serde::Deserialize;
 use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+use std::path::PathBuf;
 use wt_command::cmd;
 use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
+    if static_input(input_path)?.is_some() {
+        return install_static(runner, input_path);
+    }
     require_server_user()?;
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
@@ -37,6 +42,9 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
 }
 
 pub(crate) fn validate(input_path: &Path) -> Result<()> {
+    if let Some(input) = static_input(input_path)? {
+        return validate_static(&input);
+    }
     load_install_input(input_path).map(|_| ())
 }
 
@@ -59,6 +67,169 @@ fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::preflight(runner)?;
     runner.run(cmd!("sudo", "-v"), "authenticate sudo")?;
     host::prepare_state(runner, config)
+}
+
+#[derive(Deserialize)]
+struct KindProbe {
+    backend: Option<KindValue>,
+}
+#[derive(Deserialize)]
+struct KindValue {
+    kind: String,
+}
+#[derive(Deserialize)]
+struct StaticInput {
+    version: u32,
+    backend: StaticBackend,
+    git: GitConfig,
+    guest: StaticGuest,
+    install: StaticInstall,
+}
+#[derive(Deserialize)]
+struct StaticBackend {
+    kind: String,
+    host: String,
+    identity_file: PathBuf,
+    known_hosts_file: PathBuf,
+}
+#[derive(Deserialize)]
+struct StaticGuest {
+    session: String,
+    disk_gib: u64,
+    ssh_authorized_keys_file: PathBuf,
+}
+#[derive(Deserialize)]
+struct StaticInstall {
+    binary_dir: PathBuf,
+}
+
+fn static_input(path: &Path) -> Result<Option<StaticInput>> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("read install input {}", path.display()))?;
+    let probe: KindProbe =
+        toml::from_str(&text).with_context(|| format!("parse install input {}", path.display()))?;
+    if probe.backend.as_ref().map(|b| b.kind.as_str()) != Some("static_ssh") {
+        return Ok(None);
+    }
+    toml::from_str(&text)
+        .map(Some)
+        .with_context(|| format!("parse static SSH install input {}", path.display()))
+}
+
+fn validate_static(input: &StaticInput) -> Result<()> {
+    if input.version != 1 {
+        bail!("unsupported config version {}; expected 1", input.version);
+    }
+    if input.backend.kind != "static_ssh" {
+        bail!("backend.kind must be static_ssh");
+    }
+    if input.backend.host.is_empty()
+        || input.backend.host.starts_with('-')
+        || input.backend.host.bytes().any(|b| b.is_ascii_whitespace())
+    {
+        bail!("backend.host must be one OpenSSH destination without whitespace");
+    }
+    if input.guest.disk_gib == 0 {
+        bail!("guest.disk_gib must be greater than zero");
+    }
+    if !matches!(input.guest.session.as_str(), "tmux" | "byobu") {
+        bail!("guest.session must be tmux or byobu");
+    }
+    if !input.install.binary_dir.is_absolute() {
+        bail!("install.binary_dir must be absolute");
+    }
+    validate_git_credentials(&resolved_git(&input.git)?)?;
+    let identity = expand_home(&input.backend.identity_file)?;
+    let metadata = fs::metadata(&identity)
+        .with_context(|| format!("inspect backend.identity_file {}", identity.display()))?;
+    if !metadata.is_file()
+        || metadata.uid() != Uid::effective().as_raw()
+        || metadata.mode() & 0o7777 != 0o600
+    {
+        bail!("backend.identity_file {} must be a regular file owned by the server user with mode 0600", identity.display());
+    }
+    validate_known_hosts(
+        &expand_home(&input.backend.known_hosts_file)?,
+        "backend.known_hosts_file",
+    )?;
+    let keys = expand_home(&input.guest.ssh_authorized_keys_file)?;
+    if !keys.is_file()
+        || fs::read_to_string(&keys)?
+            .lines()
+            .all(|line| line.trim().is_empty())
+    {
+        bail!("guest.ssh_authorized_keys_file must contain at least one public key");
+    }
+    Ok(())
+}
+
+fn install_static(runner: &impl Runner, input_path: &Path) -> Result<()> {
+    require_server_user()?;
+    let input = static_input(input_path)?.context("expected static SSH install input")?;
+    validate_static(&input)?;
+    require_workspace()?;
+    runner.run(cmd!("sudo", "-v"), "authenticate sudo")?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "install",
+            "-d",
+            "-o",
+            "root",
+            "-g",
+            "root",
+            "-m",
+            "0755",
+            &input.install.binary_dir
+        ),
+        "create binary directory",
+    )?;
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    fs::create_dir_all(PathBuf::from(home).join(".local/state/wt"))
+        .context("create server state directory")?;
+    build_and_install_binaries_at(runner, &input.install.binary_dir)?;
+    let bytes = fs::read(input_path).context("read static SSH runtime config")?;
+    install_raw_server_config(runner, &bytes)?;
+    install_server_service_at(runner, &input.install.binary_dir, true)?;
+    println!(
+        "installed static SSH wt server from {}",
+        input_path.display()
+    );
+    Ok(())
+}
+
+fn resolved_git(config: &GitConfig) -> Result<GitConfig> {
+    Ok(GitConfig {
+        identity_file: expand_home(&config.identity_file)?,
+        known_hosts_file: expand_home(&config.known_hosts_file)?,
+    })
+}
+
+fn expand_home(path: &Path) -> Result<PathBuf> {
+    if let Ok(rest) = path.strip_prefix("~") {
+        Ok(PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(rest))
+    } else {
+        Ok(path.to_owned())
+    }
+}
+
+fn validate_known_hosts(path: &Path, name: &str) -> Result<()> {
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("read {name} {}", path.display()))?;
+    let output = cmd!("ssh-keygen", "-l", "-f", path)
+        .output()
+        .with_context(|| format!("validate {name} {}", path.display()))?;
+    if contents
+        .lines()
+        .all(|line| line.trim().is_empty() || line.trim().starts_with('#'))
+        || !output.status.success()
+    {
+        bail!(
+            "{name} {} must contain valid known-hosts entries",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8>)> {
@@ -140,6 +311,10 @@ fn require_workspace() -> Result<()> {
 }
 
 fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
+    build_and_install_binaries_at(runner, &config.install.binary_dir)
+}
+
+fn build_and_install_binaries_at(runner: &impl Runner, binary_dir: &Path) -> Result<()> {
     runner.run(
         cmd!(
             "cargo",
@@ -163,14 +338,35 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         "wt-server",
     ] {
         let source = Path::new("target/release").join(name);
-        let destination = config.install.binary_dir.join(name);
-        let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));
+        let destination = binary_dir.join(name);
+        let temporary = binary_dir.join(format!(".{name}.wt-new"));
         if temporary.exists() {
             bail!("stale binary install file exists: {}", temporary.display());
         }
         sudo_install(runner, &source, &temporary, 0o755)?;
         sudo_move(runner, &temporary, &destination)?;
     }
+    Ok(())
+}
+
+fn install_raw_server_config(runner: &impl Runner, bytes: &[u8]) -> Result<()> {
+    runner.run(
+        cmd!("sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", "/etc/wt"),
+        "create /etc/wt",
+    )?;
+    let path = Path::new(SERVER_CONFIG_PATH);
+    if path.exists() {
+        if fs::read(path).context("read installed server config")? != bytes {
+            bail!("installed server config differs from static SSH install input; clear WT state before changing it");
+        }
+        return require_root_file(path, 0o644);
+    }
+    let local = Path::new("target/wt-server.toml.install");
+    fs::write(local, bytes).context("stage server config")?;
+    let temporary = Path::new("/etc/wt/.server.toml.wt-new");
+    sudo_install(runner, local, temporary, 0o644)?;
+    sudo_move(runner, temporary, path)?;
+    let _ = fs::remove_file(local);
     Ok(())
 }
 
@@ -247,10 +443,18 @@ fn install_server_config(
 }
 
 fn install_server_service(runner: &impl Runner, server: &ServerConfig) -> Result<()> {
+    install_server_service_at(runner, &server.install.binary_dir, false)
+}
+
+fn install_server_service_at(
+    runner: &impl Runner,
+    binary_dir: &Path,
+    static_ssh: bool,
+) -> Result<()> {
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
-    let bytes = server_service(&user, server);
+    let bytes = server_service(&user, binary_dir, static_ssh);
     let destination = Path::new(SERVER_SERVICE_PATH);
     if destination.exists() {
         require_root_file(destination, 0o644)?;
@@ -284,13 +488,18 @@ fn install_server_service(runner: &impl Runner, server: &ServerConfig) -> Result
     )
 }
 
-fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt-server");
+fn server_service(user: &User, binary_dir: &Path, static_ssh: bool) -> Vec<u8> {
+    let executable = binary_dir.join("wt-server");
+    let after = if static_ssh {
+        "network-online.target"
+    } else {
+        "network-online.target docker.service libvirtd.service"
+    };
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
 Wants=network-online.target\n\
-After=network-online.target docker.service libvirtd.service\n\
+After={}\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -304,6 +513,7 @@ UMask=0077\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target\n",
+        after,
         user.name,
         systemd_quote(&format!("HOME={}", user.dir.display())),
         systemd_quote(&executable.display().to_string()),
@@ -393,6 +603,9 @@ mod tests {
         let server = toml::from_str::<InstallInput>(
             r#"
 version = 1
+
+[backend]
+kind = "libvirt"
 [image]
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -422,7 +635,8 @@ binary_dir = "/opt/wt bin"
         )
         .unwrap()
         .materialize();
-        let unit = String::from_utf8(server_service(&user, &server)).unwrap();
+        let unit =
+            String::from_utf8(server_service(&user, &server.install.binary_dir, false)).unwrap();
         let unit = unit
             .replace(&user.dir.display().to_string(), "[HOME]")
             .replace(&user.name, "[USER]");

@@ -41,16 +41,44 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
         let context = client_config
             .context(&item.context)
             .with_context(|| format!("missing client context {}", item.context))?;
-        let proxy_jump = match &context.kind {
-            ContextKind::BareMetalLocal => String::new(),
-            ContextKind::BareMetalSsh { host } => {
-                validate_ssh_host(&context.name, host)?;
-                format!("  ProxyJump {host}\n")
+        let server_proxy = ssh.host.strip_prefix("wt-server-proxy:");
+        let host_name = if server_proxy.is_some() {
+            "wt-static"
+        } else {
+            &ssh.host
+        };
+        let proxy_jump = if let Some(backend_id) = server_proxy {
+            if backend_id.is_empty()
+                || !backend_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            {
+                bail!(
+                    "instance {} has an invalid server proxy route",
+                    instance.name
+                );
+            }
+            match &context.kind {
+                ContextKind::BareMetalLocal => {
+                    format!("  ProxyCommand wt-server proxy {backend_id}\n")
+                }
+                ContextKind::BareMetalSsh { host } => {
+                    validate_ssh_host(&context.name, host)?;
+                    format!("  ProxyCommand ssh -- {host} wt-server proxy {backend_id}\n")
+                }
+            }
+        } else {
+            match &context.kind {
+                ContextKind::BareMetalLocal => String::new(),
+                ContextKind::BareMetalSsh { host } => {
+                    validate_ssh_host(&context.name, host)?;
+                    format!("  ProxyJump {host}\n")
+                }
             }
         };
         let guest_common = format!(
             "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n{}",
-            ssh.host,
+            host_name,
             ssh.user,
             ssh.port,
             format_args!("{qualified}-host"),
@@ -334,6 +362,54 @@ mod tests {
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         insta::assert_snapshot!(
             "remote_worlds_ssh_config",
+            normalize_home(&managed, temp.path())
+        );
+    }
+
+    #[test]
+    fn static_world_aliases_use_the_server_proxy() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", temp.path());
+        let instance = Instance {
+            id: Uuid::new_v4(),
+            name: InstanceName::parse("static").unwrap(),
+            owner: "lucas".into(),
+            status: InstanceStatus::Running,
+            source: "git@example.test:repo.git".into(),
+            guest_ip: Some("work-vm".into()),
+            last_error: None,
+            ssh: Some(SshAccess {
+                user: "wt".into(),
+                host: "wt-server-proxy:wt-0123456789abcdef".into(),
+                port: 22,
+                host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
+            }),
+            app_ssh: Some(AppSshAccess {
+                user: "vscode".into(),
+                port: 2222,
+                host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
+            }),
+        };
+        let client_config = ClientConfig {
+            contexts: vec![ClientContext {
+                name: "lab".into(),
+                kind: ContextKind::BareMetalSsh {
+                    host: "wt-server".into(),
+                },
+            }],
+        };
+        sync(
+            &client_config,
+            &[ContextInstance {
+                context: "lab".into(),
+                instance,
+            }],
+        )
+        .unwrap();
+        let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
+        insta::assert_snapshot!(
+            "static_world_server_proxy_config",
             normalize_home(&managed, temp.path())
         );
     }

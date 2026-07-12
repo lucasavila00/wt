@@ -11,12 +11,19 @@ pub const GUEST_MACHINE: &str = "q35";
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub version: u32,
+    pub backend: BackendConfig,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
     pub git: GitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackendConfig {
+    pub kind: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -116,6 +123,9 @@ impl ServerConfig {
                 "unsupported config version {}; expected 1",
                 self.version
             ));
+        }
+        if self.backend.kind != "libvirt" {
+            return Err("backend.kind must be libvirt for a libvirt server config".to_owned());
         }
         let git_identity_file = expand_home(&self.git.identity_file, "git.identity_file")?;
         let git_known_hosts_file = expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?;
@@ -344,6 +354,9 @@ mod tests {
 
     const VALID: &str = r#"
 version = 1
+
+[backend]
+kind = "libvirt"
 
 [image]
 installed_path = "/var/lib/wt/images/wt.qcow2"

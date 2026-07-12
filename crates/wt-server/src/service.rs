@@ -4,7 +4,7 @@ use base64::Engine as _;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
-use wt_libvirt::WorldWorker;
+use wt_provider::WorldWorker;
 
 pub struct Service<W, L> {
     store: Store,

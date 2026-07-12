@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use wt_libvirt::{
-    GuestConfig, ImageConfig, InstallConfig, RegistryCacheConfig, ServerConfig, ServerLibvirtConfig,
+    BackendConfig, GuestConfig, ImageConfig, InstallConfig, RegistryCacheConfig, ServerConfig,
+    ServerLibvirtConfig,
 };
 
 /// Install input for `wt-server-setup --config`.
@@ -10,6 +11,7 @@ use wt_libvirt::{
 #[serde(deny_unknown_fields)]
 pub(crate) struct InstallInput {
     pub version: u32,
+    pub backend: BackendConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
@@ -61,6 +63,7 @@ impl InstallInput {
     pub(crate) fn materialize(&self) -> ServerConfig {
         ServerConfig {
             version: self.version,
+            backend: self.backend.clone(),
             image: ImageConfig {
                 installed_path: self.image.installed_path.clone(),
             },
@@ -95,6 +98,9 @@ mod tests {
 
     const VALID: &str = r#"
 version = 1
+
+[backend]
+kind = "libvirt"
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"

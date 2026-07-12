@@ -176,6 +176,8 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 ## Requirements and limits
 
 - Ubuntu 24.04 amd64 servers with KVM.
+- Static SSH targets are dedicated Ubuntu 24.04 amd64 VMs with root or
+  passwordless sudo access; they do not require KVM.
 - App images derived from Debian or Ubuntu with `apt`.
 - The stock devcontainer recipe remains the environment contract.
 - No KVM emulation fallback.

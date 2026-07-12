@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 use uuid::Uuid;
 use wt_api::{GitPassphrase, InstanceStatus};
-use wt_libvirt::{ProvisionSpec, WorldWorker};
+use wt_provider::{ProvisionSpec, WorldWorker};
 
 #[derive(Clone, Debug)]
 pub struct Jobs {
