@@ -46,7 +46,7 @@ pub(crate) fn ensure(runner: &impl Runner, config: &ServerConfig) -> Result<()> 
     )?;
     configure_host_docker(runner, &ca, &bridge, config.registry_cache.port)?;
     wait_for_proxy(runner, &bridge, config.registry_cache.port)?;
-    let images = preload(runner, config)?;
+    let images = preload(runner, config, &bridge)?;
     publish_manifest(runner, config, &bridge, images)?;
     Ok(())
 }
@@ -318,56 +318,97 @@ fn wait_for_proxy(runner: &impl Runner, bridge: &str, port: u16) -> Result<()> {
     bail!("registry cache proxy is not reachable at {url}")
 }
 
-fn preload(runner: &impl Runner, config: &ServerConfig) -> Result<Vec<CachedImage>> {
+fn preload(runner: &impl Runner, config: &ServerConfig, bridge: &str) -> Result<Vec<CachedImage>> {
     let mut cached = Vec::new();
-    for image in &config.registry_cache.preload_images {
+    let proxy = format!("http://{bridge}:{}", config.registry_cache.port);
+    for (index, image) in config.registry_cache.preload_images.iter().enumerate() {
         println!("Preloading registry cache image {image}...");
-        runner.run(
-            "docker",
-            &["pull".into(), image.into()],
+        let image_source = format!("docker://{}", canonical_image(image));
+        let first = Path::new("target").join(format!("wt-cache-preload-{index}-first"));
+        let second = Path::new("target").join(format!("wt-cache-preload-{index}-second"));
+        if first.exists() || second.exists() {
+            bail!("stale registry cache preload state for {image}");
+        }
+        skopeo_copy(
+            runner,
+            &proxy,
+            &image_source,
+            &first,
             "preload registry cache image",
         )?;
         let digests = runner.text(
-            "docker",
+            "env",
             &[
-                "image".into(),
+                format!("HTTP_PROXY={proxy}").into(),
+                format!("HTTPS_PROXY={proxy}").into(),
+                "skopeo".into(),
                 "inspect".into(),
                 "--format".into(),
-                "{{json .RepoDigests}}".into(),
-                image.into(),
+                "{{.Digest}}".into(),
+                image_source.clone().into(),
             ],
             "inspect preloaded registry cache image",
         )?;
-        let repo_digests: Vec<String> = serde_json::from_str(digests.trim())
-            .context("parse preloaded registry cache image digests")?;
-        if repo_digests.is_empty() {
+        let digest = digests.trim();
+        if !digest.starts_with("sha256:") {
             bail!("preloaded image has no repository digest: {image}");
         }
-        runner.run(
-            "docker",
-            &["image".into(), "rm".into(), image.into()],
-            "remove host-local preloaded image",
-        )?;
+        fs::remove_dir_all(&first).context("remove first registry cache preload copy")?;
         let since = unix_timestamp();
-        runner.run(
-            "docker",
-            &["pull".into(), image.into()],
+        skopeo_copy(
+            runner,
+            &proxy,
+            &image_source,
+            &second,
             "verify preloaded registry cache image",
         )?;
         if cache_hits_since(runner, since)? == 0 {
             bail!("preloaded image was not served from the registry cache: {image}");
         }
-        runner.run(
-            "docker",
-            &["image".into(), "rm".into(), image.into()],
-            "remove verified host-local preloaded image",
-        )?;
+        fs::remove_dir_all(&second).context("remove second registry cache preload copy")?;
         cached.push(CachedImage {
             image: image.clone(),
-            repo_digests,
+            repo_digests: vec![format!("{}@{digest}", canonical_image(image))],
         });
     }
     Ok(cached)
+}
+
+fn skopeo_copy(
+    runner: &impl Runner,
+    proxy: &str,
+    source: &str,
+    destination: &Path,
+    action: &str,
+) -> Result<()> {
+    runner.run(
+        "env",
+        &[
+            format!("HTTP_PROXY={proxy}").into(),
+            format!("HTTPS_PROXY={proxy}").into(),
+            "skopeo".into(),
+            "copy".into(),
+            "--override-os".into(),
+            "linux".into(),
+            "--override-arch".into(),
+            "amd64".into(),
+            source.into(),
+            format!("dir:{}", destination.display()).into(),
+        ],
+        action,
+    )
+}
+
+fn canonical_image(image: &str) -> String {
+    let first = image.split('/').next().unwrap_or_default();
+    if image.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost") {
+        return image.to_owned();
+    }
+    if image.contains('/') {
+        format!("docker.io/{image}")
+    } else {
+        format!("docker.io/library/{image}")
+    }
 }
 
 fn unix_timestamp() -> u64 {

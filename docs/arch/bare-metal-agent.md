@@ -64,3 +64,5 @@ trusts its private CA and configures Docker's HTTP/HTTPS proxy before recipes
 start. Configured public registries are cached across worlds; configured images
 are preloaded during server setup. Mutable manifests are checked upstream while
 content-addressed layers remain cached until the configured size cap evicts them.
+See [registry-cache.md](./registry-cache.md) for the complete lifecycle, trust,
+and observability contract.

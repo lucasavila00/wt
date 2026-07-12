@@ -6,6 +6,7 @@ Current product direction: [plan.md](../plan.md).
 |-----|-------|
 | [cli.md](./cli.md) | `wt` CLI, contexts, and SSH inventory |
 | [bare-metal-agent.md](./bare-metal-agent.md) | Libvirt/KVM world backend |
+| [registry-cache.md](./registry-cache.md) | Shared Docker/OCI pull cache for KVM worlds |
 
 ## System
 

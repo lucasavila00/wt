@@ -47,6 +47,7 @@ packages=( \
     cpu-checker \
     qemu-system-x86 \
     qemu-utils \
+    skopeo \
     libvirt-daemon-system \
     libvirt-clients \
     virtinst \
