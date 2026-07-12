@@ -136,9 +136,13 @@ fn create_with_passphrase_attempts(
 ) -> Result<Response> {
     const MAX_ATTEMPTS: usize = 3;
 
+    eprintln!(
+        "To clone {source} into {}.{world_name}, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server.",
+        context.name
+    );
+
     for attempt in 1..=MAX_ATTEMPTS {
-        let passphrase =
-            prompt_password(format!("Git key passphrase for context {}: ", context.name))?;
+        let passphrase = prompt_password("Server Git SSH key passphrase: ".to_owned())?;
         if passphrase.is_empty() {
             if attempt == MAX_ATTEMPTS {
                 bail!("Git key passphrase must not be empty");

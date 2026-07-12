@@ -90,7 +90,7 @@ esac
     .unwrap();
     let mut stdout = created.stdout.take().unwrap();
     let mut transcript = Vec::new();
-    let prompt = b"Git key passphrase for context local: ";
+    let prompt = b"Server Git SSH key passphrase: ";
     for passphrase in [b"wrong-one\n".as_slice(), b"wrong-two\n", b"secret\n"] {
         loop {
             let mut byte = [0];
@@ -122,6 +122,9 @@ esac
     assert!(!transcript.contains("wrong-one"));
     assert!(!transcript.contains("wrong-two"));
     assert!(!transcript.contains("secret"));
+    assert!(transcript.contains(
+        "To clone git@example.test:repo.git into local.repo-feature, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server."
+    ));
     assert!(transcript.contains("2 attempts remaining"));
     assert!(transcript.contains("1 attempt remaining"));
     assert!(transcript.contains("building"));
