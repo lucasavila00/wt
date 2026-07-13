@@ -69,6 +69,7 @@ startup; partial resources remain until `wt rm`.
 |----------|----------|
 | [Client and SSH](./cli.md) | Context transport and SSH inventory generation |
 | [Libvirt/KVM](./bare-metal-agent.md) | World lifecycle |
+| [Provider architecture](./provider-api.md) | Machine providers, guest transport, and world provisioning |
 | [Registry cache](./registry-cache.md) | Shared image-blob cache |
 
 User-visible behavior: [What WT does](../what/README.md).
