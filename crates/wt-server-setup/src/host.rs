@@ -5,7 +5,8 @@ use std::fs;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 use wt_command::cmd;
-use wt_libvirt::{ServerConfig, LIBVIRT_URI};
+use wt_libvirt::LIBVIRT_URI;
+use wt_server::ServerConfig;
 
 pub(crate) fn preflight(runner: &impl Runner) -> Result<()> {
     require_host_platform()?;

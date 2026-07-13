@@ -2,11 +2,13 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, GitPassphrase};
-use wt_libvirt::{LibvirtWorker, ServerConfig};
+use wt_libvirt::LibvirtProvider;
+use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
 use wt_server::jobs::{run_provision, GitAuthor, JobError, JobLock, Jobs, ProvisionLauncher};
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
+use wt_server::ServerConfig;
 
 fn main() {
     if let Err(error) = run() {
@@ -31,8 +33,21 @@ fn run_api(config_path: &Path) -> Result<()> {
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
     let server = ServerConfig::load_from(config_path).map_err(anyhow::Error::msg)?;
-    let worker = LibvirtWorker::new(server.worker_config().map_err(anyhow::Error::msg)?)
-        .map_err(anyhow::Error::msg)?;
+    let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
+    let registry_cache_url = format!(
+        "http://{}:{}",
+        provider
+            .network_bridge_address()
+            .map_err(anyhow::Error::msg)?,
+        server.registry_cache.port
+    );
+    let provisioner = WorldProvisioner::new(
+        server
+            .provisioner_config(registry_cache_url)
+            .map_err(anyhow::Error::msg)?,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let worker = CompositeWorker::new(provider, provisioner, server.machine_resources());
     let jobs = Jobs::open(state.jobs_dir()).context("open provisioning jobs")?;
     let mut service = Service::new(store, worker, jobs, InlineLauncher);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
@@ -50,11 +65,11 @@ fn run_api(config_path: &Path) -> Result<()> {
 #[derive(Clone, Copy, Debug)]
 struct InlineLauncher;
 
-impl ProvisionLauncher<LibvirtWorker> for InlineLauncher {
+impl ProvisionLauncher<CompositeWorker<LibvirtProvider>> for InlineLauncher {
     fn launch(
         &self,
         store: &Store,
-        worker: &LibvirtWorker,
+        worker: &CompositeWorker<LibvirtProvider>,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
         git_author: GitAuthor<'_>,

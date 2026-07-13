@@ -1,105 +1,157 @@
-//! Production orchestration for one libvirt/KVM world.
+//! Libvirt/KVM machine lifecycle.
 
-mod devcontainer;
-mod git;
 mod guest_agent;
 mod world;
 
-use crate::{LibvirtConfig, ProvisionSpec, WorkerError, World, WorldWorker};
-use serde::Deserialize;
-use ssh_key::{HashAlg, PublicKey};
-use std::collections::BTreeSet;
+use crate::{MachineConfig, LIBVIRT_URI};
 use std::fs;
 use std::io::Write;
-use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use virt::network::Network;
 use wt_command::cmd;
+use wt_provider::{Machine, MachineProvider, MachineSpec, ProviderId, WorkerError};
 
 #[derive(Clone)]
-pub struct LibvirtWorker {
-    config: LibvirtConfig,
-    app_shell: Vec<u8>,
-    app_pane: Vec<u8>,
-    app_info: Vec<u8>,
-    app_proxy: Vec<u8>,
-    git_credentials: git::Credentials,
-    registry_cache_url: String,
-    registry_cache_ca: Vec<u8>,
+pub struct LibvirtProvider {
+    config: MachineConfig,
 }
 
-#[derive(Deserialize)]
-struct AppTarget {
-    user: String,
-    address: String,
-}
-
-impl LibvirtWorker {
-    pub fn new(config: LibvirtConfig) -> Result<Self, WorkerError> {
+impl LibvirtProvider {
+    pub fn new(config: MachineConfig) -> Result<Self, WorkerError> {
         fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open("/dev/kvm")
-            .map_err(|error| worker_error("KVM is required but /dev/kvm is unavailable", error))?;
+            .map_err(|error| context("KVM is required but /dev/kvm is unavailable", error))?;
         require_file(&config.image, "guest image")?;
-        require_file(&config.app_shell_binary, "guest app-shell binary")?;
-        require_file(&config.app_pane_binary, "guest app-pane binary")?;
-        require_file(&config.app_info_binary, "guest app-info binary")?;
-        require_file(&config.app_proxy_binary, "guest app-proxy binary")?;
-        let app_shell = fs::read(&config.app_shell_binary)
-            .map_err(|error| worker_error("read guest app-shell binary", error))?;
-        let app_pane = fs::read(&config.app_pane_binary)
-            .map_err(|error| worker_error("read guest app-pane binary", error))?;
-        let app_info = fs::read(&config.app_info_binary)
-            .map_err(|error| worker_error("read guest app-info binary", error))?;
-        let app_proxy = fs::read(&config.app_proxy_binary)
-            .map_err(|error| worker_error("read guest app-proxy binary", error))?;
         if !config.worlds_dir.is_dir() {
             return Err(WorkerError::new(format!(
                 "worlds directory not found: {}",
                 config.worlds_dir.display()
             )));
         }
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let bridge = network_address(&connection, &config.network)?;
-        let registry_cache_url = format!("http://{bridge}:{}", config.registry_cache_port);
-        verify_registry_cache(&registry_cache_url)?;
-        let registry_cache_ca = fs::read(config.registry_cache_state_dir.join("ca/ca.crt"))
-            .map_err(|error| worker_error("read registry cache CA", error))?;
-        let git_credentials =
-            git::load_credentials(&config.git_identity_file, &config.git_known_hosts_file)?;
-        Ok(Self {
-            config,
-            app_shell,
-            app_pane,
-            app_info,
-            app_proxy,
-            git_credentials,
-            registry_cache_url,
-            registry_cache_ca,
-        })
+        let connection = Connect::open(Some(LIBVIRT_URI))
+            .map_err(|error| context("connect to libvirt", error))?;
+        Network::lookup_by_name(&connection, &config.network)
+            .map_err(|error| context("look up libvirt network", error))?;
+        Ok(Self { config })
     }
 
-    fn provision_inner(
-        &self,
-        spec: &ProvisionSpec<'_>,
-        log: &mut dyn Write,
-    ) -> Result<World, WorkerError> {
-        wt_api::validate_ssh_git_source(spec.source)
-            .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
-        let private_git = &self.git_credentials;
-        log_line(log, &format!("Creating KVM guest {}...", spec.name))?;
-        let paths = world::Paths::new(&self.config.worlds_dir, spec.backend_id);
-        fs::create_dir(&paths.directory)
-            .map_err(|error| worker_error("create world directory", error))?;
+    pub fn network_bridge_address(&self) -> Result<String, WorkerError> {
+        let connection = Connect::open(Some(LIBVIRT_URI))
+            .map_err(|error| context("connect to libvirt", error))?;
+        network_address(&connection, &self.config.network)
+    }
 
+    fn wait_for_agent(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        let deadline = Instant::now() + self.config.boot_timeout;
+        loop {
+            let domain = lookup_domain(provider_id)?;
+            if domain
+                .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
+                .is_ok()
+            {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    fn wait_for_ip(&self, provider_id: &ProviderId) -> Result<String, WorkerError> {
+        let deadline = Instant::now() + self.config.boot_timeout;
+        loop {
+            if let Some(ip) = domain_ip(provider_id)? {
+                return Ok(ip);
+            }
+            if Instant::now() >= deadline {
+                return Err(WorkerError::new(format!(
+                    "timed out waiting for IP for domain {provider_id}"
+                )));
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    fn machine(&self, provider_id: &ProviderId, guest_ip: String) -> Machine {
+        Machine {
+            provider_id: provider_id.clone(),
+            guest_ip,
+            transport: Arc::new(guest_agent::QemuGuestTransport::new(provider_id.clone())),
+        }
+    }
+
+    fn remove_domain(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        let connection = Connect::open(Some(LIBVIRT_URI))
+            .map_err(|error| context("connect to libvirt", error))?;
+        let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
+            Ok(domain) => domain,
+            Err(error) if error.code() == ErrorNumber::NoDomain => return Ok(()),
+            Err(error) => return Err(context("look up libvirt domain", error)),
+        };
+        if domain
+            .is_active()
+            .map_err(|error| context("check domain state", error))?
+        {
+            domain
+                .destroy()
+                .map_err(|error| context("destroy domain", error))?;
+        }
+        domain
+            .undefine_flags(virt::sys::VIR_DOMAIN_UNDEFINE_NVRAM)
+            .map_err(|error| context("undefine domain", error))
+    }
+
+    fn remove_files(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        let directory = self.config.worlds_dir.join(provider_id.as_str());
+        match fs::remove_dir_all(&directory) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(context("remove machine files", error)),
+        }
+    }
+
+    fn cleanup(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        let mut errors = Vec::new();
+        if let Err(error) = self.remove_domain(provider_id) {
+            errors.push(error.to_string());
+        }
+        if let Err(error) = self.remove_files(provider_id) {
+            errors.push(error.to_string());
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(WorkerError::new(format!(
+                "delete libvirt machine: {}",
+                errors.join("; ")
+            )))
+        }
+    }
+
+    fn create_inner(
+        &self,
+        spec: &MachineSpec,
+        progress: &mut dyn Write,
+    ) -> Result<Machine, WorkerError> {
+        if spec.memory_mib == 0 || spec.vcpus == 0 || spec.disk_gib == 0 {
+            return Err(WorkerError::new(
+                "machine CPU, memory, and disk resources must be greater than zero",
+            ));
+        }
+        writeln!(progress, "Creating KVM guest {}...", spec.provider_id)
+            .map_err(|error| context("write machine progress", error))?;
+        let paths = world::Paths::new(&self.config.worlds_dir, &spec.provider_id);
+        fs::create_dir(&paths.directory)
+            .map_err(|error| context("create machine directory", error))?;
         run(
             cmd!(
                 "qemu-img",
@@ -112,30 +164,22 @@ impl LibvirtWorker {
                 "-b",
                 &self.config.image,
                 &paths.disk,
-                format!("{}G", self.config.disk_gib),
+                format!("{}G", spec.disk_gib),
             ),
             "create qcow2 overlay",
         )?;
-
-        fs::write(
-            &paths.user_data,
-            world::cloud_config(
-                &self.config.ssh_authorized_keys,
-                &self.registry_cache_url,
-                &self.registry_cache_ca,
-            ),
-        )
-        .map_err(|error| worker_error("write cloud-init user-data", error))?;
+        fs::write(&paths.user_data, world::cloud_config())
+            .map_err(|error| context("write cloud-init user-data", error))?;
         fs::write(
             &paths.meta_data,
             format!(
                 "instance-id: {}\nlocal-hostname: {}\n",
-                spec.backend_id, spec.name
+                spec.provider_id, spec.provider_id
             ),
         )
-        .map_err(|error| worker_error("write cloud-init meta-data", error))?;
+        .map_err(|error| context("write cloud-init meta-data", error))?;
         fs::write(&paths.network_config, world::network_config())
-            .map_err(|error| worker_error("write cloud-init network-config", error))?;
+            .map_err(|error| context("write cloud-init network-config", error))?;
         run(
             cmd!(
                 "cloud-localds",
@@ -148,555 +192,126 @@ impl LibvirtWorker {
             "create cloud-init seed",
         )?;
         prepare_qemu_file_access(&paths)?;
-
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let xml = world::domain_xml(spec.backend_id, &paths, &self.config);
+        let connection = Connect::open(Some(LIBVIRT_URI))
+            .map_err(|error| context("connect to libvirt", error))?;
+        let xml = world::domain_xml(&spec.provider_id, &paths, &self.config, spec);
         let domain = Domain::define_xml(&connection, &xml)
-            .map_err(|error| worker_error("define KVM domain", error))?;
+            .map_err(|error| context("define KVM domain", error))?;
         domain
             .create()
-            .map_err(|error| worker_error("start KVM domain", error))?;
-
-        // QEMU guest-agent is the provisioning channel. SSH is exposed to the
-        // user, but wt does not depend on it to configure the world.
-        log_line(log, "Waiting for the guest agent...")?;
-        let phase_started = Instant::now();
-        self.wait_for_guest_agent(&domain, log)?;
-        report_phase(log, "guest agent and Docker readiness", phase_started)?;
-        log_line(log, "Waiting for guest networking...")?;
-        let phase_started = Instant::now();
-        let guest_ip = self.wait_for_ip(spec.backend_id)?;
-        report_phase(log, "guest networking", phase_started)?;
-        let recipe_deadline = Instant::now() + self.config.recipe_timeout;
-        log_line(log, "Waiting for guest SSH...")?;
-        let phase_started = Instant::now();
-        self.wait_for_ssh(&guest_ip, recipe_deadline)?;
-        let host_keys = self.read_host_keys(&domain, recipe_deadline)?;
-        self.verify_ssh_endpoint(spec.backend_id, &guest_ip, &host_keys)?;
-        report_phase(log, "guest SSH readiness", phase_started)?;
-        log_line(log, &format!("Cloning {}...", spec.source))?;
-        let phase_started = Instant::now();
-        git::clone_and_checkout(
-            &domain,
-            spec.source,
-            private_git,
-            spec.git_passphrase,
-            recipe_deadline,
-            log,
-        )?;
-        git::configure_author(
-            &domain,
-            spec.git_user_name,
-            spec.git_user_email,
-            recipe_deadline,
-            log,
-        )?;
-        report_phase(log, "Git clone and checkout", phase_started)?;
-        log_line(log, "Starting the repository devcontainer...")?;
-        let phase_started = Instant::now();
-        guest_agent::run_phase(
-            &domain,
-            "workspace ownership",
-            "/bin/chown",
-            &["-R", "wt:wt", "/workspace"],
-            recipe_deadline,
-            log,
-        )?;
-        devcontainer::prepare_app_ssh(&domain, recipe_deadline, log)?;
-        let additional_features = format!(r#"{{"{}":{{}}}}"#, devcontainer::SSHD_FEATURE);
-        let app_ssh_mount = format!(
-            "type=bind,source={},target={}",
-            devcontainer::APP_SSH_PUBLIC_DIR,
-            devcontainer::APP_SSH_MOUNT
-        );
-        let sshd_config_mount = format!(
-            "type=bind,source={}/sshd_config,target=/etc/ssh/sshd_config",
-            devcontainer::APP_SSH_PUBLIC_DIR
-        );
-        guest_agent::run_phase(
-            &domain,
-            "devcontainer up",
-            "/usr/sbin/runuser",
-            &[
-                "-u",
-                "wt",
-                "--",
-                "/usr/bin/env",
-                "HOME=/home/wt",
-                "/usr/local/bin/devcontainer",
-                "up",
-                "--log-level",
-                "debug",
-                "--log-format",
-                "text",
-                "--workspace-folder",
-                "/workspace",
-                "--additional-features",
-                &additional_features,
-                "--mount",
-                &app_ssh_mount,
-                "--mount",
-                &sshd_config_mount,
-            ],
-            recipe_deadline,
-            log,
-        )?;
-        report_phase(log, "devcontainer up", phase_started)?;
-        let phase_started = Instant::now();
-        devcontainer::install_app_tools(
-            &domain,
-            &devcontainer::AppTools {
-                app_shell: &self.app_shell,
-                app_pane: &self.app_pane,
-                app_info: &self.app_info,
-                app_proxy: &self.app_proxy,
-            },
-            self.config.session,
-            recipe_deadline,
-            log,
-        )?;
-        let app_target = self.read_app_target(&domain, recipe_deadline)?;
-        let app_host_keys =
-            self.configure_and_verify_app_ssh(&domain, &app_target, recipe_deadline, log)?;
-        guest_agent::run_phase(
-            &domain,
-            "devcontainer Git credentials",
-            "/usr/local/bin/devcontainer",
-            &[
-                "exec",
-                "--workspace-folder",
-                "/workspace",
-                "/bin/sh",
-                "-c",
-                "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\" && directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
-            ],
-            recipe_deadline,
-            log,
-        )?;
-        report_phase(
-            log,
-            "app shell and Git credential verification",
-            phase_started,
-        )?;
-        log_line(log, &format!("World {} is ready.", spec.name))?;
-        Ok(World {
-            guest_ip: guest_ip.clone(),
-            ssh: wt_api::SshAccess {
-                user: "wt".to_owned(),
-                host: guest_ip,
-                port: 22,
-                host_keys,
-            },
-            app_ssh: wt_api::AppSshAccess {
-                user: app_target.user,
-                port: devcontainer::APP_SSH_PORT,
-                host_keys: app_host_keys,
-            },
-        })
+            .map_err(|error| context("start KVM domain", error))?;
+        writeln!(progress, "Waiting for the guest transport...")
+            .map_err(|error| context("write machine progress", error))?;
+        self.wait_for_agent(&spec.provider_id)?;
+        let guest_ip = self.wait_for_ip(&spec.provider_id)?;
+        writeln!(progress, "Machine transport ready at {guest_ip}.")
+            .map_err(|error| context("write machine progress", error))?;
+        Ok(self.machine(&spec.provider_id, guest_ip))
     }
+}
 
-    fn wait_for_ssh(&self, guest_ip: &str, deadline: Instant) -> Result<(), WorkerError> {
-        let address: SocketAddr = format!("{guest_ip}:22")
-            .parse()
-            .map_err(|error| worker_error("parse guest SSH address", error))?;
-        loop {
-            if TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok() {
-                return Ok(());
+impl MachineProvider for LibvirtProvider {
+    fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError> {
+        match self.create_inner(spec, progress) {
+            Ok(machine) => Ok(machine),
+            Err(primary) => {
+                if let Err(cleanup) = self.cleanup(&spec.provider_id) {
+                    Err(WorkerError::new(format!(
+                        "{primary} (cleanup also failed: {cleanup})"
+                    )))
+                } else {
+                    Err(primary)
+                }
             }
-            if Instant::now() >= deadline {
-                return Err(WorkerError::new(
-                    "SSH readiness: timed out waiting for port 22",
-                ));
-            }
-            std::thread::sleep(Duration::from_secs(1));
         }
     }
 
-    fn read_app_target(
-        &self,
-        domain: &Domain,
-        deadline: Instant,
-    ) -> Result<AppTarget, WorkerError> {
-        let output = guest_agent::capture_phase(
-            domain,
-            "devcontainer app discovery",
-            devcontainer::APP_INFO_PATH,
-            &[],
-            deadline,
-        )?;
-        let target: AppTarget = serde_json::from_slice(&output)
-            .map_err(|error| worker_error("decode devcontainer app discovery", error))?;
-        if target.user.is_empty()
-            || !target
-                .user
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
-        {
-            return Err(WorkerError::new(
-                "devcontainer app discovery: invalid remote user",
-            ));
-        }
-        target
-            .address
-            .parse::<IpAddr>()
-            .map_err(|error| worker_error("parse devcontainer app address", error))?;
-        Ok(target)
-    }
-
-    fn configure_and_verify_app_ssh(
-        &self,
-        domain: &Domain,
-        target: &AppTarget,
-        deadline: Instant,
-        log: &mut dyn Write,
-    ) -> Result<Vec<String>, WorkerError> {
-        let session_public = guest_agent::capture_phase(
-            domain,
-            "app session public key",
-            "/bin/cat",
-            &["/var/lib/wt-app-ssh/session_identity.pub"],
-            deadline,
-        )?;
-        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
-        authorized_keys.push(b'\n');
-        authorized_keys.extend_from_slice(&session_public);
-        if !authorized_keys.ends_with(b"\n") {
-            authorized_keys.push(b'\n');
-        }
-        let authorized_path = format!(
-            "{}/authorized_keys/{}",
-            devcontainer::APP_SSH_PUBLIC_DIR,
-            target.user
-        );
-        guest_agent::write(domain, &authorized_path, &authorized_keys)?;
-        guest_agent::run_phase(
-            domain,
-            "app authorized-key permissions",
-            "/bin/chmod",
-            &["0644", &authorized_path],
-            deadline,
-            log,
-        )?;
-
-        let expected_bytes = guest_agent::capture_phase(
-            domain,
-            "app SSH host keys",
-            "/bin/cat",
-            &["/var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub"],
-            deadline,
-        )?;
-        let expected = String::from_utf8_lossy(&expected_bytes)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if expected.is_empty() {
-            return Err(WorkerError::new("app SSH host keys: no public keys"));
-        }
-        let scanned = guest_agent::capture_phase(
-            domain,
-            "app SSH readiness",
-            "/usr/bin/ssh-keyscan",
-            &[
-                "-T",
-                "5",
-                "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
-                &target.address,
-            ],
-            deadline,
-        )?;
-        if !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
-            return Err(WorkerError::new(
-                "app SSH readiness: presented host keys do not match the per-world identity",
-            ));
-        }
-        let known_hosts = normalized_host_keys(&expected.join("\n"))
-            .into_iter()
-            .map(|key| format!("wt-app {key}\n"))
-            .collect::<String>();
-        guest_agent::write(
-            domain,
-            "/var/lib/wt-app-ssh/known_hosts",
-            known_hosts.as_bytes(),
-        )?;
-        guest_agent::run_phase(
-            domain,
-            "app SSH authentication",
-            "/usr/bin/ssh",
-            &[
-                "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
-                "-i",
-                "/var/lib/wt-app-ssh/session_identity",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "IdentitiesOnly=yes",
-                "-o",
-                "UserKnownHostsFile=/var/lib/wt-app-ssh/known_hosts",
-                "-o",
-                "StrictHostKeyChecking=yes",
-                "-o",
-                "HostKeyAlias=wt-app",
-                &format!("{}@{}", target.user, target.address),
-                "true",
-            ],
-            deadline,
-            log,
-        )?;
-        Ok(expected)
-    }
-
-    fn inspect_app_ssh(
-        &self,
-        domain: &Domain,
-        deadline: Instant,
-    ) -> Result<wt_api::AppSshAccess, WorkerError> {
-        let target = self.read_app_target(domain, deadline)?;
-        let expected_bytes = guest_agent::capture_phase(
-            domain,
-            "app SSH host keys",
-            "/bin/cat",
-            &["/var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub"],
-            deadline,
-        )?;
-        let expected = String::from_utf8_lossy(&expected_bytes)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        let scanned = guest_agent::capture_phase(
-            domain,
-            "app SSH readiness",
-            "/usr/bin/ssh-keyscan",
-            &[
-                "-T",
-                "5",
-                "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
-                &target.address,
-            ],
-            deadline,
-        )?;
-        if expected.is_empty() || !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
-            return Err(WorkerError::new("app SSH host identity changed"));
-        }
-        Ok(wt_api::AppSshAccess {
-            user: target.user,
-            port: devcontainer::APP_SSH_PORT,
-            host_keys: expected,
-        })
-    }
-
-    fn read_host_keys(
-        &self,
-        domain: &Domain,
-        deadline: Instant,
-    ) -> Result<Vec<String>, WorkerError> {
-        let output = guest_agent::capture_phase(
-            domain,
-            "SSH host keys",
-            "/bin/sh",
-            &["-c", "cat /etc/ssh/ssh_host_*_key.pub"],
-            deadline,
-        )?;
-        let keys = String::from_utf8_lossy(&output)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if keys.is_empty() {
-            return Err(WorkerError::new(
-                "SSH host keys: guest returned no public host keys",
-            ));
-        }
-        Ok(keys)
-    }
-
-    fn verify_ssh_endpoint(
-        &self,
-        backend_id: &str,
-        guest_ip: &str,
-        expected: &[String],
-    ) -> Result<(), WorkerError> {
-        let output = cmd!("/usr/bin/ssh-keyscan", "-T", "5", "-p", "22", guest_ip,)
-            .output()
-            .map_err(|error| worker_error("scan guest SSH host keys", error))?;
-        let presented = String::from_utf8_lossy(&output.stdout);
-        if host_keys_match(expected, &presented) {
-            return Ok(());
-        }
-        let conflicts = self.domains_with_ip(backend_id, guest_ip)?;
-        Err(endpoint_identity_error(
-            guest_ip,
-            expected,
-            &presented,
-            &conflicts,
-            &self.config.worlds_dir,
-        ))
-    }
-
-    fn domains_with_ip(
-        &self,
-        backend_id: &str,
-        guest_ip: &str,
-    ) -> Result<Vec<String>, WorkerError> {
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let domains = connection
-            .list_all_domains(virt::sys::VIR_CONNECT_LIST_DOMAINS_ACTIVE)
-            .map_err(|error| worker_error("list active libvirt domains", error))?;
-        let mut conflicts = Vec::new();
-        for domain in domains {
-            let Ok(name) = domain.get_name() else {
-                continue;
-            };
-            if name == backend_id || !name.starts_with("wt-") {
-                continue;
-            }
-            let Ok(interfaces) =
-                domain.interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, 0)
-            else {
-                continue;
-            };
-            if interfaces
+    fn inspect(&self, provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError> {
+        let directory = self.config.worlds_dir.join(provider_id.as_str());
+        let connection = Connect::open(Some(LIBVIRT_URI))
+            .map_err(|error| context("connect to libvirt", error))?;
+        let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
+            Ok(domain) => Some(domain),
+            Err(error) if error.code() == ErrorNumber::NoDomain => None,
+            Err(error) => return Err(context("look up libvirt domain", error)),
+        };
+        match (domain, directory.exists()) {
+            (None, false) => Ok(None),
+            (None, true) => Err(WorkerError::new(format!(
+                "partial libvirt machine {}: files exist but domain is missing",
+                provider_id
+            ))),
+            (Some(_), false) => Err(WorkerError::new(format!(
+                "partial libvirt machine {}: domain exists but files are missing",
+                provider_id
+            ))),
+            (Some(domain), true) => {
+                let paths = world::Paths::new(&self.config.worlds_dir, provider_id);
+                if [
+                    &paths.disk,
+                    &paths.seed,
+                    &paths.user_data,
+                    &paths.meta_data,
+                    &paths.network_config,
+                ]
                 .into_iter()
-                .flat_map(|interface| interface.addrs)
-                .any(|address| address.addr == guest_ip)
-            {
-                conflicts.push(name);
+                .any(|path| !path.is_file())
+                {
+                    return Err(WorkerError::new(format!(
+                        "partial libvirt machine {provider_id}: required machine files are missing"
+                    )));
+                }
+                if !domain
+                    .is_active()
+                    .map_err(|error| context("check domain state", error))?
+                {
+                    return Err(WorkerError::new(format!(
+                        "libvirt machine {provider_id} is stopped"
+                    )));
+                }
+                domain
+                    .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
+                    .map_err(|error| context("contact QEMU guest agent", error))?;
+                let guest_ip = domain_ip(provider_id)?.ok_or_else(|| {
+                    WorkerError::new(format!("libvirt machine {provider_id} has no IPv4 address"))
+                })?;
+                Ok(Some(self.machine(provider_id, guest_ip)))
             }
         }
-        conflicts.sort();
-        Ok(conflicts)
     }
 
-    fn wait_for_ip(&self, backend_id: &str) -> Result<String, WorkerError> {
-        let deadline = Instant::now() + self.config.boot_timeout;
-        loop {
-            if let Some(host) = self.domain_ip(backend_id)? {
-                return Ok(host);
-            }
-            if Instant::now() >= deadline {
-                return Err(WorkerError::new(format!(
-                    "timed out waiting for IP for domain {backend_id}"
-                )));
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        }
+    fn delete(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        self.cleanup(provider_id)
     }
+}
 
-    fn wait_for_guest_agent(
-        &self,
-        domain: &Domain,
-        log: &mut dyn Write,
-    ) -> Result<(), WorkerError> {
-        let deadline = Instant::now() + self.config.boot_timeout;
-        loop {
-            if domain
-                .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
-                .is_ok()
-            {
-                return self.verify_guest_tools(domain, deadline, log);
-            }
-            if Instant::now() >= deadline {
-                return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        }
-    }
+pub(super) fn lookup_domain(provider_id: &ProviderId) -> Result<Domain, WorkerError> {
+    let connection =
+        Connect::open(Some(LIBVIRT_URI)).map_err(|error| context("connect to libvirt", error))?;
+    Domain::lookup_by_name(&connection, provider_id.as_str())
+        .map_err(|error| context("look up libvirt domain", error))
+}
 
-    fn verify_guest_tools(
-        &self,
-        domain: &Domain,
-        deadline: Instant,
-        log: &mut dyn Write,
-    ) -> Result<(), WorkerError> {
-        guest_agent::run_phase(
-            domain,
-            "cloud-init readiness",
-            "/usr/bin/cloud-init",
-            &["status", "--wait"],
-            deadline,
-            log,
-        )?;
-        guest_agent::run_phase(
-            domain,
-            "Docker and Compose readiness",
-            "/bin/sh",
-            &[
-                "-lc",
-                "test -f /var/lib/wt-registry-cache-ready && docker info >/dev/null && docker compose version >/dev/null",
-            ],
-            deadline,
-            log,
-        )?;
-        Ok(())
-    }
-
-    fn domain_ip(&self, backend_id: &str) -> Result<Option<String>, WorkerError> {
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let domain = match Domain::lookup_by_name(&connection, backend_id) {
-            Ok(domain) => domain,
-            Err(error) if error.code() == ErrorNumber::NoDomain => return Ok(None),
-            Err(error) => return Err(worker_error("look up libvirt domain", error)),
-        };
-        let interfaces = domain
-            .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
-            .map_err(|error| worker_error("get domain interface addresses", error))?;
-        Ok(interfaces
-            .into_iter()
-            .flat_map(|interface| interface.addrs)
-            .find_map(|address| {
-                let ip = address.addr.parse::<IpAddr>().ok()?;
-                (ip.is_ipv4() && !ip.is_loopback()).then(|| ip.to_string())
-            }))
-    }
-
-    fn remove_domain(&self, backend_id: &str) -> Result<(), WorkerError> {
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let domain = match Domain::lookup_by_name(&connection, backend_id) {
-            Ok(domain) => domain,
-            Err(error) if error.code() == ErrorNumber::NoDomain => return Ok(()),
-            Err(error) => return Err(worker_error("look up libvirt domain", error)),
-        };
-        if domain
-            .is_active()
-            .map_err(|error| worker_error("check domain state", error))?
-        {
-            domain
-                .destroy()
-                .map_err(|error| worker_error("destroy domain", error))?;
-        }
-        domain
-            .undefine_flags(virt::sys::VIR_DOMAIN_UNDEFINE_NVRAM)
-            .map_err(|error| worker_error("undefine domain", error))?;
-        Ok(())
-    }
-
-    fn remove_files(&self, backend_id: &str) -> Result<(), WorkerError> {
-        let directory = self.config.worlds_dir.join(backend_id);
-        if directory.exists() {
-            fs::remove_dir_all(&directory)
-                .map_err(|error| worker_error("remove world files", error))?;
-        }
-        Ok(())
-    }
+fn domain_ip(provider_id: &ProviderId) -> Result<Option<String>, WorkerError> {
+    let domain = lookup_domain(provider_id)?;
+    let interfaces = domain
+        .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
+        .map_err(|error| context("get domain interface addresses", error))?;
+    Ok(interfaces
+        .into_iter()
+        .flat_map(|interface| interface.addrs)
+        .find_map(|address| {
+            let ip = address.addr.parse::<std::net::IpAddr>().ok()?;
+            (ip.is_ipv4() && !ip.is_loopback()).then(|| ip.to_string())
+        }))
 }
 
 fn network_address(connection: &Connect, name: &str) -> Result<String, WorkerError> {
     let network = Network::lookup_by_name(connection, name)
-        .map_err(|error| worker_error("look up libvirt network", error))?;
+        .map_err(|error| context("look up libvirt network", error))?;
     let xml = network
         .get_xml_desc(0)
-        .map_err(|error| worker_error("read libvirt network XML", error))?;
+        .map_err(|error| context("read libvirt network XML", error))?;
     for quote in ['\'', '"'] {
         let needle = format!("address={quote}");
         for rest in xml.split(&needle).skip(1) {
@@ -712,148 +327,7 @@ fn network_address(connection: &Connect, name: &str) -> Result<String, WorkerErr
     ))
 }
 
-fn verify_registry_cache(url: &str) -> Result<(), WorkerError> {
-    run(
-        cmd!(
-            "curl",
-            "-fsS",
-            "--output",
-            "/dev/null",
-            format!("{url}/ca.crt")
-        ),
-        "verify registry cache",
-    )
-}
-
-impl WorldWorker for LibvirtWorker {
-    fn validate_git_passphrase(
-        &self,
-        passphrase: &wt_api::GitPassphrase,
-    ) -> Result<(), WorkerError> {
-        self.git_credentials.validate_passphrase(passphrase)
-    }
-
-    fn provision(
-        &self,
-        spec: &ProvisionSpec<'_>,
-        log: &mut dyn Write,
-    ) -> Result<World, WorkerError> {
-        match self.provision_inner(spec, log) {
-            Ok(world) => Ok(world),
-            Err(error) => {
-                // A failed create must not leave a domain or overlay behind.
-                let _ = self.remove_domain(spec.backend_id);
-                let _ = self.remove_files(spec.backend_id);
-                Err(error)
-            }
-        }
-    }
-
-    fn destroy(&self, backend_id: &str) -> Result<(), WorkerError> {
-        self.remove_domain(backend_id)?;
-        self.remove_files(backend_id)
-    }
-
-    fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError> {
-        let Some(guest_ip) = self.domain_ip(backend_id)? else {
-            return Ok(None);
-        };
-        let connection = Connect::open(Some(crate::LIBVIRT_URI))
-            .map_err(|error| worker_error("connect to libvirt", error))?;
-        let domain = Domain::lookup_by_name(&connection, backend_id)
-            .map_err(|error| worker_error("look up libvirt domain", error))?;
-        // DHCP addresses can move; the per-world host keys are the stable SSH identity.
-        let host_keys = self.read_host_keys(&domain, Instant::now() + self.config.boot_timeout)?;
-        self.verify_ssh_endpoint(backend_id, &guest_ip, &host_keys)?;
-        let app_ssh = self.inspect_app_ssh(&domain, Instant::now() + self.config.boot_timeout)?;
-        Ok(Some(World {
-            guest_ip: guest_ip.clone(),
-            ssh: wt_api::SshAccess {
-                user: "wt".to_owned(),
-                host: guest_ip,
-                port: 22,
-                host_keys,
-            },
-            app_ssh,
-        }))
-    }
-}
-
-fn normalized_host_keys(lines: &str) -> BTreeSet<String> {
-    lines
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let first = fields.next()?;
-            let (kind, data) = if is_host_key_kind(first) {
-                (first, fields.next()?)
-            } else {
-                (fields.next()?, fields.next()?)
-            };
-            is_host_key_kind(kind).then(|| format!("{kind} {data}"))
-        })
-        .collect()
-}
-
-fn is_host_key_kind(value: &str) -> bool {
-    value.starts_with("ssh-") || value.starts_with("ecdsa-") || value.starts_with("sk-")
-}
-
-fn host_keys_match(expected: &[String], presented: &str) -> bool {
-    let expected = normalized_host_keys(&expected.join("\n"));
-    let presented = normalized_host_keys(presented);
-    !expected.is_disjoint(&presented)
-}
-
-fn fingerprints(keys: &BTreeSet<String>) -> String {
-    if keys.is_empty() {
-        return "none".to_owned();
-    }
-    keys.iter()
-        .map(|key| {
-            PublicKey::from_openssh(key)
-                .map(|key| key.fingerprint(HashAlg::Sha256).to_string())
-                .unwrap_or_else(|_| "invalid-key".to_owned())
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn endpoint_identity_error(
-    guest_ip: &str,
-    expected: &[String],
-    presented: &str,
-    conflicts: &[String],
-    worlds_dir: &Path,
-) -> WorkerError {
-    let expected = normalized_host_keys(&expected.join("\n"));
-    let presented = normalized_host_keys(presented);
-    let mut message = format!(
-        "SSH endpoint identity mismatch at {guest_ip}:22: expected [{}], presented [{}]. WT refused to publish SSH access because another guest may be using this IP.",
-        fingerprints(&expected),
-        fingerprints(&presented),
-    );
-    if !conflicts.is_empty() {
-        message.push_str(&format!(
-            " Active WT domain(s) reporting {guest_ip}: {}.",
-            conflicts.join(", ")
-        ));
-        let domain = &conflicts[0];
-        message.push_str(&format!(
-            " If `{domain}` is confirmed stale, run on the server: `virsh -c {} destroy {domain}`; `virsh -c {} undefine {domain} --nvram`; `rm -rf -- {}`. Then run `wt sync`. If it is managed, use `wt rm` instead.",
-            crate::LIBVIRT_URI,
-            crate::LIBVIRT_URI,
-            worlds_dir.join(domain).display(),
-        ));
-    } else {
-        message.push_str(
-            " Inspect the server's DHCP and libvirt domain state, remove the stale guest, then run `wt sync`.",
-        );
-    }
-    WorkerError::new(message)
-}
-
-fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {
+fn require_file(path: &std::path::Path, label: &str) -> Result<(), WorkerError> {
     if path.is_file() {
         Ok(())
     } else {
@@ -866,110 +340,31 @@ fn require_file(path: &Path, label: &str) -> Result<(), WorkerError> {
 
 fn prepare_qemu_file_access(paths: &world::Paths) -> Result<(), WorkerError> {
     for (path, mode, action) in [
-        (&paths.directory, 0o2770, "set world directory permissions"),
+        (
+            &paths.directory,
+            0o2770,
+            "set machine directory permissions",
+        ),
         (&paths.disk, 0o660, "set qcow2 overlay permissions"),
         (&paths.seed, 0o640, "set cloud-init seed permissions"),
     ] {
         fs::set_permissions(path, fs::Permissions::from_mode(mode))
-            .map_err(|error| worker_error(action, error))?;
+            .map_err(|error| context(action, error))?;
     }
     Ok(())
 }
 
 fn run(mut command: Command, action: &str) -> Result<(), WorkerError> {
-    let output = command
-        .output()
-        .map_err(|error| worker_error(action, error))?;
+    let output = command.output().map_err(|error| context(action, error))?;
     if output.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    Err(WorkerError::new(format!("{action}: {stderr}")))
+    Err(WorkerError::new(format!(
+        "{action}: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )))
 }
 
-fn worker_error(action: &str, error: impl std::fmt::Display) -> WorkerError {
+fn context(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
-}
-
-fn report_phase(log: &mut dyn Write, label: &str, started: Instant) -> Result<(), WorkerError> {
-    log_line(
-        log,
-        &format!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64()),
-    )
-}
-
-fn log_line(log: &mut dyn Write, message: &str) -> Result<(), WorkerError> {
-    writeln!(log, "{message}")
-        .and_then(|()| log.flush())
-        .map_err(|error| WorkerError::new(format!("write provisioning log: {error}")))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::fs::MetadataExt;
-
-    const KEY: &str =
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHIcU8rr2qppQ5sRKTKPoEp4dPLr+d1F7Eqog+U8AJbK";
-
-    #[test]
-    fn endpoint_keys_match_keyscan_output_without_comments() {
-        let expected = vec![format!("{KEY} guest-comment")];
-        let presented = format!("# banner\n192.0.2.2 {KEY}\n");
-
-        assert!(host_keys_match(&expected, &presented));
-        assert_eq!(
-            normalized_host_keys(&presented),
-            BTreeSet::from([KEY.to_owned()])
-        );
-    }
-
-    #[test]
-    fn mismatch_names_conflicting_domain_and_safe_recovery() {
-        let error = endpoint_identity_error(
-            "192.0.2.2",
-            &[KEY.to_owned()],
-            "",
-            &["wt-deadbeef".to_owned()],
-            Path::new("/var/lib/libvirt/images/wt"),
-        )
-        .to_string();
-
-        insta::assert_snapshot!(error, @"SSH endpoint identity mismatch at 192.0.2.2:22: expected [SHA256:3SPHBfpn7yLeGxYWnQdql8lUltQOR/yFUwLufJnKxiI], presented [none]. WT refused to publish SSH access because another guest may be using this IP. Active WT domain(s) reporting 192.0.2.2: wt-deadbeef. If `wt-deadbeef` is confirmed stale, run on the server: `virsh -c qemu:///system destroy wt-deadbeef`; `virsh -c qemu:///system undefine wt-deadbeef --nvram`; `rm -rf -- /var/lib/libvirt/images/wt/wt-deadbeef`. Then run `wt sync`. If it is managed, use `wt rm` instead.");
-    }
-
-    #[test]
-    fn mismatch_without_known_conflict_requests_network_inspection() {
-        let error = endpoint_identity_error(
-            "192.0.2.2",
-            &[KEY.to_owned()],
-            "",
-            &[],
-            Path::new("/worlds"),
-        )
-        .to_string();
-
-        insta::assert_snapshot!(error, @"SSH endpoint identity mismatch at 192.0.2.2:22: expected [SHA256:3SPHBfpn7yLeGxYWnQdql8lUltQOR/yFUwLufJnKxiI], presented [none]. WT refused to publish SSH access because another guest may be using this IP. Inspect the server's DHCP and libvirt domain state, remove the stale guest, then run `wt sync`.");
-    }
-
-    #[test]
-    fn qemu_files_get_explicit_access_under_a_restrictive_umask() {
-        let temp = tempfile::tempdir().unwrap();
-        let paths = world::Paths::new(temp.path(), "wt-permissions");
-        fs::create_dir(&paths.directory).unwrap();
-        fs::write(&paths.disk, []).unwrap();
-        fs::write(&paths.seed, []).unwrap();
-        for path in [&paths.disk, &paths.seed, &paths.directory] {
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
-        }
-
-        prepare_qemu_file_access(&paths).unwrap();
-
-        assert_eq!(
-            fs::metadata(&paths.directory).unwrap().mode() & 0o7777,
-            0o2770
-        );
-        assert_eq!(fs::metadata(&paths.disk).unwrap().mode() & 0o7777, 0o660);
-        assert_eq!(fs::metadata(&paths.seed).unwrap().mode() & 0o7777, 0o640);
-    }
 }

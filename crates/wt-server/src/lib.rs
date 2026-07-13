@@ -1,12 +1,18 @@
 pub mod config;
 pub mod daemon;
 pub mod jobs;
+pub mod runtime_config;
 pub mod service;
 pub mod store;
 
+pub use runtime_config::{
+    GitConfig, GuestConfig, ImageConfig, InstallConfig, RegistryCacheConfig, ServerConfig,
+    ServerLibvirtConfig, SERVER_CONFIG_PATH,
+};
+
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_libvirt::WorldWorker, L: jobs::ProvisionLauncher<W>>(
+pub fn handle_request<W: wt_provider::WorldWorker, L: jobs::ProvisionLauncher<W>>(
     service: &mut service::Service<W, L>,
     owner: &str,
     request: ApiRequest,

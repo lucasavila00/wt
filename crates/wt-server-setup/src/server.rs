@@ -11,7 +11,7 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use wt_command::cmd;
-use wt_libvirt::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
+use wt_server::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 

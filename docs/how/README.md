@@ -12,11 +12,13 @@ client: wt + OpenSSH
                             │
                      wt-server daemon
                        ├─ SQLite registry and logs
-                       └─ wt-libvirt
-                            └─ KVM world
-                                ├─ /workspace Git checkout
-                                ├─ Docker + devcontainer
-                                └─ guest and app SSH
+                       └─ wt-provider composite lifecycle
+                          ├─ wt-libvirt
+                          │  └─ KVM machine + QEMU guest transport
+                          └─ world provisioner
+                             ├─ /workspace Git checkout
+                             ├─ Docker + devcontainer
+                             └─ guest and app SSH
 ```
 
 ## Components
@@ -25,7 +27,8 @@ client: wt + OpenSSH
 |-----------|------|
 | `wt` | Contexts, API transport, names, and managed SSH inventory |
 | `wt-server` | Unix-socket API daemon, registry, durable jobs, and logs |
-| `wt-libvirt` | KVM world creation, inspection, and destruction |
+| `wt-provider` | Provider-neutral guest transport, bootstrap, world provisioning, and composite lifecycle |
+| `wt-libvirt` | KVM machine creation, inspection, destruction, and QEMU guest-agent transport |
 | `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 

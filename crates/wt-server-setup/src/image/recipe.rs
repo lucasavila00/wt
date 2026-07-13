@@ -1,20 +1,8 @@
 use anyhow::{bail, Result};
 use std::collections::{BTreeMap, BTreeSet};
-use wt_libvirt::SessionFrontend;
+use wt_provider::{BootstrapPolicy, SessionFrontend, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 1;
-pub(super) const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
-
-const COMMON_PACKAGES: &[&str] = &[
-    "docker.io",
-    "docker-buildx",
-    "docker-compose-v2",
-    "qemu-guest-agent",
-    "git",
-    "openssh-server",
-    "nodejs",
-    "npm",
-];
 
 pub(super) type PackageVersions = BTreeMap<String, String>;
 
@@ -131,20 +119,13 @@ power_state:
     }
 
     fn requested_packages(&self) -> Vec<&'static str> {
-        let mut packages = COMMON_PACKAGES.to_vec();
-        packages.push(match self.session {
-            SessionFrontend::Tmux => "tmux",
-            SessionFrontend::Byobu => "byobu",
-        });
+        let mut packages = BootstrapPolicy::expected_package_names(self.session);
+        packages.push("qemu-guest-agent");
         packages
     }
 
     fn verified_packages(&self) -> Vec<&'static str> {
-        let mut packages = self.requested_packages();
-        if self.session == SessionFrontend::Byobu {
-            packages.push("tmux");
-        }
-        packages
+        self.requested_packages()
     }
 }
 
@@ -174,15 +155,16 @@ bootcmd:
   - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
 package_update: true
 packages:
+  - ca-certificates
   - docker.io
   - docker-buildx
   - docker-compose-v2
-  - qemu-guest-agent
   - git
   - openssh-server
   - nodejs
   - npm
   - tmux
+  - qemu-guest-agent
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -193,7 +175,7 @@ runcmd:
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -216,15 +198,17 @@ bootcmd:
   - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
 package_update: true
 packages:
+  - ca-certificates
   - docker.io
   - docker-buildx
   - docker-compose-v2
-  - qemu-guest-agent
   - git
   - openssh-server
   - nodejs
   - npm
   - byobu
+  - tmux
+  - qemu-guest-agent
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -235,7 +219,7 @@ runcmd:
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm byobu tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm byobu tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -253,7 +237,7 @@ power_state:
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
         assert_eq!(packages["tmux"], "1:2.3-4");
-        assert_eq!(packages.len(), 9);
+        assert_eq!(packages.len(), 10);
     }
 
     #[test]
@@ -264,7 +248,7 @@ power_state:
             .unwrap();
         assert!(packages.contains_key("byobu"));
         assert!(packages.contains_key("tmux"));
-        assert_eq!(packages.len(), 10);
+        assert_eq!(packages.len(), 11);
     }
 
     #[test]

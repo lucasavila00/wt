@@ -1,136 +1,376 @@
-//! Small QEMU guest-agent transport used during world provisioning.
+//! QEMU guest-agent implementation of the provider-neutral guest transport.
 
-use crate::WorkerError;
+use super::lookup_domain;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use virt::domain::Domain;
+use wt_provider::{
+    validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
+    ProviderId, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
+};
 
 const OUTPUT_TAIL_LIMIT: usize = 64 * 1024;
 const FILE_READ_SIZE: usize = 48 * 1024;
+const FILE_WRITE_SIZE: usize = 48 * 1024;
 const EXEC_POLL_DELAYS_MS: [u64; 5] = [50, 100, 200, 400, 500];
 
-pub(super) struct Output {
-    exit_code: i64,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+#[derive(Clone, Debug)]
+pub(super) struct QemuGuestTransport {
+    provider_id: ProviderId,
 }
 
-pub(super) fn run_phase(
+impl QemuGuestTransport {
+    pub(super) fn new(provider_id: ProviderId) -> Self {
+        Self { provider_id }
+    }
+
+    fn domain(&self) -> Result<Domain, TransportError> {
+        lookup_domain(&self.provider_id)
+            .map_err(|error| TransportError::Transport(error.to_string()))
+    }
+}
+
+impl GuestTransport for QemuGuestTransport {
+    fn run(
+        &self,
+        request: &RunRequest<'_>,
+        destination: &mut dyn Write,
+    ) -> Result<RunOutput, TransportError> {
+        validate_executable(request.executable)?;
+        require_time(request.deadline)?;
+        let domain = self.domain()?;
+        let log_path = format!("/run/wt-command-{}.log", Uuid::new_v4());
+        write_bytes(&domain, &log_path, b"")?;
+        let handle = open_file(&domain, &log_path, "r")?;
+        let result = (|| {
+            let script =
+                "log=$1; shift; \"$@\" >\"$log\" 2>&1; status=$?; rm -f -- \"$log\"; exit \"$status\"";
+            let mut shell_args = vec![
+                "-c",
+                script,
+                "wt-command",
+                log_path.as_str(),
+                request.executable,
+            ];
+            shell_args.extend_from_slice(request.args);
+            let pid = start_exec(&domain, "/bin/sh", &shell_args, request.stdin)?;
+            let mut tail = TailBuffer::default();
+            let mut poll = PollBackoff::default();
+            loop {
+                let exit_code = exec_status(&domain, pid)?;
+                drain_stream(&domain, handle, destination, &mut tail)?;
+                if let Some(exit_code) = exit_code {
+                    return Ok(RunOutput {
+                        exit_code,
+                        diagnostic_tail: tail.into_bytes(),
+                    });
+                }
+                require_time(request.deadline)?;
+                clear_file_eof(&domain, handle)?;
+                poll.sleep();
+            }
+        })();
+        close_file(&domain, handle);
+        if result.is_err() {
+            remove_guest_files(&domain, &[&log_path]);
+        }
+        result
+    }
+
+    fn capture(&self, request: &CaptureRequest<'_>) -> Result<CapturedOutput, TransportError> {
+        validate_executable(request.executable)?;
+        require_time(request.deadline)?;
+        let domain = self.domain()?;
+        let token = Uuid::new_v4();
+        let stdout_path = format!("/run/wt-capture-{token}.stdout");
+        let stderr_path = format!("/run/wt-capture-{token}.stderr");
+        write_bytes(&domain, &stdout_path, b"")?;
+        write_bytes(&domain, &stderr_path, b"")?;
+        let stdout_handle = open_file(&domain, &stdout_path, "r")?;
+        let stderr_handle = match open_file(&domain, &stderr_path, "r") {
+            Ok(handle) => handle,
+            Err(error) => {
+                close_file(&domain, stdout_handle);
+                remove_guest_files(&domain, &[&stdout_path, &stderr_path]);
+                return Err(error);
+            }
+        };
+        let result = (|| {
+            let script = "stdout=$1; stderr=$2; shift 2; \"$@\" >\"$stdout\" 2>\"$stderr\"";
+            let mut shell_args = vec![
+                "-c",
+                script,
+                "wt-capture",
+                stdout_path.as_str(),
+                stderr_path.as_str(),
+                request.executable,
+            ];
+            shell_args.extend_from_slice(request.args);
+            let pid = start_exec(&domain, "/bin/sh", &shell_args, request.stdin)?;
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut poll = PollBackoff::default();
+            loop {
+                let exit_code = exec_status(&domain, pid)?;
+                drain_bounded(
+                    &domain,
+                    stdout_handle,
+                    &mut stdout,
+                    request.stdout_limit,
+                    StreamKind::Stdout,
+                )?;
+                drain_bounded(
+                    &domain,
+                    stderr_handle,
+                    &mut stderr,
+                    request.stderr_limit,
+                    StreamKind::Stderr,
+                )?;
+                if let Some(exit_code) = exit_code {
+                    return Ok(CapturedOutput {
+                        exit_code,
+                        stdout,
+                        stderr,
+                    });
+                }
+                require_time(request.deadline)?;
+                clear_file_eof(&domain, stdout_handle)?;
+                clear_file_eof(&domain, stderr_handle)?;
+                poll.sleep();
+            }
+        })();
+        close_file(&domain, stdout_handle);
+        close_file(&domain, stderr_handle);
+        remove_guest_files(&domain, &[&stdout_path, &stderr_path]);
+        result
+    }
+
+    fn write_file(&self, request: &WriteFileRequest<'_>) -> Result<(), TransportError> {
+        validate_file_path(request.path)?;
+        require_time(request.deadline)?;
+        let domain = self.domain()?;
+        write_bytes(&domain, request.path, request.contents)?;
+        let owner = format!("{}:{}", request.owner, request.group);
+        let mode = format!("{:04o}", request.mode);
+        let chown = run_direct(
+            &domain,
+            "/bin/chown",
+            &[&owner, request.path],
+            request.deadline,
+        )?;
+        if chown != 0 {
+            return Err(TransportError::Transport(format!(
+                "set guest file ownership: exit code {chown}"
+            )));
+        }
+        let chmod = run_direct(
+            &domain,
+            "/bin/chmod",
+            &[&mode, request.path],
+            request.deadline,
+        )?;
+        if chmod != 0 {
+            return Err(TransportError::Transport(format!(
+                "set guest file mode: exit code {chmod}"
+            )));
+        }
+        Ok(())
+    }
+}
+
+fn run_direct(
     domain: &Domain,
-    phase: &str,
-    path: &str,
+    executable: &str,
     args: &[&str],
     deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    let output = exec_streaming(domain, path, args, deadline, log)
-        .map_err(|error| WorkerError::new(format!("{phase}: {error}")))?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "{phase}: exit code {}: {}",
-            output.exit_code,
-            String::from_utf8_lossy(&output.tail).trim()
-        )));
+) -> Result<i64, TransportError> {
+    require_time(deadline)?;
+    let pid = start_exec(domain, executable, args, None)?;
+    let mut poll = PollBackoff::default();
+    loop {
+        if let Some(exit_code) = exec_status(domain, pid)? {
+            return Ok(exit_code);
+        }
+        require_time(deadline)?;
+        poll.sleep();
     }
+}
+
+fn remove_guest_files(domain: &Domain, paths: &[&str]) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut args = vec!["-f", "--"];
+    args.extend_from_slice(paths);
+    let _ = run_direct(domain, "/bin/rm", &args, deadline);
+}
+
+fn start_exec(
+    domain: &Domain,
+    path: &str,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> Result<u64, TransportError> {
+    let mut arguments = serde_json::json!({
+        "path": path,
+        "arg": args,
+        "capture-output": false,
+    });
+    if let Some(stdin) = stdin {
+        arguments["input-data"] = serde_json::Value::String(BASE64.encode(stdin));
+    }
+    let request = serde_json::json!({
+        "execute": "guest-exec",
+        "arguments": arguments,
+    });
+    let response = agent_command(domain, &request, "start guest command")?;
+    response["return"]["pid"].as_u64().ok_or_else(|| {
+        TransportError::Transport("guest agent did not return an execution pid".to_owned())
+    })
+}
+
+fn exec_status(domain: &Domain, pid: u64) -> Result<Option<i64>, TransportError> {
+    let request = serde_json::json!({
+        "execute": "guest-exec-status",
+        "arguments": { "pid": pid }
+    });
+    let response = agent_command(domain, &request, "read guest command")?;
+    let result = &response["return"];
+    Ok((result["exited"].as_bool() == Some(true))
+        .then(|| result["exitcode"].as_i64().unwrap_or(-1)))
+}
+
+fn open_file(domain: &Domain, path: &str, mode: &str) -> Result<i64, TransportError> {
+    let request = serde_json::json!({
+        "execute": "guest-file-open",
+        "arguments": { "path": path, "mode": mode }
+    });
+    let response = agent_command(domain, &request, "open guest file")?;
+    response["return"].as_i64().ok_or_else(|| {
+        TransportError::Transport("guest agent did not return a file handle".to_owned())
+    })
+}
+
+fn drain_stream(
+    domain: &Domain,
+    handle: i64,
+    destination: &mut dyn Write,
+    tail: &mut TailBuffer,
+) -> Result<(), TransportError> {
+    loop {
+        let chunk = read_file_chunk(domain, handle)?;
+        if !chunk.bytes.is_empty() {
+            destination
+                .write_all(&chunk.bytes)
+                .map_err(|error| TransportError::LogSink(error.to_string()))?;
+            destination
+                .flush()
+                .map_err(|error| TransportError::LogSink(error.to_string()))?;
+            tail.push(&chunk.bytes);
+        }
+        if chunk.eof || chunk.bytes.is_empty() {
+            return Ok(());
+        }
+    }
+}
+
+fn drain_bounded(
+    domain: &Domain,
+    handle: i64,
+    destination: &mut Vec<u8>,
+    limit: usize,
+    stream: StreamKind,
+) -> Result<(), TransportError> {
+    loop {
+        let chunk = read_file_chunk(domain, handle)?;
+        if destination.len().saturating_add(chunk.bytes.len()) > limit {
+            return Err(TransportError::Overflow { stream, limit });
+        }
+        destination.extend_from_slice(&chunk.bytes);
+        if chunk.eof || chunk.bytes.is_empty() {
+            return Ok(());
+        }
+    }
+}
+
+struct FileChunk {
+    bytes: Vec<u8>,
+    eof: bool,
+}
+
+fn read_file_chunk(domain: &Domain, handle: i64) -> Result<FileChunk, TransportError> {
+    let request = serde_json::json!({
+        "execute": "guest-file-read",
+        "arguments": { "handle": handle, "count": FILE_READ_SIZE }
+    });
+    let response = agent_command(domain, &request, "read guest command output")?;
+    let result = &response["return"];
+    Ok(FileChunk {
+        bytes: decode_data(result.get("buf-b64"))?,
+        eof: result["eof"].as_bool() == Some(true),
+    })
+}
+
+fn clear_file_eof(domain: &Domain, handle: i64) -> Result<(), TransportError> {
+    let request = serde_json::json!({
+        "execute": "guest-file-seek",
+        "arguments": { "handle": handle, "offset": 0, "whence": "cur" }
+    });
+    agent_command(domain, &request, "continue reading guest command output")?;
     Ok(())
 }
 
-pub(super) fn capture_phase(
-    domain: &Domain,
-    phase: &str,
-    path: &str,
-    args: &[&str],
-    deadline: Instant,
-) -> Result<Vec<u8>, WorkerError> {
-    let output = exec(domain, path, args, deadline)
-        .map_err(|error| WorkerError::new(format!("{phase}: {error}")))?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "{phase}: exit code {}: {}",
-            output.exit_code,
-            tail_output(&output.stdout, &output.stderr)
-        )));
-    }
-    Ok(output.stdout)
+fn close_file(domain: &Domain, handle: i64) {
+    let request = serde_json::json!({
+        "execute": "guest-file-close",
+        "arguments": { "handle": handle }
+    });
+    let _ = domain.qemu_agent_command(&request.to_string(), 10, 0);
 }
 
-struct StreamOutput {
-    exit_code: i64,
-    tail: Vec<u8>,
-}
-
-fn exec_streaming(
-    domain: &Domain,
-    path: &str,
-    args: &[&str],
-    deadline: Instant,
-    destination: &mut dyn Write,
-) -> Result<StreamOutput, WorkerError> {
-    if Instant::now() >= deadline {
-        return Err(WorkerError::new("recipe deadline exceeded"));
-    }
-    let log_path = format!("/run/wt-command-{}.log", Uuid::new_v4());
-    write(domain, &log_path, b"")?;
-    let handle = open_file(domain, &log_path, "r")?;
+fn write_bytes(domain: &Domain, path: &str, contents: &[u8]) -> Result<(), TransportError> {
+    let handle = open_file(domain, path, "w")?;
     let result = (|| {
-        let script =
-            "log=$1; shift; \"$@\" >\"$log\" 2>&1; status=$?; rm -f -- \"$log\"; exit \"$status\"";
-        let mut shell_args = vec!["-c", script, "wt-command", log_path.as_str(), path];
-        shell_args.extend_from_slice(args);
-        let pid = start_exec(domain, "/bin/sh", &shell_args, false)?;
-        let mut tail = TailBuffer::default();
-        let mut poll = PollBackoff::default();
-
-        loop {
-            let exit_code = exec_status(domain, pid)?;
-            drain_file(domain, handle, destination, &mut tail)?;
-            if let Some(exit_code) = exit_code {
-                return Ok(StreamOutput {
-                    exit_code,
-                    tail: tail.into_bytes(),
-                });
-            }
-            if Instant::now() >= deadline {
-                return Err(WorkerError::new("recipe deadline exceeded"));
-            }
-            clear_file_eof(domain, handle)?;
-            poll.sleep();
+        for chunk in contents.chunks(FILE_WRITE_SIZE) {
+            let request = serde_json::json!({
+                "execute": "guest-file-write",
+                "arguments": { "handle": handle, "buf-b64": BASE64.encode(chunk) }
+            });
+            agent_command(domain, &request, "write guest file")?;
         }
+        Ok(())
     })();
     close_file(domain, handle);
-    if result.is_err() {
-        let _ = exec(domain, "/bin/rm", &["-f", "--", &log_path], deadline);
-    }
     result
 }
 
-pub(super) fn exec(
+fn agent_command(
     domain: &Domain,
-    path: &str,
-    args: &[&str],
-    deadline: Instant,
-) -> Result<Output, WorkerError> {
-    if Instant::now() >= deadline {
-        return Err(WorkerError::new("recipe deadline exceeded"));
-    }
-    let pid = start_exec(domain, path, args, true)?;
-    let mut poll = PollBackoff::default();
+    request: &serde_json::Value,
+    action: &str,
+) -> Result<serde_json::Value, TransportError> {
+    let response = domain
+        .qemu_agent_command(&request.to_string(), 10, 0)
+        .map_err(|error| TransportError::Transport(format!("{action}: {error}")))?;
+    serde_json::from_str(&response)
+        .map_err(|error| TransportError::Transport(format!("decode {action}: {error}")))
+}
 
-    loop {
-        if let Some(result) = read_exec_status(domain, pid)? {
-            return Ok(Output {
-                exit_code: result["exitcode"].as_i64().unwrap_or(-1),
-                stdout: decode_data(result.get("out-data"))?,
-                stderr: decode_data(result.get("err-data"))?,
-            });
-        }
-        if Instant::now() >= deadline {
-            return Err(WorkerError::new("recipe deadline exceeded"));
-        }
-        poll.sleep();
+fn decode_data(value: Option<&serde_json::Value>) -> Result<Vec<u8>, TransportError> {
+    let Some(value) = value.and_then(serde_json::Value::as_str) else {
+        return Ok(Vec::new());
+    };
+    BASE64
+        .decode(value)
+        .map_err(|error| TransportError::Transport(format!("decode guest command output: {error}")))
+}
+
+fn require_time(deadline: Instant) -> Result<(), TransportError> {
+    if Instant::now() >= deadline {
+        Err(TransportError::Deadline)
+    } else {
+        Ok(())
     }
 }
 
@@ -149,170 +389,6 @@ impl PollBackoff {
     fn sleep(&mut self) {
         std::thread::sleep(self.next_delay());
     }
-}
-
-fn start_exec(
-    domain: &Domain,
-    path: &str,
-    args: &[&str],
-    capture_output: bool,
-) -> Result<u64, WorkerError> {
-    let request = serde_json::json!({
-        "execute": "guest-exec",
-        "arguments": { "path": path, "arg": args, "capture-output": capture_output }
-    });
-    let response = agent_command(domain, &request, "start guest command")?;
-    response["return"]["pid"]
-        .as_u64()
-        .ok_or_else(|| WorkerError::new("guest agent did not return an execution pid"))
-}
-
-fn exec_status(domain: &Domain, pid: u64) -> Result<Option<i64>, WorkerError> {
-    Ok(read_exec_status(domain, pid)?.map(|result| result["exitcode"].as_i64().unwrap_or(-1)))
-}
-
-fn read_exec_status(domain: &Domain, pid: u64) -> Result<Option<serde_json::Value>, WorkerError> {
-    let request = serde_json::json!({
-        "execute": "guest-exec-status",
-        "arguments": { "pid": pid }
-    });
-    let response = agent_command(domain, &request, "read guest command")?;
-    let result = &response["return"];
-    Ok((result["exited"].as_bool() == Some(true)).then(|| result.clone()))
-}
-
-fn open_file(domain: &Domain, path: &str, mode: &str) -> Result<i64, WorkerError> {
-    let request = serde_json::json!({
-        "execute": "guest-file-open",
-        "arguments": { "path": path, "mode": mode }
-    });
-    let response = agent_command(domain, &request, "open guest output file")?;
-    response["return"]
-        .as_i64()
-        .ok_or_else(|| WorkerError::new("guest agent did not return a file handle"))
-}
-
-fn drain_file(
-    domain: &Domain,
-    handle: i64,
-    destination: &mut dyn Write,
-    tail: &mut TailBuffer,
-) -> Result<(), WorkerError> {
-    loop {
-        let request = serde_json::json!({
-            "execute": "guest-file-read",
-            "arguments": { "handle": handle, "count": FILE_READ_SIZE }
-        });
-        let response = agent_command(domain, &request, "read guest command output")?;
-        let result = &response["return"];
-        let chunk = decode_data(result.get("buf-b64"))?;
-        if !chunk.is_empty() {
-            forward_chunk(destination, tail, &chunk)?;
-        }
-        if result["eof"].as_bool() == Some(true) || chunk.is_empty() {
-            return Ok(());
-        }
-    }
-}
-
-fn forward_chunk(
-    destination: &mut dyn Write,
-    tail: &mut TailBuffer,
-    chunk: &[u8],
-) -> Result<(), WorkerError> {
-    destination
-        .write_all(chunk)
-        .map_err(|error| error_context("forward guest command output", error))?;
-    destination
-        .flush()
-        .map_err(|error| error_context("flush guest command output", error))?;
-    tail.push(chunk);
-    Ok(())
-}
-
-fn clear_file_eof(domain: &Domain, handle: i64) -> Result<(), WorkerError> {
-    let request = serde_json::json!({
-        "execute": "guest-file-seek",
-        "arguments": { "handle": handle, "offset": 0, "whence": "cur" }
-    });
-    agent_command(domain, &request, "continue reading guest command output")?;
-    Ok(())
-}
-
-fn close_file(domain: &Domain, handle: i64) {
-    let request = serde_json::json!({
-        "execute": "guest-file-close",
-        "arguments": { "handle": handle }
-    });
-    let _ = domain.qemu_agent_command(&request.to_string(), 10, 0);
-}
-
-fn agent_command(
-    domain: &Domain,
-    request: &serde_json::Value,
-    action: &str,
-) -> Result<serde_json::Value, WorkerError> {
-    let response = domain
-        .qemu_agent_command(&request.to_string(), 10, 0)
-        .map_err(|error| error_context(action, error))?;
-    serde_json::from_str(&response)
-        .map_err(|error| error_context(&format!("decode {action}"), error))
-}
-
-/// Writes through QEMU's file API so provisioning never needs guest SSH.
-pub(super) fn write(domain: &Domain, path: &str, contents: &[u8]) -> Result<(), WorkerError> {
-    let request = serde_json::json!({
-        "execute": "guest-file-open",
-        "arguments": { "path": path, "mode": "w" }
-    });
-    let response = domain
-        .qemu_agent_command(&request.to_string(), 10, 0)
-        .map_err(|error| error_context("open guest file", error))?;
-    let response: serde_json::Value = serde_json::from_str(&response)
-        .map_err(|error| error_context("decode guest file response", error))?;
-    let handle = response["return"]
-        .as_i64()
-        .ok_or_else(|| WorkerError::new("guest agent did not return a file handle"))?;
-    let result = (|| {
-        // Stay below the guest-agent message limit after base64 expansion.
-        for chunk in contents.chunks(48 * 1024) {
-            let request = serde_json::json!({
-                "execute": "guest-file-write",
-                "arguments": { "handle": handle, "buf-b64": BASE64.encode(chunk) }
-            });
-            domain
-                .qemu_agent_command(&request.to_string(), 10, 0)
-                .map_err(|error| error_context("write guest file", error))?;
-        }
-        Ok(())
-    })();
-    let close = serde_json::json!({
-        "execute": "guest-file-close", "arguments": { "handle": handle }
-    });
-    let _ = domain.qemu_agent_command(&close.to_string(), 10, 0);
-    result
-}
-
-fn decode_data(value: Option<&serde_json::Value>) -> Result<Vec<u8>, WorkerError> {
-    let Some(value) = value.and_then(serde_json::Value::as_str) else {
-        return Ok(Vec::new());
-    };
-    BASE64
-        .decode(value)
-        .map_err(|error| error_context("decode guest command output", error))
-}
-
-fn tail_output(stdout: &[u8], stderr: &[u8]) -> String {
-    let mut combined = Vec::with_capacity(stdout.len() + stderr.len() + 1);
-    combined.extend_from_slice(stdout);
-    if !stdout.is_empty() && !stderr.is_empty() {
-        combined.push(b'\n');
-    }
-    combined.extend_from_slice(stderr);
-    let start = combined.len().saturating_sub(OUTPUT_TAIL_LIMIT);
-    String::from_utf8_lossy(&combined[start..])
-        .trim()
-        .to_owned()
 }
 
 #[derive(Default)]
@@ -334,13 +410,9 @@ impl TailBuffer {
     }
 }
 
-fn error_context(action: &str, error: impl std::fmt::Display) -> WorkerError {
-    WorkerError::new(format!("{action}: {error}"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{forward_chunk, tail_output, PollBackoff, TailBuffer, OUTPUT_TAIL_LIMIT};
+    use super::*;
 
     #[test]
     fn command_polling_backs_off_to_500_milliseconds() {
@@ -348,7 +420,6 @@ mod tests {
         let delays = (0..7)
             .map(|_| poll.next_delay().as_millis())
             .collect::<Vec<_>>();
-
         assert_eq!(delays, [50, 100, 200, 400, 500, 500, 500]);
     }
 
@@ -357,30 +428,8 @@ mod tests {
         let mut tail = TailBuffer::default();
         tail.push(&vec![b'a'; OUTPUT_TAIL_LIMIT]);
         tail.push(b"last");
-
         let bytes = tail.into_bytes();
         assert_eq!(bytes.len(), OUTPUT_TAIL_LIMIT);
         assert_eq!(&bytes[bytes.len() - 4..], b"last");
-        assert!(bytes[..bytes.len() - 4].iter().all(|byte| *byte == b'a'));
-    }
-
-    #[test]
-    fn captured_failure_tail_combines_stdout_and_stderr() {
-        insta::assert_snapshot!(tail_output(b"stdout", b"stderr"), @r###"
-        stdout
-        stderr
-        "###);
-    }
-
-    #[test]
-    fn forwarded_chunks_are_raw_and_do_not_require_a_trailing_newline() {
-        let mut destination = Vec::new();
-        let mut tail = TailBuffer::default();
-
-        forward_chunk(&mut destination, &mut tail, b"partial").unwrap();
-        forward_chunk(&mut destination, &mut tail, &[0xff, b'!']).unwrap();
-
-        assert_eq!(destination, b"partial\xff!");
-        assert_eq!(tail.into_bytes(), destination);
     }
 }

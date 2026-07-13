@@ -1,5 +1,8 @@
 # Provider API split
 
+Status: implemented by `wt-provider` and the narrowed `wt-libvirt` machine
+provider. The static SSH provider remains a separate next step.
+
 Separate machine lifecycle from world provisioning.
 
 Flow:
