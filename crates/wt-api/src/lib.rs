@@ -44,10 +44,21 @@ pub struct CreateInstance {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
     pub git_passphrase: GitPassphrase,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_user_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_user_email: Option<String>,
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub git_user_name: String,
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub git_user_email: String,
+}
+
+fn deserialize_nonempty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom("value must not be empty"));
+    }
+    Ok(value)
 }
 
 #[derive(Deserialize, Eq, PartialEq, Serialize, Zeroize, ZeroizeOnDrop)]
@@ -388,8 +399,8 @@ mod tests {
             git_branch: None,
             git_ref: Some("devcontainer".to_owned()),
             git_passphrase: GitPassphrase::new("secret".to_owned()),
-            git_user_name: Some("Lucas Ávila".to_owned()),
-            git_user_email: Some("lucaxx@gmail.com".to_owned()),
+            git_user_name: "Lucas Ávila".to_owned(),
+            git_user_email: "lucaxx@gmail.com".to_owned(),
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -407,22 +418,26 @@ mod tests {
     }
 
     #[test]
-    fn create_request_accepts_missing_git_author_identity() {
-        let request = serde_json::from_value::<ApiRequest>(serde_json::json!({
+    fn create_request_requires_git_author_identity() {
+        let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
             "git_passphrase": "secret"
-        }))
-        .unwrap();
-        let Operation::Create(create) = request.operation else {
-            panic!("expected create request");
-        };
-        assert_eq!(create.git_user_name, None);
-        assert_eq!(create.git_user_email, None);
-        assert_eq!(create.git_branch, None);
-        assert_eq!(create.git_ref, None);
+        }));
+        assert!(missing.is_err());
+
+        let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
+            "protocol_version": 1,
+            "operation": "create",
+            "name": "repo-feature",
+            "source": "git@github.com:example/repo.git",
+            "git_passphrase": "secret",
+            "git_user_name": "",
+            "git_user_email": "lucaxx@gmail.com"
+        }));
+        assert!(empty.is_err());
     }
 
     #[test]

@@ -74,7 +74,7 @@ fn run() -> Result<()> {
                         .join(", ")
                 ),
             };
-            let git_author = read_git_author();
+            let git_author = read_git_author()?;
             let response = create_with_passphrase_attempts(
                 context,
                 world_name,
@@ -84,7 +84,6 @@ fn run() -> Result<()> {
                 &git_author,
                 |prompt| rpassword::prompt_password(prompt).map_err(Into::into),
             )?;
-            print_git_author_warnings(&git_author);
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -232,83 +231,48 @@ fn create_with_passphrase_attempts(
 }
 
 #[derive(Debug)]
-struct GitAuthorValue {
-    value: Option<String>,
-    error: Option<String>,
-}
-
-#[derive(Debug)]
 struct GitAuthor {
-    name: Option<String>,
-    email: Option<String>,
-    warnings: Vec<String>,
+    name: String,
+    email: String,
 }
 
-fn read_git_author() -> GitAuthor {
-    let name = read_global_git_config("user.name");
-    let email = read_global_git_config("user.email");
-    let mut warnings = Vec::new();
-    collect_git_author_warning("user.name", &name, &mut warnings);
-    collect_git_author_warning("user.email", &email, &mut warnings);
-    GitAuthor {
-        name: name.value,
-        email: email.value,
-        warnings,
-    }
+fn read_git_author() -> Result<GitAuthor> {
+    Ok(GitAuthor {
+        name: read_global_git_config("user.name")?,
+        email: read_global_git_config("user.email")?,
+    })
 }
 
-fn read_global_git_config(key: &str) -> GitAuthorValue {
+fn read_global_git_config(key: &str) -> Result<String> {
     match ProcessCommand::new("git")
         .args(["config", "--global", "--null", "--get", key])
         .output()
     {
-        Ok(output) if output.status.success() => match parse_git_config_value(&output.stdout) {
-            Ok(value) => GitAuthorValue { value, error: None },
-            Err(error) => GitAuthorValue {
-                value: None,
-                error: Some(error.to_string()),
-            },
-        },
-        Ok(output) if output.status.code() == Some(1) => GitAuthorValue {
-            value: None,
-            error: None,
-        },
-        Ok(output) => GitAuthorValue {
-            value: None,
-            error: Some(String::from_utf8_lossy(&output.stderr).trim().to_owned()),
-        },
-        Err(error) => GitAuthorValue {
-            value: None,
-            error: Some(error.to_string()),
-        },
+        Ok(output) if output.status.success() => parse_git_config_value(&output.stdout)?
+            .ok_or_else(|| required_git_config_error(key, None)),
+        Ok(output) if output.status.code() == Some(1) => Err(required_git_config_error(key, None)),
+        Ok(output) => Err(required_git_config_error(
+            key,
+            Some(String::from_utf8_lossy(&output.stderr).trim()),
+        )),
+        Err(error) => Err(required_git_config_error(key, Some(&error.to_string()))),
     }
+}
+
+fn required_git_config_error(key: &str, detail: Option<&str>) -> anyhow::Error {
+    let detail = detail
+        .filter(|detail| !detail.is_empty())
+        .map(|detail| format!(": {detail}"))
+        .unwrap_or_default();
+    anyhow::anyhow!(
+        "global Git {key} is required; configure it with `git config --global {key} VALUE`{detail}"
+    )
 }
 
 fn parse_git_config_value(stdout: &[u8]) -> Result<Option<String>> {
     let value = stdout.strip_suffix(b"\0").unwrap_or(stdout);
     let value = std::str::from_utf8(value).map_err(|error| anyhow::anyhow!(error))?;
     Ok((!value.is_empty()).then(|| value.to_owned()))
-}
-
-fn collect_git_author_warning(key: &str, result: &GitAuthorValue, warnings: &mut Vec<String>) {
-    if result.value.is_some() {
-        return;
-    }
-    let detail = result
-        .error
-        .as_deref()
-        .filter(|detail| !detail.is_empty())
-        .map(|detail| format!(": {detail}"))
-        .unwrap_or_default();
-    warnings.push(format!(
-        "Git {key} was not copied because it is not configured on this workstation{detail}"
-    ));
-}
-
-fn print_git_author_warnings(git_author: &GitAuthor) {
-    for warning in &git_author.warnings {
-        eprintln!("warning: {warning}");
-    }
 }
 
 fn follow_logs(context: &Context, name: &wt_api::InstanceName) -> Result<wt_api::Instance> {
@@ -600,16 +564,10 @@ mod tests {
     }
 
     #[test]
-    fn explains_missing_git_author_value() {
-        let mut warnings = Vec::new();
-        collect_git_author_warning(
-            "user.email",
-            &GitAuthorValue {
-                value: None,
-                error: None,
-            },
-            &mut warnings,
+    fn explains_required_git_author_value() {
+        insta::assert_snapshot!(
+            required_git_config_error("user.email", None).to_string(),
+            @"global Git user.email is required; configure it with `git config --global user.email VALUE`"
         );
-        insta::assert_snapshot!(warnings.join("\n"), @"Git user.email was not copied because it is not configured on this workstation");
     }
 }
