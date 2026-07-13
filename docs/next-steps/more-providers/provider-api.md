@@ -2,15 +2,18 @@
 
 Separate machine lifecycle from world provisioning.
 
-Keep this flow:
+Flow:
 
 ```text
 reserve -> create machine -> provision guest -> start devcontainer
         -> verify SSH -> mark running
 ```
 
-This is a code refactor. User-visible changes are not a goal. Make them only
-when the provider boundary requires them.
+WT has not shipped. Breaking API, config, and database changes are allowed. Do
+not add migrations, compatibility shims, legacy readers, or fallback paths.
+
+This is still a code refactor. User-visible changes are not a goal. Make them
+only when the provider boundary requires them.
 
 ## Ownership
 

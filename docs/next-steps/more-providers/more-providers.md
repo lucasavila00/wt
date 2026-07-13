@@ -3,6 +3,9 @@
 Keep one VM per world. Keep Docker Compose behavior, including host networking,
 privileged containers, and bind mounts.
 
+WT has not shipped. These changes may break APIs, config, and stored data. Do
+not build migrations, backward compatibility, or legacy code paths.
+
 ## Model
 
 ```text
