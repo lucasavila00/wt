@@ -91,8 +91,8 @@ pub struct ProvisionSpec<'a> {
     pub git_branch: Option<&'a str>,
     pub git_ref: Option<&'a str>,
     pub git_passphrase: &'a wt_api::GitPassphrase,
-    pub git_user_name: Option<&'a str>,
-    pub git_user_email: Option<&'a str>,
+    pub git_user_name: &'a str,
+    pub git_user_email: &'a str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -362,8 +362,8 @@ mod tests {
             git_branch: None,
             git_ref: None,
             git_passphrase: &passphrase,
-            git_user_name: None,
-            git_user_email: None,
+            git_user_name: "Test User",
+            git_user_email: "test@example.invalid",
         };
         let mut log = Vec::new();
         let error = worker.provision(&spec, &mut log).unwrap_err();

@@ -152,15 +152,12 @@ pub(super) fn checkout(
 
 pub(super) fn configure_author(
     transport: &dyn GuestTransport,
-    name: Option<&str>,
-    email: Option<&str>,
+    name: &str,
+    email: &str,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     for (key, value) in [("user.name", name), ("user.email", email)] {
-        let Some(value) = value else {
-            continue;
-        };
         run_git(
             transport,
             "Git author identity",

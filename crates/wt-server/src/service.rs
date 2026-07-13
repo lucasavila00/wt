@@ -93,8 +93,8 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                     git_ref: request.git_ref.as_deref(),
                 },
                 author: GitAuthor {
-                    name: request.git_user_name.as_deref(),
-                    email: request.git_user_email.as_deref(),
+                    name: &request.git_user_name,
+                    email: &request.git_user_email,
                 },
             },
             lock,

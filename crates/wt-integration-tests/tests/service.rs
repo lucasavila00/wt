@@ -87,8 +87,8 @@ impl WorldWorker for InjectedWorker {
         _log: &mut dyn std::io::Write,
     ) -> Result<World, WorkerError> {
         self.provision_calls.fetch_add(1, Ordering::SeqCst);
-        *self.git_user_name.lock().unwrap() = spec.git_user_name.map(str::to_owned);
-        *self.git_user_email.lock().unwrap() = spec.git_user_email.map(str::to_owned);
+        *self.git_user_name.lock().unwrap() = Some(spec.git_user_name.to_owned());
+        *self.git_user_email.lock().unwrap() = Some(spec.git_user_email.to_owned());
         *self.git_branch.lock().unwrap() = spec.git_branch.map(str::to_owned);
         *self.git_ref.lock().unwrap() = spec.git_ref.map(str::to_owned);
         if self.fail_provision {
@@ -131,8 +131,8 @@ fn create(name: InstanceName) -> CreateInstance {
         git_branch: None,
         git_ref: None,
         git_passphrase: GitPassphrase::new("secret".to_owned()),
-        git_user_name: None,
-        git_user_email: None,
+        git_user_name: "Test User".to_owned(),
+        git_user_email: "test@example.invalid".to_owned(),
     }
 }
 
@@ -153,8 +153,8 @@ fn lifecycle_persists_and_is_owner_scoped() {
 
     let worker = InjectedWorker::default();
     let mut request = create(name.clone());
-    request.git_user_name = Some("Lucas Ávila".to_owned());
-    request.git_user_email = Some("lucaxx@gmail.com".to_owned());
+    request.git_user_name = "Lucas Ávila".to_owned();
+    request.git_user_email = "lucaxx@gmail.com".to_owned();
     request.git_branch = Some("devcontainer-work".to_owned());
     let mut service = Service::new(
         Store::open(&database).unwrap(),

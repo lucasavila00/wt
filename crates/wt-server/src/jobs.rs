@@ -17,10 +17,10 @@ pub struct JobLock {
     _file: File,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GitAuthor<'a> {
-    pub name: Option<&'a str>,
-    pub email: Option<&'a str>,
+    pub name: &'a str,
+    pub email: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -29,7 +29,7 @@ pub struct GitCheckout<'a> {
     pub git_ref: Option<&'a str>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProvisionOptions<'a> {
     pub checkout: GitCheckout<'a>,
     pub author: GitAuthor<'a>,
@@ -143,8 +143,8 @@ where
         let passphrase = GitPassphrase::new(passphrase.expose_secret().to_owned());
         let git_branch = options.checkout.branch.map(str::to_owned);
         let git_ref = options.checkout.git_ref.map(str::to_owned);
-        let git_user_name = options.author.name.map(str::to_owned);
-        let git_user_email = options.author.email.map(str::to_owned);
+        let git_user_name = options.author.name.to_owned();
+        let git_user_email = options.author.email.to_owned();
         std::thread::Builder::new()
             .name(format!("wt-provision-{}", stored.instance.id))
             .spawn(move || {
@@ -157,8 +157,8 @@ where
                     git_branch.as_deref(),
                     git_ref.as_deref(),
                     GitAuthor {
-                        name: git_user_name.as_deref(),
-                        email: git_user_email.as_deref(),
+                        name: &git_user_name,
+                        email: &git_user_email,
                     },
                 ) {
                     let message = error.to_string();

@@ -5,6 +5,48 @@ use std::process::Stdio;
 use wt_command::cmd;
 
 #[test]
+fn new_requires_global_git_author_identity_before_contacting_server() {
+    let temp = tempfile::tempdir().unwrap();
+    let bin = temp.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let helper = bin.join("wt-server");
+    fs::write(
+        &helper,
+        "#!/bin/sh\ntouch \"$HOME/server-contacted\"\nexit 2\n",
+    )
+    .unwrap();
+    fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::create_dir(temp.path().join(".wt")).unwrap();
+    fs::write(
+        temp.path().join(".wt/config.toml"),
+        "version = 1\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
+    )
+    .unwrap();
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )))
+    .unwrap();
+
+    let output = cmd!(
+        env!("CARGO_BIN_EXE_wt"),
+        "new",
+        "git@example.test:repo.git",
+        "repo-feature"
+    )
+    .env("HOME", temp.path())
+    .env("PATH", path)
+    .output()
+    .unwrap();
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!temp.path().join("server-contacted").exists());
+    insta::assert_snapshot!(String::from_utf8_lossy(&output.stderr), @r###"
+    wt: global Git user.name is required; configure it with `git config --global user.name VALUE`
+    "###);
+}
+
+#[test]
 fn new_and_rm_always_sync_ssh_inventory() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
