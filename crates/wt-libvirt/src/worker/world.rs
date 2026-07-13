@@ -108,4 +108,16 @@ mod tests {
             dhcp-identifier: mac
         "###);
     }
+
+    #[test]
+    fn machine_boot_installs_its_required_transport() {
+        insta::assert_snapshot!(cloud_config(), @r###"
+        #cloud-config
+        package_update: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - [systemctl, enable, --now, qemu-guest-agent.service]
+        "###);
+    }
 }

@@ -4,7 +4,9 @@ mod git;
 mod provisioner;
 mod transport;
 
-pub use bootstrap::{BootstrapPolicy, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION};
+pub use bootstrap::{
+    BootstrapPolicy, PackageSet, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION,
+};
 pub use provisioner::{ProvisionerConfig, WorldProvisioner};
 pub use transport::{
     validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
@@ -309,9 +311,10 @@ mod tests {
                 .unwrap();
         });
         let session = SessionFrontend::Tmux;
-        let packages = BootstrapPolicy::expected_package_names(session)
-            .into_iter()
-            .map(|name| (name.to_owned(), "1".to_owned()))
+        let packages = PackageSet::provisioner(session)
+            .names()
+            .iter()
+            .map(|name| ((*name).to_owned(), "1".to_owned()))
             .collect();
         let provisioner = WorldProvisioner::new(ProvisionerConfig {
             app_shell_binary: temp.path().join("app-shell"),

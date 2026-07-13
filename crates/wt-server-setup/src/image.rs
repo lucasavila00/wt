@@ -1,6 +1,6 @@
 mod recipe;
 
-use self::recipe::{ImageRecipe, PackageVersions};
+use self::recipe::ImageRecipe;
 use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
@@ -21,6 +21,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
 use wt_libvirt::LIBVIRT_URI;
+use wt_provider::PackageVersions;
 use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";

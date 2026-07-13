@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_libvirt::MachineConfig;
-use wt_provider::{
-    BootstrapPolicy, PackageVersions, ProvisionerConfig, SessionFrontend, DEVCONTAINER_CLI_VERSION,
-};
+use wt_provider::{BootstrapPolicy, PackageVersions, ProvisionerConfig, SessionFrontend};
 
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 
@@ -243,20 +241,15 @@ impl ServerConfig {
         ));
         let bytes = std::fs::read(&manifest_path)
             .map_err(|error| format!("read image manifest {}: {error}", manifest_path.display()))?;
-        let mut manifest: RawManifest = serde_json::from_slice(&bytes).map_err(|error| {
+        let manifest: RawManifest = serde_json::from_slice(&bytes).map_err(|error| {
             format!("parse image manifest {}: {error}", manifest_path.display())
         })?;
-        manifest.packages.remove("qemu-guest-agent");
-        let policy = BootstrapPolicy {
-            session: self.guest.session,
-            packages: manifest.packages,
-            devcontainer_cli_version: manifest.devcontainer_cli,
-        };
-        policy.validate()?;
-        if policy.devcontainer_cli_version != DEVCONTAINER_CLI_VERSION {
-            return Err("image Dev Container CLI version differs from runtime policy".to_owned());
-        }
-        Ok(policy)
+        BootstrapPolicy::from_installed_packages(
+            self.guest.session,
+            manifest.packages,
+            manifest.devcontainer_cli,
+            wt_libvirt::MACHINE_BOOTSTRAP_PACKAGES,
+        )
     }
 
     fn validate_registry_cache(&self) -> Result<(), String> {
