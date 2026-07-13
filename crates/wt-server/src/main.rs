@@ -3,12 +3,14 @@ use clap::{Parser, Subcommand};
 use nix::unistd::{Uid, User};
 use std::path::Path;
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
-use wt_libvirt::{LibvirtWorker, ServerConfig};
+use wt_libvirt::LibvirtProvider;
+use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
 use wt_server::jobs::{Jobs, ThreadLauncher};
 use wt_server::service::Service;
 use wt_server::store::Store;
+use wt_server::ServerConfig;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-server")]
@@ -54,8 +56,22 @@ fn run_server() -> Result<()> {
     jobs.reconcile(&store)
         .context("reconcile interrupted jobs at startup")?;
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
-    let worker = LibvirtWorker::new(server_config.worker_config().map_err(anyhow::Error::msg)?)
-        .map_err(anyhow::Error::msg)?;
+    let provider =
+        LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
+    let registry_cache_url = format!(
+        "http://{}:{}",
+        provider
+            .network_bridge_address()
+            .map_err(anyhow::Error::msg)?,
+        server_config.registry_cache.port
+    );
+    let provisioner = WorldProvisioner::new(
+        server_config
+            .provisioner_config(registry_cache_url)
+            .map_err(anyhow::Error::msg)?,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let worker = CompositeWorker::new(provider, provisioner, server_config.machine_resources());
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
@@ -66,7 +82,7 @@ fn run_server() -> Result<()> {
 fn handle_daemon_request(
     state: &StateConfig,
     jobs: &Jobs,
-    worker: &LibvirtWorker,
+    worker: &CompositeWorker<LibvirtProvider>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {

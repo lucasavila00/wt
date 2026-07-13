@@ -10,7 +10,8 @@ use wt_api::{
     Operation, Outcome, Response,
 };
 use wt_command::cmd;
-use wt_libvirt::{ServerConfig, SessionFrontend};
+use wt_provider::SessionFrontend;
+use wt_server::ServerConfig;
 
 const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
 

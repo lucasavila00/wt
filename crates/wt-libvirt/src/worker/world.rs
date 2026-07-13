@@ -1,8 +1,6 @@
 //! Files and libvirt XML that define one KVM world.
 
-use crate::LibvirtConfig;
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::Engine as _;
+use crate::MachineConfig;
 use std::path::{Path, PathBuf};
 
 pub(super) struct Paths {
@@ -15,8 +13,8 @@ pub(super) struct Paths {
 }
 
 impl Paths {
-    pub(super) fn new(root: &Path, backend_id: &str) -> Self {
-        let directory = root.join(backend_id);
+    pub(super) fn new(root: &Path, provider_id: &wt_provider::ProviderId) -> Self {
+        let directory = root.join(provider_id.as_str());
         Self {
             disk: directory.join("disk.qcow2"),
             seed: directory.join("seed.img"),
@@ -32,37 +30,26 @@ pub(super) fn network_config() -> &'static str {
     "version: 2\nethernets:\n  primary:\n    match:\n      name: \"en*\"\n    dhcp4: true\n    dhcp-identifier: mac\n"
 }
 
-pub(super) fn cloud_config(keys: &[String], proxy_url: &str, proxy_ca: &[u8]) -> String {
-    let keys = keys
-        .iter()
-        .map(|key| {
-            format!(
-                "      - {}",
-                serde_json::to_string(key).expect("serialize public key")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let ca = BASE64.encode(proxy_ca);
-    let drop_in = BASE64.encode(format!(
-        "[Service]\nEnvironment=\"HTTP_PROXY={proxy_url}\"\nEnvironment=\"HTTPS_PROXY={proxy_url}\"\nEnvironment=\"NO_PROXY=localhost,127.0.0.1\"\n"
-    ));
-    format!(
-        "#cloud-config\nssh_deletekeys: true\nssh_genkeytypes: [rsa, ecdsa, ed25519]\nusers:\n  - default\n  - name: wt\n    groups: [docker]\n    shell: /bin/bash\n    lock_passwd: true\n    ssh_authorized_keys:\n{keys}\nwrite_files:\n  - path: /usr/local/share/ca-certificates/wt-registry-cache.crt\n    owner: root:root\n    permissions: '0644'\n    encoding: b64\n    content: {ca}\n  - path: /etc/systemd/system/docker.service.d/wt-registry-cache.conf\n    owner: root:root\n    permissions: '0644'\n    encoding: b64\n    content: {drop_in}\nruncmd:\n  - [install, -d, -o, wt, -g, wt, /workspace]\n  - [update-ca-certificates]\n  - [systemctl, daemon-reload]\n  - [systemctl, restart, docker.service]\n  - [systemctl, enable, --now, ssh.service]\n  - [sh, -c, \"printf 'ready\\n' > /var/lib/wt-registry-cache-ready\"]\n"
-    )
+pub(super) fn cloud_config() -> &'static str {
+    "#cloud-config\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - [systemctl, enable, --now, qemu-guest-agent.service]\n"
 }
 
-pub(super) fn domain_xml(name: &str, paths: &Paths, config: &LibvirtConfig) -> String {
+pub(super) fn domain_xml(
+    provider_id: &wt_provider::ProviderId,
+    paths: &Paths,
+    config: &MachineConfig,
+    spec: &wt_provider::MachineSpec,
+) -> String {
     let disk_path = paths.disk.to_string_lossy();
     let seed_path = paths.seed.to_string_lossy();
-    let name = quick_xml::escape::escape(name);
+    let name = quick_xml::escape::escape(provider_id.as_str());
     let disk = quick_xml::escape::escape(disk_path.as_ref());
     let seed = quick_xml::escape::escape(seed_path.as_ref());
     let network = quick_xml::escape::escape(&config.network);
     let architecture = quick_xml::escape::escape(crate::GUEST_ARCHITECTURE);
     let machine = quick_xml::escape::escape(crate::GUEST_MACHINE);
-    let memory_mib = config.memory_mib;
-    let vcpus = config.vcpus;
+    let memory_mib = spec.memory_mib;
+    let vcpus = spec.vcpus;
     format!(
         "<domain type='kvm'>
   <name>{name}</name>
@@ -119,6 +106,18 @@ mod tests {
               name: "en*"
             dhcp4: true
             dhcp-identifier: mac
+        "###);
+    }
+
+    #[test]
+    fn machine_boot_installs_its_required_transport() {
+        insta::assert_snapshot!(cloud_config(), @r###"
+        #cloud-config
+        package_update: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - [systemctl, enable, --now, qemu-guest-agent.service]
         "###);
     }
 }

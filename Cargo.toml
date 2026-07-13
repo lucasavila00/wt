@@ -7,6 +7,7 @@ members = [
     "crates/wt-guest",
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
+    "crates/wt-provider",
     "crates/wt-server",
     "crates/wt-server-setup",
 ]
@@ -21,6 +22,7 @@ publish = false
 wt-api = { path = "crates/wt-api" }
 wt-command = { path = "crates/wt-command" }
 wt-libvirt = { path = "crates/wt-libvirt" }
+wt-provider = { path = "crates/wt-provider" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }

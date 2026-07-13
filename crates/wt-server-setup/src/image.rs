@@ -1,6 +1,6 @@
 mod recipe;
 
-use self::recipe::{ImageRecipe, PackageVersions};
+use self::recipe::ImageRecipe;
 use crate::files::{
     require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
 };
@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
-use wt_libvirt::{ServerConfig, LIBVIRT_URI};
+use wt_libvirt::LIBVIRT_URI;
+use wt_provider::PackageVersions;
+use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
@@ -599,7 +601,7 @@ mod tests {
             config_sha256: "config".to_owned(),
             golden_sha256: "golden".to_owned(),
             packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
-            devcontainer_cli: recipe::DEVCONTAINER_CLI_VERSION.to_owned(),
+            devcontainer_cli: wt_provider::DEVCONTAINER_CLI_VERSION.to_owned(),
         };
 
         let json = serde_json::to_value(manifest).unwrap();

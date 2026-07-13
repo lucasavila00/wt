@@ -7,7 +7,7 @@ use wt_api::{
     AppSshAccess, CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus,
     Operation, Response, SshAccess,
 };
-use wt_libvirt::{ProvisionSpec, WorkerError, World, WorldWorker};
+use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::jobs::{
     run_provision, GitAuthor, JobError, JobLock, Jobs, ProvisionLauncher, ThreadLauncher,
 };

@@ -1,30 +1,18 @@
-use anyhow::{bail, Result};
-use std::collections::{BTreeMap, BTreeSet};
-use wt_libvirt::SessionFrontend;
+use anyhow::{Error, Result};
+use wt_provider::{PackageSet, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 1;
-pub(super) const DEVCONTAINER_CLI_VERSION: &str = "0.80.2";
-
-const COMMON_PACKAGES: &[&str] = &[
-    "docker.io",
-    "docker-buildx",
-    "docker-compose-v2",
-    "qemu-guest-agent",
-    "git",
-    "openssh-server",
-    "nodejs",
-    "npm",
-];
-
-pub(super) type PackageVersions = BTreeMap<String, String>;
 
 pub(super) struct ImageRecipe {
-    session: SessionFrontend,
+    packages: PackageSet,
 }
 
 impl ImageRecipe {
     pub(super) fn new(session: SessionFrontend) -> Self {
-        Self { session }
+        let packages = PackageSet::provisioner(session)
+            .with_packages(wt_libvirt::MACHINE_BOOTSTRAP_PACKAGES)
+            .expect("libvirt machine package policy must be valid");
+        Self { packages }
     }
 
     pub(super) fn devcontainer_cli_version(&self) -> &'static str {
@@ -33,12 +21,13 @@ impl ImageRecipe {
 
     pub(super) fn cloud_config(&self) -> String {
         let requested_packages = self
-            .requested_packages()
-            .into_iter()
+            .packages
+            .names()
+            .iter()
             .map(|package| format!("  - {package}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let verified_packages = self.verified_packages().join(" ");
+        let verified_packages = self.packages.names().join(" ");
         let devcontainer_cli = self.devcontainer_cli_version();
 
         format!(
@@ -72,79 +61,13 @@ power_state:
     }
 
     pub(super) fn parse_package_versions(&self, text: &str) -> Result<PackageVersions> {
-        let mut packages = PackageVersions::new();
-        for (index, line) in text.lines().enumerate() {
-            if line.is_empty() {
-                continue;
-            }
-            let (name, version) = line.split_once('\t').ok_or_else(|| {
-                anyhow::anyhow!(
-                    "malformed image package manifest line {}: expected name<TAB>version",
-                    index + 1
-                )
-            })?;
-            if name.is_empty() || version.is_empty() || version.contains('\t') {
-                bail!(
-                    "malformed image package manifest line {}: expected name<TAB>version",
-                    index + 1
-                );
-            }
-            if packages
-                .insert(name.to_owned(), version.to_owned())
-                .is_some()
-            {
-                bail!("duplicate image package manifest entry: {name}");
-            }
-        }
-        self.validate_package_versions(&packages)?;
-        Ok(packages)
+        self.packages.parse_versions(text).map_err(Error::msg)
     }
 
     pub(super) fn validate_package_versions(&self, packages: &PackageVersions) -> Result<()> {
-        let expected = self
-            .verified_packages()
-            .into_iter()
-            .collect::<BTreeSet<_>>();
-        let actual = packages.keys().map(String::as_str).collect::<BTreeSet<_>>();
-        let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
-        let unexpected = actual.difference(&expected).copied().collect::<Vec<_>>();
-        if !missing.is_empty() || !unexpected.is_empty() {
-            let mut differences = Vec::new();
-            if !missing.is_empty() {
-                differences.push(format!("missing {}", missing.join(", ")));
-            }
-            if !unexpected.is_empty() {
-                differences.push(format!("unexpected {}", unexpected.join(", ")));
-            }
-            bail!(
-                "image package manifest differs from recipe: {}",
-                differences.join("; ")
-            );
-        }
-        if let Some(name) = packages
-            .iter()
-            .find_map(|(name, version)| version.is_empty().then_some(name))
-        {
-            bail!("image package manifest has an empty version for {name}");
-        }
-        Ok(())
-    }
-
-    fn requested_packages(&self) -> Vec<&'static str> {
-        let mut packages = COMMON_PACKAGES.to_vec();
-        packages.push(match self.session {
-            SessionFrontend::Tmux => "tmux",
-            SessionFrontend::Byobu => "byobu",
-        });
-        packages
-    }
-
-    fn verified_packages(&self) -> Vec<&'static str> {
-        let mut packages = self.requested_packages();
-        if self.session == SessionFrontend::Byobu {
-            packages.push("tmux");
-        }
-        packages
+        self.packages
+            .validate_versions(packages)
+            .map_err(Error::msg)
     }
 }
 
@@ -154,8 +77,9 @@ mod tests {
 
     fn package_output(recipe: &ImageRecipe) -> String {
         recipe
-            .verified_packages()
-            .into_iter()
+            .packages
+            .names()
+            .iter()
             .rev()
             .map(|name| format!("{name}\t1:2.3-4"))
             .collect::<Vec<_>>()
@@ -174,15 +98,16 @@ bootcmd:
   - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
 package_update: true
 packages:
+  - ca-certificates
   - docker.io
   - docker-buildx
   - docker-compose-v2
-  - qemu-guest-agent
   - git
   - openssh-server
   - nodejs
   - npm
   - tmux
+  - qemu-guest-agent
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -193,7 +118,7 @@ runcmd:
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -216,15 +141,17 @@ bootcmd:
   - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
 package_update: true
 packages:
+  - ca-certificates
   - docker.io
   - docker-buildx
   - docker-compose-v2
-  - qemu-guest-agent
   - git
   - openssh-server
   - nodejs
   - npm
   - byobu
+  - tmux
+  - qemu-guest-agent
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -235,7 +162,7 @@ runcmd:
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' docker.io docker-buildx docker-compose-v2 qemu-guest-agent git openssh-server nodejs npm byobu tmux | sort > /var/lib/wt-image-packages
+  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm byobu tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
   - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
 power_state:
@@ -253,7 +180,7 @@ power_state:
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
         assert_eq!(packages["tmux"], "1:2.3-4");
-        assert_eq!(packages.len(), 9);
+        assert_eq!(packages.len(), 10);
     }
 
     #[test]
@@ -264,7 +191,7 @@ power_state:
             .unwrap();
         assert!(packages.contains_key("byobu"));
         assert!(packages.contains_key("tmux"));
-        assert_eq!(packages.len(), 10);
+        assert_eq!(packages.len(), 11);
     }
 
     #[test]
@@ -277,7 +204,7 @@ power_state:
         packages.insert("screen".to_owned(), "4.9.1".to_owned());
 
         let error = recipe.validate_package_versions(&packages).unwrap_err();
-        insta::assert_snapshot!(error.to_string(), @"image package manifest differs from recipe: missing tmux; unexpected screen");
+        insta::assert_snapshot!(error.to_string(), @"installed package manifest differs from policy: missing tmux; unexpected screen");
     }
 
     #[test]
@@ -288,8 +215,8 @@ power_state:
         assert!(recipe.parse_package_versions("tmux\t\n").is_err());
 
         let mut packages = PackageVersions::new();
-        for name in recipe.verified_packages() {
-            packages.insert(name.to_owned(), "1".to_owned());
+        for name in recipe.packages.names() {
+            packages.insert((*name).to_owned(), "1".to_owned());
         }
         packages.insert("tmux".to_owned(), String::new());
         assert_eq!(
@@ -297,7 +224,7 @@ power_state:
                 .validate_package_versions(&packages)
                 .unwrap_err()
                 .to_string(),
-            "image package manifest has an empty version for tmux"
+            "installed package manifest has an empty version for tmux"
         );
     }
 }

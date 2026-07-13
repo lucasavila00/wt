@@ -1,19 +1,20 @@
 [package]
-name = "wt-libvirt"
+name = "wt-provider"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Libvirt/KVM machine provider for wt"
+description = "Provider-neutral machine and world provisioning contracts for wt"
 
 [dependencies]
+wt-api = { workspace = true }
 wt-command = { workspace = true }
-wt-provider = { workspace = true }
-base64 = { workspace = true }
-quick-xml = { workspace = true }
+nix = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+ssh-key = { workspace = true }
+thiserror = { workspace = true }
 uuid = { workspace = true }
-virt = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }

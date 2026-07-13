@@ -1568,6 +1568,7 @@ dependencies = [
  "wt-cli",
  "wt-command",
  "wt-libvirt",
+ "wt-provider",
  "wt-server",
 ]
 
@@ -1577,16 +1578,27 @@ version = "0.0.0"
 dependencies = [
  "base64",
  "insta",
- "nix",
  "quick-xml",
+ "serde_json",
+ "tempfile",
+ "uuid",
+ "virt",
+ "wt-command",
+ "wt-provider",
+]
+
+[[package]]
+name = "wt-provider"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "nix",
  "serde",
  "serde_json",
  "ssh-key",
  "tempfile",
  "thiserror",
- "toml",
  "uuid",
- "virt",
  "wt-api",
  "wt-command",
 ]
@@ -1601,12 +1613,15 @@ dependencies = [
  "insta",
  "nix",
  "rusqlite",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml",
  "uuid",
  "wt-api",
  "wt-libvirt",
+ "wt-provider",
 ]
 
 [[package]]
@@ -1625,6 +1640,8 @@ dependencies = [
  "toml",
  "wt-command",
  "wt-libvirt",
+ "wt-provider",
+ "wt-server",
 ]
 
 [[package]]

@@ -1,11 +1,10 @@
 //! Guest-side entrypoint for interactive shells in the primary devcontainer.
 
-use super::guest_agent;
-use crate::SessionFrontend;
-use crate::WorkerError;
+use crate::bootstrap::SessionFrontend;
+use crate::provisioner::guest;
+use crate::{GuestTransport, WorkerError};
 use std::io::Write;
 use std::time::Instant;
-use virt::domain::Domain;
 
 pub(super) const APP_SHELL_PATH: &str = "/usr/local/bin/wt-app-shell";
 pub(super) const APP_PANE_PATH: &str = "/usr/local/bin/wt-app-pane";
@@ -30,24 +29,24 @@ pub(super) struct AppTools<'a> {
 }
 
 pub(super) fn install_app_tools(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     tools: &AppTools<'_>,
     session: SessionFrontend,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    guest_agent::write(domain, APP_SHELL_PATH, tools.app_shell)?;
-    guest_agent::write(domain, APP_PANE_PATH, tools.app_pane)?;
-    guest_agent::write(domain, APP_INFO_PATH, tools.app_info)?;
-    guest_agent::write(domain, APP_PROXY_PATH, tools.app_proxy)?;
-    guest_agent::write(domain, TMUX_CONFIG_PATH, TMUX_CONFIG)?;
-    guest_agent::write(
-        domain,
+    guest::write(transport, APP_SHELL_PATH, tools.app_shell)?;
+    guest::write(transport, APP_PANE_PATH, tools.app_pane)?;
+    guest::write(transport, APP_INFO_PATH, tools.app_info)?;
+    guest::write(transport, APP_PROXY_PATH, tools.app_proxy)?;
+    guest::write(transport, TMUX_CONFIG_PATH, TMUX_CONFIG)?;
+    guest::write(
+        transport,
         SESSION_FRONTEND_PATH,
         session_frontend_config(session),
     )?;
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "devcontainer shell and session configuration",
         "/bin/sh",
         &[
@@ -68,28 +67,28 @@ pub(super) fn install_app_tools(
 }
 
 pub(super) fn prepare_app_ssh(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "app SSH key generation",
         "/bin/sh",
         &[
             "-c",
-            "set -eu\ninstall -d -m 0700 -o wt -g wt /var/lib/wt-app-ssh\ninstall -d -m 0755 /var/lib/wt-app-ssh/public /var/lib/wt-app-ssh/public/authorized_keys\nssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key\nssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/session_identity\nchown wt:wt /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub\nchmod 0600 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key /var/lib/wt-app-ssh/session_identity\nchmod 0644 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub /var/lib/wt-app-ssh/session_identity.pub",
+            "set -eu\ninstall -d -m 0700 -o wt -g wt /var/lib/wt-app-ssh\ninstall -d -m 0755 /var/lib/wt-app-ssh/public /var/lib/wt-app-ssh/public/authorized_keys\ntest -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key || ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key\ntest -f /var/lib/wt-app-ssh/session_identity || ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/session_identity\nchown wt:wt /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub\nchmod 0600 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key /var/lib/wt-app-ssh/session_identity\nchmod 0644 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub /var/lib/wt-app-ssh/session_identity.pub",
         ],
         deadline,
         log,
     )?;
-    guest_agent::write(
-        domain,
+    guest::write(
+        transport,
         &format!("{APP_SSH_PUBLIC_DIR}/sshd_config"),
         SSHD_CONFIG,
     )?;
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "app SSH configuration permissions",
         "/bin/chmod",
         &["0644", &format!("{APP_SSH_PUBLIC_DIR}/sshd_config")],

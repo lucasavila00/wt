@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use wt_libvirt::{
+use wt_server::{
     GuestConfig, ImageConfig, InstallConfig, RegistryCacheConfig, ServerConfig, ServerLibvirtConfig,
 };
 
@@ -13,7 +13,7 @@ pub(crate) struct InstallInput {
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
-    pub git: wt_libvirt::GitConfig,
+    pub git: wt_server::GitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
 }

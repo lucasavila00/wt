@@ -1,7 +1,7 @@
 //! SSH-only Git provisioning and the credential bridge into the devcontainer.
 
-use super::guest_agent;
-use crate::WorkerError;
+use crate::provisioner::guest;
+use crate::{GuestTransport, WorkerError};
 use nix::unistd::Uid;
 use ssh_key::PrivateKey;
 use std::fs;
@@ -9,7 +9,6 @@ use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::time::Instant;
-use virt::domain::Domain;
 use wt_api::GitPassphrase;
 
 const BUNDLE_DIR: &str = "/workspace/.git/wt";
@@ -87,16 +86,17 @@ impl Credentials {
 }
 
 pub(super) fn clone_and_checkout(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     source: &str,
+    clone_required: bool,
     credentials: &Credentials,
     passphrase: &GitPassphrase,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     credentials.validate_passphrase(passphrase)?;
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "Git credentials",
         "/usr/bin/install",
         &["-d", "-m", "0700", CLONE_CREDENTIALS_DIR],
@@ -104,20 +104,22 @@ pub(super) fn clone_and_checkout(
         log,
     )?;
     let result = (|| {
-        stage_clone_credentials(domain, credentials, passphrase, deadline, log)?;
-        let environment = git_environment();
-        run_git(
-            domain,
-            "Git clone",
-            &environment,
-            &["clone", "--", source, "/workspace"],
-            deadline,
-            log,
-        )?;
-        install_persistent_bundle(domain, credentials, deadline, log)
+        if clone_required {
+            stage_clone_credentials(transport, credentials, passphrase, deadline, log)?;
+            let environment = git_environment();
+            run_git(
+                transport,
+                "Git clone",
+                &environment,
+                &["clone", "--", source, "/workspace"],
+                deadline,
+                log,
+            )?;
+        }
+        install_persistent_bundle(transport, credentials, deadline, log)
     })();
-    let _ = guest_agent::exec(
-        domain,
+    let _ = guest::exec(
+        transport,
         "/bin/rm",
         &["-rf", CLONE_CREDENTIALS_DIR, CLONE_ASKPASS],
         deadline,
@@ -126,7 +128,7 @@ pub(super) fn clone_and_checkout(
 }
 
 pub(super) fn configure_author(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     name: Option<&str>,
     email: Option<&str>,
     deadline: Instant,
@@ -137,7 +139,7 @@ pub(super) fn configure_author(
             continue;
         };
         run_git(
-            domain,
+            transport,
             "Git author identity",
             &[],
             &["-C", "/workspace", "config", "--local", key, value],
@@ -149,26 +151,30 @@ pub(super) fn configure_author(
 }
 
 fn stage_clone_credentials(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     credentials: &Credentials,
     passphrase: &GitPassphrase,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    guest_agent::write(domain, "/run/wt-git/identity", &credentials.identity)?;
-    guest_agent::write(domain, "/run/wt-git/known_hosts", &credentials.known_hosts)?;
-    guest_agent::write(
-        domain,
+    guest::write(transport, "/run/wt-git/identity", &credentials.identity)?;
+    guest::write(
+        transport,
+        "/run/wt-git/known_hosts",
+        &credentials.known_hosts,
+    )?;
+    guest::write(
+        transport,
         "/run/wt-git/passphrase",
         passphrase.expose_secret().as_bytes(),
     )?;
-    guest_agent::write(
-        domain,
+    guest::write(
+        transport,
         CLONE_ASKPASS,
         b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
     )?;
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "Git credentials",
         "/bin/sh",
         &[
@@ -196,7 +202,7 @@ fn git_environment() -> Vec<String> {
 }
 
 fn run_git(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     phase: &str,
     environment: &[String],
     git_args: &[&str],
@@ -208,40 +214,40 @@ fn run_git(
     // cloud-init creates /workspace for wt, while guest-agent provisioning runs as root.
     args.extend(["-c", "safe.directory=/workspace"]);
     args.extend_from_slice(git_args);
-    guest_agent::run_phase(domain, phase, "/usr/bin/env", &args, deadline, log)?;
+    guest::run_phase(transport, phase, "/usr/bin/env", &args, deadline, log)?;
     Ok(())
 }
 
 fn install_persistent_bundle(
-    domain: &Domain,
+    transport: &dyn GuestTransport,
     credentials: &Credentials,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "Git credentials",
         "/usr/bin/install",
         &["-d", "-m", "0755", BUNDLE_DIR],
         deadline,
         log,
     )?;
-    guest_agent::write(
-        domain,
+    guest::write(
+        transport,
         &format!("{BUNDLE_DIR}/identity"),
         &credentials.identity,
     )?;
-    guest_agent::write(
-        domain,
+    guest::write(
+        transport,
         &format!("{BUNDLE_DIR}/known_hosts"),
         &credentials.known_hosts,
     )?;
-    guest_agent::write(domain, &format!("{BUNDLE_DIR}/ssh"), SSH_WRAPPER)?;
+    guest::write(transport, &format!("{BUNDLE_DIR}/ssh"), SSH_WRAPPER)?;
 
     // The bundle is intentionally visible to the trusted devcontainer. The
     // wrapper gives OpenSSH a private mode-0600 copy for each invocation.
-    guest_agent::run_phase(
-        domain,
+    guest::run_phase(
+        transport,
         "Git credentials",
         "/bin/sh",
         &[
