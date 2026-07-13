@@ -97,6 +97,10 @@ impl WorldProvisioner {
         log_line(log, &format!("Cloning {}...", spec.source))?;
         let phase_started = Instant::now();
         let clone_required = self.prepare_workspace(transport, spec.source, deadline, log)?;
+        let checkout = spec
+            .git_branch
+            .map(git::Checkout::Branch)
+            .or_else(|| spec.git_ref.map(git::Checkout::Ref));
         git::clone_and_checkout(
             transport,
             spec.source,
@@ -106,6 +110,7 @@ impl WorldProvisioner {
             deadline,
             log,
         )?;
+        git::checkout(transport, checkout, deadline, log)?;
         git::configure_author(
             transport,
             spec.git_user_name,

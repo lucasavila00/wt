@@ -23,6 +23,18 @@ pub struct GitAuthor<'a> {
     pub email: Option<&'a str>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GitCheckout<'a> {
+    pub branch: Option<&'a str>,
+    pub git_ref: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProvisionOptions<'a> {
+    pub checkout: GitCheckout<'a>,
+    pub author: GitAuthor<'a>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThreadLauncher;
 
@@ -33,7 +45,7 @@ pub trait ProvisionLauncher<W> {
         worker: &W,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
-        git_author: GitAuthor<'_>,
+        options: ProvisionOptions<'_>,
         lock: JobLock,
     ) -> Result<(), JobError>;
 }
@@ -122,15 +134,17 @@ where
         worker: &W,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
-        git_author: GitAuthor<'_>,
+        options: ProvisionOptions<'_>,
         lock: JobLock,
     ) -> Result<(), JobError> {
         let store = store.reopen().map_err(std::io::Error::other)?;
         let worker = worker.clone();
         let stored = stored.clone();
         let passphrase = GitPassphrase::new(passphrase.expose_secret().to_owned());
-        let git_user_name = git_author.name.map(str::to_owned);
-        let git_user_email = git_author.email.map(str::to_owned);
+        let git_branch = options.checkout.branch.map(str::to_owned);
+        let git_ref = options.checkout.git_ref.map(str::to_owned);
+        let git_user_name = options.author.name.map(str::to_owned);
+        let git_user_email = options.author.email.map(str::to_owned);
         std::thread::Builder::new()
             .name(format!("wt-provision-{}", stored.instance.id))
             .spawn(move || {
@@ -140,6 +154,8 @@ where
                     &worker,
                     stored.clone(),
                     &passphrase,
+                    git_branch.as_deref(),
+                    git_ref.as_deref(),
                     GitAuthor {
                         name: git_user_name.as_deref(),
                         email: git_user_email.as_deref(),
@@ -162,6 +178,8 @@ pub fn run_provision<W: WorldWorker>(
     worker: &W,
     stored: StoredInstance,
     passphrase: &GitPassphrase,
+    git_branch: Option<&str>,
+    git_ref: Option<&str>,
     git_author: GitAuthor<'_>,
 ) -> Result<(), StoreError> {
     let spec = ProvisionSpec {
@@ -170,6 +188,8 @@ pub fn run_provision<W: WorldWorker>(
         owner: &stored.instance.owner,
         name: &stored.instance.name,
         source: &stored.instance.source,
+        git_branch,
+        git_ref,
         git_passphrase: passphrase,
         git_user_name: git_author.name,
         git_user_email: git_author.email,

@@ -38,6 +38,11 @@ pub(super) struct Credentials {
     known_hosts: Vec<u8>,
 }
 
+pub(super) enum Checkout<'a> {
+    Branch(&'a str),
+    Ref(&'a str),
+}
+
 pub(super) fn load_credentials(
     identity_file: &Path,
     known_hosts_file: &Path,
@@ -125,6 +130,24 @@ pub(super) fn clone_and_checkout(
         deadline,
     );
     result
+}
+
+pub(super) fn checkout(
+    transport: &dyn GuestTransport,
+    checkout: Option<Checkout<'_>>,
+    deadline: Instant,
+    log: &mut dyn Write,
+) -> Result<(), WorkerError> {
+    let Some(checkout) = checkout else {
+        return Ok(());
+    };
+    let args = match checkout {
+        Checkout::Branch(branch) => vec!["-C", "/workspace", "checkout", "--", branch],
+        Checkout::Ref(git_ref) => {
+            vec!["-C", "/workspace", "checkout", "--detach", "--", git_ref]
+        }
+    };
+    run_git(transport, "Git checkout", &[], &args, deadline, log)
 }
 
 pub(super) fn configure_author(

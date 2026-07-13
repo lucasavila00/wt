@@ -1,4 +1,4 @@
-use crate::jobs::{GitAuthor, Jobs, ProvisionLauncher};
+use crate::jobs::{GitAuthor, GitCheckout, Jobs, ProvisionLauncher, ProvisionOptions};
 use crate::store::{Store, StoreError, StoredInstance};
 use base64::Engine as _;
 use std::time::{Duration, Instant};
@@ -41,6 +41,12 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
         if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
             return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
         }
+        if request.git_branch.is_some() && request.git_ref.is_some() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Git branch and ref are mutually exclusive",
+            ));
+        }
         if request.git_passphrase.expose_secret().is_empty() {
             return Err(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -81,9 +87,15 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
             &self.worker,
             &stored,
             &request.git_passphrase,
-            GitAuthor {
-                name: request.git_user_name.as_deref(),
-                email: request.git_user_email.as_deref(),
+            ProvisionOptions {
+                checkout: GitCheckout {
+                    branch: request.git_branch.as_deref(),
+                    git_ref: request.git_ref.as_deref(),
+                },
+                author: GitAuthor {
+                    name: request.git_user_name.as_deref(),
+                    email: request.git_user_email.as_deref(),
+                },
             },
             lock,
         ) {

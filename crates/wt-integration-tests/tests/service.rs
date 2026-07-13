@@ -9,7 +9,7 @@ use wt_api::{
 };
 use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::jobs::{
-    run_provision, GitAuthor, JobError, JobLock, Jobs, ProvisionLauncher, ThreadLauncher,
+    run_provision, JobError, JobLock, Jobs, ProvisionLauncher, ProvisionOptions, ThreadLauncher,
 };
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
@@ -22,6 +22,8 @@ struct InjectedWorker {
     destroy_calls: Arc<AtomicUsize>,
     git_user_name: Arc<Mutex<Option<String>>>,
     git_user_email: Arc<Mutex<Option<String>>>,
+    git_branch: Arc<Mutex<Option<String>>>,
+    git_ref: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +39,7 @@ impl ProvisionLauncher<InjectedWorker> for FailingLauncher {
         _worker: &InjectedWorker,
         _stored: &StoredInstance,
         _passphrase: &GitPassphrase,
-        _git_author: GitAuthor<'_>,
+        _options: ProvisionOptions<'_>,
         _lock: JobLock,
     ) -> Result<(), JobError> {
         Err(JobError::Io(std::io::Error::other(
@@ -53,11 +55,19 @@ impl ProvisionLauncher<InjectedWorker> for InlineLauncher {
         worker: &InjectedWorker,
         stored: &StoredInstance,
         passphrase: &GitPassphrase,
-        git_author: GitAuthor<'_>,
+        options: ProvisionOptions<'_>,
         _lock: JobLock,
     ) -> Result<(), JobError> {
-        run_provision(store, worker, stored.clone(), passphrase, git_author)
-            .map_err(|error| JobError::Io(std::io::Error::other(error)))
+        run_provision(
+            store,
+            worker,
+            stored.clone(),
+            passphrase,
+            options.checkout.branch,
+            options.checkout.git_ref,
+            options.author,
+        )
+        .map_err(|error| JobError::Io(std::io::Error::other(error)))
     }
 }
 
@@ -79,6 +89,8 @@ impl WorldWorker for InjectedWorker {
         self.provision_calls.fetch_add(1, Ordering::SeqCst);
         *self.git_user_name.lock().unwrap() = spec.git_user_name.map(str::to_owned);
         *self.git_user_email.lock().unwrap() = spec.git_user_email.map(str::to_owned);
+        *self.git_branch.lock().unwrap() = spec.git_branch.map(str::to_owned);
+        *self.git_ref.lock().unwrap() = spec.git_ref.map(str::to_owned);
         if self.fail_provision {
             return Err(WorkerError::new("injected provision failure"));
         }
@@ -116,6 +128,8 @@ fn create(name: InstanceName) -> CreateInstance {
     CreateInstance {
         name,
         source: "git@example.test:repo.git".to_owned(),
+        git_branch: None,
+        git_ref: None,
         git_passphrase: GitPassphrase::new("secret".to_owned()),
         git_user_name: None,
         git_user_email: None,
@@ -141,6 +155,7 @@ fn lifecycle_persists_and_is_owner_scoped() {
     let mut request = create(name.clone());
     request.git_user_name = Some("Lucas Ávila".to_owned());
     request.git_user_email = Some("lucaxx@gmail.com".to_owned());
+    request.git_branch = Some("devcontainer-work".to_owned());
     let mut service = Service::new(
         Store::open(&database).unwrap(),
         worker.clone(),
@@ -163,6 +178,10 @@ fn lifecycle_persists_and_is_owner_scoped() {
     assert_eq!(
         worker.git_user_email.lock().unwrap().as_deref(),
         Some("lucaxx@gmail.com")
+    );
+    assert_eq!(
+        worker.git_branch.lock().unwrap().as_deref(),
+        Some("devcontainer-work")
     );
 
     let Response::Instance { instance } = service

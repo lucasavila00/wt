@@ -17,6 +17,26 @@ by that file. If the recipe uses Docker Compose, it starts the referenced
 services. The primary devcontainer is the container that VS Code or the Dev
 Container CLI would normally open for development.
 
+By default, WT checks out the repository's default branch. To select a different
+revision, pass one of these mutually exclusive options:
+
+- `--branch BRANCH` checks out a branch with an attached HEAD. New commits made
+  in the world are added to that branch.
+- `--ref REF` checks out a tag, commit SHA, or other Git commit-ish with a
+  detached HEAD. Use this to create a world pinned to a specific revision.
+
+WT performs the checkout before it reads and starts the devcontainer recipe, so
+the selected revision supplies `.devcontainer/devcontainer.json` and any files
+referenced by that recipe.
+
+For example:
+
+```text
+wt new git@github.com:example/foo.git foo-feature --branch feature/api
+wt new git@github.com:example/foo.git foo-release --ref v1.2.0
+wt new git@github.com:example/foo.git foo-pinned --ref 0123456789abcdef
+```
+
 Each world contains:
 
 - One Ubuntu KVM guest with its own kernel, disk, network, and SSH identity.
@@ -43,7 +63,7 @@ while starting the devcontainer.
 
 | Command | Result |
 |---------|--------|
-| `wt new SOURCE NAME` | Create a world and wait for it to become usable |
+| `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a world and wait for it to become usable |
 | `wt logs NAME` | Replay and follow provisioning output |
 | `wt ls` | List worlds across configured contexts |
 | `wt rm NAME` | Destroy a world |

@@ -68,6 +68,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             Operation::Create(CreateInstance {
                 name: name.clone(),
                 source: git.url(),
+                git_branch: None,
+                git_ref: None,
                 git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: Some("WT E2E".to_owned()),
                 git_user_email: Some("wt@example.invalid".to_owned()),
@@ -90,6 +92,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             Operation::Create(CreateInstance {
                 name: peer_name.clone(),
                 source: git.url(),
+                git_branch: None,
+                git_ref: None,
                 git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: Some("WT E2E".to_owned()),
                 git_user_email: Some("wt@example.invalid".to_owned()),
