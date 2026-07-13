@@ -39,6 +39,10 @@ pub enum Operation {
 pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
     pub git_passphrase: GitPassphrase,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_user_name: Option<String>,
@@ -381,6 +385,8 @@ mod tests {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
+            git_branch: None,
+            git_ref: Some("devcontainer".to_owned()),
             git_passphrase: GitPassphrase::new("secret".to_owned()),
             git_user_name: Some("Lucas Ávila".to_owned()),
             git_user_email: Some("lucaxx@gmail.com".to_owned()),
@@ -392,6 +398,7 @@ mod tests {
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
+                "git_ref": "devcontainer",
                 "git_passphrase": "secret",
                 "git_user_name": "Lucas Ávila",
                 "git_user_email": "lucaxx@gmail.com"
@@ -414,6 +421,8 @@ mod tests {
         };
         assert_eq!(create.git_user_name, None);
         assert_eq!(create.git_user_email, None);
+        assert_eq!(create.git_branch, None);
+        assert_eq!(create.git_ref, None);
     }
 
     #[test]

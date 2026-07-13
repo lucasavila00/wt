@@ -19,7 +19,20 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a devcontainer-ready world.
-    New { source: String, name: String },
+    New {
+        source: String,
+        name: String,
+        /// Check out BRANCH before starting the devcontainer.
+        ///
+        /// The checkout has an attached HEAD, so new commits are added to the branch.
+        #[arg(long, value_name = "BRANCH", conflicts_with = "ref")]
+        branch: Option<String>,
+        /// Check out REF with a detached HEAD before starting the devcontainer.
+        ///
+        /// REF may be a tag, commit SHA, or other Git commit-ish.
+        #[arg(long, value_name = "REF", conflicts_with = "branch")]
+        r#ref: Option<String>,
+    },
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -40,7 +53,12 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New { source, name } => {
+        Command::New {
+            source,
+            name,
+            branch,
+            r#ref,
+        } => {
             wt_api::validate_ssh_git_source(&source)?;
             let (qualified_context, world_name) = inventory::parse_target(&config, &name)?;
             let context = match qualified_context {
@@ -61,6 +79,8 @@ fn run() -> Result<()> {
                 context,
                 world_name,
                 source,
+                branch,
+                r#ref,
                 &git_author,
                 |prompt| rpassword::prompt_password(prompt).map_err(Into::into),
             )?;
@@ -149,6 +169,8 @@ fn create_with_passphrase_attempts(
     context: &Context,
     world_name: wt_api::InstanceName,
     source: String,
+    git_branch: Option<String>,
+    git_ref: Option<String>,
     git_author: &GitAuthor,
     mut prompt_password: impl FnMut(String) -> Result<String>,
 ) -> Result<Response> {
@@ -177,6 +199,8 @@ fn create_with_passphrase_attempts(
             &ApiRequest::new(Operation::Create(CreateInstance {
                 name: world_name.clone(),
                 source: source.clone(),
+                git_branch: git_branch.clone(),
+                git_ref: git_ref.clone(),
                 git_passphrase: GitPassphrase::new(passphrase),
                 git_user_name: git_author.name.clone(),
                 git_user_email: git_author.email.clone(),
@@ -519,6 +543,51 @@ mod tests {
     #[test]
     fn rejects_removed_ssh_subcommand() {
         assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
+    }
+
+    #[test]
+    fn parses_new_branch_and_ref_options() {
+        let branch = Cli::try_parse_from([
+            "wt",
+            "new",
+            "git@example.test:repo.git",
+            "repo-feature",
+            "--branch",
+            "devcontainer-work",
+        ])
+        .unwrap();
+        let Command::New { branch, r#ref, .. } = branch.command else {
+            panic!("expected new command");
+        };
+        assert_eq!(branch.as_deref(), Some("devcontainer-work"));
+        assert_eq!(r#ref, None);
+
+        let commit = Cli::try_parse_from([
+            "wt",
+            "new",
+            "git@example.test:repo.git",
+            "repo-feature",
+            "--ref",
+            "0123456789abcdef",
+        ])
+        .unwrap();
+        let Command::New { branch, r#ref, .. } = commit.command else {
+            panic!("expected new command");
+        };
+        assert_eq!(branch, None);
+        assert_eq!(r#ref.as_deref(), Some("0123456789abcdef"));
+
+        assert!(Cli::try_parse_from([
+            "wt",
+            "new",
+            "git@example.test:repo.git",
+            "repo-feature",
+            "--branch",
+            "work",
+            "--ref",
+            "0123456789abcdef",
+        ])
+        .is_err());
     }
 
     #[test]
