@@ -1,211 +1,182 @@
 # Provider API split
 
 Split machine lifecycle from world provisioning before adding another provider.
-This pass is a refactor of the current libvirt backend: it must preserve the
-server API, configuration file, SQLite schema, provisioning logs, SSH inventory,
-and user-visible create, inspect, and delete behavior.
 
-## Boundary
+Keep this flow:
 
-Add a `wt-provider` crate for provider-neutral contracts and shared world
-provisioning. The dependency direction is:
+```text
+reserve -> create machine -> provision guest -> start devcontainer
+        -> verify SSH -> mark running
+```
+
+Internal APIs, ownership, setup, and logs may change. Keep the server API,
+SQLite schema, `backend_id`, SSH inventory, and create/inspect/delete behavior.
+
+## Ownership
 
 ```text
 wt-server -> wt-provider <- wt-libvirt
+wt-server-setup -> wt-provider + wt-libvirt
 ```
 
-`wt-provider` must not depend on `virt`, libvirt domain types, QEMU guest-agent
-JSON, or host filesystem paths used to build a libvirt domain. `wt-libvirt`
-keeps image, domain, network, cloud-init seed, and per-machine file lifecycle.
-The server constructs the libvirt provider and shared provisioner explicitly;
-there is still one fixed backend per server.
+`wt-provider` owns:
 
-Keep a provider-neutral composite world-lifecycle interface at the server
-boundary so `wt-server` and its injected service tests do not need to orchestrate
-provider internals. Git-passphrase validation belongs to the provisioner side of
-that composite because it owns the Git identity.
+- provider-neutral contracts and values;
+- guest transport;
+- OS bootstrap and world provisioning;
+- composite lifecycle used by `wt-server`;
+- bootstrap package and version policy.
 
-## Machine contract
+`wt-libvirt` owns:
 
-A provider returns a reachable Ubuntu 24.04 amd64 machine with a working
-privileged command and file transport. The provider owns:
+- image, domain, network, disk, seed, and host files;
+- QEMU guest-agent bootstrap and transport;
+- machine inspect and delete.
 
-- Machine creation, lookup, and deletion.
-- Its resource ID and provider-specific resource names.
-- CPU, memory, disk, image selection, and network discovery.
-- Bootstrapping whatever is required to make its transport available. For
-  libvirt this includes cloud-init and the QEMU guest agent.
+Rules:
 
-The provider does not know about Git, devcontainers, WT guest helpers, the app
-SSH server, or repository setup. The golden image may accelerate provider and
-world setup, but correctness after the transport becomes available must not
-depend on tools preinstalled in that image.
+- `wt-provider` has no `virt`, libvirt, QEMU JSON, or libvirt-path types.
+- `wt-libvirt` has no Git, devcontainer, helper, registry-cache, or app-SSH
+  provisioning.
+- One fixed libvirt provider per server. No provider registry.
+- Keep the serialized server TOML shape. Rust config types may move.
+- Split runtime config into machine and provisioner config.
+- Golden-image and runtime bootstrap use one package/version policy.
 
-Use provider-neutral equivalents of these operations; exact Rust ownership can
-follow the simplest object-safe or generic design:
+## Machine provider
 
 ```text
-MachineProvider::create(MachineSpec) -> Machine
-MachineProvider::inspect(provider_id) -> Option<Machine>
-MachineProvider::delete(provider_id)
+create(MachineSpec, progress) -> Machine
+inspect(provider_id) -> Option<Machine>
+delete(provider_id)
 ```
 
-`MachineSpec` includes the stable provider ID selected before creation and the
-requested CPU, memory, and disk. In this pass the provider ID remains the
-existing `backend_id`, so neither the registry schema nor its values change.
-`Machine` contains that ID, current network information, and a
-`GuestTransport`; it contains no provisioned-world state.
+`MachineSpec`: existing `backend_id`, CPU, memory, disk.
 
-The lifecycle operations have explicit semantics:
+`Machine`: provider ID, current network data, `GuestTransport`. No world or SSH
+access state.
 
-- `create` succeeds only after the machine is running and its transport is
-  usable. If it fails after allocating anything, it attempts to remove only
-  resources created for that provider ID. A cleanup failure is reported as
-  secondary context without hiding the create error.
-- `inspect` returns `None` only when the provider resource does not exist.
-  Unreachable, malformed, or partially present resources return an error. It
-  refreshes mutable network information without modifying the guest.
-- `delete` is safe to retry and succeeds when the resource is already absent.
-  It removes only resources owned by the provider ID. Partial cleanup is an
-  error and a later delete retries the remaining work.
+Contract:
 
-These rules preserve recovery after daemon interruption: the stored provider ID
-is sufficient for `wt rm` even when world provisioning never completed.
+- Validate IDs before resource-name or host-path use.
+- `create` returns after the machine runs and transport works.
+- `create` writes readiness output to the durable progress sink.
+- Failed `create` attempts all cleanup. Create error stays primary. Cleanup
+  errors become secondary context.
+- `inspect` returns `None` only when no provider resource exists. Stopped,
+  unreachable, malformed, or partial resources are errors.
+- `inspect` refreshes network data without guest mutation.
+- `delete` is idempotent. Attempt independent cleanup after failures. Report all
+  failures. Touch only resources owned by the validated ID.
+- Stored `backend_id` is enough for `wt rm` after interruption.
 
 ## Guest transport
 
-`GuestTransport` is synchronous and supports the operations the existing
-provisioner uses:
+Synchronous operations:
 
-- Run an executable with an argument vector, optional standard input, an
-  absolute deadline, and incremental combined output written to a supplied
-  sink. Return the exit status and a bounded output tail for diagnostics.
-- Capture stdout and stderr separately with caller-specified byte limits. Treat
-  exceeding a limit as an error rather than allocating without bound.
-- Replace a file with supplied bytes, owner, group, and mode. Do not require a
-  shell to transfer file contents.
+- Run absolute executable path, args, optional stdin, absolute deadline,
+  streaming combined output, exit status, and 64-KiB diagnostic tail.
+- Capture stdout and stderr separately with per-stream limits and deadline.
+- Write bytes, then set owner, group, and mode.
 
-Transport errors, deadline expiry, nonzero command exit, and destination-write
-errors remain distinguishable enough for the provisioner to add phase context.
-The transport never logs command input or file contents because they can contain
-the Git passphrase or private key. Provider implementations may add stricter
-constraints, but shared provisioning must not accept or expose a libvirt domain.
+Contract:
 
-Libvirt implements this contract with the QEMU guest agent. Preserve the
-current polling backoff, 64-KiB diagnostic tail, incremental log flushing, file
-chunking below the guest-agent message limit, and best-effort removal of
-temporary command-output files. A later static SSH provider will implement the
-same contract with pinned OpenSSH; it is not part of this pass.
+- Enforce capture limits while reading. Never collect unbounded output first.
+- Distinguish transport, deadline, overflow, exit-status, and log-sink errors.
+- Provisioner adds phase context and handles nonzero exit.
+- Never log stdin or file contents.
 
-This provider-specific transport choice refines the common-SSH suggestion in
-[`more-providers.md`](./more-providers.md): the shared provisioner depends on
-transport behavior, not on SSH or a libvirt domain. Converting the working
-libvirt provisioning path from the QEMU guest agent to SSH is not required to
-prove that boundary.
+Libvirt uses QEMU guest agent. Preserve polling backoff, incremental flushing,
+64-KiB tail, sub-limit file chunks, and temporary-file cleanup. Use streamed
+temporary files for bounded capture. Shared code never accepts `Domain`.
 
 ## World provisioner
 
-`WorldProvisioner` receives a `Machine`, the current provider-neutral provision
-specification, and the provisioning log sink. It owns everything inside the
-machine:
+Input: `Machine`, provision spec, durable log sink.
 
-- Verify Ubuntu 24.04 amd64 and privileged execution before changing the guest.
-- Install missing required packages and verify Docker Engine, Buildx, Compose,
-  Git, OpenSSH, CA support, Dev Container CLI, and the configured tmux or Byobu
-  frontend. Re-running these checks must be safe when the golden image already
-  contains the tools.
-- Create or verify the `wt` user and `/workspace` with the required ownership.
-- Configure authorized keys and registry-cache CA and Docker trust.
-- Clone the repository and configure checkout-local Git credentials and the
-  optional author name and email.
-- Start the stock devcontainer, install WT helpers, and configure app SSH.
-- Verify the guest SSH endpoint against the guest host keys read through the
-  transport, and verify app SSH before returning access data.
+Steps:
 
-Provisioning returns the existing provider-neutral `World` value: current guest
-address, guest SSH access, and app SSH access. Inspection takes a `Machine`
-returned by the provider, reads WT and SSH state through its transport without
-repairing it, and returns the same `World` value. Missing or changed guest/app
-host identity remains an error; a changed DHCP address with the same pinned
-identity updates the stored address as it does today.
+1. Verify Ubuntu 24.04 amd64 and root or passwordless sudo.
+2. Install or verify CA tools, Git, Docker, Buildx, Compose, OpenSSH, Node, Dev
+   Container CLI, and tmux or Byobu.
+3. Create or verify `wt` and `/workspace`.
+4. Configure authorized keys, guest SSH identity, registry CA, and Docker proxy.
+5. Clone. Configure checkout Git credentials and optional author.
+6. Start stock devcontainer.
+7. Install helpers. Configure app SSH.
+8. Verify guest and app SSH. Return current `World`.
 
-Keep phase names and log ordering stable where responsibilities only move. Never
-write the Git passphrase, private key contents, or other secrets to the
-provisioning log or an error.
+Bootstrap requirements:
 
-## Composition and failure handling
+- Works on stock supported Ubuntu after provider transport starts.
+- Idempotent on the golden image and safe to retry.
+- Handles apt locks.
+- Uses the same sources and pinned versions as image build.
 
-The composite lifecycle used by `wt-server` performs create as:
+`inspect` reads without repair. Identity change is an error. DHCP change with
+the same guest and app identities refreshes the address.
 
-```text
-reserve world with stable provider ID
-  -> MachineProvider::create
-  -> WorldProvisioner::provision
-  -> store running world
-```
+No passphrase, private key, stdin, or written file content in logs, errors, or
+debug output.
 
-If world provisioning fails, retain that error as the world's `last_error`, then
-ask the provider to delete the machine. Append a cleanup failure to the durable
-provisioning log, but do not replace or obscure the provisioning error. The
-errored registry row and stable provider ID remain so `wt rm` can retry provider
-cleanup.
+## Composite lifecycle
 
-For reconciliation of a running world:
+Move `ProvisionSpec`, `World`, error type, and the server-facing
+`WorldWorker`-shaped interface to `wt-provider`.
 
 ```text
-MachineProvider::inspect
-  -> None: mark the world missing/error
-  -> Machine: WorldProvisioner::inspect
-  -> preserve host-key checks and refresh mutable address data
+create:    provider.create -> provisioner.provision -> World
+inspect:   provider.inspect -> provisioner.inspect -> World
+delete:    provider.delete
 ```
 
-Delete delegates to the provider in this pass because deleting the libvirt
-machine removes the entire world. The later static SSH provider will require a
-separate provisioner cleanup operation before releasing its claim; do not add
-that behavior speculatively here.
+Failure rules:
+
+- Machine failure: provider cleans partial resources.
+- Provision failure: preserve provision error as `last_error`; call delete.
+- Cleanup failure: append to durable log and secondary context. Do not replace
+  `last_error`.
+- Keep errored row and stable ID. `wt rm` retries cleanup.
+- Missing machine and SSH identity change keep distinct error transitions.
+
+Static-machine cleanup is later work.
 
 ## Implementation order
 
-1. Add `wt-provider` with provider-neutral lifecycle values, errors, transport
-   contracts, and the existing server-facing composite world interface. Move
-   only configuration and provisioning types that would otherwise create a
-   dependency from `wt-provider` back to `wt-libvirt`; preserve the current TOML
-   shape.
-2. Adapt the QEMU guest-agent command, capture, and file operations to
-   `GuestTransport`, with fake-transport unit tests for deadlines, bounded
-   capture, streaming failures, exit diagnostics, and file metadata.
-3. Extract guest setup, Git, devcontainer, helper, and SSH verification into
-   `WorldProvisioner`. Replace direct `Domain` use in that code with the
-   transport and add tests over a recording fake transport.
-4. Reduce `wt-libvirt` to `MachineProvider` plus its transport implementation.
-   Keep only image, cloud-init bootstrap, domain, network, and per-machine file
-   lifecycle there.
-5. Compose the libvirt provider and shared provisioner in `wt-server`. Preserve
-   the current API/config/schema and adapt the existing injected worker tests at
-   the composite boundary.
-6. Add failure-path tests proving partial create cleanup, provisioning cleanup,
-   cleanup-error precedence, missing-machine inspection, host-identity mismatch,
-   idempotent delete, and retry after partial deletion.
+1. Add `wt-provider`. Move neutral values, errors, and composite interface.
+2. Move bootstrap policy. Make image build consume it.
+3. Add `GuestTransport`. Adapt QEMU run, bounded capture, and file write.
+4. Extract OS, user, workspace, registry, and authorized-key setup.
+5. Extract Git, devcontainer, helpers, and SSH verification.
+6. Reduce `wt-libvirt` to machine lifecycle and QEMU transport. Cloud-init only
+   bootstraps transport.
+7. Compose in `wt-server` and the KVM test server.
+8. Add clean-image and failure-path end-to-end tests.
 
-## Completion criteria
+Keep affected crates compiling and targeted tests passing after every step.
 
-- `wt-provider` contains no libvirt/QEMU types, and `wt-libvirt` contains no Git,
-  devcontainer, app-helper, or app-SSH provisioning logic.
-- Starting from a supported Ubuntu machine whose provider transport is usable,
-  provisioning succeeds even when Docker, Git, OpenSSH, the Dev Container CLI,
-  and session tools were not supplied by the golden-image recipe.
-- Existing server service tests still cover reservation, asynchronous jobs,
-  restart reconciliation, list/inspect, error recording, and delete behavior.
-- Unit tests cover the provider, transport, provisioner, and composite failure
-  contracts above, using complete Insta snapshots for stable multiline logs and
-  diagnostics.
-- Run `cargo fmt --all --check`, tests and Clippy for every affected crate, and
-  the existing libvirt KVM end-to-end test because this refactor changes the
-  real machine and provisioning path. Review snapshots and leave no
-  `.snap.new` or `.pending-snap` files.
+## Acceptance
+
+- Invalid ID touches nothing.
+- Partial create cleans all owned resources.
+- Primary errors survive cleanup errors.
+- Capture limits and deadlines apply while reading.
+- Streaming sink errors survive.
+- File metadata is applied.
+- Bootstrap installs missing tools and is safe to rerun.
+- Secrets never enter logs, errors, or debug values.
+- Missing, stopped, and identity-changed machines differ.
+- Delete is idempotent and retries partial cleanup.
+- DHCP changes refresh only with matching identities.
+- Existing service tests still cover jobs, restart, list/get, logs, errors, and
+  delete.
+- Stable multiline output, scripts, and command recordings use complete Insta
+  snapshots. Behavioral invariants use direct assertions.
+- `cargo fmt --all --check`, affected tests, affected-crate Clippy, and KVM E2E
+  pass. KVM E2E covers golden and clean image paths.
+- No `.snap.new` or `.pending-snap` files remain.
 
 ## Not in this pass
 
-Do not add static SSH, cloud providers, proxy commands, backend selection,
-per-world provider configuration, registry schema changes, server-setup
-changes, runtime overrides, or emulation fallback.
+Static SSH, cloud providers, proxy commands, backend selection, per-world
+provider config, schema changes, runtime overrides, and emulation fallback.
