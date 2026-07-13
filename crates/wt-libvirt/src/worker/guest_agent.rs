@@ -284,14 +284,24 @@ fn drain_bounded(
 ) -> Result<(), TransportError> {
     loop {
         let chunk = read_file_chunk(domain, handle)?;
-        if destination.len().saturating_add(chunk.bytes.len()) > limit {
-            return Err(TransportError::Overflow { stream, limit });
-        }
-        destination.extend_from_slice(&chunk.bytes);
+        append_bounded(destination, &chunk.bytes, limit, stream)?;
         if chunk.eof || chunk.bytes.is_empty() {
             return Ok(());
         }
     }
+}
+
+fn append_bounded(
+    destination: &mut Vec<u8>,
+    chunk: &[u8],
+    limit: usize,
+    stream: StreamKind,
+) -> Result<(), TransportError> {
+    if destination.len().saturating_add(chunk.len()) > limit {
+        return Err(TransportError::Overflow { stream, limit });
+    }
+    destination.extend_from_slice(chunk);
+    Ok(())
 }
 
 struct FileChunk {
@@ -431,5 +441,19 @@ mod tests {
         let bytes = tail.into_bytes();
         assert_eq!(bytes.len(), OUTPUT_TAIL_LIMIT);
         assert_eq!(&bytes[bytes.len() - 4..], b"last");
+    }
+
+    #[test]
+    fn capture_limits_are_enforced_before_appending_a_chunk() {
+        let mut output = b"1234".to_vec();
+        let error = append_bounded(&mut output, b"56", 5, StreamKind::Stdout).unwrap_err();
+        assert_eq!(
+            error,
+            TransportError::Overflow {
+                stream: StreamKind::Stdout,
+                limit: 5,
+            }
+        );
+        assert_eq!(output, b"1234");
     }
 }

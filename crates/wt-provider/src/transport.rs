@@ -119,7 +119,12 @@ pub trait GuestTransport: Send + Sync {
 }
 
 pub fn validate_executable(path: &str) -> Result<(), TransportError> {
-    if path.starts_with('/') && !path.split('/').any(|part| matches!(part, "." | "..")) {
+    if path.starts_with('/')
+        && path != "/"
+        && !path.ends_with('/')
+        && !path.contains("//")
+        && !path.split('/').any(|part| matches!(part, "." | ".."))
+    {
         Ok(())
     } else {
         Err(TransportError::Transport(format!(
@@ -167,6 +172,8 @@ mod tests {
         assert!(validate_executable("/usr/bin/true").is_ok());
         assert!(validate_executable("usr/bin/true").is_err());
         assert!(validate_executable("/usr/../bin/true").is_err());
+        assert!(validate_executable("/usr//bin/true").is_err());
+        assert!(validate_executable("/usr/bin/").is_err());
         assert!(validate_file_path("/run/wt/file").is_ok());
     }
 }
