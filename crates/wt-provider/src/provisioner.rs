@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 use wt_command::cmd;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
+const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
+const GUEST_INSTALL_PREFIX: &str = "/tmp/wt-install-guest";
 
 #[derive(Clone, Debug)]
 pub struct ProvisionerConfig {
@@ -130,7 +132,6 @@ impl WorldProvisioner {
             deadline,
             log,
         )?;
-        devcontainer::prepare_app_ssh(transport, deadline, log)?;
         let additional_features = format!(r#"{{"{}":{{}}}}"#, devcontainer::SSHD_FEATURE);
         let app_ssh_mount = format!(
             "type=bind,source={},target={}",
@@ -172,18 +173,6 @@ impl WorldProvisioner {
         report_phase(log, "devcontainer up", phase_started)?;
 
         let phase_started = Instant::now();
-        devcontainer::install_app_tools(
-            transport,
-            &devcontainer::AppTools {
-                app_shell: &self.app_shell,
-                app_pane: &self.app_pane,
-                app_info: &self.app_info,
-                app_proxy: &self.app_proxy,
-            },
-            self.config.session,
-            deadline,
-            log,
-        )?;
         let app_target = self.read_app_target(transport, deadline)?;
         let app_host_keys =
             self.configure_and_verify_app_ssh(transport, &app_target, deadline, log)?;
@@ -289,108 +278,60 @@ impl WorldProvisioner {
             ));
         }
 
+        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
+        authorized_keys.push(b'\n');
+        for (suffix, contents) in [
+            ("", GUEST_INSTALL),
+            ("-authorized-keys", authorized_keys.as_slice()),
+            ("-registry-ca", self.registry_cache_ca.as_slice()),
+            ("-app-shell", self.app_shell.as_slice()),
+            ("-app-pane", self.app_pane.as_slice()),
+            ("-app-info", self.app_info.as_slice()),
+            ("-app-proxy", self.app_proxy.as_slice()),
+        ] {
+            guest::write(
+                transport,
+                &format!("{GUEST_INSTALL_PREFIX}{suffix}"),
+                contents,
+            )?;
+        }
+
         let packages = self.config.bootstrap.pinned_packages();
-        let mut args = vec!["-c", APT_BOOTSTRAP, "wt-bootstrap"];
+        let session = match self.config.session {
+            SessionFrontend::Tmux => "tmux",
+            SessionFrontend::Byobu => "byobu",
+        };
+        let mut args = vec![
+            GUEST_INSTALL_PREFIX,
+            &self.config.bootstrap.devcontainer_cli_version,
+            session,
+            &self.config.registry_cache_url,
+        ];
         args.extend(packages.iter().map(String::as_str));
-        guest::run_phase(
+        let result = guest::run_phase(
             transport,
-            "guest package bootstrap",
+            "guest installation",
             "/bin/sh",
             &args,
             deadline,
             log,
-        )?;
-        let devcontainer_version = format!(
-            "@devcontainers/cli@{}",
-            self.config.bootstrap.devcontainer_cli_version
         );
-        guest::run_phase(
+        let _ = guest::exec(
             transport,
-            "Dev Container CLI",
-            "/bin/sh",
+            "/bin/rm",
             &[
-                "-c",
-                "set -eu; expected=$1; if ! command -v devcontainer >/dev/null || ! devcontainer --version | grep -Fx \"${expected#*@}\" >/dev/null; then npm install --global \"$2\"; fi; devcontainer --version",
-                "wt-devcontainer",
-                &self.config.bootstrap.devcontainer_cli_version,
-                &devcontainer_version,
+                "-f",
+                GUEST_INSTALL_PREFIX,
+                "/tmp/wt-install-guest-authorized-keys",
+                "/tmp/wt-install-guest-registry-ca",
+                "/tmp/wt-install-guest-app-shell",
+                "/tmp/wt-install-guest-app-pane",
+                "/tmp/wt-install-guest-app-info",
+                "/tmp/wt-install-guest-app-proxy",
             ],
             deadline,
-            log,
-        )?;
-        self.configure_guest(transport, deadline, log)?;
-        Ok(())
-    }
-
-    fn configure_guest(
-        &self,
-        transport: &dyn GuestTransport,
-        deadline: Instant,
-        log: &mut dyn Write,
-    ) -> Result<(), WorkerError> {
-        guest::run_phase(
-            transport,
-            "guest user and workspace",
-            "/bin/sh",
-            &[
-                "-c",
-                "set -eu; id wt >/dev/null 2>&1 || useradd --create-home --shell /bin/bash wt; usermod -aG docker wt; install -d -m 0755 -o wt -g wt /workspace /home/wt/.ssh; chmod 0700 /home/wt/.ssh; ssh-keygen -A; systemctl enable --now docker.service ssh.service",
-            ],
-            deadline,
-            log,
-        )?;
-        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
-        authorized_keys.push(b'\n');
-        guest::write_owned(
-            transport,
-            "/home/wt/.ssh/authorized_keys",
-            &authorized_keys,
-            "wt",
-            "wt",
-            0o600,
-            deadline,
-        )?;
-        guest::write_owned(
-            transport,
-            "/usr/local/share/ca-certificates/wt-registry-cache.crt",
-            &self.registry_cache_ca,
-            "root",
-            "root",
-            0o644,
-            deadline,
-        )?;
-        let drop_in = format!(
-            "[Service]\nEnvironment=\"HTTP_PROXY={}\"\nEnvironment=\"HTTPS_PROXY={}\"\nEnvironment=\"NO_PROXY=localhost,127.0.0.1\"\n",
-            self.config.registry_cache_url, self.config.registry_cache_url
         );
-        guest::run_phase(
-            transport,
-            "Docker registry proxy directory",
-            "/usr/bin/install",
-            &["-d", "-m", "0755", "/etc/systemd/system/docker.service.d"],
-            deadline,
-            log,
-        )?;
-        guest::write_owned(
-            transport,
-            "/etc/systemd/system/docker.service.d/wt-registry-cache.conf",
-            drop_in.as_bytes(),
-            "root",
-            "root",
-            0o644,
-            deadline,
-        )?;
-        guest::run_phase(
-            transport,
-            "registry trust and Docker proxy",
-            "/bin/sh",
-            &[
-                "-c",
-                "set -eu; update-ca-certificates; systemctl daemon-reload; systemctl restart docker.service; docker info >/dev/null; docker buildx version; docker compose version",
-            ],
-            deadline,
-            log,
-        )
+        result
     }
 
     fn prepare_workspace(
@@ -675,17 +616,6 @@ impl WorldProvisioner {
         }
     }
 }
-
-const APT_BOOTSTRAP: &str = r#"set -eu
-export DEBIAN_FRONTEND=noninteractive
-attempt=0
-until apt-get update && apt-get install -y --no-install-recommends "$@"; do
-    attempt=$((attempt + 1))
-    test "$attempt" -lt 30 || exit 1
-    sleep 2
-done
-systemctl enable --now docker.service ssh.service
-"#;
 
 pub(crate) mod guest {
     use super::*;
