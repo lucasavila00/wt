@@ -11,25 +11,10 @@ use std::path::Path;
 use std::time::Instant;
 use wt_api::GitPassphrase;
 
-const BUNDLE_DIR: &str = "/workspace/.git/wt";
-const CLONE_CREDENTIALS_DIR: &str = "/run/wt-git";
-const CLONE_ASKPASS: &str = "/tmp/wt-git-askpass";
 const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
-const STAGE_CREDENTIAL_MODES: &str = "chmod 0700 \"$1\" && chmod 0600 \"$2\" \"$3\" \"$4\"";
-const FINALIZE_BUNDLE: &str = "chmod 0444 \"$1\" \"$2\" && chmod 0555 \"$3\" && exec /usr/bin/git -c safe.directory=/workspace -C /workspace config --local core.sshCommand \"$4\"";
-const SSH_WRAPPER: &[u8] = br#"#!/bin/sh
-set -eu
-directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-runtime=$(mktemp -d "${TMPDIR:-/tmp}/wt-git.XXXXXX")
-trap 'rm -rf "$runtime"' EXIT HUP INT TERM
-install -m 0600 "$directory/identity" "$runtime/identity"
-/usr/bin/ssh \
-  -i "$runtime/identity" \
-  -o IdentitiesOnly=yes \
-  -o UserKnownHostsFile="$directory/known_hosts" \
-  -o StrictHostKeyChecking=yes \
-  "$@"
-"#;
+const GIT_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest-git.sh");
+const SSH_WRAPPER: &[u8] = include_bytes!("../../../assets/git-ssh.sh");
+const STAGE: &str = "/tmp/wt-install-git";
 
 #[derive(Clone)]
 pub(super) struct Credentials {
@@ -90,199 +75,65 @@ impl Credentials {
     }
 }
 
-pub(super) fn clone_and_checkout(
+#[allow(clippy::too_many_arguments)]
+pub(super) fn install_workspace(
     transport: &dyn GuestTransport,
     source: &str,
     clone_required: bool,
+    checkout: Option<Checkout<'_>>,
     credentials: &Credentials,
     passphrase: &GitPassphrase,
+    user_name: &str,
+    user_email: &str,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
     credentials.validate_passphrase(passphrase)?;
-    guest::run_phase(
-        transport,
-        "Git credentials",
-        "/usr/bin/install",
-        &["-d", "-m", "0700", CLONE_CREDENTIALS_DIR],
-        deadline,
-        log,
-    )?;
-    let result = (|| {
-        if clone_required {
-            stage_clone_credentials(transport, credentials, passphrase, deadline, log)?;
-            let environment = git_environment();
-            run_git(
-                transport,
-                "Git clone",
-                &environment,
-                &["clone", "--", source, "/workspace"],
-                deadline,
-                log,
-            )?;
-        }
-        install_persistent_bundle(transport, credentials, deadline, log)
-    })();
-    let _ = guest::exec(
-        transport,
-        "/bin/rm",
-        &["-rf", CLONE_CREDENTIALS_DIR, CLONE_ASKPASS],
-        deadline,
-    );
-    result
-}
-
-pub(super) fn checkout(
-    transport: &dyn GuestTransport,
-    checkout: Option<Checkout<'_>>,
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    let Some(checkout) = checkout else {
-        return Ok(());
-    };
-    let args = match checkout {
-        Checkout::Branch(branch) => vec!["-C", "/workspace", "checkout", "--", branch],
-        Checkout::Ref(git_ref) => {
-            vec!["-C", "/workspace", "checkout", "--detach", "--", git_ref]
-        }
-    };
-    run_git(transport, "Git checkout", &[], &args, deadline, log)
-}
-
-pub(super) fn configure_author(
-    transport: &dyn GuestTransport,
-    name: &str,
-    email: &str,
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    for (key, value) in [("user.name", name), ("user.email", email)] {
-        run_git(
-            transport,
-            "Git author identity",
-            &[],
-            &["-C", "/workspace", "config", "--local", key, value],
-            deadline,
-            log,
-        )?;
+    for (suffix, contents) in [
+        ("-identity", credentials.identity.as_slice()),
+        ("-known-hosts", credentials.known_hosts.as_slice()),
+        ("-passphrase", passphrase.expose_secret().as_bytes()),
+        ("-ssh", SSH_WRAPPER),
+    ] {
+        guest::write(transport, &format!("{STAGE}{suffix}"), contents)?;
     }
-    Ok(())
-}
-
-fn stage_clone_credentials(
-    transport: &dyn GuestTransport,
-    credentials: &Credentials,
-    passphrase: &GitPassphrase,
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    guest::write(transport, "/run/wt-git/identity", &credentials.identity)?;
-    guest::write(
+    let (checkout, checkout_value) = match checkout {
+        None => ("none", ""),
+        Some(Checkout::Branch(value)) => ("branch", value),
+        Some(Checkout::Ref(value)) => ("ref", value),
+    };
+    let clone = if clone_required { "true" } else { "false" };
+    let result = guest::run_script(
         transport,
-        "/run/wt-git/known_hosts",
-        &credentials.known_hosts,
-    )?;
-    guest::write(
-        transport,
-        "/run/wt-git/passphrase",
-        passphrase.expose_secret().as_bytes(),
-    )?;
-    guest::write(
-        transport,
-        CLONE_ASKPASS,
-        b"#!/bin/sh\ncat /run/wt-git/passphrase\n",
-    )?;
-    guest::run_phase(
-        transport,
-        "Git credentials",
-        "/bin/sh",
+        "Git workspace installation",
+        GIT_INSTALL,
         &[
-            "-c",
-            STAGE_CREDENTIAL_MODES,
-            "wt-git-credentials",
-            CLONE_ASKPASS,
-            "/run/wt-git/identity",
-            "/run/wt-git/known_hosts",
-            "/run/wt-git/passphrase",
-        ],
-        deadline,
-        log,
-    )?;
-    Ok(())
-}
-
-fn git_environment() -> Vec<String> {
-    vec![
-        "GIT_SSH_COMMAND=ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes".to_owned(),
-        format!("SSH_ASKPASS={CLONE_ASKPASS}"),
-        "SSH_ASKPASS_REQUIRE=force".to_owned(),
-        "DISPLAY=wt:0".to_owned(),
-    ]
-}
-
-fn run_git(
-    transport: &dyn GuestTransport,
-    phase: &str,
-    environment: &[String],
-    git_args: &[&str],
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    let mut args = environment.iter().map(String::as_str).collect::<Vec<_>>();
-    args.push("/usr/bin/git");
-    // cloud-init creates /workspace for wt, while guest-agent provisioning runs as root.
-    args.extend(["-c", "safe.directory=/workspace"]);
-    args.extend_from_slice(git_args);
-    guest::run_phase(transport, phase, "/usr/bin/env", &args, deadline, log)?;
-    Ok(())
-}
-
-fn install_persistent_bundle(
-    transport: &dyn GuestTransport,
-    credentials: &Credentials,
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    guest::run_phase(
-        transport,
-        "Git credentials",
-        "/usr/bin/install",
-        &["-d", "-m", "0755", BUNDLE_DIR],
-        deadline,
-        log,
-    )?;
-    guest::write(
-        transport,
-        &format!("{BUNDLE_DIR}/identity"),
-        &credentials.identity,
-    )?;
-    guest::write(
-        transport,
-        &format!("{BUNDLE_DIR}/known_hosts"),
-        &credentials.known_hosts,
-    )?;
-    guest::write(transport, &format!("{BUNDLE_DIR}/ssh"), SSH_WRAPPER)?;
-
-    // The bundle is intentionally visible to the trusted devcontainer. The
-    // wrapper gives OpenSSH a private mode-0600 copy for each invocation.
-    guest::run_phase(
-        transport,
-        "Git credentials",
-        "/bin/sh",
-        &[
-            "-c",
-            FINALIZE_BUNDLE,
-            "wt-git-bundle",
-            &format!("{BUNDLE_DIR}/identity"),
-            &format!("{BUNDLE_DIR}/known_hosts"),
-            &format!("{BUNDLE_DIR}/ssh"),
+            source,
+            clone,
+            checkout,
+            checkout_value,
+            user_name,
+            user_email,
             SSH_COMMAND,
         ],
         deadline,
         log,
-    )?;
-    Ok(())
+    );
+    let _ = guest::exec(
+        transport,
+        "/bin/rm",
+        &[
+            "-rf",
+            "/run/wt-git",
+            "/tmp/wt-git-askpass",
+            "/tmp/wt-install-git-identity",
+            "/tmp/wt-install-git-known-hosts",
+            "/tmp/wt-install-git-passphrase",
+            "/tmp/wt-install-git-ssh",
+        ],
+        deadline,
+    );
+    result
 }
 
 fn error_context(action: &str, error: impl std::fmt::Display) -> WorkerError {
@@ -366,20 +217,6 @@ mod tests {
         credentials
             .validate_passphrase(&GitPassphrase::new("secret".to_owned()))
             .unwrap();
-    }
-
-    #[test]
-    fn clone_askpass_executes_outside_noexec_run() {
-        let environment = git_environment();
-        insta::assert_debug_snapshot!(environment, @r###"
-        [
-            "GIT_SSH_COMMAND=ssh -i /run/wt-git/identity -o IdentitiesOnly=yes -o UserKnownHostsFile=/run/wt-git/known_hosts -o StrictHostKeyChecking=yes",
-            "SSH_ASKPASS=/tmp/wt-git-askpass",
-            "SSH_ASKPASS_REQUIRE=force",
-            "DISPLAY=wt:0",
-        ]
-        "###);
-        assert!(!CLONE_ASKPASS.starts_with("/run/"));
     }
 
     fn run(mut command: Command, action: &str) {

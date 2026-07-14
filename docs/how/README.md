@@ -27,9 +27,9 @@ client: wt + OpenSSH
 |-----------|------|
 | `wt` | Contexts, API transport, names, and managed SSH inventory |
 | `wt-server` | Unix-socket API daemon, registry, durable jobs, and logs |
-| `wt-provider` | Provider-neutral guest transport, bootstrap, world provisioning, and composite lifecycle |
+| `wt-provider` | Provider-neutral guest transport, embedded install flows, world provisioning, and composite lifecycle |
 | `wt-libvirt` | KVM machine creation, inspection, destruction, and QEMU guest-agent transport |
-| `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
+| `wt-server-setup` | Embedded host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 
 ## Control plane

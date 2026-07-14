@@ -70,6 +70,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-setup`. Real-system tests belong in `wt-integration-tests`.
+- Use Rust for typed validation, state, and lifecycle decisions. Whole-flow POSIX
+  shell assets are allowed for guest and server installation procedures.
 - Match verification to the files changed. Documentation-only changes need no Rust
   checks. For shell scripts, run `bash -n` on the changed scripts and targeted
   behavior checks; run ShellCheck when available.

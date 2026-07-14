@@ -103,18 +103,13 @@ impl WorldProvisioner {
             .git_branch
             .map(git::Checkout::Branch)
             .or_else(|| spec.git_ref.map(git::Checkout::Ref));
-        git::clone_and_checkout(
+        git::install_workspace(
             transport,
             spec.source,
             clone_required,
+            checkout,
             &self.git_credentials,
             spec.git_passphrase,
-            deadline,
-            log,
-        )?;
-        git::checkout(transport, checkout, deadline, log)?;
-        git::configure_author(
-            transport,
             spec.git_user_name,
             spec.git_user_email,
             deadline,
