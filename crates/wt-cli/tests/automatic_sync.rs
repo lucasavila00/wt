@@ -1,7 +1,5 @@
 use std::fs;
-use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::process::Stdio;
 use wt_command::cmd;
 
 #[test]
@@ -66,20 +64,12 @@ case "$request" in
     count=$((count + 1))
     printf '%s\n' "$count" > "$attempts"
     case "$request" in
-      *'"git_passphrase":"secret"'*'"git_user_name":"Lucas Ávila"'*'"git_user_email":"lucaxx@gmail.com"'*)
+      *'"git_user_name":"Lucas Ávila"'*'"git_user_email":"lucaxx@gmail.com"'*)
         : > "$state"
-        printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"provisioning","source":"git@example.test:repo.git"}}}'
+        printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"setup","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
         ;;
-      *)
-        printf '%s\n' '{"protocol_version":1,"outcome":"error","error":{"code":"invalid_git_passphrase","message":"Git identity: invalid private key passphrase"}}'
-        ;;
+      *) exit 2 ;;
     esac
-    ;;
-  *'"operation":"logs"'*'"offset":0'*)
-    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"logs","chunk":"YnVpbGRpbmcK","next_offset":9,"status":"running"}}'
-    ;;
-  *'"operation":"logs"'*)
-    printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"logs","chunk":"","next_offset":9,"status":"running"}}'
     ;;
   *'"operation":"get"'*)
     printf '%s\n' '{"protocol_version":1,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000001","name":"repo-feature","owner":"tester","status":"running","source":"git@example.test:repo.git","guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}}}'
@@ -117,58 +107,23 @@ esac
     )))
     .unwrap();
 
-    let mut created = cmd!(
-        "script",
-        "-q",
-        "-e",
-        "-c",
-        &format!(
-            "{} new git@example.test:repo.git repo-feature",
-            env!("CARGO_BIN_EXE_wt")
-        ),
-        "/dev/null",
+    let created = cmd!(
+        env!("CARGO_BIN_EXE_wt"),
+        "new",
+        "git@example.test:repo.git",
+        "repo-feature"
     )
     .env("HOME", temp.path())
     .env("PATH", &path)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
+    .output()
     .unwrap();
-    let mut stdout = created.stdout.take().unwrap();
-    let mut transcript = Vec::new();
-    let prompt = b"Server Git SSH key passphrase: ";
-    for passphrase in [b"wrong-one\n".as_slice(), b"wrong-two\n", b"secret\n"] {
-        loop {
-            let mut byte = [0];
-            assert_eq!(stdout.read(&mut byte).unwrap(), 1);
-            transcript.push(byte[0]);
-            if transcript.ends_with(prompt) {
-                break;
-            }
-        }
-        created
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(passphrase)
-            .unwrap();
-    }
-    drop(created.stdin.take());
-    let mut remaining = Vec::new();
-    stdout.read_to_end(&mut remaining).unwrap();
-    transcript.extend(remaining);
-    let output = created.wait_with_output().unwrap();
     assert!(
-        output.status.success(),
+        created.status.success(),
         "{}{}",
-        String::from_utf8_lossy(&transcript),
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr)
     );
-    let transcript = String::from_utf8_lossy(&transcript);
-    assert!(!transcript.contains("wrong-one"));
-    assert!(!transcript.contains("wrong-two"));
-    assert!(!transcript.contains("secret"));
+    let transcript = String::from_utf8_lossy(&created.stdout);
     let normalized_transcript = transcript
         .lines()
         .map(str::trim_end)
@@ -177,42 +132,22 @@ esac
     insta::assert_snapshot!(
         normalized_transcript,
         @r###"
-        To clone git@example.test:repo.git into local.repo-feature, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server.
-        Server Git SSH key passphrase:
-        Git identity: invalid private key passphrase; 2 attempts remaining.
-        Server Git SSH key passphrase:
-        Git identity: invalid private key passphrase; 1 attempt remaining.
-        Server Git SSH key passphrase:
-        building
-        local.repo-feature	running	192.0.2.2
+        local.repo-feature	setup	192.0.2.2
 
-        App shell: ssh local.repo-feature
-        Editor / raw app SSH: ssh local.repo-feature-vs
+        Start setup: ssh local.repo-feature
         Guest host: ssh local.repo-feature-host
         Endpoint: wt@192.0.2.2:22
         "###
     );
     assert_eq!(
         fs::read_to_string(temp.path().join("helper-attempts")).unwrap(),
-        "3\n"
+        "1\n"
     );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
     insta::assert_snapshot!(
         "automatically_synced_ssh_config",
         managed.replace(&temp.path().display().to_string(), "[HOME]")
     );
-
-    let logs = cmd!(env!("CARGO_BIN_EXE_wt"), "logs", "repo-feature")
-        .env("HOME", temp.path())
-        .env("PATH", &path)
-        .output()
-        .unwrap();
-    assert!(
-        logs.status.success(),
-        "{}",
-        String::from_utf8_lossy(&logs.stderr)
-    );
-    insta::assert_snapshot!(String::from_utf8_lossy(&logs.stdout), @"building");
 
     let removed = cmd!(env!("CARGO_BIN_EXE_wt"), "rm", "repo-feature")
         .env("HOME", temp.path())

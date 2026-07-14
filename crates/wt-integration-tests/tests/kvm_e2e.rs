@@ -6,11 +6,10 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{
-    ApiRequest, ApiResponse, CreateInstance, GitPassphrase, InstanceName, InstanceStatus,
-    Operation, Outcome, Response,
+    ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
+    Response,
 };
 use wt_command::cmd;
-use wt_provider::SessionFrontend;
 use wt_server::ServerConfig;
 
 const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
@@ -33,7 +32,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         GitSshServer::start(temp.path(), bridge_ip)
     });
     config.guest.ssh_authorized_keys_file = git.guest_public_key.clone();
-    config.git.identity_file = git.git_key.clone();
     config.git.known_hosts_file = temp.path().join(".ssh/known_hosts");
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
@@ -70,7 +68,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 source: git.url(),
                 git_branch: None,
                 git_ref: None,
-                git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),
@@ -94,7 +91,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 source: git.url(),
                 git_branch: None,
                 git_ref: None,
-                git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),
@@ -182,10 +178,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .map_err(|error| error.to_string())
         })?;
         ensure_success("enter fixture devcontainer over SSH", &output)?;
-        let (frontend, executable) = match config.guest.session {
-            SessionFrontend::Tmux => ("tmux", "/usr/bin/tmux"),
-            SessionFrontend::Byobu => ("byobu", "/usr/bin/byobu-tmux"),
-        };
+        let (frontend, executable) = ("byobu", "/usr/bin/byobu-tmux");
         let output = cmd!(
             "ssh",
             "-F",
@@ -326,10 +319,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             ),
             "read persistent session prefix",
         );
-        let expected_prefix = match config.guest.session {
-            SessionFrontend::Tmux => "C-b",
-            SessionFrontend::Byobu => "F12",
-        };
+        let expected_prefix = "F12";
         if prefix.trim() != expected_prefix {
             return Err(format!(
                 "unexpected {frontend} session prefix: {prefix:?}; expected {expected_prefix}"
@@ -396,47 +386,12 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
 }
 
 fn wait_for_world(home: &Path, config: &Path, name: &InstanceName) -> wt_api::Instance {
-    let mut offset = 0_u64;
-    loop {
-        let Response::Logs {
-            chunk,
-            next_offset,
-            status,
-            last_error,
-        } = call_api(
-            home,
-            config,
-            Operation::Logs {
-                name: name.clone(),
-                offset,
-            },
-        )
-        else {
-            panic!("expected logs response");
-        };
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(chunk)
-            .unwrap();
-        std::io::stderr().write_all(&bytes).unwrap();
-        std::io::stderr().flush().unwrap();
-        offset = next_offset;
-        if status == InstanceStatus::Provisioning || !bytes.is_empty() {
-            continue;
-        }
-        assert_ne!(
-            status,
-            InstanceStatus::Error,
-            "provisioning failed: {}",
-            last_error.as_deref().unwrap_or("unknown error")
-        );
-        let Response::Instance { instance } =
-            call_api(home, config, Operation::Get { name: name.clone() })
-        else {
-            panic!("expected instance response");
-        };
-        assert_eq!(instance.status, InstanceStatus::Running);
-        return *instance;
-    }
+    let Response::Instance { instance } =
+        call_api(home, config, Operation::Get { name: name.clone() })
+    else {
+        panic!("expected instance response")
+    };
+    *instance
 }
 
 fn call_api(home: &Path, config: &Path, operation: Operation) -> Response {
@@ -514,7 +469,6 @@ struct GitSshServer {
     address: IpAddr,
     port: u16,
     repository: PathBuf,
-    git_key: PathBuf,
     guest_key: PathBuf,
     guest_public_key: PathBuf,
 }
@@ -575,7 +529,6 @@ impl GitSshServer {
                     address,
                     port,
                     repository,
-                    git_key,
                     guest_key,
                     guest_public_key,
                 };
@@ -755,4 +708,3 @@ fn ensure_success(action: &str, output: &Output) -> Result<(), String> {
         ))
     }
 }
-use base64::Engine as _;

@@ -1,20 +1,14 @@
 #!/bin/sh
 set -eu
 
-if test "$#" -lt 4; then
-    echo "usage: install-guest.sh DEVCONTAINER_VERSION SESSION REGISTRY_URL PACKAGE..." >&2
+if test "$#" -lt 3; then
+    echo "usage: install-guest.sh DEVCONTAINER_VERSION REGISTRY_URL PACKAGE..." >&2
     exit 2
 fi
 
 devcontainer_version=$1
-session=$2
-registry_url=$3
-shift 3
-
-case "$session" in
-    tmux|byobu) ;;
-    *) echo "unsupported session frontend: $session" >&2; exit 2 ;;
-esac
+registry_url=$2
+shift 2
 
 stage=/tmp/wt-install-guest
 export DEBIAN_FRONTEND=noninteractive
@@ -45,12 +39,18 @@ printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEn
     > /etc/systemd/system/docker.service.d/wt-registry-cache.conf
 
 install -m 0755 "$stage-app-shell" /usr/local/bin/wt-app-shell
+install -m 0755 "$stage-setup-world" /usr/local/bin/wt-setup-world
 install -m 0755 "$stage-app-pane" /usr/local/bin/wt-app-pane
 install -m 0755 "$stage-app-info" /usr/local/bin/wt-app-info
 install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
-printf 'set-option -g default-command /usr/local/bin/wt-app-pane\n' > /usr/local/share/wt-tmux.conf
-printf '%s\n' "$session" > /usr/local/share/wt-session-frontend
-chmod 0644 /usr/local/share/wt-tmux.conf /usr/local/share/wt-session-frontend
+printf 'set-option -g remain-on-exit failed\n' > /usr/local/share/wt-tmux.conf
+chmod 0644 /usr/local/share/wt-tmux.conf
+install -d -m 0755 -o wt -g wt /var/lib/wt-setup
+for name in source git-branch git-ref git-user-name git-user-email git-known-hosts; do
+    install -m 0600 -o wt -g wt "/tmp/wt-setup-$name" "/var/lib/wt-setup/$name"
+done
+printf 'wt ALL=(root) NOPASSWD: ALL\n' > /etc/sudoers.d/wt-setup
+chmod 0440 /etc/sudoers.d/wt-setup
 
 install -d -m 0700 -o wt -g wt /var/lib/wt-app-ssh
 install -d -m 0755 /var/lib/wt-app-ssh/public /var/lib/wt-app-ssh/public/authorized_keys

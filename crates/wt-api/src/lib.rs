@@ -5,7 +5,6 @@ use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -32,7 +31,6 @@ pub enum Operation {
     List,
     Get { name: InstanceName },
     Delete { name: InstanceName },
-    Logs { name: InstanceName, offset: u64 },
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -43,7 +41,6 @@ pub struct CreateInstance {
     pub git_branch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
-    pub git_passphrase: GitPassphrase,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     pub git_user_name: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -59,26 +56,6 @@ where
         return Err(serde::de::Error::custom("value must not be empty"));
     }
     Ok(value)
-}
-
-#[derive(Deserialize, Eq, PartialEq, Serialize, Zeroize, ZeroizeOnDrop)]
-#[serde(transparent)]
-pub struct GitPassphrase(String);
-
-impl GitPassphrase {
-    pub fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    pub fn expose_secret(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for GitPassphrase {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("GitPassphrase([REDACTED])")
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -116,22 +93,9 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
-    Instance {
-        instance: Box<Instance>,
-    },
-    Instances {
-        instances: Vec<Instance>,
-    },
-    Deleted {
-        name: InstanceName,
-    },
-    Logs {
-        chunk: String,
-        next_offset: u64,
-        status: InstanceStatus,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        last_error: Option<String>,
-    },
+    Instance { instance: Box<Instance> },
+    Instances { instances: Vec<Instance> },
+    Deleted { name: InstanceName },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -170,6 +134,7 @@ pub struct AppSshAccess {
 #[serde(rename_all = "snake_case")]
 pub enum InstanceStatus {
     Provisioning,
+    Setup,
     Running,
     Destroying,
     Error,
@@ -179,6 +144,7 @@ impl fmt::Display for InstanceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Provisioning => "provisioning",
+            Self::Setup => "setup",
             Self::Running => "running",
             Self::Destroying => "destroying",
             Self::Error => "error",
@@ -193,6 +159,7 @@ impl FromStr for InstanceStatus {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "provisioning" => Ok(Self::Provisioning),
+            "setup" => Ok(Self::Setup),
             "running" => Ok(Self::Running),
             "destroying" => Ok(Self::Destroying),
             "error" => Ok(Self::Error),
@@ -224,7 +191,6 @@ impl ApiError {
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     InvalidRequest,
-    InvalidGitPassphrase,
     UnsupportedProtocol,
     Conflict,
     NotFound,
@@ -392,13 +358,12 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_server_credentials_shape() {
+    fn create_request_has_setup_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
             git_branch: None,
             git_ref: Some("devcontainer".to_owned()),
-            git_passphrase: GitPassphrase::new("secret".to_owned()),
             git_user_name: "Lucas Ávila".to_owned(),
             git_user_email: "lucaxx@gmail.com".to_owned(),
         }));
@@ -410,7 +375,6 @@ mod tests {
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
                 "git_ref": "devcontainer",
-                "git_passphrase": "secret",
                 "git_user_name": "Lucas Ávila",
                 "git_user_email": "lucaxx@gmail.com"
             })
@@ -424,7 +388,6 @@ mod tests {
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
-            "git_passphrase": "secret"
         }));
         assert!(missing.is_err());
 
@@ -433,36 +396,10 @@ mod tests {
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
-            "git_passphrase": "secret",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
         }));
         assert!(empty.is_err());
-    }
-
-    #[test]
-    fn logs_request_keeps_protocol_v1_offset_shape() {
-        let request = ApiRequest::new(Operation::Logs {
-            name: InstanceName::parse("repo-feature").unwrap(),
-            offset: 4096,
-        });
-        assert_eq!(
-            serde_json::to_value(request).unwrap(),
-            serde_json::json!({
-                "protocol_version": 1,
-                "operation": "logs",
-                "name": "repo-feature",
-                "offset": 4096
-            })
-        );
-    }
-
-    #[test]
-    fn git_passphrase_debug_is_redacted() {
-        let passphrase = GitPassphrase::new("do-not-print".to_owned());
-        let debug = format!("{passphrase:?}");
-        assert!(!debug.contains(passphrase.expose_secret()));
-        insta::assert_snapshot!(debug, @"GitPassphrase([REDACTED])");
     }
 
     #[test]

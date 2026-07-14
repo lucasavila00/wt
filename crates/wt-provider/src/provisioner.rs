@@ -1,6 +1,5 @@
-use crate::bootstrap::{BootstrapPolicy, SessionFrontend};
+use crate::bootstrap::BootstrapPolicy;
 use crate::devcontainer;
-use crate::git;
 use crate::{
     CaptureRequest, CapturedOutput, GuestTransport, Machine, ProvisionSpec, RunRequest,
     WorkerError, World, WriteFileRequest,
@@ -17,21 +16,20 @@ use wt_command::cmd;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
+const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/setup-world.sh");
+const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 
 #[derive(Clone, Debug)]
 pub struct ProvisionerConfig {
-    pub app_shell_binary: PathBuf,
     pub app_pane_binary: PathBuf,
     pub app_info_binary: PathBuf,
     pub app_proxy_binary: PathBuf,
     pub registry_cache_url: String,
     pub registry_cache_ca_file: PathBuf,
-    pub git_identity_file: PathBuf,
     pub git_known_hosts_file: PathBuf,
     pub recipe_timeout: Duration,
     pub ssh_authorized_keys: Vec<String>,
-    pub session: SessionFrontend,
     pub bootstrap: BootstrapPolicy,
 }
 
@@ -42,7 +40,7 @@ pub struct WorldProvisioner {
     app_pane: Vec<u8>,
     app_info: Vec<u8>,
     app_proxy: Vec<u8>,
-    git_credentials: git::Credentials,
+    git_known_hosts: Vec<u8>,
     registry_cache_ca: Vec<u8>,
 }
 
@@ -56,7 +54,7 @@ impl WorldProvisioner {
     pub fn new(config: ProvisionerConfig) -> Result<Self, WorkerError> {
         config.bootstrap.validate().map_err(WorkerError::new)?;
         verify_registry_cache(&config.registry_cache_url)?;
-        let app_shell = require_and_read(&config.app_shell_binary, "guest app-shell binary")?;
+        let app_shell = APP_SHELL.to_vec();
         let app_pane = require_and_read(&config.app_pane_binary, "guest app-pane binary")?;
         let app_info = require_and_read(&config.app_info_binary, "guest app-info binary")?;
         let app_proxy = require_and_read(&config.app_proxy_binary, "guest app-proxy binary")?;
@@ -64,24 +62,17 @@ impl WorldProvisioner {
             &config.registry_cache_ca_file,
             "registry cache certificate authority",
         )?;
-        let git_credentials =
-            git::load_credentials(&config.git_identity_file, &config.git_known_hosts_file)?;
+        let git_known_hosts =
+            require_and_read(&config.git_known_hosts_file, "Git known-hosts file")?;
         Ok(Self {
             config,
             app_shell,
             app_pane,
             app_info,
             app_proxy,
-            git_credentials,
+            git_known_hosts,
             registry_cache_ca,
         })
-    }
-
-    pub fn validate_git_passphrase(
-        &self,
-        passphrase: &wt_api::GitPassphrase,
-    ) -> Result<(), WorkerError> {
-        self.git_credentials.validate_passphrase(passphrase)
     }
 
     pub fn provision(
@@ -94,107 +85,14 @@ impl WorldProvisioner {
             .map_err(|error| WorkerError::new(format!("Git source: {error}")))?;
         let deadline = Instant::now() + self.config.recipe_timeout;
         let transport = machine.transport.as_ref();
-        self.bootstrap(transport, deadline, log)?;
-
-        log_line(log, &format!("Cloning {}...", spec.source))?;
-        let phase_started = Instant::now();
-        let clone_required = self.prepare_workspace(transport, spec.source, deadline, log)?;
-        let checkout = spec
-            .git_branch
-            .map(git::Checkout::Branch)
-            .or_else(|| spec.git_ref.map(git::Checkout::Ref));
-        git::install_workspace(
-            transport,
-            spec.source,
-            clone_required,
-            checkout,
-            &self.git_credentials,
-            spec.git_passphrase,
-            spec.git_user_name,
-            spec.git_user_email,
-            deadline,
-            log,
-        )?;
-        report_phase(log, "Git clone and checkout", phase_started)?;
-
-        log_line(log, "Starting the repository devcontainer...")?;
-        let phase_started = Instant::now();
-        guest::run_phase(
-            transport,
-            "workspace ownership",
-            "/bin/chown",
-            &["-R", "wt:wt", "/workspace"],
-            deadline,
-            log,
-        )?;
-        let additional_features = format!(r#"{{"{}":{{}}}}"#, devcontainer::SSHD_FEATURE);
-        let app_ssh_mount = format!(
-            "type=bind,source={},target={}",
-            devcontainer::APP_SSH_PUBLIC_DIR,
-            devcontainer::APP_SSH_MOUNT
-        );
-        let sshd_config_mount = format!(
-            "type=bind,source={}/sshd_config,target=/etc/ssh/sshd_config",
-            devcontainer::APP_SSH_PUBLIC_DIR
-        );
-        guest::run_phase(
-            transport,
-            "devcontainer up",
-            "/usr/sbin/runuser",
-            &[
-                "-u",
-                "wt",
-                "--",
-                "/usr/bin/env",
-                "HOME=/home/wt",
-                "/usr/local/bin/devcontainer",
-                "up",
-                "--log-level",
-                "debug",
-                "--log-format",
-                "text",
-                "--workspace-folder",
-                "/workspace",
-                "--additional-features",
-                &additional_features,
-                "--mount",
-                &app_ssh_mount,
-                "--mount",
-                &sshd_config_mount,
-            ],
-            deadline,
-            log,
-        )?;
-        report_phase(log, "devcontainer up", phase_started)?;
-
-        let phase_started = Instant::now();
-        let app_target = self.read_app_target(transport, deadline)?;
-        let app_host_keys =
-            self.configure_and_verify_app_ssh(transport, &app_target, deadline, log)?;
-        guest::run_phase(
-            transport,
-            "devcontainer Git workspace",
-            "/usr/local/bin/devcontainer",
-            &[
-                "exec",
-                "--workspace-folder",
-                "/workspace",
-                "/bin/sh",
-                "-c",
-                "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\"",
-            ],
-            deadline,
-            log,
-        )?;
-        report_phase(
-            log,
-            "app SSH and devcontainer Git verification",
-            phase_started,
-        )?;
+        self.bootstrap(transport, spec, deadline, log)?;
 
         let host_keys = self.read_host_keys(transport, deadline)?;
         self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
-        log_line(log, &format!("World {} is ready.", spec.name))?;
+        log_line(
+            log,
+            &format!("World {} is ready for setup over SSH.", spec.name),
+        )?;
         Ok(World {
             guest_ip: machine.guest_ip.clone(),
             ssh: wt_api::SshAccess {
@@ -203,11 +101,7 @@ impl WorldProvisioner {
                 port: 22,
                 host_keys,
             },
-            app_ssh: wt_api::AppSshAccess {
-                user: app_target.user,
-                port: devcontainer::APP_SSH_PORT,
-                host_keys: app_host_keys,
-            },
+            app_ssh: None,
         })
     }
 
@@ -216,7 +110,30 @@ impl WorldProvisioner {
         let transport = machine.transport.as_ref();
         let host_keys = self.read_host_keys(transport, deadline)?;
         self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
-        let app_ssh = self.inspect_app_ssh(transport, deadline)?;
+        let complete = guest::exec(
+            transport,
+            "/usr/bin/test",
+            &["-e", "/var/lib/wt-setup/complete"],
+            deadline,
+        )?
+        .exit_code
+            == 0;
+        let app_ssh = if complete {
+            let target = self.read_app_target(transport, deadline)?;
+            let host_keys = self.configure_and_verify_app_ssh(
+                transport,
+                &target,
+                deadline,
+                &mut std::io::sink(),
+            )?;
+            Some(wt_api::AppSshAccess {
+                user: target.user,
+                port: devcontainer::APP_SSH_PORT,
+                host_keys,
+            })
+        } else {
+            None
+        };
         Ok(World {
             guest_ip: machine.guest_ip.clone(),
             ssh: wt_api::SshAccess {
@@ -232,6 +149,7 @@ impl WorldProvisioner {
     fn bootstrap(
         &self,
         transport: &dyn GuestTransport,
+        spec: &ProvisionSpec<'_>,
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
@@ -282,6 +200,7 @@ impl WorldProvisioner {
             ("-app-pane", self.app_pane.as_slice()),
             ("-app-info", self.app_info.as_slice()),
             ("-app-proxy", self.app_proxy.as_slice()),
+            ("-setup-world", SETUP_WORLD),
         ] {
             guest::write(
                 transport,
@@ -289,16 +208,29 @@ impl WorldProvisioner {
                 contents,
             )?;
         }
+        for (name, contents) in [
+            ("source", spec.source),
+            ("git-branch", spec.git_branch.unwrap_or("")),
+            ("git-ref", spec.git_ref.unwrap_or("")),
+            ("git-user-name", spec.git_user_name),
+            ("git-user-email", spec.git_user_email),
+        ] {
+            guest::write(
+                transport,
+                &format!("/tmp/wt-setup-{name}"),
+                contents.as_bytes(),
+            )?;
+        }
+        guest::write(
+            transport,
+            "/tmp/wt-setup-git-known-hosts",
+            &self.git_known_hosts,
+        )?;
 
         let packages = self.config.bootstrap.pinned_packages();
-        let session = match self.config.session {
-            SessionFrontend::Tmux => "tmux",
-            SessionFrontend::Byobu => "byobu",
-        };
-        let mut args = vec![
-            &self.config.bootstrap.devcontainer_cli_version,
-            session,
-            &self.config.registry_cache_url,
+        let mut args: Vec<&str> = vec![
+            self.config.bootstrap.devcontainer_cli_version.as_str(),
+            self.config.registry_cache_url.as_str(),
         ];
         args.extend(packages.iter().map(String::as_str));
         let result = guest::run_script(
@@ -320,48 +252,11 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-app-pane",
                 "/tmp/wt-install-guest-app-info",
                 "/tmp/wt-install-guest-app-proxy",
+                "/tmp/wt-install-guest-setup-world",
             ],
             deadline,
         );
         result
-    }
-
-    fn prepare_workspace(
-        &self,
-        transport: &dyn GuestTransport,
-        source: &str,
-        deadline: Instant,
-        log: &mut dyn Write,
-    ) -> Result<bool, WorkerError> {
-        let output = guest::exec(
-            transport,
-            "/bin/sh",
-            &[
-                "-c",
-                "if test -d /workspace/.git; then git -C /workspace remote get-url origin; elif test -z \"$(find /workspace -mindepth 1 -maxdepth 1 -print -quit)\"; then exit 3; else exit 4; fi",
-            ],
-            deadline,
-        )?;
-        match output.exit_code {
-            3 => Ok(true),
-            0 if String::from_utf8_lossy(&output.stdout).trim() == source => {
-                guest::run_phase(
-                    transport,
-                    "existing checkout reset",
-                    "/usr/bin/git",
-                    &["-C", "/workspace", "reset", "--hard", "HEAD"],
-                    deadline,
-                    log,
-                )?;
-                Ok(false)
-            }
-            0 => Err(WorkerError::new(
-                "workspace already contains a checkout for a different Git source",
-            )),
-            _ => Err(WorkerError::new(
-                "workspace is not empty and is not a valid Git checkout",
-            )),
-        }
     }
 
     fn read_app_target(
@@ -487,36 +382,6 @@ impl WorldProvisioner {
             log,
         )?;
         Ok(expected)
-    }
-
-    fn inspect_app_ssh(
-        &self,
-        transport: &dyn GuestTransport,
-        deadline: Instant,
-    ) -> Result<wt_api::AppSshAccess, WorkerError> {
-        let target = self.read_app_target(transport, deadline)?;
-        let expected = self.read_app_host_keys(transport, deadline)?;
-        let scanned = guest::capture_phase(
-            transport,
-            "app SSH readiness",
-            "/usr/bin/ssh-keyscan",
-            &[
-                "-T",
-                "5",
-                "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
-                &target.address,
-            ],
-            deadline,
-        )?;
-        if !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
-            return Err(WorkerError::new("app SSH host identity changed"));
-        }
-        Ok(wt_api::AppSshAccess {
-            user: target.user,
-            port: devcontainer::APP_SSH_PORT,
-            host_keys: expected,
-        })
     }
 
     fn read_app_host_keys(
@@ -840,11 +705,4 @@ fn context(action: &str, error: impl std::fmt::Display) -> WorkerError {
 
 fn log_line(log: &mut dyn Write, message: &str) -> Result<(), WorkerError> {
     writeln!(log, "{message}").map_err(|error| context("write provisioning log", error))
-}
-
-fn report_phase(log: &mut dyn Write, label: &str, started: Instant) -> Result<(), WorkerError> {
-    log_line(
-        log,
-        &format!("{label} ready in {:.1}s.", started.elapsed().as_secs_f64()),
-    )
 }

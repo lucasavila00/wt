@@ -7,10 +7,6 @@ publish.workspace = true
 description = "Guest-side programs injected by wt"
 
 [[bin]]
-name = "wt-app-shell"
-path = "src/bin/wt-app-shell.rs"
-
-[[bin]]
 name = "wt-app-pane"
 path = "src/main.rs"
 

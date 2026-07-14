@@ -30,7 +30,6 @@ pub struct RegistryCacheConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GitConfig {
-    pub identity_file: PathBuf,
     pub known_hosts_file: PathBuf,
 }
 
@@ -51,7 +50,6 @@ pub struct ServerLibvirtConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
-    pub session: SessionFrontend,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
@@ -87,14 +85,12 @@ impl ServerConfig {
                 self.version
             ));
         }
-        let git_identity_file = expand_home(&self.git.identity_file, "git.identity_file")?;
         let git_known_hosts_file = expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?;
         for (name, path) in [
             ("image.installed_path", &self.image.installed_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
-            ("git.identity_file", &git_identity_file),
             ("git.known_hosts_file", &git_known_hosts_file),
         ] {
             if !path.is_absolute() {
@@ -214,17 +210,14 @@ impl ServerConfig {
         let git = self.resolved_git_config()?;
         let bootstrap = self.bootstrap_policy()?;
         Ok(ProvisionerConfig {
-            app_shell_binary: self.install.binary_dir.join("wt-app-shell"),
             app_pane_binary: self.install.binary_dir.join("wt-app-pane"),
             app_info_binary: self.install.binary_dir.join("wt-app-info"),
             app_proxy_binary: self.install.binary_dir.join("wt-app-proxy"),
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
-            git_identity_file: git.identity_file,
             git_known_hosts_file: git.known_hosts_file,
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             ssh_authorized_keys: self.ssh_authorized_keys()?,
-            session: self.guest.session,
             bootstrap,
         })
     }
@@ -245,7 +238,7 @@ impl ServerConfig {
             format!("parse image manifest {}: {error}", manifest_path.display())
         })?;
         BootstrapPolicy::from_installed_packages(
-            self.guest.session,
+            SessionFrontend::Byobu,
             manifest.packages,
             manifest.devcontainer_cli,
             wt_libvirt::MACHINE_BOOTSTRAP_PACKAGES,
@@ -291,7 +284,6 @@ impl ServerConfig {
 
     pub fn resolved_git_config(&self) -> Result<GitConfig, String> {
         Ok(GitConfig {
-            identity_file: expand_home(&self.git.identity_file, "git.identity_file")?,
             known_hosts_file: expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?,
         })
     }
@@ -367,11 +359,9 @@ max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 
 [git]
-identity_file = "/tmp/wt-test-git-identity"
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
-session = "tmux"
 memory_mib = 8192
 vcpus = 4
 disk_gib = 32
@@ -400,16 +390,14 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn complete_config_is_valid() {
-        let (config, machine) = parse(VALID).unwrap();
+        let (_config, machine) = parse(VALID).unwrap();
         assert_eq!(machine.image, Path::new("/var/lib/wt/images/wt.qcow2"));
         assert_eq!(machine.network, "default");
-        assert_eq!(config.guest.session, SessionFrontend::Tmux);
     }
 
     #[test]
     fn missing_and_unknown_fields_fail() {
         assert!(parse(&VALID.replace("vcpus = 4\n", "")).is_err());
-        assert!(parse(&VALID.replace("session = \"tmux\"\n", "")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 4\nfallback = true")).is_err());
         assert!(parse(&VALID.replace(
             "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
@@ -425,12 +413,7 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
         assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
-        assert!(parse(&VALID.replace("session = \"tmux\"", "session = \"screen\"")).is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
-        assert!(parse(
-            &VALID.replace("/tmp/wt-test-git-identity", "relative/wt-test-git-identity")
-        )
-        .is_err());
         assert!(parse(&VALID.replace(
             "installed_path = \"/var/lib/wt/images/wt.qcow2\"",
             "installed_path = \"/var/lib/wt/images/wt.qcow2\"\nsource_url = \"https://example.com/img\""

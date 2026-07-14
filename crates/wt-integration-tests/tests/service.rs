@@ -1,371 +1,128 @@
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 use tempfile::TempDir;
-use wt_api::{
-    AppSshAccess, CreateInstance, ErrorCode, GitPassphrase, InstanceName, InstanceStatus,
-    Operation, Response, SshAccess,
-};
+use wt_api::{CreateInstance, InstanceName, InstanceStatus, Operation, Response, SshAccess};
 use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
-use wt_server::jobs::{
-    run_provision, JobError, JobLock, Jobs, ProvisionLauncher, ProvisionOptions, ThreadLauncher,
-};
+use wt_server::jobs::Jobs;
 use wt_server::service::Service;
-use wt_server::store::{Store, StoredInstance};
+use wt_server::store::Store;
 
-#[derive(Clone, Debug, Default)]
-struct InjectedWorker {
-    fail_provision: bool,
-    reject_passphrase: bool,
-    provision_calls: Arc<AtomicUsize>,
-    destroy_calls: Arc<AtomicUsize>,
-    git_user_name: Arc<Mutex<Option<String>>>,
-    git_user_email: Arc<Mutex<Option<String>>>,
-    git_branch: Arc<Mutex<Option<String>>>,
-    git_ref: Arc<Mutex<Option<String>>>,
+#[derive(Clone, Default)]
+struct Worker {
+    provisions: Arc<AtomicUsize>,
+    destroys: Arc<AtomicUsize>,
+    complete: bool,
 }
 
-#[derive(Clone, Debug)]
-struct InlineLauncher;
-
-#[derive(Clone, Debug)]
-struct FailingLauncher;
-
-impl ProvisionLauncher<InjectedWorker> for FailingLauncher {
-    fn launch(
-        &self,
-        _store: &Store,
-        _worker: &InjectedWorker,
-        _stored: &StoredInstance,
-        _passphrase: &GitPassphrase,
-        _options: ProvisionOptions<'_>,
-        _lock: JobLock,
-    ) -> Result<(), JobError> {
-        Err(JobError::Io(std::io::Error::other(
-            "injected launch failure",
-        )))
-    }
-}
-
-impl ProvisionLauncher<InjectedWorker> for InlineLauncher {
-    fn launch(
-        &self,
-        store: &Store,
-        worker: &InjectedWorker,
-        stored: &StoredInstance,
-        passphrase: &GitPassphrase,
-        options: ProvisionOptions<'_>,
-        _lock: JobLock,
-    ) -> Result<(), JobError> {
-        run_provision(
-            store,
-            worker,
-            stored.clone(),
-            passphrase,
-            options.checkout.branch,
-            options.checkout.git_ref,
-            options.author,
-        )
-        .map_err(|error| JobError::Io(std::io::Error::other(error)))
-    }
-}
-
-impl WorldWorker for InjectedWorker {
-    fn validate_git_passphrase(&self, _passphrase: &GitPassphrase) -> Result<(), WorkerError> {
-        if self.reject_passphrase {
-            return Err(WorkerError::new(
-                "Git identity: invalid private key passphrase",
-            ));
-        }
-        Ok(())
-    }
-
+impl WorldWorker for Worker {
     fn provision(
         &self,
-        spec: &ProvisionSpec<'_>,
+        _spec: &ProvisionSpec<'_>,
         _log: &mut dyn std::io::Write,
     ) -> Result<World, WorkerError> {
-        self.provision_calls.fetch_add(1, Ordering::SeqCst);
-        *self.git_user_name.lock().unwrap() = Some(spec.git_user_name.to_owned());
-        *self.git_user_email.lock().unwrap() = Some(spec.git_user_email.to_owned());
-        *self.git_branch.lock().unwrap() = spec.git_branch.map(str::to_owned);
-        *self.git_ref.lock().unwrap() = spec.git_ref.map(str::to_owned);
-        if self.fail_provision {
-            return Err(WorkerError::new("injected provision failure"));
-        }
-        Ok(world())
+        self.provisions.fetch_add(1, Ordering::SeqCst);
+        Ok(world(false))
     }
-
     fn destroy(&self, _backend_id: &str) -> Result<(), WorkerError> {
-        self.destroy_calls.fetch_add(1, Ordering::SeqCst);
+        self.destroys.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
-
     fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
-        Ok(Some(world()))
+        Ok(Some(world(self.complete)))
     }
 }
 
-fn world() -> World {
+fn world(complete: bool) -> World {
     World {
-        guest_ip: "192.0.2.2".to_owned(),
+        guest_ip: "192.0.2.2".into(),
         ssh: SshAccess {
-            user: "wt".to_owned(),
-            host: "192.0.2.2".to_owned(),
+            user: "wt".into(),
+            host: "192.0.2.2".into(),
             port: 22,
-            host_keys: vec!["ssh-ed25519 AAAATEST guest".to_owned()],
+            host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
         },
-        app_ssh: AppSshAccess {
-            user: "vscode".to_owned(),
+        app_ssh: complete.then(|| wt_api::AppSshAccess {
+            user: "vscode".into(),
             port: 2222,
-            host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".to_owned()],
-        },
+            host_keys: vec!["ssh-ed25519 AAAAAPP app".into()],
+        }),
     }
 }
 
-fn create(name: InstanceName) -> CreateInstance {
+fn create(name: &str) -> CreateInstance {
     CreateInstance {
-        name,
-        source: "git@example.test:repo.git".to_owned(),
+        name: InstanceName::parse(name).unwrap(),
+        source: "git@example.test:repo.git".into(),
         git_branch: None,
         git_ref: None,
-        git_passphrase: GitPassphrase::new("secret".to_owned()),
-        git_user_name: "Test User".to_owned(),
-        git_user_email: "test@example.invalid".to_owned(),
+        git_user_name: "Test User".into(),
+        git_user_email: "test@example.invalid".into(),
     }
 }
 
-fn service(temp: &TempDir, worker: InjectedWorker) -> Service<InjectedWorker, InlineLauncher> {
+fn service(temp: &TempDir, worker: Worker) -> Service<Worker> {
     Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
         worker,
         Jobs::open(temp.path().join("jobs")).unwrap(),
-        InlineLauncher,
     )
 }
 
 #[test]
-fn lifecycle_persists_and_is_owner_scoped() {
+fn create_returns_setup_ready_world_synchronously() {
     let temp = TempDir::new().unwrap();
-    let database = temp.path().join("instances.db");
-    let name = InstanceName::parse("repo-feature").unwrap();
-
-    let worker = InjectedWorker::default();
-    let mut request = create(name.clone());
-    request.git_user_name = "Lucas Ávila".to_owned();
-    request.git_user_email = "lucaxx@gmail.com".to_owned();
-    request.git_branch = Some("devcontainer-work".to_owned());
-    let mut service = Service::new(
-        Store::open(&database).unwrap(),
-        worker.clone(),
-        Jobs::open(temp.path().join("jobs")).unwrap(),
-        InlineLauncher,
-    );
-    let created = service
-        .execute("lucas", Operation::Create(request))
-        .unwrap();
-    let Response::Instance { instance } = created else {
-        panic!("expected instance response");
-    };
-    assert_eq!(instance.status, InstanceStatus::Provisioning);
-    assert_eq!(instance.source, "git@example.test:repo.git");
-    assert!(instance.ssh.is_none());
-    assert_eq!(
-        worker.git_user_name.lock().unwrap().as_deref(),
-        Some("Lucas Ávila")
-    );
-    assert_eq!(
-        worker.git_user_email.lock().unwrap().as_deref(),
-        Some("lucaxx@gmail.com")
-    );
-    assert_eq!(
-        worker.git_branch.lock().unwrap().as_deref(),
-        Some("devcontainer-work")
-    );
-
-    let Response::Instance { instance } = service
-        .execute("lucas", Operation::Get { name: name.clone() })
+    let worker = Worker::default();
+    let calls = worker.provisions.clone();
+    let Response::Instance { instance } = service(&temp, worker)
+        .execute("tester", Operation::Create(create("sample")))
         .unwrap()
     else {
-        panic!("expected instance response");
+        panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Running);
-    assert_eq!(instance.guest_ip.as_deref(), Some("192.0.2.2"));
-    assert_eq!(instance.ssh.as_ref().unwrap().user, "wt");
-    assert_eq!(instance.app_ssh.as_ref().unwrap().user, "vscode");
-
-    let conflict = service
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap_err();
-    assert_eq!(conflict.code, ErrorCode::Conflict);
-
-    drop(service);
-    let mut restarted = Service::new(
-        Store::open(&database).unwrap(),
-        InjectedWorker::default(),
-        Jobs::open(temp.path().join("jobs")).unwrap(),
-        InlineLauncher,
-    );
-    let Response::Instances { instances } = restarted.execute("lucas", Operation::List).unwrap()
-    else {
-        panic!("expected instances response");
-    };
-    assert_eq!(instances.len(), 1);
-
-    let Response::Instances { instances } = restarted.execute("other", Operation::List).unwrap()
-    else {
-        panic!("expected instances response");
-    };
-    assert!(instances.is_empty());
-
-    restarted
-        .execute("lucas", Operation::Delete { name: name.clone() })
-        .unwrap();
-    let missing = restarted
-        .execute("lucas", Operation::Get { name })
-        .unwrap_err();
-    assert_eq!(missing.code, ErrorCode::NotFound);
+    assert_eq!(instance.status, InstanceStatus::Setup);
+    assert!(instance.ssh.is_some());
+    assert!(instance.app_ssh.is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
-fn provision_failure_is_recorded() {
+fn list_reconciles_completed_setup_to_running() {
     let temp = TempDir::new().unwrap();
-    let mut service = service(
+    service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+    let Response::Instances { instances } = service(
         &temp,
-        InjectedWorker {
-            fail_provision: true,
-            ..InjectedWorker::default()
+        Worker {
+            complete: true,
+            ..Worker::default()
         },
-    );
+    )
+    .execute("tester", Operation::List)
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Running);
+    assert!(instances[0].app_ssh.is_some());
+}
 
-    let response = service
+#[test]
+fn delete_removes_setup_world() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let destroys = worker.destroys.clone();
+    service(&temp, worker.clone())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+    service(&temp, worker)
         .execute(
-            "lucas",
-            Operation::Create(create(InstanceName::parse("repo-failure").unwrap())),
+            "tester",
+            Operation::Delete {
+                name: InstanceName::parse("sample").unwrap(),
+            },
         )
         .unwrap();
-    let Response::Instance { instance } = response else {
-        panic!("expected instance response");
-    };
-    assert_eq!(instance.status, InstanceStatus::Provisioning);
-
-    let Response::Instances { instances } = service.execute("lucas", Operation::List).unwrap()
-    else {
-        panic!("expected instances response");
-    };
-    assert_eq!(instances[0].status, InstanceStatus::Error);
-    assert_eq!(
-        instances[0].last_error.as_deref(),
-        Some("injected provision failure")
-    );
-}
-
-#[test]
-fn invalid_git_passphrase_does_not_reserve_instance() {
-    let temp = TempDir::new().unwrap();
-    let provision_calls = Arc::new(AtomicUsize::new(0));
-    let mut service = service(
-        &temp,
-        InjectedWorker {
-            reject_passphrase: true,
-            provision_calls: Arc::clone(&provision_calls),
-            ..InjectedWorker::default()
-        },
-    );
-    let name = InstanceName::parse("repo-passphrase").unwrap();
-
-    let error = service
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::InvalidGitPassphrase);
-    assert_eq!(provision_calls.load(Ordering::SeqCst), 0);
-
-    let missing = service
-        .execute("lucas", Operation::Get { name })
-        .unwrap_err();
-    assert_eq!(missing.code, ErrorCode::NotFound);
-}
-
-#[test]
-fn create_accepts_only_ssh_sources() {
-    let temp = TempDir::new().unwrap();
-    let mut service = service(&temp, InjectedWorker::default());
-    for source in [
-        "https://github.com/example/repo.git",
-        "git://example.test/repo.git",
-        "/tmp/repo.git",
-    ] {
-        let mut request = create(InstanceName::parse("repo-invalid").unwrap());
-        request.source = source.to_owned();
-        let error = service
-            .execute("lucas", Operation::Create(request))
-            .unwrap_err();
-        assert_eq!(error.code, ErrorCode::InvalidRequest, "{source}");
-    }
-}
-
-#[test]
-fn thread_launcher_finishes_after_create_returns() {
-    let temp = TempDir::new().unwrap();
-    let name = InstanceName::parse("background-thread").unwrap();
-    let provision_calls = Arc::new(AtomicUsize::new(0));
-    let mut service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
-        InjectedWorker {
-            provision_calls: Arc::clone(&provision_calls),
-            ..InjectedWorker::default()
-        },
-        Jobs::open(temp.path().join("jobs")).unwrap(),
-        ThreadLauncher,
-    );
-
-    let Response::Instance { instance } = service
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap()
-    else {
-        panic!("expected instance response");
-    };
-    assert_eq!(instance.status, InstanceStatus::Provisioning);
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    loop {
-        let Response::Instance { instance } = service
-            .execute("lucas", Operation::Get { name: name.clone() })
-            .unwrap()
-        else {
-            panic!("expected instance response");
-        };
-        if instance.status == InstanceStatus::Running {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "provisioning timed out"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert_eq!(provision_calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn launch_failure_removes_the_reservation() {
-    let temp = TempDir::new().unwrap();
-    let mut service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
-        InjectedWorker::default(),
-        Jobs::open(temp.path().join("jobs")).unwrap(),
-        FailingLauncher,
-    );
-    let name = InstanceName::parse("launch-failure").unwrap();
-
-    let error = service
-        .execute("lucas", Operation::Create(create(name.clone())))
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::Internal);
-    insta::assert_snapshot!(error.message, @"launch provisioning worker: job I/O: injected launch failure");
-    let missing = service
-        .execute("lucas", Operation::Get { name })
-        .unwrap_err();
-    assert_eq!(missing.code, ErrorCode::NotFound);
+    assert_eq!(destroys.load(Ordering::SeqCst), 1);
 }

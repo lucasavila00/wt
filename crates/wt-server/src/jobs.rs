@@ -1,11 +1,8 @@
-use crate::store::{Store, StoreError, StoredInstance};
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use thiserror::Error;
 use uuid::Uuid;
-use wt_api::{GitPassphrase, InstanceStatus};
-use wt_provider::{ProvisionSpec, WorldWorker};
 
 #[derive(Clone, Debug)]
 pub struct Jobs {
@@ -15,39 +12,6 @@ pub struct Jobs {
 #[derive(Debug)]
 pub struct JobLock {
     _file: File,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GitAuthor<'a> {
-    pub name: &'a str,
-    pub email: &'a str,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct GitCheckout<'a> {
-    pub branch: Option<&'a str>,
-    pub git_ref: Option<&'a str>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProvisionOptions<'a> {
-    pub checkout: GitCheckout<'a>,
-    pub author: GitAuthor<'a>,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ThreadLauncher;
-
-pub trait ProvisionLauncher<W> {
-    fn launch(
-        &self,
-        store: &Store,
-        worker: &W,
-        stored: &StoredInstance,
-        passphrase: &GitPassphrase,
-        options: ProvisionOptions<'_>,
-        lock: JobLock,
-    ) -> Result<(), JobError>;
 }
 
 #[derive(Debug, Error)]
@@ -85,26 +49,17 @@ impl Jobs {
         }
     }
 
-    pub fn reconcile(&self, store: &Store) -> Result<(), StoreError> {
+    pub fn reconcile(&self, store: &crate::store::Store) -> Result<(), crate::store::StoreError> {
         for stored in store.transitional()? {
-            if self
+            if !self
                 .is_locked(stored.instance.id)
-                .map_err(|error| StoreError::InvalidData(error.to_string()))?
+                .map_err(|error| crate::store::StoreError::InvalidData(error.to_string()))?
             {
-                continue;
+                store.mark_error(
+                    stored.instance.id,
+                    "operation was interrupted; remove the world and retry",
+                )?;
             }
-            let message = match stored.instance.status {
-                InstanceStatus::Provisioning => {
-                    "provisioning was interrupted; remove the world with wt rm"
-                }
-                InstanceStatus::Destroying => "deletion was interrupted; retry wt rm",
-                _ => continue,
-            };
-            store.finish_error(
-                stored.instance.id,
-                message,
-                format!("ERROR: {message}\n").as_bytes(),
-            )?;
         }
         Ok(())
     }
@@ -124,96 +79,6 @@ impl Jobs {
     }
 }
 
-impl<W> ProvisionLauncher<W> for ThreadLauncher
-where
-    W: WorldWorker + Clone + Send + 'static,
-{
-    fn launch(
-        &self,
-        store: &Store,
-        worker: &W,
-        stored: &StoredInstance,
-        passphrase: &GitPassphrase,
-        options: ProvisionOptions<'_>,
-        lock: JobLock,
-    ) -> Result<(), JobError> {
-        let store = store.reopen().map_err(std::io::Error::other)?;
-        let worker = worker.clone();
-        let stored = stored.clone();
-        let passphrase = GitPassphrase::new(passphrase.expose_secret().to_owned());
-        let git_branch = options.checkout.branch.map(str::to_owned);
-        let git_ref = options.checkout.git_ref.map(str::to_owned);
-        let git_user_name = options.author.name.to_owned();
-        let git_user_email = options.author.email.to_owned();
-        std::thread::Builder::new()
-            .name(format!("wt-provision-{}", stored.instance.id))
-            .spawn(move || {
-                let _lock = lock;
-                if let Err(error) = run_provision(
-                    &store,
-                    &worker,
-                    stored.clone(),
-                    &passphrase,
-                    git_branch.as_deref(),
-                    git_ref.as_deref(),
-                    GitAuthor {
-                        name: &git_user_name,
-                        email: &git_user_email,
-                    },
-                ) {
-                    let message = error.to_string();
-                    let _ = store.finish_error(
-                        stored.instance.id,
-                        &message,
-                        format!("ERROR: {message}\n").as_bytes(),
-                    );
-                }
-            })?;
-        Ok(())
-    }
-}
-
-pub fn run_provision<W: WorldWorker>(
-    store: &Store,
-    worker: &W,
-    stored: StoredInstance,
-    passphrase: &GitPassphrase,
-    git_branch: Option<&str>,
-    git_ref: Option<&str>,
-    git_author: GitAuthor<'_>,
-) -> Result<(), StoreError> {
-    let spec = ProvisionSpec {
-        id: stored.instance.id,
-        backend_id: &stored.backend_id,
-        owner: &stored.instance.owner,
-        name: &stored.instance.name,
-        source: &stored.instance.source,
-        git_branch,
-        git_ref,
-        git_passphrase: passphrase,
-        git_user_name: git_author.name,
-        git_user_email: git_author.email,
-    };
-    let mut log = store.log_writer(stored.instance.id);
-    match worker.provision(&spec, &mut log) {
-        Ok(world) => store.finish_running(
-            stored.instance.id,
-            &world.guest_ip,
-            &world.ssh,
-            &world.app_ssh,
-            format!("SUCCESS: world {} is running\n", stored.instance.name).as_bytes(),
-        ),
-        Err(error) => {
-            let message = error.to_string();
-            store.finish_error(
-                stored.instance.id,
-                &message,
-                format!("ERROR: {message}\n").as_bytes(),
-            )
-        }
-    }
-}
-
 fn map_lock_error(error: std::fs::TryLockError) -> JobError {
     match error {
         std::fs::TryLockError::Error(error) => JobError::Io(error),
@@ -221,56 +86,5 @@ fn map_lock_error(error: std::fs::TryLockError) -> JobError {
             std::io::ErrorKind::WouldBlock,
             "job lock is held",
         )),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use wt_api::{Instance, InstanceName};
-
-    fn insert_provisioning(store: &Store, id: Uuid) -> StoredInstance {
-        let stored = StoredInstance {
-            instance: Instance {
-                id,
-                name: InstanceName::parse("recovery").unwrap(),
-                owner: "tester".to_owned(),
-                status: InstanceStatus::Provisioning,
-                source: "git@example.test:repo.git".to_owned(),
-                guest_ip: None,
-                last_error: None,
-                ssh: None,
-                app_ssh: None,
-            },
-            backend_id: format!("wt-{}", id.simple()),
-        };
-        store.insert(&stored).unwrap();
-        stored
-    }
-
-    #[test]
-    fn active_lock_prevents_false_abandonment_then_recovery_records_error() {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Store::open(&temp.path().join("instances.db")).unwrap();
-        let jobs = Jobs::open(temp.path().join("jobs")).unwrap();
-        let id = Uuid::new_v4();
-        let lock = jobs.lock(id).unwrap();
-        insert_provisioning(&store, id);
-
-        jobs.reconcile(&store).unwrap();
-        assert_eq!(
-            store.get_by_id(id).unwrap().instance.status,
-            InstanceStatus::Provisioning
-        );
-
-        drop(lock);
-        jobs.reconcile(&store).unwrap();
-        let recovered = store.get_by_id(id).unwrap().instance;
-        assert_eq!(recovered.status, InstanceStatus::Error);
-        insta::assert_snapshot!(recovered.last_error.unwrap(), @"provisioning was interrupted; remove the world with wt rm");
-        insta::assert_snapshot!(
-            String::from_utf8(store.read_log(id, 0, 1024).unwrap().0).unwrap(),
-            @"ERROR: provisioning was interrupted; remove the world with wt rm"
-        );
     }
 }

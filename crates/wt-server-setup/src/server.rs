@@ -6,7 +6,6 @@ use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
-use ssh_key::PrivateKey;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -64,34 +63,11 @@ fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8
     let server = input.materialize();
     let server_bytes = serialize_server_config(&server).map_err(anyhow::Error::msg)?;
     let git = server.resolved_git_config().map_err(anyhow::Error::msg)?;
-    validate_git_credentials(&git)?;
+    validate_git_known_hosts(&git)?;
     Ok((input, server, server_bytes))
 }
 
-fn validate_git_credentials(config: &GitConfig) -> Result<()> {
-    let identity = &config.identity_file;
-    let metadata = fs::metadata(identity)
-        .with_context(|| format!("inspect git.identity_file {}", identity.display()))?;
-    if !metadata.is_file()
-        || metadata.uid() != Uid::effective().as_raw()
-        || metadata.mode() & 0o7777 != 0o600
-    {
-        bail!(
-            "git.identity_file {} must be a regular file owned by the server user with mode 0600",
-            identity.display()
-        );
-    }
-    let encoded = fs::read_to_string(identity)
-        .with_context(|| format!("read git.identity_file {}", identity.display()))?;
-    let private_key = PrivateKey::from_openssh(&encoded)
-        .with_context(|| format!("parse git.identity_file {}", identity.display()))?;
-    if !private_key.is_encrypted() {
-        bail!(
-            "git.identity_file {} must be an encrypted OpenSSH private key",
-            identity.display()
-        );
-    }
-
+fn validate_git_known_hosts(config: &GitConfig) -> Result<()> {
     let known_hosts = &config.known_hosts_file;
     let metadata = fs::metadata(known_hosts)
         .with_context(|| format!("inspect git.known_hosts_file {}", known_hosts.display()))?;
@@ -157,7 +133,6 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         "wt-app-pane",
         "wt-app-info",
         "wt-app-proxy",
-        "wt-app-shell",
         "wt-server",
     ] {
         let source = Path::new("target/release").join(name);
@@ -346,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn validates_server_owned_git_credentials() {
+    fn validates_git_known_hosts() {
         let temp = tempfile::tempdir().unwrap();
         let identity = temp.path().join("identity");
         let output = cmd!(
@@ -376,13 +351,9 @@ mod tests {
         )
         .unwrap();
         let config = GitConfig {
-            identity_file: identity.clone(),
             known_hosts_file: known_hosts,
         };
-        validate_git_credentials(&config).unwrap();
-
-        fs::set_permissions(identity, fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(validate_git_credentials(&config).is_err());
+        validate_git_known_hosts(&config).unwrap();
     }
 
     #[test]
@@ -404,10 +375,8 @@ port = 3128
 max_size_gib = 1
 registries = ["docker.io"]
 [git]
-identity_file = "~/.ssh/id"
 known_hosts_file = "~/.ssh/known_hosts"
 [guest]
-session = "tmux"
 memory_mib = 1024
 vcpus = 1
 disk_gib = 8

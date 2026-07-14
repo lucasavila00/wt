@@ -25,12 +25,12 @@ host = "wt-server"
 The client resolves `context.world` directly. It resolves a short name only when
 the name is unique across all contexts.
 
-## Create observation
+## World setup
 
-After the daemon acknowledges a background create job, the client follows its
-stored log. Ctrl-C stops observation, not provisioning. `wt logs` resumes from
-stored output. If transport fails before acknowledgement, the client checks no
-outcome automatically.
+`wt new` returns after the guest and its SSH endpoint are ready. The first
+`ssh NAME` forwards the workstation SSH agent and starts the remaining install
+inside Byobu. Reconnecting attaches to the same session and retries a failed
+installer with the newly forwarded agent socket.
 
 ## SSH inventory
 
@@ -40,12 +40,14 @@ The main SSH config includes the managed file before every `Host` block:
 Include ~/.ssh/wt/config
 ```
 
-`wt sync` converts running-world inventory into the aliases described in
+`wt sync` converts world inventory into the aliases described in
 [What WT does](../what/README.md#access). It owns `~/.ssh/wt/config` and
 `~/.ssh/wt/known_hosts`; it does not edit the main SSH config.
 
 Qualified aliases always exist. Short aliases exist only for globally unique
-names. Host keys are pinned. Non-running worlds have no aliases.
+names. Host keys are pinned. Setup worlds expose guest aliases with
+`ForwardAgent yes`; running worlds additionally expose the app alias and no
+longer forward the agent.
 
 Guest aliases for `bare_metal_ssh` contexts use the context's configured
 OpenSSH host as a `ProxyJump`. OpenSSH connects to that server and asks it to
