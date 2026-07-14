@@ -56,8 +56,6 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
 }
 
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
-    host::preflight(runner)?;
-    runner.run(cmd!("sudo", "-v"), "authenticate sudo")?;
     host::prepare_state(runner, config)
 }
 

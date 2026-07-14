@@ -17,7 +17,7 @@ use wt_command::cmd;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
-const GUEST_INSTALL_PREFIX: &str = "/tmp/wt-install-guest";
+const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 
 #[derive(Clone, Debug)]
 pub struct ProvisionerConfig {
@@ -281,7 +281,6 @@ impl WorldProvisioner {
         let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
         authorized_keys.push(b'\n');
         for (suffix, contents) in [
-            ("", GUEST_INSTALL),
             ("-authorized-keys", authorized_keys.as_slice()),
             ("-registry-ca", self.registry_cache_ca.as_slice()),
             ("-app-shell", self.app_shell.as_slice()),
@@ -291,7 +290,7 @@ impl WorldProvisioner {
         ] {
             guest::write(
                 transport,
-                &format!("{GUEST_INSTALL_PREFIX}{suffix}"),
+                &format!("{GUEST_INSTALL_STAGE}{suffix}"),
                 contents,
             )?;
         }
@@ -302,16 +301,15 @@ impl WorldProvisioner {
             SessionFrontend::Byobu => "byobu",
         };
         let mut args = vec![
-            GUEST_INSTALL_PREFIX,
             &self.config.bootstrap.devcontainer_cli_version,
             session,
             &self.config.registry_cache_url,
         ];
         args.extend(packages.iter().map(String::as_str));
-        let result = guest::run_phase(
+        let result = guest::run_script(
             transport,
             "guest installation",
-            "/bin/sh",
+            GUEST_INSTALL,
             &args,
             deadline,
             log,
@@ -321,7 +319,6 @@ impl WorldProvisioner {
             "/bin/rm",
             &[
                 "-f",
-                GUEST_INSTALL_PREFIX,
                 "/tmp/wt-install-guest-authorized-keys",
                 "/tmp/wt-install-guest-registry-ca",
                 "/tmp/wt-install-guest-app-shell",
@@ -620,6 +617,27 @@ impl WorldProvisioner {
 pub(crate) mod guest {
     use super::*;
 
+    pub(crate) fn run_script(
+        transport: &dyn GuestTransport,
+        phase: &str,
+        script: &[u8],
+        args: &[&str],
+        deadline: Instant,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
+        let mut shell_args = vec!["-s", "--"];
+        shell_args.extend_from_slice(args);
+        run_request(
+            transport,
+            phase,
+            "/bin/sh",
+            &shell_args,
+            Some(script),
+            deadline,
+            log,
+        )
+    }
+
     pub(crate) fn run_phase(
         transport: &dyn GuestTransport,
         phase: &str,
@@ -628,12 +646,24 @@ pub(crate) mod guest {
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
+        run_request(transport, phase, executable, args, None, deadline, log)
+    }
+
+    fn run_request(
+        transport: &dyn GuestTransport,
+        phase: &str,
+        executable: &str,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        deadline: Instant,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
         let output = transport
             .run(
                 &RunRequest {
                     executable,
                     args,
-                    stdin: None,
+                    stdin,
                     deadline,
                 },
                 log,
