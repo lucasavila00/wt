@@ -173,7 +173,7 @@ impl WorldProvisioner {
             self.configure_and_verify_app_ssh(transport, &app_target, deadline, log)?;
         guest::run_phase(
             transport,
-            "devcontainer Git credentials",
+            "devcontainer Git workspace",
             "/usr/local/bin/devcontainer",
             &[
                 "exec",
@@ -181,14 +181,14 @@ impl WorldProvisioner {
                 "/workspace",
                 "/bin/sh",
                 "-c",
-                "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\" && directory=$(git rev-parse --git-common-dir)/wt && test -r \"$directory/identity\" && test -x \"$directory/ssh\" && test -r \"$directory/known_hosts\" && test -n \"$(git config --get core.sshCommand)\"",
+                "workspace=$(pwd -P) && git config --global --add safe.directory \"$workspace\"",
             ],
             deadline,
             log,
         )?;
         report_phase(
             log,
-            "app shell and Git credential verification",
+            "app SSH and devcontainer Git verification",
             phase_started,
         )?;
 
@@ -345,14 +345,6 @@ impl WorldProvisioner {
         match output.exit_code {
             3 => Ok(true),
             0 if String::from_utf8_lossy(&output.stdout).trim() == source => {
-                guest::run_phase(
-                    transport,
-                    "existing checkout cleanup",
-                    "/bin/rm",
-                    &["-rf", "/workspace/.git/wt"],
-                    deadline,
-                    log,
-                )?;
                 guest::run_phase(
                     transport,
                     "existing checkout reset",

@@ -151,30 +151,8 @@ config. WT does not copy other Git configuration.
 
 The passphrase is not stored in server config, SQLite, provisioning logs, or the
 finished world.
-
-### Later Git commands
-
-After cloning, WT creates `/workspace/.git/wt/`:
-
-| File | Contents |
-|------|----------|
-| `identity` | The encrypted private key; no passphrase |
-| `known_hosts` | Pinned Git server host keys |
-| `ssh` | Wrapper that uses only that key and known-hosts file |
-
-The checkout's local `core.sshCommand` points to the wrapper. `/workspace` is
-mounted into the devcontainer, so Git in the guest and Git in the devcontainer
-use the same bundle. WT does not copy another key into the container.
-
-For each `fetch`, `pull`, or `push`, the wrapper copies the encrypted key to a
-temporary mode-`0600` file, enables strict host-key checking, runs OpenSSH, then
-deletes the temporary file. OpenSSH asks the user for the passphrase. WT does not
-retain it or run an agent that remembers it.
-
-This makes Git available in both environments without leaving a decrypted key
-or passphrase behind. The encrypted key is readable inside the trusted world and
-devcontainer; compromised code could copy it for offline passphrase guessing.
-Use a strong passphrase and treat repository and devcontainer code as trusted.
+WT does not retain Git credentials or configure authenticated Git access for
+later commands in the guest or devcontainer.
 
 ## Safety model
 
@@ -185,7 +163,7 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | Only the encrypted key persists. The passphrase is transient, and Git host keys are pinned. |
+| Git credentials | The encrypted key, passphrase, known hosts, and askpass helper are temporary clone inputs and are deleted before the world becomes usable. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries
@@ -193,8 +171,8 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 - The KVM host, its administrators, and users with libvirt control are trusted.
   They can inspect or control worlds.
 - The deployment is for one developer or a trusted team, not hostile tenants.
-- Repository and devcontainer code is trusted inside its world. It can access
-  that world's checkout and checkout-local encrypted Git identity.
+- Repository and devcontainer code is trusted inside its world and can access
+  that world's checkout.
 - Anyone holding an authorized world SSH key can access the guest and app.
 - The application recipe may publish its own ports inside the world. Host
   routing and firewall policy determine whether those ports are reachable.

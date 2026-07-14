@@ -11,9 +11,7 @@ use std::path::Path;
 use std::time::Instant;
 use wt_api::GitPassphrase;
 
-const SSH_COMMAND: &str = "sh -c 'exec \"$(git rev-parse --git-common-dir)/wt/ssh\" \"$@\"' wt-ssh";
 const GIT_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest-git.sh");
-const SSH_WRAPPER: &[u8] = include_bytes!("../../../assets/git-ssh.sh");
 const STAGE: &str = "/tmp/wt-install-git";
 
 #[derive(Clone)]
@@ -88,14 +86,15 @@ pub(super) fn install_workspace(
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    credentials.validate_passphrase(passphrase)?;
-    for (suffix, contents) in [
-        ("-identity", credentials.identity.as_slice()),
-        ("-known-hosts", credentials.known_hosts.as_slice()),
-        ("-passphrase", passphrase.expose_secret().as_bytes()),
-        ("-ssh", SSH_WRAPPER),
-    ] {
-        guest::write(transport, &format!("{STAGE}{suffix}"), contents)?;
+    if clone_required {
+        credentials.validate_passphrase(passphrase)?;
+        for (suffix, contents) in [
+            ("-identity", credentials.identity.as_slice()),
+            ("-known-hosts", credentials.known_hosts.as_slice()),
+            ("-passphrase", passphrase.expose_secret().as_bytes()),
+        ] {
+            guest::write(transport, &format!("{STAGE}{suffix}"), contents)?;
+        }
     }
     let (checkout, checkout_value) = match checkout {
         None => ("none", ""),
@@ -114,7 +113,6 @@ pub(super) fn install_workspace(
             checkout_value,
             user_name,
             user_email,
-            SSH_COMMAND,
         ],
         deadline,
         log,
@@ -129,7 +127,6 @@ pub(super) fn install_workspace(
             "/tmp/wt-install-git-identity",
             "/tmp/wt-install-git-known-hosts",
             "/tmp/wt-install-git-passphrase",
-            "/tmp/wt-install-git-ssh",
         ],
         deadline,
     );
@@ -146,49 +143,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
     use wt_command::cmd;
-
-    #[test]
-    fn persistent_ssh_command_resolves_from_nested_workspace() {
-        let temp = tempfile::tempdir().unwrap();
-        let repository = temp.path().join("repo");
-        fs::create_dir(&repository).unwrap();
-        run(
-            cmd!("git", "init", "-q", &repository),
-            "initialize test repository",
-        );
-        let bundle = repository.join(".git/wt");
-        fs::create_dir(&bundle).unwrap();
-        fs::write(bundle.join("identity"), "not-read-by-ssh-g\n").unwrap();
-        fs::write(bundle.join("known_hosts"), "").unwrap();
-        fs::write(bundle.join("ssh"), SSH_WRAPPER).unwrap();
-        fs::set_permissions(bundle.join("ssh"), fs::Permissions::from_mode(0o555)).unwrap();
-        run(
-            cmd!(
-                "git",
-                "-C",
-                &repository,
-                "config",
-                "core.sshCommand",
-                SSH_COMMAND,
-            ),
-            "configure test SSH command",
-        );
-        let nested = repository.join("nested");
-        fs::create_dir(&nested).unwrap();
-        let runtime = temp.path().join("runtime");
-        fs::create_dir(&runtime).unwrap();
-        let status = cmd!(
-            "sh",
-            "-c",
-            format!("{SSH_COMMAND} -T -G example.test >/dev/null"),
-        )
-        .current_dir(&nested)
-        .env("TMPDIR", &runtime)
-        .status()
-        .unwrap();
-        assert!(status.success());
-        assert_eq!(fs::read_dir(runtime).unwrap().count(), 0);
-    }
 
     #[test]
     fn validates_encrypted_private_key_passphrases() {
