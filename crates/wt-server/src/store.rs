@@ -14,6 +14,7 @@ pub struct Store {
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
+    pub setup_fingerprint: String,
 }
 
 #[derive(Debug, Error)]
@@ -50,6 +51,7 @@ impl Store {
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
                  source        TEXT NOT NULL,
+                 setup_fingerprint TEXT NOT NULL,
                  ssh_user      TEXT,
                  ssh_host      TEXT,
                  ssh_port      INTEGER,
@@ -82,8 +84,8 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id, source, ssh_host_keys, app_ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]', '[]')",
+             (id, owner, name, status, backend_id, source, setup_fingerprint, ssh_host_keys, app_ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
@@ -91,6 +93,7 @@ impl Store {
                 instance.status.to_string(),
                 stored.backend_id,
                 instance.source,
+                stored.setup_fingerprint,
             ],
         );
         match result {
@@ -110,7 +113,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -124,7 +127,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -138,7 +141,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
                  FROM instances WHERE id = ?1",
                 [id.to_string()],
                 row_to_instance,
@@ -152,7 +155,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
              FROM instances WHERE status IN ('provisioning', 'destroying')",
         )?;
         let rows = statement
@@ -278,6 +281,7 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             app_ssh: app_ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
+        setup_fingerprint: row.get(15)?,
     })
 }
 

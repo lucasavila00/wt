@@ -42,12 +42,20 @@ impl<W: WorldWorker> Service<W> {
                 "Git branch and ref are mutually exclusive",
             ));
         }
+        let setup_fingerprint = serde_json::to_string(&(
+            &request.source,
+            &request.git_branch,
+            &request.git_ref,
+            &request.git_user_name,
+            &request.git_user_email,
+        ))
+        .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         match self.store.get(owner, &request.name) {
             Ok(stored)
                 if matches!(
                     stored.instance.status,
                     InstanceStatus::Provisioning | InstanceStatus::Setup
-                ) && stored.instance.source == request.source =>
+                ) && stored.setup_fingerprint == setup_fingerprint =>
             {
                 return Ok(Response::Instance {
                     instance: Box::new(stored.instance),
@@ -77,6 +85,7 @@ impl<W: WorldWorker> Service<W> {
                 app_ssh: None,
             },
             backend_id,
+            setup_fingerprint,
         };
         let lock = self
             .jobs

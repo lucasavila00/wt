@@ -126,3 +126,35 @@ fn delete_removes_setup_world() {
         .unwrap();
     assert_eq!(destroys.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn repeated_create_resumes_only_identical_setup() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let provisions = worker.provisions.clone();
+    let mut first = create("sample");
+    first.git_branch = Some("feature".into());
+    let Response::Instance { instance: original } = service(&temp, worker.clone())
+        .execute("tester", Operation::Create(first))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let mut same = create("sample");
+    same.git_branch = Some("feature".into());
+    let Response::Instance { instance: resumed } = service(&temp, worker.clone())
+        .execute("tester", Operation::Create(same))
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(resumed.id, original.id);
+    assert_eq!(provisions.load(Ordering::SeqCst), 1);
+
+    let mut different = create("sample");
+    different.git_branch = Some("other".into());
+    let error = service(&temp, worker)
+        .execute("tester", Operation::Create(different))
+        .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+}
