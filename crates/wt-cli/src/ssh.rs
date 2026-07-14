@@ -38,6 +38,8 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             bail!("instance {} has incomplete SSH host keys", instance.name);
         }
         let qualified = item.qualified_name();
+        let title = world_title(&qualified, &instance.source);
+        let app_shell = format!("BYOBU_ALT_TITLE='{}' /usr/local/bin/wt-app-shell", title);
         let context = client_config
             .context(&item.context)
             .with_context(|| format!("missing client context {}", item.context))?;
@@ -67,12 +69,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             qualified,
         );
         config.push_str(&format!(
-            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
+            "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n\nHost {}-vs\n{app_common}",
             qualified, qualified, qualified,
         ));
         if counts.get(instance.name.as_str()) == Some(&1) {
             config.push_str(&format!(
-                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand /usr/local/bin/wt-app-shell\n\nHost {}-vs\n{app_common}",
+                "\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n\nHost {}-vs\n{app_common}",
                 instance.name, instance.name, instance.name,
             ));
         }
@@ -99,6 +101,28 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
     atomic_write(&config_path, config.as_bytes())?;
     atomic_write(&known_hosts_path, known_hosts.as_bytes())?;
     Ok(config_path)
+}
+
+fn world_title(qualified: &str, source: &str) -> String {
+    match repository_name(source) {
+        Some(repository) => format!("{qualified} — {repository}"),
+        None => qualified.to_owned(),
+    }
+}
+
+fn repository_name(source: &str) -> Option<&str> {
+    let path = if let Some(rest) = source.strip_prefix("ssh://") {
+        rest.split_once('/')?.1
+    } else {
+        source.split_once(':')?.1
+    };
+    let repository = path.trim_end_matches('/').rsplit('/').next()?;
+    let repository = repository.strip_suffix(".git").unwrap_or(repository);
+    (!repository.is_empty()
+        && repository
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')))
+    .then_some(repository)
 }
 
 fn ensure_directory(path: &Path) -> Result<()> {
@@ -158,6 +182,27 @@ mod tests {
 
     fn normalize_home(contents: &str, home: &Path) -> String {
         contents.replace(&home.display().to_string(), "[HOME]")
+    }
+
+    #[test]
+    fn titles_use_the_qualified_world_and_repository_name() {
+        assert_eq!(
+            world_title("ars.wt2", "git@example.test:group/repo.git"),
+            "ars.wt2 — repo"
+        );
+        assert_eq!(
+            world_title("ars.wt2", "ssh://git@example.test/group/repo"),
+            "ars.wt2 — repo"
+        );
+    }
+
+    #[test]
+    fn titles_omit_unsafe_or_missing_repository_names() {
+        assert_eq!(
+            world_title("ars.wt2", "git@example.test:group/repo+unsafe.git"),
+            "ars.wt2"
+        );
+        assert_eq!(world_title("ars.wt2", "ssh://git@example.test/"), "ars.wt2");
     }
 
     #[test]
