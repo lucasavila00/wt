@@ -42,6 +42,26 @@ impl<W: WorldWorker> Service<W> {
                 "Git branch and ref are mutually exclusive",
             ));
         }
+        match self.store.get(owner, &request.name) {
+            Ok(stored)
+                if matches!(
+                    stored.instance.status,
+                    InstanceStatus::Provisioning | InstanceStatus::Setup
+                ) && stored.instance.source == request.source =>
+            {
+                return Ok(Response::Instance {
+                    instance: Box::new(stored.instance),
+                });
+            }
+            Ok(_) => {
+                return Err(ApiError::new(
+                    ErrorCode::Conflict,
+                    "instance already exists with different setup inputs or state",
+                ));
+            }
+            Err(StoreError::NotFound) => {}
+            Err(error) => return Err(map_store_error(error)),
+        }
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
