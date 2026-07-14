@@ -94,6 +94,10 @@ session programs do not need to be provided by the devcontainer. If the
 devcontainer stops, the pane's SSH connection ends; new panes resolve the
 current container when it is running again.
 
+When Byobu is selected, WT sets the terminal title to the qualified world and
+repository name, such as `ars.wt2 — repo`. The qualified name remains the same
+when the world is reached through its unqualified SSH alias.
+
 ### `ssh NAME-vs`
 
 1. The workstation's main OpenSSH client starts a proxy command.
