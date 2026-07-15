@@ -8,7 +8,7 @@ The `wt` client.
 - World naming and cross-context resolution.
 - `new`, `ls`, `code`, `rm`, and `sync`.
 - Managed OpenSSH config and known hosts.
-- Managed setup-only SSH agent forwarding.
+- Managed SSH agent forwarding into worlds and devcontainers.
 
 The client does not run libvirt, Docker, or provisioning.
 

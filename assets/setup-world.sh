@@ -37,7 +37,6 @@ fi
 exec 9>"$state/install.lock"
 flock 9
 if test -e "$state/complete"; then
-    /usr/bin/tmux set-environment -gu SSH_AUTH_SOCK || true
     exit 0
 fi
 
@@ -73,8 +72,6 @@ if test -e "$state/source"; then
     unset GIT_SSH_COMMAND
     rm -f "$state/source" "$state/git-branch" "$state/git-ref" \
         "$state/git-user-name" "$state/git-user-email" "$state/git-known-hosts"
-    unset SSH_AUTH_SOCK
-    /usr/bin/tmux set-environment -gu SSH_AUTH_SOCK || true
 fi
 
 sudo /usr/local/libexec/wt-setup-root prepare

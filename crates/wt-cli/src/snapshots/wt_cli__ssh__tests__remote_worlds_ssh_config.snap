@@ -23,6 +23,7 @@ Host lab.world-one
   StrictHostKeyChecking yes
   SetEnv TERM=xterm-256color
   ProxyJump wt-server
+  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-one — repo' /usr/local/bin/wt-app-shell
 
@@ -33,6 +34,7 @@ Host lab.world-one-vs
   HostKeyAlias lab.world-one-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-one-host /usr/local/bin/wt-app-proxy
 
@@ -55,6 +57,7 @@ Host world-one
   StrictHostKeyChecking yes
   SetEnv TERM=xterm-256color
   ProxyJump wt-server
+  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-one — repo' /usr/local/bin/wt-app-shell
 
@@ -65,6 +68,7 @@ Host world-one-vs
   HostKeyAlias lab.world-one-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-one-host /usr/local/bin/wt-app-proxy
 
@@ -87,6 +91,7 @@ Host lab.world-two
   StrictHostKeyChecking yes
   SetEnv TERM=xterm-256color
   ProxyJump wt-server
+  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-two — repo' /usr/local/bin/wt-app-shell
 
@@ -97,6 +102,7 @@ Host lab.world-two-vs
   HostKeyAlias lab.world-two-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-two-host /usr/local/bin/wt-app-proxy
 
@@ -119,6 +125,7 @@ Host world-two
   StrictHostKeyChecking yes
   SetEnv TERM=xterm-256color
   ProxyJump wt-server
+  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-two — repo' /usr/local/bin/wt-app-shell
 
@@ -129,5 +136,6 @@ Host world-two-vs
   HostKeyAlias lab.world-two-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-two-host /usr/local/bin/wt-app-proxy

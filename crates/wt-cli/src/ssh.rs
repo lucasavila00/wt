@@ -60,7 +60,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             proxy_jump,
         );
         let app_common = instance.app_ssh.as_ref().map(|app_ssh| format!(
-            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  ForwardAgent yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
             app_ssh.user,
             app_ssh.port,
             qualified,
@@ -68,17 +68,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             ssh_quote(&main_config_path),
             qualified,
         ));
-        let forward_agent = if instance.status == InstanceStatus::Setup {
-            "  ForwardAgent yes\n"
-        } else {
-            ""
-        };
-        config.push_str(&format!("\nHost {qualified}-host\n{guest_common}\nHost {qualified}\n{guest_common}{forward_agent}  RequestTTY force\n  RemoteCommand {app_shell}\n"));
+        config.push_str(&format!("\nHost {qualified}-host\n{guest_common}\nHost {qualified}\n{guest_common}  ForwardAgent yes\n  RequestTTY force\n  RemoteCommand {app_shell}\n"));
         if let Some(app_common) = &app_common {
             config.push_str(&format!("\nHost {qualified}-vs\n{app_common}"));
         }
         if counts.get(instance.name.as_str()) == Some(&1) {
-            config.push_str(&format!("\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}{forward_agent}  RequestTTY force\n  RemoteCommand {app_shell}\n", instance.name, instance.name));
+            config.push_str(&format!("\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  ForwardAgent yes\n  RequestTTY force\n  RemoteCommand {app_shell}\n", instance.name, instance.name));
             if let Some(app_common) = &app_common {
                 config.push_str(&format!("\nHost {}-vs\n{app_common}", instance.name));
             }
