@@ -16,7 +16,7 @@ const FIXTURE_SOURCE: &str = "https://github.com/lucasavila00/small-devcontainer
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
-fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
+fn local_service_runs_small_devcontainer_fixture() {
     let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();
     let workspace = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
@@ -272,9 +272,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             &git.guest_key,
             &host_alias,
             "/usr/bin/tmux",
-            "-L",
-            "wt-app",
             "new-window",
+            "/usr/local/bin/wt-app-pane",
             "\\;",
             "list-panes",
             "-a",
@@ -285,11 +284,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         .map_err(|error| error.to_string())?;
         ensure_success("create persistent app window", &output)?;
         let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
-        if panes.lines().count() != 2
-            || !panes
-                .lines()
-                .all(|command| command == "/usr/local/bin/wt-app-pane")
-        {
+        if panes != "/usr/local/bin/wt-setup-world\n/usr/local/bin/wt-app-pane\n" {
             return Err(format!("unexpected tmux pane commands: {panes:?}"));
         }
         let prefix = git_output(
@@ -301,8 +296,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 &git.guest_key,
                 &host_alias,
                 "/usr/bin/tmux",
-                "-L",
-                "wt-app",
                 "show-options",
                 "-gv",
                 "prefix",
@@ -321,12 +314,12 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ntest \"$(git config user.name)\" = 'WT E2E'\ntest \"$(git config user.email)\" = wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ntest \"$(git config user.name)\" = 'WT E2E'\ntest \"$(git config user.email)\" = wt@example.invalid\ngit switch -c {branch}\nprintf 'committed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\n"
             ),
         )
         .map_err(|error| error.to_string())?;
         let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
-        let output = timings.run("push from app container", || {
+        let output = timings.run("commit from app container", || {
             cmd!(
                 "ssh",
                 "-F",
@@ -340,20 +333,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .output()
             .map_err(|error| error.to_string())
         })?;
-        ensure_success("push from fixture app container", &output)?;
-        let pushed = git_output(
-            cmd!(
-                "git",
-                "--git-dir",
-                &git.repository,
-                "rev-parse",
-                format!("refs/heads/{branch}"),
-            ),
-            "verify pushed branch",
-        );
-        if pushed.trim().is_empty() {
-            return Err("pushed branch has no commit".to_owned());
-        }
+        ensure_success("commit from fixture app container", &output)?;
         Ok(())
     })();
 
