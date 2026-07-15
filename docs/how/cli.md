@@ -32,6 +32,20 @@ stored log. Ctrl-C stops observation, not provisioning. `wt logs` resumes from
 stored output. If transport fails before acknowledgement, the client checks no
 outcome automatically.
 
+## VS Code launch
+
+`wt code NAME` requires a complete world inventory, resolves `NAME` using the
+normal qualified-or-globally-unique rules, and updates the managed SSH files.
+For a running world, it asks the guest's `wt-app-info` helper for the primary
+devcontainer's live workspace destination and launches:
+
+```text
+code --remote ssh-remote+CONTEXT.WORLD-vs WORKSPACE
+```
+
+The workspace destination comes from the container mount rather than assuming a
+fixed `/workspaces/...` path.
+
 ## SSH inventory
 
 The main SSH config includes the managed file before every `Host` block:
