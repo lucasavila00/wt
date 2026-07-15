@@ -66,12 +66,18 @@ while starting the devcontainer.
 | `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a world and wait for it to become usable |
 | `wt logs NAME` | Replay and follow provisioning output |
 | `wt ls` | List worlds across configured contexts |
+| `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
 | `wt sync` | Update managed OpenSSH aliases (`new`, `ls`, and `rm` do this automatically; run `sync` on another workstation after changing worlds elsewhere) |
 
 A context identifies a WT server. `context.world` is the stable world name.
 Short names work when globally unique. Git sources use `ssh://...` or
 `user@host:path`.
+
+`wt code ars.jsdev` refreshes the managed SSH inventory, discovers the primary
+devcontainer's current workspace mount, and runs the local VS Code CLI against
+the `ars.jsdev-vs` Remote-SSH alias. It requires the `code` command and VS Code's
+Remote-SSH extension on the workstation.
 
 ## SSH access
 
