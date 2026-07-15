@@ -233,6 +233,44 @@ mod tests {
     }
 
     #[test]
+    fn setup_world_forwards_agent_without_app_alias() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", temp.path());
+        let instance = Instance {
+            id: Uuid::new_v4(),
+            name: InstanceName::parse("repo-feature").unwrap(),
+            owner: "lucas".into(),
+            status: InstanceStatus::Setup,
+            source: "git@example.test:repo.git".into(),
+            guest_ip: Some("192.0.2.2".into()),
+            last_error: None,
+            ssh: Some(SshAccess {
+                user: "wt".into(),
+                host: "192.0.2.2".into(),
+                port: 22,
+                host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
+            }),
+            app_ssh: None,
+        };
+        sync(
+            &local_config(),
+            &[ContextInstance {
+                context: "local".into(),
+                instance,
+            }],
+        )
+        .unwrap();
+        let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
+        insta::assert_snapshot!(
+            "setup_world_ssh_config",
+            normalize_home(&managed, temp.path())
+        );
+        let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
+        insta::assert_snapshot!("setup_world_known_hosts", known_hosts);
+    }
+
+    #[test]
     fn duplicate_names_only_receive_qualified_aliases() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();

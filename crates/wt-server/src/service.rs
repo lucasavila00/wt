@@ -52,10 +52,28 @@ impl<W: WorldWorker> Service<W> {
         .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         match self.store.get(owner, &request.name) {
             Ok(stored)
-                if matches!(
-                    stored.instance.status,
-                    InstanceStatus::Provisioning | InstanceStatus::Setup
-                ) && stored.setup_fingerprint == setup_fingerprint =>
+                if stored.instance.status == InstanceStatus::Provisioning
+                    && stored.setup_fingerprint == setup_fingerprint =>
+            {
+                let lock = self.jobs.wait(stored.instance.id).map_err(|error| {
+                    ApiError::new(
+                        ErrorCode::Internal,
+                        format!("wait for provisioning: {error}"),
+                    )
+                })?;
+                drop(lock);
+                let instance = self
+                    .store
+                    .get(owner, &request.name)
+                    .map_err(map_store_error)?
+                    .instance;
+                return Ok(Response::Instance {
+                    instance: Box::new(instance),
+                });
+            }
+            Ok(stored)
+                if stored.instance.status == InstanceStatus::Setup
+                    && stored.setup_fingerprint == setup_fingerprint =>
             {
                 return Ok(Response::Instance {
                     instance: Box::new(stored.instance),
@@ -109,10 +127,6 @@ impl<W: WorldWorker> Service<W> {
             git_user_email: &request.git_user_email,
         };
         let result = self.worker.provision(&spec, &mut std::io::sink());
-        drop(lock);
-        self.jobs
-            .remove(id)
-            .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         match result {
             Ok(world) => self
                 .store
@@ -121,9 +135,15 @@ impl<W: WorldWorker> Service<W> {
             Err(error) => {
                 let _ = self.worker.destroy(&stored.backend_id);
                 let _ = self.store.delete(id);
+                drop(lock);
+                let _ = self.jobs.remove(id);
                 return Err(ApiError::new(ErrorCode::Backend, error.to_string()));
             }
         }
+        drop(lock);
+        self.jobs
+            .remove(id)
+            .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         let instance = self
             .store
             .get(owner, &stored.instance.name)

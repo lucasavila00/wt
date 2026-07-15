@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use wt_provider::{PackageSet, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION};
+use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 1;
 
@@ -8,8 +8,8 @@ pub(super) struct ImageRecipe {
 }
 
 impl ImageRecipe {
-    pub(super) fn new(session: SessionFrontend) -> Self {
-        let packages = PackageSet::provisioner(session)
+    pub(super) fn new() -> Self {
+        let packages = PackageSet::provisioner()
             .with_packages(wt_libvirt::MACHINE_BOOTSTRAP_PACKAGES)
             .expect("libvirt machine package policy must be valid");
         Self { packages }
@@ -87,52 +87,9 @@ mod tests {
     }
 
     #[test]
-    fn renders_tmux_cloud_config() {
-        insta::assert_snapshot!(
-            ImageRecipe::new(SessionFrontend::Tmux).cloud_config(),
-            @r###"
-#cloud-config
-output:
-  all: '| tee -a /var/log/cloud-init-output.log'
-bootcmd:
-  - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
-package_update: true
-packages:
-  - ca-certificates
-  - docker.io
-  - docker-buildx
-  - docker-compose-v2
-  - git
-  - openssh-server
-  - nodejs
-  - npm
-  - tmux
-  - qemu-guest-agent
-runcmd:
-  - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
-  - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
-  - docker info
-  - docker buildx version
-  - docker compose version
-  - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
-  - npm install --global @devcontainers/cli@0.80.2
-  - devcontainer --version
-  - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
-  - printf 'ready\n' > /var/lib/wt-image-ready
-  - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
-power_state:
-  mode: poweroff
-  timeout: 60
-  condition: true
-"###
-        );
-    }
-
-    #[test]
     fn renders_byobu_cloud_config() {
         insta::assert_snapshot!(
-            ImageRecipe::new(SessionFrontend::Byobu).cloud_config(),
+            ImageRecipe::new().cloud_config(),
             @r###"
 #cloud-config
 output:
@@ -175,17 +132,17 @@ power_state:
 
     #[test]
     fn parses_unordered_package_versions() {
-        let recipe = ImageRecipe::new(SessionFrontend::Tmux);
+        let recipe = ImageRecipe::new();
         let packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
         assert_eq!(packages["tmux"], "1:2.3-4");
-        assert_eq!(packages.len(), 10);
+        assert_eq!(packages.len(), 11);
     }
 
     #[test]
     fn byobu_requires_its_tmux_backend() {
-        let recipe = ImageRecipe::new(SessionFrontend::Byobu);
+        let recipe = ImageRecipe::new();
         let packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -196,7 +153,7 @@ power_state:
 
     #[test]
     fn reports_missing_and_unexpected_packages() {
-        let recipe = ImageRecipe::new(SessionFrontend::Tmux);
+        let recipe = ImageRecipe::new();
         let mut packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -209,7 +166,7 @@ power_state:
 
     #[test]
     fn rejects_duplicate_malformed_and_empty_versions() {
-        let recipe = ImageRecipe::new(SessionFrontend::Tmux);
+        let recipe = ImageRecipe::new();
         assert!(recipe.parse_package_versions("tmux\t1\ntmux\t2\n").is_err());
         assert!(recipe.parse_package_versions("tmux=1\n").is_err());
         assert!(recipe.parse_package_versions("tmux\t\n").is_err());

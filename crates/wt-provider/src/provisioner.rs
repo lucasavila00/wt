@@ -17,6 +17,7 @@ use wt_command::cmd;
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
 const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/setup-world.sh");
+const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 
@@ -201,6 +202,7 @@ impl WorldProvisioner {
             ("-app-info", self.app_info.as_slice()),
             ("-app-proxy", self.app_proxy.as_slice()),
             ("-setup-world", SETUP_WORLD),
+            ("-setup-world-root", SETUP_WORLD_ROOT),
         ] {
             guest::write(
                 transport,
@@ -253,6 +255,7 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-app-info",
                 "/tmp/wt-install-guest-app-proxy",
                 "/tmp/wt-install-guest-setup-world",
+                "/tmp/wt-install-guest-setup-world-root",
             ],
             deadline,
         );

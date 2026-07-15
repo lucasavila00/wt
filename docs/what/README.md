@@ -140,9 +140,11 @@ config. WT does not copy other Git configuration.
 
 After `wt new` returns, the first `ssh NAME` forwards the workstation agent and
 starts the installer in Byobu. The installer clones with strict host-key
-checking, starts the devcontainer, records its log inside the guest, and removes
-the temporary known-hosts file and setup privilege when complete. No private key
-or passphrase crosses the WT API or remains in the world.
+checking, finishes package and Docker setup, starts the devcontainer, and tees
+its output to both Byobu and a guest-held log. Clone trust and the forwarded
+agent are removed immediately after checkout; the narrowly scoped setup
+privilege and remaining inputs are removed before completion. No private key or
+passphrase crosses the WT API or remains in the world.
 
 ## Safety model
 

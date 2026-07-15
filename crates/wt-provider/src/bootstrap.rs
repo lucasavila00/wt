@@ -23,28 +23,19 @@ pub struct PackageSet {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapPolicy {
-    pub session: SessionFrontend,
     pub packages: PackageVersions,
     pub devcontainer_cli_version: String,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionFrontend {
-    Tmux,
-    Byobu,
-}
-
 impl BootstrapPolicy {
     pub fn from_installed_packages(
-        session: SessionFrontend,
         installed: PackageVersions,
         devcontainer_cli_version: String,
         machine_packages: &[&'static str],
     ) -> Result<Self, String> {
-        let complete = PackageSet::provisioner(session).with_packages(machine_packages)?;
+        let complete = PackageSet::provisioner().with_packages(machine_packages)?;
         complete.validate_versions(&installed)?;
-        let required = PackageSet::provisioner(session)
+        let required = PackageSet::provisioner()
             .names()
             .iter()
             .map(|name| {
@@ -55,7 +46,6 @@ impl BootstrapPolicy {
             })
             .collect::<Result<PackageVersions, _>>()?;
         let policy = Self {
-            session,
             packages: required,
             devcontainer_cli_version,
         };
@@ -70,7 +60,7 @@ impl BootstrapPolicy {
                 self.devcontainer_cli_version
             ));
         }
-        let expected = PackageSet::provisioner(self.session)
+        let expected = PackageSet::provisioner()
             .names
             .into_iter()
             .collect::<BTreeSet<_>>();
@@ -113,15 +103,10 @@ impl BootstrapPolicy {
 }
 
 impl PackageSet {
-    pub fn provisioner(session: SessionFrontend) -> Self {
+    pub fn provisioner() -> Self {
         let mut names = COMMON_PACKAGES.to_vec();
-        names.push(match session {
-            SessionFrontend::Tmux => "tmux",
-            SessionFrontend::Byobu => "byobu",
-        });
-        if session == SessionFrontend::Byobu {
-            names.push("tmux");
-        }
+        names.push("byobu");
+        names.push("tmux");
         Self { names }
     }
 
@@ -215,8 +200,8 @@ mod tests {
 
     const MACHINE_PACKAGES: &[&str] = &["qemu-guest-agent"];
 
-    fn installed_versions(session: SessionFrontend) -> PackageVersions {
-        PackageSet::provisioner(session)
+    fn installed_versions() -> PackageVersions {
+        PackageSet::provisioner()
             .with_packages(MACHINE_PACKAGES)
             .unwrap()
             .names()
@@ -227,9 +212,8 @@ mod tests {
 
     #[test]
     fn installed_image_and_runtime_policy_share_one_package_set() {
-        let installed = installed_versions(SessionFrontend::Tmux);
+        let installed = installed_versions();
         let policy = BootstrapPolicy::from_installed_packages(
-            SessionFrontend::Tmux,
             installed,
             DEVCONTAINER_CLI_VERSION.to_owned(),
             MACHINE_PACKAGES,
@@ -239,6 +223,7 @@ mod tests {
         assert_eq!(
             policy.packages.keys().cloned().collect::<Vec<_>>(),
             [
+                "byobu",
                 "ca-certificates",
                 "docker-buildx",
                 "docker-compose-v2",
@@ -255,12 +240,11 @@ mod tests {
 
     #[test]
     fn installed_package_drift_is_rejected_before_runtime_policy_is_built() {
-        let mut installed = installed_versions(SessionFrontend::Byobu);
+        let mut installed = installed_versions();
         installed.remove("docker-buildx");
         installed.insert("screen".to_owned(), "1".to_owned());
 
         let error = BootstrapPolicy::from_installed_packages(
-            SessionFrontend::Byobu,
             installed,
             DEVCONTAINER_CLI_VERSION.to_owned(),
             MACHINE_PACKAGES,
@@ -271,7 +255,7 @@ mod tests {
 
     #[test]
     fn installed_package_manifest_parser_is_strict() {
-        let packages = PackageSet::provisioner(SessionFrontend::Tmux)
+        let packages = PackageSet::provisioner()
             .with_packages(MACHINE_PACKAGES)
             .unwrap();
         assert!(packages.parse_versions("tmux=1\n").is_err());

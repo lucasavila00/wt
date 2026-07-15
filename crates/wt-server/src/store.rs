@@ -350,6 +350,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(version, 1);
+        assert!(columns.iter().any(|name| name == "setup_fingerprint"));
         assert!(!columns.iter().any(|name| name == "job_acknowledged"));
+        let log_table: Option<String> = store
+            .connection
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'job_log_chunks'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(log_table.is_none());
     }
 }

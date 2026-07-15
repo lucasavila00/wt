@@ -48,8 +48,10 @@ the daemon and registry records.
 
 Creation returns when the guest is ready for setup. The first app-shell SSH
 connection forwards the workstation agent and runs the remaining installation
-inside Byobu, so it and its guest-local log survive client disconnects. List,
-get, and sync reconcile the completion marker into the running state.
+inside Byobu, including Docker/Dev Container tooling verification and startup.
+Output remains visible in the pane and in a guest-local log, and post-clone work
+survives client disconnects. List, get, and sync reconcile the completion marker
+into the running state.
 
 ## Data and trust
 

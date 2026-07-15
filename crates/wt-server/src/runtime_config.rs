@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_libvirt::MachineConfig;
-use wt_provider::{BootstrapPolicy, PackageVersions, ProvisionerConfig, SessionFrontend};
+use wt_provider::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 
@@ -238,7 +238,6 @@ impl ServerConfig {
             format!("parse image manifest {}: {error}", manifest_path.display())
         })?;
         BootstrapPolicy::from_installed_packages(
-            SessionFrontend::Byobu,
             manifest.packages,
             manifest.devcontainer_cli,
             wt_libvirt::MACHINE_BOOTSTRAP_PACKAGES,

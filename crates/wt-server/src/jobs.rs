@@ -32,6 +32,12 @@ impl Jobs {
         Ok(JobLock { _file: file })
     }
 
+    pub fn wait(&self, id: Uuid) -> Result<JobLock, JobError> {
+        let file = self.open_lock(id)?;
+        file.lock().map_err(JobError::Io)?;
+        Ok(JobLock { _file: file })
+    }
+
     pub fn is_locked(&self, id: Uuid) -> Result<bool, JobError> {
         let file = self.open_lock(id)?;
         match file.try_lock() {

@@ -3,9 +3,7 @@ mod devcontainer;
 mod provisioner;
 mod transport;
 
-pub use bootstrap::{
-    BootstrapPolicy, PackageSet, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION,
-};
+pub use bootstrap::{BootstrapPolicy, PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 pub use provisioner::{ProvisionerConfig, WorldProvisioner};
 pub use transport::{
     validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
@@ -282,8 +280,7 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
                 .unwrap();
         });
-        let session = SessionFrontend::Tmux;
-        let packages = PackageSet::provisioner(session)
+        let packages = PackageSet::provisioner()
             .names()
             .iter()
             .map(|name| ((*name).to_owned(), "1".to_owned()))
@@ -298,7 +295,6 @@ mod tests {
             recipe_timeout: Duration::from_secs(10),
             ssh_authorized_keys: vec!["ssh-ed25519 AAAATEST".to_owned()],
             bootstrap: BootstrapPolicy {
-                session,
                 packages,
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
             },

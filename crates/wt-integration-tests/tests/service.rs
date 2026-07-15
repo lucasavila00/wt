@@ -1,19 +1,26 @@
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    mpsc, Arc, Condvar, Mutex,
 };
 use tempfile::TempDir;
-use wt_api::{CreateInstance, InstanceName, InstanceStatus, Operation, Response, SshAccess};
+use uuid::Uuid;
+use wt_api::{
+    CreateInstance, Instance, InstanceName, InstanceStatus, Operation, Response, SshAccess,
+};
 use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::jobs::Jobs;
 use wt_server::service::Service;
-use wt_server::store::Store;
+use wt_server::store::{Store, StoredInstance};
 
 #[derive(Clone, Default)]
 struct Worker {
     provisions: Arc<AtomicUsize>,
     destroys: Arc<AtomicUsize>,
     complete: bool,
+    provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
+    missing: bool,
+    changed_guest_identity: bool,
+    changed_app_identity: bool,
 }
 
 impl WorldWorker for Worker {
@@ -23,6 +30,13 @@ impl WorldWorker for Worker {
         _log: &mut dyn std::io::Write,
     ) -> Result<World, WorkerError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
+        if let Some(gate) = &self.provision_gate {
+            let (ready, wake) = &**gate;
+            let mut released = ready.lock().unwrap();
+            while !*released {
+                released = wake.wait(released).unwrap();
+            }
+        }
         Ok(world(false))
     }
     fn destroy(&self, _backend_id: &str) -> Result<(), WorkerError> {
@@ -30,7 +44,18 @@ impl WorldWorker for Worker {
         Ok(())
     }
     fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
-        Ok(Some(world(self.complete)))
+        if self.missing {
+            return Ok(None);
+        }
+        let mut inspected = world(self.complete);
+        if self.changed_guest_identity {
+            inspected.ssh.host_keys = vec!["ssh-ed25519 AAAACHANGED guest".into()];
+        }
+        if self.changed_app_identity {
+            inspected.app_ssh.as_mut().unwrap().host_keys =
+                vec!["ssh-ed25519 AAAACHANGED app".into()];
+        }
+        Ok(Some(inspected))
     }
 }
 
@@ -157,4 +182,159 @@ fn repeated_create_resumes_only_identical_setup() {
         .execute("tester", Operation::Create(different))
         .unwrap_err();
     assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+}
+
+#[test]
+fn matching_retry_waits_for_synchronous_preparation() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().to_owned();
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let worker = Worker {
+        provision_gate: Some(gate.clone()),
+        ..Worker::default()
+    };
+    let creator = std::thread::spawn({
+        let root = root.clone();
+        let worker = worker.clone();
+        move || {
+            Service::new(
+                Store::open(&root.join("instances.db")).unwrap(),
+                worker,
+                Jobs::open(root.join("jobs")).unwrap(),
+            )
+            .execute("tester", Operation::Create(create("sample")))
+            .unwrap()
+        }
+    });
+    while worker.provisions.load(Ordering::SeqCst) == 0 {
+        std::thread::yield_now();
+    }
+    let delete_error = Service::new(
+        Store::open(&root.join("instances.db")).unwrap(),
+        Worker::default(),
+        Jobs::open(root.join("jobs")).unwrap(),
+    )
+    .execute(
+        "tester",
+        Operation::Delete {
+            name: InstanceName::parse("sample").unwrap(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(delete_error.code, wt_api::ErrorCode::Conflict);
+    let (sent, received) = mpsc::channel();
+    let retry = std::thread::spawn({
+        let root = root.clone();
+        move || {
+            let response = Service::new(
+                Store::open(&root.join("instances.db")).unwrap(),
+                Worker::default(),
+                Jobs::open(root.join("jobs")).unwrap(),
+            )
+            .execute("tester", Operation::Create(create("sample")))
+            .unwrap();
+            sent.send(response).unwrap();
+        }
+    });
+    assert!(received
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
+    let (released, wake) = &*gate;
+    *released.lock().unwrap() = true;
+    wake.notify_all();
+    let Response::Instance { instance } = received.recv().unwrap() else {
+        panic!()
+    };
+    assert_eq!(instance.status, InstanceStatus::Setup);
+    creator.join().unwrap();
+    retry.join().unwrap();
+}
+
+#[test]
+fn reconciliation_marks_missing_or_changed_worlds_as_error() {
+    for worker in [
+        Worker {
+            missing: true,
+            ..Worker::default()
+        },
+        Worker {
+            changed_guest_identity: true,
+            ..Worker::default()
+        },
+    ] {
+        let temp = TempDir::new().unwrap();
+        service(&temp, Worker::default())
+            .execute("tester", Operation::Create(create("sample")))
+            .unwrap();
+        let Response::Instances { instances } = service(&temp, worker)
+            .execute("tester", Operation::List)
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(instances[0].status, InstanceStatus::Error);
+    }
+}
+
+#[test]
+fn reconciliation_rejects_changed_app_identity() {
+    let temp = TempDir::new().unwrap();
+    service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+    service(
+        &temp,
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+    )
+    .execute("tester", Operation::List)
+    .unwrap();
+    let Response::Instances { instances } = service(
+        &temp,
+        Worker {
+            complete: true,
+            changed_app_identity: true,
+            ..Worker::default()
+        },
+    )
+    .execute("tester", Operation::List)
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Error);
+}
+
+#[test]
+fn startup_recovery_marks_unlocked_provisioning_as_error() {
+    let temp = TempDir::new().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let name = InstanceName::parse("sample").unwrap();
+    let id = Uuid::new_v4();
+    store
+        .insert(&StoredInstance {
+            instance: Instance {
+                id,
+                name: name.clone(),
+                owner: "tester".into(),
+                status: InstanceStatus::Provisioning,
+                source: "git@example.test:repo.git".into(),
+                guest_ip: None,
+                last_error: None,
+                ssh: None,
+                app_ssh: None,
+            },
+            backend_id: format!("wt-{}", id.simple()),
+            setup_fingerprint: "test".into(),
+        })
+        .unwrap();
+    Jobs::open(temp.path().join("jobs"))
+        .unwrap()
+        .reconcile(&store)
+        .unwrap();
+    assert_eq!(
+        store.get("tester", &name).unwrap().instance.status,
+        InstanceStatus::Error
+    );
 }
