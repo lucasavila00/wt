@@ -65,12 +65,18 @@ while starting the devcontainer.
 |---------|--------|
 | `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a guest and wait for its setup SSH endpoint |
 | `wt ls` | List worlds across configured contexts |
+| `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
 | `wt sync` | Update managed OpenSSH aliases (`new`, `ls`, and `rm` do this automatically; run `sync` on another workstation after changing worlds elsewhere) |
 
 A context identifies a WT server. `context.world` is the stable world name.
 Short names work when globally unique. Git sources use `ssh://...` or
 `user@host:path`.
+
+`wt code ars.jsdev` refreshes the managed SSH inventory, discovers the primary
+devcontainer's current workspace mount, and runs the local VS Code CLI against
+the `ars.jsdev-vs` Remote-SSH alias. It requires the `code` command and VS Code's
+Remote-SSH extension on the workstation.
 
 ## SSH access
 
@@ -92,6 +98,10 @@ Byobu stays in the guest when the workstation disconnects. It does not need to
 be provided by the devcontainer. If the
 devcontainer stops, the pane's SSH connection ends; new panes resolve the
 current container when it is running again.
+
+When Byobu is selected, WT sets the terminal title to the qualified world and
+repository name, such as `ars.wt2 — repo`. The qualified name remains the same
+when the world is reached through its unqualified SSH alias.
 
 ### `ssh NAME-vs`
 
@@ -134,9 +144,9 @@ from the workstation's forwarded SSH agent during initial setup.
 
 When creating a world, `wt` reads the workstation's global Git `user.name` and
 `user.email`. Both values are required. If either is missing, empty, or cannot be
-read, world creation stops before the server Git key passphrase prompt. Both
-values are sent in the create request and written to the checkout's local Git
-config. WT does not copy other Git configuration.
+read, world creation stops before contacting the server. Both values are sent in
+the create request and written to the checkout's local Git config. WT does not
+copy other Git configuration.
 
 After `wt new` returns, the first `ssh NAME` forwards the workstation agent and
 starts the installer in Byobu. The installer clones with strict host-key

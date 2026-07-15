@@ -1,7 +1,8 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as _, Result};
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
 use std::io::Write as _;
+use std::path::Path;
 use std::process::Command as ProcessCommand;
 use wt_api::{ApiRequest, CreateInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
@@ -36,6 +37,8 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: String },
+    /// Open a world in VS Code Remote-SSH.
+    Code { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
 }
@@ -140,6 +143,7 @@ fn run() -> Result<()> {
             warn_if_sync_skipped(&config)?;
             println!("removed {}.{}", context.name, world_name);
         }
+        Command::Code { name } => open_in_code(&config, &name)?,
         Command::Sync => {
             let report = inventory::list_all(&config);
             if !report.failures.is_empty() {
@@ -152,6 +156,77 @@ fn run() -> Result<()> {
             let path = wt_cli::ssh::sync(&config, &report.instances)?;
             println!("updated {}", path.display());
         }
+    }
+    Ok(())
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AppInfo {
+    workspace: String,
+}
+
+fn open_in_code(config: &ClientConfig, target: &str) -> Result<()> {
+    let report = inventory::list_all(config);
+    if !report.failures.is_empty() {
+        return Err(context_failures(
+            "VS Code was not opened because the complete world list is unavailable",
+            &report.failures,
+            None,
+        ));
+    }
+    let selected = inventory::resolve(&report.instances, target)?;
+    if selected.instance.status != wt_api::InstanceStatus::Running {
+        bail!(
+            "world {} is {}; VS Code can only open a running world",
+            selected.qualified_name(),
+            selected.instance.status
+        );
+    }
+    if selected.instance.ssh.is_none() || selected.instance.app_ssh.is_none() {
+        bail!(
+            "world {} has incomplete SSH access information",
+            selected.qualified_name()
+        );
+    }
+
+    wt_cli::ssh::sync(config, &report.instances)?;
+    let qualified = selected.qualified_name();
+    let workspace = discover_app_workspace(&qualified)?;
+    launch_code(&qualified, &workspace)
+}
+
+fn discover_app_workspace(qualified: &str) -> Result<String> {
+    let host = format!("{qualified}-host");
+    let output = ProcessCommand::new("ssh")
+        .args(["--", &host, "/usr/local/bin/wt-app-info"])
+        .output()
+        .with_context(|| format!("start OpenSSH to inspect {qualified}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if detail.is_empty() {
+            bail!("inspect {qualified}: ssh exited with {}", output.status);
+        }
+        bail!(
+            "inspect {qualified}: ssh exited with {}: {detail}",
+            output.status
+        );
+    }
+    let app: AppInfo = serde_json::from_slice(&output.stdout)
+        .with_context(|| format!("decode app information for {qualified}"))?;
+    if !Path::new(&app.workspace).is_absolute() {
+        bail!("app workspace for {qualified} is not an absolute path");
+    }
+    Ok(app.workspace)
+}
+
+fn launch_code(qualified: &str, workspace: &str) -> Result<()> {
+    let authority = format!("ssh-remote+{qualified}-vs");
+    let status = ProcessCommand::new("code")
+        .args(["--remote", &authority, workspace])
+        .status()
+        .context("start the VS Code command-line interface (`code`)")?;
+    if !status.success() {
+        bail!("VS Code exited with {status}");
     }
     Ok(())
 }
@@ -383,6 +458,15 @@ mod tests {
     #[test]
     fn rejects_removed_ssh_subcommand() {
         assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
+    }
+
+    #[test]
+    fn parses_code_target() {
+        let cli = Cli::try_parse_from(["wt", "code", "ars.jsdev"]).unwrap();
+        let Command::Code { name } = cli.command else {
+            panic!("expected code command");
+        };
+        assert_eq!(name, "ars.jsdev");
     }
 
     #[test]

@@ -22,7 +22,7 @@ Host local.same
   StrictHostKeyChecking yes
   SetEnv TERM=xterm-256color
   RequestTTY force
-  RemoteCommand /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.same — repo' /usr/local/bin/wt-app-shell
 
 Host local.same-vs
   HostName wt-app
@@ -54,7 +54,7 @@ Host lab.same
   SetEnv TERM=xterm-256color
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.same — repo' /usr/local/bin/wt-app-shell
 
 Host lab.same-vs
   HostName wt-app
