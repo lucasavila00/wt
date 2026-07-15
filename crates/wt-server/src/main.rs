@@ -7,7 +7,7 @@ use wt_libvirt::LibvirtProvider;
 use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
-use wt_server::jobs::Jobs;
+use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::Store;
 use wt_server::ServerConfig;
@@ -52,9 +52,10 @@ fn run_api() -> Result<()> {
 fn run_server() -> Result<()> {
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
-    let jobs = Jobs::open(state.jobs_dir()).context("open provisioning jobs")?;
-    jobs.reconcile(&store)
-        .context("reconcile interrupted jobs at startup")?;
+    store
+        .reconcile_interrupted()
+        .context("reconcile interrupted operations at startup")?;
+    let operations = Operations::default();
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
@@ -75,20 +76,20 @@ fn run_server() -> Result<()> {
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
-        handle_daemon_request(&state, &jobs, &worker, &owner, request)
+        handle_daemon_request(&state, &operations, &worker, &owner, request)
     })
 }
 
 fn handle_daemon_request(
     state: &StateConfig,
-    jobs: &Jobs,
+    operations: &Operations,
     worker: &CompositeWorker<LibvirtProvider>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
-        let mut service = Service::new(store, worker.clone(), jobs.clone());
+        let mut service = Service::new(store, worker.clone(), operations.clone());
         Ok::<_, anyhow::Error>(wt_server::handle_request(&mut service, owner, request))
     })();
     result.unwrap_or_else(|error| {

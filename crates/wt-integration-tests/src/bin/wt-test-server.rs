@@ -5,7 +5,7 @@ use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt::LibvirtProvider;
 use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
-use wt_server::jobs::Jobs;
+use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::Store;
 use wt_server::ServerConfig;
@@ -48,8 +48,7 @@ fn run_api(config_path: &Path) -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
     let worker = CompositeWorker::new(provider, provisioner, server.machine_resources());
-    let jobs = Jobs::open(state.jobs_dir()).context("open provisioning jobs")?;
-    let mut service = Service::new(store, worker, jobs);
+    let mut service = Service::new(store, worker, Operations::default());
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
         Ok(request) => wt_server::handle_request(&mut service, "lucas", request),
         Err(error) => ApiResponse::error(ApiError::new(

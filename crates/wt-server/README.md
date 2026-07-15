@@ -11,7 +11,7 @@ request and response between stdio and the daemon.
 
 - Create, list, get, delete, and logs operations.
 - SQLite world registry and provisioning logs.
-- World locks and daemon-owned provisioning jobs.
+- In-memory coordination of concurrent world operations.
 - Reconciliation after worker failure.
 - Dispatch to `wt-libvirt`.
 
@@ -23,10 +23,9 @@ It does not listen on TCP, manage SSH authentication, or implement KVM lifecycle
 |------|----------|
 | `/etc/wt/server.toml` | Strict runtime configuration |
 | `~/.local/state/wt/instances.db` | User registry and logs |
-| `~/.local/state/wt/jobs` | Per-world OS locks |
-
-Accepted provisioning jobs survive client disconnects. A daemon crash or restart
-marks interrupted jobs `error` at startup; cleanup requires `wt rm`.
+Accepted provisioning operations survive client disconnects. A daemon crash or
+restart marks interrupted operations `error` at startup; cleanup requires
+`wt rm`.
 
 ## Smoke test
 
