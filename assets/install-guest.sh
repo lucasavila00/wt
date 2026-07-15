@@ -41,7 +41,10 @@ install -m 0755 "$stage-setup-world-root" /usr/local/libexec/wt-setup-root
 install -m 0755 "$stage-app-pane" /usr/local/bin/wt-app-pane
 install -m 0755 "$stage-app-info" /usr/local/bin/wt-app-info
 install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
-printf 'set-option -g remain-on-exit failed\n' > /usr/local/share/wt-tmux.conf
+printf '%s\n' \
+    'set-option -g default-command /usr/local/bin/wt-app-pane' \
+    'set-option -g remain-on-exit failed' \
+    > /usr/local/share/wt-tmux.conf
 chmod 0644 /usr/local/share/wt-tmux.conf
 install -d -m 0755 -o wt -g wt /var/lib/wt-setup
 printf '%s\n' "$deferred_packages" > /var/lib/wt-setup/deferred-packages
