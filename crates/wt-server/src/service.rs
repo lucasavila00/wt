@@ -1,4 +1,4 @@
-use crate::operations::{OperationError, Operations};
+use crate::operations::Operations;
 use crate::store::{Store, StoreError, StoredInstance};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
@@ -19,7 +19,7 @@ impl<W: WorldWorker> Service<W> {
         }
     }
 
-    pub fn execute(&mut self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
+    pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
@@ -41,10 +41,7 @@ impl<W: WorldWorker> Service<W> {
                 "Git branch and ref are mutually exclusive",
             ));
         }
-        let _operation = self
-            .operations
-            .lock(owner, &request.name)
-            .map_err(map_operation_error)?;
+        let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = serde_json::to_string(&(
             &request.source,
             &request.git_branch,
@@ -58,13 +55,8 @@ impl<W: WorldWorker> Service<W> {
                 if stored.instance.status == InstanceStatus::Provisioning
                     && stored.setup_fingerprint == setup_fingerprint =>
             {
-                let instance = self
-                    .store
-                    .get(owner, &request.name)
-                    .map_err(map_store_error)?
-                    .instance;
                 return Ok(Response::Instance {
-                    instance: Box::new(instance),
+                    instance: Box::new(stored.instance),
                 });
             }
             Ok(stored)
@@ -140,57 +132,8 @@ impl<W: WorldWorker> Service<W> {
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list(owner).map_err(map_store_error)?;
-        for instance in stored.iter().filter(|item| {
-            matches!(
-                item.instance.status,
-                InstanceStatus::Setup | InstanceStatus::Running
-            )
-        }) {
-            match self.worker.inspect(&instance.backend_id) {
-                Ok(Some(world)) => {
-                    let same_guest_identity = instance
-                        .instance
-                        .ssh
-                        .as_ref()
-                        .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-                    let same_app_identity = match (&instance.instance.app_ssh, &world.app_ssh) {
-                        (Some(stored), Some(current)) => stored.host_keys == current.host_keys,
-                        (None, _) => true,
-                        _ => false,
-                    };
-                    if same_guest_identity && same_app_identity {
-                        if let Some(app_ssh) = &world.app_ssh {
-                            self.store
-                                .mark_running(
-                                    instance.instance.id,
-                                    &world.guest_ip,
-                                    &world.ssh,
-                                    app_ssh,
-                                )
-                                .map_err(map_store_error)?;
-                        } else {
-                            self.store
-                                .mark_setup(instance.instance.id, &world.guest_ip, &world.ssh)
-                                .map_err(map_store_error)?;
-                        }
-                    } else {
-                        self.store
-                            .mark_error(instance.instance.id, "SSH host identity changed")
-                            .map_err(map_store_error)?;
-                    }
-                }
-                Ok(None) => self
-                    .store
-                    .mark_error(instance.instance.id, "guest domain is missing")
-                    .map_err(map_store_error)?,
-                Err(error) => self
-                    .store
-                    .mark_error(
-                        instance.instance.id,
-                        &format!("guest reconciliation: {error}"),
-                    )
-                    .map_err(map_store_error)?,
-            }
+        for instance in &stored {
+            self.reconcile(instance)?;
         }
         let instances = self
             .store
@@ -202,8 +145,59 @@ impl<W: WorldWorker> Service<W> {
         Ok(Response::Instances { instances })
     }
 
+    fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {
+        if !matches!(
+            stored.instance.status,
+            InstanceStatus::Setup | InstanceStatus::Running
+        ) {
+            return Ok(());
+        }
+        match self.worker.inspect(&stored.backend_id) {
+            Ok(Some(world)) => {
+                let same_guest_identity = stored
+                    .instance
+                    .ssh
+                    .as_ref()
+                    .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
+                let same_app_identity = match (&stored.instance.app_ssh, &world.app_ssh) {
+                    (Some(previous), Some(current)) => previous.host_keys == current.host_keys,
+                    (None, _) => true,
+                    _ => false,
+                };
+                if same_guest_identity && same_app_identity {
+                    if let Some(app_ssh) = &world.app_ssh {
+                        self.store
+                            .mark_running(stored.instance.id, &world.guest_ip, &world.ssh, app_ssh)
+                            .map_err(map_store_error)?;
+                    } else {
+                        self.store
+                            .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?;
+                    }
+                } else {
+                    self.store
+                        .mark_error(stored.instance.id, "SSH host identity changed")
+                        .map_err(map_store_error)?;
+                }
+            }
+            Ok(None) => self
+                .store
+                .mark_error(stored.instance.id, "guest domain is missing")
+                .map_err(map_store_error)?,
+            Err(error) => self
+                .store
+                .mark_error(
+                    stored.instance.id,
+                    &format!("guest reconciliation: {error}"),
+                )
+                .map_err(map_store_error)?,
+        }
+        Ok(())
+    }
+
     fn get(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
-        let _ = self.list(owner)?;
+        let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        self.reconcile(&stored)?;
         let instance = self
             .store
             .get(owner, name)
@@ -218,12 +212,7 @@ impl<W: WorldWorker> Service<W> {
         let _operation = self
             .operations
             .try_lock(owner, name)
-            .map_err(|error| match error {
-                OperationError::Active => {
-                    ApiError::new(ErrorCode::Conflict, "instance job is active")
-                }
-                OperationError::Poisoned => map_operation_error(error),
-            })?;
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
         self.store
             .mark_destroying(stored.instance.id)
@@ -240,10 +229,6 @@ impl<W: WorldWorker> Service<W> {
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
     }
-}
-
-fn map_operation_error(error: OperationError) -> ApiError {
-    ApiError::new(ErrorCode::Internal, error.to_string())
 }
 
 fn map_store_error(error: StoreError) -> ApiError {

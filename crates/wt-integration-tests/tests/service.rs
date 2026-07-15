@@ -16,6 +16,7 @@ use wt_server::store::{Store, StoredInstance};
 struct Worker {
     provisions: Arc<AtomicUsize>,
     destroys: Arc<AtomicUsize>,
+    inspections: Arc<AtomicUsize>,
     complete: bool,
     provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     missing: bool,
@@ -44,6 +45,7 @@ impl WorldWorker for Worker {
         Ok(())
     }
     fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
+        self.inspections.fetch_add(1, Ordering::SeqCst);
         if self.missing {
             return Ok(None);
         }
@@ -57,6 +59,29 @@ impl WorldWorker for Worker {
         }
         Ok(Some(inspected))
     }
+}
+
+#[test]
+fn get_reconciles_only_the_requested_world() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    service(&temp, worker.clone())
+        .execute("tester", Operation::Create(create("first")))
+        .unwrap();
+    service(&temp, worker.clone())
+        .execute("tester", Operation::Create(create("second")))
+        .unwrap();
+
+    service(&temp, worker.clone())
+        .execute(
+            "tester",
+            Operation::Get {
+                name: InstanceName::parse("first").unwrap(),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(worker.inspections.load(Ordering::SeqCst), 1);
 }
 
 fn world(complete: bool) -> World {

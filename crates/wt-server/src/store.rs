@@ -7,7 +7,6 @@ use wt_api::{AppSshAccess, Instance, InstanceName, InstanceStatus, SshAccess};
 #[derive(Debug)]
 pub struct Store {
     connection: Connection,
-    path: std::path::PathBuf,
 }
 
 #[derive(Clone, Debug)]
@@ -70,14 +69,7 @@ impl Store {
                 "unsupported registry schema version {version}; expected 1; run make clear before reinstalling"
             )));
         }
-        Ok(Self {
-            connection,
-            path: path.to_owned(),
-        })
-    }
-
-    pub fn reopen(&self) -> Result<Self, StoreError> {
-        Self::open(&self.path)
+        Ok(Self { connection })
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
@@ -135,43 +127,13 @@ impl Store {
             .map_err(StoreError::from)
     }
 
-    pub fn get_by_id(&self, id: Uuid) -> Result<StoredInstance, StoreError> {
-        self.connection
-            .query_row(
-                "SELECT id, owner, name, status,
-                        guest_ip, last_error, backend_id, source,
-                        ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
-                 FROM instances WHERE id = ?1",
-                [id.to_string()],
-                row_to_instance,
-            )
-            .optional()?
-            .ok_or(StoreError::NotFound)
-    }
-
-    pub fn transitional(&self) -> Result<Vec<StoredInstance>, StoreError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, owner, name, status,
-                    guest_ip, last_error, backend_id, source,
-                    ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
-             FROM instances WHERE status IN ('provisioning', 'destroying')",
-        )?;
-        let rows = statement
-            .query_map([], row_to_instance)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::from)?;
-        Ok(rows)
-    }
-
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
-        for stored in self.transitional()? {
-            self.mark_error(
-                stored.instance.id,
-                "operation was interrupted; remove the world and retry",
-            )?;
-        }
+        self.connection.execute(
+            "UPDATE instances
+             SET status = 'error', last_error = ?1
+             WHERE status IN ('provisioning', 'destroying')",
+            ["operation was interrupted; remove the world and retry"],
+        )?;
         Ok(())
     }
 

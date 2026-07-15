@@ -4,21 +4,35 @@ set -eu
 state=/var/lib/wt-setup
 log=$state/install.log
 workspace=/workspace
-pipe=$state/install-log.$$
-mkfifo "$pipe"
-exec 3>&1
-tee -a "$log" < "$pipe" >&3 &
-tee_pid=$!
-exec > "$pipe" 2>&1
-finish_log() {
-    status=$1
-    trap - 0
-    exec 1>&3 2>&3
-    wait "$tee_pid"
-    rm -f "$pipe"
-    return "$status"
-}
-trap 'status=$?; finish_log "$status"; exit "$status"' 0
+inner=false
+test "${1:-}" != --inner || inner=true
+
+if ! "$inner"; then
+    # tee makes child output non-TTY; preserve terminal rendering when a pane is attached.
+    rich=false
+    test -t 1 && test "${TERM:-dumb}" != dumb && rich=true
+    pipe=$state/install-log.$$
+    mkfifo "$pipe"
+    exec 3>&1
+    tee -a "$log" < "$pipe" >&3 &
+    tee_pid=$!
+    exec > "$pipe" 2>&1
+    finish_log() {
+        status=$1
+        trap - 0
+        exec 1>&3 2>&3
+        wait "$tee_pid"
+        rm -f "$pipe"
+        return "$status"
+    }
+    trap 'status=$?; finish_log "$status"; exit "$status"' 0
+
+    if "$rich"; then
+        script -qefc '/usr/local/bin/wt-setup-world --inner' /dev/null
+        finish_log 0
+        exec /usr/local/bin/wt-app-pane
+    fi
+fi
 
 exec 9>"$state/install.lock"
 flock 9
@@ -89,5 +103,6 @@ ssh -p 2222 -i /var/lib/wt-app-ssh/session_identity -o BatchMode=yes \
 
 sudo /usr/local/libexec/wt-setup-root cleanup
 echo "World setup complete. Entering the devcontainer."
+"$inner" && exit 0
 finish_log 0
 exec /usr/local/bin/wt-app-pane

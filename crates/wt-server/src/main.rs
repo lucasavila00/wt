@@ -89,8 +89,8 @@ fn handle_daemon_request(
 ) -> ApiResponse {
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
-        let mut service = Service::new(store, worker.clone(), operations.clone());
-        Ok::<_, anyhow::Error>(wt_server::handle_request(&mut service, owner, request))
+        let service = Service::new(store, worker.clone(), operations.clone());
+        Ok::<_, anyhow::Error>(wt_server::handle_request(&service, owner, request))
     })();
     result.unwrap_or_else(|error| {
         ApiResponse::error(ApiError::new(

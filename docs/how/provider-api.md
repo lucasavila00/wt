@@ -62,7 +62,7 @@ only `GuestTransport`, never a libvirt domain.
 
 ## World provisioner
 
-Given a `Machine`, provision specification, and durable log sink, the
+Given a `Machine`, provision specification, and output sink, the
 provisioner:
 
 1. Verifies the supported OS, architecture, and privilege level.
