@@ -48,9 +48,9 @@ fn run_api(config_path: &Path) -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
     let worker = CompositeWorker::new(provider, provisioner, server.machine_resources());
-    let mut service = Service::new(store, worker, Operations::default());
+    let service = Service::new(store, worker, Operations::default());
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
-        Ok(request) => wt_server::handle_request(&mut service, "lucas", request),
+        Ok(request) => wt_server::handle_request(&service, "lucas", request),
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,
             format!("invalid JSON request: {error}"),

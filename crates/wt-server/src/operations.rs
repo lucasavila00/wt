@@ -1,6 +1,5 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Condvar, Mutex};
-use thiserror::Error;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use wt_api::InstanceName;
 
 type OperationKey = (String, InstanceName);
@@ -17,41 +16,29 @@ pub struct OperationGuard {
     key: Option<OperationKey>,
 }
 
-#[derive(Debug, Error)]
-pub enum OperationError {
-    #[error("operation coordinator lock is poisoned")]
-    Poisoned,
-    #[error("world operation is active")]
-    Active,
-}
-
 impl Operations {
-    pub fn lock(&self, owner: &str, name: &InstanceName) -> Result<OperationGuard, OperationError> {
+    pub fn lock(&self, owner: &str, name: &InstanceName) -> OperationGuard {
         let key = (owner.to_owned(), name.clone());
         let (active, wake) = &*self.state;
-        let mut active = active.lock().map_err(|_| OperationError::Poisoned)?;
+        let mut active = lock_unpoisoned(active);
         while active.contains(&key) {
-            active = wake.wait(active).map_err(|_| OperationError::Poisoned)?;
+            active = wake.wait(active).unwrap_or_else(|error| error.into_inner());
         }
         active.insert(key.clone());
-        Ok(OperationGuard {
+        OperationGuard {
             state: Arc::clone(&self.state),
             key: Some(key),
-        })
+        }
     }
 
-    pub fn try_lock(
-        &self,
-        owner: &str,
-        name: &InstanceName,
-    ) -> Result<OperationGuard, OperationError> {
+    pub fn try_lock(&self, owner: &str, name: &InstanceName) -> Option<OperationGuard> {
         let key = (owner.to_owned(), name.clone());
         let (active, _) = &*self.state;
-        let mut active = active.lock().map_err(|_| OperationError::Poisoned)?;
+        let mut active = lock_unpoisoned(active);
         if !active.insert(key.clone()) {
-            return Err(OperationError::Active);
+            return None;
         }
-        Ok(OperationGuard {
+        Some(OperationGuard {
             state: Arc::clone(&self.state),
             key: Some(key),
         })
@@ -64,9 +51,11 @@ impl Drop for OperationGuard {
             return;
         };
         let (active, wake) = &*self.state;
-        if let Ok(mut active) = active.lock() {
-            active.remove(&key);
-            wake.notify_all();
-        }
+        lock_unpoisoned(active).remove(&key);
+        wake.notify_all();
     }
+}
+
+fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|error| error.into_inner())
 }

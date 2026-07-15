@@ -13,7 +13,7 @@ pub use runtime_config::{
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
 pub fn handle_request<W: wt_provider::WorldWorker>(
-    service: &mut service::Service<W>,
+    service: &service::Service<W>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
