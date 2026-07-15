@@ -8,7 +8,7 @@ use wt_api::{
     CreateInstance, Instance, InstanceName, InstanceStatus, Operation, Response, SshAccess,
 };
 use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
-use wt_server::jobs::Jobs;
+use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
 
@@ -91,7 +91,7 @@ fn service(temp: &TempDir, worker: Worker) -> Service<Worker> {
     Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
         worker,
-        Jobs::open(temp.path().join("jobs")).unwrap(),
+        Operations::default(),
     )
 }
 
@@ -193,14 +193,16 @@ fn matching_retry_waits_for_synchronous_preparation() {
         provision_gate: Some(gate.clone()),
         ..Worker::default()
     };
+    let operations = Operations::default();
     let creator = std::thread::spawn({
         let root = root.clone();
         let worker = worker.clone();
+        let operations = operations.clone();
         move || {
             Service::new(
                 Store::open(&root.join("instances.db")).unwrap(),
                 worker,
-                Jobs::open(root.join("jobs")).unwrap(),
+                operations,
             )
             .execute("tester", Operation::Create(create("sample")))
             .unwrap()
@@ -212,7 +214,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
     let delete_error = Service::new(
         Store::open(&root.join("instances.db")).unwrap(),
         Worker::default(),
-        Jobs::open(root.join("jobs")).unwrap(),
+        operations.clone(),
     )
     .execute(
         "tester",
@@ -225,11 +227,12 @@ fn matching_retry_waits_for_synchronous_preparation() {
     let (sent, received) = mpsc::channel();
     let retry = std::thread::spawn({
         let root = root.clone();
+        let operations = operations.clone();
         move || {
             let response = Service::new(
                 Store::open(&root.join("instances.db")).unwrap(),
                 Worker::default(),
-                Jobs::open(root.join("jobs")).unwrap(),
+                operations,
             )
             .execute("tester", Operation::Create(create("sample")))
             .unwrap();
@@ -307,7 +310,7 @@ fn reconciliation_rejects_changed_app_identity() {
 }
 
 #[test]
-fn startup_recovery_marks_unlocked_provisioning_as_error() {
+fn startup_recovery_marks_provisioning_as_error() {
     let temp = TempDir::new().unwrap();
     let store = Store::open(&temp.path().join("instances.db")).unwrap();
     let name = InstanceName::parse("sample").unwrap();
@@ -329,10 +332,7 @@ fn startup_recovery_marks_unlocked_provisioning_as_error() {
             setup_fingerprint: "test".into(),
         })
         .unwrap();
-    Jobs::open(temp.path().join("jobs"))
-        .unwrap()
-        .reconcile(&store)
-        .unwrap();
+    store.reconcile_interrupted().unwrap();
     assert_eq!(
         store.get("tester", &name).unwrap().instance.status,
         InstanceStatus::Error

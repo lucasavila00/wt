@@ -165,6 +165,16 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
+        for stored in self.transitional()? {
+            self.mark_error(
+                stored.instance.id,
+                "operation was interrupted; remove the world and retry",
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn mark_setup(&self, id: Uuid, guest_ip: &str, ssh: &SshAccess) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;

@@ -1,6 +1,6 @@
 pub mod config;
 pub mod daemon;
-pub mod jobs;
+pub mod operations;
 pub mod runtime_config;
 pub mod service;
 pub mod store;
