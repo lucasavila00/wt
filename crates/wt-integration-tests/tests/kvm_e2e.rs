@@ -273,7 +273,8 @@ fn local_service_runs_small_devcontainer_fixture() {
             &host_alias,
             "/usr/bin/tmux",
             "new-window",
-            "/usr/local/bin/wt-app-pane",
+            "\\;",
+            "split-window",
             "\\;",
             "list-panes",
             "-a",
@@ -282,9 +283,11 @@ fn local_service_runs_small_devcontainer_fixture() {
         )
         .output()
         .map_err(|error| error.to_string())?;
-        ensure_success("create persistent app window", &output)?;
+        ensure_success("create persistent app window and split", &output)?;
         let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
-        if panes != "/usr/local/bin/wt-setup-world\n/usr/local/bin/wt-app-pane\n" {
+        if panes
+            != "/usr/local/bin/wt-setup-world\n/usr/local/bin/wt-app-pane\n/usr/local/bin/wt-app-pane\n"
+        {
             return Err(format!("unexpected tmux pane commands: {panes:?}"));
         }
         let prefix = git_output(
