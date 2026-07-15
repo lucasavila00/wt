@@ -12,7 +12,7 @@ use wt_api::{
 use wt_command::cmd;
 use wt_server::ServerConfig;
 
-const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
+const FIXTURE_SOURCE: &str = "https://github.com/lucasavila00/small-devcontainer-fixture.git";
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]

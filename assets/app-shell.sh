@@ -10,10 +10,5 @@ else
   if test -n "${SSH_AUTH_SOCK:-}"; then
     "$tmux" set-environment -t wt-app SSH_AUTH_SOCK "$SSH_AUTH_SOCK"
   fi
-  if test -e "$state/complete"; then
-    "$tmux" new-window -t wt-app /usr/local/bin/wt-app-pane
-  else
-    "$tmux" new-window -t wt-app /usr/local/bin/wt-setup-world
-  fi
 fi
 exec "$tmux" attach-session -t wt-app
