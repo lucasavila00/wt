@@ -59,9 +59,9 @@ Include ~/.ssh/wt/config
 `~/.ssh/wt/known_hosts`; it does not edit the main SSH config.
 
 Qualified aliases always exist. Short aliases exist only for globally unique
-names. Host keys are pinned. Setup worlds expose guest aliases with
-`ForwardAgent yes`; running worlds additionally expose the app alias and no
-longer forward the agent.
+names. Host keys are pinned. Guest and app aliases use `ForwardAgent yes` so
+the workstation agent is available inside the devcontainer. Running worlds
+add the app alias.
 
 Guest aliases for `bare_metal_ssh` contexts use the context's configured
 OpenSSH host as a `ProxyJump`. OpenSSH connects to that server and asks it to

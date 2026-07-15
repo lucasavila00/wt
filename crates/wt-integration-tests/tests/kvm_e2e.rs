@@ -150,7 +150,7 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && ! /usr/bin/tmux show-environment -g SSH_AUTH_SOCK >/dev/null 2>&1",
+                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared",
             )
             .output()
             .map_err(|error| error.to_string())
@@ -162,10 +162,9 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "-F",
                 &ssh_config,
                 &vs_alias,
-                "test",
-                "-d",
-                "/workspaces/small-devcontainer-fixture",
+                "test -d /workspaces/small-devcontainer-fixture && ssh-add -L >/dev/null",
             )
+            .env("SSH_AUTH_SOCK", &agent.socket)
             .output()
             .map_err(|error| error.to_string())
         })?;
@@ -224,6 +223,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             &git.guest_key,
             name.as_str(),
         )
+        .env("SSH_AUTH_SOCK", &agent.socket)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -234,7 +234,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             .as_mut()
             .unwrap()
             .write_all(
-                b"export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD\"\n",
+                b"ssh-add -L >/dev/null && export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD\"\n",
             )
             .map_err(|error| format!("initialize persistent app shell: {error}"))?;
         wait_for_line(&mut persistent, "retained:/tmp")?;
@@ -248,6 +248,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             &git.guest_key,
             name.as_str(),
         )
+        .env("SSH_AUTH_SOCK", &agent.socket)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

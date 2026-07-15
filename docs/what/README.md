@@ -140,7 +140,8 @@ the guests; the workstation does not need a route to the libvirt network.
 ## Git credentials
 
 The server config points to a Git known-hosts file. Git authentication comes
-from the workstation's forwarded SSH agent during initial setup.
+from the workstation's forwarded SSH agent during setup and later work inside
+the devcontainer.
 
 When creating a world, `wt` reads the workstation's global Git `user.name` and
 `user.email`. Both values are required. If either is missing, empty, or cannot be
@@ -151,10 +152,10 @@ copy other Git configuration.
 After `wt new` returns, the first `ssh NAME` forwards the workstation agent and
 starts the installer in Byobu. The installer clones with strict host-key
 checking, finishes package and Docker setup, starts the devcontainer, and tees
-its output to both Byobu and a guest-held log. Clone trust and the forwarded
-agent are removed immediately after checkout; the narrowly scoped setup
-privilege and remaining inputs are removed before completion. No private key or
-passphrase crosses the WT API or remains in the world.
+its output to both Byobu and a guest-held log. Clone trust is removed after
+checkout; the narrowly scoped setup privilege and remaining inputs are removed
+before completion. Later connections forward the agent into the devcontainer.
+No private key or passphrase crosses the WT API or remains in the world.
 
 ## Safety model
 
@@ -165,7 +166,7 @@ passphrase crosses the WT API or remains in the world.
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | Only the forwarded agent socket and temporary known hosts are available during setup; the socket dies with the SSH connection and the known-hosts file is removed on success. |
+| Git credentials | SSH connections forward the workstation agent into the devcontainer. The socket dies with the connection. Temporary clone known hosts are removed after checkout. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries

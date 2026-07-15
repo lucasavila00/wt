@@ -179,6 +179,7 @@ pub fn pane_command(target: &AppTarget) -> Command {
     cmd!(
         "/usr/bin/ssh",
         "-tt",
+        "-A",
         "-p",
         APP_SSH_PORT.to_string(),
         "-i",
@@ -254,6 +255,7 @@ mod tests {
             .get_args()
             .map(|arg| arg.to_string_lossy())
             .collect::<Vec<_>>();
+        assert!(args.iter().any(|arg| arg == "-A"));
         assert!(args.iter().any(|arg| arg == "vscode@172.18.0.3"));
         assert!(!args.iter().any(|arg| arg.contains("docker")));
     }
