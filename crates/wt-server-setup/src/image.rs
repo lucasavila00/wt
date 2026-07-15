@@ -166,7 +166,7 @@ fn build_image_inner(
     console: &Path,
     prepared: &Path,
 ) -> Result<()> {
-    let recipe = ImageRecipe::new(server.guest.session);
+    let recipe = ImageRecipe::new();
     println!("Preparing temporary KVM build disk...");
     runner.run(
         cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, disk),
@@ -487,7 +487,7 @@ pub(crate) fn verify_installed_image(
     server_bytes: &[u8],
     manifest_path: &Path,
 ) -> Result<()> {
-    let recipe = ImageRecipe::new(server.guest.session);
+    let recipe = ImageRecipe::new();
     require_named_file(&server.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(

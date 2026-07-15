@@ -232,7 +232,6 @@ fn helper_command(context: &Context) -> Command {
 fn error_code(code: wt_api::ErrorCode) -> &'static str {
     match code {
         wt_api::ErrorCode::InvalidRequest => "invalid request",
-        wt_api::ErrorCode::InvalidGitPassphrase => "invalid Git passphrase",
         wt_api::ErrorCode::UnsupportedProtocol => "unsupported protocol",
         wt_api::ErrorCode::Conflict => "conflict",
         wt_api::ErrorCode::NotFound => "not found",

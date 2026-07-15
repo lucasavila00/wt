@@ -11,7 +11,7 @@ client: wt + OpenSSH
                      Unix socket (0600)
                             │
                      wt-server daemon
-                       ├─ SQLite registry and logs
+                       ├─ SQLite lifecycle registry
                        └─ wt-provider composite lifecycle
                           ├─ wt-libvirt
                           │  └─ KVM machine + QEMU guest transport
@@ -27,9 +27,9 @@ client: wt + OpenSSH
 |-----------|------|
 | `wt` | Contexts, API transport, names, and managed SSH inventory |
 | `wt-server` | Unix-socket API daemon, registry, durable jobs, and logs |
-| `wt-provider` | Provider-neutral guest transport, bootstrap, world provisioning, and composite lifecycle |
+| `wt-provider` | Provider-neutral guest transport, embedded install flows, world provisioning, and composite lifecycle |
 | `wt-libvirt` | KVM machine creation, inspection, destruction, and QEMU guest-agent transport |
-| `wt-server-setup` | Host setup, runtime config, golden image, and registry cache |
+| `wt-server-setup` | Embedded host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 
 ## Control plane
@@ -41,16 +41,17 @@ the daemon and registry records.
 
 | Operation | Result |
 |-----------|--------|
-| `create` | Reserve and start background provisioning |
+| `create` | Create and prepare a guest through SSH readiness |
 | `list` | Return the owner's worlds and SSH inventory |
 | `get` | Return one owned world |
 | `delete` | Destroy one owned world |
-| `logs` | Read provisioning output from a byte offset |
 
-Provisioning is acknowledged after SQLite records the job and the daemon starts
-its background worker. Client disconnects after acknowledgement do not stop the
-job. A daemon crash or restart changes interrupted worlds to `error` during
-startup; partial resources remain until `wt rm`.
+Creation returns when the guest is ready for setup. The first app-shell SSH
+connection forwards the workstation agent and runs the remaining installation
+inside Byobu, including Docker/Dev Container tooling verification and startup.
+Output remains visible in the pane and in a guest-local log, and post-clone work
+survives client disconnects. List, get, and sync reconcile the completion marker
+into the running state.
 
 ## Data and trust
 
@@ -59,7 +60,7 @@ startup; partial resources remain until `wt rm`.
 - Runtime server config: `/etc/wt/server.toml`.
 - User registry: `~/.local/state/wt/instances.db`.
 - Checkout in each world: `/workspace`.
-- Git passphrases cross the API for provisioning and are never persisted.
+- Git private keys and passphrases never cross the API or enter server state.
 - Client-to-server, server-to-Git, guest, and app SSH identities have distinct
   roles.
 

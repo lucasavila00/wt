@@ -6,18 +6,17 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{
-    ApiRequest, ApiResponse, CreateInstance, GitPassphrase, InstanceName, InstanceStatus,
-    Operation, Outcome, Response,
+    ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
+    Response,
 };
 use wt_command::cmd;
-use wt_provider::SessionFrontend;
 use wt_server::ServerConfig;
 
-const FIXTURE_SOURCE: &str = "git@github.com:lucasavila00/small-devcontainer-fixture.git";
+const FIXTURE_SOURCE: &str = "https://github.com/lucasavila00/small-devcontainer-fixture.git";
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
-fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
+fn local_service_runs_small_devcontainer_fixture() {
     let mut timings = Timings::new();
     let temp = TempDir::new().unwrap();
     let workspace = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
@@ -33,7 +32,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         GitSshServer::start(temp.path(), bridge_ip)
     });
     config.guest.ssh_authorized_keys_file = git.guest_public_key.clone();
-    config.git.identity_file = git.git_key.clone();
     config.git.known_hosts_file = temp.path().join(".ssh/known_hosts");
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
@@ -70,7 +68,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 source: git.url(),
                 git_branch: None,
                 git_ref: None,
-                git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),
@@ -79,10 +76,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     let Response::Instance { instance } = created else {
         panic!("expected instance");
     };
-    assert_eq!(instance.status, InstanceStatus::Provisioning);
-    let instance = timings.run("reattach to provisioning logs", || {
-        wait_for_world(temp.path(), &server_config_path, &name)
-    });
+    assert_eq!(instance.status, InstanceStatus::Setup);
+    let instance = *instance;
     assert!(!instance.ssh.as_ref().unwrap().host_keys.is_empty());
     let peer_name = InstanceName::parse(format!("{}-peer", name.as_str())).unwrap();
     let peer_created = timings.run("create peer KVM world", || {
@@ -94,7 +89,6 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 source: git.url(),
                 git_branch: None,
                 git_ref: None,
-                git_passphrase: GitPassphrase::new("secret".to_owned()),
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),
@@ -106,15 +100,29 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     else {
         panic!("expected peer instance");
     };
-    assert_eq!(peer_instance.status, InstanceStatus::Provisioning);
-    let peer_instance = timings.run("follow peer provisioning logs", || {
-        wait_for_world(temp.path(), &server_config_path, &peer_name)
-    });
+    assert_eq!(peer_instance.status, InstanceStatus::Setup);
+    let peer_instance = *peer_instance;
     assert_ne!(instance.guest_ip, peer_instance.guest_ip);
     assert_ne!(
         instance.ssh.as_ref().unwrap().host_keys,
         peer_instance.ssh.as_ref().unwrap().host_keys
     );
+
+    let Response::Instances { instances } =
+        call_api(temp.path(), &server_config_path, Operation::List)
+    else {
+        panic!("expected list response");
+    };
+    sync_inventory(&instances).unwrap();
+    let agent = SshAgent::start(temp.path(), &git.git_key);
+    let mut setup = start_world_setup(temp.path(), &name, &agent);
+    let mut peer_setup = start_world_setup(temp.path(), &peer_name, &agent);
+    let instance = wait_for_running(temp.path(), &server_config_path, &name);
+    let peer_instance = wait_for_running(temp.path(), &server_config_path, &peer_name);
+    let _ = setup.kill();
+    let _ = setup.wait();
+    let _ = peer_setup.kill();
+    let _ = peer_setup.wait();
     assert_ne!(
         instance.app_ssh.as_ref().unwrap().host_keys,
         peer_instance.app_ssh.as_ref().unwrap().host_keys
@@ -128,25 +136,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             return Err("expected list response".to_owned());
         };
         assert_eq!(instances.len(), 2);
-        timings.run("sync SSH inventory", || {
-            let client_config = wt_cli::config::ClientConfig {
-                contexts: vec![wt_cli::config::Context {
-                    name: "local".into(),
-                    kind: wt_cli::config::ContextKind::BareMetalLocal,
-                }],
-            };
-            wt_cli::ssh::sync(
-                &client_config,
-                &instances
-                    .into_iter()
-                    .map(|instance| wt_cli::inventory::ContextInstance {
-                        context: "local".into(),
-                        instance,
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .map_err(|error| error.to_string())
-        })?;
+        timings.run("sync SSH inventory", || sync_inventory(&instances))?;
 
         let host_alias = format!("local.{}-host", name.as_str());
         let vs_alias = format!("local.{}-vs", name.as_str());
@@ -160,9 +150,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "test",
-                "-d",
-                "/workspace",
+                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && ! /usr/bin/tmux show-environment -g SSH_AUTH_SOCK >/dev/null 2>&1",
             )
             .output()
             .map_err(|error| error.to_string())
@@ -182,10 +170,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .map_err(|error| error.to_string())
         })?;
         ensure_success("enter fixture devcontainer over SSH", &output)?;
-        let (frontend, executable) = match config.guest.session {
-            SessionFrontend::Tmux => ("tmux", "/usr/bin/tmux"),
-            SessionFrontend::Byobu => ("byobu", "/usr/bin/byobu-tmux"),
-        };
+        let executable = "/usr/bin/byobu-tmux";
         let output = cmd!(
             "ssh",
             "-F",
@@ -193,13 +178,11 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             "-i",
             &git.guest_key,
             &host_alias,
-            format!(
-                "test \"$(cat /usr/local/share/wt-session-frontend)\" = {frontend} && test -x {executable}"
-            ),
+            format!("test -x {executable}"),
         )
         .output()
         .map_err(|error| error.to_string())?;
-        ensure_success("verify configured session frontend", &output)?;
+        ensure_success("verify Byobu frontend", &output)?;
         let machine_id = git_output(
             cmd!(
                 "ssh",
@@ -289,9 +272,8 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             &git.guest_key,
             &host_alias,
             "/usr/bin/tmux",
-            "-L",
-            "wt-app",
             "new-window",
+            "/usr/local/bin/wt-app-pane",
             "\\;",
             "list-panes",
             "-a",
@@ -302,11 +284,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         .map_err(|error| error.to_string())?;
         ensure_success("create persistent app window", &output)?;
         let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
-        if panes.lines().count() != 2
-            || !panes
-                .lines()
-                .all(|command| command == "/usr/local/bin/wt-app-pane")
-        {
+        if panes != "/usr/local/bin/wt-setup-world\n/usr/local/bin/wt-app-pane\n" {
             return Err(format!("unexpected tmux pane commands: {panes:?}"));
         }
         let prefix = git_output(
@@ -318,21 +296,16 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
                 &git.guest_key,
                 &host_alias,
                 "/usr/bin/tmux",
-                "-L",
-                "wt-app",
                 "show-options",
                 "-gv",
                 "prefix",
             ),
             "read persistent session prefix",
         );
-        let expected_prefix = match config.guest.session {
-            SessionFrontend::Tmux => "C-b",
-            SessionFrontend::Byobu => "F12",
-        };
+        let expected_prefix = "F12";
         if prefix.trim() != expected_prefix {
             return Err(format!(
-                "unexpected {frontend} session prefix: {prefix:?}; expected {expected_prefix}"
+                "unexpected Byobu session prefix: {prefix:?}; expected {expected_prefix}"
             ));
         }
 
@@ -341,12 +314,12 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
         fs::write(
             &app_commands,
             format!(
-                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ntest \"$(git config user.name)\" = 'WT E2E'\ntest \"$(git config user.email)\" = wt@example.invalid\ngit switch -c {branch}\nprintf 'pushed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\nprintf '#!/bin/sh\\necho secret\\n' > /tmp/wt-askpass\nchmod 0700 /tmp/wt-askpass\nDISPLAY=:0 SSH_ASKPASS=/tmp/wt-askpass SSH_ASKPASS_REQUIRE=force setsid -w git push origin HEAD:refs/heads/{branch}\nrm -f /tmp/wt-askpass\n"
+                "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ntest \"$(git config user.name)\" = 'WT E2E'\ntest \"$(git config user.email)\" = wt@example.invalid\ngit switch -c {branch}\nprintf 'committed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\n"
             ),
         )
         .map_err(|error| error.to_string())?;
         let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
-        let output = timings.run("push from app container", || {
+        let output = timings.run("commit from app container", || {
             cmd!(
                 "ssh",
                 "-F",
@@ -360,20 +333,7 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
             .output()
             .map_err(|error| error.to_string())
         })?;
-        ensure_success("push from fixture app container", &output)?;
-        let pushed = git_output(
-            cmd!(
-                "git",
-                "--git-dir",
-                &git.repository,
-                "rev-parse",
-                format!("refs/heads/{branch}"),
-            ),
-            "verify pushed branch",
-        );
-        if pushed.trim().is_empty() {
-            return Err("pushed branch has no commit".to_owned());
-        }
+        ensure_success("commit from fixture app container", &output)?;
         Ok(())
     })();
 
@@ -395,47 +355,102 @@ fn local_service_runs_and_pushes_from_small_devcontainer_fixture() {
     result.unwrap();
 }
 
-fn wait_for_world(home: &Path, config: &Path, name: &InstanceName) -> wt_api::Instance {
-    let mut offset = 0_u64;
+fn wait_for_running(home: &Path, config: &Path, name: &InstanceName) -> wt_api::Instance {
+    let deadline = Instant::now() + Duration::from_secs(900);
     loop {
-        let Response::Logs {
-            chunk,
-            next_offset,
-            status,
-            last_error,
-        } = call_api(
-            home,
-            config,
-            Operation::Logs {
-                name: name.clone(),
-                offset,
-            },
-        )
-        else {
-            panic!("expected logs response");
-        };
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(chunk)
-            .unwrap();
-        std::io::stderr().write_all(&bytes).unwrap();
-        std::io::stderr().flush().unwrap();
-        offset = next_offset;
-        if status == InstanceStatus::Provisioning || !bytes.is_empty() {
-            continue;
-        }
-        assert_ne!(
-            status,
-            InstanceStatus::Error,
-            "provisioning failed: {}",
-            last_error.as_deref().unwrap_or("unknown error")
-        );
         let Response::Instance { instance } =
             call_api(home, config, Operation::Get { name: name.clone() })
         else {
-            panic!("expected instance response");
+            panic!("expected instance response")
         };
-        assert_eq!(instance.status, InstanceStatus::Running);
-        return *instance;
+        if instance.status == InstanceStatus::Running {
+            return *instance;
+        }
+        assert_ne!(
+            instance.status,
+            InstanceStatus::Error,
+            "setup failed: {instance:?}"
+        );
+        assert!(Instant::now() < deadline, "timed out waiting for setup");
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+fn sync_inventory(instances: &[wt_api::Instance]) -> Result<(), String> {
+    let client_config = wt_cli::config::ClientConfig {
+        contexts: vec![wt_cli::config::Context {
+            name: "local".into(),
+            kind: wt_cli::config::ContextKind::BareMetalLocal,
+        }],
+    };
+    wt_cli::ssh::sync(
+        &client_config,
+        &instances
+            .iter()
+            .cloned()
+            .map(|instance| wt_cli::inventory::ContextInstance {
+                context: "local".into(),
+                instance,
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+fn start_world_setup(home: &Path, name: &InstanceName, agent: &SshAgent) -> Child {
+    cmd!(
+        "ssh",
+        "-F",
+        home.join(".ssh/config"),
+        format!("local.{name}")
+    )
+    .env("SSH_AUTH_SOCK", &agent.socket)
+    .stdout(Stdio::null())
+    .stderr(Stdio::inherit())
+    .spawn()
+    .expect("start first-SSH world setup")
+}
+
+struct SshAgent {
+    child: Child,
+    socket: String,
+}
+
+impl SshAgent {
+    fn start(root: &Path, identity: &Path) -> Self {
+        let child = cmd!("ssh-agent", "-D", "-a", root.join("agent.sock"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let socket = root.join("agent.sock").display().to_string();
+        for _ in 0..50 {
+            if Path::new(&socket).exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let askpass = root.join("askpass.sh");
+        fs::write(&askpass, "#!/bin/sh\nprintf '%s\\n' secret\n").unwrap();
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(&askpass, fs::Permissions::from_mode(0o700)).unwrap();
+        let output = cmd!("ssh-add", identity)
+            .env("SSH_AUTH_SOCK", &socket)
+            .env("SSH_ASKPASS", &askpass)
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .env("DISPLAY", ":0")
+            .output()
+            .unwrap();
+        ensure_success("add Git identity to test agent", &output).unwrap();
+        Self { child, socket }
+    }
+}
+
+impl Drop for SshAgent {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -755,4 +770,3 @@ fn ensure_success(action: &str, output: &Output) -> Result<(), String> {
         ))
     }
 }
-use base64::Engine as _;

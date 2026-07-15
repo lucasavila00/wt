@@ -1,5 +1,4 @@
 use rusqlite::{params, Connection, ErrorCode as SqliteErrorCode, OptionalExtension};
-use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
@@ -15,6 +14,7 @@ pub struct Store {
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
+    pub setup_fingerprint: String,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +51,7 @@ impl Store {
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
                  source        TEXT NOT NULL,
+                 setup_fingerprint TEXT NOT NULL,
                  ssh_user      TEXT,
                  ssh_host      TEXT,
                  ssh_port      INTEGER,
@@ -59,12 +60,6 @@ impl Store {
                  app_ssh_port      INTEGER,
                  app_ssh_host_keys TEXT NOT NULL,
                  UNIQUE(owner, name)
-             );
-             CREATE TABLE job_log_chunks (
-                 instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
-                 byte_offset INTEGER NOT NULL,
-                 data BLOB NOT NULL,
-                 PRIMARY KEY(instance_id, byte_offset)
              );
              PRAGMA user_version = 1;",
             )?;
@@ -89,8 +84,8 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id, source, ssh_host_keys, app_ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]', '[]')",
+             (id, owner, name, status, backend_id, source, setup_fingerprint, ssh_host_keys, app_ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
@@ -98,6 +93,7 @@ impl Store {
                 instance.status.to_string(),
                 stored.backend_id,
                 instance.source,
+                stored.setup_fingerprint,
             ],
         );
         match result {
@@ -117,7 +113,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
                  FROM instances WHERE owner = ?1 AND name = ?2",
                 params![owner, name.as_str()],
                 row_to_instance,
@@ -131,7 +127,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
              FROM instances WHERE owner = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([owner], row_to_instance)?;
@@ -145,7 +141,7 @@ impl Store {
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys
+                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
                  FROM instances WHERE id = ?1",
                 [id.to_string()],
                 row_to_instance,
@@ -159,7 +155,7 @@ impl Store {
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys
+                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
              FROM instances WHERE status IN ('provisioning', 'destroying')",
         )?;
         let rows = statement
@@ -169,117 +165,25 @@ impl Store {
         Ok(rows)
     }
 
-    pub fn log_writer(&self, id: Uuid) -> JobLog<'_> {
-        JobLog { store: self, id }
-    }
-
-    pub fn append_log(&self, id: Uuid, data: &[u8]) -> Result<(), StoreError> {
-        if data.is_empty() {
-            return Ok(());
-        }
-        let transaction = self.connection.unchecked_transaction()?;
-        let offset: u64 = transaction.query_row(
-            "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
-             FROM job_log_chunks WHERE instance_id = ?1",
-            [id.to_string()],
-            |row| row.get(0),
-        )?;
-        transaction.execute(
-            "INSERT INTO job_log_chunks (instance_id, byte_offset, data)
-             VALUES (?1, ?2, ?3)",
-            params![id.to_string(), offset, data],
-        )?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    pub fn read_log(
-        &self,
-        id: Uuid,
-        offset: u64,
-        limit: usize,
-    ) -> Result<(Vec<u8>, u64), StoreError> {
-        let length: u64 = self.connection.query_row(
-            "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
-             FROM job_log_chunks WHERE instance_id = ?1",
-            [id.to_string()],
-            |row| row.get(0),
-        )?;
-        let start = offset.min(length);
-        let mut statement = self.connection.prepare(
-            "SELECT byte_offset, data FROM job_log_chunks
-             WHERE instance_id = ?1 AND byte_offset + length(data) > ?2
-             ORDER BY byte_offset",
-        )?;
-        let mut rows = statement.query(params![id.to_string(), start])?;
-        let mut output = Vec::with_capacity(limit);
-        while output.len() < limit {
-            let Some(row) = rows.next()? else { break };
-            let chunk_offset: u64 = row.get(0)?;
-            let data: Vec<u8> = row.get(1)?;
-            let skip = start.saturating_sub(chunk_offset) as usize;
-            let available = &data[skip.min(data.len())..];
-            let take = available.len().min(limit - output.len());
-            output.extend_from_slice(&available[..take]);
-        }
-        let next_offset = start + output.len() as u64;
-        Ok((output, next_offset))
-    }
-
-    pub fn finish_running(
-        &self,
-        id: Uuid,
-        guest_ip: &str,
-        ssh: &SshAccess,
-        app_ssh: &AppSshAccess,
-        terminal_log: &[u8],
-    ) -> Result<(), StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        append_log_transaction(&transaction, id, terminal_log)?;
+    pub fn mark_setup(&self, id: Uuid, guest_ip: &str, ssh: &SshAccess) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
-            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let changed = transaction.execute(
+        let changed = self.connection.execute(
             "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
-             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7,
-             app_ssh_user = ?8, app_ssh_port = ?9, app_ssh_host_keys = ?10 WHERE id = ?1",
+             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
             params![
                 id.to_string(),
-                InstanceStatus::Running.to_string(),
+                InstanceStatus::Setup.to_string(),
                 guest_ip,
                 ssh.user,
                 ssh.host,
                 ssh.port,
                 host_keys,
-                app_ssh.user,
-                app_ssh.port,
-                app_host_keys,
             ],
         )?;
         if changed == 0 {
             return Err(StoreError::NotFound);
         }
-        transaction.commit()?;
-        Ok(())
-    }
-
-    pub fn finish_error(
-        &self,
-        id: Uuid,
-        message: &str,
-        terminal_log: &[u8],
-    ) -> Result<(), StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        append_log_transaction(&transaction, id, terminal_log)?;
-        let changed = transaction.execute(
-            "UPDATE instances SET status = ?2, last_error = ?3 WHERE id = ?1",
-            params![id.to_string(), InstanceStatus::Error.to_string(), message],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound);
-        }
-        transaction.commit()?;
         Ok(())
     }
 
@@ -377,46 +281,8 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             app_ssh: app_ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
+        setup_fingerprint: row.get(15)?,
     })
-}
-
-pub struct JobLog<'a> {
-    store: &'a Store,
-    id: Uuid,
-}
-
-impl Write for JobLog<'_> {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.store
-            .append_log(self.id, buffer)
-            .map_err(std::io::Error::other)?;
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn append_log_transaction(
-    transaction: &rusqlite::Transaction<'_>,
-    id: Uuid,
-    data: &[u8],
-) -> Result<(), StoreError> {
-    if data.is_empty() {
-        return Ok(());
-    }
-    let offset: u64 = transaction.query_row(
-        "SELECT COALESCE(MAX(byte_offset + length(data)), 0)
-         FROM job_log_chunks WHERE instance_id = ?1",
-        [id.to_string()],
-        |row| row.get(0),
-    )?;
-    transaction.execute(
-        "INSERT INTO job_log_chunks (instance_id, byte_offset, data) VALUES (?1, ?2, ?3)",
-        params![id.to_string(), offset, data],
-    )?;
-    Ok(())
 }
 
 fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
@@ -465,24 +331,6 @@ fn invalid_column(message: &str) -> rusqlite::Error {
 mod tests {
     use super::*;
 
-    fn stored(name: &str) -> StoredInstance {
-        let id = Uuid::new_v4();
-        StoredInstance {
-            instance: Instance {
-                id,
-                name: InstanceName::parse(name).unwrap(),
-                owner: "tester".to_owned(),
-                status: InstanceStatus::Provisioning,
-                source: "git@example.test:repo.git".to_owned(),
-                guest_ip: None,
-                last_error: None,
-                ssh: None,
-                app_ssh: None,
-            },
-            backend_id: format!("wt-{}", id.simple()),
-        }
-    }
-
     #[test]
     fn fresh_registry_uses_daemon_native_schema_version_one() {
         let temp = tempfile::tempdir().unwrap();
@@ -502,64 +350,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(version, 1);
+        assert!(columns.iter().any(|name| name == "setup_fingerprint"));
         assert!(!columns.iter().any(|name| name == "job_acknowledged"));
-    }
-
-    #[test]
-    fn log_chunks_replay_from_bounded_byte_offsets() {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Store::open(&temp.path().join("instances.db")).unwrap();
-        let instance = stored("chunked");
-        store.insert(&instance).unwrap();
-        store.append_log(instance.instance.id, b"abc").unwrap();
-        store.append_log(instance.instance.id, b"def").unwrap();
-
-        assert_eq!(
-            store.read_log(instance.instance.id, 0, 4).unwrap(),
-            (b"abcd".to_vec(), 4)
-        );
-        assert_eq!(
-            store.read_log(instance.instance.id, 4, 64).unwrap(),
-            (b"ef".to_vec(), 6)
-        );
-        assert_eq!(
-            store.read_log(instance.instance.id, 99, 64).unwrap(),
-            (Vec::new(), 6)
-        );
-    }
-
-    #[test]
-    fn terminal_log_and_state_are_committed_together() {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Store::open(&temp.path().join("instances.db")).unwrap();
-        let instance = stored("failed");
-        store.insert(&instance).unwrap();
-        store
-            .append_log(instance.instance.id, b"working\n")
-            .unwrap();
-
-        store
-            .finish_error(
-                instance.instance.id,
-                "injected failure",
-                b"ERROR: injected failure\n",
+        let log_table: Option<String> = store
+            .connection
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'job_log_chunks'",
+                [],
+                |row| row.get(0),
             )
+            .optional()
             .unwrap();
-
-        let current = store
-            .get("tester", &instance.instance.name)
-            .unwrap()
-            .instance;
-        assert_eq!(current.status, InstanceStatus::Error);
-        assert_eq!(current.last_error.as_deref(), Some("injected failure"));
-        assert_eq!(
-            store.read_log(instance.instance.id, 0, 1024).unwrap().0,
-            b"working\nERROR: injected failure\n"
-        );
-        store.delete(instance.instance.id).unwrap();
-        assert_eq!(
-            store.read_log(instance.instance.id, 0, 1024).unwrap().0,
-            Vec::<u8>::new()
-        );
+        assert!(log_table.is_none());
     }
 }

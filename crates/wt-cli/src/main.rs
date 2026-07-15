@@ -1,11 +1,10 @@
 use anyhow::{bail, Context as _, Result};
-use base64::Engine as _;
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::process::Command as ProcessCommand;
-use wt_api::{ApiRequest, CreateInstance, ErrorCode, GitPassphrase, Operation, Outcome, Response};
+use wt_api::{ApiRequest, CreateInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
@@ -38,8 +37,6 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: String },
-    /// Replay and follow a world's provisioning log.
-    Logs { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },
     /// Update managed OpenSSH inventory.
@@ -78,23 +75,26 @@ fn run() -> Result<()> {
                 ),
             };
             let git_author = read_git_author()?;
-            let response = create_with_passphrase_attempts(
+            let response = wt_cli::transport::call(
                 context,
-                world_name,
-                source,
-                branch,
-                r#ref,
-                &git_author,
-                |prompt| rpassword::prompt_password(prompt).map_err(Into::into),
-            )?;
+                &ApiRequest::new(Operation::Create(CreateInstance {
+                    name: world_name.clone(),
+                    source,
+                    git_branch: branch,
+                    git_ref: r#ref,
+                    git_user_name: git_author.name,
+                    git_user_email: git_author.email,
+                })),
+            )
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "create did not complete; run `wt ls` to check the world: {error:#}"
+                )
+            })?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
-            let instance = if instance.status == wt_api::InstanceStatus::Provisioning {
-                follow_logs(context, &instance.name)?
-            } else {
-                *instance
-            };
+            let instance = *instance;
             warn_if_sync_skipped(&config)?;
             println!(
                 "{}.{}\t{}\t{}",
@@ -104,11 +104,7 @@ fn run() -> Result<()> {
                 instance.guest_ip.as_deref().unwrap_or("-")
             );
             if let Some(ssh) = &instance.ssh {
-                println!("\nApp shell: ssh {}.{}", context.name, instance.name);
-                println!(
-                    "Editor / raw app SSH: ssh {}.{}-vs",
-                    context.name, instance.name
-                );
+                println!("\nStart setup: ssh {}.{}", context.name, instance.name);
                 println!("Guest host: ssh {}.{}-host", context.name, instance.name);
                 println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             }
@@ -146,10 +142,6 @@ fn run() -> Result<()> {
             };
             warn_if_sync_skipped(&config)?;
             println!("removed {}.{}", context.name, world_name);
-        }
-        Command::Logs { name } => {
-            let (context, world_name) = resolve_operation_target(&config, &name)?;
-            follow_logs(context, &world_name)?;
         }
         Command::Code { name } => open_in_code(&config, &name)?,
         Command::Sync => {
@@ -239,72 +231,6 @@ fn launch_code(qualified: &str, workspace: &str) -> Result<()> {
     Ok(())
 }
 
-fn create_with_passphrase_attempts(
-    context: &Context,
-    world_name: wt_api::InstanceName,
-    source: String,
-    git_branch: Option<String>,
-    git_ref: Option<String>,
-    git_author: &GitAuthor,
-    mut prompt_password: impl FnMut(String) -> Result<String>,
-) -> Result<Response> {
-    const MAX_ATTEMPTS: usize = 3;
-
-    eprintln!(
-        "To clone {source} into {}.{world_name}, WT must unlock the Git SSH key configured on that context's server. This may differ from the SSH key your client uses to connect to the server.",
-        context.name
-    );
-
-    for attempt in 1..=MAX_ATTEMPTS {
-        let passphrase = prompt_password("Server Git SSH key passphrase: ".to_owned())?;
-        if passphrase.is_empty() {
-            if attempt == MAX_ATTEMPTS {
-                bail!("Git key passphrase must not be empty");
-            }
-            let remaining = MAX_ATTEMPTS - attempt;
-            eprintln!(
-                "Git key passphrase must not be empty; {remaining} attempt{} remaining.",
-                if remaining == 1 { "" } else { "s" }
-            );
-            continue;
-        }
-        let outcome = wt_cli::transport::call_outcome(
-            context,
-            &ApiRequest::new(Operation::Create(CreateInstance {
-                name: world_name.clone(),
-                source: source.clone(),
-                git_branch: git_branch.clone(),
-                git_ref: git_ref.clone(),
-                git_passphrase: GitPassphrase::new(passphrase),
-                git_user_name: git_author.name.clone(),
-                git_user_email: git_author.email.clone(),
-            })),
-        )
-        .map_err(|error| {
-            anyhow::anyhow!(
-                "create acknowledgement was not received; the outcome is unknown. Run `wt ls` or `wt logs {}.{}` to check: {error:#}",
-                context.name,
-                world_name
-            )
-        })?;
-        match outcome {
-            Outcome::Ok { response } => return Ok(*response),
-            Outcome::Error { error }
-                if error.code == ErrorCode::InvalidGitPassphrase && attempt < MAX_ATTEMPTS =>
-            {
-                let remaining = MAX_ATTEMPTS - attempt;
-                eprintln!(
-                    "{}; {remaining} attempt{} remaining.",
-                    error.message,
-                    if remaining == 1 { "" } else { "s" }
-                );
-            }
-            Outcome::Error { error } => bail!(wt_cli::transport::format_api_error(&error)),
-        }
-    }
-    unreachable!("the final passphrase attempt always returns")
-}
-
 #[derive(Debug)]
 struct GitAuthor {
     name: String,
@@ -348,56 +274,6 @@ fn parse_git_config_value(stdout: &[u8]) -> Result<Option<String>> {
     let value = stdout.strip_suffix(b"\0").unwrap_or(stdout);
     let value = std::str::from_utf8(value).map_err(|error| anyhow::anyhow!(error))?;
     Ok((!value.is_empty()).then(|| value.to_owned()))
-}
-
-fn follow_logs(context: &Context, name: &wt_api::InstanceName) -> Result<wt_api::Instance> {
-    let mut offset = 0_u64;
-    loop {
-        let response = wt_cli::transport::call(
-            context,
-            &ApiRequest::new(Operation::Logs {
-                name: name.clone(),
-                offset,
-            }),
-        )?;
-        let Response::Logs {
-            chunk,
-            next_offset,
-            status,
-            last_error,
-        } = response
-        else {
-            bail!("helper returned the wrong response to logs");
-        };
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(chunk)
-            .map_err(|error| anyhow::anyhow!("decode provisioning log: {error}"))?;
-        std::io::stdout().write_all(&bytes)?;
-        std::io::stdout().flush()?;
-        offset = next_offset;
-        if status == wt_api::InstanceStatus::Provisioning || !bytes.is_empty() {
-            continue;
-        }
-        if status == wt_api::InstanceStatus::Error {
-            bail!(
-                "provisioning {}.{} failed: {}",
-                context.name,
-                name,
-                last_error.as_deref().unwrap_or("unknown error")
-            );
-        }
-        let response = wt_cli::transport::call(
-            context,
-            &ApiRequest::new(Operation::Get { name: name.clone() }),
-        )?;
-        let Response::Instance { instance } = response else {
-            bail!("helper returned the wrong response to get");
-        };
-        if instance.status != wt_api::InstanceStatus::Running {
-            bail!("world reached unexpected status: {}", instance.status);
-        }
-        return Ok(*instance);
-    }
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

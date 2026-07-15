@@ -43,7 +43,7 @@ Each world contains:
 - One Git checkout at `/workspace`.
 - One Docker daemon with its own containers, images, volumes, and networks.
 - The running containers defined by the repository's devcontainer recipe.
-- A persistent tmux or Byobu session.
+- A persistent Byobu session.
 - Separate SSH servers for the guest and primary devcontainer.
 
 The repository remains unchanged. WT adds the app SSH server and access material
@@ -55,7 +55,7 @@ while starting the devcontainer.
 |----------|-------|------|
 | Workstation | `wt`, OpenSSH, optional VS Code Remote-SSH | Manage and enter worlds |
 | Server | OpenSSH, `wt-server`, SQLite, libvirt, QEMU/KVM, registry proxy | Store world state and run VMs |
-| Guest | Ubuntu, cloud-init, QEMU guest agent, Git, OpenSSH, Docker Engine, Buildx, Compose, Dev Container CLI, tmux or Byobu | Host one checkout and devcontainer |
+| Guest | Ubuntu, cloud-init, QEMU guest agent, Git, OpenSSH, Docker Engine, Buildx, Compose, Dev Container CLI, Byobu | Host one checkout and devcontainer |
 | Primary devcontainer | Repository tooling and an injected OpenSSH server | Run the development environment |
 | Git host | Existing SSH Git service | Supply the repository |
 
@@ -63,8 +63,7 @@ while starting the devcontainer.
 
 | Command | Result |
 |---------|--------|
-| `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a world and wait for it to become usable |
-| `wt logs NAME` | Replay and follow provisioning output |
+| `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a guest and wait for its setup SSH endpoint |
 | `wt ls` | List worlds across configured contexts |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
@@ -86,7 +85,7 @@ Remote-SSH extension on the workstation.
 1. The workstation's SSH connection terminates at the guest SSH server and
    verifies its host key. For a remote context, OpenSSH reaches the guest's
    private address through the context server as a jump host.
-2. The guest runs `wt-app-shell`, which attaches to tmux or Byobu in the guest.
+2. The guest runs `wt-app-shell`, which attaches to Byobu in the guest. On the first connection it starts the world installer using the workstation's forwarded SSH agent.
 3. Each pane runs `wt-app-pane`. It finds the current primary devcontainer and
    opens a separate guest-to-app SSH connection with a guest-held session key.
 4. The pane opens a login shell at the mounted workspace.
@@ -95,8 +94,8 @@ Remote-SSH extension on the workstation.
 does not need a TCP proxy: `wt-app-pane` runs inside the guest, where it can
 connect directly to the app's private Docker address.
 
-tmux or Byobu stays in the guest when the workstation disconnects. Only those
-session programs do not need to be provided by the devcontainer. If the
+Byobu stays in the guest when the workstation disconnects. It does not need to
+be provided by the devcontainer. If the
 devcontainer stops, the pane's SSH connection ends; new panes resolve the
 current container when it is running again.
 
@@ -140,51 +139,22 @@ the guests; the workstation does not need a route to the libvirt network.
 
 ## Git credentials
 
-The server config points to an encrypted OpenSSH private key and a known-hosts
-file. The key must belong to the server user and have mode `0600`.
+The server config points to a Git known-hosts file. Git authentication comes
+from the workstation's forwarded SSH agent during initial setup.
 
 When creating a world, `wt` reads the workstation's global Git `user.name` and
 `user.email`. Both values are required. If either is missing, empty, or cannot be
-read, world creation stops before the server Git key passphrase prompt. Both
-values are sent in the create request and written to the checkout's local Git
-config. WT does not copy other Git configuration.
+read, world creation stops before contacting the server. Both values are sent in
+the create request and written to the checkout's local Git config. WT does not
+copy other Git configuration.
 
-### Initial clone
-
-1. `wt new` asks for the server Git key's passphrase on the workstation.
-2. The passphrase travels in the create request over local stdio or the remote
-   OpenSSH connection. The server validates it before reserving the world.
-3. The provisioning worker sends the encrypted key, known hosts, and passphrase
-   into temporary files in the guest.
-4. Git clones into `/workspace` with that key and strict host-key checking.
-5. WT deletes the temporary passphrase, key, known hosts, and askpass helper.
-
-The passphrase is not stored in server config, SQLite, provisioning logs, or the
-finished world.
-
-### Later Git commands
-
-After cloning, WT creates `/workspace/.git/wt/`:
-
-| File | Contents |
-|------|----------|
-| `identity` | The encrypted private key; no passphrase |
-| `known_hosts` | Pinned Git server host keys |
-| `ssh` | Wrapper that uses only that key and known-hosts file |
-
-The checkout's local `core.sshCommand` points to the wrapper. `/workspace` is
-mounted into the devcontainer, so Git in the guest and Git in the devcontainer
-use the same bundle. WT does not copy another key into the container.
-
-For each `fetch`, `pull`, or `push`, the wrapper copies the encrypted key to a
-temporary mode-`0600` file, enables strict host-key checking, runs OpenSSH, then
-deletes the temporary file. OpenSSH asks the user for the passphrase. WT does not
-retain it or run an agent that remembers it.
-
-This makes Git available in both environments without leaving a decrypted key
-or passphrase behind. The encrypted key is readable inside the trusted world and
-devcontainer; compromised code could copy it for offline passphrase guessing.
-Use a strong passphrase and treat repository and devcontainer code as trusted.
+After `wt new` returns, the first `ssh NAME` forwards the workstation agent and
+starts the installer in Byobu. The installer clones with strict host-key
+checking, finishes package and Docker setup, starts the devcontainer, and tees
+its output to both Byobu and a guest-held log. Clone trust and the forwarded
+agent are removed immediately after checkout; the narrowly scoped setup
+privilege and remaining inputs are removed before completion. No private key or
+passphrase crosses the WT API or remains in the world.
 
 ## Safety model
 
@@ -195,7 +165,7 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | Only the encrypted key persists. The passphrase is transient, and Git host keys are pinned. |
+| Git credentials | Only the forwarded agent socket and temporary known hosts are available during setup; the socket dies with the SSH connection and the known-hosts file is removed on success. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries
@@ -203,8 +173,8 @@ Use a strong passphrase and treat repository and devcontainer code as trusted.
 - The KVM host, its administrators, and users with libvirt control are trusted.
   They can inspect or control worlds.
 - The deployment is for one developer or a trusted team, not hostile tenants.
-- Repository and devcontainer code is trusted inside its world. It can access
-  that world's checkout and checkout-local encrypted Git identity.
+- Repository and devcontainer code is trusted inside its world and can access
+  that world's checkout.
 - Anyone holding an authorized world SSH key can access the guest and app.
 - The application recipe may publish its own ports inside the world. Host
   routing and firewall policy determine whether those ports are reachable.

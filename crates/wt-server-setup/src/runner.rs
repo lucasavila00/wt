@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
-use std::process::{Command, Output};
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
 
 pub(crate) trait Runner {
     fn output(&self, command: Command) -> Result<Output>;
@@ -24,6 +25,26 @@ pub(crate) trait Runner {
             );
         }
         String::from_utf8(output.stdout).with_context(|| format!("decode output from {action}"))
+    }
+
+    fn run_script(&self, script: &[u8], args: &[&str], action: &str) -> Result<()> {
+        let mut child = Command::new("/bin/sh")
+            .args(["-s", "--"])
+            .args(args)
+            .stdin(Stdio::piped())
+            .spawn()
+            .context("start /bin/sh")?;
+        child
+            .stdin
+            .take()
+            .context("open /bin/sh stdin")?
+            .write_all(script)
+            .context("write shell script")?;
+        let status = child.wait().context("wait for /bin/sh")?;
+        if !status.success() {
+            bail!("{action}: script exited with {status}");
+        }
+        Ok(())
     }
 }
 

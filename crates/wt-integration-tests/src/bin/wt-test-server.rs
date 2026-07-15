@@ -1,15 +1,13 @@
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, GitPassphrase};
+use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt::LibvirtProvider;
 use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
-use wt_server::jobs::{
-    run_provision, JobError, JobLock, Jobs, ProvisionLauncher, ProvisionOptions,
-};
+use wt_server::jobs::Jobs;
 use wt_server::service::Service;
-use wt_server::store::{Store, StoredInstance};
+use wt_server::store::Store;
 use wt_server::ServerConfig;
 
 fn main() {
@@ -51,7 +49,7 @@ fn run_api(config_path: &Path) -> Result<()> {
     .map_err(anyhow::Error::msg)?;
     let worker = CompositeWorker::new(provider, provisioner, server.machine_resources());
     let jobs = Jobs::open(state.jobs_dir()).context("open provisioning jobs")?;
-    let mut service = Service::new(store, worker, jobs, InlineLauncher);
+    let mut service = Service::new(store, worker, jobs);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
         Ok(request) => wt_server::handle_request(&mut service, "lucas", request),
         Err(error) => ApiResponse::error(ApiError::new(
@@ -62,30 +60,4 @@ fn run_api(config_path: &Path) -> Result<()> {
     serde_json::to_writer(std::io::stdout().lock(), &response)?;
     std::io::stdout().write_all(b"\n")?;
     Ok(())
-}
-
-#[derive(Clone, Copy, Debug)]
-struct InlineLauncher;
-
-impl ProvisionLauncher<CompositeWorker<LibvirtProvider>> for InlineLauncher {
-    fn launch(
-        &self,
-        store: &Store,
-        worker: &CompositeWorker<LibvirtProvider>,
-        stored: &StoredInstance,
-        passphrase: &GitPassphrase,
-        options: ProvisionOptions<'_>,
-        _lock: JobLock,
-    ) -> Result<(), JobError> {
-        run_provision(
-            store,
-            worker,
-            stored.clone(),
-            passphrase,
-            options.checkout.branch,
-            options.checkout.git_ref,
-            options.author,
-        )
-        .map_err(|error| JobError::Io(std::io::Error::other(error)))
-    }
 }

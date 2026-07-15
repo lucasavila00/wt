@@ -1,12 +1,9 @@
 mod bootstrap;
 mod devcontainer;
-mod git;
 mod provisioner;
 mod transport;
 
-pub use bootstrap::{
-    BootstrapPolicy, PackageSet, PackageVersions, SessionFrontend, DEVCONTAINER_CLI_VERSION,
-};
+pub use bootstrap::{BootstrapPolicy, PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 pub use provisioner::{ProvisionerConfig, WorldProvisioner};
 pub use transport::{
     validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
@@ -90,7 +87,6 @@ pub struct ProvisionSpec<'a> {
     pub source: &'a str,
     pub git_branch: Option<&'a str>,
     pub git_ref: Option<&'a str>,
-    pub git_passphrase: &'a wt_api::GitPassphrase,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
 }
@@ -99,14 +95,10 @@ pub struct ProvisionSpec<'a> {
 pub struct World {
     pub guest_ip: String,
     pub ssh: SshAccess,
-    pub app_ssh: AppSshAccess,
+    pub app_ssh: Option<AppSshAccess>,
 }
 
 pub trait WorldWorker {
-    fn validate_git_passphrase(
-        &self,
-        passphrase: &wt_api::GitPassphrase,
-    ) -> Result<(), WorkerError>;
     fn provision(
         &self,
         spec: &ProvisionSpec<'_>,
@@ -145,13 +137,6 @@ impl<P> CompositeWorker<P> {
 }
 
 impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
-    fn validate_git_passphrase(
-        &self,
-        passphrase: &wt_api::GitPassphrase,
-    ) -> Result<(), WorkerError> {
-        self.provisioner.validate_git_passphrase(passphrase)
-    }
-
     fn provision(
         &self,
         spec: &ProvisionSpec<'_>,
@@ -167,15 +152,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             },
             log,
         )?;
-        match self.provisioner.provision(&machine, spec, log) {
-            Ok(world) => Ok(world),
-            Err(error) => {
-                if let Err(cleanup) = self.provider.delete(&provider_id) {
-                    let _ = writeln!(log, "CLEANUP ERROR: {cleanup}");
-                }
-                Err(error)
-            }
-        }
+        self.provisioner.provision(&machine, spec, log)
     }
 
     fn destroy(&self, backend_id: &str) -> Result<(), WorkerError> {
@@ -214,7 +191,6 @@ impl From<TransportError> for WorkerError {
 mod tests {
     use super::*;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -291,17 +267,9 @@ mod tests {
     #[test]
     fn provision_failure_keeps_primary_error_and_logs_cleanup_failure() {
         let temp = tempfile::tempdir().unwrap();
-        for name in ["app-shell", "app-pane", "app-info", "app-proxy", "ca.crt"] {
+        for name in ["app-pane", "app-info", "app-proxy", "ca.crt"] {
             fs::write(temp.path().join(name), name).unwrap();
         }
-        let identity = temp.path().join("identity");
-        let status = std::process::Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", "secret", "-f"])
-            .arg(&identity)
-            .status()
-            .unwrap();
-        assert!(status.success());
-        fs::set_permissions(&identity, fs::Permissions::from_mode(0o600)).unwrap();
         let known_hosts = temp.path().join("known_hosts");
         fs::write(&known_hosts, "example.test ssh-ed25519 AAAATEST\n").unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -312,26 +280,21 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
                 .unwrap();
         });
-        let session = SessionFrontend::Tmux;
-        let packages = PackageSet::provisioner(session)
+        let packages = PackageSet::provisioner()
             .names()
             .iter()
             .map(|name| ((*name).to_owned(), "1".to_owned()))
             .collect();
         let provisioner = WorldProvisioner::new(ProvisionerConfig {
-            app_shell_binary: temp.path().join("app-shell"),
             app_pane_binary: temp.path().join("app-pane"),
             app_info_binary: temp.path().join("app-info"),
             app_proxy_binary: temp.path().join("app-proxy"),
             registry_cache_url: format!("http://{registry_address}"),
             registry_cache_ca_file: temp.path().join("ca.crt"),
-            git_identity_file: identity,
             git_known_hosts_file: known_hosts,
             recipe_timeout: Duration::from_secs(10),
             ssh_authorized_keys: vec!["ssh-ed25519 AAAATEST".to_owned()],
-            session,
             bootstrap: BootstrapPolicy {
-                session,
                 packages,
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
             },
@@ -352,7 +315,6 @@ mod tests {
             },
         );
         let name = InstanceName::parse("failure").unwrap();
-        let passphrase = wt_api::GitPassphrase::new("secret".to_owned());
         let spec = ProvisionSpec {
             id: Uuid::new_v4(),
             backend_id: "wt-0123456789abcdef0123456789abcdef",
@@ -361,18 +323,14 @@ mod tests {
             source: "git@example.test:repo.git",
             git_branch: None,
             git_ref: None,
-            git_passphrase: &passphrase,
             git_user_name: "Test User",
             git_user_email: "test@example.invalid",
         };
         let mut log = Vec::new();
         let error = worker.provision(&spec, &mut log).unwrap_err();
-        assert_eq!(deletes.load(Ordering::SeqCst), 1);
+        assert_eq!(deletes.load(Ordering::SeqCst), 0);
         assert!(error.to_string().contains("expected Ubuntu 24.04 amd64"));
         assert!(!error.to_string().contains("cleanup"));
-        insta::assert_snapshot!(String::from_utf8(log).unwrap(), @r###"
-        Verifying and bootstrapping the guest OS...
-        CLEANUP ERROR: injected cleanup failure
-        "###);
+        insta::assert_snapshot!(String::from_utf8(log).unwrap(), @"Verifying and bootstrapping the guest OS...\n");
     }
 }

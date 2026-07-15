@@ -1,25 +1,21 @@
-use crate::jobs::{GitAuthor, GitCheckout, Jobs, ProvisionLauncher, ProvisionOptions};
+use crate::jobs::Jobs;
 use crate::store::{Store, StoreError, StoredInstance};
-use base64::Engine as _;
-use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
 use wt_provider::WorldWorker;
 
-pub struct Service<W, L> {
+pub struct Service<W> {
     store: Store,
     worker: W,
     jobs: Jobs,
-    launcher: L,
 }
 
-impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
-    pub fn new(store: Store, worker: W, jobs: Jobs, launcher: L) -> Self {
+impl<W: WorldWorker> Service<W> {
+    pub fn new(store: Store, worker: W, jobs: Jobs) -> Self {
         Self {
             store,
             worker,
             jobs,
-            launcher,
         }
     }
 
@@ -33,7 +29,6 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
-            Operation::Logs { name, offset } => self.logs(owner, &name, offset),
         }
     }
 
@@ -47,15 +42,52 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                 "Git branch and ref are mutually exclusive",
             ));
         }
-        if request.git_passphrase.expose_secret().is_empty() {
-            return Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "Git key passphrase must not be empty",
-            ));
+        let setup_fingerprint = serde_json::to_string(&(
+            &request.source,
+            &request.git_branch,
+            &request.git_ref,
+            &request.git_user_name,
+            &request.git_user_email,
+        ))
+        .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
+        match self.store.get(owner, &request.name) {
+            Ok(stored)
+                if stored.instance.status == InstanceStatus::Provisioning
+                    && stored.setup_fingerprint == setup_fingerprint =>
+            {
+                let lock = self.jobs.wait(stored.instance.id).map_err(|error| {
+                    ApiError::new(
+                        ErrorCode::Internal,
+                        format!("wait for provisioning: {error}"),
+                    )
+                })?;
+                drop(lock);
+                let instance = self
+                    .store
+                    .get(owner, &request.name)
+                    .map_err(map_store_error)?
+                    .instance;
+                return Ok(Response::Instance {
+                    instance: Box::new(instance),
+                });
+            }
+            Ok(stored)
+                if stored.instance.status == InstanceStatus::Setup
+                    && stored.setup_fingerprint == setup_fingerprint =>
+            {
+                return Ok(Response::Instance {
+                    instance: Box::new(stored.instance),
+                });
+            }
+            Ok(_) => {
+                return Err(ApiError::new(
+                    ErrorCode::Conflict,
+                    "instance already exists with different setup inputs or state",
+                ));
+            }
+            Err(StoreError::NotFound) => {}
+            Err(error) => return Err(map_store_error(error)),
         }
-        self.worker
-            .validate_git_passphrase(&request.git_passphrase)
-            .map_err(|error| ApiError::new(ErrorCode::InvalidGitPassphrase, error.to_string()))?;
         let id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
@@ -71,6 +103,7 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                 app_ssh: None,
             },
             backend_id,
+            setup_fingerprint,
         };
         let lock = self
             .jobs
@@ -82,41 +115,53 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
             return Err(map_store_error(error));
         }
 
-        if let Err(error) = self.launcher.launch(
-            &self.store,
-            &self.worker,
-            &stored,
-            &request.git_passphrase,
-            ProvisionOptions {
-                checkout: GitCheckout {
-                    branch: request.git_branch.as_deref(),
-                    git_ref: request.git_ref.as_deref(),
-                },
-                author: GitAuthor {
-                    name: &request.git_user_name,
-                    email: &request.git_user_email,
-                },
-            },
-            lock,
-        ) {
-            let _ = self.store.delete(id);
-            let _ = self.jobs.remove(id);
-            return Err(ApiError::new(
-                ErrorCode::Internal,
-                format!("launch provisioning worker: {error}"),
-            ));
+        let spec = wt_provider::ProvisionSpec {
+            id,
+            backend_id: &stored.backend_id,
+            owner,
+            name: &stored.instance.name,
+            source: &stored.instance.source,
+            git_branch: request.git_branch.as_deref(),
+            git_ref: request.git_ref.as_deref(),
+            git_user_name: &request.git_user_name,
+            git_user_email: &request.git_user_email,
+        };
+        let result = self.worker.provision(&spec, &mut std::io::sink());
+        match result {
+            Ok(world) => self
+                .store
+                .mark_setup(id, &world.guest_ip, &world.ssh)
+                .map_err(map_store_error)?,
+            Err(error) => {
+                let _ = self.worker.destroy(&stored.backend_id);
+                let _ = self.store.delete(id);
+                drop(lock);
+                let _ = self.jobs.remove(id);
+                return Err(ApiError::new(ErrorCode::Backend, error.to_string()));
+            }
         }
+        drop(lock);
+        self.jobs
+            .remove(id)
+            .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
+        let instance = self
+            .store
+            .get(owner, &stored.instance.name)
+            .map_err(map_store_error)?
+            .instance;
         Ok(Response::Instance {
-            instance: Box::new(stored.instance),
+            instance: Box::new(instance),
         })
     }
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list(owner).map_err(map_store_error)?;
-        for instance in stored
-            .iter()
-            .filter(|item| item.instance.status == InstanceStatus::Running)
-        {
+        for instance in stored.iter().filter(|item| {
+            matches!(
+                item.instance.status,
+                InstanceStatus::Setup | InstanceStatus::Running
+            )
+        }) {
             match self.worker.inspect(&instance.backend_id) {
                 Ok(Some(world)) => {
                     let same_guest_identity = instance
@@ -124,20 +169,26 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
                         .ssh
                         .as_ref()
                         .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-                    let same_app_identity = instance
-                        .instance
-                        .app_ssh
-                        .as_ref()
-                        .is_some_and(|ssh| ssh.host_keys == world.app_ssh.host_keys);
+                    let same_app_identity = match (&instance.instance.app_ssh, &world.app_ssh) {
+                        (Some(stored), Some(current)) => stored.host_keys == current.host_keys,
+                        (None, _) => true,
+                        _ => false,
+                    };
                     if same_guest_identity && same_app_identity {
-                        self.store
-                            .mark_running(
-                                instance.instance.id,
-                                &world.guest_ip,
-                                &world.ssh,
-                                &world.app_ssh,
-                            )
-                            .map_err(map_store_error)?;
+                        if let Some(app_ssh) = &world.app_ssh {
+                            self.store
+                                .mark_running(
+                                    instance.instance.id,
+                                    &world.guest_ip,
+                                    &world.ssh,
+                                    app_ssh,
+                                )
+                                .map_err(map_store_error)?;
+                        } else {
+                            self.store
+                                .mark_setup(instance.instance.id, &world.guest_ip, &world.ssh)
+                                .map_err(map_store_error)?;
+                        }
                     } else {
                         self.store
                             .mark_error(instance.instance.id, "SSH host identity changed")
@@ -168,6 +219,7 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
     }
 
     fn get(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
+        let _ = self.list(owner)?;
         let instance = self
             .store
             .get(owner, name)
@@ -213,36 +265,6 @@ impl<W: WorldWorker, L: ProvisionLauncher<W>> Service<W, L> {
             .remove(stored.instance.id)
             .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         Ok(Response::Deleted { name: name.clone() })
-    }
-
-    fn logs(
-        &self,
-        owner: &str,
-        name: &wt_api::InstanceName,
-        offset: u64,
-    ) -> Result<Response, ApiError> {
-        const CHUNK_SIZE: usize = 64 * 1024;
-        const LONG_POLL: Duration = Duration::from_secs(15);
-        let deadline = Instant::now() + LONG_POLL;
-        loop {
-            let stored = self.store.get(owner, name).map_err(map_store_error)?;
-            let (chunk, next_offset) = self
-                .store
-                .read_log(stored.instance.id, offset, CHUNK_SIZE)
-                .map_err(map_store_error)?;
-            if !chunk.is_empty()
-                || stored.instance.status != InstanceStatus::Provisioning
-                || Instant::now() >= deadline
-            {
-                return Ok(Response::Logs {
-                    chunk: base64::engine::general_purpose::STANDARD.encode(chunk),
-                    next_offset,
-                    status: stored.instance.status,
-                    last_error: stored.instance.last_error,
-                });
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
     }
 }
 

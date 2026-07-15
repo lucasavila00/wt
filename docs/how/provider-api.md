@@ -68,7 +68,7 @@ provisioner:
 1. Verifies the supported OS, architecture, and privilege level.
 2. Installs the required system and development tools.
 3. Configures the `wt` user, workspace, SSH, registry trust, and Docker proxy.
-4. Clones the repository and configures its Git credentials.
+4. Clones the repository with temporary Git credentials, deletes them, and configures local author values.
 5. Starts the devcontainer and installs WT helpers.
 6. Verifies guest and app SSH and returns the current `World`.
 

@@ -7,7 +7,7 @@ use wt_libvirt::LibvirtProvider;
 use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
-use wt_server::jobs::{Jobs, ThreadLauncher};
+use wt_server::jobs::Jobs;
 use wt_server::service::Service;
 use wt_server::store::Store;
 use wt_server::ServerConfig;
@@ -88,7 +88,7 @@ fn handle_daemon_request(
 ) -> ApiResponse {
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
-        let mut service = Service::new(store, worker.clone(), jobs.clone(), ThreadLauncher);
+        let mut service = Service::new(store, worker.clone(), jobs.clone());
         Ok::<_, anyhow::Error>(wt_server::handle_request(&mut service, owner, request))
     })();
     result.unwrap_or_else(|error| {

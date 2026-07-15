@@ -17,11 +17,9 @@ max_size_gib = 64
 registries = ["docker.io"]
 
 [git]
-identity_file = "~/.ssh/id_ed25519"
 known_hosts_file = "~/.ssh/known_hosts"
 
 [guest]
-session = "byobu"
 memory_mib = 8192
 vcpus = 8
 disk_gib = 32
