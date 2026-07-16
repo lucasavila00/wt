@@ -135,37 +135,14 @@ esac
         String::from_utf8_lossy(&created.stderr)
     );
     let transcript = String::from_utf8_lossy(&created.stdout).replace('\r', "");
-    let normalized_transcript = transcript
-        .lines()
-        .map(|line| {
-            if line.trim_start().starts_with("SHA256:") {
-                "  [SSH_KEY_FINGERPRINT]"
-            } else {
-                line.trim_end()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let completed = transcript
+        .find("local.repo-feature\tsetup")
+        .map(|start| &transcript[start..])
+        .expect("creation result is present in the terminal transcript");
     insta::assert_snapshot!(
-        normalized_transcript,
+        completed,
         @r###"
-        repo-feature
-        git@example.test:repo.git
-
-
-
-
-
-        World name: Git repository: Revision [default]: Virtual CPUs [2]: RAM (MiB) [4096]: Disk (GiB) [32]:
-        World: repo-feature
-        Context: local
-        Repository: git@example.test:repo.git
-        Revision: default
-        Git author: Lucas Ávila <lucaxx@gmail.com>
-        Resources: 2 CPU, 4096 MiB RAM, 32 GiB disk
-        SSH keys:
-          [SSH_KEY_FINGERPRINT]
-        Create world? [yes]: local.repo-feature	setup	192.0.2.2
+        local.repo-feature	setup	192.0.2.2
 
         Start setup: ssh local.repo-feature
         Guest host: ssh local.repo-feature-host

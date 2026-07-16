@@ -27,7 +27,7 @@ the name is unique across all contexts.
 
 ## World setup
 
-`wt new` requires a terminal and asks one question per line. World name and Git
+`wt new` requires a terminal and guides the user through interactive prompts. World name and Git
 repository are required. Context, revision, CPU, RAM, disk, and confirmation
 have defaults. The client validates every answer and reads all regular
 `~/.ssh/*.pub` files before it sends one complete create request.
