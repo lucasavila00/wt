@@ -13,4 +13,9 @@ else
         "$tmux" set-environment -u -t wt-app SSH_AUTH_SOCK
     fi
 fi
+if test -e "$state/complete"; then
+    "$tmux" set-option -g remain-on-exit off
+else
+    "$tmux" set-option -g remain-on-exit failed
+fi
 exec "$tmux" attach-session -t wt-app
