@@ -326,6 +326,26 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "unexpected Byobu session prefix: {prefix:?}; expected {expected_prefix}"
             ));
         }
+        let remain_on_exit = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "show-options",
+                "-gv",
+                "remain-on-exit",
+            ),
+            "read persistent session remain-on-exit",
+        );
+        if remain_on_exit.trim() != "off" {
+            return Err(format!(
+                "unexpected remain-on-exit after setup: {remain_on_exit:?}; expected off"
+            ));
+        }
 
         let branch = format!("wt-e2e-{}", std::process::id());
         let app_commands = temp.path().join("app-commands");
