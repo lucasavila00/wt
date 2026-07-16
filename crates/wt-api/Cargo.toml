@@ -8,6 +8,7 @@ description = "Shared JSON types for wt CLI and agents"
 
 [dependencies]
 serde = { workspace = true }
+ssh-key = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }

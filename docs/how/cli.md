@@ -27,6 +27,14 @@ the name is unique across all contexts.
 
 ## World setup
 
+`wt new` requires a terminal and asks one question per line. World name and Git
+repository are required. Context, revision, CPU, RAM, disk, and confirmation
+have defaults. The client validates every answer and reads all regular
+`~/.ssh/*.pub` files before it sends one complete create request.
+
+The request owns the world resources and authorized keys. The server config
+owns only infrastructure, image-build settings, trust, and timeouts.
+
 `wt new` returns after the guest and its SSH endpoint are ready. The first
 `ssh NAME` forwards the workstation SSH agent and starts the remaining install
 inside Byobu. Reconnecting attaches to the same session and retries a failed

@@ -50,12 +50,8 @@ pub struct ServerLibvirtConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
-    pub memory_mib: u64,
-    pub vcpus: u32,
-    pub disk_gib: u64,
     pub boot_timeout_seconds: u64,
     pub recipe_timeout_seconds: u64,
-    pub ssh_authorized_keys_file: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -166,22 +162,8 @@ impl ServerConfig {
             return Err("libvirt.network must not be empty".to_owned());
         }
         self.validate_registry_cache()?;
-        if self.guest.memory_mib == 0
-            || self.guest.vcpus == 0
-            || self.guest.disk_gib == 0
-            || self.guest.boot_timeout_seconds == 0
-            || self.guest.recipe_timeout_seconds == 0
-        {
-            return Err("guest resource values must be greater than zero".to_owned());
-        }
-        let keys = self.ssh_authorized_keys()?;
-        if keys.is_empty() {
-            return Err(
-                "guest.ssh_authorized_keys_file must contain at least one public key".to_owned(),
-            );
-        }
-        for key in &keys {
-            validate_public_key(key)?;
+        if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
+            return Err("guest timeout values must be greater than zero".to_owned());
         }
         Ok(())
     }
@@ -192,14 +174,6 @@ impl ServerConfig {
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-        }
-    }
-
-    pub fn machine_resources(&self) -> wt_provider::MachineResources {
-        wt_provider::MachineResources {
-            memory_mib: self.guest.memory_mib,
-            vcpus: self.guest.vcpus,
-            disk_gib: self.guest.disk_gib,
         }
     }
 
@@ -217,7 +191,6 @@ impl ServerConfig {
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             git_known_hosts_file: git.known_hosts_file,
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
-            ssh_authorized_keys: self.ssh_authorized_keys()?,
             bootstrap,
         })
     }
@@ -262,25 +235,6 @@ impl ServerConfig {
         Ok(())
     }
 
-    pub fn ssh_authorized_keys(&self) -> Result<Vec<String>, String> {
-        let path = expand_home(
-            &self.guest.ssh_authorized_keys_file,
-            "guest.ssh_authorized_keys_file",
-        )?;
-        let contents = std::fs::read_to_string(&path).map_err(|error| {
-            format!(
-                "read guest.ssh_authorized_keys_file {}: {error}",
-                path.display()
-            )
-        })?;
-        Ok(contents
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect())
-    }
-
     pub fn resolved_git_config(&self) -> Result<GitConfig, String> {
         Ok(GitConfig {
             known_hosts_file: expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?,
@@ -317,26 +271,6 @@ fn expand_home(path: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path.to_owned())
 }
 
-fn validate_public_key(key: &str) -> Result<(), String> {
-    if key.contains('\n') || key.contains('\r') || key.contains("PRIVATE KEY") {
-        return Err("guest.ssh_authorized_keys_file accepts public keys only".to_owned());
-    }
-    let mut fields = key.split_whitespace();
-    let kind = fields.next().unwrap_or_default();
-    let data = fields.next().unwrap_or_default();
-    let supported =
-        kind == "ssh-ed25519" || kind == "ssh-rsa" || kind.starts_with("ecdsa-sha2-nistp");
-    if !supported
-        || data.len() < 16
-        || !data.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/' || byte == b'='
-        })
-    {
-        return Err("guest.ssh_authorized_keys_file contains an invalid public key".to_owned());
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,27 +295,15 @@ registries = ["docker.io", "mcr.microsoft.com"]
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
-memory_mib = 8192
-vcpus = 4
-disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-ssh_authorized_keys_file = "KEY_FILE"
 
 [install]
 binary_dir = "/usr/local/bin"
 "#;
 
     fn parse(value: &str) -> Result<(ServerConfig, MachineConfig), String> {
-        let key_dir = tempfile::tempdir().unwrap();
-        let key_file = key_dir.path().join("id.pub");
-        std::fs::write(
-            &key_file,
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example\n",
-        )
-        .unwrap();
-        let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
-        let config: ServerConfig = toml::from_str(&value).map_err(|error| error.to_string())?;
+        let config: ServerConfig = toml::from_str(value).map_err(|error| error.to_string())?;
         config.validate()?;
         let machine = config.machine_config();
         Ok((config, machine))
@@ -396,8 +318,12 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn missing_and_unknown_fields_fail() {
-        assert!(parse(&VALID.replace("vcpus = 4\n", "")).is_err());
-        assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 4\nfallback = true")).is_err());
+        assert!(parse(&VALID.replace("recipe_timeout_seconds = 900\n", "")).is_err());
+        assert!(parse(&VALID.replace(
+            "recipe_timeout_seconds = 900",
+            "recipe_timeout_seconds = 900\nfallback = true"
+        ))
+        .is_err());
         assert!(parse(&VALID.replace(
             "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
             "registries = [\"docker.io\", \"mcr.microsoft.com\"]\npreload_images = [\"redis:7-alpine\"]"
@@ -411,7 +337,10 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
-        assert!(parse(&VALID.replace("vcpus = 4", "vcpus = 0")).is_err());
+        assert!(parse(
+            &VALID.replace("recipe_timeout_seconds = 900", "recipe_timeout_seconds = 0")
+        )
+        .is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(&VALID.replace(
             "installed_path = \"/var/lib/wt/images/wt.qcow2\"",

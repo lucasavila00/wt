@@ -30,7 +30,6 @@ pub struct ProvisionerConfig {
     pub registry_cache_ca_file: PathBuf,
     pub git_known_hosts_file: PathBuf,
     pub recipe_timeout: Duration,
-    pub ssh_authorized_keys: Vec<String>,
     pub bootstrap: BootstrapPolicy,
 }
 
@@ -192,7 +191,7 @@ impl WorldProvisioner {
             ));
         }
 
-        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
+        let mut authorized_keys = spec.ssh_authorized_keys.join("\n").into_bytes();
         authorized_keys.push(b'\n');
         for (suffix, contents) in [
             ("-authorized-keys", authorized_keys.as_slice()),
@@ -307,26 +306,9 @@ impl WorldProvisioner {
             &["/var/lib/wt-app-ssh/session_identity.pub"],
             deadline,
         )?;
-        let mut authorized_keys = self.config.ssh_authorized_keys.join("\n").into_bytes();
-        authorized_keys.push(b'\n');
-        authorized_keys.extend_from_slice(&session_public);
-        if !authorized_keys.ends_with(b"\n") {
-            authorized_keys.push(b'\n');
+        if session_public.is_empty() {
+            return Err(WorkerError::new("app session public key is empty"));
         }
-        let authorized_path = format!(
-            "{}/authorized_keys/{}",
-            devcontainer::APP_SSH_PUBLIC_DIR,
-            target.user
-        );
-        guest::write_owned(
-            transport,
-            &authorized_path,
-            &authorized_keys,
-            "root",
-            "root",
-            0o644,
-            deadline,
-        )?;
         let expected = self.read_app_host_keys(transport, deadline)?;
         let scanned = guest::capture_phase(
             transport,

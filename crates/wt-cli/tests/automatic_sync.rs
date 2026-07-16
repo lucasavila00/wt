@@ -1,9 +1,11 @@
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Stdio;
 use wt_command::cmd;
 
 #[test]
-fn new_requires_global_git_author_identity_before_contacting_server() {
+fn new_requires_a_terminal_before_contacting_server() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
@@ -25,23 +27,16 @@ fn new_requires_global_git_author_identity_before_contacting_server() {
     )))
     .unwrap();
 
-    let output = cmd!(
-        env!("CARGO_BIN_EXE_wt"),
-        "new",
-        "git@example.test:repo.git",
-        "repo-feature"
-    )
-    .env("HOME", temp.path())
-    .env("PATH", path)
-    .output()
-    .unwrap();
+    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "new")
+        .env("HOME", temp.path())
+        .env("PATH", path)
+        .output()
+        .unwrap();
 
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     assert!(!temp.path().join("server-contacted").exists());
-    insta::assert_snapshot!(String::from_utf8_lossy(&output.stderr), @r###"
-    wt: global Git user.name is required; configure it with `git config --global user.name VALUE`
-    "###);
+    insta::assert_snapshot!(String::from_utf8_lossy(&output.stderr), @"wt: `wt new` requires an interactive terminal\n");
 }
 
 #[test]
@@ -97,6 +92,12 @@ esac
         "[user]\n\tname = Lucas Ávila\n\temail = lucaxx@gmail.com\n",
     )
     .unwrap();
+    fs::create_dir(temp.path().join(".ssh")).unwrap();
+    let key = temp.path().join(".ssh/id_ed25519");
+    let generated = cmd!("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", &key)
+        .output()
+        .unwrap();
+    assert!(generated.status.success());
     fs::write(
         temp.path().join(".wt/config.toml"),
         "version = 1\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
@@ -107,32 +108,64 @@ esac
     )))
     .unwrap();
 
-    let created = cmd!(
-        env!("CARGO_BIN_EXE_wt"),
-        "new",
-        "git@example.test:repo.git",
-        "repo-feature"
+    let mut created = cmd!(
+        "script",
+        "-qfec",
+        format!("{} new", env!("CARGO_BIN_EXE_wt")),
+        "/dev/null"
     )
     .env("HOME", temp.path())
     .env("PATH", &path)
-    .output()
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
     .unwrap();
+    created
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"repo-feature\ngit@example.test:repo.git\n\n\n\n\n\n")
+        .unwrap();
+    let created = created.wait_with_output().unwrap();
     assert!(
         created.status.success(),
         "{}{}",
         String::from_utf8_lossy(&created.stdout),
         String::from_utf8_lossy(&created.stderr)
     );
-    let transcript = String::from_utf8_lossy(&created.stdout);
+    let transcript = String::from_utf8_lossy(&created.stdout).replace('\r', "");
     let normalized_transcript = transcript
         .lines()
-        .map(str::trim_end)
+        .map(|line| {
+            if line.trim_start().starts_with("SHA256:") {
+                "  [SSH_KEY_FINGERPRINT]"
+            } else {
+                line.trim_end()
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(
         normalized_transcript,
         @r###"
-        local.repo-feature	setup	192.0.2.2
+        repo-feature
+        git@example.test:repo.git
+
+
+
+
+
+        World name: Git repository: Revision [default]: Virtual CPUs [2]: RAM (MiB) [4096]: Disk (GiB) [32]:
+        World: repo-feature
+        Context: local
+        Repository: git@example.test:repo.git
+        Revision: default
+        Git author: Lucas Ávila <lucaxx@gmail.com>
+        Resources: 2 CPU, 4096 MiB RAM, 32 GiB disk
+        SSH keys:
+          [SSH_KEY_FINGERPRINT]
+        Create world? [yes]: local.repo-feature	setup	192.0.2.2
 
         Start setup: ssh local.repo-feature
         Guest host: ssh local.repo-feature-host

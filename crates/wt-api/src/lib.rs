@@ -45,6 +45,32 @@ pub struct CreateInstance {
     pub git_user_name: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     pub git_user_email: String,
+    pub vcpus: u32,
+    pub memory_mib: u64,
+    pub disk_gib: u64,
+    pub ssh_authorized_keys: Vec<String>,
+}
+
+pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
+    if request.vcpus == 0 || request.memory_mib == 0 || request.disk_gib == 0 {
+        return Err("CPU, memory, and disk values must be greater than zero");
+    }
+    if request.ssh_authorized_keys.is_empty() {
+        return Err("at least one SSH authorized key is required");
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for key in &request.ssh_authorized_keys {
+        let mut parsed = ssh_key::PublicKey::from_openssh(key)
+            .map_err(|_| "SSH authorized keys must be valid OpenSSH public keys")?;
+        parsed.set_comment("");
+        let normalized = parsed
+            .to_openssh()
+            .map_err(|_| "SSH authorized keys must be valid OpenSSH public keys")?;
+        if !unique.insert(normalized) {
+            return Err("SSH authorized keys must not contain duplicates");
+        }
+    }
+    Ok(())
 }
 
 fn deserialize_nonempty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -366,6 +392,10 @@ mod tests {
             git_ref: Some("devcontainer".to_owned()),
             git_user_name: "Lucas Ávila".to_owned(),
             git_user_email: "lucaxx@gmail.com".to_owned(),
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -376,7 +406,11 @@ mod tests {
                 "source": "git@github.com:example/repo.git",
                 "git_ref": "devcontainer",
                 "git_user_name": "Lucas Ávila",
-                "git_user_email": "lucaxx@gmail.com"
+                "git_user_email": "lucaxx@gmail.com",
+                "vcpus": 2,
+                "memory_mib": 4096,
+                "disk_gib": 32,
+                "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"]
             })
         );
     }
@@ -400,6 +434,29 @@ mod tests {
             "git_user_email": "lucaxx@gmail.com"
         }));
         assert!(empty.is_err());
+    }
+
+    #[test]
+    fn create_resources_and_authorized_keys_are_strict() {
+        let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example";
+        let mut request = CreateInstance {
+            name: InstanceName::parse("sample").unwrap(),
+            source: "git@example.test:repo.git".to_owned(),
+            git_branch: None,
+            git_ref: None,
+            git_user_name: "Test User".to_owned(),
+            git_user_email: "test@example.invalid".to_owned(),
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            ssh_authorized_keys: vec![key.to_owned()],
+        };
+        assert_eq!(validate_create_resources(&request), Ok(()));
+        request.vcpus = 0;
+        assert!(validate_create_resources(&request).is_err());
+        request.vcpus = 1;
+        request.ssh_authorized_keys.push(key.to_owned());
+        assert!(validate_create_resources(&request).is_err());
     }
 
     #[test]

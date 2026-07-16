@@ -366,6 +366,9 @@ version = 1
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 installed_path = "/var/lib/wt/image.qcow2"
+build_memory_mib = 1024
+build_vcpus = 1
+build_disk_gib = 8
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/wt/worlds"
@@ -377,12 +380,8 @@ registries = ["docker.io"]
 [git]
 known_hosts_file = "~/.ssh/known_hosts"
 [guest]
-memory_mib = 1024
-vcpus = 1
-disk_gib = 8
 boot_timeout_seconds = 30
 recipe_timeout_seconds = 30
-ssh_authorized_keys_file = "~/.ssh/id.pub"
 [install]
 binary_dir = "/opt/wt bin"
 "#,
@@ -392,7 +391,7 @@ binary_dir = "/opt/wt bin"
         let unit = String::from_utf8(server_service(&user, &server)).unwrap();
         let unit = unit
             .replace(&user.dir.display().to_string(), "[HOME]")
-            .replace(&user.name, "[USER]");
+            .replace(&format!("User={}", user.name), "User=[USER]");
         insta::assert_snapshot!(unit, @r###"
         [Unit]
         Description=WT control-plane daemon

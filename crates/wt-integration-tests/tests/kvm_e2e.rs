@@ -25,14 +25,20 @@ fn local_service_runs_small_devcontainer_fixture() {
         command.current_dir(&workspace);
         run(command, "build guest helpers")
     });
-    let mut config = ServerConfig::load().unwrap();
+    let mut config = match std::env::var_os("WT_KVM_SERVER_CONFIG") {
+        Some(path) => ServerConfig::load_from(Path::new(&path)).unwrap(),
+        None => ServerConfig::load().unwrap(),
+    };
     config.install.binary_dir = workspace.join("target/debug");
     let bridge_ip = network_address(&config.libvirt.network);
     let git = timings.run("prepare SSH Git fixture", || {
         GitSshServer::start(temp.path(), bridge_ip)
     });
-    config.guest.ssh_authorized_keys_file = git.guest_public_key.clone();
     config.git.known_hosts_file = temp.path().join(".ssh/known_hosts");
+    let guest_public_key = fs::read_to_string(&git.guest_public_key)
+        .unwrap()
+        .trim()
+        .to_owned();
     std::env::set_var("HOME", temp.path());
     fs::create_dir_all(temp.path().join(".ssh")).unwrap();
     fs::write(
@@ -70,6 +76,10 @@ fn local_service_runs_small_devcontainer_fixture() {
                 git_ref: None,
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
+                vcpus: 1,
+                memory_mib: 1024,
+                disk_gib: 32,
+                ssh_authorized_keys: vec![guest_public_key.clone()],
             }),
         )
     });
@@ -91,6 +101,10 @@ fn local_service_runs_small_devcontainer_fixture() {
                 git_ref: None,
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
+                vcpus: 1,
+                memory_mib: 1024,
+                disk_gib: 32,
+                ssh_authorized_keys: vec![guest_public_key.clone()],
             }),
         )
     });
@@ -150,7 +164,7 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared",
+                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
             )
             .output()
             .map_err(|error| error.to_string())
