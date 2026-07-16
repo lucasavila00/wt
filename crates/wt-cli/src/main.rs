@@ -4,7 +4,7 @@ use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::io::{BufRead, IsTerminal, Write};
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +49,8 @@ fn run() -> Result<()> {
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;
+            let spinner = cliclack::spinner();
+            spinner.start("Creating world");
             let response = wt_cli::transport::call(
                 context,
                 &ApiRequest::new(Operation::Create(CreateInstance {
@@ -63,8 +65,12 @@ fn run() -> Result<()> {
                     disk_gib: input.disk_gib,
                     ssh_authorized_keys: input.ssh_authorized_keys,
                 })),
-            )
-            .map_err(|error| {
+            );
+            match &response {
+                Ok(_) => spinner.stop("World created"),
+                Err(_) => spinner.error("World creation did not complete"),
+            }
+            let response = response.map_err(|error| {
                 anyhow::anyhow!(
                     "create did not complete; run `wt ls` to check the world: {error:#}"
                 )
@@ -190,13 +196,12 @@ fn install_cancel_handlers() -> Result<SignalGuard> {
 }
 
 fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
-    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
     let _signals = install_cancel_handlers()?;
     let git_author = read_git_author()?;
-    let mut input = std::io::stdin().lock();
-    let mut output = std::io::stdout().lock();
+    cliclack::intro("Create a new world")?;
     let default_context = config
         .contexts
         .first()
@@ -206,68 +211,66 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
     let context = if config.contexts.len() == 1 {
         default_context
     } else {
-        loop {
-            let value = prompt_default(&mut input, &mut output, "Context", &default_context)?;
-            if config.context(&value).is_some() {
-                break value;
-            }
-            writeln!(output, "Unknown context: {value}")?;
+        let mut prompt = cliclack::select("Where should the world run?");
+        for context in &config.contexts {
+            prompt = prompt.item(context.name.clone(), &context.name, "");
         }
+        prompt
+            .initial_value(default_context)
+            .filter_mode()
+            .interact()
+            .map_err(prompt_error)?
     };
-    let name = loop {
-        let value = prompt_required(&mut input, &mut output, "World name")?;
-        match wt_api::InstanceName::parse(value) {
-            Ok(name) => break name,
-            Err(error) => writeln!(output, "Invalid world name: {error}")?,
-        }
-    };
-    let source = loop {
-        let value = prompt_required(&mut input, &mut output, "Git repository")?;
-        match wt_api::validate_ssh_git_source(&value) {
-            Ok(()) => break value,
-            Err(error) => writeln!(output, "Invalid Git repository: {error}")?,
-        }
-    };
-    let revision = loop {
-        let value = prompt_default(&mut input, &mut output, "Revision", "default")?;
-        match parse_revision(&value) {
-            Ok(revision) => break revision,
-            Err(error) => writeln!(output, "{error}")?,
-        }
-    };
-    let vcpus = prompt_number(&mut input, &mut output, "Virtual CPUs", DEFAULT_VCPUS)?;
-    let memory_mib = prompt_number(&mut input, &mut output, "RAM (MiB)", DEFAULT_MEMORY_MIB)?;
-    let disk_gib = prompt_number(&mut input, &mut output, "Disk (GiB)", DEFAULT_DISK_GIB)?;
+    let name: String = cliclack::input("World name")
+        .placeholder("my-world")
+        .validate(|value: &String| {
+            wt_api::InstanceName::parse(value.clone())
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+        .interact()
+        .map_err(prompt_error)?;
+    let name = wt_api::InstanceName::parse(name)?;
+    let source: String = cliclack::input("Git repository")
+        .placeholder("git@example.com:team/repository.git")
+        .validate(|value: &String| {
+            wt_api::validate_ssh_git_source(value).map_err(|error| error.to_string())
+        })
+        .interact()
+        .map_err(prompt_error)?;
+    let revision_value: String = cliclack::input("Revision")
+        .default_input("default")
+        .placeholder("default, branch:NAME, or ref:VALUE")
+        .validate(|value: &String| parse_revision(value).map(|_| ()))
+        .interact()
+        .map_err(prompt_error)?;
+    let revision = parse_revision(&revision_value)?;
+    let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
+    let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
+    let disk_gib = prompt_number("Disk (GiB)", DEFAULT_DISK_GIB)?;
     let keys = discover_public_keys()?;
-    writeln!(output, "\nWorld: {name}")?;
-    writeln!(output, "Context: {context}")?;
-    writeln!(output, "Repository: {source}")?;
     let revision_summary = match &revision {
         (Some(branch), None) => format!("branch:{branch}"),
         (None, Some(reference)) => format!("ref:{reference}"),
         _ => "default".to_owned(),
     };
-    writeln!(output, "Revision: {revision_summary}")?;
-    writeln!(
-        output,
-        "Git author: {} <{}>",
-        git_author.name, git_author.email
-    )?;
-    writeln!(
-        output,
-        "Resources: {vcpus} CPU, {memory_mib} MiB RAM, {disk_gib} GiB disk"
-    )?;
-    writeln!(output, "SSH keys:")?;
+    let mut summary = format!(
+        "World       {name}\nContext     {context}\nRepository  {source}\nRevision    {revision_summary}\nGit author  {} <{}>\nResources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
+        git_author.name,
+        git_author.email,
+        keys.len()
+    );
     for (_, fingerprint) in &keys {
-        writeln!(output, "  {fingerprint}")?;
+        write!(summary, "\n            {fingerprint}")?;
     }
-    loop {
-        let answer = prompt_default(&mut input, &mut output, "Create world?", "yes")?;
-        match answer.to_ascii_lowercase().as_str() {
-            "y" | "yes" => break,
-            "n" | "no" => bail!("creation cancelled"),
-            _ => writeln!(output, "Answer yes or no.")?,
-        }
+    cliclack::note("Review", summary)?;
+    if !cliclack::confirm("Create this world?")
+        .initial_value(true)
+        .interact()
+        .map_err(prompt_error)?
+    {
+        cliclack::outro_cancel("Creation cancelled")?;
+        bail!("creation cancelled");
     }
     Ok(CreateInput {
         context,
@@ -284,69 +287,27 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
     })
 }
 
-fn prompt_line(input: &mut impl BufRead, output: &mut impl Write, label: &str) -> Result<String> {
-    if CANCELLED.load(Ordering::SeqCst) {
-        bail!("creation cancelled");
-    }
-    write!(output, "{label}: ")?;
-    output.flush()?;
-    let mut value = String::new();
-    match input.read_line(&mut value) {
-        Ok(0) => bail!("creation cancelled"),
-        Ok(_) => {}
-        Err(_error) if CANCELLED.load(Ordering::SeqCst) => bail!("creation cancelled"),
-        Err(error) => return Err(error.into()),
-    }
-    if CANCELLED.load(Ordering::SeqCst) {
-        bail!("creation cancelled");
-    }
-    Ok(value.trim().to_owned())
-}
-
-fn prompt_required(
-    input: &mut impl BufRead,
-    output: &mut impl Write,
-    label: &str,
-) -> Result<String> {
-    loop {
-        let value = prompt_line(input, output, label)?;
-        if !value.is_empty() {
-            return Ok(value);
-        }
-        writeln!(output, "A value is required.")?;
-    }
-}
-
-fn prompt_default(
-    input: &mut impl BufRead,
-    output: &mut impl Write,
-    label: &str,
-    default: &str,
-) -> Result<String> {
-    let value = prompt_line(input, output, &format!("{label} [{default}]"))?;
-    Ok(if value.is_empty() {
-        default.to_owned()
+fn prompt_error(error: std::io::Error) -> anyhow::Error {
+    if error.kind() == std::io::ErrorKind::Interrupted || CANCELLED.load(Ordering::SeqCst) {
+        anyhow::anyhow!("creation cancelled")
     } else {
-        value
-    })
+        error.into()
+    }
 }
 
-fn prompt_number<T>(
-    input: &mut impl BufRead,
-    output: &mut impl Write,
-    label: &str,
-    default: T,
-) -> Result<T>
+fn prompt_number<T>(label: &str, default: T) -> Result<T>
 where
-    T: std::str::FromStr + std::fmt::Display + Copy + PartialEq + Default,
+    T: std::str::FromStr + std::fmt::Display + Copy + PartialEq + Default + 'static,
+    T::Err: std::fmt::Display,
 {
-    loop {
-        let value = prompt_default(input, output, label, &default.to_string())?;
-        match value.parse::<T>() {
-            Ok(number) if number != T::default() => return Ok(number),
-            _ => writeln!(output, "Enter a number greater than zero.")?,
-        }
-    }
+    cliclack::input(label)
+        .default_input(&default.to_string())
+        .validate(|value: &String| match value.parse::<T>() {
+            Ok(number) if number != T::default() => Ok(()),
+            _ => Err("Enter a number greater than zero."),
+        })
+        .interact()
+        .map_err(prompt_error)
 }
 
 fn parse_revision(value: &str) -> Result<(Option<String>, Option<String>)> {
@@ -635,7 +596,6 @@ fn context_failures(summary: &str, failures: &[ContextError], hint: Option<&str>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use std::sync::Mutex;
 
     static PROMPT_LOCK: Mutex<()> = Mutex::new(());
@@ -730,35 +690,11 @@ mod tests {
     }
 
     #[test]
-    fn prompts_repeat_required_values_and_accept_defaults() {
-        let _lock = PROMPT_LOCK.lock().unwrap();
-        CANCELLED.store(false, Ordering::SeqCst);
-        let mut input = Cursor::new(b"\nworld\n\n".as_slice());
-        let mut output = Vec::new();
-        assert_eq!(
-            prompt_required(&mut input, &mut output, "World name").unwrap(),
-            "world"
-        );
-        assert_eq!(
-            prompt_default(&mut input, &mut output, "Virtual CPUs", "2").unwrap(),
-            "2"
-        );
-        let output = String::from_utf8(output)
-            .unwrap()
-            .replace(": ", ": [INPUT]");
-        insta::assert_snapshot!(output, @r###"
-        World name: [INPUT]A value is required.
-        World name: [INPUT]Virtual CPUs [2]: [INPUT]
-        "###);
-    }
-
-    #[test]
     fn prompt_cancels_after_a_signal() {
         let _lock = PROMPT_LOCK.lock().unwrap();
         CANCELLED.store(false, Ordering::SeqCst);
         cancel_prompt(0);
-        let error =
-            prompt_line(&mut Cursor::new(b"world\n"), &mut Vec::new(), "World name").unwrap_err();
+        let error = prompt_error(std::io::Error::other("prompt failed"));
         assert_eq!(error.to_string(), "creation cancelled");
         CANCELLED.store(false, Ordering::SeqCst);
     }

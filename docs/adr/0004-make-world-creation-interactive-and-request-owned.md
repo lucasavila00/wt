@@ -25,7 +25,7 @@ Make world inputs client-owned. Send them in the create request.
 
 ### Interactive `wt new`
 
-`wt new` is interactive. It asks one question per line:
+`wt new` is an interactive prompt flow:
 
 1. Context, when more than one context exists.
 2. World name.
@@ -48,12 +48,13 @@ Validate each answer before continuing. Ask again when an answer is invalid.
 Do not contact the server until the complete request is confirmed.
 
 Remove positional create arguments and create flags. Reject `wt new` when stdin
-or stdout is not a terminal.
+or stderr is not a terminal.
 
 ### Interruption and exit
 
-Use line-based prompts. Do not leave the terminal in raw mode between
-questions. EOF cancels creation and exits without contacting the server.
+The prompt UI may use raw terminal mode while collecting input. It must restore
+the terminal before returning. EOF or Escape cancels creation and exits without
+contacting the server.
 
 Handle `SIGINT`, `SIGTERM`, and `SIGHUP` as cancellation while prompting.
 Restore terminal state, print a short cancellation message, and exit nonzero.
