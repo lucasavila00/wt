@@ -1,9 +1,13 @@
 use anyhow::{bail, Context as _, Result};
 use clap::{Parser, Subcommand};
+use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use ssh_key::{HashAlg, PublicKey};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::io::Write as _;
-use std::path::Path;
+use std::io::{BufRead, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::sync::atomic::{AtomicBool, Ordering};
 use wt_api::{ApiRequest, CreateInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
@@ -19,20 +23,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a devcontainer-ready world.
-    New {
-        source: String,
-        name: String,
-        /// Check out BRANCH before starting the devcontainer.
-        ///
-        /// The checkout has an attached HEAD, so new commits are added to the branch.
-        #[arg(long, value_name = "BRANCH", conflicts_with = "ref")]
-        branch: Option<String>,
-        /// Check out REF with a detached HEAD before starting the devcontainer.
-        ///
-        /// REF may be a tag, commit SHA, or other Git commit-ish.
-        #[arg(long, value_name = "REF", conflicts_with = "branch")]
-        r#ref: Option<String>,
-    },
+    New,
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -53,37 +44,24 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New {
-            source,
-            name,
-            branch,
-            r#ref,
-        } => {
-            wt_api::validate_ssh_git_source(&source)?;
-            let (qualified_context, world_name) = inventory::parse_target(&config, &name)?;
-            let context = match qualified_context {
-                Some(context) => context,
-                None if config.contexts.len() == 1 => &config.contexts[0],
-                None => bail!(
-                    "world context is ambiguous; use one of: {}",
-                    config
-                        .contexts
-                        .iter()
-                        .map(|context| format!("{}.{}", context.name, world_name))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            };
-            let git_author = read_git_author()?;
+        Command::New => {
+            let input = prompt_create(&config)?;
+            let context = config
+                .context(&input.context)
+                .context("selected context is missing")?;
             let response = wt_cli::transport::call(
                 context,
                 &ApiRequest::new(Operation::Create(CreateInstance {
-                    name: world_name.clone(),
-                    source,
-                    git_branch: branch,
-                    git_ref: r#ref,
-                    git_user_name: git_author.name,
-                    git_user_email: git_author.email,
+                    name: input.name.clone(),
+                    source: input.source,
+                    git_branch: input.git_branch,
+                    git_ref: input.git_ref,
+                    git_user_name: input.git_user_name,
+                    git_user_email: input.git_user_email,
+                    vcpus: input.vcpus,
+                    memory_mib: input.memory_mib,
+                    disk_gib: input.disk_gib,
+                    ssh_authorized_keys: input.ssh_authorized_keys,
                 })),
             )
             .map_err(|error| {
@@ -158,6 +136,266 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+const DEFAULT_VCPUS: u32 = 2;
+const DEFAULT_MEMORY_MIB: u64 = 4096;
+const DEFAULT_DISK_GIB: u64 = 32;
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+struct CreateInput {
+    context: String,
+    name: wt_api::InstanceName,
+    source: String,
+    git_branch: Option<String>,
+    git_ref: Option<String>,
+    vcpus: u32,
+    memory_mib: u64,
+    disk_gib: u64,
+    ssh_authorized_keys: Vec<String>,
+    git_user_name: String,
+    git_user_email: String,
+}
+
+extern "C" fn cancel_prompt(_: i32) {
+    CANCELLED.store(true, Ordering::SeqCst);
+}
+
+struct SignalGuard(Vec<(Signal, SigAction)>);
+
+impl Drop for SignalGuard {
+    fn drop(&mut self) {
+        for (signal, action) in &self.0 {
+            // SAFETY: restore the action returned by the matching sigaction call.
+            let _ = unsafe { signal::sigaction(*signal, action) };
+        }
+    }
+}
+
+fn install_cancel_handlers() -> Result<SignalGuard> {
+    CANCELLED.store(false, Ordering::SeqCst);
+    let action = SigAction::new(
+        SigHandler::Handler(cancel_prompt),
+        SaFlags::empty(),
+        SigSet::empty(),
+    );
+    let mut previous = Vec::new();
+    for signal in [Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
+        // SAFETY: the handler only stores to a lock-free atomic.
+        let old = unsafe { signal::sigaction(signal, &action) }
+            .with_context(|| format!("install {signal} handler"))?;
+        previous.push((signal, old));
+    }
+    Ok(SignalGuard(previous))
+}
+
+fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        bail!("`wt new` requires an interactive terminal");
+    }
+    let _signals = install_cancel_handlers()?;
+    let git_author = read_git_author()?;
+    let mut input = std::io::stdin().lock();
+    let mut output = std::io::stdout().lock();
+    let default_context = config
+        .contexts
+        .first()
+        .context("no contexts are configured")?
+        .name
+        .clone();
+    let context = if config.contexts.len() == 1 {
+        default_context
+    } else {
+        loop {
+            let value = prompt_default(&mut input, &mut output, "Context", &default_context)?;
+            if config.context(&value).is_some() {
+                break value;
+            }
+            writeln!(output, "Unknown context: {value}")?;
+        }
+    };
+    let name = loop {
+        let value = prompt_required(&mut input, &mut output, "World name")?;
+        match wt_api::InstanceName::parse(value) {
+            Ok(name) => break name,
+            Err(error) => writeln!(output, "Invalid world name: {error}")?,
+        }
+    };
+    let source = loop {
+        let value = prompt_required(&mut input, &mut output, "Git repository")?;
+        match wt_api::validate_ssh_git_source(&value) {
+            Ok(()) => break value,
+            Err(error) => writeln!(output, "Invalid Git repository: {error}")?,
+        }
+    };
+    let revision = loop {
+        let value = prompt_default(&mut input, &mut output, "Revision", "default")?;
+        match parse_revision(&value) {
+            Ok(revision) => break revision,
+            Err(error) => writeln!(output, "{error}")?,
+        }
+    };
+    let vcpus = prompt_number(&mut input, &mut output, "Virtual CPUs", DEFAULT_VCPUS)?;
+    let memory_mib = prompt_number(&mut input, &mut output, "RAM (MiB)", DEFAULT_MEMORY_MIB)?;
+    let disk_gib = prompt_number(&mut input, &mut output, "Disk (GiB)", DEFAULT_DISK_GIB)?;
+    let keys = discover_public_keys()?;
+    writeln!(output, "\nWorld: {name}")?;
+    writeln!(output, "Context: {context}")?;
+    writeln!(output, "Repository: {source}")?;
+    let revision_summary = match &revision {
+        (Some(branch), None) => format!("branch:{branch}"),
+        (None, Some(reference)) => format!("ref:{reference}"),
+        _ => "default".to_owned(),
+    };
+    writeln!(output, "Revision: {revision_summary}")?;
+    writeln!(
+        output,
+        "Git author: {} <{}>",
+        git_author.name, git_author.email
+    )?;
+    writeln!(
+        output,
+        "Resources: {vcpus} CPU, {memory_mib} MiB RAM, {disk_gib} GiB disk"
+    )?;
+    writeln!(output, "SSH keys:")?;
+    for (_, fingerprint) in &keys {
+        writeln!(output, "  {fingerprint}")?;
+    }
+    loop {
+        let answer = prompt_default(&mut input, &mut output, "Create world?", "yes")?;
+        match answer.to_ascii_lowercase().as_str() {
+            "y" | "yes" => break,
+            "n" | "no" => bail!("creation cancelled"),
+            _ => writeln!(output, "Answer yes or no.")?,
+        }
+    }
+    Ok(CreateInput {
+        context,
+        name,
+        source,
+        git_branch: revision.0,
+        git_ref: revision.1,
+        vcpus,
+        memory_mib,
+        disk_gib,
+        ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
+        git_user_name: git_author.name,
+        git_user_email: git_author.email,
+    })
+}
+
+fn prompt_line(input: &mut impl BufRead, output: &mut impl Write, label: &str) -> Result<String> {
+    if CANCELLED.load(Ordering::SeqCst) {
+        bail!("creation cancelled");
+    }
+    write!(output, "{label}: ")?;
+    output.flush()?;
+    let mut value = String::new();
+    match input.read_line(&mut value) {
+        Ok(0) => bail!("creation cancelled"),
+        Ok(_) => {}
+        Err(_error) if CANCELLED.load(Ordering::SeqCst) => bail!("creation cancelled"),
+        Err(error) => return Err(error.into()),
+    }
+    if CANCELLED.load(Ordering::SeqCst) {
+        bail!("creation cancelled");
+    }
+    Ok(value.trim().to_owned())
+}
+
+fn prompt_required(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    label: &str,
+) -> Result<String> {
+    loop {
+        let value = prompt_line(input, output, label)?;
+        if !value.is_empty() {
+            return Ok(value);
+        }
+        writeln!(output, "A value is required.")?;
+    }
+}
+
+fn prompt_default(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    label: &str,
+    default: &str,
+) -> Result<String> {
+    let value = prompt_line(input, output, &format!("{label} [{default}]"))?;
+    Ok(if value.is_empty() {
+        default.to_owned()
+    } else {
+        value
+    })
+}
+
+fn prompt_number<T>(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    label: &str,
+    default: T,
+) -> Result<T>
+where
+    T: std::str::FromStr + std::fmt::Display + Copy + PartialEq + Default,
+{
+    loop {
+        let value = prompt_default(input, output, label, &default.to_string())?;
+        match value.parse::<T>() {
+            Ok(number) if number != T::default() => return Ok(number),
+            _ => writeln!(output, "Enter a number greater than zero.")?,
+        }
+    }
+}
+
+fn parse_revision(value: &str) -> Result<(Option<String>, Option<String>)> {
+    if value == "default" {
+        return Ok((None, None));
+    }
+    if let Some(branch) = value
+        .strip_prefix("branch:")
+        .filter(|value| !value.is_empty())
+    {
+        return Ok((Some(branch.to_owned()), None));
+    }
+    if let Some(reference) = value.strip_prefix("ref:").filter(|value| !value.is_empty()) {
+        return Ok((None, Some(reference.to_owned())));
+    }
+    bail!("Use default, branch:NAME, or ref:VALUE.")
+}
+
+fn discover_public_keys() -> Result<Vec<(String, String)>> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .context("HOME is not set")?;
+    let directory = home.join(".ssh");
+    let entries = std::fs::read_dir(&directory)
+        .with_context(|| format!("read SSH directory {}", directory.display()))?;
+    let mut keys = BTreeSet::new();
+    for entry in entries {
+        let entry = entry.with_context(|| format!("read {} entry", directory.display()))?;
+        if entry.path().extension().and_then(|value| value.to_str()) != Some("pub")
+            || !entry.file_type()?.is_file()
+        {
+            continue;
+        }
+        let value = std::fs::read_to_string(entry.path())
+            .with_context(|| format!("read public key {}", entry.path().display()))?;
+        let mut key = PublicKey::from_openssh(value.trim())
+            .with_context(|| format!("parse public key {}", entry.path().display()))?;
+        key.set_comment("");
+        keys.insert(key.to_openssh()?);
+    }
+    if keys.is_empty() {
+        bail!("no valid public keys found in {}", directory.display());
+    }
+    keys.into_iter()
+        .map(|key| {
+            let parsed = PublicKey::from_openssh(&key)?;
+            Ok((key, parsed.fingerprint(HashAlg::Sha256).to_string()))
+        })
+        .collect()
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -397,6 +635,10 @@ fn context_failures(summary: &str, failures: &[ContextError], hint: Option<&str>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+    use std::sync::Mutex;
+
+    static PROMPT_LOCK: Mutex<()> = Mutex::new(());
     use uuid::Uuid;
     use wt_api::{Instance, InstanceName, InstanceStatus, SshAccess};
 
@@ -470,48 +712,55 @@ mod tests {
     }
 
     #[test]
-    fn parses_new_branch_and_ref_options() {
-        let branch = Cli::try_parse_from([
-            "wt",
-            "new",
-            "git@example.test:repo.git",
-            "repo-feature",
-            "--branch",
-            "devcontainer-work",
-        ])
-        .unwrap();
-        let Command::New { branch, r#ref, .. } = branch.command else {
-            panic!("expected new command");
-        };
-        assert_eq!(branch.as_deref(), Some("devcontainer-work"));
-        assert_eq!(r#ref, None);
+    fn new_is_interactive_only() {
+        assert!(matches!(
+            Cli::try_parse_from(["wt", "new"]).unwrap().command,
+            Command::New
+        ));
+        assert!(Cli::try_parse_from(["wt", "new", "git@example.test:repo.git"]).is_err());
+        assert_eq!(
+            parse_revision("branch:work").unwrap(),
+            (Some("work".to_owned()), None)
+        );
+        assert_eq!(
+            parse_revision("ref:0123456789abcdef").unwrap(),
+            (None, Some("0123456789abcdef".to_owned()))
+        );
+        assert_eq!(parse_revision("default").unwrap(), (None, None));
+    }
 
-        let commit = Cli::try_parse_from([
-            "wt",
-            "new",
-            "git@example.test:repo.git",
-            "repo-feature",
-            "--ref",
-            "0123456789abcdef",
-        ])
-        .unwrap();
-        let Command::New { branch, r#ref, .. } = commit.command else {
-            panic!("expected new command");
-        };
-        assert_eq!(branch, None);
-        assert_eq!(r#ref.as_deref(), Some("0123456789abcdef"));
+    #[test]
+    fn prompts_repeat_required_values_and_accept_defaults() {
+        let _lock = PROMPT_LOCK.lock().unwrap();
+        CANCELLED.store(false, Ordering::SeqCst);
+        let mut input = Cursor::new(b"\nworld\n\n".as_slice());
+        let mut output = Vec::new();
+        assert_eq!(
+            prompt_required(&mut input, &mut output, "World name").unwrap(),
+            "world"
+        );
+        assert_eq!(
+            prompt_default(&mut input, &mut output, "Virtual CPUs", "2").unwrap(),
+            "2"
+        );
+        let output = String::from_utf8(output)
+            .unwrap()
+            .replace(": ", ": [INPUT]");
+        insta::assert_snapshot!(output, @r###"
+        World name: [INPUT]A value is required.
+        World name: [INPUT]Virtual CPUs [2]: [INPUT]
+        "###);
+    }
 
-        assert!(Cli::try_parse_from([
-            "wt",
-            "new",
-            "git@example.test:repo.git",
-            "repo-feature",
-            "--branch",
-            "work",
-            "--ref",
-            "0123456789abcdef",
-        ])
-        .is_err());
+    #[test]
+    fn prompt_cancels_after_a_signal() {
+        let _lock = PROMPT_LOCK.lock().unwrap();
+        CANCELLED.store(false, Ordering::SeqCst);
+        cancel_prompt(0);
+        let error =
+            prompt_line(&mut Cursor::new(b"world\n"), &mut Vec::new(), "World name").unwrap_err();
+        assert_eq!(error.to_string(), "creation cancelled");
+        CANCELLED.store(false, Ordering::SeqCst);
     }
 
     #[test]

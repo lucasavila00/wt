@@ -1,6 +1,6 @@
 ---
 source: crates/wt-server-setup/src/install_input.rs
-expression: "text.replace(&keys.path().display().to_string(), \"[KEY_DIR]\")"
+expression: text
 ---
 version = 1
 
@@ -21,12 +21,8 @@ registries = ["docker.io"]
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
-memory_mib = 8192
-vcpus = 4
-disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-ssh_authorized_keys_file = "[KEY_DIR]/id.pub"
 
 [install]
 binary_dir = "/usr/local/bin"

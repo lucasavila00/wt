@@ -109,6 +109,10 @@ fn create(name: &str) -> CreateInstance {
         git_ref: None,
         git_user_name: "Test User".into(),
         git_user_email: "test@example.invalid".into(),
+        vcpus: 1,
+        memory_mib: 1024,
+        disk_gib: 8,
+        ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".into()],
     }
 }
 
@@ -207,6 +211,27 @@ fn repeated_create_resumes_only_identical_setup() {
         .execute("tester", Operation::Create(different))
         .unwrap_err();
     assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+}
+
+#[test]
+fn create_retry_fingerprint_includes_resources_and_authorized_keys() {
+    for change in ["resources", "keys"] {
+        let temp = TempDir::new().unwrap();
+        let worker = Worker::default();
+        service(&temp, worker.clone())
+            .execute("tester", Operation::Create(create("sample")))
+            .unwrap();
+        let mut different = create("sample");
+        if change == "resources" {
+            different.memory_mib += 1;
+        } else {
+            different.ssh_authorized_keys[0].push_str(" changed-comment");
+        }
+        let error = service(&temp, worker)
+            .execute("tester", Operation::Create(different))
+            .unwrap_err();
+        assert_eq!(error.code, wt_api::ErrorCode::Conflict, "{change}");
+    }
 }
 
 #[test]

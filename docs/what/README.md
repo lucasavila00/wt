@@ -6,10 +6,11 @@ devcontainer recipe. Each environment is called a world.
 ## A world
 
 Suppose a repository named `foo` contains `.devcontainer/devcontainer.json`.
-Running:
+Running `wt new` opens an interactive prompt for the world name, Git source,
+revision, CPU, RAM, disk, and confirmation:
 
 ```text
-wt new git@github.com:example/foo.git foo-feature
+wt new
 ```
 
 creates a VM, clones `foo` into `/workspace`, and starts the environment defined
@@ -17,25 +18,20 @@ by that file. If the recipe uses Docker Compose, it starts the referenced
 services. The primary devcontainer is the container that VS Code or the Dev
 Container CLI would normally open for development.
 
-By default, WT checks out the repository's default branch. To select a different
-revision, pass one of these mutually exclusive options:
+By default, WT checks out the repository's default branch. The revision prompt
+also accepts:
 
-- `--branch BRANCH` checks out a branch with an attached HEAD. New commits made
+- `branch:BRANCH` checks out a branch with an attached HEAD. New commits made
   in the world are added to that branch.
-- `--ref REF` checks out a tag, commit SHA, or other Git commit-ish with a
+- `ref:REF` checks out a tag, commit SHA, or other Git commit-ish with a
   detached HEAD. Use this to create a world pinned to a specific revision.
 
 WT performs the checkout before it reads and starts the devcontainer recipe, so
 the selected revision supplies `.devcontainer/devcontainer.json` and any files
 referenced by that recipe.
 
-For example:
-
-```text
-wt new git@github.com:example/foo.git foo-feature --branch feature/api
-wt new git@github.com:example/foo.git foo-release --ref v1.2.0
-wt new git@github.com:example/foo.git foo-pinned --ref 0123456789abcdef
-```
+The resource prompts default to 2 CPUs, 4096 MiB RAM, and 32 GiB disk. WT reads
+and authorizes every valid regular `~/.ssh/*.pub` file from the workstation.
 
 Each world contains:
 
@@ -63,7 +59,7 @@ while starting the devcontainer.
 
 | Command | Result |
 |---------|--------|
-| `wt new SOURCE NAME [--branch BRANCH \| --ref REF]` | Create a guest and wait for its setup SSH endpoint |
+| `wt new` | Interactively create a guest and wait for its setup SSH endpoint |
 | `wt ls` | List worlds across configured contexts |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |

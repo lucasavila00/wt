@@ -41,6 +41,8 @@ impl<W: WorldWorker> Service<W> {
                 "Git branch and ref are mutually exclusive",
             ));
         }
+        wt_api::validate_create_resources(&request)
+            .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = serde_json::to_string(&(
             &request.source,
@@ -48,6 +50,10 @@ impl<W: WorldWorker> Service<W> {
             &request.git_ref,
             &request.git_user_name,
             &request.git_user_email,
+            request.vcpus,
+            request.memory_mib,
+            request.disk_gib,
+            &request.ssh_authorized_keys,
         ))
         .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
         match self.store.get(owner, &request.name) {
@@ -107,6 +113,10 @@ impl<W: WorldWorker> Service<W> {
             git_ref: request.git_ref.as_deref(),
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
+            memory_mib: request.memory_mib,
+            vcpus: request.vcpus,
+            disk_gib: request.disk_gib,
+            ssh_authorized_keys: &request.ssh_authorized_keys,
         };
         let result = self.worker.provision(&spec, &mut std::io::sink());
         match result {

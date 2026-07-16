@@ -39,11 +39,9 @@ cp examples/server-config/wt-server.development.toml ./server.toml
 
 Edit `server.toml`. At minimum, check:
 
-- `git.identity_file`: encrypted SSH key used to clone repositories.
 - `git.known_hosts_file`: trusted Git host keys.
-- `guest.ssh_authorized_keys_file`: public keys allowed into worlds.
-- `guest.session`: `tmux` or `byobu`.
-- `guest.memory_mib`, `guest.vcpus`, and `guest.disk_gib`.
+- `image.build_memory_mib`, `image.build_vcpus`, and `image.build_disk_gib`:
+  temporary resources used to build the golden image.
 - `registry_cache.registries`: registry hosts whose public images are cached.
 
 Install:
@@ -81,7 +79,7 @@ Include ~/.ssh/wt/config
 ## Create and enter a world
 
 ```bash
-wt new git@github.com:org/repo.git local.repo-feature
+wt new
 wt ls
 ssh local.repo-feature
 ```
@@ -119,20 +117,9 @@ context. The server's SSH service must allow TCP forwarding, and the server
 must be able to reach its libvirt guests. The workstation does not need a route
 to the libvirt network.
 
-Before server setup, copy the client's public key:
-
-```bash
-scp ~/.ssh/id_ed25519.pub wt-server:~/.ssh/wt-client.pub
-```
-
-Set this path in the server install input, then install the server:
-
-```toml
-[guest]
-ssh_authorized_keys_file = "~/.ssh/wt-client.pub"
-```
-
-Keep the other `[guest]` values from the sample.
+Install the server from the sample config. World SSH keys are collected from
+`~/.ssh/*.pub` on the workstation when `wt new` runs. They do not need to be
+copied to the server.
 
 Install the client:
 
@@ -159,7 +146,7 @@ host = "wt-server"
 Use it:
 
 ```bash
-wt new git@github.com:org/repo.git lab.repo-feature
+wt new
 ssh lab.repo-feature
 ```
 

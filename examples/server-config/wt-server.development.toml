@@ -5,6 +5,9 @@ version = 1
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
 source_sha256 = "5fa5b05e5ec239858c4531485d6023b0896448c2df7c63b34f8dae6ea6051a44"
 installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+build_memory_mib = 8192
+build_vcpus = 8
+build_disk_gib = 32
 
 [libvirt]
 network = "default"
@@ -20,12 +23,8 @@ registries = ["docker.io"]
 known_hosts_file = "~/.ssh/known_hosts"
 
 [guest]
-memory_mib = 8192
-vcpus = 8
-disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-ssh_authorized_keys_file = "~/.ssh/id_ed25519.pub"
 
 [install]
 binary_dir = "/usr/local/bin"

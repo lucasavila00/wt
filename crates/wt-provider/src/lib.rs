@@ -89,6 +89,10 @@ pub struct ProvisionSpec<'a> {
     pub git_ref: Option<&'a str>,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
+    pub memory_mib: u64,
+    pub vcpus: u32,
+    pub disk_gib: u64,
+    pub ssh_authorized_keys: &'a [String],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,26 +116,13 @@ pub trait WorldWorker {
 pub struct CompositeWorker<P> {
     provider: P,
     provisioner: WorldProvisioner,
-    machine_resources: MachineResources,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MachineResources {
-    pub memory_mib: u64,
-    pub vcpus: u32,
-    pub disk_gib: u64,
 }
 
 impl<P> CompositeWorker<P> {
-    pub fn new(
-        provider: P,
-        provisioner: WorldProvisioner,
-        machine_resources: MachineResources,
-    ) -> Self {
+    pub fn new(provider: P, provisioner: WorldProvisioner) -> Self {
         Self {
             provider,
             provisioner,
-            machine_resources,
         }
     }
 }
@@ -146,9 +137,9 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         let machine = self.provider.create(
             &MachineSpec {
                 provider_id: provider_id.clone(),
-                memory_mib: self.machine_resources.memory_mib,
-                vcpus: self.machine_resources.vcpus,
-                disk_gib: self.machine_resources.disk_gib,
+                memory_mib: spec.memory_mib,
+                vcpus: spec.vcpus,
+                disk_gib: spec.disk_gib,
             },
             log,
         )?;
@@ -293,7 +284,6 @@ mod tests {
             registry_cache_ca_file: temp.path().join("ca.crt"),
             git_known_hosts_file: known_hosts,
             recipe_timeout: Duration::from_secs(10),
-            ssh_authorized_keys: vec!["ssh-ed25519 AAAATEST".to_owned()],
             bootstrap: BootstrapPolicy {
                 packages,
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
@@ -308,11 +298,6 @@ mod tests {
                 cleanup_fails: true,
             },
             provisioner,
-            MachineResources {
-                memory_mib: 1024,
-                vcpus: 1,
-                disk_gib: 8,
-            },
         );
         let name = InstanceName::parse("failure").unwrap();
         let spec = ProvisionSpec {
@@ -325,6 +310,10 @@ mod tests {
             git_ref: None,
             git_user_name: "Test User",
             git_user_email: "test@example.invalid",
+            memory_mib: 1024,
+            vcpus: 1,
+            disk_gib: 8,
+            ssh_authorized_keys: &["ssh-ed25519 AAAATEST".to_owned()],
         };
         let mut log = Vec::new();
         let error = worker.provision(&spec, &mut log).unwrap_err();

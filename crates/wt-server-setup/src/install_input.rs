@@ -24,6 +24,9 @@ pub(crate) struct InstallImageConfig {
     pub source_url: String,
     pub source_sha256: String,
     pub installed_path: PathBuf,
+    pub build_memory_mib: u64,
+    pub build_vcpus: u32,
+    pub build_disk_gib: u64,
 }
 
 impl InstallInput {
@@ -54,6 +57,12 @@ impl InstallInput {
                 .all(|byte| byte.is_ascii_hexdigit())
         {
             return Err("image.source_sha256 must contain 64 hexadecimal characters".to_owned());
+        }
+        if self.image.build_memory_mib == 0
+            || self.image.build_vcpus == 0
+            || self.image.build_disk_gib == 0
+        {
+            return Err("image build resource values must be greater than zero".to_owned());
         }
         self.materialize().validate()
     }
@@ -91,7 +100,6 @@ pub(crate) fn serialize_server_config(config: &ServerConfig) -> Result<Vec<u8>, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     const VALID: &str = r#"
 version = 1
@@ -100,6 +108,9 @@ version = 1
 source_url = "https://cloud-images.ubuntu.com/image.img"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 installed_path = "/var/lib/wt/images/wt.qcow2"
+build_memory_mib = 8192
+build_vcpus = 4
+build_disk_gib = 32
 
 [libvirt]
 network = "default"
@@ -115,34 +126,22 @@ registries = ["docker.io"]
 known_hosts_file = "/tmp/wt-test-git-known-hosts"
 
 [guest]
-memory_mib = 8192
-vcpus = 4
-disk_gib = 32
 boot_timeout_seconds = 300
 recipe_timeout_seconds = 900
-ssh_authorized_keys_file = "KEY_FILE"
 
 [install]
 binary_dir = "/usr/local/bin"
 "#;
 
-    fn parse(value: &str) -> Result<(InstallInput, tempfile::TempDir), String> {
-        let key_dir = tempfile::tempdir().unwrap();
-        let key_file = key_dir.path().join("id.pub");
-        fs::write(
-            &key_file,
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestOnlyKeyMaterial wt@example\n",
-        )
-        .unwrap();
-        let value = value.replace("KEY_FILE", key_file.to_str().unwrap());
-        let input: InstallInput = toml::from_str(&value).map_err(|error| error.to_string())?;
+    fn parse(value: &str) -> Result<InstallInput, String> {
+        let input: InstallInput = toml::from_str(value).map_err(|error| error.to_string())?;
         input.validate()?;
-        Ok((input, key_dir))
+        Ok(input)
     }
 
     #[test]
     fn materialize_drops_image_source_fields() {
-        let (input, keys) = parse(VALID).unwrap();
+        let input = parse(VALID).unwrap();
         let server = input.materialize();
         assert_eq!(
             server.image.installed_path,
@@ -150,10 +149,7 @@ binary_dir = "/usr/local/bin"
         );
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();
-        insta::assert_snapshot!(
-            "materialized_server_config",
-            text.replace(&keys.path().display().to_string(), "[KEY_DIR]")
-        );
+        insta::assert_snapshot!("materialized_server_config", text);
     }
 
     #[test]
@@ -164,7 +160,7 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn materialize_round_trips_as_server_config() {
-        let (input, _keys) = parse(VALID).unwrap();
+        let input = parse(VALID).unwrap();
         let server = input.materialize();
         let bytes = serialize_server_config(&server).unwrap();
         let reloaded: ServerConfig = toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();

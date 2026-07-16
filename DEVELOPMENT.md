@@ -52,7 +52,7 @@ make e2e-tests
 ## Manual test
 
 ```bash
-wt new git@github.com:lucasavila00/jsdev-sample.git jsdev-manual
+wt new
 wt ls
 ssh jsdev-manual
 ssh jsdev-manual-vs

@@ -177,7 +177,7 @@ fn build_image_inner(
             "qemu-img",
             "resize",
             disk,
-            format!("{}G", server.guest.disk_gib),
+            format!("{}G", input.image.build_disk_gib),
         ),
         "resize image build disk",
     )?;
@@ -202,9 +202,9 @@ fn build_image_inner(
             "--name",
             BUILD_NAME,
             "--memory",
-            server.guest.memory_mib.to_string(),
+            input.image.build_memory_mib.to_string(),
             "--vcpus",
-            server.guest.vcpus.to_string(),
+            input.image.build_vcpus.to_string(),
             "--virt-type",
             "kvm",
             "--os-variant",
@@ -307,7 +307,7 @@ fn build_image_inner(
         version: IMAGE_MANIFEST_VERSION,
         recipe_version: recipe::RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
-        config_sha256: sha_bytes(server_bytes),
+        config_sha256: image_config_sha(server_bytes, input),
         golden_sha256: sha_file(prepared)?,
         packages,
         devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
@@ -498,7 +498,7 @@ pub(crate) fn verify_installed_image(
     if manifest.version != IMAGE_MANIFEST_VERSION
         || manifest.recipe_version != recipe::RECIPE_VERSION
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
-        || manifest.config_sha256 != sha_bytes(server_bytes)
+        || manifest.config_sha256 != image_config_sha(server_bytes, input)
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
     {
         bail!("installed image provenance differs from the current install input");
@@ -511,6 +511,18 @@ pub(crate) fn verify_installed_image(
         &manifest.golden_sha256,
         "installed golden image",
     )
+}
+
+fn image_config_sha(server_bytes: &[u8], input: &InstallInput) -> String {
+    let mut bytes = server_bytes.to_vec();
+    bytes.extend_from_slice(
+        format!(
+            "\nimage_memory_mib={}\nimage_vcpus={}\nimage_disk_gib={}\n",
+            input.image.build_memory_mib, input.image.build_vcpus, input.image.build_disk_gib
+        )
+        .as_bytes(),
+    );
+    sha_bytes(&bytes)
 }
 
 pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {

@@ -72,7 +72,7 @@ fn run_server() -> Result<()> {
             .map_err(anyhow::Error::msg)?,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = CompositeWorker::new(provider, provisioner, server_config.machine_resources());
+    let worker = CompositeWorker::new(provider, provisioner);
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {

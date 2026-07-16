@@ -26,7 +26,7 @@ wt-provider = { path = "crates/wt-provider" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
-nix = { version = "0.31.2", features = ["user"] }
+nix = { version = "0.31.2", features = ["signal", "user"] }
 quick-xml = "0.39.2"
 base64 = "0.22.1"
 insta = "1.47.0"
