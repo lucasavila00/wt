@@ -35,6 +35,11 @@ have defaults. The client validates every answer and reads all regular
 The request owns the world resources and authorized keys. The server config
 owns only infrastructure, image-build settings, trust, and timeouts.
 
+`wt ls` shows each world's context, name, status, repository name, requested
+CPU/RAM/disk resources, and any lifecycle error. Guest IP addresses
+and raw SSH endpoints are omitted because managed world aliases are the client
+connection interface.
+
 `wt new` returns after the guest and its SSH endpoint are ready. The first
 `ssh NAME` forwards the workstation SSH agent and starts the remaining install
 inside Byobu. Reconnecting attaches to the same session and retries a failed

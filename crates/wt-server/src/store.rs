@@ -50,6 +50,9 @@ impl Store {
                  last_error    TEXT,
                  backend_id    TEXT NOT NULL UNIQUE,
                  source        TEXT NOT NULL,
+                 vcpus         INTEGER NOT NULL,
+                 memory_mib    INTEGER NOT NULL,
+                 disk_gib      INTEGER NOT NULL,
                  setup_fingerprint TEXT NOT NULL,
                  ssh_user      TEXT,
                  ssh_host      TEXT,
@@ -76,8 +79,9 @@ impl Store {
         let instance = &stored.instance;
         let result = self.connection.execute(
             "INSERT INTO instances
-             (id, owner, name, status, backend_id, source, setup_fingerprint, ssh_host_keys, app_ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', '[]')",
+             (id, owner, name, status, backend_id, source,
+              vcpus, memory_mib, disk_gib, setup_fingerprint, ssh_host_keys, app_ssh_host_keys)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '[]', '[]')",
             params![
                 instance.id.to_string(),
                 instance.owner,
@@ -85,6 +89,9 @@ impl Store {
                 instance.status.to_string(),
                 stored.backend_id,
                 instance.source,
+                instance.vcpus,
+                instance.memory_mib,
+                instance.disk_gib,
                 stored.setup_fingerprint,
             ],
         );
@@ -104,6 +111,7 @@ impl Store {
             .query_row(
                 "SELECT id, owner, name, status,
                         guest_ip, last_error, backend_id, source,
+                        vcpus, memory_mib, disk_gib,
                         ssh_user, ssh_host, ssh_port, ssh_host_keys,
                         app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
                  FROM instances WHERE owner = ?1 AND name = ?2",
@@ -118,6 +126,7 @@ impl Store {
         let mut statement = self.connection.prepare(
             "SELECT id, owner, name, status,
                     guest_ip, last_error, backend_id, source,
+                    vcpus, memory_mib, disk_gib,
                     ssh_user, ssh_host, ssh_port, ssh_host_keys,
                     app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
              FROM instances WHERE owner = ?1 ORDER BY name",
@@ -249,41 +258,44 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> 
             guest_ip: row.get(4)?,
             last_error: row.get(5)?,
             source: row.get(7)?,
+            vcpus: row.get(8)?,
+            memory_mib: row.get(9)?,
+            disk_gib: row.get(10)?,
             ssh: ssh_from_row(row)?,
             app_ssh: app_ssh_from_row(row)?,
         },
         backend_id: row.get(6)?,
-        setup_fingerprint: row.get(15)?,
+        setup_fingerprint: row.get(18)?,
     })
 }
 
 fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
-    let user: Option<String> = row.get(8)?;
-    let Some(user) = user else {
-        return Ok(None);
-    };
-    let keys: String = row.get(11)?;
-    let host_keys =
-        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
-    Ok(Some(SshAccess {
-        user,
-        host: row.get(9)?,
-        port: row.get(10)?,
-        host_keys,
-    }))
-}
-
-fn app_ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<AppSshAccess>> {
-    let user: Option<String> = row.get(12)?;
+    let user: Option<String> = row.get(11)?;
     let Some(user) = user else {
         return Ok(None);
     };
     let keys: String = row.get(14)?;
     let host_keys =
         serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
+    Ok(Some(SshAccess {
+        user,
+        host: row.get(12)?,
+        port: row.get(13)?,
+        host_keys,
+    }))
+}
+
+fn app_ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<AppSshAccess>> {
+    let user: Option<String> = row.get(15)?;
+    let Some(user) = user else {
+        return Ok(None);
+    };
+    let keys: String = row.get(17)?;
+    let host_keys =
+        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
     Ok(Some(AppSshAccess {
         user,
-        port: row.get(13)?,
+        port: row.get(16)?,
         host_keys,
     }))
 }
@@ -323,6 +335,9 @@ mod tests {
 
         assert_eq!(version, 1);
         assert!(columns.iter().any(|name| name == "setup_fingerprint"));
+        for name in ["vcpus", "memory_mib", "disk_gib"] {
+            assert!(columns.iter().any(|column| column == name));
+        }
         assert!(!columns.iter().any(|name| name == "job_acknowledged"));
         let log_table: Option<String> = store
             .connection

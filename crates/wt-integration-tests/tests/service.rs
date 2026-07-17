@@ -136,6 +136,9 @@ fn create_returns_setup_ready_world_synchronously() {
         panic!()
     };
     assert_eq!(instance.status, InstanceStatus::Setup);
+    assert_eq!(instance.vcpus, 1);
+    assert_eq!(instance.memory_mib, 1024);
+    assert_eq!(instance.disk_gib, 8);
     assert!(instance.ssh.is_some());
     assert!(instance.app_ssh.is_none());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -159,6 +162,9 @@ fn list_reconciles_completed_setup_to_running() {
         panic!()
     };
     assert_eq!(instances[0].status, InstanceStatus::Running);
+    assert_eq!(instances[0].vcpus, 1);
+    assert_eq!(instances[0].memory_mib, 1024);
+    assert_eq!(instances[0].disk_gib, 8);
     assert!(instances[0].app_ssh.is_some());
 }
 
@@ -373,6 +379,9 @@ fn startup_recovery_marks_provisioning_as_error() {
                 owner: "tester".into(),
                 status: InstanceStatus::Provisioning,
                 source: "git@example.test:repo.git".into(),
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
