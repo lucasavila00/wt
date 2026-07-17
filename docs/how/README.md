@@ -72,5 +72,6 @@ into the running state.
 | [Libvirt/KVM](./bare-metal-agent.md) | World lifecycle |
 | [Provider architecture](./provider-api.md) | Machine providers, guest transport, and world provisioning |
 | [Registry cache](./registry-cache.md) | Shared image-blob cache |
+| [Database](./database.md) | SQLite storage, Diesel models, and migrations |
 
 User-visible behavior: [What WT does](../what/README.md).

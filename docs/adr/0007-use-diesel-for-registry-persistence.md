@@ -26,8 +26,8 @@ Replace `rusqlite` with Diesel and its SQLite backend.
 The first migration creates the whole schema. We will run `make clear` during
 the change. We will not migrate or detect the old database format.
 
-The Diesel CLI may help developers create migrations. It is not needed on the
-server.
+Run Diesel CLI commands from `crates/wt-server`. Its config regenerates
+`src/schema.rs` when migrations run. The CLI is not needed on the server.
 
 ## Consequences
 
