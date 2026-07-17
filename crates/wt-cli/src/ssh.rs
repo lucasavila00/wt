@@ -110,7 +110,7 @@ fn world_title(qualified: &str, source: &str) -> String {
     }
 }
 
-fn repository_name(source: &str) -> Option<&str> {
+pub fn repository_name(source: &str) -> Option<&str> {
     let path = if let Some(rest) = source.strip_prefix("ssh://") {
         rest.split_once('/')?.1
     } else {
@@ -219,6 +219,9 @@ mod tests {
             owner: "lucas".into(),
             status: InstanceStatus::Running,
             source: "git@example.test:repo.git".into(),
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
             guest_ip: Some("192.0.2.2".into()),
             last_error: None,
             ssh: Some(SshAccess {
@@ -283,6 +286,9 @@ mod tests {
             owner: "lucas".into(),
             status: InstanceStatus::Setup,
             source: "git@example.test:repo.git".into(),
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
             guest_ip: Some("192.0.2.2".into()),
             last_error: None,
             ssh: Some(SshAccess {
@@ -323,6 +329,9 @@ mod tests {
                 owner: "lucas".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
                 guest_ip: Some("192.0.2.2".into()),
                 last_error: None,
                 ssh: Some(SshAccess {
@@ -381,6 +390,9 @@ mod tests {
                 owner: "lucas".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
                 guest_ip: Some(host.into()),
                 last_error: None,
                 ssh: Some(SshAccess {

@@ -481,23 +481,20 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         "CONTEXT".to_owned(),
         "NAME".to_owned(),
         "STATUS".to_owned(),
-        "IP".to_owned(),
-        "SSH".to_owned(),
+        "REPO".to_owned(),
+        "RESOURCES".to_owned(),
         "DETAIL".to_owned(),
     ]);
     rows.extend(instances.iter().map(|item| {
         let instance = &item.instance;
-        let target = instance
-            .ssh
-            .as_ref()
-            .map(|ssh| format!("{}@{}:{}", ssh.user, ssh.host, ssh.port))
-            .unwrap_or_else(|| "-".to_owned());
         [
             item.context.clone(),
             instance.name.to_string(),
             instance.status.to_string(),
-            instance.guest_ip.as_deref().unwrap_or("-").to_owned(),
-            target,
+            wt_cli::ssh::repository_name(&instance.source)
+                .unwrap_or("-")
+                .to_owned(),
+            format_resources(instance.vcpus, instance.memory_mib, instance.disk_gib),
             instance.last_error.as_deref().unwrap_or("-").to_owned(),
         ]
     }));
@@ -513,7 +510,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     for row in rows {
         writeln!(
             output,
-            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<ip_width$}  {:<ssh_width$}  {}",
+            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<repo_width$}  {:<resources_width$}  {}",
             row[0],
             row[1],
             row[2],
@@ -523,12 +520,21 @@ fn format_instances(instances: &[ContextInstance]) -> String {
             context_width = widths[0],
             name_width = widths[1],
             status_width = widths[2],
-            ip_width = widths[3],
-            ssh_width = widths[4],
+            repo_width = widths[3],
+            resources_width = widths[4],
         )
         .expect("writing to a String cannot fail");
     }
     output
+}
+
+fn format_resources(vcpus: u32, memory_mib: u64, disk_gib: u64) -> String {
+    let memory = if memory_mib.is_multiple_of(1024) {
+        format!("{}G", memory_mib / 1024)
+    } else {
+        format!("{memory_mib}MiB")
+    };
+    format!("{vcpus} CPU · {memory} · {disk_gib}G")
 }
 
 fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Context> {
@@ -611,6 +617,9 @@ mod tests {
                 owner: "tester".to_owned(),
                 status,
                 source: "git@example.test:repo.git".to_owned(),
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
@@ -623,6 +632,7 @@ mod tests {
     fn formats_aligned_instance_columns_without_tabs() {
         let provisioning = item("local", "jsdev-manual", InstanceStatus::Provisioning);
         let mut running = item("remote-lab", "a", InstanceStatus::Running);
+        running.instance.memory_mib = 1536;
         running.instance.guest_ip = Some("192.0.2.10".to_owned());
         running.instance.ssh = Some(SshAccess {
             user: "wt".to_owned(),
@@ -634,16 +644,16 @@ mod tests {
         let output = format_instances(&[provisioning, running]);
 
         insta::assert_snapshot!(output, @r###"
-        CONTEXT     NAME          STATUS        IP          SSH                 DETAIL
-        local       jsdev-manual  provisioning  -           -                   -
-        remote-lab  a             running       192.0.2.10  wt@192.0.2.10:2222  -
+        CONTEXT     NAME          STATUS        REPO  RESOURCES              DETAIL
+        local       jsdev-manual  provisioning  repo  2 CPU · 4G · 32G       -
+        remote-lab  a             running       repo  2 CPU · 1536MiB · 32G  -
         "###);
         assert!(!output.contains('\t'));
     }
 
     #[test]
     fn formats_header_for_empty_inventory() {
-        insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  IP  SSH  DETAIL");
+        insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  REPO  RESOURCES  DETAIL");
     }
 
     #[test]
@@ -652,8 +662,8 @@ mod tests {
         failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
         insta::assert_snapshot!(format_instances(&[failed]), @r###"
-        CONTEXT  NAME   STATUS  IP  SSH  DETAIL
-        local    jsdev  error   -   -    SSH endpoint identity mismatch
+        CONTEXT  NAME   STATUS  REPO  RESOURCES         DETAIL
+        local    jsdev  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch
         "###);
     }
 

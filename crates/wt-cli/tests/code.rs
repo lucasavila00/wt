@@ -25,7 +25,7 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"operation":"list"'*)
-    printf '%s\n' '{{"protocol_version":1,"outcome":"ok","response":{{"response":"instances","instances":[{{"id":"00000000-0000-0000-0000-000000000001","name":"jsdev","owner":"tester","status":"{status}","source":"git@example.test:group/repo.git","guest_ip":"192.0.2.2","ssh":{{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}},"app_ssh":{{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}}}]}}}}'
+    printf '%s\n' '{{"protocol_version":1,"outcome":"ok","response":{{"response":"instances","instances":[{{"id":"00000000-0000-0000-0000-000000000001","name":"jsdev","owner":"tester","status":"{status}","source":"git@example.test:group/repo.git","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}},"app_ssh":{{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}}}]}}}}'
     ;;
   *) exit 2 ;;
 esac

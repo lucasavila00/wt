@@ -131,6 +131,9 @@ pub struct Instance {
     pub owner: String,
     pub status: InstanceStatus,
     pub source: String,
+    pub vcpus: u32,
+    pub memory_mib: u64,
+    pub disk_gib: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
