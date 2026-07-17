@@ -107,6 +107,7 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
             || !has(binds, &expected_cache)
             || !has(binds, &expected_ca)
             || !has(env, "ALLOW_PUSH=true")
+            || !has(env, "DISABLE_IPV6=true")
             || !has(env, "ENABLE_MANIFEST_CACHE=false")
             || !has(
                 env,
@@ -156,6 +157,8 @@ fn ensure_container(runner: &impl Runner, config: &ServerConfig, bridge: &str) -
         &publish,
         "--env",
         "ALLOW_PUSH=true",
+        "--env",
+        "DISABLE_IPV6=true",
         "--env",
         "ENABLE_MANIFEST_CACHE=false",
         "--env",
