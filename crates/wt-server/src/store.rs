@@ -1,12 +1,19 @@
-use rusqlite::{params, Connection, ErrorCode as SqliteErrorCode, OptionalExtension};
+use crate::schema::instances;
+use diesel::connection::SimpleConnection;
+use diesel::prelude::*;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
+use diesel::sqlite::SqliteConnection;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use std::cell::RefCell;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
 use wt_api::{AppSshAccess, Instance, InstanceName, InstanceStatus, SshAccess};
 
-#[derive(Debug)]
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
 pub struct Store {
-    connection: Connection,
+    connection: RefCell<SqliteConnection>,
 }
 
 #[derive(Clone, Debug)]
@@ -22,150 +29,161 @@ pub enum StoreError {
     Conflict,
     #[error("instance not found")]
     NotFound,
+    #[error("database connection error: {0}")]
+    Connection(#[from] diesel::ConnectionError),
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] DieselError),
+    #[error("database migration error: {0}")]
+    Migration(String),
     #[error("invalid stored data: {0}")]
     InvalidData(String),
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = instances)]
+struct NewInstance<'a> {
+    id: String,
+    owner: &'a str,
+    name: &'a str,
+    status: String,
+    backend_id: &'a str,
+    source: &'a str,
+    vcpus: i64,
+    memory_mib: i64,
+    disk_gib: i64,
+    setup_fingerprint: &'a str,
+    ssh_host_keys: &'static str,
+    app_ssh_host_keys: &'static str,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = instances)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct InstanceRow {
+    id: String,
+    owner: String,
+    name: String,
+    status: String,
+    guest_ip: Option<String>,
+    last_error: Option<String>,
+    backend_id: String,
+    source: String,
+    vcpus: i64,
+    memory_mib: i64,
+    disk_gib: i64,
+    setup_fingerprint: String,
+    ssh_user: Option<String>,
+    ssh_host: Option<String>,
+    ssh_port: Option<i32>,
+    ssh_host_keys: String,
+    app_ssh_user: Option<String>,
+    app_ssh_port: Option<i32>,
+    app_ssh_host_keys: String,
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
-        let create = !path.exists();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 StoreError::InvalidData(format!("create state directory: {error}"))
             })?;
         }
-        let connection = Connection::open(path)?;
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
-        connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
-        if create {
-            connection.execute_batch(
-                "CREATE TABLE instances (
-                 id            TEXT PRIMARY KEY,
-                 owner         TEXT NOT NULL,
-                 name          TEXT NOT NULL,
-                 status        TEXT NOT NULL,
-                 guest_ip      TEXT,
-                 last_error    TEXT,
-                 backend_id    TEXT NOT NULL UNIQUE,
-                 source        TEXT NOT NULL,
-                 vcpus         INTEGER NOT NULL,
-                 memory_mib    INTEGER NOT NULL,
-                 disk_gib      INTEGER NOT NULL,
-                 setup_fingerprint TEXT NOT NULL,
-                 ssh_user      TEXT,
-                 ssh_host      TEXT,
-                 ssh_port      INTEGER,
-                 ssh_host_keys TEXT NOT NULL,
-                 app_ssh_user      TEXT,
-                 app_ssh_port      INTEGER,
-                 app_ssh_host_keys TEXT NOT NULL,
-                 UNIQUE(owner, name)
-             );
-             PRAGMA user_version = 1;",
-            )?;
-        }
-        let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version != 1 {
-            return Err(StoreError::InvalidData(format!(
-                "unsupported registry schema version {version}; expected 1; run make clear before reinstalling"
-            )));
-        }
-        Ok(Self { connection })
+        let path = path
+            .to_str()
+            .ok_or_else(|| StoreError::InvalidData("database path is not UTF-8".into()))?;
+        let mut connection = SqliteConnection::establish(path)?;
+        connection.batch_execute(
+            "PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;",
+        )?;
+        connection
+            .run_pending_migrations(MIGRATIONS)
+            .map_err(|error| StoreError::Migration(error.to_string()))?;
+        Ok(Self {
+            connection: RefCell::new(connection),
+        })
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
         let instance = &stored.instance;
-        let result = self.connection.execute(
-            "INSERT INTO instances
-             (id, owner, name, status, backend_id, source,
-              vcpus, memory_mib, disk_gib, setup_fingerprint, ssh_host_keys, app_ssh_host_keys)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '[]', '[]')",
-            params![
-                instance.id.to_string(),
-                instance.owner,
-                instance.name.as_str(),
-                instance.status.to_string(),
-                stored.backend_id,
-                instance.source,
-                instance.vcpus,
-                instance.memory_mib,
-                instance.disk_gib,
-                stored.setup_fingerprint,
-            ],
-        );
-        match result {
+        let row = NewInstance {
+            id: instance.id.to_string(),
+            owner: &instance.owner,
+            name: instance.name.as_str(),
+            status: instance.status.to_string(),
+            backend_id: &stored.backend_id,
+            source: &instance.source,
+            vcpus: instance.vcpus.into(),
+            memory_mib: to_i64(instance.memory_mib, "memory_mib")?,
+            disk_gib: to_i64(instance.disk_gib, "disk_gib")?,
+            setup_fingerprint: &stored.setup_fingerprint,
+            ssh_host_keys: "[]",
+            app_ssh_host_keys: "[]",
+        };
+        match diesel::insert_into(instances::table)
+            .values(&row)
+            .execute(&mut *self.connection.borrow_mut())
+        {
             Ok(_) => Ok(()),
-            Err(rusqlite::Error::SqliteFailure(error, _))
-                if error.code == SqliteErrorCode::ConstraintViolation =>
-            {
+            Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
                 Err(StoreError::Conflict)
             }
-            Err(error) => Err(StoreError::Database(error)),
+            Err(error) => Err(error.into()),
         }
     }
 
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
-        self.connection
-            .query_row(
-                "SELECT id, owner, name, status,
-                        guest_ip, last_error, backend_id, source,
-                        vcpus, memory_mib, disk_gib,
-                        ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                        app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
-                 FROM instances WHERE owner = ?1 AND name = ?2",
-                params![owner, name.as_str()],
-                row_to_instance,
-            )
+        instances::table
+            .filter(instances::owner.eq(owner))
+            .filter(instances::name.eq(name.as_str()))
+            .select(InstanceRow::as_select())
+            .first(&mut *self.connection.borrow_mut())
             .optional()?
-            .ok_or(StoreError::NotFound)
+            .ok_or(StoreError::NotFound)?
+            .try_into()
     }
 
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, owner, name, status,
-                    guest_ip, last_error, backend_id, source,
-                    vcpus, memory_mib, disk_gib,
-                    ssh_user, ssh_host, ssh_port, ssh_host_keys,
-                    app_ssh_user, app_ssh_port, app_ssh_host_keys, setup_fingerprint
-             FROM instances WHERE owner = ?1 ORDER BY name",
-        )?;
-        let rows = statement.query_map([owner], row_to_instance)?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::from)
+        instances::table
+            .filter(instances::owner.eq(owner))
+            .order(instances::name)
+            .select(InstanceRow::as_select())
+            .load(&mut *self.connection.borrow_mut())?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
     }
 
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
-        self.connection.execute(
-            "UPDATE instances
-             SET status = 'error', last_error = ?1
-             WHERE status IN ('provisioning', 'destroying')",
-            ["operation was interrupted; remove the world and retry"],
-        )?;
+        diesel::update(
+            instances::table.filter(
+                instances::status
+                    .eq("provisioning")
+                    .or(instances::status.eq("destroying")),
+            ),
+        )
+        .set((
+            instances::status.eq("error"),
+            instances::last_error.eq("operation was interrupted; remove the world and retry"),
+        ))
+        .execute(&mut *self.connection.borrow_mut())?;
         Ok(())
     }
 
     pub fn mark_setup(&self, id: Uuid, guest_ip: &str, ssh: &SshAccess) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let changed = self.connection.execute(
-            "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
-             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7 WHERE id = ?1",
-            params![
-                id.to_string(),
-                InstanceStatus::Setup.to_string(),
-                guest_ip,
-                ssh.user,
-                ssh.host,
-                ssh.port,
-                host_keys,
-            ],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound);
-        }
-        Ok(())
+        let changed = diesel::update(instances::table.find(id.to_string()))
+            .set((
+                instances::status.eq(InstanceStatus::Setup.to_string()),
+                instances::guest_ip.eq(guest_ip),
+                instances::last_error.eq(None::<String>),
+                instances::ssh_user.eq(&ssh.user),
+                instances::ssh_host.eq(&ssh.host),
+                instances::ssh_port.eq(i32::from(ssh.port)),
+                instances::ssh_host_keys.eq(host_keys),
+            ))
+            .execute(&mut *self.connection.borrow_mut())?;
+        changed_one(changed)
     }
 
     pub fn mark_running(
@@ -179,27 +197,21 @@ impl Store {
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let changed = self.connection.execute(
-            "UPDATE instances SET status = ?2, guest_ip = ?3, last_error = NULL,
-             ssh_user = ?4, ssh_host = ?5, ssh_port = ?6, ssh_host_keys = ?7,
-             app_ssh_user = ?8, app_ssh_port = ?9, app_ssh_host_keys = ?10 WHERE id = ?1",
-            params![
-                id.to_string(),
-                InstanceStatus::Running.to_string(),
-                guest_ip,
-                ssh.user,
-                ssh.host,
-                ssh.port,
-                host_keys,
-                app_ssh.user,
-                app_ssh.port,
-                app_host_keys,
-            ],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound);
-        }
-        Ok(())
+        let changed = diesel::update(instances::table.find(id.to_string()))
+            .set((
+                instances::status.eq(InstanceStatus::Running.to_string()),
+                instances::guest_ip.eq(guest_ip),
+                instances::last_error.eq(None::<String>),
+                instances::ssh_user.eq(&ssh.user),
+                instances::ssh_host.eq(&ssh.host),
+                instances::ssh_port.eq(i32::from(ssh.port)),
+                instances::ssh_host_keys.eq(host_keys),
+                instances::app_ssh_user.eq(&app_ssh.user),
+                instances::app_ssh_port.eq(i32::from(app_ssh.port)),
+                instances::app_ssh_host_keys.eq(app_host_keys),
+            ))
+            .execute(&mut *self.connection.borrow_mut())?;
+        changed_one(changed)
     }
 
     pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
@@ -217,98 +229,110 @@ impl Store {
         guest_ip: Option<&str>,
         last_error: Option<&str>,
     ) -> Result<(), StoreError> {
-        let changed = self.connection.execute(
-            "UPDATE instances
-             SET status = ?2,
-                 guest_ip = COALESCE(?3, guest_ip),
-                 last_error = ?4
-             WHERE id = ?1",
-            params![id.to_string(), status.to_string(), guest_ip, last_error,],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound);
-        }
-        Ok(())
+        let target = instances::table.find(id.to_string());
+        let changed = if let Some(guest_ip) = guest_ip {
+            diesel::update(target)
+                .set((
+                    instances::status.eq(status.to_string()),
+                    instances::guest_ip.eq(guest_ip),
+                    instances::last_error.eq(last_error),
+                ))
+                .execute(&mut *self.connection.borrow_mut())?
+        } else {
+            diesel::update(target)
+                .set((
+                    instances::status.eq(status.to_string()),
+                    instances::last_error.eq(last_error),
+                ))
+                .execute(&mut *self.connection.borrow_mut())?
+        };
+        changed_one(changed)
     }
 
     pub fn delete(&self, id: Uuid) -> Result<(), StoreError> {
-        if self
-            .connection
-            .execute("DELETE FROM instances WHERE id = ?1", [id.to_string()])?
-            == 0
-        {
-            return Err(StoreError::NotFound);
-        }
+        let changed = diesel::delete(instances::table.find(id.to_string()))
+            .execute(&mut *self.connection.borrow_mut())?;
+        changed_one(changed)
+    }
+}
+
+impl TryFrom<InstanceRow> for StoredInstance {
+    type Error = StoreError;
+
+    fn try_from(row: InstanceRow) -> Result<Self, Self::Error> {
+        let ssh = match row.ssh_user {
+            Some(user) => Some(SshAccess {
+                user,
+                host: required(row.ssh_host, "ssh_host")?,
+                port: to_u16(required(row.ssh_port, "ssh_port")?, "ssh_port")?,
+                host_keys: parse_keys(&row.ssh_host_keys)?,
+            }),
+            None => None,
+        };
+        let app_ssh = match row.app_ssh_user {
+            Some(user) => Some(AppSshAccess {
+                user,
+                port: to_u16(required(row.app_ssh_port, "app_ssh_port")?, "app_ssh_port")?,
+                host_keys: parse_keys(&row.app_ssh_host_keys)?,
+            }),
+            None => None,
+        };
+        Ok(Self {
+            instance: Instance {
+                id: Uuid::parse_str(&row.id)
+                    .map_err(|error| StoreError::InvalidData(error.to_string()))?,
+                owner: row.owner,
+                name: InstanceName::parse(row.name)
+                    .map_err(|error| StoreError::InvalidData(error.to_string()))?,
+                status: row
+                    .status
+                    .parse()
+                    .map_err(|error: wt_api::ParseStatusError| {
+                        StoreError::InvalidData(error.to_string())
+                    })?,
+                guest_ip: row.guest_ip,
+                last_error: row.last_error,
+                source: row.source,
+                vcpus: u32::try_from(row.vcpus).map_err(|_| invalid_number("vcpus", row.vcpus))?,
+                memory_mib: u64::try_from(row.memory_mib)
+                    .map_err(|_| invalid_number("memory_mib", row.memory_mib))?,
+                disk_gib: u64::try_from(row.disk_gib)
+                    .map_err(|_| invalid_number("disk_gib", row.disk_gib))?,
+                ssh,
+                app_ssh,
+            },
+            backend_id: row.backend_id,
+            setup_fingerprint: row.setup_fingerprint,
+        })
+    }
+}
+
+fn changed_one(changed: usize) -> Result<(), StoreError> {
+    if changed == 0 {
+        Err(StoreError::NotFound)
+    } else {
         Ok(())
     }
 }
 
-fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredInstance> {
-    let id: String = row.get(0)?;
-    let name: String = row.get(2)?;
-    let status: String = row.get(3)?;
-    Ok(StoredInstance {
-        instance: Instance {
-            id: Uuid::parse_str(&id).map_err(|error| invalid_column(&error.to_string()))?,
-            owner: row.get(1)?,
-            name: InstanceName::parse(name).map_err(|error| invalid_column(&error.to_string()))?,
-            status: status
-                .parse()
-                .map_err(|error: wt_api::ParseStatusError| invalid_column(&error.to_string()))?,
-            guest_ip: row.get(4)?,
-            last_error: row.get(5)?,
-            source: row.get(7)?,
-            vcpus: row.get(8)?,
-            memory_mib: row.get(9)?,
-            disk_gib: row.get(10)?,
-            ssh: ssh_from_row(row)?,
-            app_ssh: app_ssh_from_row(row)?,
-        },
-        backend_id: row.get(6)?,
-        setup_fingerprint: row.get(18)?,
-    })
+fn required<T>(value: Option<T>, field: &str) -> Result<T, StoreError> {
+    value.ok_or_else(|| StoreError::InvalidData(format!("{field} is missing")))
 }
 
-fn ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SshAccess>> {
-    let user: Option<String> = row.get(11)?;
-    let Some(user) = user else {
-        return Ok(None);
-    };
-    let keys: String = row.get(14)?;
-    let host_keys =
-        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
-    Ok(Some(SshAccess {
-        user,
-        host: row.get(12)?,
-        port: row.get(13)?,
-        host_keys,
-    }))
+fn parse_keys(value: &str) -> Result<Vec<String>, StoreError> {
+    serde_json::from_str(value).map_err(|error| StoreError::InvalidData(error.to_string()))
 }
 
-fn app_ssh_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<AppSshAccess>> {
-    let user: Option<String> = row.get(15)?;
-    let Some(user) = user else {
-        return Ok(None);
-    };
-    let keys: String = row.get(17)?;
-    let host_keys =
-        serde_json::from_str(&keys).map_err(|error| invalid_column(&error.to_string()))?;
-    Ok(Some(AppSshAccess {
-        user,
-        port: row.get(16)?,
-        host_keys,
-    }))
+fn to_i64(value: u64, field: &str) -> Result<i64, StoreError> {
+    i64::try_from(value).map_err(|_| invalid_number(field, value))
 }
 
-fn invalid_column(message: &str) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(
-        0,
-        rusqlite::types::Type::Text,
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            message.to_owned(),
-        )),
-    )
+fn to_u16(value: i32, field: &str) -> Result<u16, StoreError> {
+    u16::try_from(value).map_err(|_| invalid_number(field, value))
+}
+
+fn invalid_number(field: &str, value: impl std::fmt::Display) -> StoreError {
+    StoreError::InvalidData(format!("invalid {field}: {value}"))
 }
 
 #[cfg(test)]
@@ -316,38 +340,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fresh_registry_uses_daemon_native_schema_version_one() {
+    fn open_applies_embedded_migrations() {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&temp.path().join("instances.db")).unwrap();
-        let version: u32 = store
-            .connection
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        let mut statement = store
-            .connection
-            .prepare("PRAGMA table_info(instances)")
-            .unwrap();
-        let columns = statement
-            .query_map([], |row| row.get::<_, String>(1))
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
 
-        assert_eq!(version, 1);
-        assert!(columns.iter().any(|name| name == "setup_fingerprint"));
-        for name in ["vcpus", "memory_mib", "disk_gib"] {
-            assert!(columns.iter().any(|column| column == name));
-        }
-        assert!(!columns.iter().any(|name| name == "job_acknowledged"));
-        let log_table: Option<String> = store
-            .connection
-            .query_row(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'job_log_chunks'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap();
-        assert!(log_table.is_none());
+        assert!(store.list("owner").unwrap().is_empty());
+        let migrations: i64 =
+            diesel::sql_query("SELECT COUNT(*) AS count FROM __diesel_schema_migrations")
+                .load::<Count>(&mut *store.connection.borrow_mut())
+                .unwrap()[0]
+                .count;
+        assert_eq!(migrations, 1);
+    }
+
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        count: i64,
     }
 }

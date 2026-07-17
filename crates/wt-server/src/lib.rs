@@ -2,6 +2,7 @@ pub mod config;
 pub mod daemon;
 pub mod operations;
 pub mod runtime_config;
+mod schema;
 pub mod service;
 pub mod store;
 
