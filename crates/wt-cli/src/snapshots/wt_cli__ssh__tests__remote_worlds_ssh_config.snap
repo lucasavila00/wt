@@ -25,7 +25,7 @@ Host lab.world-one
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-one — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-one - repo' /usr/local/bin/wt-app-shell
 
 Host lab.world-one-vs
   HostName wt-app
@@ -59,7 +59,7 @@ Host world-one
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-one — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-one - repo' /usr/local/bin/wt-app-shell
 
 Host world-one-vs
   HostName wt-app
@@ -93,7 +93,7 @@ Host lab.world-two
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-two — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-two - repo' /usr/local/bin/wt-app-shell
 
 Host lab.world-two-vs
   HostName wt-app
@@ -127,7 +127,7 @@ Host world-two
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-two — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-two - repo' /usr/local/bin/wt-app-shell
 
 Host world-two-vs
   HostName wt-app

@@ -23,7 +23,7 @@ Host local.repo-feature
   SetEnv TERM=xterm-256color
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature - repo' /usr/local/bin/wt-app-shell
 
 Host local.repo-feature-vs
   HostName wt-app
@@ -55,7 +55,7 @@ Host repo-feature
   SetEnv TERM=xterm-256color
   ForwardAgent yes
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature — repo' /usr/local/bin/wt-app-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature - repo' /usr/local/bin/wt-app-shell
 
 Host repo-feature-vs
   HostName wt-app
