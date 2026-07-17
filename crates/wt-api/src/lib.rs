@@ -7,10 +7,13 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u32 = 1;
+pub const WT_GIT_COMMIT: &str = env!("WT_GIT_COMMIT");
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
     pub protocol_version: u32,
+    #[serde(deserialize_with = "deserialize_git_commit")]
+    pub client_commit: String,
     #[serde(flatten)]
     pub operation: Operation,
 }
@@ -19,9 +22,27 @@ impl ApiRequest {
     pub fn new(operation: Operation) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
+            client_commit: WT_GIT_COMMIT.to_owned(),
             operation,
         }
     }
+}
+
+fn deserialize_git_commit<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if value.len() != 40
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(serde::de::Error::custom(
+            "client_commit must be a full lowercase Git commit hash",
+        ));
+    }
+    Ok(value)
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -380,6 +401,7 @@ mod tests {
             value,
             serde_json::json!({
                 "protocol_version": 1,
+                "client_commit": WT_GIT_COMMIT,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -404,6 +426,7 @@ mod tests {
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
                 "protocol_version": 1,
+                "client_commit": WT_GIT_COMMIT,
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
@@ -422,6 +445,7 @@ mod tests {
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
+            "client_commit": WT_GIT_COMMIT,
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
@@ -430,6 +454,7 @@ mod tests {
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
+            "client_commit": WT_GIT_COMMIT,
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
@@ -466,10 +491,29 @@ mod tests {
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
+            "client_commit": WT_GIT_COMMIT,
             "operation": "get",
             "name": "Not-Valid"
         }))
         .unwrap_err();
         insta::assert_snapshot!(error.to_string(), @"invalid instance name: must start with a lowercase letter or digit");
+    }
+
+    #[test]
+    fn request_requires_a_full_lowercase_client_commit() {
+        for client_commit in [
+            None,
+            Some("abc"),
+            Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        ] {
+            let mut value = serde_json::json!({
+                "protocol_version": 1,
+                "operation": "list"
+            });
+            if let Some(client_commit) = client_commit {
+                value["client_commit"] = client_commit.into();
+            }
+            assert!(serde_json::from_value::<ApiRequest>(value).is_err());
+        }
     }
 }
