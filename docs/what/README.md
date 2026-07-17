@@ -95,9 +95,11 @@ be provided by the devcontainer. If the
 devcontainer stops, the pane's SSH connection ends; new panes resolve the
 current container when it is running again.
 
-When Byobu is selected, WT sets the terminal title to the qualified world and
-repository name, such as `ars.wt2 — repo`. The qualified name remains the same
-when the world is reached through its unqualified SSH alias.
+When Byobu is selected, WT sets the terminal title to the qualified world,
+repository, and current Git checkout, such as `ars.wt2 - repo@feature`. A
+detached checkout uses its abbreviated commit ID. The checkout is refreshed
+when the user reconnects. The qualified name remains the same when the world is
+reached through its unqualified SSH alias.
 
 ### `ssh NAME-vs`
 

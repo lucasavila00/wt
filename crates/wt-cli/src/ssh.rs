@@ -105,7 +105,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
 
 fn world_title(qualified: &str, source: &str) -> String {
     match repository_name(source) {
-        Some(repository) => format!("{qualified} — {repository}"),
+        Some(repository) => format!("{qualified} - {repository}"),
         None => qualified.to_owned(),
     }
 }
@@ -188,11 +188,11 @@ mod tests {
     fn titles_use_the_qualified_world_and_repository_name() {
         assert_eq!(
             world_title("ars.wt2", "git@example.test:group/repo.git"),
-            "ars.wt2 — repo"
+            "ars.wt2 - repo"
         );
         assert_eq!(
             world_title("ars.wt2", "ssh://git@example.test/group/repo"),
-            "ars.wt2 — repo"
+            "ars.wt2 - repo"
         );
     }
 
