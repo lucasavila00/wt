@@ -44,6 +44,9 @@ install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
 printf '%s\n' \
     'set-option -g default-command /usr/local/bin/wt-app-pane' \
     'set-option -g remain-on-exit failed' \
+    'set-option -s set-clipboard on' \
+    'set-option -g allow-passthrough on' \
+    "set-option -as terminal-features ',xterm-ghostty:clipboard'" \
     > /usr/local/share/wt-tmux.conf
 chmod 0644 /usr/local/share/wt-tmux.conf
 install -d -m 0755 -o wt -g wt /var/lib/wt-setup
