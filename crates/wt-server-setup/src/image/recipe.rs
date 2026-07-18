@@ -2,6 +2,8 @@ use anyhow::{Error, Result};
 use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 1;
+pub(super) const TMUX_VERSION: &str = "3.6b";
+const TMUX_SHA256: &str = "390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7";
 
 pub(super) struct ImageRecipe {
     packages: PackageSet,
@@ -29,6 +31,8 @@ impl ImageRecipe {
             .join("\n");
         let verified_packages = self.packages.names().join(" ");
         let devcontainer_cli = self.devcontainer_cli_version();
+        let tmux_version = TMUX_VERSION;
+        let tmux_sha256 = TMUX_SHA256;
 
         format!(
             r#"#cloud-config
@@ -39,6 +43,12 @@ bootcmd:
 package_update: true
 packages:
 {requested_packages}
+  - bison
+  - build-essential
+  - curl
+  - libevent-dev
+  - libncurses-dev
+  - pkg-config
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -48,6 +58,8 @@ runcmd:
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@{devcontainer_cli}
   - devcontainer --version
+  - echo 'WT_IMAGE_PHASE=installing tmux {tmux_version}' > /dev/ttyS0
+  - curl -fL --output /tmp/tmux.tar.gz https://github.com/tmux/tmux/releases/download/{tmux_version}/tmux-{tmux_version}.tar.gz && printf '%s  %s\n' {tmux_sha256} /tmp/tmux.tar.gz | sha256sum --check --strict && tar -xzf /tmp/tmux.tar.gz -C /tmp && cd /tmp/tmux-{tmux_version} && ./configure --prefix=/usr && make -j2 && make install && install -m 0755 /usr/bin/tmux /var/lib/wt-tmux && test "$(/var/lib/wt-tmux -V)" = 'tmux {tmux_version}' && cd / && rm -rf /tmp/tmux.tar.gz /tmp/tmux-{tmux_version} && printf 'ready\n' > /var/lib/wt-tmux-ready
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
   - dpkg-query -W -f='${{Package}}\t${{Version}}\n' {verified_packages} | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
@@ -109,6 +121,12 @@ packages:
   - byobu
   - tmux
   - qemu-guest-agent
+  - bison
+  - build-essential
+  - curl
+  - libevent-dev
+  - libncurses-dev
+  - pkg-config
 runcmd:
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
@@ -118,6 +136,8 @@ runcmd:
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
+  - echo 'WT_IMAGE_PHASE=installing tmux 3.6b' > /dev/ttyS0
+  - curl -fL --output /tmp/tmux.tar.gz https://github.com/tmux/tmux/releases/download/3.6b/tmux-3.6b.tar.gz && printf '%s  %s\n' 390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7 /tmp/tmux.tar.gz | sha256sum --check --strict && tar -xzf /tmp/tmux.tar.gz -C /tmp && cd /tmp/tmux-3.6b && ./configure --prefix=/usr && make -j2 && make install && install -m 0755 /usr/bin/tmux /var/lib/wt-tmux && test "$(/var/lib/wt-tmux -V)" = 'tmux 3.6b' && cd / && rm -rf /tmp/tmux.tar.gz /tmp/tmux-3.6b && printf 'ready\n' > /var/lib/wt-tmux-ready
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
   - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm byobu tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready

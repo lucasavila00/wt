@@ -46,6 +46,7 @@ printf '%s\n' \
     'set-option -g remain-on-exit failed' \
     'set-option -s set-clipboard on' \
     'set-option -g allow-passthrough on' \
+    'set-option -g focus-events on' \
     "set-option -as terminal-features ',xterm-ghostty:clipboard'" \
     > /usr/local/share/wt-tmux.conf
 chmod 0644 /usr/local/share/wt-tmux.conf

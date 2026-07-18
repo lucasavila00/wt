@@ -167,6 +167,7 @@ fn build_image_inner(
     prepared: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
+    let build_dir = disk.parent().context("image build disk has no parent")?;
     println!("Preparing temporary KVM build disk...");
     runner.run(
         cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, disk),
@@ -247,6 +248,24 @@ fn build_image_inner(
     if marker.trim() != "ready" {
         bail!("image build finished without the expected readiness marker");
     }
+    let tmux_marker = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-tmux-ready"),
+        "verify pinned tmux readiness marker",
+    );
+    let tmux_marker = match tmux_marker {
+        Ok(marker) => marker,
+        Err(error) => {
+            let log = fs::read_to_string(console).context("read failed tmux build console")?;
+            let tail = log.lines().rev().take(500).collect::<Vec<_>>();
+            bail!(
+                "pinned tmux build did not complete: {error}\n{}",
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            );
+        }
+    };
+    if tmux_marker.trim() != "ready" {
+        bail!("image build finished without the pinned tmux readiness marker");
+    }
     let package_output = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
         "read installed guest package versions",
@@ -260,6 +279,17 @@ fn build_image_inner(
     println!("Verified packages: {package_summary}");
 
     undefine_build_domain(runner)?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-copy-out",
+            "-a",
+            disk,
+            "/var/lib/wt-tmux",
+            &build_dir
+        ),
+        "preserve pinned tmux across image sysprep",
+    )?;
     println!("Sysprepping golden image...");
     runner.run(
         cmd!("sudo", "virt-sysprep", "-a", disk),
@@ -271,11 +301,25 @@ fn build_image_inner(
             "virt-customize",
             "-a",
             disk,
+            "--upload",
+            format!("{}:/var/tmp/wt-tmux", build_dir.join("wt-tmux").display()),
             "--run-command",
-            CLEAR_MACHINE_ID,
+            format!(
+                "install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && /usr/bin/tmux -V > /var/lib/wt-tmux-version && rm -f /var/tmp/wt-tmux /var/lib/wt-tmux /var/lib/wt-tmux-ready && {CLEAR_MACHINE_ID}"
+            ),
         ),
-        "clear golden image machine identity",
+        "restore pinned tmux and clear golden image machine identity",
     )?;
+    let tmux_version = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-tmux-version",),
+        "read pinned tmux version after image sysprep",
+    )?;
+    if tmux_version.trim() != format!("tmux {}", recipe::TMUX_VERSION) {
+        bail!(
+            "golden image has unexpected tmux version: {:?}",
+            tmux_version.trim()
+        );
+    }
     let machine_id = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/etc/machine-id"),
         "verify empty golden image machine identity",

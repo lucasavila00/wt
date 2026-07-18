@@ -196,6 +196,24 @@ fn local_service_runs_small_devcontainer_fixture() {
         .output()
         .map_err(|error| error.to_string())?;
         ensure_success("verify Byobu frontend", &output)?;
+        let tmux_version = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/byobu-tmux",
+                "-V",
+            ),
+            "read Byobu tmux version",
+        );
+        if tmux_version.trim() != "tmux 3.6b" {
+            return Err(format!(
+                "unexpected Byobu tmux version: {tmux_version:?}; expected tmux 3.6b"
+            ));
+        }
         let machine_id = git_output(
             cmd!(
                 "ssh",
@@ -344,6 +362,26 @@ fn local_service_runs_small_devcontainer_fixture() {
         if remain_on_exit.trim() != "off" {
             return Err(format!(
                 "unexpected remain-on-exit after setup: {remain_on_exit:?}; expected off"
+            ));
+        }
+        let focus_events = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "show-options",
+                "-gv",
+                "focus-events",
+            ),
+            "read persistent session focus-events",
+        );
+        if focus_events.trim() != "on" {
+            return Err(format!(
+                "unexpected focus-events value: {focus_events:?}; expected on"
             ));
         }
 
