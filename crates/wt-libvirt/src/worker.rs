@@ -6,6 +6,7 @@ mod world;
 use crate::{MachineConfig, LIBVIRT_URI};
 use std::fs;
 use std::io::Write;
+use std::ops::Deref;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::Arc;
@@ -16,6 +17,30 @@ use virt::error::ErrorNumber;
 use virt::network::Network;
 use wt_command::cmd;
 use wt_provider::{Machine, MachineProvider, MachineSpec, ProviderId, WorkerError};
+
+struct LibvirtConnection(Connect);
+
+impl LibvirtConnection {
+    fn open() -> Result<Self, WorkerError> {
+        Connect::open(Some(LIBVIRT_URI))
+            .map(Self)
+            .map_err(|error| context("connect to libvirt", error))
+    }
+}
+
+impl Deref for LibvirtConnection {
+    type Target = Connect;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for LibvirtConnection {
+    fn drop(&mut self) {
+        let _ = self.0.close();
+    }
+}
 
 #[derive(Clone)]
 pub struct LibvirtProvider {
@@ -36,16 +61,14 @@ impl LibvirtProvider {
                 config.worlds_dir.display()
             )));
         }
-        let connection = Connect::open(Some(LIBVIRT_URI))
-            .map_err(|error| context("connect to libvirt", error))?;
+        let connection = LibvirtConnection::open()?;
         Network::lookup_by_name(&connection, &config.network)
             .map_err(|error| context("look up libvirt network", error))?;
         Ok(Self { config })
     }
 
     pub fn network_bridge_address(&self) -> Result<String, WorkerError> {
-        let connection = Connect::open(Some(LIBVIRT_URI))
-            .map_err(|error| context("connect to libvirt", error))?;
+        let connection = LibvirtConnection::open()?;
         network_address(&connection, &self.config.network)
     }
 
@@ -90,8 +113,7 @@ impl LibvirtProvider {
     }
 
     fn remove_domain(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
-        let connection = Connect::open(Some(LIBVIRT_URI))
-            .map_err(|error| context("connect to libvirt", error))?;
+        let connection = LibvirtConnection::open()?;
         let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
             Ok(domain) => domain,
             Err(error) if error.code() == ErrorNumber::NoDomain => return Ok(()),
@@ -192,14 +214,15 @@ impl LibvirtProvider {
             "create cloud-init seed",
         )?;
         prepare_qemu_file_access(&paths)?;
-        let connection = Connect::open(Some(LIBVIRT_URI))
-            .map_err(|error| context("connect to libvirt", error))?;
         let xml = world::domain_xml(&spec.provider_id, &paths, &self.config, spec);
-        let domain = Domain::define_xml(&connection, &xml)
-            .map_err(|error| context("define KVM domain", error))?;
-        domain
-            .create()
-            .map_err(|error| context("start KVM domain", error))?;
+        {
+            let connection = LibvirtConnection::open()?;
+            let domain = Domain::define_xml(&connection, &xml)
+                .map_err(|error| context("define KVM domain", error))?;
+            domain
+                .create()
+                .map_err(|error| context("start KVM domain", error))?;
+        }
         writeln!(progress, "Waiting for the guest transport...")
             .map_err(|error| context("write machine progress", error))?;
         self.wait_for_agent(&spec.provider_id)?;
@@ -228,8 +251,7 @@ impl MachineProvider for LibvirtProvider {
 
     fn inspect(&self, provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError> {
         let directory = self.config.worlds_dir.join(provider_id.as_str());
-        let connection = Connect::open(Some(LIBVIRT_URI))
-            .map_err(|error| context("connect to libvirt", error))?;
+        let connection = LibvirtConnection::open()?;
         let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
             Ok(domain) => Some(domain),
             Err(error) if error.code() == ErrorNumber::NoDomain => None,
@@ -286,8 +308,7 @@ impl MachineProvider for LibvirtProvider {
 }
 
 pub(super) fn lookup_domain(provider_id: &ProviderId) -> Result<Domain, WorkerError> {
-    let connection =
-        Connect::open(Some(LIBVIRT_URI)).map_err(|error| context("connect to libvirt", error))?;
+    let connection = LibvirtConnection::open()?;
     Domain::lookup_by_name(&connection, provider_id.as_str())
         .map_err(|error| context("look up libvirt domain", error))
 }
