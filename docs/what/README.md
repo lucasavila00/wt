@@ -59,7 +59,7 @@ while starting the devcontainer.
 
 | Command | Result |
 |---------|--------|
-| `wt new` | Interactively create a guest and wait for its setup SSH endpoint |
+| `wt new` | Interactively create a guest, then enter its setup SSH session |
 | `wt ls` | List worlds, resources, and status across configured contexts |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
@@ -147,13 +147,14 @@ read, world creation stops before contacting the server. Both values are sent in
 the create request and written to the checkout's local Git config. WT does not
 copy other Git configuration.
 
-After `wt new` returns, the first `ssh NAME` forwards the workstation agent and
-starts the installer in Byobu. The installer clones with strict host-key
-checking, finishes package and Docker setup, starts the devcontainer, and tees
-its output to both Byobu and a guest-held log. Clone trust is removed after
-checkout; the narrowly scoped setup privilege and remaining inputs are removed
-before completion. Later connections forward the agent into the devcontainer.
-No private key or passphrase crosses the WT API or remains in the world.
+After creating the guest, `wt new` replaces itself with `ssh NAME`. That SSH
+session forwards the workstation agent and starts the installer in Byobu. The
+installer clones with strict host-key checking, finishes package and Docker
+setup, starts the devcontainer, and tees its output to both Byobu and a
+guest-held log. Clone trust is removed after checkout; the narrowly scoped
+setup privilege and remaining inputs are removed before completion. Later
+connections forward the agent into the devcontainer. No private key or
+passphrase crosses the WT API or remains in the world.
 
 ## Safety model
 

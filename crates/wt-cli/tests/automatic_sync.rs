@@ -86,6 +86,13 @@ esac
     )
     .unwrap();
     fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+    let ssh = bin.join("ssh");
+    fs::write(
+        &ssh,
+        "#!/bin/sh\nprintf 'ssh exec: %s\\n' \"$*\"\nexit 23\n",
+    )
+    .unwrap();
+    fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).unwrap();
     fs::create_dir(temp.path().join(".wt")).unwrap();
     fs::write(
         temp.path().join(".gitconfig"),
@@ -128,12 +135,7 @@ esac
         .write_all(b"repo-feature\ngit@example.test:repo.git\n\n\n\n\n\n")
         .unwrap();
     let created = created.wait_with_output().unwrap();
-    assert!(
-        created.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&created.stdout),
-        String::from_utf8_lossy(&created.stderr)
-    );
+    assert_eq!(created.status.code(), Some(23));
     let transcript = String::from_utf8_lossy(&created.stdout).replace('\r', "");
     let completed = transcript
         .find("local.repo-feature\tsetup")
@@ -144,9 +146,10 @@ esac
         @r###"
         local.repo-feature	setup	192.0.2.2
 
-        Start setup: ssh local.repo-feature
+        Starting setup: ssh local.repo-feature
         Guest host: ssh local.repo-feature-host
         Endpoint: wt@192.0.2.2:22
+        ssh exec: local.repo-feature
         "###
     );
     assert_eq!(

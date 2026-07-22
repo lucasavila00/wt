@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-14
 - Agent lifetime: Superseded by ADR 0003
+- Creation handoff: Superseded by ADR 0011
 
 ## Context
 

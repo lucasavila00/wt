@@ -5,6 +5,7 @@ use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -87,11 +88,17 @@ fn run() -> Result<()> {
                 instance.status,
                 instance.guest_ip.as_deref().unwrap_or("-")
             );
-            if let Some(ssh) = &instance.ssh {
-                println!("\nStart setup: ssh {}.{}", context.name, instance.name);
-                println!("Guest host: ssh {}.{}-host", context.name, instance.name);
-                println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
-            }
+            let ssh = instance
+                .ssh
+                .as_ref()
+                .context("created world has no SSH endpoint")?;
+            println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
+            println!("Guest host: ssh {}.{}-host", context.name, instance.name);
+            println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
+            std::io::stdout().flush()?;
+            let target = format!("{}.{}", context.name, instance.name);
+            return Err(ProcessCommand::new("ssh").arg(&target).exec())
+                .with_context(|| format!("exec ssh {target}"));
         }
         Command::Ls => {
             let report = inventory::list_all(&config);

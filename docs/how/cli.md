@@ -40,9 +40,10 @@ CPU/RAM/disk resources, and any lifecycle error. Guest IP addresses
 and raw SSH endpoints are omitted because managed world aliases are the client
 connection interface.
 
-`wt new` returns after the guest and its SSH endpoint are ready. The first
-`ssh NAME` forwards the workstation SSH agent and starts the remaining install
-inside Byobu. Reconnecting attaches to the same session and retries a failed
+After the guest and its SSH endpoint are ready, `wt new` synchronizes the SSH
+inventory and replaces itself with `ssh CONTEXT.NAME`. That connection forwards
+the workstation SSH agent and starts the remaining install inside Byobu.
+Reconnect with `ssh NAME` to attach to the same session and retry a failed
 installer with the newly forwarded agent socket.
 
 ## VS Code launch
