@@ -11,7 +11,6 @@ Host lab.world-one-host
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
 
 Host lab.world-one
@@ -21,7 +20,6 @@ Host lab.world-one
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -45,7 +43,6 @@ Host world-one-host
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
 
 Host world-one
@@ -55,7 +52,6 @@ Host world-one
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -79,7 +75,6 @@ Host lab.world-two-host
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
 
 Host lab.world-two
@@ -89,7 +84,6 @@ Host lab.world-two
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -113,7 +107,6 @@ Host world-two-host
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
 
 Host world-two
@@ -123,7 +116,6 @@ Host world-two
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force

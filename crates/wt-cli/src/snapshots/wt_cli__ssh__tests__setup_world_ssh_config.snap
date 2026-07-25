@@ -11,7 +11,6 @@ Host local.repo-feature-host
   HostKeyAlias local.repo-feature-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
 
 Host local.repo-feature
   HostName 192.0.2.2
@@ -20,7 +19,6 @@ Host local.repo-feature
   HostKeyAlias local.repo-feature-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.repo-feature - repo' /usr/local/bin/wt-app-shell
@@ -32,7 +30,6 @@ Host repo-feature-host
   HostKeyAlias local.repo-feature-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
 
 Host repo-feature
   HostName 192.0.2.2
@@ -41,7 +38,6 @@ Host repo-feature
   HostKeyAlias local.repo-feature-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.repo-feature - repo' /usr/local/bin/wt-app-shell

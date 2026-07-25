@@ -33,7 +33,12 @@ install -d -m 0755 -o wt -g wt /workspace
 install -d -m 0700 -o wt -g wt /home/wt/.ssh
 install -o wt -g wt -m 0600 "$stage-authorized-keys" /home/wt/.ssh/authorized_keys
 install -d -m 0755 -o wt -g wt /home/wt/.byobu
-printf '%s\n' 'set-option -g default-command /usr/local/bin/wt-app-pane' \
+printf '%s\n' \
+    'set-option -g default-command /usr/local/bin/wt-app-pane' \
+    'set-option -g default-terminal tmux-256color' \
+    'set-option -g mouse on' \
+    "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
+    "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
     > /home/wt/.byobu/.tmux.conf
 chown wt:wt /home/wt/.byobu/.tmux.conf
 chmod 0644 /home/wt/.byobu/.tmux.conf
@@ -49,10 +54,14 @@ install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
 printf '%s\n' \
     'set-option -g default-command /usr/local/bin/wt-app-pane' \
     'set-option -g remain-on-exit failed' \
+    'set-option -g default-terminal tmux-256color' \
+    'set-option -g mouse on' \
+    "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
+    "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
     'set-option -s set-clipboard on' \
     'set-option -g allow-passthrough on' \
     'set-option -g focus-events on' \
-    "set-option -as terminal-features ',xterm-ghostty:clipboard'" \
+    "set-option -as terminal-features ',xterm-ghostty:clipboard:hyperlinks'" \
     > /usr/local/share/wt-tmux.conf
 chmod 0644 /usr/local/share/wt-tmux.conf
 install -d -m 0755 -o wt -g wt /var/lib/wt-setup

@@ -164,7 +164,7 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
+                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && test \"$(TERM=ghostty tput colors)\" = 256 && test \"$(TERM=xterm-ghostty tput colors)\" = 256 && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
             )
             .output()
             .map_err(|error| error.to_string())
@@ -256,6 +256,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             name.as_str(),
         )
         .env("SSH_AUTH_SOCK", &agent.socket)
+        .env("TERM", "xterm-ghostty")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -266,10 +267,10 @@ fn local_service_runs_small_devcontainer_fixture() {
             .as_mut()
             .unwrap()
             .write_all(
-                b"ssh-add -L >/dev/null && export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD\"\n",
+                b"ssh-add -L >/dev/null && export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD:$TERM\"\n",
             )
             .map_err(|error| format!("initialize persistent app shell: {error}"))?;
-        wait_for_line(&mut persistent, "retained:/tmp")?;
+        wait_for_line(&mut persistent, "retained:/tmp:tmux-256color")?;
         disconnect(&mut persistent, "initial persistent app shell")?;
 
         let mut reattached = cmd!(
@@ -281,6 +282,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             name.as_str(),
         )
         .env("SSH_AUTH_SOCK", &agent.socket)
+        .env("TERM", "xterm-ghostty")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -324,8 +326,17 @@ fn local_service_runs_small_devcontainer_fixture() {
             &output,
         )?;
         let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+        let mut panes = panes
+            .lines()
+            .filter(|pane| *pane != "byobu-janitor")
+            .collect::<Vec<_>>();
+        panes.sort_unstable();
         if panes
-            != "/usr/local/bin/wt-setup-world\n/usr/local/bin/wt-app-pane\n/usr/local/bin/wt-app-pane\n"
+            != [
+                "/usr/local/bin/wt-app-pane",
+                "/usr/local/bin/wt-app-pane",
+                "/usr/local/bin/wt-setup-world",
+            ]
         {
             return Err(format!("unexpected tmux pane commands: {panes:?}"));
         }
@@ -389,6 +400,99 @@ fn local_service_runs_small_devcontainer_fixture() {
             return Err(format!(
                 "unexpected focus-events value: {focus_events:?}; expected on"
             ));
+        }
+        let default_terminal = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "show-options",
+                "-gv",
+                "default-terminal",
+            ),
+            "read persistent session default-terminal",
+        );
+        if default_terminal.trim() != "tmux-256color" {
+            return Err(format!(
+                "unexpected default-terminal value: {default_terminal:?}; expected tmux-256color"
+            ));
+        }
+        let mouse = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "show-options",
+                "-gv",
+                "mouse",
+            ),
+            "read persistent session mouse setting",
+        );
+        if mouse.trim() != "on" {
+            return Err(format!("unexpected mouse value: {mouse:?}; expected on"));
+        }
+        let terminal_features = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "/usr/bin/tmux",
+                "show-options",
+                "-sv",
+                "terminal-features",
+            ),
+            "read persistent session terminal features",
+        );
+        if !terminal_features
+            .lines()
+            .any(|line| line == "xterm-ghostty:clipboard:hyperlinks")
+        {
+            return Err(format!(
+                "terminal features do not include Ghostty clipboard and hyperlinks: {terminal_features:?}"
+            ));
+        }
+        for (key, expected) in [
+            (
+                "WheelUpPane",
+                "bind-key -T root WheelUpPane if-shell -F -t = \"#{mouse_any_flag}\" \"send-keys -M\" \"copy-mode -e -t =\"",
+            ),
+            (
+                "WheelDownPane",
+                "bind-key -T root WheelDownPane if-shell -F -t = \"#{mouse_any_flag}\" \"send-keys -M\" \"select-pane -t =\"",
+            ),
+        ] {
+            let binding = git_output(
+                cmd!(
+                    "ssh",
+                    "-F",
+                    &ssh_config,
+                    "-i",
+                    &git.guest_key,
+                    &host_alias,
+                    "/usr/bin/tmux",
+                    "list-keys",
+                    "-T",
+                    "root",
+                    key,
+                ),
+                "read persistent session mouse wheel binding",
+            );
+            if binding.trim() != expected {
+                return Err(format!(
+                    "unexpected {key} binding: {binding:?}; expected {expected:?}"
+                ));
+            }
         }
 
         let branch = format!("wt-e2e-{}", std::process::id());
@@ -488,6 +592,7 @@ fn start_world_setup(home: &Path, name: &InstanceName, agent: &SshAgent) -> Chil
         format!("local.{name}")
     )
     .env("SSH_AUTH_SOCK", &agent.socket)
+    .env("TERM", "xterm-ghostty")
     .stdout(Stdio::null())
     .stderr(Stdio::inherit())
     .spawn()

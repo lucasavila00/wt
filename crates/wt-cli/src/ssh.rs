@@ -51,7 +51,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             }
         };
         let guest_common = format!(
-            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  SetEnv TERM=xterm-256color\n{}",
+            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n{}",
             ssh.host,
             ssh.user,
             ssh.port,

@@ -11,7 +11,6 @@ Host local.same-host
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
 
 Host local.same
   HostName 192.0.2.2
@@ -20,7 +19,6 @@ Host local.same
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.same - repo' /usr/local/bin/wt-app-shell
@@ -43,7 +41,6 @@ Host lab.same-host
   HostKeyAlias lab.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
 
 Host lab.same
@@ -53,7 +50,6 @@ Host lab.same
   HostKeyAlias lab.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  SetEnv TERM=xterm-256color
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force

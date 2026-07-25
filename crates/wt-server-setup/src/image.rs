@@ -266,6 +266,19 @@ fn build_image_inner(
     if tmux_marker.trim() != "ready" {
         bail!("image build finished without the pinned tmux readiness marker");
     }
+    let ghostty_terminfo_marker = runner.text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            disk,
+            "/var/lib/wt-ghostty-terminfo-ready"
+        ),
+        "verify Ghostty terminfo readiness marker",
+    )?;
+    if ghostty_terminfo_marker.trim() != "ready" {
+        bail!("image build finished without the Ghostty terminfo readiness marker");
+    }
     let package_output = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
         "read installed guest package versions",
@@ -305,10 +318,11 @@ fn build_image_inner(
             format!("{}:/var/tmp/wt-tmux", build_dir.join("wt-tmux").display()),
             "--run-command",
             format!(
-                "install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && /usr/bin/tmux -V > /var/lib/wt-tmux-version && rm -f /var/tmp/wt-tmux /var/lib/wt-tmux /var/lib/wt-tmux-ready && {CLEAR_MACHINE_ID}"
+                "install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && /usr/bin/tmux -V > /var/lib/wt-tmux-version && printf '%s  %s\\n' {} /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /var/tmp/wt-tmux /var/lib/wt-tmux /var/lib/wt-tmux-ready /var/lib/wt-ghostty-terminfo-ready && {CLEAR_MACHINE_ID}",
+                recipe::GHOSTTY_TERMINFO_SHA256
             ),
         ),
-        "restore pinned tmux and clear golden image machine identity",
+        "restore tmux, verify Ghostty terminfo, and clear golden image machine identity",
     )?;
     let tmux_version = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-tmux-version",),
@@ -662,7 +676,7 @@ mod tests {
 
         let json = serde_json::to_value(manifest).unwrap();
         assert_eq!(json["version"], 1);
-        assert_eq!(json["recipe_version"], 1);
+        assert_eq!(json["recipe_version"], 2);
         assert_eq!(json["packages"]["tmux"], "3.4-1");
     }
 

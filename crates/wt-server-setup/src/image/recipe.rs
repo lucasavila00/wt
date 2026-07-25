@@ -1,9 +1,14 @@
 use anyhow::{Error, Result};
 use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
-pub(super) const RECIPE_VERSION: u32 = 1;
+pub(super) const RECIPE_VERSION: u32 = 2;
 pub(super) const TMUX_VERSION: &str = "3.6b";
 const TMUX_SHA256: &str = "390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7";
+const NCURSES_TERM_DEB: &str = "ncurses-term_6.6+20260608-2_all.deb";
+const NCURSES_TERM_SHA256: &str =
+    "2696f4d2430b44c1ed25dd20fe91c6bf9811194bfb19a6c5408c83789f9f0cb4";
+pub(super) const GHOSTTY_TERMINFO_SHA256: &str =
+    "1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa";
 
 pub(super) struct ImageRecipe {
     packages: PackageSet,
@@ -33,6 +38,9 @@ impl ImageRecipe {
         let devcontainer_cli = self.devcontainer_cli_version();
         let tmux_version = TMUX_VERSION;
         let tmux_sha256 = TMUX_SHA256;
+        let ncurses_term_deb = NCURSES_TERM_DEB;
+        let ncurses_term_sha256 = NCURSES_TERM_SHA256;
+        let ghostty_terminfo_sha256 = GHOSTTY_TERMINFO_SHA256;
 
         format!(
             r#"#cloud-config
@@ -60,6 +68,8 @@ runcmd:
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=installing tmux {tmux_version}' > /dev/ttyS0
   - curl -fL --output /tmp/tmux.tar.gz https://github.com/tmux/tmux/releases/download/{tmux_version}/tmux-{tmux_version}.tar.gz && printf '%s  %s\n' {tmux_sha256} /tmp/tmux.tar.gz | sha256sum --check --strict && tar -xzf /tmp/tmux.tar.gz -C /tmp && cd /tmp/tmux-{tmux_version} && ./configure --prefix=/usr && make -j2 && make install && install -m 0755 /usr/bin/tmux /var/lib/wt-tmux && test "$(/var/lib/wt-tmux -V)" = 'tmux {tmux_version}' && cd / && rm -rf /tmp/tmux.tar.gz /tmp/tmux-{tmux_version} && printf 'ready\n' > /var/lib/wt-tmux-ready
+  - echo 'WT_IMAGE_PHASE=installing Ghostty terminfo' > /dev/ttyS0
+  - curl -fL --output /tmp/ncurses-term.deb https://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/{ncurses_term_deb} && printf '%s  %s\n' {ncurses_term_sha256} /tmp/ncurses-term.deb | sha256sum --check --strict && install -d -m 0755 /usr/share/terminfo/g /usr/share/terminfo/x && dpkg-deb --fsys-tarfile /tmp/ncurses-term.deb | tar -xO ./usr/share/terminfo/g/ghostty > /usr/share/terminfo/g/ghostty && cp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && printf '%s  %s\n' {ghostty_terminfo_sha256} /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /tmp/ncurses-term.deb && printf 'ready\n' > /var/lib/wt-ghostty-terminfo-ready
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
   - dpkg-query -W -f='${{Package}}\t${{Version}}\n' {verified_packages} | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
@@ -138,6 +148,8 @@ runcmd:
   - devcontainer --version
   - echo 'WT_IMAGE_PHASE=installing tmux 3.6b' > /dev/ttyS0
   - curl -fL --output /tmp/tmux.tar.gz https://github.com/tmux/tmux/releases/download/3.6b/tmux-3.6b.tar.gz && printf '%s  %s\n' 390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7 /tmp/tmux.tar.gz | sha256sum --check --strict && tar -xzf /tmp/tmux.tar.gz -C /tmp && cd /tmp/tmux-3.6b && ./configure --prefix=/usr && make -j2 && make install && install -m 0755 /usr/bin/tmux /var/lib/wt-tmux && test "$(/var/lib/wt-tmux -V)" = 'tmux 3.6b' && cd / && rm -rf /tmp/tmux.tar.gz /tmp/tmux-3.6b && printf 'ready\n' > /var/lib/wt-tmux-ready
+  - echo 'WT_IMAGE_PHASE=installing Ghostty terminfo' > /dev/ttyS0
+  - curl -fL --output /tmp/ncurses-term.deb https://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/ncurses-term_6.6+20260608-2_all.deb && printf '%s  %s\n' 2696f4d2430b44c1ed25dd20fe91c6bf9811194bfb19a6c5408c83789f9f0cb4 /tmp/ncurses-term.deb | sha256sum --check --strict && install -d -m 0755 /usr/share/terminfo/g /usr/share/terminfo/x && dpkg-deb --fsys-tarfile /tmp/ncurses-term.deb | tar -xO ./usr/share/terminfo/g/ghostty > /usr/share/terminfo/g/ghostty && cp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && printf '%s  %s\n' 1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /tmp/ncurses-term.deb && printf 'ready\n' > /var/lib/wt-ghostty-terminfo-ready
   - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
   - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm byobu tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
   - printf 'ready\n' > /var/lib/wt-image-ready
