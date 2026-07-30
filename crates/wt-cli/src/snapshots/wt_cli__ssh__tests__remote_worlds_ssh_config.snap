@@ -11,6 +11,7 @@ Host lab.world-one-host
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
 
 Host lab.world-one
@@ -20,6 +21,7 @@ Host lab.world-one
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -32,6 +34,7 @@ Host lab.world-one-vs
   HostKeyAlias lab.world-one-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-one-host /usr/local/bin/wt-app-proxy
@@ -43,6 +46,7 @@ Host world-one-host
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
 
 Host world-one
@@ -52,6 +56,7 @@ Host world-one
   HostKeyAlias lab.world-one-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -64,6 +69,7 @@ Host world-one-vs
   HostKeyAlias lab.world-one-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-one-host /usr/local/bin/wt-app-proxy
@@ -75,6 +81,7 @@ Host lab.world-two-host
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
 
 Host lab.world-two
@@ -84,6 +91,7 @@ Host lab.world-two
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -96,6 +104,7 @@ Host lab.world-two-vs
   HostKeyAlias lab.world-two-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-two-host /usr/local/bin/wt-app-proxy
@@ -107,6 +116,7 @@ Host world-two-host
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
 
 Host world-two
@@ -116,6 +126,7 @@ Host world-two
   HostKeyAlias lab.world-two-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -128,6 +139,7 @@ Host world-two-vs
   HostKeyAlias lab.world-two-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.world-two-host /usr/local/bin/wt-app-proxy

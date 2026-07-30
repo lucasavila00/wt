@@ -11,6 +11,7 @@ Host local.same-host
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
 
 Host local.same
   HostName 192.0.2.2
@@ -19,6 +20,7 @@ Host local.same
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.same - repo' /usr/local/bin/wt-app-shell
@@ -30,6 +32,7 @@ Host local.same-vs
   HostKeyAlias local.same-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" local.same-host /usr/local/bin/wt-app-proxy
@@ -41,6 +44,7 @@ Host lab.same-host
   HostKeyAlias lab.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
 
 Host lab.same
@@ -50,6 +54,7 @@ Host lab.same
   HostKeyAlias lab.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -62,6 +67,7 @@ Host lab.same-vs
   HostKeyAlias lab.same-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
+  Compression yes
   ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" lab.same-host /usr/local/bin/wt-app-proxy
