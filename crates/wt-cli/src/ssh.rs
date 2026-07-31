@@ -43,15 +43,15 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
         let context = client_config
             .context(&item.context)
             .with_context(|| format!("missing client context {}", item.context))?;
-        let proxy_jump = match &context.kind {
-            ContextKind::BareMetalLocal => String::new(),
+        let (proxy_jump, compression) = match &context.kind {
+            ContextKind::BareMetalLocal => (String::new(), "no"),
             ContextKind::BareMetalSsh { host } => {
                 validate_ssh_host(&context.name, host)?;
-                format!("  ProxyJump {host}\n")
+                (format!("  ProxyJump {host}\n"), "yes")
             }
         };
         let guest_common = format!(
-            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression yes\n{}",
+            "  HostName {}\n  User {}\n  Port {}\n  HostKeyAlias {}\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n{}",
             ssh.host,
             ssh.user,
             ssh.port,
@@ -60,7 +60,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             proxy_jump,
         );
         let app_common = instance.app_ssh.as_ref().map(|app_ssh| format!(
-            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression yes\n  ForwardAgent yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} {}-host /usr/local/bin/wt-app-proxy\n",
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  ForwardAgent yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-app-proxy\n",
             app_ssh.user,
             app_ssh.port,
             qualified,

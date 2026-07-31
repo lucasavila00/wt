@@ -11,7 +11,11 @@ Host local.same-host
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  Compression yes
+  Compression no
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
 
 Host local.same
   HostName 192.0.2.2
@@ -20,7 +24,11 @@ Host local.same
   HostKeyAlias local.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  Compression yes
+  Compression no
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
   ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.same - repo' /usr/local/bin/wt-app-shell
@@ -32,10 +40,14 @@ Host local.same-vs
   HostKeyAlias local.same-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
-  Compression yes
+  Compression no
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
   ForwardAgent yes
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" local.same-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.same-host /usr/local/bin/wt-app-proxy
 
 Host lab.same-host
   HostName 192.0.2.2
@@ -45,6 +57,10 @@ Host lab.same-host
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
   Compression yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
   ProxyJump wt-server
 
 Host lab.same
@@ -55,6 +71,10 @@ Host lab.same
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
   Compression yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
   ProxyJump wt-server
   ForwardAgent yes
   RequestTTY force
@@ -68,6 +88,10 @@ Host lab.same-vs
   UserKnownHostsFile "[HOME]/.ssh/wt/known_hosts"
   StrictHostKeyChecking yes
   Compression yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
   ForwardAgent yes
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" lab.same-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.same-host /usr/local/bin/wt-app-proxy
