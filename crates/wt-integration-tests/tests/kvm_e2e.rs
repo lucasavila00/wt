@@ -164,7 +164,7 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "-i",
                 &git.guest_key,
                 &host_alias,
-                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && test \"$(TERM=ghostty tput colors)\" = 256 && test \"$(TERM=xterm-ghostty tput colors)\" = 256 && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
+                "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && printf 'BACKGROUND=k\\nFOREGROUND=w\\nMONOCHROME=1\\n' | cmp - /home/wt/.byobu/color && test \"$(stat -c '%U:%G:%a' /home/wt/.byobu/color)\" = wt:wt:644 && test \"$(TERM=ghostty tput colors)\" = 256 && test \"$(TERM=xterm-ghostty tput colors)\" = 256 && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
             )
             .output()
             .map_err(|error| error.to_string())

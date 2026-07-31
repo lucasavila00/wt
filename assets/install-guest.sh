@@ -40,8 +40,9 @@ printf '%s\n' \
     "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
     "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
     > /home/wt/.byobu/.tmux.conf
-chown wt:wt /home/wt/.byobu/.tmux.conf
-chmod 0644 /home/wt/.byobu/.tmux.conf
+printf 'BACKGROUND=k\nFOREGROUND=w\nMONOCHROME=1\n' > /home/wt/.byobu/color
+chown wt:wt /home/wt/.byobu/.tmux.conf /home/wt/.byobu/color
+chmod 0644 /home/wt/.byobu/.tmux.conf /home/wt/.byobu/color
 ssh-keygen -A
 
 install -m 0755 "$stage-app-shell" /usr/local/bin/wt-app-shell
