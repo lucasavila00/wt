@@ -31,6 +31,17 @@ struct ContainerConfig {
 }
 
 #[derive(Debug, Deserialize)]
+struct ConfigurationOutput {
+    configuration: DevcontainerConfiguration,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevcontainerConfiguration {
+    #[serde(rename = "remoteUser")]
+    remote_user: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct NetworkSettings {
     networks: BTreeMap<String, ContainerNetwork>,
@@ -45,8 +56,6 @@ struct ContainerNetwork {
 
 #[derive(Debug, Deserialize)]
 struct DevcontainerMetadata {
-    #[serde(rename = "containerUser")]
-    container_user: Option<String>,
     #[serde(rename = "remoteUser")]
     remote_user: Option<String>,
 }
@@ -77,6 +86,61 @@ pub fn app_target() -> Result<AppTarget, String> {
     let container = select_container(&containers)?;
     let inspect = docker(&["inspect", &container])?;
     inspect_target(container, &inspect)
+}
+
+pub fn configured_remote_user(output: &str) -> Result<String, String> {
+    let output: ConfigurationOutput = serde_json::from_str(output)
+        .map_err(|error| format!("wt: read devcontainer configuration: {error}"))?;
+    let user = output
+        .configuration
+        .remote_user
+        .ok_or_else(|| "wt: devcontainer configuration must set remoteUser".to_owned())?;
+    validate_user(&user, "devcontainer configuration")?;
+    Ok(user)
+}
+
+pub fn verify_app_user(expected: &str) -> Result<(), String> {
+    validate_user(expected, "devcontainer configuration")?;
+    let target = app_target()?;
+    verify_runtime_user(expected, &target.user)?;
+    let output = cmd!("docker")
+        .args([
+            "exec",
+            "--user",
+            expected,
+            &target.container,
+            "/usr/bin/id",
+            "-un",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("wt: verify devcontainer remoteUser {expected:?}: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "wt: devcontainer remoteUser {expected:?} is not an existing container account: {}",
+            detail.trim()
+        ));
+    }
+    let resolved = String::from_utf8(output.stdout)
+        .map_err(|error| format!("wt: read devcontainer remoteUser: {error}"))?;
+    if resolved.trim() != expected {
+        return Err(format!(
+            "wt: devcontainer remoteUser {expected:?} resolves to a different account {:?}",
+            resolved.trim()
+        ));
+    }
+    Ok(())
+}
+
+fn verify_runtime_user(expected: &str, actual: &str) -> Result<(), String> {
+    if actual != expected {
+        return Err(format!(
+            "wt: devcontainer remoteUser changed from {expected:?} to {actual:?} at runtime"
+        ));
+    }
+    Ok(())
 }
 
 fn docker(args: &[&str]) -> Result<String, String> {
@@ -123,16 +187,9 @@ fn inspect_target(container: String, output: &str) -> Result<AppTarget, String> 
         .config
         .labels
         .get("devcontainer.metadata")
-        .map(|metadata| metadata_user(metadata))
-        .transpose()?
-        .flatten()
-        .unwrap_or_else(|| "root".to_owned());
-    if !user
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
-    {
-        return Err("wt: the devcontainer app has an invalid remote user".to_owned());
-    }
+        .ok_or_else(|| "wt: devcontainer runtime metadata has no remoteUser".to_owned())
+        .and_then(|metadata| metadata_user(metadata))?;
+    validate_user(&user, "devcontainer runtime metadata")?;
     let address = inspected
         .network_settings
         .networks
@@ -148,26 +205,31 @@ fn inspect_target(container: String, output: &str) -> Result<AppTarget, String> 
     })
 }
 
-fn metadata_user(metadata: &str) -> Result<Option<String>, String> {
+fn metadata_user(metadata: &str) -> Result<String, String> {
     let entries = serde_json::from_str(metadata)
         .map_err(|error| format!("wt: read devcontainer metadata: {error}"))?;
     let entries = match entries {
         DevcontainerMetadataLabel::One(entry) => vec![entry],
         DevcontainerMetadataLabel::Many(entries) => entries,
     };
-    let mut container_user = None;
     let mut remote_user = None;
     for entry in entries {
-        if let Some(value) = entry.container_user {
-            container_user = Some(value);
-        }
         if let Some(value) = entry.remote_user {
             remote_user = Some(value);
         }
     }
-    Ok(remote_user
-        .filter(|value| !value.is_empty())
-        .or_else(|| container_user.filter(|value| !value.is_empty())))
+    remote_user.ok_or_else(|| "wt: devcontainer runtime metadata has no remoteUser".to_owned())
+}
+
+fn validate_user(user: &str, source: &str) -> Result<(), String> {
+    if user.is_empty()
+        || !user
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+    {
+        return Err(format!("wt: {source} has invalid remoteUser {user:?}"));
+    }
+    Ok(())
 }
 
 pub fn pane_command(target: &AppTarget) -> Command {
@@ -242,7 +304,43 @@ mod tests {
     fn reads_object_devcontainer_metadata() {
         assert_eq!(
             metadata_user(r#"{"containerUser":"node","remoteUser":"vscode"}"#).unwrap(),
-            Some("vscode".to_owned())
+            "vscode"
+        );
+    }
+
+    #[test]
+    fn requires_configured_remote_user() {
+        assert_eq!(
+            configured_remote_user(r#"{"configuration":{"remoteUser":"vscode"}}"#).unwrap(),
+            "vscode"
+        );
+        insta::assert_snapshot!(
+            configured_remote_user(r#"{"configuration":{}}"#).unwrap_err(),
+            @"wt: devcontainer configuration must set remoteUser"
+        );
+        insta::assert_snapshot!(
+            configured_remote_user(r#"{"configuration":{"remoteUser":""}}"#).unwrap_err(),
+            @r###"wt: devcontainer configuration has invalid remoteUser """###
+        );
+        insta::assert_snapshot!(
+            configured_remote_user(r#"{"configuration":{"remoteUser":0}}"#).unwrap_err(),
+            @r###"wt: read devcontainer configuration: invalid type: integer `0`, expected a string at line 1 column 32"###
+        );
+    }
+
+    #[test]
+    fn runtime_metadata_does_not_fall_back_to_container_user() {
+        insta::assert_snapshot!(
+            metadata_user(r#"{"containerUser":"node"}"#).unwrap_err(),
+            @"wt: devcontainer runtime metadata has no remoteUser"
+        );
+    }
+
+    #[test]
+    fn runtime_user_must_match_configuration() {
+        insta::assert_snapshot!(
+            verify_runtime_user("vscode", "root").unwrap_err(),
+            @r###"wt: devcontainer remoteUser changed from "vscode" to "root" at runtime"###
         );
     }
 

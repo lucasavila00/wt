@@ -2,5 +2,6 @@
   "name": "wt",
   "build": {
     "dockerfile": "Dockerfile"
-  }
+  },
+  "remoteUser": "root"
 }

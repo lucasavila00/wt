@@ -1731,6 +1731,7 @@ version = "0.0.0"
 name = "wt-guest"
 version = "0.0.0"
 dependencies = [
+ "insta",
  "serde",
  "serde_json",
  "wt-command",

@@ -183,6 +183,7 @@ passphrase crosses the WT API or remains in the world.
 
 - Ubuntu 24.04 amd64 servers with KVM.
 - App images derived from Debian or Ubuntu with `apt`.
+- The devcontainer configuration explicitly sets an existing `remoteUser`.
 - The stock devcontainer recipe remains the environment contract.
 - No KVM emulation fallback.
 

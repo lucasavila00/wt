@@ -77,14 +77,18 @@ fi
 sudo /usr/local/libexec/wt-setup-root prepare
 
 additional_features='{"ghcr.io/devcontainers/features/sshd:1":{}}'
+app_user=$(
+    devcontainer read-configuration --workspace-folder "$workspace" |
+        /usr/local/bin/wt-app-info configured-user
+)
 devcontainer up --log-level debug --log-format text --workspace-folder "$workspace" \
     --additional-features "$additional_features" \
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
     --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
     'workspace=$(pwd -P) && git config --global --add safe.directory "$workspace"'
+/usr/local/bin/wt-app-info verify-user "$app_user"
 /usr/local/bin/wt-app-info > "$state/app.json"
-app_user=$(/usr/local/bin/wt-app-info user)
 app_address=$(/usr/local/bin/wt-app-info address)
 cat "$state/authorized-keys" /var/lib/wt-app-ssh/session_identity.pub > "$state/app-authorized-keys"
 sudo /usr/local/libexec/wt-setup-root finalize "$app_user"
