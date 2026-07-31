@@ -196,6 +196,26 @@ fn local_service_runs_small_devcontainer_fixture() {
         .output()
         .map_err(|error| error.to_string())?;
         ensure_success("verify Byobu frontend", &output)?;
+        let byobu_version = git_output(
+            cmd!(
+                "ssh",
+                "-F",
+                &ssh_config,
+                "-i",
+                &git.guest_key,
+                &host_alias,
+                "dpkg-query",
+                "-W",
+                r"-f=\${Version}",
+                "byobu",
+            ),
+            "read Byobu package version",
+        );
+        if byobu_version != "7.15-0ubuntu1" {
+            return Err(format!(
+                "unexpected Byobu version: {byobu_version:?}; expected 7.15-0ubuntu1"
+            ));
+        }
         let tmux_version = git_output(
             cmd!(
                 "ssh",

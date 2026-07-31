@@ -1,7 +1,9 @@
 use anyhow::{Error, Result};
 use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
-pub(super) const RECIPE_VERSION: u32 = 2;
+pub(super) const RECIPE_VERSION: u32 = 3;
+const BYOBU_VERSION: &str = "7.15-0ubuntu1";
+const BYOBU_SHA256: &str = "7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc";
 pub(super) const TMUX_VERSION: &str = "3.6b";
 const TMUX_SHA256: &str = "390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7";
 const NCURSES_TERM_DEB: &str = "ncurses-term_6.6+20260608-2_all.deb";
@@ -31,11 +33,14 @@ impl ImageRecipe {
             .packages
             .names()
             .iter()
+            .filter(|package| **package != "byobu")
             .map(|package| format!("  - {package}"))
             .collect::<Vec<_>>()
             .join("\n");
         let verified_packages = self.packages.names().join(" ");
         let devcontainer_cli = self.devcontainer_cli_version();
+        let byobu_version = BYOBU_VERSION;
+        let byobu_sha256 = BYOBU_SHA256;
         let tmux_version = TMUX_VERSION;
         let tmux_sha256 = TMUX_SHA256;
         let ncurses_term_deb = NCURSES_TERM_DEB;
@@ -63,6 +68,8 @@ runcmd:
   - docker info
   - docker buildx version
   - docker compose version
+  - echo 'WT_IMAGE_PHASE=installing Byobu {byobu_version}' > /dev/ttyS0
+  - curl -fL --output /tmp/byobu.deb https://archive.ubuntu.com/ubuntu/pool/main/b/byobu/byobu_{byobu_version}_all.deb && printf '%s  %s\n' {byobu_sha256} /tmp/byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /tmp/byobu.deb && test "$(dpkg-query -W -f='${{Version}}' byobu)" = '{byobu_version}' && rm -f /tmp/byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@{devcontainer_cli}
   - devcontainer --version
@@ -83,13 +90,22 @@ power_state:
     }
 
     pub(super) fn parse_package_versions(&self, text: &str) -> Result<PackageVersions> {
-        self.packages.parse_versions(text).map_err(Error::msg)
+        let packages = self.packages.parse_versions(text).map_err(Error::msg)?;
+        self.validate_package_versions(&packages)?;
+        Ok(packages)
     }
 
     pub(super) fn validate_package_versions(&self, packages: &PackageVersions) -> Result<()> {
         self.packages
             .validate_versions(packages)
-            .map_err(Error::msg)
+            .map_err(Error::msg)?;
+        if packages["byobu"] != BYOBU_VERSION {
+            return Err(Error::msg(format!(
+                "installed byobu version is {}; expected {BYOBU_VERSION}",
+                packages["byobu"]
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -103,7 +119,14 @@ mod tests {
             .names()
             .iter()
             .rev()
-            .map(|name| format!("{name}\t1:2.3-4"))
+            .map(|name| {
+                let version = if *name == "byobu" {
+                    BYOBU_VERSION
+                } else {
+                    "1:2.3-4"
+                };
+                format!("{name}\t{version}")
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -128,7 +151,6 @@ packages:
   - openssh-server
   - nodejs
   - npm
-  - byobu
   - tmux
   - qemu-guest-agent
   - bison
@@ -143,6 +165,8 @@ runcmd:
   - docker info
   - docker buildx version
   - docker compose version
+  - echo 'WT_IMAGE_PHASE=installing Byobu 7.15-0ubuntu1' > /dev/ttyS0
+  - curl -fL --output /tmp/byobu.deb https://archive.ubuntu.com/ubuntu/pool/main/b/byobu/byobu_7.15-0ubuntu1_all.deb && printf '%s  %s\n' 7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc /tmp/byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /tmp/byobu.deb && test "$(dpkg-query -W -f='${Version}' byobu)" = '7.15-0ubuntu1' && rm -f /tmp/byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
@@ -194,6 +218,23 @@ power_state:
 
         let error = recipe.validate_package_versions(&packages).unwrap_err();
         insta::assert_snapshot!(error.to_string(), @"installed package manifest differs from policy: missing tmux; unexpected screen");
+    }
+
+    #[test]
+    fn rejects_unexpected_byobu_version() {
+        let recipe = ImageRecipe::new();
+        let mut packages = recipe
+            .parse_package_versions(&package_output(&recipe))
+            .unwrap();
+        packages.insert("byobu".to_owned(), "6.11-0ubuntu1".to_owned());
+
+        assert_eq!(
+            recipe
+                .validate_package_versions(&packages)
+                .unwrap_err()
+                .to_string(),
+            "installed byobu version is 6.11-0ubuntu1; expected 7.15-0ubuntu1"
+        );
     }
 
     #[test]

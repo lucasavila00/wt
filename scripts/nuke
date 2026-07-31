@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+report_failure() {
+    status=$?
+    if (( status != 0 )); then
+        printf '\nERROR: server cleanup stopped before completion (exit status %d).\n' "$status" >&2
+    fi
+}
+trap report_failure EXIT
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if [[ $# -ne 0 ]]; then
+    echo "usage: scripts/nuke" >&2
+    exit 2
+fi
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as the server user, not with sudo" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication is required" >&2
+    exit 1
+fi
+
+sudo systemctl disable --now wt-server.service 2>/dev/null || true
+
+mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
+for domain in "${domains[@]}"; do
+    state=$(virsh -c qemu:///system domstate "$domain")
+    if [[ $state != "shut off" ]]; then
+        virsh -c qemu:///system destroy "$domain"
+    fi
+    virsh -c qemu:///system undefine "$domain" --nvram
+done
+
+if command -v docker >/dev/null; then
+    docker rm -f wt-registry-cache 2>/dev/null || true
+fi
+
+sudo rm -f /etc/systemd/system/wt-server.service
+rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt"
+sudo rm -f /etc/systemd/system/docker.service.d/wt-registry-cache.conf
+sudo rm -f /usr/local/share/ca-certificates/wt-registry-cache.crt
+sudo systemctl daemon-reload
+if systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    sudo systemctl restart docker.service
+fi
+sudo update-ca-certificates
+sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/wt/registry-cache /var/lib/libvirt/images/wt

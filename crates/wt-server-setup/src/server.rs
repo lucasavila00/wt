@@ -175,10 +175,10 @@ Accidental change: re-run with the install input that produced the current serve
   scripts/install-server --config {input_path}
 
 Intentional change: clear WT server state, then reinstall:
-  make clear   # or: scripts/clear
+  make nuke   # or: scripts/nuke
   scripts/install-server --config {input_path}
 
-`make clear` destroys every wt-* domain and removes installed WT state
+`make nuke` destroys every wt-* domain and removes installed WT state
 (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
 Packages and binaries stay installed."
     )
@@ -310,10 +310,10 @@ mod tests {
           scripts/install-server --config ./server.toml
 
         Intentional change: clear WT server state, then reinstall:
-          make clear   # or: scripts/clear
+          make nuke   # or: scripts/nuke
           scripts/install-server --config ./server.toml
 
-        `make clear` destroys every wt-* domain and removes installed WT state
+        `make nuke` destroys every wt-* domain and removes installed WT state
         (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
         Packages and binaries stay installed.
         "

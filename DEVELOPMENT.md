@@ -68,5 +68,9 @@ Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 make clear
 ```
 
-This destroys `wt-*` domains and removes WT development state. It does not
-uninstall packages or binaries.
+This destroys `wt-*` domains and removes worlds, the golden image, the server
+database, and generated SSH inventory. It keeps the server installation,
+configuration, Ubuntu source image, and registry cache.
+
+Use `make nuke` for a full teardown, including configuration and registry-cache
+state. Neither target uninstalls packages or binaries.

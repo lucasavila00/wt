@@ -1,10 +1,13 @@
-.PHONY: bootstrap-server-user clear e2e-tests install-client install-server prepare-image
+.PHONY: bootstrap-server-user clear e2e-tests install-client install-server nuke prepare-image
 
 bootstrap-server-user:
 	scripts/bootstrap-server-user
 
 clear:
 	scripts/clear
+
+nuke:
+	scripts/nuke
 
 e2e-tests:
 	cargo test -p wt-integration-tests --test kvm_e2e -- --ignored

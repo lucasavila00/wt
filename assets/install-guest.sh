@@ -39,6 +39,10 @@ printf '%s\n' \
     'set-option -g mouse on' \
     "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
     "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
+    'set-option -s set-clipboard on' \
+    'set-option -g allow-passthrough on' \
+    'set-option -g focus-events on' \
+    "set-option -as terminal-features ',xterm-ghostty:clipboard:hyperlinks'" \
     > /home/wt/.byobu/.tmux.conf
 printf 'BACKGROUND=k\nFOREGROUND=w\nMONOCHROME=1\n' > /home/wt/.byobu/color
 chown wt:wt /home/wt/.byobu/.tmux.conf /home/wt/.byobu/color
