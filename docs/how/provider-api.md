@@ -30,19 +30,23 @@ Git, devcontainer, registry-cache, or app-SSH provisioning.
 
 ```text
 create(MachineSpec, progress) -> Machine
+fork(ForkMachineSpec, progress) -> Machine
 inspect(provider_id) -> Option<Machine>
-delete(provider_id)
+delete(provider_id, garbage_disk_ids)
 ```
 
-`MachineSpec` contains the stable provider ID and requested CPU, memory, and
-disk. `Machine` contains the provider ID, current network data, and a
+`MachineSpec` contains the stable provider and disk IDs and requested CPU,
+memory, and disk. `Machine` contains the provider ID, current network data, and a
 `GuestTransport`.
 
 - `create` returns when the machine and transport are ready. On failure, it
   attempts to remove partial resources without hiding the original error.
+- `fork` atomically pivots a quiesced source, boots the sibling with networking
+  disabled, replaces machine and SSH identities, then enables networking.
 - `inspect` returns `None` only when no provider resource exists. It refreshes
   network data without changing the guest.
-- `delete` is idempotent and attempts independent cleanup after errors.
+- `delete` is idempotent and attempts independent domain, machine-file, and
+  registry-selected disk-node cleanup after errors.
 - The stored provider ID is sufficient to retry deletion after interruption.
 
 ## Guest transport
@@ -81,8 +85,9 @@ with the same identity is accepted.
 
 ```text
 create:  machine.create -> provisioner.provision -> World
+fork:    machine.fork -> provisioner.inspect -> World
 inspect: machine.inspect -> provisioner.inspect -> World
-delete:  machine.delete
+delete:  registry.gc -> machine.delete
 ```
 
 Machine creation cleans up its own partial resources. Provisioning failure is

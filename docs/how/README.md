@@ -42,6 +42,7 @@ the daemon and registry records.
 | Operation | Result |
 |-----------|--------|
 | `create` | Create and prepare a guest through SSH readiness |
+| `fork` | Fork a running owned world on this server from a shared disk point |
 | `list` | Return the owner's worlds and SSH inventory |
 | `get` | Return one owned world |
 | `delete` | Destroy one owned world |

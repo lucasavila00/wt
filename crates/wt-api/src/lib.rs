@@ -49,9 +49,16 @@ where
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Operation {
     Create(CreateInstance),
+    Fork(ForkInstance),
     List,
     Get { name: InstanceName },
     Delete { name: InstanceName },
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ForkInstance {
+    pub source: InstanceName,
+    pub name: InstanceName,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -437,6 +444,24 @@ mod tests {
                 "memory_mib": 4096,
                 "disk_gib": 32,
                 "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"]
+            })
+        );
+    }
+
+    #[test]
+    fn fork_request_has_source_and_destination_shape() {
+        let request = ApiRequest::new(Operation::Fork(ForkInstance {
+            source: InstanceName::parse("source").unwrap(),
+            name: InstanceName::parse("fork").unwrap(),
+        }));
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 1,
+                "client_commit": WT_GIT_COMMIT,
+                "operation": "fork",
+                "source": "source",
+                "name": "fork"
             })
         );
     }

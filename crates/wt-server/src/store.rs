@@ -1,4 +1,4 @@
-use crate::schema::instances;
+use crate::schema::{disk_nodes, instances};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
@@ -20,6 +20,7 @@ pub struct Store {
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
+    pub head_disk_id: Uuid,
     pub setup_fingerprint: String,
 }
 
@@ -47,6 +48,7 @@ struct NewInstance<'a> {
     name: &'a str,
     status: String,
     backend_id: &'a str,
+    head_disk_id: String,
     source: &'a str,
     vcpus: i64,
     memory_mib: i64,
@@ -67,6 +69,7 @@ struct InstanceRow {
     guest_ip: Option<String>,
     last_error: Option<String>,
     backend_id: String,
+    head_disk_id: String,
     source: String,
     vcpus: i64,
     memory_mib: i64,
@@ -79,6 +82,23 @@ struct InstanceRow {
     app_ssh_user: Option<String>,
     app_ssh_port: Option<i32>,
     app_ssh_host_keys: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = disk_nodes)]
+struct NewDiskNode {
+    id: String,
+    parent_id: Option<String>,
+    immutable: bool,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = disk_nodes)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct DiskNodeRow {
+    id: String,
+    parent_id: Option<String>,
+    immutable: bool,
 }
 
 impl Store {
@@ -104,31 +124,84 @@ impl Store {
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
-        let instance = &stored.instance;
-        let row = NewInstance {
-            id: instance.id.to_string(),
-            owner: &instance.owner,
-            name: instance.name.as_str(),
-            status: instance.status.to_string(),
-            backend_id: &stored.backend_id,
-            source: &instance.source,
-            vcpus: instance.vcpus.into(),
-            memory_mib: to_i64(instance.memory_mib, "memory_mib")?,
-            disk_gib: to_i64(instance.disk_gib, "disk_gib")?,
-            setup_fingerprint: &stored.setup_fingerprint,
-            ssh_host_keys: "[]",
-            app_ssh_host_keys: "[]",
-        };
-        match diesel::insert_into(instances::table)
-            .values(&row)
-            .execute(&mut *self.connection.borrow_mut())
-        {
-            Ok(_) => Ok(()),
-            Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
-                Err(StoreError::Conflict)
+        self.connection.borrow_mut().transaction(|connection| {
+            insert_disk(connection, stored.head_disk_id, None, false)?;
+            insert_instance(connection, stored)
+        })
+    }
+
+    pub fn reserve_fork(
+        &self,
+        source_id: Uuid,
+        expected_source_disk_id: Uuid,
+        source_head_disk_id: Uuid,
+        fork: &StoredInstance,
+    ) -> Result<(), StoreError> {
+        self.connection.borrow_mut().transaction(|connection| {
+            let changed = diesel::update(
+                disk_nodes::table
+                    .find(expected_source_disk_id.to_string())
+                    .filter(disk_nodes::immutable.eq(false)),
+            )
+            .set(disk_nodes::immutable.eq(true))
+            .execute(connection)?;
+            changed_one(changed)?;
+            insert_disk(
+                connection,
+                source_head_disk_id,
+                Some(expected_source_disk_id),
+                false,
+            )?;
+            insert_disk(
+                connection,
+                fork.head_disk_id,
+                Some(expected_source_disk_id),
+                false,
+            )?;
+            let changed = diesel::update(
+                instances::table
+                    .find(source_id.to_string())
+                    .filter(instances::head_disk_id.eq(expected_source_disk_id.to_string())),
+            )
+            .set(instances::head_disk_id.eq(source_head_disk_id.to_string()))
+            .execute(connection)?;
+            changed_one(changed)?;
+            insert_instance(connection, fork)
+        })
+    }
+
+    pub fn discard_fork(
+        &self,
+        source_id: Uuid,
+        source_disk_id: Uuid,
+        source_head_disk_id: Uuid,
+        fork_id: Uuid,
+        fork_disk_id: Uuid,
+        source_pivoted: bool,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        self.connection.borrow_mut().transaction(|connection| {
+            diesel::delete(instances::table.find(fork_id.to_string())).execute(connection)?;
+            diesel::delete(disk_nodes::table.find(fork_disk_id.to_string())).execute(connection)?;
+            let mut removed = vec![fork_disk_id];
+            if !source_pivoted {
+                let changed = diesel::update(instances::table.find(source_id.to_string()))
+                    .set(instances::head_disk_id.eq(source_disk_id.to_string()))
+                    .execute(connection)?;
+                changed_one(changed)?;
+                diesel::delete(disk_nodes::table.find(source_head_disk_id.to_string()))
+                    .execute(connection)?;
+                let changed = diesel::update(disk_nodes::table.find(source_disk_id.to_string()))
+                    .set(disk_nodes::immutable.eq(false))
+                    .execute(connection)?;
+                changed_one(changed)?;
+                removed.push(source_head_disk_id);
             }
-            Err(error) => Err(error.into()),
-        }
+            Ok(removed)
+        })
+    }
+
+    pub fn garbage_for_delete(&self, id: Uuid) -> Result<Vec<Uuid>, StoreError> {
+        garbage_for_delete(&mut self.connection.borrow_mut(), id)
     }
 
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
@@ -249,10 +322,23 @@ impl Store {
         changed_one(changed)
     }
 
-    pub fn delete(&self, id: Uuid) -> Result<(), StoreError> {
-        let changed = diesel::delete(instances::table.find(id.to_string()))
-            .execute(&mut *self.connection.borrow_mut())?;
-        changed_one(changed)
+    pub fn delete(&self, id: Uuid, garbage: &[Uuid]) -> Result<(), StoreError> {
+        self.connection.borrow_mut().transaction(|connection| {
+            if garbage_for_delete(connection, id)? != garbage {
+                return Err(StoreError::InvalidData(
+                    "disk graph changed while deleting world".into(),
+                ));
+            }
+            let changed =
+                diesel::delete(instances::table.find(id.to_string())).execute(connection)?;
+            changed_one(changed)?;
+            for disk_id in garbage {
+                let changed = diesel::delete(disk_nodes::table.find(disk_id.to_string()))
+                    .execute(connection)?;
+                changed_one(changed)?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -302,9 +388,111 @@ impl TryFrom<InstanceRow> for StoredInstance {
                 app_ssh,
             },
             backend_id: row.backend_id,
+            head_disk_id: Uuid::parse_str(&row.head_disk_id)
+                .map_err(|error| StoreError::InvalidData(error.to_string()))?,
             setup_fingerprint: row.setup_fingerprint,
         })
     }
+}
+
+fn insert_disk(
+    connection: &mut SqliteConnection,
+    id: Uuid,
+    parent_id: Option<Uuid>,
+    immutable: bool,
+) -> Result<(), StoreError> {
+    let row = NewDiskNode {
+        id: id.to_string(),
+        parent_id: parent_id.map(|id| id.to_string()),
+        immutable,
+    };
+    insert_result(
+        diesel::insert_into(disk_nodes::table)
+            .values(row)
+            .execute(connection),
+    )
+}
+
+fn insert_instance(
+    connection: &mut SqliteConnection,
+    stored: &StoredInstance,
+) -> Result<(), StoreError> {
+    let instance = &stored.instance;
+    let row = NewInstance {
+        id: instance.id.to_string(),
+        owner: &instance.owner,
+        name: instance.name.as_str(),
+        status: instance.status.to_string(),
+        backend_id: &stored.backend_id,
+        head_disk_id: stored.head_disk_id.to_string(),
+        source: &instance.source,
+        vcpus: instance.vcpus.into(),
+        memory_mib: to_i64(instance.memory_mib, "memory_mib")?,
+        disk_gib: to_i64(instance.disk_gib, "disk_gib")?,
+        setup_fingerprint: &stored.setup_fingerprint,
+        ssh_host_keys: "[]",
+        app_ssh_host_keys: "[]",
+    };
+    insert_result(
+        diesel::insert_into(instances::table)
+            .values(row)
+            .execute(connection),
+    )
+}
+
+fn insert_result(result: Result<usize, DieselError>) -> Result<(), StoreError> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+            Err(StoreError::Conflict)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn garbage_for_delete(
+    connection: &mut SqliteConnection,
+    instance_id: Uuid,
+) -> Result<Vec<Uuid>, StoreError> {
+    let mut current = instances::table
+        .find(instance_id.to_string())
+        .select(instances::head_disk_id)
+        .first::<String>(connection)
+        .optional()?
+        .ok_or(StoreError::NotFound)?;
+    let mut garbage = Vec::new();
+    loop {
+        let node = disk_nodes::table
+            .find(&current)
+            .select(DiskNodeRow::as_select())
+            .first::<DiskNodeRow>(connection)?;
+        if (garbage.is_empty() && node.immutable) || (!garbage.is_empty() && !node.immutable) {
+            return Err(StoreError::InvalidData(
+                "disk graph mutability invariant is broken".into(),
+            ));
+        }
+        garbage.push(
+            Uuid::parse_str(&node.id)
+                .map_err(|error| StoreError::InvalidData(error.to_string()))?,
+        );
+        let Some(parent_id) = node.parent_id else {
+            break;
+        };
+        let other_children = disk_nodes::table
+            .filter(disk_nodes::parent_id.eq(&parent_id))
+            .filter(disk_nodes::id.ne(&current))
+            .count()
+            .get_result::<i64>(connection)?;
+        let direct_heads = instances::table
+            .filter(instances::head_disk_id.eq(&parent_id))
+            .count()
+            .get_result::<i64>(connection)?;
+        if other_children != 0 || direct_heads != 0 {
+            break;
+        }
+        current = parent_id;
+    }
+    Ok(garbage)
 }
 
 fn changed_one(changed: usize) -> Result<(), StoreError> {

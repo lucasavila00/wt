@@ -60,6 +60,7 @@ while starting the devcontainer.
 | Command | Result |
 |---------|--------|
 | `wt new` | Interactively create a guest, then enter its setup SSH session |
+| `wt fork SOURCE NEW` | Fork a running world on the same context using copy-on-write storage |
 | `wt ls` | List worlds, resources, and status across configured contexts |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
@@ -73,6 +74,13 @@ Short names work when globally unique. Git sources use `ssh://...` or
 devcontainer's current workspace mount, and runs the local VS Code CLI against
 the `ars.jsdev-vs` Remote-SSH alias. It requires the `code` command and VS Code's
 Remote-SSH extension on the workstation.
+
+Fork operands may be qualified (`ars.w1`) or unqualified (`w1`). An
+unqualified destination uses the source context. The source and destination
+must be on the same context, and the destination name must be unused. A fork
+inherits the source disk state, resources, and authorized access, but boots as
+a separate machine with new guest and app SSH identities and no copied running
+processes.
 
 ## SSH access
 

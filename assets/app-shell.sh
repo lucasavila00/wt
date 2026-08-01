@@ -3,6 +3,15 @@ set -eu
 
 state=/var/lib/wt-setup
 tmux=/usr/bin/byobu-tmux
+agent_socket=$state/ssh-agent.sock
+if test -n "${SSH_AUTH_SOCK:-}"; then
+    ln -sfn "$SSH_AUTH_SOCK" "$agent_socket"
+    SSH_AUTH_SOCK=$agent_socket
+    export SSH_AUTH_SOCK
+else
+    rm -f "$agent_socket"
+    unset SSH_AUTH_SOCK
+fi
 if test -n "${BYOBU_ALT_TITLE:-}" && test -e "$state/complete"; then
     checkout=$(
         /usr/bin/git -C /workspace symbolic-ref --quiet --short HEAD 2>/dev/null ||
@@ -25,8 +34,14 @@ else
     fi
 fi
 if test -e "$state/complete"; then
+    if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then
+        "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-app-pane
+    fi
     "$tmux" set-option -g remain-on-exit off
 else
     "$tmux" set-option -g remain-on-exit failed
+    if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then
+        "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-setup-world
+    fi
 fi
 exec "$tmux" attach-session -t wt-app

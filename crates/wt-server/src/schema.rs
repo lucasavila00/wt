@@ -1,6 +1,14 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    disk_nodes (id) {
+        id -> Text,
+        parent_id -> Nullable<Text>,
+        immutable -> Bool,
+    }
+}
+
+diesel::table! {
     instances (id) {
         id -> Text,
         owner -> Text,
@@ -9,6 +17,7 @@ diesel::table! {
         guest_ip -> Nullable<Text>,
         last_error -> Nullable<Text>,
         backend_id -> Text,
+        head_disk_id -> Text,
         source -> Text,
         vcpus -> BigInt,
         memory_mib -> BigInt,
@@ -23,3 +32,7 @@ diesel::table! {
         app_ssh_host_keys -> Text,
     }
 }
+
+diesel::joinable!(instances -> disk_nodes (head_disk_id));
+
+diesel::allow_tables_to_appear_in_same_query!(disk_nodes, instances);

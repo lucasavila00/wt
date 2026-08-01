@@ -49,9 +49,18 @@ impl fmt::Display for ProviderId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MachineSpec {
     pub provider_id: ProviderId,
+    pub disk_id: Uuid,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForkMachineSpec {
+    pub source_provider_id: ProviderId,
+    pub source_disk_id: Uuid,
+    pub source_head_disk_id: Uuid,
+    pub machine: MachineSpec,
 }
 
 #[derive(Clone)]
@@ -74,14 +83,16 @@ impl fmt::Debug for Machine {
 
 pub trait MachineProvider: Clone + Send + Sync + 'static {
     fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError>;
+    fn fork(&self, spec: &ForkMachineSpec, progress: &mut dyn Write) -> Result<Machine, ForkError>;
     fn inspect(&self, provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError>;
-    fn delete(&self, provider_id: &ProviderId) -> Result<(), WorkerError>;
+    fn delete(&self, provider_id: &ProviderId, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
 }
 
 #[derive(Clone, Debug)]
 pub struct ProvisionSpec<'a> {
     pub id: Uuid,
     pub backend_id: &'a str,
+    pub disk_id: Uuid,
     pub owner: &'a str,
     pub name: &'a InstanceName,
     pub source: &'a str,
@@ -93,6 +104,18 @@ pub struct ProvisionSpec<'a> {
     pub vcpus: u32,
     pub disk_gib: u64,
     pub ssh_authorized_keys: &'a [String],
+}
+
+#[derive(Clone, Debug)]
+pub struct ForkSpec<'a> {
+    pub source_backend_id: &'a str,
+    pub source_disk_id: Uuid,
+    pub source_head_disk_id: Uuid,
+    pub backend_id: &'a str,
+    pub disk_id: Uuid,
+    pub memory_mib: u64,
+    pub vcpus: u32,
+    pub disk_gib: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,7 +131,8 @@ pub trait WorldWorker {
         spec: &ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<World, WorkerError>;
-    fn destroy(&self, backend_id: &str) -> Result<(), WorkerError>;
+    fn fork(&self, spec: &ForkSpec<'_>, log: &mut dyn Write) -> Result<World, ForkError>;
+    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError>;
 }
 
@@ -137,6 +161,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         let machine = self.provider.create(
             &MachineSpec {
                 provider_id: provider_id.clone(),
+                disk_id: spec.disk_id,
                 memory_mib: spec.memory_mib,
                 vcpus: spec.vcpus,
                 disk_gib: spec.disk_gib,
@@ -146,8 +171,32 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         self.provisioner.provision(&machine, spec, log)
     }
 
-    fn destroy(&self, backend_id: &str) -> Result<(), WorkerError> {
-        self.provider.delete(&ProviderId::parse(backend_id)?)
+    fn fork(&self, spec: &ForkSpec<'_>, log: &mut dyn Write) -> Result<World, ForkError> {
+        let machine = self.provider.fork(
+            &ForkMachineSpec {
+                source_provider_id: ProviderId::parse(spec.source_backend_id)
+                    .map_err(ForkError::before_pivot)?,
+                source_disk_id: spec.source_disk_id,
+                source_head_disk_id: spec.source_head_disk_id,
+                machine: MachineSpec {
+                    provider_id: ProviderId::parse(spec.backend_id)
+                        .map_err(ForkError::before_pivot)?,
+                    disk_id: spec.disk_id,
+                    memory_mib: spec.memory_mib,
+                    vcpus: spec.vcpus,
+                    disk_gib: spec.disk_gib,
+                },
+            },
+            log,
+        )?;
+        self.provisioner
+            .inspect(&machine)
+            .map_err(ForkError::after_pivot)
+    }
+
+    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
+        self.provider
+            .delete(&ProviderId::parse(backend_id)?, disk_ids)
     }
 
     fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError> {
@@ -155,6 +204,33 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             return Ok(None);
         };
         self.provisioner.inspect(&machine).map(Some)
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("{error}")]
+pub struct ForkError {
+    error: WorkerError,
+    source_pivoted: bool,
+}
+
+impl ForkError {
+    pub fn before_pivot(error: WorkerError) -> Self {
+        Self {
+            error,
+            source_pivoted: false,
+        }
+    }
+
+    pub fn after_pivot(error: WorkerError) -> Self {
+        Self {
+            error,
+            source_pivoted: true,
+        }
+    }
+
+    pub fn source_pivoted(&self) -> bool {
+        self.source_pivoted
     }
 }
 
@@ -217,11 +293,19 @@ mod tests {
             })
         }
 
+        fn fork(
+            &self,
+            _spec: &ForkMachineSpec,
+            _progress: &mut dyn Write,
+        ) -> Result<Machine, ForkError> {
+            unreachable!()
+        }
+
         fn inspect(&self, _provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError> {
             unreachable!()
         }
 
-        fn delete(&self, _provider_id: &ProviderId) -> Result<(), WorkerError> {
+        fn delete(&self, _provider_id: &ProviderId, _disk_ids: &[Uuid]) -> Result<(), WorkerError> {
             self.deletes.fetch_add(1, Ordering::SeqCst);
             if self.cleanup_fails {
                 Err(WorkerError::new("injected cleanup failure"))
@@ -303,6 +387,7 @@ mod tests {
         let spec = ProvisionSpec {
             id: Uuid::new_v4(),
             backend_id: "wt-0123456789abcdef0123456789abcdef",
+            disk_id: Uuid::new_v4(),
             owner: "tester",
             name: &name,
             source: "git@example.test:repo.git",

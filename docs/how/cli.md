@@ -25,6 +25,11 @@ host = "wt-server"
 The client resolves `context.world` directly. It resolves a short name only when
 the name is unique across all contexts.
 
+`wt fork SOURCE NEW` resolves both operands with the same rules. An unqualified
+`NEW` inherits the resolved source context. A qualified destination must name
+that same context; the client rejects cross-context forks before contacting a
+server.
+
 ## World setup
 
 `wt new` requires a terminal and guides the user through interactive prompts. World name and Git

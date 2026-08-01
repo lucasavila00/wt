@@ -22,8 +22,9 @@ Forward the workstation SSH agent for the lifetime of each user connection.
 
 - Keep `ForwardAgent yes` on `NAME` aliases after setup.
 - Set `ForwardAgent yes` on `NAME-vs` aliases.
-- Keep `SSH_AUTH_SOCK` in the Byobu environment after setup.
-- Refresh the Byobu `SSH_AUTH_SOCK` on every `ssh NAME` connection.
+- Give Byobu panes a stable guest-side `SSH_AUTH_SOCK` path.
+- Retarget that path to the current forwarded socket on every `ssh NAME`
+  connection.
 - Make `wt-app-pane` forward the agent on its guest-to-devcontainer SSH
   connection.
 
@@ -33,8 +34,8 @@ inside the devcontainer.
 
 When the workstation disconnects, its forwarded socket becomes unusable.
 Existing shells remain alive. SSH operations fail until the user reconnects.
-The reconnect replaces the stale socket in the Byobu environment. New panes
-inherit the new socket.
+The reconnect retargets the stable path, so existing shells and new panes use
+the new socket.
 
 ## Verification
 
@@ -43,7 +44,7 @@ inherit the new socket.
 - `ssh NAME-vs` exposes the workstation agent inside the devcontainer.
 - Disconnecting does not stop existing Byobu shells.
 - Reconnecting replaces the stale agent socket.
-- A pane created after reconnect uses the new agent socket.
+- Existing panes and panes created after reconnect use the new agent socket.
 
 ## Consequences
 

@@ -5,9 +5,10 @@ use std::sync::{
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_api::{
-    CreateInstance, Instance, InstanceName, InstanceStatus, Operation, Response, SshAccess,
+    CreateInstance, ForkInstance, Instance, InstanceName, InstanceStatus, Operation, Response,
+    SshAccess,
 };
-use wt_provider::{ProvisionSpec, WorkerError, World, WorldWorker};
+use wt_provider::{ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredInstance};
@@ -17,11 +18,14 @@ struct Worker {
     provisions: Arc<AtomicUsize>,
     destroys: Arc<AtomicUsize>,
     inspections: Arc<AtomicUsize>,
+    forks: Arc<AtomicUsize>,
+    destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     complete: bool,
     provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     missing: bool,
     changed_guest_identity: bool,
     changed_app_identity: bool,
+    fork_error_pivoted: Option<bool>,
 }
 
 impl WorldWorker for Worker {
@@ -40,8 +44,25 @@ impl WorldWorker for Worker {
         }
         Ok(world(false))
     }
-    fn destroy(&self, _backend_id: &str) -> Result<(), WorkerError> {
+    fn fork(
+        &self,
+        _spec: &ForkSpec<'_>,
+        _log: &mut dyn std::io::Write,
+    ) -> Result<World, ForkError> {
+        self.forks.fetch_add(1, Ordering::SeqCst);
+        if let Some(pivoted) = self.fork_error_pivoted {
+            let error = WorkerError::new("injected fork failure");
+            return Err(if pivoted {
+                ForkError::after_pivot(error)
+            } else {
+                ForkError::before_pivot(error)
+            });
+        }
+        Ok(fork_world())
+    }
+    fn destroy(&self, _backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
+        self.destroyed_disks.lock().unwrap().push(disk_ids.to_vec());
         Ok(())
     }
     fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
@@ -59,6 +80,15 @@ impl WorldWorker for Worker {
         }
         Ok(Some(inspected))
     }
+}
+
+fn fork_world() -> World {
+    let mut fork = world(true);
+    fork.guest_ip = "192.0.2.3".into();
+    fork.ssh.host = "192.0.2.3".into();
+    fork.ssh.host_keys = vec!["ssh-ed25519 AAAAFORK guest".into()];
+    fork.app_ssh.as_mut().unwrap().host_keys = vec!["ssh-ed25519 AAAAFORKAPP app".into()];
+    fork
 }
 
 #[test]
@@ -185,6 +215,173 @@ fn delete_removes_setup_world() {
         )
         .unwrap();
     assert_eq!(destroys.load(Ordering::SeqCst), 1);
+}
+
+fn make_running(temp: &TempDir, name: &str) {
+    service(temp, Worker::default())
+        .execute("tester", Operation::Create(create(name)))
+        .unwrap();
+    service(
+        temp,
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+    )
+    .execute("tester", Operation::List)
+    .unwrap();
+}
+
+#[test]
+fn fork_inherits_resources_and_replaces_ssh_identities() {
+    let temp = TempDir::new().unwrap();
+    make_running(&temp, "source");
+    let worker = Worker {
+        complete: true,
+        ..Worker::default()
+    };
+    let Response::Instance { instance } = service(&temp, worker.clone())
+        .execute(
+            "tester",
+            Operation::Fork(ForkInstance {
+                source: InstanceName::parse("source").unwrap(),
+                name: InstanceName::parse("fork").unwrap(),
+            }),
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(instance.status, InstanceStatus::Running);
+    assert_eq!(
+        (instance.vcpus, instance.memory_mib, instance.disk_gib),
+        (1, 1024, 8)
+    );
+    assert_eq!(
+        instance.ssh.unwrap().host_keys,
+        vec!["ssh-ed25519 AAAAFORK guest"]
+    );
+    assert_eq!(
+        instance.app_ssh.unwrap().host_keys,
+        vec!["ssh-ed25519 AAAAFORKAPP app"]
+    );
+    assert_eq!(worker.forks.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn fork_rejects_destination_collisions() {
+    let temp = TempDir::new().unwrap();
+    make_running(&temp, "source");
+    make_running(&temp, "existing");
+    let error = service(
+        &temp,
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+    )
+    .execute(
+        "tester",
+        Operation::Fork(ForkInstance {
+            source: InstanceName::parse("source").unwrap(),
+            name: InstanceName::parse("existing").unwrap(),
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+}
+
+#[test]
+fn deleting_fork_siblings_garbage_collects_only_unreferenced_nodes() {
+    let temp = TempDir::new().unwrap();
+    make_running(&temp, "source");
+    service(
+        &temp,
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+    )
+    .execute(
+        "tester",
+        Operation::Fork(ForkInstance {
+            source: InstanceName::parse("source").unwrap(),
+            name: InstanceName::parse("fork").unwrap(),
+        }),
+    )
+    .unwrap();
+    let worker = Worker::default();
+    for name in ["source", "fork"] {
+        service(&temp, worker.clone())
+            .execute(
+                "tester",
+                Operation::Delete {
+                    name: InstanceName::parse(name).unwrap(),
+                },
+            )
+            .unwrap();
+    }
+    let disk_counts = worker
+        .destroyed_disks
+        .lock()
+        .unwrap()
+        .iter()
+        .map(Vec::len)
+        .collect::<Vec<_>>();
+    assert_eq!(disk_counts, [1, 2]);
+}
+
+#[test]
+fn failed_forks_leave_the_source_running_and_retryable() {
+    for pivoted in [false, true] {
+        let temp = TempDir::new().unwrap();
+        make_running(&temp, "source");
+        let error = service(
+            &temp,
+            Worker {
+                complete: true,
+                fork_error_pivoted: Some(pivoted),
+                ..Worker::default()
+            },
+        )
+        .execute(
+            "tester",
+            Operation::Fork(ForkInstance {
+                source: InstanceName::parse("source").unwrap(),
+                name: InstanceName::parse("failed").unwrap(),
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, wt_api::ErrorCode::Backend);
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        assert_eq!(
+            store
+                .get("tester", &InstanceName::parse("source").unwrap())
+                .unwrap()
+                .instance
+                .status,
+            InstanceStatus::Running
+        );
+        assert!(matches!(
+            store.get("tester", &InstanceName::parse("failed").unwrap()),
+            Err(wt_server::store::StoreError::NotFound)
+        ));
+        service(
+            &temp,
+            Worker {
+                complete: true,
+                ..Worker::default()
+            },
+        )
+        .execute(
+            "tester",
+            Operation::Fork(ForkInstance {
+                source: InstanceName::parse("source").unwrap(),
+                name: InstanceName::parse("retry").unwrap(),
+            }),
+        )
+        .unwrap();
+    }
 }
 
 #[test]
@@ -388,6 +585,7 @@ fn startup_recovery_marks_provisioning_as_error() {
                 app_ssh: None,
             },
             backend_id: format!("wt-{}", id.simple()),
+            head_disk_id: Uuid::new_v4(),
             setup_fingerprint: "test".into(),
         })
         .unwrap();

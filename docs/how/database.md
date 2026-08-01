@@ -10,6 +10,11 @@
 
 SQLite is bundled. The server does not need Diesel CLI.
 
+`instances.head_disk_id` references the writable head of each world.
+`disk_nodes.parent_id` records qcow2 backing relationships; parent nodes become
+immutable when shared. Delete computes unreachable leaf-to-root nodes in the
+registry and passes only those IDs to the machine provider for removal.
+
 ## Startup
 
 `Store::open` opens SQLite and runs pending migrations. Migrations are embedded

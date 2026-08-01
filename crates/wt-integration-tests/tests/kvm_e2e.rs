@@ -6,8 +6,8 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{
-    ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
-    Response,
+    ApiRequest, ApiResponse, CreateInstance, ForkInstance, InstanceName, InstanceStatus, Operation,
+    Outcome, Response,
 };
 use wt_command::cmd;
 use wt_server::ServerConfig;
@@ -30,6 +30,7 @@ fn local_service_runs_small_devcontainer_fixture() {
         None => ServerConfig::load().unwrap(),
     };
     config.install.binary_dir = workspace.join("target/debug");
+    let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
     let bridge_ip = network_address(&config.libvirt.network);
     let git = timings.run("prepare SSH Git fixture", || {
         GitSshServer::start(temp.path(), bridge_ip)
@@ -65,6 +66,7 @@ fn local_service_runs_small_devcontainer_fixture() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
+    let source_started = Instant::now();
     let created = timings.run("create KVM devcontainer world", || {
         call_api(
             temp.path(),
@@ -89,37 +91,86 @@ fn local_service_runs_small_devcontainer_fixture() {
     assert_eq!(instance.status, InstanceStatus::Setup);
     let instance = *instance;
     assert!(!instance.ssh.as_ref().unwrap().host_keys.is_empty());
-    let peer_name = InstanceName::parse(format!("{}-peer", name.as_str())).unwrap();
-    let peer_created = timings.run("create peer KVM world", || {
+    let Response::Instances { instances } =
+        call_api(temp.path(), &server_config_path, Operation::List)
+    else {
+        panic!("expected list response");
+    };
+    sync_inventory(&instances).unwrap();
+    let agent = SshAgent::start(temp.path(), &git.git_key);
+    create_failed_setup_pane(temp.path(), &name);
+    let mut setup = start_world_setup(temp.path(), &name, &agent);
+    let instance = wait_for_running(temp.path(), &server_config_path, &name);
+    let source_create_elapsed = source_started.elapsed();
+    let _ = setup.kill();
+    let _ = setup.wait();
+    assert_registry_cache_hit(cache_log_since);
+
+    let Response::Instances { instances } =
+        call_api(temp.path(), &server_config_path, Operation::List)
+    else {
+        panic!("expected list response");
+    };
+    sync_inventory(&instances).unwrap();
+    let ssh_config = temp.path().join(".ssh/config");
+    let host_alias = format!("local.{}-host", name.as_str());
+    let fork_point = cmd!(
+        "ssh",
+        "-F",
+        &ssh_config,
+        "-i",
+        &git.guest_key,
+        &host_alias,
+        "printf 'fork point\n' > /workspace/wt-fork-point",
+    )
+    .output()
+    .unwrap();
+    ensure_success("write uncommitted fork-point state", &fork_point).unwrap();
+    let fork_name = InstanceName::parse(format!("{}-fork", name.as_str())).unwrap();
+    let fork_started = Instant::now();
+    let forked = timings.run("fork running KVM world", || {
         call_api(
             temp.path(),
             &server_config_path,
-            Operation::Create(CreateInstance {
-                name: peer_name.clone(),
-                source: git.url(),
-                git_branch: None,
-                git_ref: None,
-                git_user_name: "WT E2E".to_owned(),
-                git_user_email: "wt@example.invalid".to_owned(),
-                vcpus: 1,
-                memory_mib: 1024,
-                disk_gib: 32,
-                ssh_authorized_keys: vec![guest_public_key.clone()],
+            Operation::Fork(ForkInstance {
+                source: name.clone(),
+                name: fork_name.clone(),
             }),
         )
     });
+    let fork_elapsed = fork_started.elapsed();
     let Response::Instance {
-        instance: peer_instance,
-    } = peer_created
+        instance: fork_instance,
+    } = forked
     else {
-        panic!("expected peer instance");
+        panic!("expected fork instance");
     };
-    assert_eq!(peer_instance.status, InstanceStatus::Setup);
-    let peer_instance = *peer_instance;
-    assert_ne!(instance.guest_ip, peer_instance.guest_ip);
+    let fork_instance = *fork_instance;
+    assert_eq!(fork_instance.status, InstanceStatus::Running);
+    assert_eq!(
+        (
+            fork_instance.vcpus,
+            fork_instance.memory_mib,
+            fork_instance.disk_gib
+        ),
+        (instance.vcpus, instance.memory_mib, instance.disk_gib)
+    );
+    assert_ne!(fork_instance.guest_ip, instance.guest_ip);
     assert_ne!(
-        instance.ssh.as_ref().unwrap().host_keys,
-        peer_instance.ssh.as_ref().unwrap().host_keys
+        fork_instance.ssh.as_ref().unwrap().host_keys,
+        instance.ssh.as_ref().unwrap().host_keys
+    );
+    assert_ne!(
+        fork_instance.app_ssh.as_ref().unwrap().host_keys,
+        instance.app_ssh.as_ref().unwrap().host_keys
+    );
+    assert!(
+        fork_elapsed < source_create_elapsed,
+        "fork took {fork_elapsed:?}, but source creation took {source_create_elapsed:?}"
+    );
+    assert_eq!(
+        count_disk_nodes(&config.libvirt.worlds_dir),
+        initial_disk_nodes + 3
     );
 
     let Response::Instances { instances } =
@@ -128,20 +179,90 @@ fn local_service_runs_small_devcontainer_fixture() {
         panic!("expected list response");
     };
     sync_inventory(&instances).unwrap();
-    let agent = SshAgent::start(temp.path(), &git.git_key);
-    let mut setup = start_world_setup(temp.path(), &name, &agent);
-    let mut peer_setup = start_world_setup(temp.path(), &peer_name, &agent);
-    let instance = wait_for_running(temp.path(), &server_config_path, &name);
-    let peer_instance = wait_for_running(temp.path(), &server_config_path, &peer_name);
-    let _ = setup.kill();
-    let _ = setup.wait();
-    let _ = peer_setup.kill();
-    let _ = peer_setup.wait();
-    assert_ne!(
-        instance.app_ssh.as_ref().unwrap().host_keys,
-        peer_instance.app_ssh.as_ref().unwrap().host_keys
+    let fork_host_alias = format!("local.{}-host", fork_name.as_str());
+    for (alias, command, action) in [
+        (
+            host_alias.as_str(),
+            "test \"$(cat /workspace/wt-fork-point)\" = 'fork point' && printf 'source\n' > /workspace/wt-source-only && test ! -e /workspace/wt-fork-only",
+            "modify source after fork",
+        ),
+        (
+            fork_host_alias.as_str(),
+            "test \"$(cat /workspace/wt-fork-point)\" = 'fork point' && test ! -e /workspace/wt-source-only && printf 'fork\n' > /workspace/wt-fork-only",
+            "modify fork after fork point",
+        ),
+        (
+            host_alias.as_str(),
+            "test ! -e /workspace/wt-fork-only",
+            "verify source and fork disk isolation",
+        ),
+    ] {
+        let output = cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            alias,
+            command,
+        )
+        .output()
+        .unwrap();
+        ensure_success(action, &output).unwrap();
+    }
+    let source_machine_id = git_output(
+        cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            &host_alias,
+            "cat",
+            "/etc/machine-id",
+        ),
+        "read source machine ID after fork",
     );
-    assert_registry_cache_hit(cache_log_since);
+    let fork_machine_id = git_output(
+        cmd!(
+            "ssh",
+            "-F",
+            &ssh_config,
+            "-i",
+            &git.guest_key,
+            &fork_host_alias,
+            "cat",
+            "/etc/machine-id",
+        ),
+        "read fork machine ID",
+    );
+    assert_ne!(source_machine_id.trim(), fork_machine_id.trim());
+    let removed_fork = timings.run("remove fork KVM world", || {
+        call_api_result(
+            temp.path(),
+            &server_config_path,
+            Operation::Delete {
+                name: fork_name.clone(),
+            },
+        )
+    });
+    assert!(removed_fork.is_ok(), "remove fork world: {removed_fork:?}");
+    assert_eq!(
+        count_disk_nodes(&config.libvirt.worlds_dir),
+        initial_disk_nodes + 2
+    );
+    let source_after_delete = cmd!(
+        "ssh",
+        "-F",
+        &ssh_config,
+        "-i",
+        &git.guest_key,
+        &host_alias,
+        "test \"$(cat /workspace/wt-source-only)\" = source",
+    )
+    .output()
+    .unwrap();
+    ensure_success("verify source after deleting fork", &source_after_delete).unwrap();
 
     let result = (|| {
         let Response::Instances { instances } =
@@ -149,12 +270,11 @@ fn local_service_runs_small_devcontainer_fixture() {
         else {
             return Err("expected list response".to_owned());
         };
-        assert_eq!(instances.len(), 2);
+        assert_eq!(instances.len(), 1);
         timings.run("sync SSH inventory", || sync_inventory(&instances))?;
 
         let host_alias = format!("local.{}-host", name.as_str());
         let vs_alias = format!("local.{}-vs", name.as_str());
-        let peer_host_alias = format!("local.{}-host", peer_name.as_str());
         let ssh_config = temp.path().join(".ssh/config");
         let output = timings.run("verify guest SSH", || {
             cmd!(
@@ -234,39 +354,6 @@ fn local_service_runs_small_devcontainer_fixture() {
                 "unexpected Byobu tmux version: {tmux_version:?}; expected tmux 3.6b"
             ));
         }
-        let machine_id = git_output(
-            cmd!(
-                "ssh",
-                "-F",
-                &ssh_config,
-                "-i",
-                &git.guest_key,
-                &host_alias,
-                "cat",
-                "/etc/machine-id",
-            ),
-            "read fixture machine ID",
-        );
-        let peer_machine_id = git_output(
-            cmd!(
-                "ssh",
-                "-F",
-                &ssh_config,
-                "-i",
-                &git.guest_key,
-                &peer_host_alias,
-                "cat",
-                "/etc/machine-id",
-            ),
-            "read peer machine ID",
-        );
-        if machine_id.trim().is_empty() || peer_machine_id.trim().is_empty() {
-            return Err("guest machine ID is empty".to_owned());
-        }
-        if machine_id.trim() == peer_machine_id.trim() {
-            return Err(format!("guest machine IDs are duplicated: {machine_id:?}"));
-        }
-
         let mut persistent = cmd!(
             "ssh",
             "-F",
@@ -326,7 +413,7 @@ fn local_service_runs_small_devcontainer_fixture() {
             "-i",
             &git.guest_key,
             &host_alias,
-            "/usr/bin/tmux",
+            "/usr/bin/byobu-tmux",
             "source-file",
             "/usr/share/byobu/profiles/tmuxrc",
             "\\;",
@@ -543,21 +630,14 @@ fn local_service_runs_small_devcontainer_fixture() {
         Ok(())
     })();
 
-    let peer_removed = timings.run("remove peer KVM world", || {
-        call_api_result(
-            temp.path(),
-            &server_config_path,
-            Operation::Delete { name: peer_name },
-        )
-    });
-    assert!(
-        peer_removed.is_ok(),
-        "remove peer KVM sample world: {peer_removed:?}"
-    );
     let removed = timings.run("remove KVM world", || {
         call_api_result(temp.path(), &server_config_path, Operation::Delete { name })
     });
     assert!(removed.is_ok(), "remove KVM sample world: {removed:?}");
+    assert_eq!(
+        count_disk_nodes(&config.libvirt.worlds_dir),
+        initial_disk_nodes
+    );
     result.unwrap();
 }
 
@@ -580,6 +660,18 @@ fn wait_for_running(home: &Path, config: &Path, name: &InstanceName) -> wt_api::
         assert!(Instant::now() < deadline, "timed out waiting for setup");
         std::thread::sleep(Duration::from_secs(2));
     }
+}
+
+fn count_disk_nodes(worlds_dir: &Path) -> usize {
+    let entries = match fs::read_dir(worlds_dir.join("disks")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return 0,
+        Err(error) => panic!("read disk node directory: {error}"),
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("qcow2"))
+        .count()
 }
 
 fn sync_inventory(instances: &[wt_api::Instance]) -> Result<(), String> {
@@ -617,6 +709,75 @@ fn start_world_setup(home: &Path, name: &InstanceName, agent: &SshAgent) -> Chil
     .stderr(Stdio::inherit())
     .spawn()
     .expect("start first-SSH world setup")
+}
+
+fn create_failed_setup_pane(home: &Path, name: &InstanceName) {
+    let host = format!("local.{name}-host");
+    for (arguments, action) in [
+        (
+            vec![
+                "/usr/bin/byobu-tmux",
+                "-f",
+                "/usr/local/share/wt-tmux.conf",
+                "new-session",
+                "-d",
+                "-s",
+                "wt-app",
+                "/bin/sleep",
+                "600",
+            ],
+            "create setup session",
+        ),
+        (
+            vec!["/usr/bin/tmux", "set-option", "-g", "remain-on-exit", "on"],
+            "retain failed setup pane",
+        ),
+        (
+            vec![
+                "/usr/bin/tmux",
+                "respawn-pane",
+                "-k",
+                "-t",
+                "wt-app:0.0",
+                "/bin/false",
+            ],
+            "fail setup pane",
+        ),
+    ] {
+        let output = Command::new("ssh")
+            .arg("-F")
+            .arg(home.join(".ssh/config"))
+            .arg(&host)
+            .args(arguments)
+            .output()
+            .unwrap();
+        ensure_success(action, &output).unwrap();
+    }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let output = cmd!(
+            "ssh",
+            "-F",
+            home.join(".ssh/config"),
+            format!("local.{name}-host"),
+            "/usr/bin/tmux",
+            "display-message",
+            "-p",
+            "-t",
+            "wt-app:0.0",
+            "'#{pane_dead}'",
+        )
+        .output()
+        .unwrap();
+        if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "1" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "setup pane did not enter the failed state"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }
 
 struct SshAgent {
@@ -681,7 +842,7 @@ fn call_api_result(home: &Path, config: &Path, operation: Operation) -> Result<R
     .env("HOME", home)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    .stderr(Stdio::inherit())
     .spawn()
     .map_err(|error| error.to_string())?;
     serde_json::to_writer(

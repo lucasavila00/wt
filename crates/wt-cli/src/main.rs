@@ -9,7 +9,7 @@ use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
-use wt_api::{ApiRequest, CreateInstance, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, ForkInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
@@ -27,6 +27,8 @@ enum Command {
     New,
     /// List worlds across every configured context.
     Ls,
+    /// Fork a running world using copy-on-write storage.
+    Fork { source: String, name: String },
     /// Remove a world.
     Rm { name: String },
     /// Open a world in VS Code Remote-SSH.
@@ -119,6 +121,31 @@ fn run() -> Result<()> {
                     "warning: SSH inventory was not updated because the complete world list is unavailable"
                 );
             }
+        }
+        Command::Fork { source, name } => {
+            let (context, source, name) = resolve_fork_targets(&config, &source, &name)?;
+            let spinner = cliclack::spinner();
+            spinner.start("Forking world");
+            let response = wt_cli::transport::call(
+                context,
+                &ApiRequest::new(Operation::Fork(ForkInstance { source, name })),
+            );
+            match &response {
+                Ok(_) => spinner.stop("World forked"),
+                Err(_) => spinner.error("World fork did not complete"),
+            }
+            let response = response?;
+            let Response::Instance { instance } = response else {
+                bail!("helper returned the wrong response to fork");
+            };
+            warn_if_sync_skipped(&config)?;
+            println!(
+                "{}.{}\t{}\t{}",
+                context.name,
+                instance.name,
+                instance.status,
+                instance.guest_ip.as_deref().unwrap_or("-")
+            );
         }
         Command::Rm { name } => {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
@@ -575,6 +602,25 @@ fn resolve_operation_target<'a>(
     Ok((context, selected.instance.name.clone()))
 }
 
+fn resolve_fork_targets<'a>(
+    config: &'a ClientConfig,
+    source: &str,
+    destination: &str,
+) -> Result<(&'a Context, wt_api::InstanceName, wt_api::InstanceName)> {
+    let (source_context, source_name) = resolve_operation_target(config, source)?;
+    let (destination_context, destination_name) = inventory::parse_target(config, destination)?;
+    if let Some(destination_context) = destination_context {
+        if destination_context.name != source_context.name {
+            bail!(
+                "cannot fork across contexts: source is on {} and destination is on {}",
+                source_context.name,
+                destination_context.name
+            );
+        }
+    }
+    Ok((source_context, source_name, destination_name))
+}
+
 fn warn_if_sync_skipped(config: &ClientConfig) -> Result<()> {
     let report = inventory::list_all(config);
     if report.failures.is_empty() {
@@ -686,6 +732,49 @@ mod tests {
             panic!("expected code command");
         };
         assert_eq!(name, "ars.jsdev");
+    }
+
+    #[test]
+    fn parses_fork_source_and_name() {
+        let cli = Cli::try_parse_from(["wt", "fork", "ars.jsdev", "ars.experiment"]).unwrap();
+        let Command::Fork { source, name } = cli.command else {
+            panic!("expected fork command");
+        };
+        assert_eq!(source, "ars.jsdev");
+        assert_eq!(name, "ars.experiment");
+    }
+
+    #[test]
+    fn fork_destinations_must_use_the_source_context() {
+        let config = ClientConfig {
+            contexts: vec![
+                Context {
+                    name: "ars".into(),
+                    kind: wt_cli::config::ContextKind::BareMetalLocal,
+                },
+                Context {
+                    name: "lab".into(),
+                    kind: wt_cli::config::ContextKind::BareMetalSsh {
+                        host: "wt-lab".into(),
+                    },
+                },
+            ],
+        };
+        let (context, source, destination) = resolve_fork_targets(&config, "ars.w1", "w2").unwrap();
+        assert_eq!(context.name, "ars");
+        assert_eq!(source.as_str(), "w1");
+        assert_eq!(destination.as_str(), "w2");
+
+        let (context, source, destination) =
+            resolve_fork_targets(&config, "ars.w1", "ars.w2").unwrap();
+        assert_eq!(context.name, "ars");
+        assert_eq!(source.as_str(), "w1");
+        assert_eq!(destination.as_str(), "w2");
+
+        let error = resolve_fork_targets(&config, "ars.w1", "lab.w2")
+            .unwrap_err()
+            .to_string();
+        insta::assert_snapshot!(error, @"cannot fork across contexts: source is on ars and destination is on lab");
     }
 
     #[test]

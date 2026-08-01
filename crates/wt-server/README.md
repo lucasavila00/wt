@@ -9,8 +9,8 @@ request and response between stdio and the daemon.
 
 ## Owns
 
-- Create, list, get, and delete operations.
-- SQLite world registry.
+- Create, fork, list, get, and delete operations.
+- SQLite world and copy-on-write disk-graph registry.
 - In-memory coordination of concurrent world operations.
 - Reconciliation after worker failure.
 - Dispatch to `wt-libvirt`.

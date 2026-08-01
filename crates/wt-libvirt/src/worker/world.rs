@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 pub(super) struct Paths {
     pub(super) directory: PathBuf,
-    pub(super) disk: PathBuf,
     pub(super) seed: PathBuf,
     pub(super) user_data: PathBuf,
     pub(super) meta_data: PathBuf,
@@ -16,7 +15,6 @@ impl Paths {
     pub(super) fn new(root: &Path, provider_id: &wt_provider::ProviderId) -> Self {
         let directory = root.join(provider_id.as_str());
         Self {
-            disk: directory.join("disk.qcow2"),
             seed: directory.join("seed.img"),
             user_data: directory.join("user-data"),
             meta_data: directory.join("meta-data"),
@@ -24,6 +22,10 @@ impl Paths {
             directory,
         }
     }
+}
+
+pub(super) fn disk_path(root: &Path, disk_id: uuid::Uuid) -> PathBuf {
+    root.join("disks").join(format!("{disk_id}.qcow2"))
 }
 
 pub(super) fn network_config() -> &'static str {
@@ -37,10 +39,12 @@ pub(super) fn cloud_config() -> &'static str {
 pub(super) fn domain_xml(
     provider_id: &wt_provider::ProviderId,
     paths: &Paths,
+    disk_path: &Path,
     config: &MachineConfig,
     spec: &wt_provider::MachineSpec,
+    network_enabled: bool,
 ) -> String {
-    let disk_path = paths.disk.to_string_lossy();
+    let disk_path = disk_path.to_string_lossy();
     let seed_path = paths.seed.to_string_lossy();
     let name = quick_xml::escape::escape(provider_id.as_str());
     let disk = quick_xml::escape::escape(disk_path.as_ref());
@@ -50,6 +54,14 @@ pub(super) fn domain_xml(
     let machine = quick_xml::escape::escape(crate::GUEST_MACHINE);
     let memory_mib = spec.memory_mib;
     let vcpus = spec.vcpus;
+    let mac = mac_address(provider_id);
+    let interface = if network_enabled {
+        format!(
+            "    <interface type='network'>\n      <mac address='{mac}'/>\n      <source network='{network}'/>\n      <model type='virtio'/>\n    </interface>\n"
+        )
+    } else {
+        String::new()
+    };
     format!(
         "<domain type='kvm'>
   <name>{name}</name>
@@ -77,11 +89,7 @@ pub(super) fn domain_xml(
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>
-    <interface type='network'>
-      <source network='{network}'/>
-      <model type='virtio'/>
-    </interface>
-    <channel type='unix'>
+{interface}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
     <serial type='pty'><target port='0'/></serial>
@@ -89,6 +97,27 @@ pub(super) fn domain_xml(
     <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>
   </devices>
 </domain>"
+    )
+}
+
+pub(super) fn interface_xml(
+    provider_id: &wt_provider::ProviderId,
+    config: &MachineConfig,
+) -> String {
+    let network = quick_xml::escape::escape(&config.network);
+    let mac = mac_address(provider_id);
+    format!(
+        "<interface type='network'><mac address='{mac}'/><source network='{network}'/><model type='virtio'/></interface>"
+    )
+}
+
+fn mac_address(provider_id: &wt_provider::ProviderId) -> String {
+    let suffix = &provider_id.as_str()[3..];
+    format!(
+        "52:54:00:{}:{}:{}",
+        &suffix[0..2],
+        &suffix[2..4],
+        &suffix[4..6]
     )
 }
 
