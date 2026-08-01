@@ -2,8 +2,10 @@
 set -eu
 
 state=/var/lib/wt-setup
-tmux=/usr/bin/byobu-tmux
+tmux=/usr/bin/tmux
 agent_socket=$state/ssh-agent.sock
+exec 9>"$state/app-shell.lock"
+flock 9
 if test -n "${SSH_AUTH_SOCK:-}"; then
     ln -sfn "$SSH_AUTH_SOCK" "$agent_socket"
     SSH_AUTH_SOCK=$agent_socket
@@ -44,4 +46,5 @@ else
         "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-setup-world
     fi
 fi
+flock -u 9
 exec "$tmux" attach-session -t wt-app

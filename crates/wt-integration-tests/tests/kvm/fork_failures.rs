@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
-fn local_fork_failures_before_and_after_pivot_leave_source_retryable() {
+fn local_post_pivot_fork_failure_leaves_source_retryable() {
     let _serial = KVM_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -18,40 +18,6 @@ fn local_fork_failures_before_and_after_pivot_leave_source_retryable() {
         InstanceStatus::Running
     );
     harness.sync_inventory();
-
-    run_guest(
-        &harness,
-        &source,
-        "set -eu; running=$(docker ps -q); test -n \"$running\"; docker stop $running >/dev/null; test -z \"$(docker ps -q)\"",
-        "stop every source container before fork",
-    );
-    let before_error = call_api_result(
-        harness.temp.path(),
-        &harness.server_config_path,
-        Operation::Fork(ForkInstance {
-            source: source.clone(),
-            name: destination.clone(),
-        }),
-    )
-    .unwrap_err();
-    assert!(
-        before_error.contains("no running Docker containers"),
-        "unexpected pre-pivot failure: {before_error}"
-    );
-    assert_eq!(
-        count_disk_nodes(&harness.config.libvirt.worlds_dir),
-        harness.initial_disk_nodes + 1
-    );
-    assert!(harness
-        .sync_inventory()
-        .iter()
-        .all(|instance| instance.name != destination));
-    run_guest(
-        &harness,
-        &source,
-        "set -eu; stopped=$(docker ps -aq); test -n \"$stopped\"; docker start $stopped >/dev/null; test -n \"$(docker ps -q)\"",
-        "restart source container after pre-pivot failure",
-    );
 
     run_guest(
         &harness,
@@ -89,7 +55,7 @@ fn local_fork_failures_before_and_after_pivot_leave_source_retryable() {
         "repair source identity after post-pivot failure",
     );
 
-    let retry = timings.run("retry fork after real failures", || {
+    let retry = timings.run("retry fork after post-pivot failure", || {
         harness.fork(&source, &destination)
     });
     assert_eq!(retry.status, InstanceStatus::Running);

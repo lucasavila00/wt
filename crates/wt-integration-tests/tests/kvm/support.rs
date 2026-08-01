@@ -295,7 +295,7 @@ pub(crate) fn create_failed_setup_pane(home: &Path, name: &InstanceName) {
     for (arguments, action) in [
         (
             vec![
-                "/usr/bin/byobu-tmux",
+                "/usr/bin/tmux",
                 "-f",
                 "/usr/local/share/wt-tmux.conf",
                 "new-session",
