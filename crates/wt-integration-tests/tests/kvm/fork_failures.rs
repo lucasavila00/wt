@@ -22,8 +22,8 @@ fn local_post_pivot_fork_failure_leaves_source_retryable() {
     run_guest(
         &harness,
         &source,
-        "rm -f /var/lib/wt-app-ssh/session_identity.pub",
-        "inject post-pivot identity replacement failure",
+        "set -eu; app=$(docker ps --filter label=devcontainer.local_folder=/workspace --format '{{.ID}}'); test -n \"$app\"; image=$(docker inspect -f '{{.Image}}' \"$app\"); mount=/workspace/wt-fork-required-mount; mkdir -p \"$mount\"; docker rm -f wt-fork-restart-failure >/dev/null 2>&1 || true; docker run -d --name wt-fork-restart-failure --mount type=bind,source=\"$mount\",target=/mnt \"$image\" sleep infinity >/dev/null; rm -rf \"$mount\"; test \"$(docker inspect -f '{{.State.Running}}' wt-fork-restart-failure)\" = true",
+        "inject post-pivot container restart failure",
     );
     let after_error = timings.run("exercise post-pivot fork failure", || {
         call_api_result(
@@ -37,7 +37,7 @@ fn local_post_pivot_fork_failure_leaves_source_retryable() {
         .unwrap_err()
     });
     assert!(
-        after_error.contains("replace fork identities"),
+        after_error.contains("restart fork containers"),
         "unexpected post-pivot failure: {after_error}"
     );
     assert_eq!(
@@ -51,8 +51,8 @@ fn local_post_pivot_fork_failure_leaves_source_retryable() {
     run_guest(
         &harness,
         &source,
-        "set -eu; ssh-keygen -y -f /var/lib/wt-app-ssh/session_identity > /var/lib/wt-app-ssh/session_identity.pub; chown wt:wt /var/lib/wt-app-ssh/session_identity.pub; chmod 0644 /var/lib/wt-app-ssh/session_identity.pub; test -n \"$(docker ps -q)\"",
-        "repair source identity after post-pivot failure",
+        "set -eu; mkdir -p /workspace/wt-fork-required-mount; test -n \"$(docker ps -q)\"",
+        "repair source container after post-pivot failure",
     );
 
     let retry = timings.run("retry fork after post-pivot failure", || {

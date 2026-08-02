@@ -1,7 +1,7 @@
 use super::fixture::*;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
@@ -291,50 +291,21 @@ pub(crate) fn start_world_setup(home: &Path, name: &InstanceName, agent: &SshAge
 }
 
 pub(crate) fn create_failed_setup_pane(home: &Path, name: &InstanceName) {
-    let host = format!("local.{name}-host");
-    for (arguments, action) in [
-        (
-            vec![
-                "/usr/bin/tmux",
-                "-f",
-                "/usr/local/share/wt-tmux.conf",
-                "new-session",
-                "-d",
-                "-s",
-                "wt-app",
-                "/bin/sleep",
-                "600",
-            ],
-            "create setup session",
-        ),
-        (
-            vec!["/usr/bin/tmux", "set-option", "-g", "remain-on-exit", "on"],
-            "retain failed setup pane",
-        ),
-        (
-            vec![
-                "/usr/bin/tmux",
-                "respawn-pane",
-                "-k",
-                "-t",
-                "wt-app:0.0",
-                "/bin/false",
-            ],
-            "fail setup pane",
-        ),
-    ] {
-        let output = Command::new("ssh")
-            .arg("-F")
-            .arg(home.join(".ssh/config"))
-            .arg(&host)
-            .args(arguments)
-            .output()
-            .unwrap();
-        ensure_success(action, &output).unwrap();
-    }
+    let mut setup = cmd!(
+        "ssh",
+        "-F",
+        home.join(".ssh/config"),
+        format!("local.{name}")
+    )
+    .env_remove("SSH_AUTH_SOCK")
+    .env("TERM", "xterm-ghostty")
+    .stdout(Stdio::null())
+    .stderr(Stdio::inherit())
+    .spawn()
+    .expect("start setup without agent forwarding");
     let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        let output = cmd!(
+    let pane = loop {
+        let output = match cmd!(
             "ssh",
             "-F",
             home.join(".ssh/config"),
@@ -347,16 +318,25 @@ pub(crate) fn create_failed_setup_pane(home: &Path, name: &InstanceName) {
             "'#{pane_dead}'",
         )
         .output()
-        .unwrap();
+        {
+            Ok(output) => output,
+            Err(error) => break Err(format!("inspect failed setup pane: {error}")),
+        };
         if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "1" {
-            break;
+            break Ok(());
         }
-        assert!(
-            Instant::now() < deadline,
-            "setup pane did not enter the failed state"
-        );
+        if Instant::now() >= deadline {
+            break Err(format!(
+                "setup pane did not enter the failed state: stdout={} stderr={}",
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim(),
+            ));
+        }
         std::thread::sleep(Duration::from_millis(200));
-    }
+    };
+    let _ = setup.kill();
+    let _ = setup.wait();
+    pane.unwrap();
 }
 
 pub(crate) fn call_api(home: &Path, config: &Path, operation: Operation) -> Response {

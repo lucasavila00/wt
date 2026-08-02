@@ -3,6 +3,7 @@ set -eu
 
 state=/var/lib/wt-setup
 tmux=/usr/bin/tmux
+byobu=/usr/bin/byobu-tmux
 agent_socket=$state/ssh-agent.sock
 exec 9>"$state/app-shell.lock"
 flock 9
@@ -26,8 +27,18 @@ if test -n "${BYOBU_ALT_TITLE:-}" && test -e "$state/complete"; then
     esac
 fi
 if ! "$tmux" has-session -t wt-app 2>/dev/null; then
-    "$tmux" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-app \
-        "$(test -e "$state/complete" && echo /usr/local/bin/wt-app-pane || echo /usr/local/bin/wt-setup-world)"
+    attempt=1
+    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-app \
+        "$(test -e "$state/complete" && echo /usr/local/bin/wt-app-pane || echo /usr/local/bin/wt-setup-world)"; do
+        "$tmux" has-session -t wt-app 2>/dev/null && break
+        if test "$attempt" -ge 3; then
+            echo "wt: failed to start the Byobu session after $attempt attempts" >&2
+            exit 1
+        fi
+        echo "wt: failed to start the Byobu session on attempt $attempt; retrying" >&2
+        attempt=$((attempt + 1))
+        sleep 1
+    done
 else
     if test -n "${SSH_AUTH_SOCK:-}"; then
         "$tmux" set-environment -t wt-app SSH_AUTH_SOCK "$SSH_AUTH_SOCK"

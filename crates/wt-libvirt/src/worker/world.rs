@@ -33,7 +33,7 @@ pub(super) fn network_config() -> &'static str {
 }
 
 pub(super) fn cloud_config() -> &'static str {
-    "#cloud-config\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - [systemctl, enable, --now, qemu-guest-agent.service]\n"
+    "#cloud-config\n"
 }
 
 pub(super) fn domain_xml(
@@ -139,14 +139,8 @@ mod tests {
     }
 
     #[test]
-    fn machine_boot_installs_its_required_transport() {
-        insta::assert_snapshot!(cloud_config(), @r###"
-        #cloud-config
-        package_update: true
-        packages:
-          - qemu-guest-agent
-        runcmd:
-          - [systemctl, enable, --now, qemu-guest-agent.service]
-        "###);
+    fn machine_boot_does_not_repeat_golden_image_installation() {
+        insta::assert_snapshot!(cloud_config(), @"#cloud-config
+");
     }
 }

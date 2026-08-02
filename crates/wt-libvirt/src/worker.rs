@@ -22,6 +22,9 @@ use wt_provider::{
     MachineSpec, ProviderId, RunRequest, WorkerError,
 };
 
+const GUEST_AGENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const GUEST_IP_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
 struct LibvirtConnection(Connect);
 
 impl LibvirtConnection {
@@ -94,7 +97,7 @@ impl LibvirtProvider {
             if Instant::now() >= deadline {
                 return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
             }
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(GUEST_AGENT_POLL_INTERVAL);
         }
     }
 
@@ -109,7 +112,7 @@ impl LibvirtProvider {
                     "timed out waiting for IP for domain {provider_id}"
                 )));
             }
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(GUEST_IP_POLL_INTERVAL);
         }
     }
 
