@@ -18,7 +18,7 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use wt_command::cmd;
 use wt_libvirt::LIBVIRT_URI;
 use wt_provider::PackageVersions;
@@ -62,7 +62,16 @@ pub(crate) fn ensure(
     }
 
     let source = source_image(input, runner)?;
-    build_image(runner, input, server, server_bytes, &source, &manifest_path)
+    let byobu = byobu_package(runner)?;
+    build_image(
+        runner,
+        input,
+        server,
+        server_bytes,
+        &source,
+        &byobu,
+        &manifest_path,
+    )
 }
 
 pub(crate) fn rebuild(
@@ -73,8 +82,17 @@ pub(crate) fn rebuild(
 ) -> Result<()> {
     refuse_active_worlds(runner)?;
     let source = source_image(input, runner)?;
+    let byobu = byobu_package(runner)?;
     let manifest = manifest_path(&server.image.installed_path);
-    build_image(runner, input, server, server_bytes, &source, &manifest)
+    build_image(
+        runner,
+        input,
+        server,
+        server_bytes,
+        &source,
+        &byobu,
+        &manifest,
+    )
 }
 
 fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
@@ -106,12 +124,46 @@ fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
     Ok(path)
 }
 
+fn byobu_package(runner: &impl Runner) -> Result<PathBuf> {
+    let path = Path::new("imgs").join(recipe::BYOBU_DEB);
+    fs::create_dir_all("imgs").context("create imgs directory")?;
+    if path.exists() {
+        println!("Verifying cached pinned Byobu package...");
+        require_sha(&path, recipe::BYOBU_SHA256, "pinned Byobu package")?;
+        println!("Reusing verified pinned Byobu package: {}", path.display());
+        return Ok(path);
+    }
+    let temporary = path.with_extension("deb.download");
+    if temporary.exists() {
+        bail!(
+            "stale pinned Byobu package download exists: {}",
+            temporary.display()
+        );
+    }
+    println!("Downloading pinned Byobu package from Launchpad...");
+    runner.run(
+        cmd!("curl", "-fL", "--output", &temporary, recipe::BYOBU_URL),
+        "download pinned Byobu package from Launchpad",
+    )?;
+    if let Err(error) = require_sha(
+        &temporary,
+        recipe::BYOBU_SHA256,
+        "downloaded pinned Byobu package",
+    ) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    fs::rename(&temporary, &path).context("publish pinned Byobu package")?;
+    Ok(path)
+}
+
 fn build_image(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
     server_bytes: &[u8],
     source: &Path,
+    byobu: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
@@ -136,6 +188,7 @@ fn build_image(
             server,
             server_bytes,
             source,
+            byobu,
             manifest_path,
             &disk,
             &seed,
@@ -158,6 +211,7 @@ fn build_image_inner(
     server: &ServerConfig,
     server_bytes: &[u8],
     source: &Path,
+    byobu: &Path,
     manifest_path: &Path,
     disk: &Path,
     seed: &Path,
@@ -181,6 +235,17 @@ fn build_image_inner(
             format!("{}G", input.image.build_disk_gib),
         ),
         "resize image build disk",
+    )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-customize",
+            "-a",
+            disk,
+            "--upload",
+            format!("{}:/var/tmp/wt-byobu.deb", byobu.display()),
+        ),
+        "stage pinned Byobu package in image build disk",
     )?;
     fs::write(user_data, recipe.cloud_config()).context("write image cloud-init user-data")?;
     fs::write(
@@ -241,46 +306,41 @@ fn build_image_inner(
     wait_for_shutdown(runner, &mut console_log)?;
 
     println!("Guest powered off. Verifying readiness and package versions...");
-    let marker = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-ready",),
+    let marker = read_build_file(
+        runner,
+        disk,
+        console,
+        "/var/lib/wt-image-ready",
         "verify image readiness marker",
     )?;
     if marker.trim() != "ready" {
         bail!("image build finished without the expected readiness marker");
     }
-    let byobu_marker = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-byobu-ready"),
+    let byobu_marker = read_build_file(
+        runner,
+        disk,
+        console,
+        "/var/lib/wt-byobu-ready",
         "verify pinned Byobu readiness marker",
     )?;
     if byobu_marker.trim() != "ready" {
         bail!("image build finished without the pinned Byobu readiness marker");
     }
-    let tmux_marker = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-tmux-ready"),
+    let tmux_marker = read_build_file(
+        runner,
+        disk,
+        console,
+        "/var/lib/wt-tmux-ready",
         "verify pinned tmux readiness marker",
-    );
-    let tmux_marker = match tmux_marker {
-        Ok(marker) => marker,
-        Err(error) => {
-            let log = fs::read_to_string(console).context("read failed tmux build console")?;
-            let tail = log.lines().rev().take(500).collect::<Vec<_>>();
-            bail!(
-                "pinned tmux build did not complete: {error}\n{}",
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            );
-        }
-    };
+    )?;
     if tmux_marker.trim() != "ready" {
         bail!("image build finished without the pinned tmux readiness marker");
     }
-    let ghostty_terminfo_marker = runner.text(
-        cmd!(
-            "sudo",
-            "virt-cat",
-            "-a",
-            disk,
-            "/var/lib/wt-ghostty-terminfo-ready"
-        ),
+    let ghostty_terminfo_marker = read_build_file(
+        runner,
+        disk,
+        console,
+        "/var/lib/wt-ghostty-terminfo-ready",
         "verify Ghostty terminfo readiness marker",
     )?;
     if ghostty_terminfo_marker.trim() != "ready" {
@@ -498,6 +558,26 @@ fn undefine_build_domain(runner: &impl Runner) -> Result<()> {
     )
 }
 
+fn read_build_file(
+    runner: &impl Runner,
+    disk: &Path,
+    console: &Path,
+    guest_path: &str,
+    action: &str,
+) -> Result<String> {
+    match runner.text(cmd!("sudo", "virt-cat", "-a", disk, guest_path), action) {
+        Ok(text) => Ok(text),
+        Err(error) => {
+            let log = fs::read_to_string(console).context("read failed image build console")?;
+            let tail = log.lines().rev().take(500).collect::<Vec<_>>();
+            bail!(
+                "{error}\nImage build console tail:\n{}",
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            )
+        }
+    }
+}
+
 fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
     if domain_exists(runner).unwrap_or(false) {
         let state = runner
@@ -513,6 +593,24 @@ fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
             );
         }
         let _ = undefine_build_domain(runner);
+    }
+    let console = build_dir.join("console.log");
+    if console.exists() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
+        let destination = build_dir.with_file_name(format!(
+            "{BUILD_NAME}.failed-{suffix}-{}.console.log",
+            std::process::id()
+        ));
+        match fs::copy(&console, &destination) {
+            Ok(_) => eprintln!(
+                "Preserved failed image build console: {}",
+                destination.display()
+            ),
+            Err(error) => eprintln!("Could not preserve failed image build console: {error}"),
+        }
     }
     let _ = fs::remove_dir_all(build_dir);
 }

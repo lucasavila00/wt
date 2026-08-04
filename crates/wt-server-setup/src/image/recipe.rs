@@ -3,7 +3,11 @@ use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 3;
 const BYOBU_VERSION: &str = "7.15-0ubuntu1";
-const BYOBU_SHA256: &str = "7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc";
+pub(super) const BYOBU_DEB: &str = "byobu_7.15-0ubuntu1_all.deb";
+pub(super) const BYOBU_SHA256: &str =
+    "7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc";
+pub(super) const BYOBU_URL: &str =
+    "https://launchpadlibrarian.net/868113245/byobu_7.15-0ubuntu1_all.deb";
 pub(super) const TMUX_VERSION: &str = "3.6b";
 const TMUX_SHA256: &str = "390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7";
 const NCURSES_TERM_DEB: &str = "ncurses-term_6.6+20260608-2_all.deb";
@@ -63,13 +67,14 @@ packages:
   - libncurses-dev
   - pkg-config
 runcmd:
+  - set -eux
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
   - docker buildx version
   - docker compose version
   - echo 'WT_IMAGE_PHASE=installing Byobu {byobu_version}' > /dev/ttyS0
-  - curl -fL --output /tmp/byobu.deb https://archive.ubuntu.com/ubuntu/pool/main/b/byobu/byobu_{byobu_version}_all.deb && printf '%s  %s\n' {byobu_sha256} /tmp/byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /tmp/byobu.deb && test "$(dpkg-query -W -f='${{Version}}' byobu)" = '{byobu_version}' && rm -f /tmp/byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
+  - printf '%s  %s\n' {byobu_sha256} /var/tmp/wt-byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /var/tmp/wt-byobu.deb && test "$(dpkg-query -W -f='${{Version}}' byobu)" = '{byobu_version}' && rm -f /var/tmp/wt-byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@{devcontainer_cli}
   - devcontainer --version
@@ -160,13 +165,14 @@ packages:
   - libncurses-dev
   - pkg-config
 runcmd:
+  - set -eux
   - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
   - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
   - docker info
   - docker buildx version
   - docker compose version
   - echo 'WT_IMAGE_PHASE=installing Byobu 7.15-0ubuntu1' > /dev/ttyS0
-  - curl -fL --output /tmp/byobu.deb https://archive.ubuntu.com/ubuntu/pool/main/b/byobu/byobu_7.15-0ubuntu1_all.deb && printf '%s  %s\n' 7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc /tmp/byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /tmp/byobu.deb && test "$(dpkg-query -W -f='${Version}' byobu)" = '7.15-0ubuntu1' && rm -f /tmp/byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
+  - printf '%s  %s\n' 7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc /var/tmp/wt-byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /var/tmp/wt-byobu.deb && test "$(dpkg-query -W -f='${Version}' byobu)" = '7.15-0ubuntu1' && rm -f /var/tmp/wt-byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
   - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
   - npm install --global @devcontainers/cli@0.80.2
   - devcontainer --version
