@@ -140,10 +140,10 @@ fn byobu_package(runner: &impl Runner) -> Result<PathBuf> {
             temporary.display()
         );
     }
-    println!("Downloading pinned Byobu package from Launchpad...");
+    println!("Downloading pinned Byobu package from Ubuntu snapshot...");
     runner.run(
         cmd!("curl", "-fL", "--output", &temporary, recipe::BYOBU_URL),
-        "download pinned Byobu package from Launchpad",
+        "download pinned Byobu package from Ubuntu snapshot",
     )?;
     if let Err(error) = require_sha(
         &temporary,
@@ -479,7 +479,7 @@ fn extract_phase_markers(pending_line: &mut Vec<u8>, bytes: &[u8]) -> Vec<String
             continue;
         }
         let line = String::from_utf8_lossy(&pending_line[consumed..index]);
-        if let Some((_, phase)) = line.split_once(PREFIX) {
+        if let Some(phase) = line.strip_prefix(PREFIX) {
             phases.push(phase.trim_end_matches('\r').to_owned());
         }
         consumed = index + 1;
@@ -809,6 +809,16 @@ mod tests {
             ["validating services"]
         );
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn shell_trace_is_not_a_phase_marker() {
+        let mut pending = Vec::new();
+        assert!(extract_phase_markers(
+            &mut pending,
+            b"[  1.0] cloud-init: + echo WT_IMAGE_PHASE=installing packages\n"
+        )
+        .is_empty());
     }
 
     #[test]

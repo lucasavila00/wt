@@ -7,7 +7,7 @@ pub(super) const BYOBU_DEB: &str = "byobu_7.15-0ubuntu1_all.deb";
 pub(super) const BYOBU_SHA256: &str =
     "7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc";
 pub(super) const BYOBU_URL: &str =
-    "https://launchpadlibrarian.net/868113245/byobu_7.15-0ubuntu1_all.deb";
+    "https://snapshot.ubuntu.com/ubuntu/20260710T120000Z/pool/main/b/byobu/byobu_7.15-0ubuntu1_all.deb";
 pub(super) const TMUX_VERSION: &str = "3.6b";
 const TMUX_SHA256: &str = "390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7";
 const NCURSES_TERM_DEB: &str = "ncurses-term_6.6+20260608-2_all.deb";
