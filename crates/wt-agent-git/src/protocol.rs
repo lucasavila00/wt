@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -66,6 +66,7 @@ pub enum ClientOperation {
     Cli {
         args: Vec<String>,
         branch: Option<String>,
+        head: Option<String>,
     },
 }
 

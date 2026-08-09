@@ -131,19 +131,21 @@ impl Gateway {
                 return Ok(());
             }
         };
-        let response = match &request.operation {
-            ClientOperation::Git { .. } => {
-                TransportResponse::with_message(git_context_header(&grant))
-            }
-            ClientOperation::Cli { .. } => TransportResponse::ok(),
-        };
-        crate::write_json_line(&mut stream, &response)?;
         match request.operation {
             ClientOperation::Git { service, source } => {
+                crate::write_json_line(
+                    &mut stream,
+                    &TransportResponse::with_message(git_context_header(&grant)),
+                )?;
                 self.serve_git(stream, service, &source, &grant)
             }
-            ClientOperation::Cli { args, branch } => {
-                self.serve_cli(stream, &args, branch.as_deref(), &grant)
+            ClientOperation::Cli { args, branch, head } => {
+                let response =
+                    match self.serve_cli(&args, branch.as_deref(), head.as_deref(), &grant) {
+                        Ok(output) => TransportResponse::with_message(output),
+                        Err(error) => TransportResponse::error(format!("{error:#}")),
+                    };
+                crate::write_json_line(&mut stream, &response)
             }
         }
     }
@@ -315,17 +317,14 @@ impl Gateway {
         bridge_child(stream, child, None)
     }
 
-    fn serve_cli<S: DuplexStream>(
+    fn serve_cli(
         &self,
-        mut stream: S,
         args: &[String],
         branch: Option<&str>,
+        _head: Option<&str>,
         grant: &GrantRecord,
-    ) -> Result<()> {
-        let output = cli_output(args, branch, grant);
-        stream
-            .write_all(output.as_bytes())
-            .context("write ag-git output")
+    ) -> Result<String> {
+        Ok(cli_output(args, branch, grant))
     }
 }
 

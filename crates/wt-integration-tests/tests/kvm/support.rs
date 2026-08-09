@@ -203,6 +203,7 @@ impl KvmHarness {
                 operation: ClientOperation::Cli {
                     args: Vec::new(),
                     branch: None,
+                    head: None,
                 },
             },
         )

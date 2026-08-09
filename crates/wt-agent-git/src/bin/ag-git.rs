@@ -17,14 +17,14 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = std::env::args().skip(1).collect();
-    let branch = current_branch();
+    let (branch, head) = current_checkout();
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).context("connect to WT Git relay")?;
     write_json_line(
         &mut relay,
         &ClientRequest {
             protocol_version: PROTOCOL_VERSION,
-            operation: ClientOperation::Cli { args, branch },
+            operation: ClientOperation::Cli { args, branch, head },
         },
     )?;
     let response: TransportResponse = read_json_line(&mut relay)?;
@@ -37,21 +37,22 @@ fn run() -> Result<()> {
                 .unwrap_or("gateway rejected command")
         );
     }
-    let mut input_relay = relay.try_clone().context("clone WT Git relay stream")?;
-    std::thread::spawn(move || {
-        let _ = std::io::copy(&mut std::io::stdin().lock(), &mut input_relay);
-        let _ = input_relay.flush();
-        let _ = input_relay.shutdown(std::net::Shutdown::Write);
-    });
-    std::io::copy(&mut relay, &mut std::io::stdout()).context("read gateway output")?;
+    if let Some(message) = response.message {
+        std::io::stdout()
+            .write_all(message.as_bytes())
+            .context("write gateway output")?;
+    }
     Ok(())
 }
 
-fn current_branch() -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .output()
-        .ok()?;
+fn current_checkout() -> (Option<String>, Option<String>) {
+    let branch = git_output(&["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    let head = git_output(&["rev-parse", "--verify", "HEAD"]);
+    (branch, head)
+}
+
+fn git_output(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git").args(args).output().ok()?;
     output
         .status
         .success()

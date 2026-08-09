@@ -76,6 +76,10 @@ fn handle(
     vsock_port: u32,
 ) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
+    let streams_git = matches!(
+        &request.operation,
+        wt_agent_git::ClientOperation::Git { .. }
+    );
     let request = TransportRequest {
         protocol_version: request.protocol_version,
         token: token.to_owned(),
@@ -87,7 +91,7 @@ fn handle(
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
         write_json_line(&mut client, &response)?;
-        if response.ok {
+        if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
         }
     } else {
@@ -95,7 +99,7 @@ fn handle(
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
         write_json_line(&mut client, &response)?;
-        if response.ok {
+        if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
         }
     }
