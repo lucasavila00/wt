@@ -32,7 +32,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock && test \"$(git remote get-url origin)\" = ag::git@local.test:project.git",
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock && test \"$(git remote get-url origin)\" = ag::git@local.test:acme/widget.git",
         "verify devcontainer gateway setup",
     );
 
@@ -95,6 +95,19 @@ fn agent_git_transport_works_without_provider_credentials() {
         local.trim(),
         String::from_utf8(upstream.stdout).unwrap().trim()
     );
+
+    for provider in ["github", "gitlab"] {
+        harness.use_provider_api_fixture(provider, local.trim());
+        let status = app_output(
+            &harness,
+            &name,
+            "ag-git",
+            "read ag-git status through provider API fixture",
+        );
+        assert!(status.contains("Project: acme/widget"));
+        assert!(status.contains("Request: none"));
+        harness.restart_gateway();
+    }
 
     app(
         &harness,

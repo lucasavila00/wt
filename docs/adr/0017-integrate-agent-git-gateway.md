@@ -180,9 +180,13 @@ remote:   ag-git open-mr --draft
 If a request already exists, the push output says what changed:
 
 ```text
-remote: Updated merge request !123: https://gitlab.example/project/-/merge_requests/123
+remote: Published branch `df1/fix-login`.
+remote: Updated request !123: https://gitlab.example/project/-/merge_requests/123
 remote: Run `ag-git` to see review comments and CI.
 ```
+
+If the provider lookup fails after Git accepts the push, the push still
+succeeds and points the agent to `ag-git` for the current state.
 
 ## Pull and merge requests
 

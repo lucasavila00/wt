@@ -40,10 +40,11 @@ own. The gateway keeps the same restrictions as GitHub.
 Tests never use a GitLab credential or contact GitLab.
 
 - Compile every GraphQL query against the vendored schema.
-- Run the shared provider contract tests used by GitHub.
-- Run the GitLab client against local HTTP fixtures. Assert the complete
-  method, path, query, headers, and body, then parse representative success,
-  pagination, GraphQL error, REST error, and rate-limit responses.
+- Reuse the provider-neutral command and output tests used by GitHub.
+- Run the GitLab client against local HTTP fixtures. Assert the method, path,
+  authentication, and relevant request body, then parse representative success
+  and failure responses. Never return partial request, review, or CI state;
+  paginate it or fail clearly when the provider reports another page.
 - Reuse the provider-neutral output snapshots.
 - Add a small set of KVM cases that run `ag-git` through the real CLI, relay,
   and gateway into the local HTTP fixture. They cover the important wiring

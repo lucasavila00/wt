@@ -144,8 +144,7 @@ impl GitlabApi {
         })
     }
 
-    #[cfg(test)]
-    fn with_base_url(base_url: String, token: &str) -> Result<Self> {
+    pub(crate) fn with_base_url(base_url: String, token: &str) -> Result<Self> {
         Ok(Self {
             http: ProviderHttpClient::new(base_url, token, ProviderAuthentication::Gitlab)?,
         })
@@ -440,6 +439,11 @@ impl GitProviderApi for GitlabApi {
             ProviderCommand::ReadCurrentStatus => Ok(ProviderCommandOutput::CurrentStatus(
                 self.read_change_request_snapshot(scope, true)?.request,
             )),
+            ProviderCommand::ReadChangeRequestAfterPush => {
+                Ok(ProviderCommandOutput::CurrentStatus(
+                    self.read_change_request_snapshot(scope, false)?.request,
+                ))
+            }
             ProviderCommand::OpenChangeRequest { draft } => {
                 let snapshot = self.read_change_request_snapshot(scope, false)?;
                 if let Some(request) = snapshot.request {

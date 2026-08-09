@@ -1,8 +1,11 @@
 use super::fixture::*;
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_agent_git::{
@@ -26,6 +29,7 @@ pub(crate) struct KvmHarness {
     pub(crate) server_config_path: PathBuf,
     pub(crate) guest_public_key: String,
     pub(crate) initial_disk_nodes: usize,
+    api_fixture: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl KvmHarness {
@@ -76,7 +80,7 @@ impl KvmHarness {
         .unwrap();
         let server_config_path = temp.path().join("server.toml");
         fs::write(&server_config_path, toml::to_string(&config).unwrap()).unwrap();
-        let gateway = spawn_gateway(temp.path(), &config.install.binary_dir);
+        let gateway = spawn_gateway(temp.path(), &config.install.binary_dir, None);
         let control_socket = temp.path().join("gateway-control.sock");
         let deadline = Instant::now() + Duration::from_secs(5);
         while !control_socket.exists() {
@@ -94,6 +98,7 @@ impl KvmHarness {
             server_config_path,
             guest_public_key,
             initial_disk_nodes,
+            api_fixture: None,
         }
     }
 
@@ -149,7 +154,24 @@ impl KvmHarness {
     pub(crate) fn restart_gateway(&mut self) {
         self.gateway.kill().unwrap();
         self.gateway.wait().unwrap();
-        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir);
+        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir, None);
+        if let Some(fixture) = self.api_fixture.take() {
+            fixture.join().unwrap().unwrap();
+        }
+    }
+
+    pub(crate) fn use_provider_api_fixture(&mut self, kind: &str, head: &str) {
+        self.gateway.kill().unwrap();
+        self.gateway.wait().unwrap();
+        let (base_url, fixture) = spawn_provider_api_fixture(kind, head);
+        let token_file = self.temp.path().join("provider-api-token");
+        fs::write(&token_file, "fixture-token\n").unwrap();
+        self.gateway = spawn_gateway(
+            self.temp.path(),
+            &self.config.install.binary_dir,
+            Some((kind, &base_url, &token_file)),
+        );
+        self.api_fixture = Some(fixture);
     }
 
     pub(crate) fn change_gateway_base(&mut self, base: &str) {
@@ -162,7 +184,7 @@ impl KvmHarness {
             grant["base"] = serde_json::Value::String(base.to_owned());
         }
         fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
-        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir);
+        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir, None);
     }
 
     pub(crate) fn assert_prefix_is_reserved(&self, name: &InstanceName) {
@@ -213,7 +235,7 @@ impl KvmHarness {
     }
 }
 
-fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
+fn spawn_gateway(temp: &Path, binary_dir: &Path, api: Option<(&str, &str, &Path)>) -> Child {
     let control_socket = temp.join("gateway-control.sock");
     let transport_socket = temp.join("gateway-transport.sock");
     for socket in [&control_socket, &transport_socket] {
@@ -223,7 +245,7 @@ fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
             Err(error) => panic!("remove stale gateway socket: {error}"),
         }
     }
-    let gateway = cmd!(
+    let mut gateway = cmd!(
         binary_dir.join("wt-agent-git-gateway"),
         "serve",
         "--control-socket",
@@ -234,11 +256,15 @@ fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
         temp.join("gateway-state.json"),
         "--local-provider",
         format!("local.test={}", temp.display()),
-    )
-    .stdout(Stdio::null())
-    .stderr(Stdio::inherit())
-    .spawn()
-    .unwrap();
+    );
+    gateway.stdout(Stdio::null());
+    if let Some((kind, base_url, token_file)) = api {
+        gateway
+            .env("WT_AGENT_GIT_TEST_PROVIDER_KIND", kind)
+            .env("WT_AGENT_GIT_TEST_API_BASE", base_url)
+            .env("WT_AGENT_GIT_TEST_TOKEN_FILE", token_file);
+    }
+    let gateway = gateway.stderr(Stdio::inherit()).spawn().unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     for socket in [&control_socket, &transport_socket] {
         while !socket.exists() {
@@ -247,6 +273,88 @@ fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
         }
     }
     gateway
+}
+
+fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Result<(), String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let kind = kind.to_owned();
+    let head = head.to_owned();
+    let requests = if kind == "github" { 2 } else { 1 };
+    let fixture = std::thread::spawn(move || {
+        for _ in 0..requests {
+            let (stream, _) = listener
+                .accept()
+                .map_err(|error| format!("accept provider fixture request: {error}"))?;
+            serve_provider_api_request(stream, &kind, &head)?;
+        }
+        Ok(())
+    });
+    (base_url, fixture)
+}
+
+fn serve_provider_api_request(mut stream: TcpStream, kind: &str, head: &str) -> Result<(), String> {
+    let mut reader = BufReader::new(
+        stream
+            .try_clone()
+            .map_err(|error| format!("clone provider fixture stream: {error}"))?,
+    );
+    let mut request_line = String::new();
+    reader
+        .read_line(&mut request_line)
+        .map_err(|error| format!("read provider fixture request: {error}"))?;
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or("provider fixture request has no path")?
+        .to_owned();
+    let mut content_length = 0;
+    let mut authenticated = false;
+    loop {
+        let mut header = String::new();
+        reader
+            .read_line(&mut header)
+            .map_err(|error| format!("read provider fixture header: {error}"))?;
+        if header == "\r\n" || header.is_empty() {
+            break;
+        }
+        let lowercase = header.to_ascii_lowercase();
+        if let Some(value) = lowercase.strip_prefix("content-length:") {
+            content_length = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|error| format!("parse provider fixture content length: {error}"))?;
+        }
+        authenticated |= if kind == "github" {
+            lowercase.trim() == "authorization: bearer fixture-token"
+        } else {
+            lowercase.trim() == "private-token: fixture-token"
+        };
+    }
+    if !authenticated {
+        return Err("provider fixture request was not authenticated".to_owned());
+    }
+    let mut body = vec![0; content_length];
+    reader
+        .read_exact(&mut body)
+        .map_err(|error| format!("read provider fixture body: {error}"))?;
+    let response = match (kind, path.as_str()) {
+        ("github", "/graphql") => r#"{"data":{"viewer":{"login":"agent"},"repository":{"id":"repository-1","nameWithOwner":"acme/widget","viewerPermission":"WRITE","pullRequests":{"pageInfo":{"hasNextPage":false},"totalCount":0,"nodes":[]}}}}"#.to_owned(),
+        ("github", path) if path.starts_with("/repos/acme/widget/actions/runs?") => {
+            r#"{"total_count":0,"workflow_runs":[]}"#.to_owned()
+        }
+        ("gitlab", "/api/graphql") => format!(
+            r#"{{"data":{{"currentUser":{{"username":"agent"}},"project":{{"id":"project-1","fullPath":"acme/widget","userPermissions":{{"createMergeRequestIn":true}},"repository":{{"commit":{{"sha":"{head}"}}}},"mergeRequests":{{"pageInfo":{{"hasNextPage":false}},"nodes":[]}}}}}}}}"#
+        ),
+        _ => return Err(format!("unexpected {kind} fixture request path: {path}")),
+    };
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+        response.len()
+    );
+    stream
+        .write_all(response.as_bytes())
+        .map_err(|error| format!("write provider fixture response: {error}"))
 }
 
 impl Drop for KvmHarness {

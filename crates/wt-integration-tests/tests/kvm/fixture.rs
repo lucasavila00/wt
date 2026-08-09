@@ -52,7 +52,8 @@ impl GitFixture {
             cmd!("git", "-C", &seed, "commit", "-m", "fixture"),
             "commit fixture repository",
         );
-        let repository = root.join("project.git");
+        let repository = root.join("acme/widget.git");
+        fs::create_dir_all(repository.parent().unwrap()).unwrap();
         run(
             cmd!("git", "clone", "--bare", &seed, &repository),
             "create bare fixture repository",
@@ -68,7 +69,7 @@ impl GitFixture {
     }
 
     pub(crate) fn url(&self) -> String {
-        "git@local.test:project.git".to_owned()
+        "git@local.test:acme/widget.git".to_owned()
     }
 }
 

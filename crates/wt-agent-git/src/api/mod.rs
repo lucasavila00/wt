@@ -32,6 +32,7 @@ pub(crate) struct ProviderCommandScope<'a> {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ProviderCommand {
     ReadCurrentStatus,
+    ReadChangeRequestAfterPush,
     OpenChangeRequest {
         draft: bool,
     },
@@ -255,6 +256,25 @@ pub(crate) fn execute_provider_command(
     with_provider_command_context(result, kind, scope, command)
 }
 
+pub(crate) fn execute_provider_command_at_base(
+    kind: ProviderKind,
+    token_file: &Path,
+    base_url: &str,
+    scope: &ProviderCommandScope<'_>,
+    command: &ProviderCommand,
+) -> Result<ProviderCommandOutput> {
+    let result = (|| {
+        let token = read_provider_token(token_file)?;
+        match kind {
+            ProviderKind::GitHub => github::GithubApi::with_base_url(base_url.to_owned(), &token)?
+                .execute_command(scope, command),
+            ProviderKind::GitLab => gitlab::GitlabApi::with_base_url(base_url.to_owned(), &token)?
+                .execute_command(scope, command),
+        }
+    })();
+    with_provider_command_context(result, kind, scope, command)
+}
+
 fn read_provider_token(token_file: &Path) -> Result<String> {
     let token = std::fs::read_to_string(token_file)
         .map_err(|error| anyhow::anyhow!("read provider API credential: {error}"))?;
@@ -269,6 +289,7 @@ impl ProviderCommand {
     fn action(&self) -> &'static str {
         match self {
             Self::ReadCurrentStatus => "read the current request, reviews, and CI status",
+            Self::ReadChangeRequestAfterPush => "read the request updated by the Git push",
             Self::OpenChangeRequest { .. } => "open the pull or merge request",
             Self::MarkChangeRequestReady => "mark the pull or merge request ready",
             Self::MarkChangeRequestDraft => "mark the pull or merge request as draft",

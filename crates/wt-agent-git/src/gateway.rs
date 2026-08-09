@@ -33,7 +33,15 @@ pub enum Provider {
     Local {
         host: String,
         repositories: PathBuf,
+        api: Option<FixtureApi>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct FixtureApi {
+    pub kind: ProviderKind,
+    pub base_url: String,
+    pub token_file: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -325,7 +333,14 @@ impl Gateway {
                 .write_all(&commands)
                 .context("forward push commands")?;
             let sideband = push_uses_sideband(&commands)?;
-            return bridge_child(stream, child, sideband.then_some(commands.as_slice()));
+            let message = |response: &[u8]| {
+                self.push_result_message(provider, &source, grant, &commands, response, sideband)
+            };
+            return bridge_child(
+                stream,
+                child,
+                sideband.then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
+            );
         }
         forward_advertisement(&mut child, stream)?;
         bridge_child(stream, child, None)
@@ -343,12 +358,17 @@ impl Gateway {
         }
         let source = parse_source(&grant.source)?;
         let provider = self.provider(&source.host)?;
-        let Provider::Ssh {
-            kind,
-            api_token_file,
-            ..
-        } = provider
-        else {
+        let api = match provider {
+            Provider::Ssh {
+                kind,
+                api_token_file,
+                ..
+            } => Some((*kind, api_token_file, None)),
+            Provider::Local { api, .. } => api
+                .as_ref()
+                .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
+        };
+        let Some((kind, api_token_file, api_base)) = api else {
             return Ok(cli_output(args, branch, grant));
         };
         let branch = branch.context("ag-git requires a branch checkout")?;
@@ -388,8 +408,88 @@ impl Gateway {
             branch,
             head,
         };
-        api::execute_provider_command(*kind, api_token_file, &scope, &command)
-            .map(|output| api::render_provider_command_output(output, &scope))
+        let output = match api_base {
+            Some(base) => {
+                api::execute_provider_command_at_base(kind, api_token_file, base, &scope, &command)
+            }
+            None => api::execute_provider_command(kind, api_token_file, &scope, &command),
+        }?;
+        Ok(api::render_provider_command_output(output, &scope))
+    }
+
+    fn push_result_message(
+        &self,
+        provider: &Provider,
+        source: &GitSource,
+        grant: &GrantRecord,
+        commands: &[u8],
+        response: &[u8],
+        sideband: bool,
+    ) -> Result<String> {
+        let updates = successful_push_updates(commands, response, sideband)?;
+        let mut message = String::new();
+        for (head, branch) in updates {
+            if head.bytes().all(|byte| byte == b'0') {
+                message.push_str(&format!("Deleted branch `{branch}`.\n"));
+                continue;
+            }
+            message.push_str(&format!("Published branch `{branch}`.\n"));
+            let api = match provider {
+                Provider::Ssh {
+                    kind,
+                    api_token_file,
+                    ..
+                } => Some((*kind, api_token_file, None)),
+                Provider::Local { api, .. } => api
+                    .as_ref()
+                    .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
+            };
+            let Some((kind, api_token_file, api_base)) = api else {
+                message
+                    .push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n");
+                message.push_str("If it has no request, open one with `ag-git open-mr`.\n");
+                continue;
+            };
+            let scope = api::ProviderCommandScope {
+                host: &source.host,
+                project: source.path.trim_end_matches(".git"),
+                base: &grant.base,
+                prefix: &grant.prefix,
+                branch: &branch,
+                head: &head,
+            };
+            let result = match api_base {
+                Some(base) => api::execute_provider_command_at_base(
+                    kind,
+                    api_token_file,
+                    base,
+                    &scope,
+                    &api::ProviderCommand::ReadChangeRequestAfterPush,
+                ),
+                None => api::execute_provider_command(
+                    kind,
+                    api_token_file,
+                    &scope,
+                    &api::ProviderCommand::ReadChangeRequestAfterPush,
+                ),
+            };
+            match result {
+                Ok(api::ProviderCommandOutput::CurrentStatus(Some(request))) => {
+                    message.push_str(&format!(
+                        "Updated request {}: {}\nRun `ag-git` to see review comments and CI.\n",
+                        request.handle, request.url
+                    ));
+                }
+                Ok(api::ProviderCommandOutput::CurrentStatus(None)) => {
+                    message.push_str("This branch does not have a pull or merge request.\n");
+                    message.push_str("Open one for review:\n  ag-git open-mr\n");
+                    message.push_str("Or open it as a draft:\n  ag-git open-mr --draft\n");
+                }
+                Ok(_) | Err(_) => message
+                    .push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n"),
+            }
+        }
+        Ok(message)
     }
 }
 
@@ -669,7 +769,7 @@ fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
 fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
-    push_commands: Option<&[u8]>,
+    push_message: Option<&dyn Fn(&[u8]) -> Result<String>>,
 ) -> Result<()> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
@@ -695,14 +795,14 @@ fn bridge_child<S: DuplexStream>(
         result
     });
     let mut child_stdout = child.stdout.take().context("Git service has no stdout")?;
-    let response = if let Some(commands) = push_commands {
+    let response = if let Some(push_message) = push_message {
         let mut response = Vec::new();
         child_stdout
             .read_to_end(&mut response)
             .context("read Git response")?;
         if let Some(body) = response.strip_suffix(b"0000") {
             stream.write_all(body).context("forward Git response")?;
-            let message = successful_push_message(commands, &response, true)?;
+            let message = push_message(&response)?;
             if !message.is_empty() {
                 let mut packet = Vec::with_capacity(message.len() + 1);
                 packet.push(2);
@@ -875,7 +975,11 @@ fn valid_object_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn successful_push_message(commands: &[u8], response: &[u8], sideband: bool) -> Result<String> {
+fn successful_push_updates(
+    commands: &[u8],
+    response: &[u8],
+    sideband: bool,
+) -> Result<Vec<(String, String)>> {
     let report = if sideband {
         let mut report = Vec::new();
         for packet in packet_lines(response)? {
@@ -896,23 +1000,16 @@ fn successful_push_message(commands: &[u8], response: &[u8], sideband: bool) -> 
                 .map(str::to_owned)
         })
         .collect();
-    let mut message = String::new();
-    for (new, reference) in push_commands(commands)? {
-        if !accepted.contains(&reference) {
-            continue;
-        }
-        let branch = reference
-            .strip_prefix("refs/heads/")
-            .context("validated push contains a non-branch ref")?;
-        if new.bytes().all(|byte| byte == b'0') {
-            message.push_str(&format!("Deleted branch `{branch}`.\n"));
-        } else {
-            message.push_str(&format!("Published branch `{branch}`.\n"));
-            message.push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n");
-            message.push_str("If it has no request, open one with `ag-git open-mr`.\n");
-        }
-    }
-    Ok(message)
+    push_commands(commands)?
+        .into_iter()
+        .filter(|(_, reference)| accepted.contains(reference))
+        .map(|(head, reference)| {
+            let branch = reference
+                .strip_prefix("refs/heads/")
+                .context("validated push contains a non-branch ref")?;
+            Ok((head, branch.to_owned()))
+        })
+        .collect()
 }
 
 fn reject_push(stream: &mut impl Write, section: &[u8], reason: &str) -> Result<()> {
@@ -1060,25 +1157,25 @@ mod tests {
             response.extend_from_slice(b"0000");
             response
         };
-        insta::assert_snapshot!(
-            "push_published",
-            successful_push_message(
+        assert_eq!(
+            successful_push_updates(
                 &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
                 &response("ok refs/heads/df1/fix-login"),
                 true,
             )
-            .unwrap()
+            .unwrap(),
+            vec![("a".repeat(40), "df1/fix-login".to_owned())]
         );
-        insta::assert_snapshot!(
-            "push_deleted",
-            successful_push_message(
+        assert_eq!(
+            successful_push_updates(
                 &command(&"0".repeat(40), "refs/heads/df1/fix-login"),
                 &response("ok refs/heads/df1/fix-login"),
                 true,
             )
-            .unwrap()
+            .unwrap(),
+            vec![("0".repeat(40), "df1/fix-login".to_owned())]
         );
-        assert!(successful_push_message(
+        assert!(successful_push_updates(
             &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
             &response("ng refs/heads/df1/fix-login protected branch"),
             true,

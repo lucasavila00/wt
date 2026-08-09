@@ -5,7 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use wt_agent_git::{
-    Gateway, GatewayConfig, Provider, ProviderKind, VsockListener, CONTROL_SOCKET, VSOCK_PORT,
+    FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, VsockListener, CONTROL_SOCKET,
+    VSOCK_PORT,
 };
 
 #[derive(Debug, Parser)]
@@ -55,9 +56,14 @@ fn run() -> Result<()> {
         vsock_port,
         no_vsock,
     } = Cli::parse().command;
+    let fixture_api = fixture_api()?;
     let mut providers: Vec<_> = local_provider
         .into_iter()
-        .map(|(host, repositories)| Provider::Local { host, repositories })
+        .map(|(host, repositories)| Provider::Local {
+            host,
+            repositories,
+            api: fixture_api.clone(),
+        })
         .collect();
     providers.extend(
         [
@@ -135,6 +141,36 @@ fn run() -> Result<()> {
             }
         });
     }
+}
+
+#[cfg(debug_assertions)]
+fn fixture_api() -> Result<Option<FixtureApi>> {
+    let kind = std::env::var("WT_AGENT_GIT_TEST_PROVIDER_KIND").ok();
+    let base_url = std::env::var("WT_AGENT_GIT_TEST_API_BASE").ok();
+    let token_file = std::env::var_os("WT_AGENT_GIT_TEST_TOKEN_FILE").map(PathBuf::from);
+    match (kind, base_url, token_file) {
+        (None, None, None) => Ok(None),
+        (Some(kind), Some(base_url), Some(token_file)) => {
+            let kind = match kind.as_str() {
+                "github" => ProviderKind::GitHub,
+                "gitlab" => ProviderKind::GitLab,
+                _ => anyhow::bail!("WT_AGENT_GIT_TEST_PROVIDER_KIND must be github or gitlab"),
+            };
+            Ok(Some(FixtureApi {
+                kind,
+                base_url,
+                token_file,
+            }))
+        }
+        _ => anyhow::bail!(
+            "WT agent Git test API requires provider kind, base URL, and token file together"
+        ),
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn fixture_api() -> Result<Option<FixtureApi>> {
+    Ok(None)
 }
 
 fn bind_unix(path: &Path, mode: u32) -> Result<UnixListener> {

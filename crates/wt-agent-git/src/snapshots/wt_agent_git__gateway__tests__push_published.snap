@@ -1,7 +1,0 @@
----
-source: crates/wt-agent-git/src/gateway.rs
-expression: "successful_push_message(&command(&\"a\".repeat(40), \"refs/heads/df1/fix-login\"),\n&response(\"ok refs/heads/df1/fix-login\"), true,).unwrap()"
----
-Published branch `df1/fix-login`.
-Run `ag-git` to see its pull or merge request, reviews, and CI.
-If it has no request, open one with `ag-git open-mr`.

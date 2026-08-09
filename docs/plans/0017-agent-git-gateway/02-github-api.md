@@ -38,10 +38,11 @@ and work outside the grant.
 Tests never use a GitHub credential or contact GitHub.
 
 - Compile every GraphQL query against the vendored schema.
-- Test provider-neutral command behavior with an in-memory provider.
-- Run the GitHub client against local HTTP fixtures. Assert the complete
-  method, path, query, headers, and body, then parse representative success,
-  pagination, GraphQL error, REST error, and rate-limit responses.
+- Test provider-neutral command parsing and output directly.
+- Run the GitHub client against local HTTP fixtures. Assert the method, path,
+  authentication, and relevant request body, then parse representative success
+  and failure responses. Never return partial request, review, or CI state;
+  paginate it or fail clearly when the provider reports another page.
 - Snapshot complete `ag-git` output from provider-neutral results.
 - Add a small set of KVM cases that run `ag-git` through the real CLI, relay,
   and gateway into the local HTTP fixture. They cover the important wiring

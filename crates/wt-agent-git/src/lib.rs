@@ -4,7 +4,7 @@ mod protocol;
 mod stream;
 mod vsock;
 
-pub use gateway::{Gateway, GatewayConfig, Provider, ProviderKind};
+pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind};
 pub use protocol::{
     ClientOperation, ClientRequest, ControlRequest, ControlResponse, GitService, Grant,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,
