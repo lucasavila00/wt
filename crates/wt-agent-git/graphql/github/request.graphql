@@ -9,10 +9,12 @@ query GithubReadPullRequest($owner: String!, $name: String!, $branch: String!, $
     pullRequests(
       headRefName: $branch
       baseRefName: $base
-      states: [OPEN, CLOSED]
+      states: [OPEN, CLOSED, MERGED]
       first: 10
       orderBy: { field: UPDATED_AT, direction: DESC }
     ) {
+      pageInfo { hasNextPage }
+      totalCount
       nodes {
         id
         number
@@ -21,19 +23,69 @@ query GithubReadPullRequest($owner: String!, $name: String!, $branch: String!, $
         state
         isDraft
         headRefOid
+        headRepository { id nameWithOwner }
+        isCrossRepository
         baseRefName
         reviewDecision
         reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
+          totalCount
           nodes {
             id
             isResolved
             path
             line
             comments(first: 100) {
+              pageInfo { hasNextPage }
+              totalCount
               nodes {
                 author { __typename login }
                 body
                 url
+              }
+            }
+          }
+        }
+        reviews(first: 100) {
+          pageInfo { hasNextPage }
+          totalCount
+          nodes {
+            id
+            author { __typename login }
+            body
+            state
+            url
+          }
+        }
+        comments(first: 100) {
+          pageInfo { hasNextPage }
+          totalCount
+          nodes {
+            id
+            author { __typename login }
+            body
+            url
+          }
+        }
+        statusCheckRollup {
+          contexts(first: 100) {
+            pageInfo { hasNextPage }
+            totalCount
+            nodes {
+              __typename
+              ... on CheckRun {
+                id
+                databaseId
+                name
+                status
+                conclusion
+                detailsUrl
+              }
+              ... on StatusContext {
+                id
+                context
+                state
+                targetUrl
               }
             }
           }

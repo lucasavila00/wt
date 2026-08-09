@@ -103,11 +103,19 @@ pub(crate) struct GithubApi {
     rest_prefix: &'static str,
 }
 
+#[derive(Debug)]
 struct GithubChangeRequestSnapshot {
     repository_id: GithubRepositoryId,
     pull_request_id: Option<GithubPullRequestId>,
     request: Option<ChangeRequestStatus>,
-    thread_ids: Vec<GithubReviewThreadId>,
+    review_targets: Vec<(String, GithubReviewTarget)>,
+    jobs: Vec<CiJob>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum GithubReviewTarget {
+    Thread(GithubReviewThreadId),
+    PullRequest(GithubPullRequestId),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -124,6 +132,7 @@ struct GithubReviewThreadId(String);
 
 #[derive(Deserialize)]
 struct WorkflowRuns {
+    total_count: u64,
     workflow_runs: Vec<WorkflowRun>,
 }
 
@@ -134,6 +143,7 @@ struct WorkflowRun {
 
 #[derive(Deserialize)]
 struct WorkflowJobs {
+    total_count: u64,
     jobs: Vec<WorkflowJob>,
 }
 
@@ -144,7 +154,6 @@ struct WorkflowJob {
     status: String,
     conclusion: Option<String>,
     html_url: Option<String>,
-    run_id: u64,
 }
 
 impl GithubApi {
@@ -194,36 +203,109 @@ impl GithubApi {
         let repository = data
             .repository
             .with_context(|| format!("GitHub repository {} was not found", scope.project))?;
+        ensure_complete_connection(
+            "pull requests",
+            repository.pull_requests.page_info.has_next_page,
+            repository.pull_requests.total_count,
+        )?;
+        let mut jobs: Vec<CiJob> = Vec::new();
+        let repository_id = GithubRepositoryId(repository.id);
         let mut nodes = repository
             .pull_requests
             .nodes
             .unwrap_or_default()
             .into_iter()
             .flatten()
+            .filter(|request| {
+                !request.is_cross_repository
+                    && request
+                        .head_repository
+                        .as_ref()
+                        .is_some_and(|head| head.id == repository_id.0)
+            })
             .collect::<Vec<_>>();
         let node = nodes
             .iter()
             .position(|request| request.head_ref_oid.0 == scope.head)
             .map(|index| nodes.remove(index));
-        if node.is_none() {
-            if let Some(request) = nodes.first() {
-                bail!(
-                    "the pull request is at commit {}, but this checkout is at {}; push the branch first",
-                    request.head_ref_oid.0,
-                    scope.head
-                );
+        let Some(mut node) = node else {
+            if include_jobs {
+                jobs.extend(self.read_action_jobs(scope)?);
             }
-        }
-        let Some(node) = node else {
             return Ok(GithubChangeRequestSnapshot {
-                repository_id: GithubRepositoryId(repository.id),
+                repository_id,
                 pull_request_id: None,
                 request: None,
-                thread_ids: Vec::new(),
+                review_targets: Vec::new(),
+                jobs,
             });
         };
-        let mut thread_ids = Vec::new();
-        let threads = node
+        if let Some(rollup) = include_jobs
+            .then(|| node.status_check_rollup.take())
+            .flatten()
+        {
+            ensure_complete_connection(
+                "status checks",
+                rollup.contexts.page_info.has_next_page,
+                rollup.contexts.total_count,
+            )?;
+            for context in rollup
+                .contexts
+                .nodes
+                .unwrap_or_default()
+                .into_iter()
+                .flatten()
+            {
+                use github_read_pull_request::GithubReadPullRequestRepositoryPullRequestsNodesStatusCheckRollupContextsNodes as StatusNode;
+                match context {
+                    StatusNode::CheckRun(check) => jobs.push(CiJob {
+                        handle: CiJobHandle::new(
+                            check
+                                .database_id
+                                .map(|id| id.to_string())
+                                .unwrap_or_else(|| format!("C:{}", check.id)),
+                        ),
+                        name: check.name,
+                        state: check
+                            .conclusion
+                            .map(|state| format!("{state:?}").to_ascii_lowercase())
+                            .unwrap_or_else(|| format!("{:?}", check.status).to_ascii_lowercase()),
+                        url: check.details_url.map(|url| url.0),
+                    }),
+                    StatusNode::StatusContext(status) => jobs.push(CiJob {
+                        handle: CiJobHandle::new(format!("S:{}", status.id)),
+                        name: status.context,
+                        state: format!("{:?}", status.state).to_ascii_lowercase(),
+                        url: status.target_url.map(|url| url.0),
+                    }),
+                }
+            }
+        }
+        if include_jobs {
+            for job in self.read_action_jobs(scope)? {
+                if let Some(existing) = jobs
+                    .iter_mut()
+                    .find(|existing| existing.handle == job.handle)
+                {
+                    *existing = job;
+                } else {
+                    jobs.push(job);
+                }
+            }
+        }
+        ensure_complete_connection(
+            "review threads",
+            node.review_threads.page_info.has_next_page,
+            node.review_threads.total_count,
+        )?;
+        ensure_complete_connection(
+            "pull request comments",
+            node.comments.page_info.has_next_page,
+            node.comments.total_count,
+        )?;
+        let pull_request_id = GithubPullRequestId(node.id.clone());
+        let mut review_targets = Vec::new();
+        let mut threads: Vec<ReviewThread> = node
             .review_threads
             .nodes
             .unwrap_or_default()
@@ -231,9 +313,19 @@ impl GithubApi {
             .flatten()
             .enumerate()
             .map(|(index, thread)| {
-                thread_ids.push(GithubReviewThreadId(thread.id.clone()));
-                ReviewThread {
-                    handle: ReviewThreadHandle::new(format!("T{}", index + 1)),
+                ensure_complete_connection(
+                    &format!("comments in review thread T{}", index + 1),
+                    thread.comments.page_info.has_next_page,
+                    thread.comments.total_count,
+                )?;
+                let handle = format!("T:{}", thread.id);
+                review_targets.push((
+                    handle.clone(),
+                    GithubReviewTarget::Thread(GithubReviewThreadId(thread.id.clone())),
+                ));
+                Ok(ReviewThread {
+                    handle: ReviewThreadHandle::new(handle),
+                    resolvable: true,
                     resolved: thread.is_resolved,
                     path: Some(thread.path),
                     line: thread.line.map(|line| line as u64),
@@ -252,14 +344,71 @@ impl GithubApi {
                             url: Some(comment.url.0),
                         })
                         .collect(),
-                }
+                })
             })
-            .collect();
-        let jobs = if include_jobs {
-            self.read_ci_jobs(scope)?
-        } else {
-            Vec::new()
-        };
+            .collect::<Result<_>>()?;
+        if let Some(reviews) = node.reviews {
+            ensure_complete_connection(
+                "pull request reviews",
+                reviews.page_info.has_next_page,
+                reviews.total_count,
+            )?;
+            for review in reviews.nodes.unwrap_or_default().into_iter().flatten() {
+                let handle = format!("R:{}", review.id);
+                review_targets.push((
+                    handle.clone(),
+                    GithubReviewTarget::PullRequest(pull_request_id.clone()),
+                ));
+                let state = format!("{:?}", review.state).to_ascii_lowercase();
+                threads.push(ReviewThread {
+                    handle: ReviewThreadHandle::new(handle),
+                    resolvable: false,
+                    resolved: matches!(state.as_str(), "approved" | "dismissed"),
+                    path: Some("pull request review".to_owned()),
+                    line: None,
+                    comments: vec![ReviewComment {
+                        author: review
+                            .author
+                            .map(|author| author.login)
+                            .unwrap_or_else(|| "unknown".to_owned()),
+                        body: if review.body.trim().is_empty() {
+                            format!("Review state: {state}.")
+                        } else {
+                            format!("Review state: {state}.\n\n{}", review.body)
+                        },
+                        url: Some(review.url.0),
+                    }],
+                });
+            }
+        }
+        for comment in node
+            .comments
+            .nodes
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+        {
+            let handle = format!("C:{}", comment.id);
+            review_targets.push((
+                handle.clone(),
+                GithubReviewTarget::PullRequest(pull_request_id.clone()),
+            ));
+            threads.push(ReviewThread {
+                handle: ReviewThreadHandle::new(handle),
+                resolvable: false,
+                resolved: false,
+                path: Some("pull request comment".to_owned()),
+                line: None,
+                comments: vec![ReviewComment {
+                    author: comment
+                        .author
+                        .map(|author| author.login)
+                        .unwrap_or_else(|| "unknown".to_owned()),
+                    body: comment.body,
+                    url: Some(comment.url.0),
+                }],
+            });
+        }
         let request = ChangeRequestStatus {
             handle: format!("#{}", node.number),
             url: node.url.0,
@@ -272,13 +421,14 @@ impl GithubApi {
                 .review_decision
                 .map(|state| format!("{state:?}").to_ascii_lowercase()),
             threads,
-            jobs,
+            jobs: jobs.clone(),
         };
         Ok(GithubChangeRequestSnapshot {
-            repository_id: GithubRepositoryId(repository.id),
-            pull_request_id: Some(GithubPullRequestId(node.id)),
+            repository_id,
+            pull_request_id: Some(pull_request_id),
             request: Some(request),
-            thread_ids,
+            review_targets,
+            jobs,
         })
     }
 
@@ -304,17 +454,27 @@ impl GithubApi {
         ))
     }
 
-    fn read_ci_jobs(&self, scope: &ProviderCommandScope<'_>) -> Result<Vec<CiJob>> {
+    fn read_action_jobs(&self, scope: &ProviderCommandScope<'_>) -> Result<Vec<CiJob>> {
         let runs: WorkflowRuns = self.rest.read_json(&format!(
             "{}repos/{}/actions/runs?head_sha={}&per_page=100",
             self.rest_prefix, scope.project, scope.head
         ))?;
+        ensure_complete_rest_collection(
+            "Actions workflow runs",
+            runs.total_count,
+            runs.workflow_runs.len(),
+        )?;
         let mut jobs = Vec::new();
         for run in runs.workflow_runs {
             let response: WorkflowJobs = self.rest.read_json(&format!(
                 "{}repos/{}/actions/runs/{}/jobs?filter=latest&per_page=100",
                 self.rest_prefix, scope.project, run.id
             ))?;
+            ensure_complete_rest_collection(
+                &format!("jobs in Actions workflow run {}", run.id),
+                response.total_count,
+                response.jobs.len(),
+            )?;
             jobs.extend(response.jobs.into_iter().map(|job| CiJob {
                 handle: CiJobHandle::new(job.id.to_string()),
                 name: job.name,
@@ -327,32 +487,27 @@ impl GithubApi {
 
     fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
         if self
-            .read_ci_jobs(scope)?
+            .read_action_jobs(scope)?
             .iter()
             .any(|job| job.handle.as_str() == handle.as_str())
         {
             Ok(())
         } else {
             bail!(
-                "CI job `{handle}` does not belong to the current commit; run `ag-git ci` and use a current job handle"
+                "CI check `{handle}` is not a controllable GitHub Actions job for the current commit; run `ag-git ci` and use a current numeric Actions job handle"
             )
         }
     }
 
-    fn review_thread_id(
+    fn review_target(
         snapshot: &GithubChangeRequestSnapshot,
         handle: &ReviewThreadHandle,
-    ) -> Result<GithubReviewThreadId> {
-        let index = handle
-            .as_str()
-            .strip_prefix('T')
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|index| *index > 0)
-            .ok_or_else(|| anyhow::anyhow!("invalid review thread handle `{handle}`"))?;
+    ) -> Result<GithubReviewTarget> {
         snapshot
-            .thread_ids
-            .get(index - 1)
-            .cloned()
+            .review_targets
+            .iter()
+            .find(|(candidate, _)| candidate == handle.as_str())
+            .map(|(_, target)| target.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
@@ -482,21 +637,39 @@ impl GitProviderApi for GithubApi {
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
                 let snapshot = self.require_change_request(scope)?;
-                let thread = Self::review_thread_id(&snapshot, thread)?;
-                self.graphql.execute_graphql::<GithubReplyToReviewThread>(
-                    self.graphql_path,
-                    github_reply_to_review_thread::Variables {
-                        thread: thread.0,
-                        body: super::attributed_comment(scope, body),
-                    },
-                )?;
+                match Self::review_target(&snapshot, thread)? {
+                    GithubReviewTarget::Thread(thread) => {
+                        self.graphql.execute_graphql::<GithubReplyToReviewThread>(
+                            self.graphql_path,
+                            github_reply_to_review_thread::Variables {
+                                thread: thread.0,
+                                body: super::attributed_comment(scope, body),
+                            },
+                        )?;
+                    }
+                    GithubReviewTarget::PullRequest(id) => {
+                        self.graphql
+                            .execute_graphql::<GithubAddPullRequestComment>(
+                                self.graphql_path,
+                                github_add_pull_request_comment::Variables {
+                                    id: id.0,
+                                    body: super::attributed_comment(scope, body),
+                                },
+                            )?;
+                    }
+                }
                 Ok(ProviderCommandOutput::Confirmation(
                     "Reply added.".to_owned(),
                 ))
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
                 let snapshot = self.require_change_request(scope)?;
-                let thread = Self::review_thread_id(&snapshot, thread)?;
+                let GithubReviewTarget::Thread(thread) = Self::review_target(&snapshot, thread)?
+                else {
+                    bail!(
+                        "feedback `{thread}` is a pull request review or comment and cannot be resolved; reply to it or address the reviewer in a new comment"
+                    );
+                };
                 if *resolved {
                     self.graphql.execute_graphql::<GithubResolveReviewThread>(
                         self.graphql_path,
@@ -514,9 +687,9 @@ impl GitProviderApi for GithubApi {
                     "Thread reopened.".to_owned()
                 }))
             }
-            ProviderCommand::ReadCiJobs => {
-                Ok(ProviderCommandOutput::CiJobs(self.read_ci_jobs(scope)?))
-            }
+            ProviderCommand::ReadCiJobs => Ok(ProviderCommandOutput::CiJobs(
+                self.read_change_request_snapshot(scope, true)?.jobs,
+            )),
             ProviderCommand::ReadCiJobLog { job } => {
                 self.require_ci_job(scope, job)?;
                 Ok(ProviderCommandOutput::CiJobLog(self.rest.read_text(
@@ -533,22 +706,14 @@ impl GitProviderApi for GithubApi {
                     self.rest_prefix, scope.project
                 ))?;
                 Ok(ProviderCommandOutput::Confirmation(format!(
-                    "Retry requested for job {job}."
+                    "Retry requested for job {job} and its dependent jobs."
                 )))
             }
             ProviderCommand::CancelCiJob { job } => {
                 self.require_ci_job(scope, job)?;
-                let detail: WorkflowJob = self.rest.read_json(&format!(
-                    "{}repos/{}/actions/jobs/{job}",
-                    self.rest_prefix, scope.project
-                ))?;
-                self.rest.post_without_body(&format!(
-                    "{}repos/{}/actions/runs/{}/cancel",
-                    self.rest_prefix, scope.project, detail.run_id
-                ))?;
-                Ok(ProviderCommandOutput::Confirmation(format!(
-                    "Cancellation requested for job {job}."
-                )))
+                bail!(
+                    "GitHub cannot cancel one Actions job: its API can only cancel the entire workflow run, including sibling jobs; ag-git refuses to widen `cancel {job}` beyond the selected job"
+                )
             }
             ProviderCommand::WaitForReviewOrCiChange => {
                 super::wait_for_review_or_ci_change(self, scope)
@@ -588,6 +753,24 @@ fn split_project(project: &str) -> Result<(&str, &str)> {
     Ok((owner, name))
 }
 
+fn ensure_complete_connection(name: &str, has_next_page: bool, total_count: i64) -> Result<()> {
+    if has_next_page {
+        bail!(
+            "GitHub returned only the first page of {name} ({total_count} total); ag-git refuses to continue with incomplete handles or status"
+        );
+    }
+    Ok(())
+}
+
+fn ensure_complete_rest_collection(name: &str, total_count: u64, received: usize) -> Result<()> {
+    if total_count != received as u64 {
+        bail!(
+            "GitHub returned only {received} of {total_count} {name}; ag-git refuses to continue with incomplete CI handles or status"
+        );
+    }
+    Ok(())
+}
+
 fn title_from_branch(scope: &ProviderCommandScope<'_>) -> String {
     scope
         .branch
@@ -609,6 +792,8 @@ mod tests {
                 "nameWithOwner": "acme/widget",
                 "viewerPermission": "WRITE",
                 "pullRequests": {
+                    "pageInfo": { "hasNextPage": false },
+                    "totalCount": 1,
                     "nodes": [{
                         "id": "pull-request-7",
                         "number": 7,
@@ -617,15 +802,21 @@ mod tests {
                         "state": "OPEN",
                         "isDraft": false,
                         "headRefOid": "abc123",
+                        "headRepository": { "id": "repository-1", "nameWithOwner": "acme/widget" },
+                        "isCrossRepository": false,
                         "baseRefName": "main",
                         "reviewDecision": "CHANGES_REQUESTED",
                         "reviewThreads": {
+                            "pageInfo": { "hasNextPage": false },
+                            "totalCount": 1,
                             "nodes": [{
                                 "id": "thread-1",
                                 "isResolved": false,
                                 "path": "src/login.rs",
                                 "line": 12,
                                 "comments": {
+                                    "pageInfo": { "hasNextPage": false },
+                                    "totalCount": 1,
                                     "nodes": [{
                                         "author": { "__typename": "User", "login": "reviewer" },
                                         "body": "Handle the error here.",
@@ -633,6 +824,51 @@ mod tests {
                                     }]
                                 }
                             }]
+                        },
+                        "reviews": {
+                            "pageInfo": { "hasNextPage": false },
+                            "totalCount": 1,
+                            "nodes": [{
+                                "id": "review-1",
+                                "author": { "__typename": "User", "login": "lead" },
+                                "body": "Please cover the edge case.",
+                                "state": "CHANGES_REQUESTED",
+                                "url": "https://github.test/acme/widget/pull/7#review"
+                            }]
+                        },
+                        "comments": {
+                            "pageInfo": { "hasNextPage": false },
+                            "totalCount": 1,
+                            "nodes": [{
+                                "id": "comment-1",
+                                "author": { "__typename": "User", "login": "maintainer" },
+                                "body": "Please update the documentation too.",
+                                "url": "https://github.test/acme/widget/pull/7#issuecomment-1"
+                            }]
+                        },
+                        "statusCheckRollup": {
+                            "contexts": {
+                                "pageInfo": { "hasNextPage": false },
+                                "totalCount": 2,
+                                "nodes": [
+                                    {
+                                        "__typename": "CheckRun",
+                                        "id": "check-44",
+                                        "databaseId": 44,
+                                        "name": "test",
+                                        "status": "COMPLETED",
+                                        "conclusion": "SUCCESS",
+                                        "detailsUrl": "https://github.test/checks/44"
+                                    },
+                                    {
+                                        "__typename": "StatusContext",
+                                        "id": "status-1",
+                                        "context": "external/lint",
+                                        "state": "PENDING",
+                                        "targetUrl": "https://ci.test/lint"
+                                    }
+                                ]
+                            }
                         }
                     }]
                 }
@@ -647,7 +883,11 @@ mod tests {
                 "id": "repository-1",
                 "nameWithOwner": "acme/widget",
                 "viewerPermission": "WRITE",
-                "pullRequests": { "nodes": [] }
+                "pullRequests": {
+                    "pageInfo": { "hasNextPage": false },
+                    "totalCount": 0,
+                    "nodes": []
+                }
             }
         }
     }"#;
@@ -669,7 +909,7 @@ mod tests {
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"{"workflow_runs":[{"id":91}]}"#,
+                response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
             },
             ExpectedRequest {
                 method: "GET",
@@ -677,7 +917,7 @@ mod tests {
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"{"jobs":[{"id":44,"name":"test","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}]}"#,
+                response_body: r#"{"total_count":1,"jobs":[{"id":44,"name":"test","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}]}"#,
             },
         ]);
         let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
@@ -692,7 +932,144 @@ mod tests {
         };
         assert_eq!(request.handle, "#7");
         assert_eq!(request.threads[0].comments[0].author, "reviewer");
+        assert_eq!(request.threads[0].handle.as_str(), "T:thread-1");
+        assert_eq!(request.threads[1].handle.as_str(), "R:review-1");
+        assert_eq!(request.threads[1].comments[0].author, "lead");
+        assert_eq!(request.threads[2].handle.as_str(), "C:comment-1");
+        assert_eq!(request.threads[2].comments[0].author, "maintainer");
         assert_eq!(request.jobs[0].handle, CiJobHandle::new("44"));
+        assert_eq!(request.jobs[1].handle, CiJobHandle::new("S:status-1"));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn refuses_cross_repository_pull_request_even_when_branch_and_commit_match() {
+        let response = leak_fixture(PULL_REQUEST_RESPONSE.replace(
+            "\"isCrossRepository\": false",
+            "\"isCrossRepository\": true",
+        ));
+        let (base_url, server) = serve(vec![graphql_fixture(response)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let snapshot = provider
+            .read_change_request_snapshot(&scope(), false)
+            .unwrap();
+
+        assert!(snapshot.request.is_none());
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn merged_pull_request_remains_visible() {
+        let response = leak_fixture(
+            PULL_REQUEST_RESPONSE.replace("\"state\": \"OPEN\"", "\"state\": \"MERGED\""),
+        );
+        let (base_url, server) = serve(vec![graphql_fixture(response)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let snapshot = provider
+            .read_change_request_snapshot(&scope(), false)
+            .unwrap();
+
+        assert_eq!(snapshot.request.unwrap().state, "merged");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn refuses_truncated_graphql_connections_instead_of_issuing_unsafe_handles() {
+        let response = leak_fixture(PULL_REQUEST_RESPONSE.replacen(
+            "\"hasNextPage\": false",
+            "\"hasNextPage\": true",
+            1,
+        ));
+        let (base_url, server) = serve(vec![graphql_fixture(response)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .read_change_request_snapshot(&scope(), false)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "GitHub returned only the first page of pull requests (1 total); ag-git refuses to continue with incomplete handles or status"
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn stable_review_handle_selects_provider_thread_after_reordering() {
+        let (base_url, server) = serve(vec![graphql_fixture(PULL_REQUEST_RESPONSE)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+        let mut snapshot = provider
+            .read_change_request_snapshot(&scope(), false)
+            .unwrap();
+        snapshot.review_targets.reverse();
+
+        let target =
+            GithubApi::review_target(&snapshot, &ReviewThreadHandle::new("T:thread-1")).unwrap();
+
+        assert_eq!(
+            target,
+            GithubReviewTarget::Thread(GithubReviewThreadId("thread-1".to_owned()))
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn refuses_truncated_actions_results_instead_of_issuing_incomplete_handles() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "GET",
+            path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: None,
+            response_content_type: "application/json",
+            response_body: r#"{"total_count":2,"workflow_runs":[{"id":91}]}"#,
+        }]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider.read_action_jobs(&scope()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "GitHub returned only 1 of 2 Actions workflow runs; ag-git refuses to continue with incomplete CI handles or status"
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn refuses_to_turn_job_cancellation_into_whole_run_cancellation() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":1,"jobs":[{"id":44,"name":"test","status":"in_progress","conclusion":null,"html_url":"https://github.test/jobs/44","run_id":91}]}"#,
+            },
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::CancelCiJob {
+                    job: CiJobHandle::new("44"),
+                },
+            )
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("only cancel the entire workflow run"));
         server.join().unwrap().unwrap();
     }
 
@@ -749,5 +1126,20 @@ mod tests {
             branch: "df1/fix-login",
             head: "abc123",
         }
+    }
+
+    fn graphql_fixture(response_body: &'static str) -> ExpectedRequest {
+        ExpectedRequest {
+            method: "POST",
+            path: "/graphql",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: Some("GithubReadPullRequest"),
+            response_content_type: "application/json",
+            response_body,
+        }
+    }
+
+    fn leak_fixture(value: String) -> &'static str {
+        Box::leak(value.into_boxed_str())
     }
 }

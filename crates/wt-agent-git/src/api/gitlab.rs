@@ -90,7 +90,7 @@ struct GitlabChangeRequestSnapshot {
     merge_request_id: Option<GitlabMergeRequestId>,
     merge_request_number: Option<GitlabMergeRequestNumber>,
     request: Option<ChangeRequestStatus>,
-    discussion_ids: Vec<GitlabDiscussionId>,
+    discussions: Vec<(ReviewThreadHandle, GitlabDiscussionId)>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -114,7 +114,15 @@ struct GitlabDiscussionId(String);
 #[derive(Deserialize)]
 struct Pipeline {
     id: u64,
+    status: String,
+    web_url: Option<String>,
+    yaml_errors: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MergeRequestDetails {
     sha: String,
+    head_pipeline: Option<Pipeline>,
 }
 
 #[derive(Deserialize)]
@@ -152,6 +160,7 @@ impl GitlabApi {
             "api/graphql",
             gitlab_read_merge_request::Variables {
                 project: scope.project.to_owned(),
+                branch: scope.branch.to_owned(),
                 branches: Some(vec![scope.branch.to_owned()]),
                 bases: Some(vec![scope.base.to_owned()]),
             },
@@ -159,9 +168,19 @@ impl GitlabApi {
         let project = data
             .project
             .with_context(|| format!("GitLab project {} was not found", scope.project))?;
-        let mut nodes = project
+        let remote_head = project
+            .repository
+            .and_then(|repository| repository.commit)
+            .map(|commit| commit.sha);
+        let merge_requests = project
             .merge_requests
-            .context("GitLab returned no merge request connection")?
+            .context("GitLab returned no merge request connection")?;
+        if merge_requests.page_info.has_next_page {
+            bail!(
+                "GitLab returned more than 100 merge requests for this branch; refusing to choose one from an incomplete result"
+            );
+        }
+        let mut nodes = merge_requests
             .nodes
             .unwrap_or_default()
             .into_iter()
@@ -171,44 +190,61 @@ impl GitlabApi {
             .iter()
             .position(|request| request.diff_head_sha.as_deref() == Some(scope.head))
             .map(|index| nodes.remove(index));
-        if node.is_none() {
-            if let Some(request) = nodes.first() {
-                let provider_head = request.diff_head_sha.as_deref().unwrap_or("unknown");
-                bail!(
-                    "the merge request is at commit {provider_head}, but this checkout is at {}; push the branch first",
-                    scope.head
-                );
-            }
+        if remote_head.as_deref() != Some(scope.head) {
+            let provider_head = remote_head.as_deref().unwrap_or("missing");
+            bail!(
+                "the provider branch is at commit {provider_head}, but this checkout is at {}; push the branch first",
+                scope.head
+            );
         }
         let Some(node) = node else {
             return Ok(GitlabChangeRequestSnapshot {
                 merge_request_id: None,
                 merge_request_number: None,
                 request: None,
-                discussion_ids: Vec::new(),
+                discussions: Vec::new(),
             });
         };
-        let mut discussion_ids = Vec::new();
+        if node.discussions.page_info.has_next_page {
+            bail!(
+                "GitLab returned more than 100 review discussions; refusing to assign handles from an incomplete result"
+            );
+        }
+        let mut discussions = Vec::new();
         let threads = node
             .discussions
             .nodes
             .unwrap_or_default()
             .into_iter()
             .flatten()
-            .enumerate()
-            .map(|(index, thread)| {
-                discussion_ids.push(GitlabDiscussionId(thread.id.0.clone()));
-                ReviewThread {
-                    handle: ReviewThreadHandle::new(format!("T{}", index + 1)),
+            .filter(|thread| thread.resolvable)
+            .map(|thread| {
+                if thread.notes.page_info.has_next_page {
+                    bail!(
+                        "GitLab returned more than 100 comments in one review discussion; refusing to show an incomplete thread"
+                    );
+                }
+                let discussion_id = GitlabDiscussionId(thread.id.0);
+                let handle = review_thread_handle(&discussion_id);
+                discussions.push((handle.clone(), discussion_id));
+                let notes = thread
+                    .notes
+                    .nodes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let position = notes.iter().find_map(|note| note.position.as_ref());
+                Ok(ReviewThread {
+                    handle,
+                    resolvable: true,
                     resolved: thread.resolved,
-                    path: None,
-                    line: None,
-                    comments: thread
-                        .notes
-                        .nodes
-                        .unwrap_or_default()
+                    path: position.map(|position| position.file_path.clone()),
+                    line: position
+                        .and_then(|position| position.new_line.or(position.old_line))
+                        .and_then(|line| u64::try_from(line).ok()),
+                    comments: notes
                         .into_iter()
-                        .flatten()
                         .map(|note| ReviewComment {
                             author: note
                                 .author
@@ -218,9 +254,9 @@ impl GitlabApi {
                             url: note.url,
                         })
                         .collect(),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let merge_request_number = GitlabMergeRequestNumber(node.iid);
         let jobs = if include_jobs {
             self.read_ci_jobs(scope, &merge_request_number)?
@@ -244,7 +280,7 @@ impl GitlabApi {
             merge_request_id: Some(GitlabMergeRequestId(node.id)),
             merge_request_number: Some(merge_request_number),
             request: Some(request),
-            discussion_ids,
+            discussions,
         })
     }
 
@@ -274,21 +310,21 @@ impl GitlabApi {
         snapshot: &GitlabChangeRequestSnapshot,
         handle: &ReviewThreadHandle,
     ) -> Result<GitlabDiscussionId> {
-        let index = handle
-            .as_str()
-            .strip_prefix('T')
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|index| *index > 0)
-            .ok_or_else(|| anyhow::anyhow!("invalid review thread handle `{handle}`"))?;
-        snapshot
-            .discussion_ids
-            .get(index - 1)
-            .cloned()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
-                )
-            })
+        let matches = snapshot
+            .discussions
+            .iter()
+            .filter(|(candidate, _)| candidate == handle)
+            .map(|(_, id)| id)
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [id] => Ok((*id).clone()),
+            [] => bail!(
+                "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
+            ),
+            _ => bail!(
+                "review thread handle `{handle}` is ambiguous; no thread was changed; run `ag-git review` after the discussions change"
+            ),
+        }
     }
 
     fn read_ci_jobs(
@@ -297,29 +333,61 @@ impl GitlabApi {
         merge_request_number: &GitlabMergeRequestNumber,
     ) -> Result<Vec<CiJob>> {
         let project = encoded_project(scope.project);
-        let pipelines: Vec<Pipeline> = self.http.read_json(&format!(
-            "api/v4/projects/{project}/merge_requests/{merge_request_number}/pipelines"
+        let details: MergeRequestDetails = self.http.read_json(&format!(
+            "api/v4/projects/{project}/merge_requests/{merge_request_number}"
         ))?;
-        let mut jobs = Vec::new();
-        for pipeline in pipelines
+        if details.sha != scope.head {
+            bail!(
+                "the merge request moved to commit {}, but this checkout is at {}; push or update the checkout before inspecting CI",
+                details.sha,
+                scope.head
+            );
+        }
+        let Some(pipeline) = details.head_pipeline else {
+            return Ok(Vec::new());
+        };
+        let response: Vec<PipelineJob> = self.http.read_json(&format!(
+            "api/v4/projects/{project}/pipelines/{}/jobs?include_retried=false&per_page=100",
+            pipeline.id
+        ))?;
+        if response.len() == 100 {
+            bail!("GitLab returned 100 CI jobs; refusing to report a possibly truncated pipeline");
+        }
+        let mut jobs = response
             .into_iter()
-            .filter(|pipeline| pipeline.sha == scope.head)
-        {
-            let response: Vec<PipelineJob> = self.http.read_json(&format!(
-                "api/v4/projects/{project}/pipelines/{}/jobs?include_retried=false&per_page=100",
-                pipeline.id
-            ))?;
-            jobs.extend(response.into_iter().map(|job| CiJob {
+            .map(|job| CiJob {
                 handle: CiJobHandle::new(job.id.to_string()),
                 name: job.name,
-                state: job.status,
+                state: normalized_ci_state(job.status),
                 url: job.web_url,
-            }));
+            })
+            .collect::<Vec<_>>();
+        let pipeline_state = normalized_ci_state(pipeline.status);
+        let pipeline_state_is_missing =
+            pipeline_state != "success" && !jobs.iter().any(|job| job.state == pipeline_state);
+        if jobs.is_empty() || pipeline_state_is_missing || pipeline.yaml_errors.is_some() {
+            jobs.insert(
+                0,
+                CiJob {
+                    handle: CiJobHandle::new(format!("pipeline-{}", pipeline.id)),
+                    name: pipeline
+                        .yaml_errors
+                        .map(|error| format!("pipeline configuration: {error}"))
+                        .unwrap_or_else(|| "pipeline".to_owned()),
+                    state: pipeline_state,
+                    url: pipeline.web_url,
+                },
+            );
         }
         Ok(jobs)
     }
 
     fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
+        if handle.as_str().starts_with("pipeline-") {
+            bail!(
+                "`{handle}` is the overall pipeline status, not a job; run `ag-git ci` and choose a job handle"
+            );
+        }
         let merge_request_number = self
             .require_change_request(scope)?
             .merge_request_number
@@ -344,10 +412,13 @@ impl GitProviderApi for GitlabApi {
             "api/graphql",
             gitlab_read_merge_request::Variables {
                 project: project.to_owned(),
+                branch: "__wt_access_check__".to_owned(),
                 branches: Some(vec!["__wt_access_check__".to_owned()]),
                 bases: Some(vec![base.to_owned()]),
             },
         )?;
+        data.current_user
+            .context("GitLab API credential did not identify a user")?;
         let project_data = data
             .project
             .with_context(|| format!("GitLab project {project} was not found"))?;
@@ -395,7 +466,7 @@ impl GitProviderApi for GitlabApi {
                         scope,
                         snapshot
                             .merge_request_number
-                            .context("merge request has no IID")?,
+                            .context("merge request has no number")?,
                         true,
                     )?;
                 }
@@ -405,7 +476,7 @@ impl GitProviderApi for GitlabApi {
                 let merge_request_number = self
                     .require_change_request(scope)?
                     .merge_request_number
-                    .context("merge request has no IID")?;
+                    .context("merge request has no number")?;
                 set_change_request_draft(
                     &self.http,
                     scope,
@@ -439,7 +510,7 @@ impl GitProviderApi for GitlabApi {
                 let merge_request_number = self
                     .require_change_request(scope)?
                     .merge_request_number
-                    .context("merge request has no IID")?;
+                    .context("merge request has no number")?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
                     "api/graphql",
                     gitlab_update_merge_request::Variables {
@@ -512,7 +583,7 @@ impl GitProviderApi for GitlabApi {
                 let merge_request_number = self
                     .require_change_request(scope)?
                     .merge_request_number
-                    .context("merge request has no IID")?;
+                    .context("merge request has no number")?;
                 Ok(ProviderCommandOutput::CiJobs(
                     self.read_ci_jobs(scope, &merge_request_number)?,
                 ))
@@ -528,26 +599,20 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::RetryCiJob { job } => {
                 self.require_ci_job(scope, job)?;
-                let _: PipelineJob = self.http.post_json(
-                    &format!(
-                        "api/v4/projects/{}/jobs/{job}/retry",
-                        encoded_project(scope.project)
-                    ),
-                    &serde_json::Value::Null,
-                )?;
+                self.http.post_without_body(&format!(
+                    "api/v4/projects/{}/jobs/{job}/retry",
+                    encoded_project(scope.project)
+                ))?;
                 Ok(ProviderCommandOutput::Confirmation(format!(
                     "Retry requested for job {job}."
                 )))
             }
             ProviderCommand::CancelCiJob { job } => {
                 self.require_ci_job(scope, job)?;
-                let _: PipelineJob = self.http.post_json(
-                    &format!(
-                        "api/v4/projects/{}/jobs/{job}/cancel",
-                        encoded_project(scope.project)
-                    ),
-                    &serde_json::Value::Null,
-                )?;
+                self.http.post_without_body(&format!(
+                    "api/v4/projects/{}/jobs/{job}/cancel",
+                    encoded_project(scope.project)
+                ))?;
                 Ok(ProviderCommandOutput::Confirmation(format!(
                     "Cancellation requested for job {job}."
                 )))
@@ -559,7 +624,7 @@ impl GitProviderApi for GitlabApi {
                 let merge_request_number = self
                     .require_change_request(scope)?
                     .merge_request_number
-                    .context("merge request has no IID")?;
+                    .context("merge request has no number")?;
                 let state = if matches!(command, ProviderCommand::CloseChangeRequest) {
                     gitlab_update_merge_request::MergeRequestNewState::CLOSED
                 } else {
@@ -615,6 +680,30 @@ fn ensure_errors(errors: Vec<String>) -> Result<()> {
     }
 }
 
+fn review_thread_handle(id: &GitlabDiscussionId) -> ReviewThreadHandle {
+    let stable_suffix =
+        id.0.rsplit(['/', ':'])
+            .find(|part| !part.is_empty())
+            .unwrap_or(&id.0);
+    let short = stable_suffix
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        .take(12)
+        .collect::<String>();
+    ReviewThreadHandle::new(format!(
+        "T-{}",
+        if short.is_empty() { "unknown" } else { &short }
+    ))
+}
+
+fn normalized_ci_state(state: String) -> String {
+    if state == "canceled" {
+        "cancelled".to_owned()
+    } else {
+        state
+    }
+}
+
 fn encoded_project(project: &str) -> String {
     url::form_urlencoded::byte_serialize(project.as_bytes()).collect()
 }
@@ -639,7 +728,9 @@ mod tests {
                 "id": "project-1",
                 "fullPath": "acme/widget",
                 "userPermissions": { "createMergeRequestIn": true },
+                "repository": { "commit": { "sha": "abc123" } },
                 "mergeRequests": {
+                    "pageInfo": { "hasNextPage": false },
                     "nodes": [{
                         "id": "merge-request-8",
                         "iid": "8",
@@ -651,15 +742,22 @@ mod tests {
                         "sourceBranch": "df1/fix-login",
                         "targetBranch": "main",
                         "discussions": {
+                            "pageInfo": { "hasNextPage": false },
                             "nodes": [{
                                 "id": "discussion-1",
                                 "resolved": false,
                                 "resolvable": true,
                                 "notes": {
+                                    "pageInfo": { "hasNextPage": false },
                                     "nodes": [{
                                         "author": { "username": "reviewer" },
                                         "body": "Handle the error here.",
-                                        "url": "https://gitlab.test/acme/widget/-/merge_requests/8#note_1"
+                                        "url": "https://gitlab.test/acme/widget/-/merge_requests/8#note_1",
+                                        "position": {
+                                            "filePath": "src/login.rs",
+                                            "newLine": 42,
+                                            "oldLine": null
+                                        }
                                     }]
                                 }
                             }]
@@ -677,7 +775,111 @@ mod tests {
                 "id": "project-1",
                 "fullPath": "acme/widget",
                 "userPermissions": { "createMergeRequestIn": true },
-                "mergeRequests": { "nodes": [] }
+                "repository": { "commit": { "sha": "abc123" } },
+                "mergeRequests": {
+                    "pageInfo": { "hasNextPage": false },
+                    "nodes": []
+                }
+            }
+        }
+    }"#;
+
+    const HISTORICAL_MERGE_REQUEST_RESPONSE: &str = r#"{
+        "data": {
+            "currentUser": { "username": "agent" },
+            "project": {
+                "id": "project-1",
+                "fullPath": "acme/widget",
+                "userPermissions": { "createMergeRequestIn": true },
+                "repository": { "commit": { "sha": "abc123" } },
+                "mergeRequests": {
+                    "pageInfo": { "hasNextPage": false },
+                    "nodes": [{
+                        "id": "old-mr",
+                        "iid": "7",
+                        "title": "Old change",
+                        "webUrl": "https://gitlab.test/acme/widget/-/merge_requests/7",
+                        "state": "closed",
+                        "draft": false,
+                        "diffHeadSha": "old123",
+                        "sourceBranch": "df1/fix-login",
+                        "targetBranch": "main",
+                        "discussions": {
+                            "pageInfo": { "hasNextPage": false },
+                            "nodes": []
+                        }
+                    }]
+                }
+            }
+        }
+    }"#;
+
+    const REORDERED_DISCUSSIONS_RESPONSE: &str = r#"{
+        "data": {
+            "currentUser": { "username": "agent" },
+            "project": {
+                "id": "project-1",
+                "fullPath": "acme/widget",
+                "userPermissions": { "createMergeRequestIn": true },
+                "repository": { "commit": { "sha": "abc123" } },
+                "mergeRequests": {
+                    "pageInfo": { "hasNextPage": false },
+                    "nodes": [{
+                        "id": "merge-request-8",
+                        "iid": "8",
+                        "title": "Fix login",
+                        "webUrl": "https://gitlab.test/acme/widget/-/merge_requests/8",
+                        "state": "opened",
+                        "draft": false,
+                        "diffHeadSha": "abc123",
+                        "sourceBranch": "df1/fix-login",
+                        "targetBranch": "main",
+                        "discussions": {
+                            "pageInfo": { "hasNextPage": false },
+                            "nodes": [
+                                {
+                                    "id": "gid://gitlab/Discussion/fedcba654321-new",
+                                    "resolved": false,
+                                    "resolvable": true,
+                                    "notes": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "nodes": [{
+                                            "author": { "username": "second-reviewer" },
+                                            "body": "A newer thread.",
+                                            "url": null
+                                        }]
+                                    }
+                                },
+                                {
+                                    "id": "gid://gitlab/Discussion/abcdef123456-target",
+                                    "resolved": false,
+                                    "resolvable": true,
+                                    "notes": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "nodes": [{
+                                            "author": { "username": "reviewer" },
+                                            "body": "The target thread.",
+                                            "url": null
+                                        }]
+                                    }
+                                },
+                                {
+                                    "id": "gid://gitlab/Discussion/ordinary-note",
+                                    "resolved": false,
+                                    "resolvable": false,
+                                    "notes": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "nodes": [{
+                                            "author": { "username": "author" },
+                                            "body": "A normal MR comment.",
+                                            "url": null
+                                        }]
+                                    }
+                                }
+                            ]
+                        }
+                    }]
+                }
             }
         }
     }"#;
@@ -695,11 +897,11 @@ mod tests {
             },
             ExpectedRequest {
                 method: "GET",
-                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8/pipelines",
+                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8",
                 required_header: Some(("private-token", "fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"[{"id":92,"sha":"abc123"}]"#,
+                response_body: r#"{"sha":"abc123","head_pipeline":{"id":92,"status":"success","web_url":"https://gitlab.test/pipelines/92","yaml_errors":null}}"#,
             },
             ExpectedRequest {
                 method: "GET",
@@ -721,7 +923,13 @@ mod tests {
             panic!("expected current merge request status");
         };
         assert_eq!(request.handle, "!8");
+        assert_eq!(
+            request.threads[0].handle,
+            ReviewThreadHandle::new("T-discussion-1")
+        );
         assert_eq!(request.threads[0].comments[0].author, "reviewer");
+        assert_eq!(request.threads[0].path.as_deref(), Some("src/login.rs"));
+        assert_eq!(request.threads[0].line, Some(42));
         assert_eq!(request.jobs[0].handle, CiJobHandle::new("45"));
         server.join().unwrap().unwrap();
     }
@@ -767,6 +975,234 @@ mod tests {
             panic!("expected opened merge request");
         };
         assert_eq!(request.handle, "!8");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn stable_review_handle_selects_its_discussion_after_reordering() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: REORDERED_DISCUSSIONS_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("abcdef123456-target"),
+                response_content_type: "application/json",
+                response_body: r#"{"data":{"createNote":{"errors":[],"note":{"id":"note-2","url":null}}}}"#,
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::ReplyToReviewThread {
+                    thread: ReviewThreadHandle::new("T-abcdef123456"),
+                    body: "Fixed.".to_owned(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            ProviderCommandOutput::Confirmation("Reply added.".to_owned())
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn hides_non_resolvable_merge_request_notes_from_review_threads() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/api/graphql",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: Some("GitlabReadMergeRequest"),
+            response_content_type: "application/json",
+            response_body: REORDERED_DISCUSSIONS_RESPONSE,
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(&scope(), &ProviderCommand::ReadReviewThreads)
+            .unwrap();
+
+        let ProviderCommandOutput::ReviewThreads(threads) = output else {
+            panic!("expected review threads");
+        };
+        assert_eq!(threads.len(), 2);
+        assert!(threads
+            .iter()
+            .all(|thread| thread.comments[0].body != "A normal MR comment."));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn historical_merge_request_does_not_hide_a_pushed_current_branch() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/api/graphql",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: Some("GitlabReadMergeRequest"),
+            response_content_type: "application/json",
+            response_body: HISTORICAL_MERGE_REQUEST_RESPONSE,
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(&scope(), &ProviderCommand::ReadCurrentStatus)
+            .unwrap();
+
+        assert_eq!(output, ProviderCommandOutput::CurrentStatus(None));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn failed_pipeline_without_jobs_is_still_reported_as_failed_ci() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: MERGE_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"sha":"abc123","head_pipeline":{"id":92,"status":"failed","web_url":"https://gitlab.test/pipelines/92","yaml_errors":"invalid configuration"}}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/pipelines/92/jobs?include_retried=false&per_page=100",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: "[]",
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(&scope(), &ProviderCommand::ReadCurrentStatus)
+            .unwrap();
+
+        let ProviderCommandOutput::CurrentStatus(Some(request)) = output else {
+            panic!("expected current merge request status");
+        };
+        assert_eq!(request.jobs.len(), 1);
+        assert_eq!(request.jobs[0].state, "failed");
+        assert_eq!(
+            request.jobs[0].name,
+            "pipeline configuration: invalid configuration"
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn refuses_incomplete_graphql_connections() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/api/graphql",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: Some("GitlabReadMergeRequest"),
+            response_content_type: "application/json",
+            response_body: r#"{
+                "data": {
+                    "currentUser": { "username": "agent" },
+                    "project": {
+                        "id": "project-1",
+                        "fullPath": "acme/widget",
+                        "userPermissions": { "createMergeRequestIn": true },
+                        "repository": { "commit": { "sha": "abc123" } },
+                        "mergeRequests": {
+                            "pageInfo": { "hasNextPage": true },
+                            "nodes": []
+                        }
+                    }
+                }
+            }"#,
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_command(&scope(), &ProviderCommand::ReadCurrentStatus)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "GitLab returned more than 100 merge requests for this branch; refusing to choose one from an incomplete result"
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn normalizes_gitlabs_canceled_spelling_for_shared_status_output() {
+        assert_eq!(normalized_ci_state("canceled".to_owned()), "cancelled");
+        assert_eq!(normalized_ci_state("failed".to_owned()), "failed");
+    }
+
+    #[test]
+    fn retries_only_a_job_from_the_current_head_pipeline() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: MERGE_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"sha":"abc123","head_pipeline":{"id":92,"status":"failed","web_url":"https://gitlab.test/pipelines/92","yaml_errors":null}}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/pipelines/92/jobs?include_retried=false&per_page=100",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"[{"id":45,"name":"test","status":"failed","web_url":"https://gitlab.test/jobs/45"}]"#,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/v4/projects/acme%2Fwidget/jobs/45/retry",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: "{}",
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::RetryCiJob {
+                    job: CiJobHandle::new("45"),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            ProviderCommandOutput::Confirmation("Retry requested for job 45.".to_owned())
+        );
         server.join().unwrap().unwrap();
     }
 

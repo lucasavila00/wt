@@ -1,16 +1,20 @@
-query GitlabReadMergeRequest($project: ID!, $branches: [String!], $bases: [String!]) {
+query GitlabReadMergeRequest($project: ID!, $branch: String!, $branches: [String!], $bases: [String!]) {
   currentUser { username }
   project(fullPath: $project) {
     id
     fullPath
     userPermissions { createMergeRequestIn }
+    repository {
+      commit(ref: $branch) { sha }
+    }
     mergeRequests(
       sourceBranches: $branches
       targetBranches: $bases
       state: all
-      first: 10
+      first: 100
       sort: UPDATED_DESC
     ) {
+      pageInfo { hasNextPage }
       nodes {
         id
         iid
@@ -22,15 +26,18 @@ query GitlabReadMergeRequest($project: ID!, $branches: [String!], $bases: [Strin
         sourceBranch
         targetBranch
         discussions(first: 100) {
+          pageInfo { hasNextPage }
           nodes {
             id
             resolved
             resolvable
             notes(first: 100) {
+              pageInfo { hasNextPage }
               nodes {
                 author { username }
                 body
                 url
+                position { filePath newLine oldLine }
               }
             }
           }

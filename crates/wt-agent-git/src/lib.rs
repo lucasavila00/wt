@@ -13,7 +13,7 @@ pub use stream::{copy_bidirectional, read_json_line, write_json_line, DuplexStre
 pub use vsock::{VsockListener, VsockStream};
 
 pub const VSOCK_PORT: u32 = 18017;
-pub const CONTROL_SOCKET: &str = "/run/wt/agent-git-control.sock";
+pub const CONTROL_SOCKET: &str = "/run/wt-agent-git/control.sock";
 
 #[derive(Clone, Debug)]
 pub struct ControlClient {

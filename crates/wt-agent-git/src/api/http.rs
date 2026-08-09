@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use graphql_client::{GraphQLQuery, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::io::Read;
 use std::time::Duration;
 
 #[derive(Clone, Copy)]
@@ -92,20 +93,6 @@ impl ProviderHttpClient {
         read_response(response, "GET", &url)
     }
 
-    pub(crate) fn post_json<B: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<T> {
-        let url = self.url(path);
-        let response = self
-            .authorize(self.agent.post(&url))
-            .send_json(body)
-            .with_context(|| connection_context("POST", &url))?;
-        let body = read_response(response, "POST", &url)?;
-        decode_json(&body, &url, "JSON")
-    }
-
     pub(crate) fn post_without_body(&self, path: &str) -> Result<()> {
         let url = self.url(path);
         let response = self
@@ -154,10 +141,23 @@ fn read_response(
     url: &str,
 ) -> Result<String> {
     let status = response.status();
-    let body = response
-        .body_mut()
-        .read_to_string()
-        .with_context(|| format!("read provider response from {url}"))?;
+    let metadata = response_metadata(&response);
+    let body: Result<String> = if status.is_success() {
+        response
+            .body_mut()
+            .read_to_string()
+            .map_err(anyhow::Error::from)
+    } else {
+        let mut body = String::new();
+        response
+            .body_mut()
+            .as_reader()
+            .take(4097)
+            .read_to_string(&mut body)
+            .map(|_| body)
+            .map_err(anyhow::Error::from)
+    };
+    let body = body.with_context(|| format!("read provider response from {url}"))?;
     if status.is_success() {
         return Ok(body);
     }
@@ -175,9 +175,31 @@ fn read_response(
         truncate(&body, 4096)
     };
     bail!(
-        "provider API request failed\nHTTP: {method} {url} -> {}\nProvider response: {body}\nNext step: {hint}",
+        "provider API request failed\nHTTP: {method} {url} -> {}{metadata}\nProvider response: {body}\nNext step: {hint}",
         status.as_u16()
     )
+}
+
+fn response_metadata(response: &ureq::http::Response<ureq::Body>) -> String {
+    const HEADERS: [&str; 6] = [
+        "retry-after",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-ratelimit-resource",
+        "x-github-request-id",
+        "x-request-id",
+    ];
+    let values = HEADERS
+        .into_iter()
+        .filter_map(|name| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| format!("\n{name}: {value}"))
+        })
+        .collect::<String>();
+    values
 }
 
 fn truncate(value: &str, limit: usize) -> String {

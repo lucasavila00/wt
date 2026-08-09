@@ -16,7 +16,7 @@ LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent
 LoadCredentialEncrypted=github-ssh-known-hosts:/etc/credstore.encrypted/wt-agent-git-github-ssh-known-hosts
 ExecStart="/opt/wt bin/wt-agent-git-gateway" serve --github-provider "github.com=%d/github-api-token,%d/github-ssh-private-key,%d/github-ssh-known-hosts"
 Restart=on-failure
-RuntimeDirectory=wt
+RuntimeDirectory=wt-agent-git
 RuntimeDirectoryMode=0700
 StateDirectory=wt/agent-git
 StateDirectoryMode=0700

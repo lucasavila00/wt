@@ -85,6 +85,7 @@ pub(crate) struct ChangeRequestStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReviewThread {
     pub handle: ReviewThreadHandle,
+    pub resolvable: bool,
     pub resolved: bool,
     pub path: Option<String>,
     pub line: Option<u64>,
@@ -174,15 +175,17 @@ pub(crate) fn verify_provider_access(
     project: &str,
     base: &str,
 ) -> Result<()> {
-    let token = read_provider_token(token_file)?;
-    let result = match kind {
-        ProviderKind::GitHub => {
-            github::GithubApi::new(host, &token)?.verify_repository_access(project, base)
+    let result = (|| {
+        let token = read_provider_token(token_file)?;
+        match kind {
+            ProviderKind::GitHub => {
+                github::GithubApi::new(host, &token)?.verify_repository_access(project, base)
+            }
+            ProviderKind::GitLab => {
+                gitlab::GitlabApi::new(host, &token)?.verify_repository_access(project, base)
+            }
         }
-        ProviderKind::GitLab => {
-            gitlab::GitlabApi::new(host, &token)?.verify_repository_access(project, base)
-        }
-    };
+    })();
     result.with_context(|| {
         format!(
             "the {} API credential cannot prepare project {project} with base {base}",
@@ -217,11 +220,17 @@ fn wait_for_review_or_ci_change(
 ) -> Result<ProviderCommandOutput> {
     let read_status = ProviderCommand::ReadCurrentStatus;
     let initial = provider.execute_command(scope, &read_status)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5 * 60);
     loop {
         std::thread::sleep(std::time::Duration::from_secs(10));
         let current = provider.execute_command(scope, &read_status)?;
         if current != initial {
             return Ok(current);
+        }
+        if std::time::Instant::now() >= deadline {
+            bail!(
+                "review and CI did not change within five minutes; run `ag-git` for the current status or `ag-git wait` to wait again"
+            );
         }
     }
 }
@@ -232,15 +241,17 @@ pub(crate) fn execute_provider_command(
     scope: &ProviderCommandScope<'_>,
     command: &ProviderCommand,
 ) -> Result<ProviderCommandOutput> {
-    let token = read_provider_token(token_file)?;
-    let result = match kind {
-        ProviderKind::GitHub => {
-            github::GithubApi::new(scope.host, &token)?.execute_command(scope, command)
+    let result = (|| {
+        let token = read_provider_token(token_file)?;
+        match kind {
+            ProviderKind::GitHub => {
+                github::GithubApi::new(scope.host, &token)?.execute_command(scope, command)
+            }
+            ProviderKind::GitLab => {
+                gitlab::GitlabApi::new(scope.host, &token)?.execute_command(scope, command)
+            }
         }
-        ProviderKind::GitLab => {
-            gitlab::GitlabApi::new(scope.host, &token)?.execute_command(scope, command)
-        }
-    };
+    })();
     with_provider_command_context(result, kind, scope, command)
 }
 
@@ -385,19 +396,57 @@ fn render_status(
     let unresolved = request
         .threads
         .iter()
-        .filter(|thread| !thread.resolved)
+        .filter(|thread| thread.resolvable && !thread.resolved)
         .count();
     output.push_str(&format!("Unresolved threads: {unresolved}\n"));
     let failing = request
         .jobs
         .iter()
-        .filter(|job| matches!(job.state.as_str(), "failed" | "failure" | "cancelled"))
+        .filter(|job| ci_failed(&job.state))
         .count();
-    output.push_str(&format!(
-        "CI jobs: {} ({failing} failing)\n",
-        request.jobs.len()
-    ));
+    let passing = request
+        .jobs
+        .iter()
+        .filter(|job| ci_passed(&job.state))
+        .count();
+    let pending = request.jobs.len() - failing - passing;
+    let ci = if request.jobs.is_empty() {
+        "no jobs".to_owned()
+    } else if failing > 0 {
+        format!("failing ({failing} failed, {pending} pending)")
+    } else if pending > 0 {
+        format!("pending ({pending} not finished)")
+    } else {
+        format!("passing ({passing} passed)")
+    };
+    output.push_str(&format!("CI: {ci}\n"));
+    if request.draft {
+        output.push_str("\nMark it ready with `ag-git ready`.\n");
+    }
+    if unresolved > 0 || request.review_state.as_deref() == Some("changes_requested") {
+        output.push_str("Read and answer review feedback with `ag-git review`.\n");
+    }
+    if failing > 0 {
+        output.push_str("Inspect failures with `ag-git ci`, then `ag-git log JOB`.\n");
+    }
     output
+}
+
+fn ci_failed(state: &str) -> bool {
+    matches!(
+        state,
+        "failed"
+            | "failure"
+            | "cancelled"
+            | "canceled"
+            | "timed_out"
+            | "action_required"
+            | "startup_failure"
+    )
+}
+
+fn ci_passed(state: &str) -> bool {
+    matches!(state, "success" | "passed" | "skipped" | "neutral")
 }
 
 fn render_threads(threads: &[ReviewThread]) -> String {
@@ -414,11 +463,20 @@ fn render_threads(threads: &[ReviewThread]) -> String {
         output.push_str(&format!(
             "{} [{}]{}\n",
             thread.handle,
-            if thread.resolved { "resolved" } else { "open" },
+            if !thread.resolvable {
+                "feedback"
+            } else if thread.resolved {
+                "resolved"
+            } else {
+                "open"
+            },
             location
         ));
         for comment in &thread.comments {
             output.push_str(&format!("  {}: {}\n", comment.author, comment.body));
+            if let Some(url) = &comment.url {
+                output.push_str(&format!("  {url}\n"));
+            }
         }
     }
     output
@@ -429,7 +487,14 @@ fn render_jobs(jobs: &[CiJob]) -> String {
         return "No CI jobs for the current commit.\n".to_owned();
     }
     jobs.iter()
-        .map(|job| format!("{} [{}] {}\n", job.handle, job.state, job.name))
+        .map(|job| {
+            let url = job
+                .url
+                .as_deref()
+                .map(|url| format!("\n  {url}"))
+                .unwrap_or_default();
+            format!("{} [{}] {}{url}\n", job.handle, job.state, job.name)
+        })
         .collect()
 }
 
@@ -539,6 +604,64 @@ mod tests {
         Base: main
         Current commit: abc123
         Cause: review thread `T9` was not found; run `ag-git review` and use a current thread handle
+        "###);
+    }
+
+    #[test]
+    fn status_output_tells_an_agent_what_to_do_next() {
+        let scope = ProviderCommandScope {
+            host: "github.com",
+            project: "acme/widget",
+            base: "main",
+            prefix: "df1/",
+            branch: "df1/fix-login",
+            head: "abc123",
+        };
+        let request = ChangeRequestStatus {
+            handle: "#7".to_owned(),
+            url: "https://github.test/acme/widget/pull/7".to_owned(),
+            title: "Fix login".to_owned(),
+            state: "open".to_owned(),
+            draft: true,
+            head: "abc123".to_owned(),
+            base: "main".to_owned(),
+            review_state: Some("changes_requested".to_owned()),
+            threads: vec![ReviewThread {
+                handle: ReviewThreadHandle::new("T:thread-1"),
+                resolvable: true,
+                resolved: false,
+                path: Some("src/login.rs".to_owned()),
+                line: Some(42),
+                comments: vec![ReviewComment {
+                    author: "reviewer".to_owned(),
+                    body: "Handle this error.".to_owned(),
+                    url: Some("https://github.test/thread-1".to_owned()),
+                }],
+            }],
+            jobs: vec![CiJob {
+                handle: CiJobHandle::new("91"),
+                name: "test".to_owned(),
+                state: "failure".to_owned(),
+                url: Some("https://github.test/job-91".to_owned()),
+            }],
+        };
+
+        insta::assert_snapshot!(render_provider_command_output(
+            ProviderCommandOutput::CurrentStatus(Some(request)),
+            &scope,
+        ), @r###"
+        Project: acme/widget
+        Branch: df1/fix-login (abc123)
+        Base: main
+        Request: #7 Fix login [open, draft]
+        URL: https://github.test/acme/widget/pull/7
+        Review: changes_requested
+        Unresolved threads: 1
+        CI: failing (1 failed, 0 pending)
+
+        Mark it ready with `ag-git ready`.
+        Read and answer review feedback with `ag-git review`.
+        Inspect failures with `ag-git ci`, then `ag-git log JOB`.
         "###);
     }
 }

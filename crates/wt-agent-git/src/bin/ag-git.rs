@@ -19,15 +19,21 @@ fn run() -> Result<()> {
     let args = std::env::args().skip(1).collect();
     let (branch, head) = current_checkout();
     let socket = test_socket();
-    let mut relay = UnixStream::connect(&socket).context("connect to WT Git relay")?;
+    let mut relay = UnixStream::connect(&socket).with_context(|| {
+        format!(
+            "cannot reach the WT Git relay at {socket}; this command only works inside a running WT environment"
+        )
+    })?;
     write_json_line(
         &mut relay,
         &ClientRequest {
             protocol_version: PROTOCOL_VERSION,
             operation: ClientOperation::Cli { args, branch, head },
         },
-    )?;
-    let response: TransportResponse = read_json_line(&mut relay)?;
+    )
+    .context("send command to the WT Git relay")?;
+    let response: TransportResponse = read_json_line(&mut relay)
+        .context("read the WT Git gateway response; the relay or gateway may have stopped")?;
     if !response.ok {
         bail!(
             "{}",

@@ -509,7 +509,7 @@ Environment={}\n\
 {}\n\
 ExecStart={}\n\
 Restart=on-failure\n\
-RuntimeDirectory=wt\n\
+RuntimeDirectory=wt-agent-git\n\
 RuntimeDirectoryMode=0700\n\
 StateDirectory=wt/agent-git\n\
 StateDirectoryMode=0700\n\
@@ -530,8 +530,7 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
-Requires=wt-agent-git-gateway.service\n\
-Wants=network-online.target\n\
+Wants=network-online.target wt-agent-git-gateway.service\n\
 After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service\n\
 \n\
 [Service]\n\
@@ -697,8 +696,7 @@ binary_dir = "/opt/wt bin"
         insta::assert_snapshot!(unit, @r###"
         [Unit]
         Description=WT control-plane daemon
-        Requires=wt-agent-git-gateway.service
-        Wants=network-online.target
+        Wants=network-online.target wt-agent-git-gateway.service
         After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service
 
         [Service]

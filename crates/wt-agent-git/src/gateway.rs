@@ -137,7 +137,12 @@ impl Gateway {
                     &mut stream,
                     &TransportResponse::with_message(git_context_header(&grant)),
                 )?;
-                self.serve_git(stream, service, &source, &grant)
+                if let Err(error) = self.serve_git(&mut stream, service, &source, &grant) {
+                    let message = format!("ERR WT Git gateway failed: {error:#}\n");
+                    let _ = write_packet(&mut stream, message.as_bytes());
+                    let _ = stream.flush();
+                }
+                Ok(())
             }
             ClientOperation::Cli { args, branch, head } => {
                 let response =
@@ -167,7 +172,11 @@ impl Gateway {
                 .state
                 .lock()
                 .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-            if let Some(existing) = state.grants.iter().find(|grant| grant.world_id == world_id) {
+            if let Some(existing) = state
+                .grants
+                .iter()
+                .find(|grant| grant.world_id == world_id && !grant.revoked)
+            {
                 if existing.source != source || existing.base != base || existing.prefix != prefix {
                     bail!("world already reserved with a different Git scope");
                 }
@@ -176,24 +185,32 @@ impl Gateway {
                     token: existing.token.clone(),
                 })));
             }
-            if state
-                .grants
-                .iter()
-                .any(|grant| !grant.revoked && grant.source == source && grant.prefix == prefix)
-            {
+            if state.grants.iter().any(|grant| {
+                !grant.revoked && same_project(&grant.source, &parsed) && grant.prefix == prefix
+            }) {
                 bail!("branch prefix {prefix} is already reserved for this project");
             }
         }
-        verify_repository(provider, &parsed, base)?;
+        let reclaims_prefix = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?
+            .grants
+            .iter()
+            .any(|grant| {
+                grant.revoked
+                    && grant.world_id == world_id
+                    && same_project(&grant.source, &parsed)
+                    && grant.prefix == prefix
+            });
+        verify_repository(provider, &parsed, base, prefix, reclaims_prefix)?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if state
-            .grants
-            .iter()
-            .any(|grant| !grant.revoked && grant.source == source && grant.prefix == prefix)
-        {
+        if state.grants.iter().any(|grant| {
+            !grant.revoked && same_project(&grant.source, &parsed) && grant.prefix == prefix
+        }) {
             bail!("branch prefix {prefix} is already reserved for this project");
         }
         let record = GrantRecord {
@@ -284,7 +301,7 @@ impl Gateway {
 
     fn serve_git<S: DuplexStream>(
         &self,
-        mut stream: S,
+        stream: &mut S,
         service: GitService,
         source: &str,
         grant: &GrantRecord,
@@ -293,13 +310,10 @@ impl Gateway {
         let provider = self.provider(&source.host)?;
         let mut child = spawn_git(provider, &source, service)?;
         if service == GitService::ReceivePack {
-            copy_packet_section(
-                child.stdout.as_mut().context("Git service has no stdout")?,
-                &mut stream,
-            )?;
-            let commands = read_packet_section(&mut stream)?;
+            forward_advertisement(&mut child, stream)?;
+            let commands = read_packet_section(&mut *stream)?;
             if let Err(error) = validate_push(&commands, &grant.prefix) {
-                reject_push(&mut stream, &commands, &error.to_string())?;
+                reject_push(stream, &commands, &error.to_string())?;
                 let _ = child.kill();
                 let _ = child.wait();
                 return Ok(());
@@ -311,9 +325,9 @@ impl Gateway {
                 .write_all(&commands)
                 .context("forward push commands")?;
             let sideband = push_uses_sideband(&commands)?;
-            let message = push_success_message(&commands)?;
-            return bridge_child(stream, child, sideband.then_some(message.as_bytes()));
+            return bridge_child(stream, child, sideband.then_some(commands.as_slice()));
         }
+        forward_advertisement(&mut child, stream)?;
         bridge_child(stream, child, None)
     }
 
@@ -348,6 +362,21 @@ impl Gateway {
         }
         if !valid_object_id(head) {
             bail!("current Git commit is invalid");
+        }
+        let published_head = repository_refs(provider, &source)?
+            .into_iter()
+            .find_map(|(object, reference)| {
+                (reference == format!("refs/heads/{branch}")).then_some(object)
+            })
+            .with_context(|| {
+                format!(
+                    "branch `{branch}` is not published; run `git push -u origin {branch}` and retry"
+                )
+            })?;
+        if published_head != head {
+            bail!(
+                "branch `{branch}` is published at {published_head}, but this checkout is at {head}; run `git push origin {branch}` and retry"
+            );
         }
         let project = source.path.trim_end_matches(".git");
         let command = api::ProviderCommand::parse(args)?;
@@ -506,14 +535,15 @@ fn spawn_git(provider: &Provider, source: &GitSource, service: GitService) -> Re
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("start {}", service.command()))
 }
 
-fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Result<()> {
-    let mut child = spawn_git(provider, source, GitService::UploadPack)
-        .context("open Git repository with the configured gateway key")?;
+fn repository_refs(provider: &Provider, source: &GitSource) -> Result<Vec<(String, String)>> {
+    let mut child = spawn_git(provider, source, GitService::UploadPack)?;
+    let stderr = child.stderr.take().context("Git service has no stderr")?;
+    let stderr = std::thread::spawn(move || capture_stderr(stderr));
     let mut advertisement = Vec::new();
     let result = copy_packet_section(
         child.stdout.as_mut().context("Git service has no stdout")?,
@@ -521,19 +551,57 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
     );
     let _ = child.kill();
     let _ = child.wait();
-    result.with_context(|| {
+    let stderr = stderr
+        .join()
+        .map_err(|_| anyhow::anyhow!("Git stderr reader panicked"))?;
+    if let Err(error) = result {
+        let detail = String::from_utf8_lossy(&stderr);
+        let detail = detail.trim();
+        if detail.is_empty() {
+            return Err(error).context("read Git repository advertisement");
+        }
+        return Err(error).context(format!("Git provider said: {detail}"));
+    }
+    let refs = packet_lines(&advertisement)?
+        .filter_map(|line| {
+            let mut fields = line.split(|byte| byte.is_ascii_whitespace() || *byte == 0);
+            let object = fields.next()?;
+            let reference = fields.next()?;
+            Some((
+                String::from_utf8_lossy(object).into_owned(),
+                String::from_utf8_lossy(reference).into_owned(),
+            ))
+        })
+        .collect();
+    Ok(refs)
+}
+
+fn verify_repository(
+    provider: &Provider,
+    source: &GitSource,
+    base: &str,
+    prefix: &str,
+    reclaims_prefix: bool,
+) -> Result<()> {
+    let refs = repository_refs(provider, source).with_context(|| {
         format!(
             "the gateway SSH key cannot read repository {} on {}",
             source.path, source.host
         )
     })?;
     let expected = format!("refs/heads/{base}");
-    if !packet_lines(&advertisement)?.any(|line| {
-        line.split(|byte| byte.is_ascii_whitespace() || *byte == 0)
-            .nth(1)
-            == Some(expected.as_bytes())
-    }) {
+    if !refs.iter().any(|(_, reference)| reference == &expected) {
         bail!("Git base branch `{base}` does not exist");
+    }
+    let prefixed_ref = format!("refs/heads/{prefix}");
+    if !reclaims_prefix
+        && refs
+            .iter()
+            .any(|(_, reference)| reference.starts_with(&prefixed_ref))
+    {
+        bail!(
+            "branch prefix `{prefix}` is already present in the project; choose a different world name"
+        );
     }
     if let Provider::Ssh {
         kind,
@@ -551,6 +619,29 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
         .context("verify provider API access")?;
     }
     Ok(())
+}
+
+fn same_project(source: &str, expected: &GitSource) -> bool {
+    parse_source(source).is_ok_and(|source| {
+        source.host == expected.host
+            && source.path.trim_end_matches(".git") == expected.path.trim_end_matches(".git")
+    })
+}
+
+fn capture_stderr(mut stderr: impl Read) -> Vec<u8> {
+    const LIMIT: usize = 16 * 1024;
+    let mut captured = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        match stderr.read(&mut buffer) {
+            Ok(0) | Err(_) => return captured,
+            Ok(count) if captured.len() < LIMIT => {
+                let remaining = LIMIT - captured.len();
+                captured.extend_from_slice(&buffer[..count.min(remaining)]);
+            }
+            Ok(_) => {}
+        }
+    }
 }
 
 fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
@@ -576,10 +667,12 @@ fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
 }
 
 fn bridge_child<S: DuplexStream>(
-    mut stream: S,
+    stream: &mut S,
     mut child: Child,
-    progress: Option<&[u8]>,
+    push_commands: Option<&[u8]>,
 ) -> Result<()> {
+    let stderr = child.stderr.take().context("Git service has no stderr")?;
+    let stderr = std::thread::spawn(move || capture_stderr(stderr));
     let mut request_stream = stream.try_clone_stream().context("clone gateway stream")?;
     let shutdown = stream.try_clone_stream().context("clone gateway stream")?;
     let mut child_stdin = child.stdin.take().context("Git service has no stdin")?;
@@ -602,17 +695,20 @@ fn bridge_child<S: DuplexStream>(
         result
     });
     let mut child_stdout = child.stdout.take().context("Git service has no stdout")?;
-    let response = if let Some(progress) = progress {
+    let response = if let Some(commands) = push_commands {
         let mut response = Vec::new();
         child_stdout
             .read_to_end(&mut response)
             .context("read Git response")?;
         if let Some(body) = response.strip_suffix(b"0000") {
             stream.write_all(body).context("forward Git response")?;
-            let mut packet = Vec::with_capacity(progress.len() + 1);
-            packet.push(2);
-            packet.extend_from_slice(progress);
-            write_packet(&mut stream, &packet)?;
+            let message = successful_push_message(commands, &response, true)?;
+            if !message.is_empty() {
+                let mut packet = Vec::with_capacity(message.len() + 1);
+                packet.push(2);
+                packet.extend_from_slice(message.as_bytes());
+                write_packet(stream, &packet)?;
+            }
             stream.write_all(b"0000").context("finish Git response")?;
         } else {
             stream
@@ -622,7 +718,7 @@ fn bridge_child<S: DuplexStream>(
         stream.flush().context("flush Git response")?;
         Ok(response.len() as u64)
     } else {
-        std::io::copy(&mut child_stdout, &mut stream)
+        std::io::copy(&mut child_stdout, stream)
     };
     let _ = shutdown.shutdown_stream(Shutdown::Both);
     let request = request
@@ -631,8 +727,35 @@ fn bridge_child<S: DuplexStream>(
     tolerate_stream_close(request).context("forward Git request")?;
     tolerate_stream_close(response).context("forward Git response")?;
     let status = child.wait().context("wait for Git service")?;
+    let stderr = stderr
+        .join()
+        .map_err(|_| anyhow::anyhow!("Git stderr reader panicked"))?;
     if !status.success() {
-        bail!("{} exited with {status}", "Git service");
+        let detail = String::from_utf8_lossy(&stderr);
+        let detail = detail.trim();
+        if !detail.is_empty() {
+            bail!("Git provider failed with {status}: {detail}");
+        }
+        bail!("Git provider failed with {status}");
+    }
+    Ok(())
+}
+
+fn forward_advertisement(child: &mut Child, stream: &mut impl Write) -> Result<()> {
+    let result = copy_packet_section(
+        child.stdout.as_mut().context("Git service has no stdout")?,
+        stream,
+    );
+    if let Err(error) = result {
+        let _ = child.kill();
+        let _ = child.wait();
+        let stderr = child.stderr.take().map(capture_stderr).unwrap_or_default();
+        let detail = String::from_utf8_lossy(&stderr);
+        let detail = detail.trim();
+        if !detail.is_empty() {
+            return Err(error).context(format!("Git provider said: {detail}"));
+        }
+        return Err(error).context("read Git provider response");
     }
     Ok(())
 }
@@ -752,9 +875,32 @@ fn valid_object_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn push_success_message(section: &[u8]) -> Result<String> {
+fn successful_push_message(commands: &[u8], response: &[u8], sideband: bool) -> Result<String> {
+    let report = if sideband {
+        let mut report = Vec::new();
+        for packet in packet_lines(response)? {
+            if packet.first() == Some(&1) {
+                report.extend_from_slice(&packet[1..]);
+            }
+        }
+        report
+    } else {
+        response.to_vec()
+    };
+    let accepted: std::collections::BTreeSet<_> = packet_lines(&report)?
+        .filter_map(|line| {
+            std::str::from_utf8(line)
+                .ok()?
+                .trim_end()
+                .strip_prefix("ok ")
+                .map(str::to_owned)
+        })
+        .collect();
     let mut message = String::new();
-    for (new, reference) in push_commands(section)? {
+    for (new, reference) in push_commands(commands)? {
+        if !accepted.contains(&reference) {
+            continue;
+        }
         let branch = reference
             .strip_prefix("refs/heads/")
             .context("validated push contains a non-branch ref")?;
@@ -762,9 +908,8 @@ fn push_success_message(section: &[u8]) -> Result<String> {
             message.push_str(&format!("Deleted branch `{branch}`.\n"));
         } else {
             message.push_str(&format!("Published branch `{branch}`.\n"));
-            message.push_str("This branch does not have a pull or merge request.\n");
-            message.push_str("Open one for review:\n  ag-git open-mr\n");
-            message.push_str("Or open it as a draft:\n  ag-git open-mr --draft\n");
+            message.push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n");
+            message.push_str("If it has no request, open one with `ag-git open-mr`.\n");
         }
     }
     Ok(message)
@@ -903,14 +1048,43 @@ mod tests {
             let payload = format!("{} {new} {reference}\0report-status\n", "0".repeat(40));
             format!("{:04x}{payload}0000", payload.len() + 4).into_bytes()
         };
+        let response = |status: &str| {
+            let mut report = Vec::new();
+            write_packet(&mut report, b"unpack ok\n").unwrap();
+            write_packet(&mut report, format!("{status}\n").as_bytes()).unwrap();
+            report.extend_from_slice(b"0000");
+            let mut packet = vec![1];
+            packet.extend_from_slice(&report);
+            let mut response = Vec::new();
+            write_packet(&mut response, &packet).unwrap();
+            response.extend_from_slice(b"0000");
+            response
+        };
         insta::assert_snapshot!(
             "push_published",
-            push_success_message(&command(&"a".repeat(40), "refs/heads/df1/fix-login")).unwrap()
+            successful_push_message(
+                &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
+                &response("ok refs/heads/df1/fix-login"),
+                true,
+            )
+            .unwrap()
         );
         insta::assert_snapshot!(
             "push_deleted",
-            push_success_message(&command(&"0".repeat(40), "refs/heads/df1/fix-login")).unwrap()
+            successful_push_message(
+                &command(&"0".repeat(40), "refs/heads/df1/fix-login"),
+                &response("ok refs/heads/df1/fix-login"),
+                true,
+            )
+            .unwrap()
         );
+        assert!(successful_push_message(
+            &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
+            &response("ng refs/heads/df1/fix-login protected branch"),
+            true,
+        )
+        .unwrap()
+        .is_empty());
         insta::assert_snapshot!(
             "push_rejected",
             validate_push(&command(&"a".repeat(40), "refs/heads/fix-login"), "df1/")

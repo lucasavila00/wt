@@ -43,6 +43,14 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     git(&seed, &["commit", "-m", "base"]);
     git(&seed, &["branch", "-M", "main"]);
     git(&seed, &["push", upstream.to_str().unwrap(), "main:main"]);
+    git(
+        &seed,
+        &[
+            "push",
+            upstream.to_str().unwrap(),
+            "main:refs/heads/taken/existing",
+        ],
+    );
     git(&upstream, &["symbolic-ref", "HEAD", "refs/heads/main"]);
 
     let control = temp.path().join("control.sock");
@@ -71,6 +79,15 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     );
     assert!(!response.ok);
     assert!(response.error.unwrap().contains("does not exist"));
+    let response = reserve(
+        &control,
+        "existing-prefix",
+        "git@local.test:project.git",
+        "main",
+        "taken/",
+    );
+    assert!(!response.ok);
+    assert!(response.error.unwrap().contains("already present"));
 
     let response = reserve(
         &control,
@@ -81,8 +98,18 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     );
     assert!(response.ok, "{:?}", response.error);
     let grant = response.grant.unwrap();
+    let response = reserve(
+        &control,
+        "world-2",
+        "ssh://git@local.test/project.git",
+        "main",
+        "df1/",
+    );
+    assert!(!response.ok);
+    assert!(response.error.unwrap().contains("already reserved"));
     let grant_file = temp.path().join("grant");
-    fs::write(&grant_file, grant.token).unwrap();
+    let original_token = grant.token.clone();
+    fs::write(&grant_file, &grant.token).unwrap();
 
     let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-relay"))
         .args([
@@ -186,7 +213,13 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     assert_success(&git_output(&checkout, &["fetch", "origin"], &relay_socket));
 
     let mut stream = UnixStream::connect(&control).unwrap();
-    write_json_line(&mut stream, &ControlRequest::Revoke { grant_id: grant.id }).unwrap();
+    write_json_line(
+        &mut stream,
+        &ControlRequest::Revoke {
+            grant_id: grant.id.clone(),
+        },
+    )
+    .unwrap();
     let response: ControlResponse = read_json_line(&mut stream).unwrap();
     assert!(response.ok, "{:?}", response.error);
     let rejected = git_output(&checkout, &["fetch", "origin"], &relay_socket);
@@ -196,6 +229,15 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         "{}",
         String::from_utf8_lossy(&rejected.stderr)
     );
+    let replacement = reserve(
+        &control,
+        "world-1",
+        "git@local.test:project.git",
+        "main",
+        "df1/",
+    );
+    assert!(replacement.ok, "{:?}", replacement.error);
+    assert_ne!(replacement.grant.unwrap().token, original_token);
     drop(gateway);
 }
 
