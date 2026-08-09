@@ -5,73 +5,80 @@
 
 ## Context
 
-WT relies on the developer's forwarded SSH agent for all Git access. It uses the
-agent to clone the repository during setup and forwards it into the devcontainer
-for later Git commands.
+WT currently uses the developer's forwarded SSH agent for every Git operation:
+the initial clone and later fetches and pushes from the devcontainer. An agent
+inside the world therefore uses the developer's Git identity and permissions.
 
-An agent therefore uses the developer's Git identity and permissions. WT cannot
-give the agent limited access or revoke that access independently.
+Agent worlds need their own Git identity, limited to their own fork and branch
+namespace. Normal worlds should keep using SSH agent forwarding as they do
+today.
 
-## Developer experience
+## Decision
 
-Configure the gateway in WT once. When creating an agent world, choose a
-project and base branch in addition to the world name.
+Add an agent Git mode to world creation. Configure the gateway in WT once, then
+select a project and base branch when creating an agent world.
 
-For a world named `df1`, WT creates a private Forgejo fork for that project and
-world name. It checks out the selected base branch, configures the fork as
-`origin`, and installs its credential. The agent does not need the developer's
-SSH agent to use this remote.
+For an agent world named `df1`:
 
-The agent uses ordinary branch names inside the world:
+1. The `wt` client generates a new SSH keypair.
+2. The client asks the gateway for the Forgejo fork identified by the project
+   and world name. The gateway creates the fork if needed and authorizes the
+   public key.
+3. The client sends `wt-server` an agent-mode create request containing the
+   Forgejo remotes, selected base, and private key.
+4. `wt-server` creates the world, stores the private key on its private disk,
+   checks out the selected base, and configures the remotes.
+
+`origin` is the world's private, writable Forgejo fork. `upstream` is the
+gateway's read-only mirror of the project. The agent can use both without the
+developer's SSH agent.
+
+The server is trusted in WT's self-hosted model, so sending the world-specific
+private key through the existing protected API is an acceptable and simpler
+design. `wt-server` may handle the key while creating the world but never writes
+it to its database, logs, VM images, or shared disks. Its only persistent copy
+is on the world's private disk, outside the checkout.
+
+## Branches
+
+The agent uses ordinary branch names:
 
 ```text
 git switch -c fix-login
 git push -u origin fix-login
 ```
 
-The gateway publishes `origin/fix-login` to the project's GitHub or GitLab
-repository as `df1/fix-login`. The `df1/` prefix comes from the world name and
-is added by the gateway. Pushing more commits, force-pushing, or deleting
-`origin/fix-login` updates the same branch in the project repository.
+For `df1`, the gateway publishes the fork's `fix-login` branch to the project's
+GitHub or GitLab repository as `df1/fix-login`. The prefix comes from the world
+name and is added automatically. Later pushes, force-pushes, and deletions
+update that same published branch.
 
-The agent cannot publish a branch without the `df1/` prefix, publish under
-another world's prefix, or push tags. Opening a pull or merge request remains a
-separate action.
+The agent cannot publish outside `df1/`, publish under another world's prefix,
+or push tags. Opening a pull or merge request remains a separate action.
 
-Running `wt rm df1` deletes the world as usual. It does not delete the Forgejo
-fork, its branches, its identity, or its authorized public key. The private key
-installed by WT disappears with the world's disk.
+## Removing and reusing worlds
 
-Creating another `df1` for the same project reuses the retained fork and
-installs a new credential. Existing credentials remain authorized. `wt fork`
-rejects agent worlds because it must not copy a Git credential or identity.
+`wt rm df1` uses the existing server deletion path. It does not contact the
+gateway or change anything in Forgejo. Deleting the world's private disk removes
+WT's copy of the private key.
 
-## Decision
+The Forgejo fork, its branches, identity, and authorized public keys remain.
+This is deliberate: the data is small, and retaining it makes recovery from an
+accidental world deletion possible. Any copy of an old private key also remains
+valid because WT does not revoke its public key.
 
-The gateway runs as a separate service. When creating an agent world, the `wt`
-client calls the gateway API to create or find the private Forgejo fork for the
-project and world name. The gateway manages Forgejo and publishes branches to
-GitHub or GitLab. The world connects to Forgejo through Git. `wt-server` does
-not call the gateway or any Git provider.
+Creating another `df1` for the same project reuses the retained fork and adds a
+new credential. Retained forks and credentials accumulate by design.
 
-The client generates a new SSH keypair for the world. It gives the public key to
-the gateway and includes the private key in the world creation request.
-`wt-server` writes the private key to the world's private disk, outside the
-checkout. It does not write the key to its database, logs, VM images, or shared
-disks.
+`wt fork` rejects agent worlds because copying the disk would also copy their
+Git identity and private key.
 
-The create request identifies the world as either a normal world, which uses the
-developer's forwarded SSH agent, or an agent world, which uses the supplied
-Forgejo remote and private key.
+## Boundaries
 
-The server is already trusted in WT's self-hosted model. Sending this disposable
-key through the existing protected API keeps world setup in one place without
-giving `wt-server` access to Forgejo.
-
-Agent worlds do not forward the workstation's SSH agent during setup or normal
-connections. A developer can still opt in for a connection with `ssh -A`.
-Normal worlds keep their existing agent-forwarding behavior.
-
-`wt rm` uses the existing server deletion path and does not contact the gateway.
-Retained forks accumulate by design so work can be recovered after an accidental
-world deletion.
+- The `wt` client calls the gateway only when creating an agent world.
+- The gateway manages Forgejo and publishes branches to GitHub or GitLab.
+- The world connects to Forgejo through normal Git transport.
+- `wt-server` handles the supplied private key but never calls the gateway,
+  Forgejo, GitHub, or GitLab.
+- Agent worlds do not forward the workstation's SSH agent by default. A
+  developer can still opt in for a connection with `ssh -A`.
