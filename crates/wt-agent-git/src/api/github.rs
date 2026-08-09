@@ -333,7 +333,9 @@ impl GithubApi {
         {
             Ok(())
         } else {
-            bail!("CI job `{handle}` does not belong to the current commit")
+            bail!(
+                "CI job `{handle}` does not belong to the current commit; run `ag-git ci` and use a current job handle"
+            )
         }
     }
 
@@ -351,7 +353,11 @@ impl GithubApi {
             .thread_ids
             .get(index - 1)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("review thread `{handle}` was not found"))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
+                )
+            })
     }
 }
 
@@ -381,7 +387,9 @@ impl GitProviderApi for GithubApi {
         ) {
             Ok(())
         } else {
-            bail!("GitHub API credential cannot create pull requests in {project}")
+            bail!(
+                "GitHub API credential cannot create pull requests in {project}; install a credential with write access and rerun `wt-server-setup`"
+            )
         }
     }
 
@@ -443,7 +451,7 @@ impl GitProviderApi for GithubApi {
                         self.graphql_path,
                         github_add_pull_request_comment::Variables {
                             id: id.0,
-                            body: body.clone(),
+                            body: super::attributed_comment(scope, body),
                         },
                     )?;
                 Ok(ProviderCommandOutput::Confirmation(
@@ -479,7 +487,7 @@ impl GitProviderApi for GithubApi {
                     self.graphql_path,
                     github_reply_to_review_thread::Variables {
                         thread: thread.0,
-                        body: body.clone(),
+                        body: super::attributed_comment(scope, body),
                     },
                 )?;
                 Ok(ProviderCommandOutput::Confirmation(

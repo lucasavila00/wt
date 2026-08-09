@@ -12,21 +12,38 @@ pub(crate) struct ExpectedRequest {
 }
 
 pub(crate) fn serve(expected: Vec<ExpectedRequest>) -> (String, JoinHandle<Result<(), String>>) {
+    serve_with_statuses(expected.into_iter().map(|request| (request, 200)).collect())
+}
+
+pub(crate) fn serve_one_with_status(
+    expected: ExpectedRequest,
+    status: u16,
+) -> (String, JoinHandle<Result<(), String>>) {
+    serve_with_statuses(vec![(expected, status)])
+}
+
+fn serve_with_statuses(
+    expected: Vec<(ExpectedRequest, u16)>,
+) -> (String, JoinHandle<Result<(), String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture server");
     let address = listener.local_addr().expect("read fixture address");
     let handle = thread::spawn(move || {
-        for expected_request in expected {
+        for (expected_request, response_status) in expected {
             let (stream, _) = listener
                 .accept()
                 .map_err(|error| format!("accept fixture request: {error}"))?;
-            handle_request(stream, expected_request)?;
+            handle_request(stream, expected_request, response_status)?;
         }
         Ok(())
     });
     (format!("http://{address}"), handle)
 }
 
-fn handle_request(mut stream: TcpStream, expected: ExpectedRequest) -> Result<(), String> {
+fn handle_request(
+    mut stream: TcpStream,
+    expected: ExpectedRequest,
+    response_status: u16,
+) -> Result<(), String> {
     let mut reader = BufReader::new(
         stream
             .try_clone()
@@ -88,7 +105,7 @@ fn handle_request(mut stream: TcpStream, expected: ExpectedRequest) -> Result<()
     }
 
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {response_status} Fixture\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         expected.response_content_type,
         expected.response_body.len(),
         expected.response_body

@@ -284,7 +284,11 @@ impl GitlabApi {
             .discussion_ids
             .get(index - 1)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("review thread `{handle}` was not found"))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
+                )
+            })
     }
 
     fn read_ci_jobs(
@@ -327,7 +331,9 @@ impl GitlabApi {
         {
             Ok(())
         } else {
-            bail!("CI job `{handle}` does not belong to the current commit")
+            bail!(
+                "CI job `{handle}` does not belong to the current commit; run `ag-git ci` and use a current job handle"
+            )
         }
     }
 }
@@ -348,7 +354,9 @@ impl GitProviderApi for GitlabApi {
         if project_data.user_permissions.create_merge_request_in {
             Ok(())
         } else {
-            bail!("GitLab API credential cannot create merge requests in {project}")
+            bail!(
+                "GitLab API credential cannot create merge requests in {project}; install a credential with permission to create merge requests and rerun `wt-server-setup`"
+            )
         }
     }
 
@@ -415,7 +423,7 @@ impl GitProviderApi for GitlabApi {
                     "api/graphql",
                     gitlab_add_merge_request_comment::Variables {
                         id: NoteableID(id.0),
-                        body: body.clone(),
+                        body: super::attributed_comment(scope, body),
                     },
                 )?;
                 ensure_errors(
@@ -466,7 +474,7 @@ impl GitProviderApi for GitlabApi {
                     gitlab_reply_to_discussion::Variables {
                         id: NoteableID(id.0),
                         discussion: DiscussionID(discussion.0),
-                        body: body.clone(),
+                        body: super::attributed_comment(scope, body),
                         head: scope.head.to_owned(),
                     },
                 )?;

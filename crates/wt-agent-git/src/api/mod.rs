@@ -16,7 +16,7 @@ mod http;
 mod test_server;
 
 use crate::ProviderKind;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -175,14 +175,40 @@ pub(crate) fn verify_provider_access(
     base: &str,
 ) -> Result<()> {
     let token = read_provider_token(token_file)?;
-    match kind {
+    let result = match kind {
         ProviderKind::GitHub => {
             github::GithubApi::new(host, &token)?.verify_repository_access(project, base)
         }
         ProviderKind::GitLab => {
             gitlab::GitlabApi::new(host, &token)?.verify_repository_access(project, base)
         }
-    }
+    };
+    result.with_context(|| {
+        format!(
+            "the {} API credential cannot prepare project {project} with base {base}",
+            provider_name(kind)
+        )
+    })
+}
+
+fn with_provider_command_context(
+    result: Result<ProviderCommandOutput>,
+    kind: ProviderKind,
+    scope: &ProviderCommandScope<'_>,
+    command: &ProviderCommand,
+) -> Result<ProviderCommandOutput> {
+    result.with_context(|| {
+        format!(
+            "ag-git could not {}\nProvider: {} ({})\nProject: {}\nBranch: {}\nBase: {}\nCurrent commit: {}\nCause",
+            command.action(),
+            provider_name(kind),
+            scope.host,
+            scope.project,
+            scope.branch,
+            scope.base,
+            scope.head
+        )
+    })
 }
 
 fn wait_for_review_or_ci_change(
@@ -207,14 +233,15 @@ pub(crate) fn execute_provider_command(
     command: &ProviderCommand,
 ) -> Result<ProviderCommandOutput> {
     let token = read_provider_token(token_file)?;
-    match kind {
+    let result = match kind {
         ProviderKind::GitHub => {
             github::GithubApi::new(scope.host, &token)?.execute_command(scope, command)
         }
         ProviderKind::GitLab => {
             gitlab::GitlabApi::new(scope.host, &token)?.execute_command(scope, command)
         }
-    }
+    };
+    with_provider_command_context(result, kind, scope, command)
 }
 
 fn read_provider_token(token_file: &Path) -> Result<String> {
@@ -228,6 +255,30 @@ fn read_provider_token(token_file: &Path) -> Result<String> {
 }
 
 impl ProviderCommand {
+    fn action(&self) -> &'static str {
+        match self {
+            Self::ReadCurrentStatus => "read the current request, reviews, and CI status",
+            Self::OpenChangeRequest { .. } => "open the pull or merge request",
+            Self::MarkChangeRequestReady => "mark the pull or merge request ready",
+            Self::MarkChangeRequestDraft => "mark the pull or merge request as draft",
+            Self::AddChangeRequestComment { .. } => "add a pull or merge request comment",
+            Self::EditChangeRequest { .. } => "edit the pull or merge request",
+            Self::ReadReviewThreads => "read review threads",
+            Self::ReplyToReviewThread { .. } => "reply to the review thread",
+            Self::SetReviewThreadResolved { resolved: true, .. } => "resolve the review thread",
+            Self::SetReviewThreadResolved {
+                resolved: false, ..
+            } => "reopen the review thread",
+            Self::ReadCiJobs => "read CI jobs for the current commit",
+            Self::ReadCiJobLog { .. } => "read the CI job log",
+            Self::RetryCiJob { .. } => "retry the CI job",
+            Self::CancelCiJob { .. } => "cancel the CI job",
+            Self::WaitForReviewOrCiChange => "wait for review or CI to change",
+            Self::CloseChangeRequest => "close the pull or merge request",
+            Self::ReopenChangeRequest => "reopen the pull or merge request",
+        }
+    }
+
     pub(crate) fn parse(args: &[String]) -> Result<Self> {
         let Some((name, rest)) = args.split_first() else {
             return Ok(Self::ReadCurrentStatus);
@@ -276,6 +327,20 @@ impl ProviderCommand {
             _ => bail!("unknown command `{name}`; run `ag-git --help`"),
         }
     }
+}
+
+fn provider_name(kind: ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::GitHub => "GitHub",
+        ProviderKind::GitLab => "GitLab",
+    }
+}
+
+fn attributed_comment(scope: &ProviderCommandScope<'_>, body: &str) -> String {
+    format!(
+        "{body}\n\n— WT world `{}`",
+        scope.prefix.trim_end_matches('/')
+    )
 }
 
 pub(crate) fn render_provider_command_output(
@@ -441,5 +506,39 @@ mod tests {
         assert!(ProviderCommand::parse(&["reviewers".into()]).is_err());
         assert!(ProviderCommand::parse(&["labels".into()]).is_err());
         assert!(ProviderCommand::parse(&["merge".into()]).is_err());
+    }
+
+    #[test]
+    fn command_errors_include_complete_agent_context() {
+        let scope = ProviderCommandScope {
+            host: "github.example",
+            project: "acme/widget",
+            base: "main",
+            prefix: "df1/",
+            branch: "df1/fix-login",
+            head: "abc123",
+        };
+        let error = with_provider_command_context(
+            Err(anyhow::anyhow!(
+                "review thread `T9` was not found; run `ag-git review` and use a current thread handle"
+            )),
+            ProviderKind::GitHub,
+            &scope,
+            &ProviderCommand::SetReviewThreadResolved {
+                thread: ReviewThreadHandle::new("T9"),
+                resolved: true,
+            },
+        )
+        .unwrap_err();
+
+        insta::assert_snapshot!(format!("{error:#}"), @r###"
+        ag-git could not resolve the review thread
+        Provider: GitHub (github.example)
+        Project: acme/widget
+        Branch: df1/fix-login
+        Base: main
+        Current commit: abc123
+        Cause: review thread `T9` was not found; run `ag-git review` and use a current thread handle
+        "###);
     }
 }

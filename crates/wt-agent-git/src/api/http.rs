@@ -30,6 +30,7 @@ impl ProviderHttpClient {
         }
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(60)))
+            .http_status_as_error(false)
             .build();
         Ok(Self {
             agent: ureq::Agent::new_with_config(config),
@@ -50,21 +51,22 @@ impl ProviderHttpClient {
         Q::ResponseData: DeserializeOwned,
     {
         let body = Q::build_query(variables);
-        let mut response = self
-            .authorize(self.agent.post(self.url(path)))
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.post(&url))
             .send_json(&body)
-            .context("send provider GraphQL request")?;
-        let response: Response<Q::ResponseData> = response
-            .body_mut()
-            .read_json()
-            .context("decode provider GraphQL response")?;
+            .with_context(|| connection_context("POST", &url))?;
+        let body = read_response(response, "POST", &url)?;
+        let response: Response<Q::ResponseData> = decode_json(&body, &url, "GraphQL")?;
         if let Some(errors) = response.errors {
             let messages = errors
                 .into_iter()
                 .map(|error| error.message)
                 .collect::<Vec<_>>()
                 .join("; ");
-            bail!("provider GraphQL error: {messages}");
+            bail!(
+                "provider GraphQL request failed\nEndpoint: {url}\nProvider response: {messages}\nNext step: use the provider response to correct the command, credential, or repository configuration"
+            );
         }
         response
             .data
@@ -72,25 +74,22 @@ impl ProviderHttpClient {
     }
 
     pub(crate) fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let mut response = self
-            .authorize(self.agent.get(self.url(path)))
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.get(&url))
             .call()
-            .context("send provider GET request")?;
-        response
-            .body_mut()
-            .read_json()
-            .context("decode provider response")
+            .with_context(|| connection_context("GET", &url))?;
+        let body = read_response(response, "GET", &url)?;
+        decode_json(&body, &url, "JSON")
     }
 
     pub(crate) fn read_text(&self, path: &str) -> Result<String> {
-        let mut response = self
-            .authorize(self.agent.get(self.url(path)))
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.get(&url))
             .call()
-            .context("send provider GET request")?;
-        response
-            .body_mut()
-            .read_to_string()
-            .context("read provider response")
+            .with_context(|| connection_context("GET", &url))?;
+        read_response(response, "GET", &url)
     }
 
     pub(crate) fn post_json<B: Serialize, T: DeserializeOwned>(
@@ -98,20 +97,22 @@ impl ProviderHttpClient {
         path: &str,
         body: &B,
     ) -> Result<T> {
-        let mut response = self
-            .authorize(self.agent.post(self.url(path)))
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.post(&url))
             .send_json(body)
-            .context("send provider POST request")?;
-        response
-            .body_mut()
-            .read_json()
-            .context("decode provider response")
+            .with_context(|| connection_context("POST", &url))?;
+        let body = read_response(response, "POST", &url)?;
+        decode_json(&body, &url, "JSON")
     }
 
     pub(crate) fn post_without_body(&self, path: &str) -> Result<()> {
-        self.authorize(self.agent.post(self.url(path)))
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.post(&url))
             .send_empty()
-            .context("send provider POST request")?;
+            .with_context(|| connection_context("POST", &url))?;
+        read_response(response, "POST", &url)?;
         Ok(())
     }
 
@@ -129,5 +130,100 @@ impl ProviderHttpClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}/{}", self.base, path.trim_start_matches('/'))
+    }
+}
+
+fn connection_context(method: &str, url: &str) -> String {
+    format!(
+        "could not reach provider API\nHTTP: {method} {url}\nNext step: check DNS, TLS, and outbound provider access from the WT host"
+    )
+}
+
+fn decode_json<T: DeserializeOwned>(body: &str, url: &str, kind: &str) -> Result<T> {
+    serde_json::from_str(body).with_context(|| {
+        format!(
+            "decode provider {kind} response from {url}\nProvider response: {}",
+            truncate(body, 4096)
+        )
+    })
+}
+
+fn read_response(
+    mut response: ureq::http::Response<ureq::Body>,
+    method: &str,
+    url: &str,
+) -> Result<String> {
+    let status = response.status();
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .with_context(|| format!("read provider response from {url}"))?;
+    if status.is_success() {
+        return Ok(body);
+    }
+
+    let hint = match status.as_u16() {
+        401 => "The installed API credential is invalid or expired. Reinstall the gateway credential.",
+        403 => "The installed API credential lacks permission, or the provider has rate-limited it. Check the credential and provider response.",
+        404 => "The project or object was not found with this credential. Check its repository access.",
+        429 => "The provider rate limit was reached. Wait and retry this command.",
+        _ => "The provider rejected the request. Use its response below to correct the problem.",
+    };
+    let body = if body.trim().is_empty() {
+        "<empty response>".to_owned()
+    } else {
+        truncate(&body, 4096)
+    };
+    bail!(
+        "provider API request failed\nHTTP: {method} {url} -> {}\nProvider response: {body}\nNext step: {hint}",
+        status.as_u16()
+    )
+}
+
+fn truncate(value: &str, limit: usize) -> String {
+    if value.len() <= limit {
+        value.to_owned()
+    } else {
+        format!("{}…", &value[..value.floor_char_boundary(limit)])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::test_server::{serve_one_with_status, ExpectedRequest};
+
+    #[test]
+    fn http_errors_preserve_status_provider_body_and_recovery_hint() {
+        let (base_url, server) = serve_one_with_status(
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"message":"Resource not accessible by token"}"#,
+            },
+            403,
+        );
+        let client = ProviderHttpClient::new(
+            base_url.clone(),
+            "fixture-token",
+            ProviderAuthentication::Github,
+        )
+        .unwrap();
+
+        let error = client
+            .read_json::<serde_json::Value>("repos/acme/widget")
+            .unwrap_err();
+        let message = format!("{error:#}").replace(&base_url, "<provider>");
+
+        insta::assert_snapshot!(message, @r###"
+        provider API request failed
+        HTTP: GET <provider>/repos/acme/widget -> 403
+        Provider response: {"message":"Resource not accessible by token"}
+        Next step: The installed API credential lacks permission, or the provider has rate-limited it. Check the credential and provider response.
+        "###);
+        server.join().unwrap().unwrap();
     }
 }
