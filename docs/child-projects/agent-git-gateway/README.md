@@ -17,13 +17,13 @@ boundary.
 2. The gateway syncs its read-only mirror and creates a provisional workspace.
 3. The runner gives the workspace's Git-only credential to its agent.
 4. The agent works freely in the private fork.
-5. A trusted caller assigns one source ref for publication.
-6. The gateway pins its commit, updates a leased staging ref, and opens or
-   updates one review.
+5. Branches under the workspace's reserved prefix are assigned automatically.
+6. The gateway pins each commit, updates its leased staging ref, and opens or
+   updates its review.
 7. The runner isolates the workload. The gateway fences Git and publication,
    then revokes the workspace. Published review state remains.
 
 ## Decisions
 
 - [ADR 0001: Isolate agent Git work in Forgejo](./adr/0001-isolate-agent-git-work-in-forgejo.md)
-- [ADR 0002: Publish agent work through leased assignments](./adr/0002-publish-agent-work-through-leased-assignments.md)
+- [ADR 0002: Publish agent branch namespaces](./adr/0002-publish-agent-branch-namespaces.md)
