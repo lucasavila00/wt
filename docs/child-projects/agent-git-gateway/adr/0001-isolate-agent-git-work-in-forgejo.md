@@ -13,9 +13,11 @@ GitHub/GitLab -> read-only Forgejo mirror -> private workspace fork
 
 GitHub or GitLab remains the source of truth.
 
-Each project has one gateway-managed mirror. Each workspace has its own fork
-and Git identity. That identity can write its fork and read the mirror. It
-cannot access another workspace or use the Forgejo API or web UI.
+Each project has one gateway-managed mirror. Each workspace has its own fork,
+Git identity, and fixed branch prefix. That identity can read the mirror and
+create, rewrite, or delete only branches under its prefix. Other branches and
+all tags are rejected. It cannot access another workspace or use the Forgejo
+API or web UI.
 
 The identity cannot create or administer repositories, keys, collaborators,
 hooks, Actions, packages, or mirrors. Forgejo Actions and agent-controlled hooks
@@ -28,19 +30,19 @@ origin    writable workspace fork
 upstream  read-only project mirror
 ```
 
-The agent may create, rewrite, and delete branches in `origin`. It receives no
-GitHub, GitLab, or mirror credential.
+The agent receives no GitHub, GitLab, or mirror credential.
 
 The runner may persist the workspace credential only in private state that is
 never cloned or reused. Reissuing it invalidates the previous credential.
 
-Revocation fences active and new Git sessions, applies the publication rules in
-ADR 0002, and then removes the identity and fork. Published work remains;
-unpublished work is deleted.
+Revocation fences active and new Git sessions, applies the sync rules in
+ADR 0002, and then removes the identity and fork. Synced work remains;
+unsynced work is deleted.
 
 ## Verification
 
 - Workspaces cannot read or write each other's forks.
+- A workspace cannot push outside its branch prefix or push tags.
 - Workspace credentials provide Git access only.
 - Pushing workflow or hook files executes nothing on the gateway.
 - Reissued and revoked credentials stop working.

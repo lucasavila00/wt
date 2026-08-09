@@ -11,12 +11,15 @@ branch prefix based on the world name. A world named `df1` always gets `df1/`.
 The prefix is not configurable.
 
 The world appears in `wt ls` and works with `ssh NAME` and `wt code NAME`. The
-agent may commit, branch, and push inside its fork. Pushing `df1/fix-a`
-automatically creates or updates one review against the configured base.
-`df1/fix-b` gets another review. Branches outside `df1/` stay private.
+agent may create, rewrite, and delete branches under `df1/`. It cannot push
+other branches or tags.
 
-`wt reviews NAME` lists the review URLs. `wt rm NAME` revokes the Git workspace
-and deletes the world. Tasks continue to use normal SSH or agent tooling.
+Every `df1/*` branch automatically syncs to the project's external staging
+fork. Opening a pull or merge request against the canonical project is a
+separate operation and is not part of this ADR.
+
+`wt rm NAME` revokes the Git workspace and deletes the world. Tasks continue to
+use normal SSH or agent tooling.
 
 ## Decision
 
@@ -32,7 +35,7 @@ revision. Stale or duplicate calls have no effect. Another authorized
 workstation can resume an interrupted operation.
 
 Creation reserves the WT world, creates a provisional gateway workspace and
-publication grant, attaches them to the WT record, and provisions the guest.
+branch-sync grant, attaches them to the WT record, and provisions the guest.
 Unattached gateway leases expire.
 
 The client sends the Git-only workspace credential over setup SSH stdin. The
@@ -45,21 +48,21 @@ Gateway worlds default to `ForwardAgent no` and receive no agent socket during
 setup. A user may explicitly connect with `ssh -A`. Normal worlds keep the ADR
 0003 behavior.
 
-The gateway creates one exact assignment for every matching branch and
-reconciles later pushes. The workspace credential cannot change the prefix,
-base, or assignments.
+The gateway creates one exact sync record for every matching branch and
+reconciles later updates and deletions. The workspace credential cannot change
+the prefix, external project, or staging fork.
 
 Deletion stops the VM, removes SSH access, and records `revocation pending`.
-The gateway fences Git and publication before confirming revocation. WT then
+The gateway fences Git and branch sync before confirming revocation. WT then
 records `cleanup pending` and deletes the private disk.
 
 `wt fork` rejects gateway worlds before any disk pivot.
 
 ## Verification
 
-- Matching branches create distinct reviews; other branches remain private.
-- Creation, restart, review listing, and deletion need no manual credentials.
+- Matching branches sync; other branches and tags are rejected.
+- Creating, restarting, and deleting a world needs no manual Git credentials.
 - Interrupted and competing operations converge safely.
 - Credentials never enter WT state, logs, images, or shared disks.
 - Revocation-pending worlds stay isolated; cleanup-pending worlds cannot push,
-  publish, or fork.
+  sync, or fork.
