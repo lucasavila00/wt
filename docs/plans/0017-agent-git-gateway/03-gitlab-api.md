@@ -46,8 +46,9 @@ Tests never use a GitLab credential or contact GitLab.
   method, path, query, headers, and body, then parse representative success,
   pagination, GraphQL error, REST error, and rate-limit responses.
 - Reuse the provider-neutral output snapshots.
-- Add one KVM case that runs `ag-git` through the real CLI, relay, and gateway
-  into the local HTTP fixture. It proves wiring only.
+- Add a small set of KVM cases that run `ag-git` through the real CLI, relay,
+  and gateway into the local HTTP fixture. They cover the important wiring
+  paths without repeating the provider test suite.
 
 Fixtures contain invented projects, users, commits, and request IDs. They are
 written by hand from the public contract, not recorded from a real account.
