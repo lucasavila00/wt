@@ -5,14 +5,21 @@ use super::{
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
 use graphql_client::GraphQLQuery;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[allow(clippy::upper_case_acronyms)]
-type NoteableID = String;
-#[allow(clippy::upper_case_acronyms)]
-type NoteID = String;
-#[allow(clippy::upper_case_acronyms)]
-type DiscussionID = String;
+// graphql_client resolves custom scalars by their schema names. Transparent
+// newtypes keep those JSON values typed without changing their wire format.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct NoteableID(String);
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct NoteID(String);
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct DiscussionID(String);
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -86,8 +93,12 @@ struct GitlabChangeRequestSnapshot {
     discussion_ids: Vec<GitlabDiscussionId>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GitlabMergeRequestId(String);
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GitlabMergeRequestNumber(String);
 
 impl std::fmt::Display for GitlabMergeRequestNumber {
@@ -96,7 +107,8 @@ impl std::fmt::Display for GitlabMergeRequestNumber {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GitlabDiscussionId(String);
 
 #[derive(Deserialize)]
@@ -151,8 +163,16 @@ impl GitlabApi {
         let node = nodes
             .iter()
             .position(|request| request.diff_head_sha.as_deref() == Some(scope.head))
-            .map(|index| nodes.remove(index))
-            .or_else(|| nodes.into_iter().next());
+            .map(|index| nodes.remove(index));
+        if node.is_none() {
+            if let Some(request) = nodes.first() {
+                let provider_head = request.diff_head_sha.as_deref().unwrap_or("unknown");
+                bail!(
+                    "the merge request is at commit {provider_head}, but this checkout is at {}; push the branch first",
+                    scope.head
+                );
+            }
+        }
         let Some(node) = node else {
             return Ok(GitlabChangeRequestSnapshot {
                 merge_request_id: None,
@@ -170,7 +190,7 @@ impl GitlabApi {
             .flatten()
             .enumerate()
             .map(|(index, thread)| {
-                discussion_ids.push(GitlabDiscussionId(thread.id.clone()));
+                discussion_ids.push(GitlabDiscussionId(thread.id.0.clone()));
                 ReviewThread {
                     handle: ReviewThreadHandle::new(format!("T{}", index + 1)),
                     resolved: thread.resolved,
@@ -287,6 +307,22 @@ impl GitlabApi {
         }
         Ok(jobs)
     }
+
+    fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
+        let merge_request_number = self
+            .require_change_request(scope)?
+            .merge_request_number
+            .context("merge request has no number")?;
+        if self
+            .read_ci_jobs(scope, &merge_request_number)?
+            .iter()
+            .any(|job| job.handle.as_str() == handle.as_str())
+        {
+            Ok(())
+        } else {
+            bail!("CI job `{handle}` does not belong to the current commit")
+        }
+    }
 }
 
 impl GitProviderApi for GitlabApi {
@@ -352,7 +388,7 @@ impl GitProviderApi for GitlabApi {
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
                     "api/graphql",
                     gitlab_add_merge_request_comment::Variables {
-                        id: id.0,
+                        id: NoteableID(id.0),
                         body: body.clone(),
                     },
                 )?;
@@ -402,8 +438,8 @@ impl GitProviderApi for GitlabApi {
                 let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
                     "api/graphql",
                     gitlab_reply_to_discussion::Variables {
-                        id: id.0,
-                        discussion: discussion.0,
+                        id: NoteableID(id.0),
+                        discussion: DiscussionID(discussion.0),
                         body: body.clone(),
                         head: scope.head.to_owned(),
                     },
@@ -423,7 +459,7 @@ impl GitProviderApi for GitlabApi {
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
                     gitlab_set_discussion_resolved::Variables {
-                        discussion: discussion.0,
+                        discussion: DiscussionID(discussion.0),
                         resolve: *resolved,
                     },
                 )?;
@@ -447,13 +483,17 @@ impl GitProviderApi for GitlabApi {
                     self.read_ci_jobs(scope, &merge_request_number)?,
                 ))
             }
-            ProviderCommand::ReadCiJobLog { job } => Ok(ProviderCommandOutput::CiJobLog(
-                self.http.read_text(&format!(
-                    "api/v4/projects/{}/jobs/{job}/trace",
-                    encoded_project(scope.project)
-                ))?,
-            )),
+            ProviderCommand::ReadCiJobLog { job } => {
+                self.require_ci_job(scope, job)?;
+                Ok(ProviderCommandOutput::CiJobLog(self.http.read_text(
+                    &format!(
+                        "api/v4/projects/{}/jobs/{job}/trace",
+                        encoded_project(scope.project)
+                    ),
+                )?))
+            }
             ProviderCommand::RetryCiJob { job } => {
+                self.require_ci_job(scope, job)?;
                 let _: PipelineJob = self.http.post_json(
                     &format!(
                         "api/v4/projects/{}/jobs/{job}/retry",
@@ -466,6 +506,7 @@ impl GitProviderApi for GitlabApi {
                 )))
             }
             ProviderCommand::CancelCiJob { job } => {
+                self.require_ci_job(scope, job)?;
                 let _: PipelineJob = self.http.post_json(
                     &format!(
                         "api/v4/projects/{}/jobs/{job}/cancel",
@@ -478,7 +519,7 @@ impl GitProviderApi for GitlabApi {
                 )))
             }
             ProviderCommand::WaitForReviewOrCiChange => {
-                bail!("`ag-git wait` is not implemented yet")
+                super::wait_for_review_or_ci_change(self, scope)
             }
             ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
                 let merge_request_number = self

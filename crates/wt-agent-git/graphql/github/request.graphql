@@ -31,6 +31,7 @@ query GithubReadPullRequest($owner: String!, $name: String!, $branch: String!, $
             line
             comments(first: 100) {
               nodes {
+                author { __typename login }
                 body
                 url
               }

@@ -1,9 +1,21 @@
+//! Typed GitHub and GitLab API operations.
+//!
+//! GraphQL custom scalar types must keep the names declared by the provider
+//! schemas. Those names include capitalized acronyms, so this module allows the
+//! corresponding Clippy lint once instead of annotating every scalar newtype.
+
+#![allow(
+    clippy::upper_case_acronyms,
+    reason = "GraphQL custom scalar names are imposed by the provider schemas"
+)]
+
 mod github;
 mod gitlab;
 mod http;
 
 use crate::ProviderKind;
 use anyhow::{bail, Result};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub(crate) struct ProviderCommandScope<'a> {
@@ -92,7 +104,9 @@ pub(crate) struct CiJob {
     pub url: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+// Every identifier newtype serializes as its underlying scalar.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 pub(crate) struct ReviewThreadHandle(String);
 
 impl ReviewThreadHandle {
@@ -111,12 +125,17 @@ impl std::fmt::Display for ReviewThreadHandle {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 pub(crate) struct CiJobHandle(String);
 
 impl CiJobHandle {
     pub(crate) fn new(value: impl Into<String>) -> Self {
         Self(value.into())
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -142,6 +161,21 @@ pub(crate) trait GitProviderApi {
         scope: &ProviderCommandScope<'_>,
         command: &ProviderCommand,
     ) -> Result<ProviderCommandOutput>;
+}
+
+fn wait_for_review_or_ci_change(
+    provider: &impl GitProviderApi,
+    scope: &ProviderCommandScope<'_>,
+) -> Result<ProviderCommandOutput> {
+    let read_status = ProviderCommand::ReadCurrentStatus;
+    let initial = provider.execute_command(scope, &read_status)?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        let current = provider.execute_command(scope, &read_status)?;
+        if current != initial {
+            return Ok(current);
+        }
+    }
 }
 
 pub(crate) fn execute_provider_command(

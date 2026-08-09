@@ -5,12 +5,17 @@ use super::{
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
 use graphql_client::GraphQLQuery;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[allow(clippy::upper_case_acronyms)]
-type URI = String;
-#[allow(clippy::upper_case_acronyms)]
-type GitObjectID = String;
+// graphql_client resolves custom scalars by their schema names. Transparent
+// newtypes keep those JSON values typed without changing their wire format.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct URI(String);
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct GitObjectID(String);
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -105,11 +110,16 @@ struct GithubChangeRequestSnapshot {
     thread_ids: Vec<GithubReviewThreadId>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GithubRepositoryId(String);
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GithubPullRequestId(String);
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 struct GithubReviewThreadId(String);
 
 #[derive(Deserialize)]
@@ -179,9 +189,17 @@ impl GithubApi {
             .collect::<Vec<_>>();
         let node = nodes
             .iter()
-            .position(|request| request.head_ref_oid == scope.head)
-            .map(|index| nodes.remove(index))
-            .or_else(|| nodes.into_iter().next());
+            .position(|request| request.head_ref_oid.0 == scope.head)
+            .map(|index| nodes.remove(index));
+        if node.is_none() {
+            if let Some(request) = nodes.first() {
+                bail!(
+                    "the pull request is at commit {}, but this checkout is at {}; push the branch first",
+                    request.head_ref_oid.0,
+                    scope.head
+                );
+            }
+        }
         let Some(node) = node else {
             return Ok(GithubChangeRequestSnapshot {
                 repository_id: GithubRepositoryId(repository.id),
@@ -212,9 +230,12 @@ impl GithubApi {
                         .into_iter()
                         .flatten()
                         .map(|comment| ReviewComment {
-                            author: "reviewer".to_owned(),
+                            author: comment
+                                .author
+                                .map(|author| author.login)
+                                .unwrap_or_else(|| "unknown".to_owned()),
                             body: comment.body,
-                            url: Some(comment.url),
+                            url: Some(comment.url.0),
                         })
                         .collect(),
                 }
@@ -227,11 +248,11 @@ impl GithubApi {
         };
         let request = ChangeRequestStatus {
             handle: format!("#{}", node.number),
-            url: node.url,
+            url: node.url.0,
             title: node.title,
             state: format!("{:?}", node.state).to_ascii_lowercase(),
             draft: node.is_draft,
-            head: node.head_ref_oid,
+            head: node.head_ref_oid.0,
             base: node.base_ref_name,
             review_state: node
                 .review_decision
@@ -288,6 +309,18 @@ impl GithubApi {
             }));
         }
         Ok(jobs)
+    }
+
+    fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
+        if self
+            .read_ci_jobs(scope)?
+            .iter()
+            .any(|job| job.handle.as_str() == handle.as_str())
+        {
+            Ok(())
+        } else {
+            bail!("CI job `{handle}` does not belong to the current commit")
+        }
     }
 
     fn review_thread_id(
@@ -433,13 +466,17 @@ impl GitProviderApi for GithubApi {
             ProviderCommand::ReadCiJobs => {
                 Ok(ProviderCommandOutput::CiJobs(self.read_ci_jobs(scope)?))
             }
-            ProviderCommand::ReadCiJobLog { job } => Ok(ProviderCommandOutput::CiJobLog(
-                self.rest.read_text(&format!(
-                    "{}repos/{}/actions/jobs/{job}/logs",
-                    self.rest_prefix, scope.project
-                ))?,
-            )),
+            ProviderCommand::ReadCiJobLog { job } => {
+                self.require_ci_job(scope, job)?;
+                Ok(ProviderCommandOutput::CiJobLog(self.rest.read_text(
+                    &format!(
+                        "{}repos/{}/actions/jobs/{job}/logs",
+                        self.rest_prefix, scope.project
+                    ),
+                )?))
+            }
             ProviderCommand::RetryCiJob { job } => {
+                self.require_ci_job(scope, job)?;
                 self.rest.post_without_body(&format!(
                     "{}repos/{}/actions/jobs/{job}/rerun",
                     self.rest_prefix, scope.project
@@ -449,6 +486,7 @@ impl GitProviderApi for GithubApi {
                 )))
             }
             ProviderCommand::CancelCiJob { job } => {
+                self.require_ci_job(scope, job)?;
                 let detail: WorkflowJob = self.rest.read_json(&format!(
                     "{}repos/{}/actions/jobs/{job}",
                     self.rest_prefix, scope.project
@@ -462,7 +500,7 @@ impl GitProviderApi for GithubApi {
                 )))
             }
             ProviderCommand::WaitForReviewOrCiChange => {
-                bail!("`ag-git wait` is not implemented yet")
+                super::wait_for_review_or_ci_change(self, scope)
             }
             ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
                 let id = self
