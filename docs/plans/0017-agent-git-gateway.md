@@ -34,30 +34,33 @@ GitHub and GitLab are independently optional. A normal installation must
 configure at least one. `wt new` selects the provider from the repository host
 and fails before creating a world when that provider is not configured.
 
-Each provider block names an API-token environment variable and an SSH key
-pair. TOML contains paths and the environment-variable name, never a token or
-private-key value. The checked-in development config enables GitHub only:
+Each provider block names an API-token file and an SSH key pair. TOML contains
+paths, never a token or private-key value. The checked-in development config
+enables GitHub only:
 
 ```toml
 [agent_git.github]
 host = "github.com"
-api_token_env = "GITHUB_TOKEN"
+api_token_file = "~/.config/wt/credentials/github.token"
 ssh_private_key_file = "~/.ssh/id_ed25519"
 ssh_public_key_file = "~/.ssh/id_ed25519.pub"
 ```
 
-`DEVELOPMENT.md` requires `GITHUB_TOKEN` in the developer's `.bashrc` before
-running:
+`DEVELOPMENT.md` tells the developer to create the token file outside the
+checkout with mode `0600` before running:
 
 ```bash
 scripts/install-server --config examples/server-config/wt-server.development.toml
 ```
 
-The installer fails when the configured environment variable is empty. It
-expands the key paths, checks their ownership and permissions, unlocks the
-private key when necessary, and proves that the public and private keys match.
-It installs the API token and unlocked key as encrypted systemd credentials for
-the gateway. Neither secret is written to `/etc/wt/server.toml`.
+The installer opens the token file without following symlinks. It requires a
+nonempty regular file owned by the installing user with mode `0600`. It applies
+the same ownership and no-group-or-other-access checks to the private key,
+unlocks it when necessary, and proves that the public key matches.
+
+The installer passes the token and unlocked key to the gateway as encrypted
+systemd credentials. It never puts them in command arguments, environment
+variables, or `/etc/wt/server.toml`.
 
 Before creating a world, the gateway proves that the configured SSH key can read
 the requested repository. GitHub API identity and write-permission checks land
