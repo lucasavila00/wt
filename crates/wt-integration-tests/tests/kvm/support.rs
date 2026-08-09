@@ -51,7 +51,10 @@ impl KvmHarness {
         });
         let mut config = match std::env::var_os("WT_KVM_SERVER_CONFIG") {
             Some(path) => ServerConfig::load_from(Path::new(&path)).unwrap(),
-            None => ServerConfig::load().unwrap(),
+            None => ServerConfig::load_from(
+                &workspace.join("examples/server-config/wt-server.kvm-test.toml"),
+            )
+            .unwrap(),
         };
         config.install.binary_dir = workspace.join("target/debug");
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);

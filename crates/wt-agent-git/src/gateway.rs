@@ -766,10 +766,12 @@ fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
     Ok(lines.into_iter())
 }
 
+type PushMessage<'a> = &'a dyn Fn(&[u8]) -> Result<String>;
+
 fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
-    push_message: Option<&dyn Fn(&[u8]) -> Result<String>>,
+    push_message: Option<PushMessage<'_>>,
 ) -> Result<()> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
