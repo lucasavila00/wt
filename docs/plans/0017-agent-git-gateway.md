@@ -22,11 +22,10 @@ system.
 installed. Every world uses them. There is no feature flag, legacy Git path, or
 opt-out.
 
-`ag-git` is a small POSIX shell frontend. All commands, help, output, policy,
-and provider behavior live in the gateway. `git-remote-ag` and the guest relay
-only transport requests and streams. Host updates apply to running worlds
-without rebuilding them. Only a transport protocol change requires a clean
-world rebuild.
+`ag-git`, `git-remote-ag`, and the guest relay only transport requests and
+streams. All commands, help, output, policy, and provider behavior live in the
+gateway. Host updates apply to running worlds without rebuilding them. Only a
+transport protocol change requires a clean world rebuild.
 
 ## Provider configuration
 

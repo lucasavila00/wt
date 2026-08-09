@@ -263,7 +263,7 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         "wt-agent-git-gateway",
         "wt-agent-git-relay",
         "git-remote-ag",
-        "wt-agent-git-client",
+        "ag-git",
         "wt",
         "wt-app-pane",
         "wt-app-info",

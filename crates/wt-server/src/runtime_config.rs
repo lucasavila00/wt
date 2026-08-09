@@ -194,7 +194,7 @@ impl ServerConfig {
             app_proxy_binary: self.install.binary_dir.join("wt-app-proxy"),
             agent_git_relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
             agent_git_remote_binary: self.install.binary_dir.join("git-remote-ag"),
-            agent_git_client_binary: self.install.binary_dir.join("wt-agent-git-client"),
+            agent_git_cli_binary: self.install.binary_dir.join("ag-git"),
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),

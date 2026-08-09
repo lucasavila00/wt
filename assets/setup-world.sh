@@ -99,7 +99,6 @@ devcontainer up --log-level debug --log-format text --workspace-folder "$workspa
     --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config \
     --mount type=bind,source=/run/wt-agent-git/gateway.sock,target=/run/wt-agent-git/gateway.sock \
     --mount type=bind,source=/usr/local/bin/git-remote-ag,target=/usr/local/bin/git-remote-ag \
-    --mount type=bind,source=/usr/local/bin/wt-agent-git-client,target=/usr/local/bin/wt-agent-git-client \
     --mount type=bind,source=/usr/local/bin/ag-git,target=/usr/local/bin/ag-git \
     --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \

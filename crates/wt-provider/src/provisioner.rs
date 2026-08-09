@@ -19,7 +19,6 @@ const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
 const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/setup-world.sh");
 const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
-const AG_GIT: &[u8] = include_bytes!("../../../assets/ag-git.sh");
 const AGENT_GIT_HINT: &[u8] = include_bytes!("../../../assets/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 
@@ -30,7 +29,7 @@ pub struct ProvisionerConfig {
     pub app_proxy_binary: PathBuf,
     pub agent_git_relay_binary: PathBuf,
     pub agent_git_remote_binary: PathBuf,
-    pub agent_git_client_binary: PathBuf,
+    pub agent_git_cli_binary: PathBuf,
     pub registry_cache_url: String,
     pub registry_cache_ca_file: PathBuf,
     pub recipe_timeout: Duration,
@@ -46,7 +45,7 @@ pub struct WorldProvisioner {
     app_proxy: Vec<u8>,
     agent_git_relay: Vec<u8>,
     agent_git_remote: Vec<u8>,
-    agent_git_client: Vec<u8>,
+    agent_git_cli: Vec<u8>,
     registry_cache_ca: Vec<u8>,
 }
 
@@ -70,10 +69,7 @@ impl WorldProvisioner {
             &config.agent_git_remote_binary,
             "agent Git remote helper binary",
         )?;
-        let agent_git_client = require_and_read(
-            &config.agent_git_client_binary,
-            "agent Git client transport binary",
-        )?;
+        let agent_git_cli = require_and_read(&config.agent_git_cli_binary, "agent Git CLI binary")?;
         let registry_cache_ca = require_and_read(
             &config.registry_cache_ca_file,
             "registry cache certificate authority",
@@ -86,7 +82,7 @@ impl WorldProvisioner {
             app_proxy,
             agent_git_relay,
             agent_git_remote,
-            agent_git_client,
+            agent_git_cli,
             registry_cache_ca,
         })
     }
@@ -218,8 +214,7 @@ impl WorldProvisioner {
             ("-app-proxy", self.app_proxy.as_slice()),
             ("-agent-git-relay", self.agent_git_relay.as_slice()),
             ("-agent-git-remote", self.agent_git_remote.as_slice()),
-            ("-agent-git-client", self.agent_git_client.as_slice()),
-            ("-ag-git", AG_GIT),
+            ("-ag-git", self.agent_git_cli.as_slice()),
             ("-agent-git-hint", AGENT_GIT_HINT),
             ("-setup-world", SETUP_WORLD),
             ("-setup-world-root", SETUP_WORLD_ROOT),
@@ -272,7 +267,6 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-app-proxy",
                 "/tmp/wt-install-guest-agent-git-relay",
                 "/tmp/wt-install-guest-agent-git-remote",
-                "/tmp/wt-install-guest-agent-git-client",
                 "/tmp/wt-install-guest-ag-git",
                 "/tmp/wt-install-guest-agent-git-hint",
                 "/tmp/wt-install-guest-setup-world",

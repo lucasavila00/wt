@@ -19,8 +19,8 @@ name = "git-remote-ag"
 path = "src/bin/git-remote-ag.rs"
 
 [[bin]]
-name = "wt-agent-git-client"
-path = "src/bin/client.rs"
+name = "ag-git"
+path = "src/bin/ag-git.rs"
 
 [dependencies]
 anyhow = { workspace = true }

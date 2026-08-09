@@ -348,7 +348,7 @@ mod tests {
             "app-proxy",
             "agent-git-relay",
             "agent-git-remote",
-            "agent-git-client",
+            "agent-git-cli",
             "ca.crt",
         ] {
             fs::write(temp.path().join(name), name).unwrap();
@@ -374,7 +374,7 @@ mod tests {
             app_proxy_binary: temp.path().join("app-proxy"),
             agent_git_relay_binary: temp.path().join("agent-git-relay"),
             agent_git_remote_binary: temp.path().join("agent-git-remote"),
-            agent_git_client_binary: temp.path().join("agent-git-client"),
+            agent_git_cli_binary: temp.path().join("agent-git-cli"),
             registry_cache_url: format!("http://{registry_address}"),
             registry_cache_ca_file: temp.path().join("ca.crt"),
             recipe_timeout: Duration::from_secs(10),

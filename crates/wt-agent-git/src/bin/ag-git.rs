@@ -16,12 +16,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut args = std::env::args();
-    let _program = args.next();
-    if args.next().as_deref() != Some("cli") {
-        bail!("internal usage: wt-agent-git-client cli [ARG...]");
-    }
-    let args = args.collect();
+    let args = std::env::args().skip(1).collect();
     let branch = current_branch();
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).context("connect to WT Git relay")?;

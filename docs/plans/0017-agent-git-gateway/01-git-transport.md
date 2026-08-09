@@ -17,9 +17,8 @@ Implement it in this order:
 3. Add the gateway, guest relay, `git-remote-ag`, and `ag-git` to the workspace
    and installer as unconditional WT components. Connect `wt-server` to the
    gateway by Unix socket and each guest relay to it by KVM vsock.
-4. Make `ag-git` a POSIX shell frontend that forwards arguments, stdin, stdout,
-   stderr, and exit status. Keep command parsing, help, and behavior in the
-   gateway. Keep `git-remote-ag` and the guest relay limited to transport.
+4. Keep `ag-git`, `git-remote-ag`, and the guest relay limited to transport.
+   Keep command parsing, help, and behavior in the gateway.
 5. Add the provider configuration from the main plan. Require at least one
    provider, validate and install its SSH key, and reject repository hosts whose
    provider is not configured.

@@ -58,7 +58,6 @@ install -m 0755 "$stage-app-info" /usr/local/bin/wt-app-info
 install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
 install -m 0755 "$stage-agent-git-relay" /usr/local/bin/wt-agent-git-relay
 install -m 0755 "$stage-agent-git-remote" /usr/local/bin/git-remote-ag
-install -m 0755 "$stage-agent-git-client" /usr/local/bin/wt-agent-git-client
 install -m 0755 "$stage-ag-git" /usr/local/bin/ag-git
 install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-hint
 printf '%s\n' \

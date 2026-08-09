@@ -25,10 +25,9 @@ Build and release the gateway, guest relay, `git-remote-ag`, and `ag-git` in the
 WT monorepo. `wt-server-setup` installs and manages every component. The systemd
 service layout is internal to WT.
 
-`ag-git` is a small POSIX shell frontend. It forwards its arguments and streams
-to the gateway; it does not implement provider behavior or carry the help text.
-The gateway owns commands, output, policy, and provider integrations. Updating
-the host services fixes every existing world without rebuilding it.
+`ag-git` is a small transport client. The gateway owns commands, output, policy,
+and provider integrations. Updating the host services fixes every existing
+world without rebuilding it.
 
 The guest relay and `git-remote-ag` are stable transport shims. Ordinary
 gateway changes must not require changes inside a world. A transport protocol
