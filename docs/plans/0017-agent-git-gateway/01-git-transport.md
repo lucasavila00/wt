@@ -1,6 +1,6 @@
-# Milestone 1: Git transport and world integration
+# Stage 1: Git transport and world integration
 
-This milestone makes normal Git work from every world. It does not call a
+This stage makes normal Git work from every world. It does not call a
 GitHub or GitLab API.
 
 Implement it in this order:
@@ -10,8 +10,10 @@ Implement it in this order:
    world prefix, and gateway grant. Reject `wt fork` for every world.
 2. Delete WT's SSH-agent forwarding code. Remove `ForwardAgent` from generated
    SSH config, remove every `SSH_AUTH_SOCK` handoff, and remove the guest and
-   devcontainer socket plumbing. Do not block a developer who explicitly uses
-   OpenSSH's `ssh -A`; that path is outside WT.
+   devcontainer socket plumbing. The gateway replaces the agent for both the
+   initial clone and later Git operations. Do not block native forwarding on an
+   explicit `ssh -A NAME-host` or `ssh -A NAME-vs` connection; those paths are
+   outside WT.
 3. Add the gateway, guest relay, `git-remote-ag`, and `ag-git` to the workspace
    and installer as unconditional WT components. Connect `wt-server` to the
    gateway by Unix socket and each guest relay to it by KVM vsock.
@@ -32,7 +34,7 @@ Implement it in this order:
    branch with the message from the ADR.
 9. Install the checkout and commit hints without replacing project hooks.
    Snapshot the gateway's complete `ag-git --help` response and all user-visible
-   messages. Provider-backed commands fail clearly until milestone 2 or 3
+   messages. Provider-backed commands fail clearly until stage 2 or 3
    implements the selected provider.
 10. Update `DEVELOPMENT.md`, `docs/how/cli.md`, and
    `examples/server-config/wt-server.development.toml` with the GitHub-only
@@ -54,9 +56,8 @@ force-push, and delete its own branch with normal Git. It must also prove:
 - the guest and devcontainer have no forwarded agent socket;
 - another prefix and tags are rejected;
 - a rejected push leaves the upstream unchanged;
-- a gateway restart keeps namespace ownership; and
+- a gateway restart keeps namespace ownership;
 - changing a gateway response changes `ag-git` output in the existing world;
-  and
 - a deleted world's grant no longer works.
 
 Read the bare repository directly to verify refs and objects. Run this test in
@@ -64,6 +65,6 @@ the existing KVM E2E suite.
 
 ## Completion
 
-Milestone 1 is complete when the E2E test passes and the installed help and
+Stage 1 is complete when the E2E test passes and the installed help and
 discoverability text describe the final workflow. Pull and merge request
 operations do not work yet.

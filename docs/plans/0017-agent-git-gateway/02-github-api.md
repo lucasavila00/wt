@@ -1,6 +1,6 @@
-# Milestone 2: GitHub API support
+# Stage 2: GitHub API support
 
-Keep the transport and CLI from milestone 1. Add GitHub authentication and the
+Keep the transport and CLI from stage 1. Add GitHub authentication and the
 provider implementation inside the gateway. Validate the configured API
 identity and repository permissions before creating a world for a GitHub
 repository.
@@ -24,5 +24,5 @@ real API. Before release, a human runs the documented workflow against a
 dedicated GitHub test repository. QA credentials stay in the installed gateway
 and never enter the repository or test harness.
 
-This milestone is complete when every documented command works for GitHub and
+Stage 2 is complete when every documented command works for GitHub and
 GitLab commands still report that their API implementation is unavailable.

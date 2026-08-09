@@ -2,6 +2,9 @@
 
 - Status: Proposed
 - Date: 2026-08-09
+- Supersedes: [ADR 0001](0001-agent-forwarded-first-ssh-provisioning.md)'s
+  Git authentication and
+  [ADR 0003](0003-forward-the-workstation-ssh-agent-to-devcontainers.md)
 
 ## Context
 
@@ -69,16 +72,35 @@ During creation, `wt-server` asks the gateway for a token limited to the
 selected project, base branch, and world name. World setup stores it on the
 private disk, outside the checkout, and starts the relay.
 
-Worlds never receive the developer's SSH keys or provider credentials. WT does
-not configure, carry, or manage SSH-agent forwarding.
-
-WT does not block OpenSSH's own forwarding. A developer may explicitly run
-`ssh -A NAME`, but that is their connection and their responsibility. It
-bypasses WT's credential isolation and is outside the gateway contract.
+Worlds never receive the developer's SSH keys or provider credentials.
 
 The gateway is the central trust boundary. `wt-server-setup` configures provider
 credentials once on the Linux host. If the gateway is unavailable, worlds can
 keep working locally but cannot fetch, push, or use `ag-git` until it returns.
+
+## SSH agent forwarding
+
+ADR 0001 forwarded the developer's agent for the initial clone. ADR 0003 kept
+forwarding it so later Git commands inside the devcontainer could use the same
+SSH identities. Because `ssh NAME` crosses the guest before entering the
+devcontainer, WT had to relay `SSH_AUTH_SOCK` across that second hop and retarget
+the relay after every reconnect.
+
+The gateway now authenticates both the initial clone and later Git operations.
+No WT workflow needs the developer's agent, so WT removes the forwarding config,
+socket relay, reconnect handling, and devcontainer handoff.
+
+WT does not disable OpenSSH's native forwarding. A developer can still choose
+to expose their agent for one connection:
+
+- `ssh -A NAME-host` exposes it in the guest.
+- `ssh -A NAME-vs` exposes it directly in the devcontainer.
+- `ssh -A NAME` exposes it in the guest, but WT does not carry it through
+  `wt-app-pane` into the devcontainer.
+
+These connections bypass WT's credential isolation and are the developer's
+responsibility. SSH port forwarding with `-L`, `-R`, or `-D` is unrelated and
+continues to work normally.
 
 ## Git workflow
 

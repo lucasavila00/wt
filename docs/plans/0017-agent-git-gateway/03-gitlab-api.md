@@ -1,4 +1,4 @@
-# Milestone 3: GitLab API support
+# Stage 3: GitLab API support
 
 Implement the same provider contract for GitLab merge requests, discussions,
 pipelines, and jobs. Validate the configured API identity and repository
@@ -13,5 +13,5 @@ Before release, a human runs the documented workflow against a dedicated
 GitLab test project. QA credentials stay in the installed gateway and never
 enter the repository or test harness.
 
-This milestone is complete when the same CLI workflow works for GitHub and
+Stage 3 is complete when the same CLI workflow works for GitHub and
 GitLab, with provider differences contained inside the gateway.

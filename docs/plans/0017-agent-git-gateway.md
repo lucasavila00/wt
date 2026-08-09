@@ -1,13 +1,13 @@
 # ADR 0017 implementation plan
 
 This plan implements [ADR 0017](../adr/0017-integrate-agent-git-gateway.md)
-in three separately merged milestones:
+in three ordered stages:
 
 1. [Git transport and world integration](0017-agent-git-gateway/01-git-transport.md)
 2. [GitHub API support](0017-agent-git-gateway/02-github-api.md)
 3. [GitLab API support](0017-agent-git-gateway/03-gitlab-api.md)
 
-Milestone 1 fixes the complete `ag-git` command and help contract. The docs and
+Stage 1 fixes the complete `ag-git` command and help contract. The docs and
 help describe all operations immediately, even while provider commands still
 report that their API implementation is unavailable.
 
@@ -64,14 +64,4 @@ variables, or `/etc/wt/server.toml`.
 
 Before creating a world, the gateway proves that the configured SSH key can read
 the requested repository. GitHub API identity and write-permission checks land
-in milestone 2; GitLab checks land in milestone 3.
-
-## Common merge gate
-
-Each milestone includes its schema, installer, clean-install instructions,
-tests, and user-visible text. Run formatting, tests, and Clippy for every
-affected Rust crate.
-
-No automated test uses provider credentials or contacts GitHub or GitLab. Real
-provider behavior is covered by human release QA against dedicated test
-projects, with credentials held only by the installed gateway.
+in stage 2; GitLab checks land in stage 3.
