@@ -11,6 +11,7 @@ name = "wt-server"
 path = "src/main.rs"
 
 [dependencies]
+wt-agent-git = { path = "../wt-agent-git" }
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-provider = { workspace = true }

@@ -22,6 +22,7 @@ pub struct StoredInstance {
     pub backend_id: String,
     pub head_disk_id: Uuid,
     pub setup_fingerprint: String,
+    pub gateway_grant_id: String,
 }
 
 #[derive(Debug, Error)]
@@ -50,6 +51,9 @@ struct NewInstance<'a> {
     backend_id: &'a str,
     head_disk_id: String,
     source: &'a str,
+    git_base: &'a str,
+    git_prefix: &'a str,
+    gateway_grant_id: &'a str,
     vcpus: i64,
     memory_mib: i64,
     disk_gib: i64,
@@ -71,6 +75,9 @@ struct InstanceRow {
     backend_id: String,
     head_disk_id: String,
     source: String,
+    git_base: String,
+    git_prefix: String,
+    gateway_grant_id: String,
     vcpus: i64,
     memory_mib: i64,
     disk_gib: i64,
@@ -379,6 +386,8 @@ impl TryFrom<InstanceRow> for StoredInstance {
                 guest_ip: row.guest_ip,
                 last_error: row.last_error,
                 source: row.source,
+                git_base: row.git_base,
+                git_prefix: row.git_prefix,
                 vcpus: u32::try_from(row.vcpus).map_err(|_| invalid_number("vcpus", row.vcpus))?,
                 memory_mib: u64::try_from(row.memory_mib)
                     .map_err(|_| invalid_number("memory_mib", row.memory_mib))?,
@@ -391,6 +400,7 @@ impl TryFrom<InstanceRow> for StoredInstance {
             head_disk_id: Uuid::parse_str(&row.head_disk_id)
                 .map_err(|error| StoreError::InvalidData(error.to_string()))?,
             setup_fingerprint: row.setup_fingerprint,
+            gateway_grant_id: row.gateway_grant_id,
         })
     }
 }
@@ -426,6 +436,9 @@ fn insert_instance(
         backend_id: &stored.backend_id,
         head_disk_id: stored.head_disk_id.to_string(),
         source: &instance.source,
+        git_base: &instance.git_base,
+        git_prefix: &instance.git_prefix,
+        gateway_grant_id: &stored.gateway_grant_id,
         vcpus: instance.vcpus.into(),
         memory_mib: to_i64(instance.memory_mib, "memory_mib")?,
         disk_gib: to_i64(instance.disk_gib, "disk_gib")?,

@@ -59,8 +59,14 @@ pub struct ClientRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ClientOperation {
-    Git { service: GitService, source: String },
-    Cli { args: Vec<String> },
+    Git {
+        service: GitService,
+        source: String,
+    },
+    Cli {
+        args: Vec<String>,
+        branch: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -76,6 +82,8 @@ pub struct TransportResponse {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 impl TransportResponse {
@@ -83,6 +91,15 @@ impl TransportResponse {
         Self {
             ok: true,
             error: None,
+            message: None,
+        }
+    }
+
+    pub fn with_message(message: impl Into<String>) -> Self {
+        Self {
+            ok: true,
+            error: None,
+            message: Some(message.into()),
         }
     }
 
@@ -90,6 +107,7 @@ impl TransportResponse {
         Self {
             ok: false,
             error: Some(error.into()),
+            message: None,
         }
     }
 }

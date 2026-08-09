@@ -13,7 +13,7 @@ pub struct ServerConfig {
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
-    pub git: GitConfig,
+    pub agent_git: AgentGitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
 }
@@ -29,8 +29,15 @@ pub struct RegistryCacheConfig {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct GitConfig {
-    pub known_hosts_file: PathBuf,
+pub struct AgentGitConfig {
+    pub github: Option<AgentGitProviderConfig>,
+    pub gitlab: Option<AgentGitProviderConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentGitProviderConfig {
+    pub host: String,
 }
 
 /// Golden image path used by the server at runtime.
@@ -81,13 +88,11 @@ impl ServerConfig {
                 self.version
             ));
         }
-        let git_known_hosts_file = expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?;
         for (name, path) in [
             ("image.installed_path", &self.image.installed_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
-            ("git.known_hosts_file", &git_known_hosts_file),
         ] {
             if !path.is_absolute() {
                 return Err(format!("{name} must be an absolute path"));
@@ -162,6 +167,7 @@ impl ServerConfig {
             return Err("libvirt.network must not be empty".to_owned());
         }
         self.validate_registry_cache()?;
+        self.validate_agent_git()?;
         if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
@@ -181,15 +187,16 @@ impl ServerConfig {
         &self,
         registry_cache_url: String,
     ) -> Result<ProvisionerConfig, String> {
-        let git = self.resolved_git_config()?;
         let bootstrap = self.bootstrap_policy()?;
         Ok(ProvisionerConfig {
             app_pane_binary: self.install.binary_dir.join("wt-app-pane"),
             app_info_binary: self.install.binary_dir.join("wt-app-info"),
             app_proxy_binary: self.install.binary_dir.join("wt-app-proxy"),
+            agent_git_relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
+            agent_git_remote_binary: self.install.binary_dir.join("git-remote-ag"),
+            agent_git_client_binary: self.install.binary_dir.join("wt-agent-git-client"),
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
-            git_known_hosts_file: git.known_hosts_file,
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             bootstrap,
         })
@@ -235,11 +242,33 @@ impl ServerConfig {
         Ok(())
     }
 
-    pub fn resolved_git_config(&self) -> Result<GitConfig, String> {
-        Ok(GitConfig {
-            known_hosts_file: expand_home(&self.git.known_hosts_file, "git.known_hosts_file")?,
-        })
+    fn validate_agent_git(&self) -> Result<(), String> {
+        let providers = [
+            ("agent_git.github.host", self.agent_git.github.as_ref()),
+            ("agent_git.gitlab.host", self.agent_git.gitlab.as_ref()),
+        ];
+        if providers.iter().all(|(_, provider)| provider.is_none()) {
+            return Err("at least one agent Git provider is required".to_owned());
+        }
+        let mut hosts = std::collections::BTreeSet::new();
+        for (name, provider) in providers {
+            let Some(provider) = provider else { continue };
+            if !valid_git_host(&provider.host) || !hosts.insert(provider.host.as_str()) {
+                return Err(format!("invalid or duplicate {name}: {}", provider.host));
+            }
+        }
+        Ok(())
     }
+}
+
+fn valid_git_host(value: &str) -> bool {
+    !value.is_empty()
+        && value == value.to_ascii_lowercase()
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
+        })
 }
 
 fn valid_registry_host(value: &str) -> bool {
@@ -250,25 +279,6 @@ fn valid_registry_host(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b':')
         })
-}
-
-fn expand_home(path: &Path, name: &str) -> Result<PathBuf, String> {
-    if path == Path::new("~") {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        return Ok(home);
-    }
-    if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        return Ok(home.join(relative));
-    }
-    if !path.is_absolute() {
-        return Err(format!("{name} must be absolute or start with ~/"));
-    }
-    Ok(path.to_owned())
 }
 
 #[cfg(test)]
@@ -291,8 +301,8 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 
-[git]
-known_hosts_file = "/tmp/wt-test-git-known-hosts"
+[agent_git.github]
+host = "github.com"
 
 [guest]
 boot_timeout_seconds = 300
@@ -347,14 +357,5 @@ binary_dir = "/usr/local/bin"
             "installed_path = \"/var/lib/wt/images/wt.qcow2\"\nsource_url = \"https://example.com/img\""
         ))
         .is_err());
-    }
-
-    #[test]
-    fn git_paths_expand_home() {
-        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
-        assert_eq!(
-            expand_home(Path::new("~/.ssh/id_ed25519"), "git.identity_file").unwrap(),
-            home.join(".ssh/id_ed25519")
-        );
     }
 }

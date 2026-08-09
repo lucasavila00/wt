@@ -1,0 +1,26 @@
+---
+source: crates/wt-server-setup/src/server.rs
+expression: gateway
+---
+[Unit]
+Description=WT agent Git gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=[USER]
+Environment="HOME=[HOME]"
+LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wt-agent-git-github-api-token
+LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent-git-github-ssh-private-key
+LoadCredentialEncrypted=github-ssh-known-hosts:/etc/credstore.encrypted/wt-agent-git-github-ssh-known-hosts
+ExecStart="/opt/wt bin/wt-agent-git-gateway" serve --github-provider "github.com=%d/github-api-token,%d/github-ssh-private-key,%d/github-ssh-known-hosts"
+Restart=on-failure
+RuntimeDirectory=wt
+RuntimeDirectoryMode=0700
+StateDirectory=wt/agent-git
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

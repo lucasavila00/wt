@@ -1,24 +1,28 @@
 use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
-use crate::install_input::{serialize_server_config, InstallInput};
+use crate::install_input::{serialize_server_config, AgentGitProviderInstallConfig, InstallInput};
 use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
-use std::fs;
-use std::os::unix::fs::MetadataExt;
+use std::fs::{self, OpenOptions};
+use std::io::{Read, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use wt_command::cmd;
-use wt_server::{GitConfig, ServerConfig, SERVER_CONFIG_PATH};
+use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
+const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
+const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     require_server_user()?;
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     require_installed_config_compatible(input_path, &server)?;
+    let credentials = prepare_agent_git_credentials(runner, &input)?;
     prepare_host(runner, &server)?;
     registry_cache::ensure(runner, &server)?;
     image::ensure(runner, &input, &server, &server_bytes)?;
@@ -26,8 +30,9 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     build_and_install_binaries(runner, &server)?;
     println!("Installing server config at {SERVER_CONFIG_PATH}...");
     install_server_config(runner, input_path, &server, &server_bytes)?;
-    println!("Installing and starting wt-server.service...");
-    install_server_service(runner, &server)?;
+    install_agent_git_credentials(runner, &credentials)?;
+    println!("Installing and starting WT services...");
+    install_services(runner, &input, &server)?;
     println!(
         "installed wt server from install input {}",
         input_path.display()
@@ -36,7 +41,8 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
 }
 
 pub(crate) fn validate(input_path: &Path) -> Result<()> {
-    load_install_input(input_path).map(|_| ())
+    let (input, _, _) = load_install_input(input_path)?;
+    validate_agent_git_files(&input)
 }
 
 pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> Result<()> {
@@ -62,37 +68,160 @@ fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8
     let input = InstallInput::load_from(path).map_err(anyhow::Error::msg)?;
     let server = input.materialize();
     let server_bytes = serialize_server_config(&server).map_err(anyhow::Error::msg)?;
-    let git = server.resolved_git_config().map_err(anyhow::Error::msg)?;
-    validate_git_known_hosts(&git)?;
     Ok((input, server, server_bytes))
 }
 
-fn validate_git_known_hosts(config: &GitConfig) -> Result<()> {
-    let known_hosts = &config.known_hosts_file;
-    let metadata = fs::metadata(known_hosts)
-        .with_context(|| format!("inspect git.known_hosts_file {}", known_hosts.display()))?;
-    if !metadata.is_file() {
-        bail!(
-            "git.known_hosts_file {} must be a regular file",
-            known_hosts.display()
-        );
-    }
-    let contents = fs::read_to_string(known_hosts)
-        .with_context(|| format!("read git.known_hosts_file {}", known_hosts.display()))?;
-    let has_entries = contents
-        .lines()
-        .map(str::trim)
-        .any(|line| !line.is_empty() && !line.starts_with('#'));
-    let output = cmd!("ssh-keygen", "-l", "-f", known_hosts)
-        .output()
-        .with_context(|| format!("validate git.known_hosts_file {}", known_hosts.display()))?;
-    if !has_entries || !output.status.success() {
-        bail!(
-            "git.known_hosts_file {} must contain valid known-hosts entries",
-            known_hosts.display()
-        );
+struct PreparedProviderCredentials {
+    kind: &'static str,
+    api_token: tempfile::NamedTempFile,
+    private_key: tempfile::NamedTempFile,
+    known_hosts: tempfile::NamedTempFile,
+}
+
+fn validate_agent_git_files(input: &InstallInput) -> Result<()> {
+    for (kind, provider) in input.agent_git.providers() {
+        let token = read_owned_file(
+            &provider.api_token_file,
+            true,
+            &format!("agent_git.{kind}.api_token_file"),
+        )?;
+        if token.iter().all(u8::is_ascii_whitespace) {
+            bail!("agent_git.{kind}.api_token_file must not be empty");
+        }
+        read_owned_file(
+            &provider.ssh_private_key_file,
+            true,
+            &format!("agent_git.{kind}.ssh_private_key_file"),
+        )?;
+        read_owned_file(
+            &provider.ssh_public_key_file,
+            false,
+            &format!("agent_git.{kind}.ssh_public_key_file"),
+        )?;
+        read_owned_file(
+            &provider.ssh_known_hosts_file,
+            false,
+            &format!("agent_git.{kind}.ssh_known_hosts_file"),
+        )?;
     }
     Ok(())
+}
+
+fn prepare_agent_git_credentials(
+    runner: &impl Runner,
+    input: &InstallInput,
+) -> Result<Vec<PreparedProviderCredentials>> {
+    validate_agent_git_files(input)?;
+    input
+        .agent_git
+        .providers()
+        .map(|(kind, provider)| prepare_provider_credentials(runner, kind, provider))
+        .collect()
+}
+
+fn prepare_provider_credentials(
+    runner: &impl Runner,
+    kind: &'static str,
+    provider: &AgentGitProviderInstallConfig,
+) -> Result<PreparedProviderCredentials> {
+    let api_token = temporary_credential(&read_owned_file(
+        &provider.api_token_file,
+        true,
+        &format!("agent_git.{kind}.api_token_file"),
+    )?)?;
+    let mut private_key = temporary_credential(&read_owned_file(
+        &provider.ssh_private_key_file,
+        true,
+        &format!("agent_git.{kind}.ssh_private_key_file"),
+    )?)?;
+    runner.run(
+        cmd!("ssh-keygen", "-p", "-N", "", "-f", private_key.path(),),
+        &format!("unlock agent_git.{kind}.ssh_private_key_file"),
+    )?;
+    private_key
+        .as_file_mut()
+        .flush()
+        .context("flush unlocked SSH private key")?;
+    let derived_public = runner.text(
+        cmd!("ssh-keygen", "-y", "-f", private_key.path()),
+        &format!("read agent_git.{kind} SSH public key"),
+    )?;
+    let configured_public = String::from_utf8(read_owned_file(
+        &provider.ssh_public_key_file,
+        false,
+        &format!("agent_git.{kind}.ssh_public_key_file"),
+    )?)
+    .with_context(|| format!("decode agent_git.{kind}.ssh_public_key_file"))?;
+    let derived_public =
+        public_key_fields(&derived_public).context("ssh-keygen returned an invalid public key")?;
+    let configured_public = public_key_fields(&configured_public)
+        .with_context(|| format!("agent_git.{kind}.ssh_public_key_file is invalid"))?;
+    if derived_public != configured_public {
+        bail!("agent_git.{kind} SSH public key does not match its private key");
+    }
+    let known_hosts = temporary_credential(&read_owned_file(
+        &provider.ssh_known_hosts_file,
+        false,
+        &format!("agent_git.{kind}.ssh_known_hosts_file"),
+    )?)?;
+    let output = runner.output(cmd!(
+        "ssh-keygen",
+        "-F",
+        &provider.host,
+        "-f",
+        known_hosts.path(),
+    ))?;
+    if !output.status.success() || output.stdout.is_empty() {
+        bail!(
+            "agent_git.{kind}.ssh_known_hosts_file has no key for {}",
+            provider.host
+        );
+    }
+    Ok(PreparedProviderCredentials {
+        kind,
+        api_token,
+        private_key,
+        known_hosts,
+    })
+}
+
+fn read_owned_file(path: &Path, private: bool, name: &str) -> Result<Vec<u8>> {
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("inspect {name} {}", path.display()))?;
+    let mode = metadata.mode() & 0o7777;
+    let valid_mode = mode == 0o600 || (!private && mode == 0o644);
+    if !metadata.file_type().is_file() || metadata.uid() != Uid::effective().as_raw() || !valid_mode
+    {
+        let expected = if private { "0600" } else { "0600 or 0644" };
+        bail!(
+            "{name} {} must be a regular file owned by the installing user with mode {expected}",
+            path.display()
+        );
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NOFOLLOW)
+        .open(path)
+        .with_context(|| format!("open {name} {}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .with_context(|| format!("read {name} {}", path.display()))?;
+    Ok(bytes)
+}
+
+fn temporary_credential(bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
+    let mut file = tempfile::NamedTempFile::new().context("create temporary credential")?;
+    fs::set_permissions(file.path(), fs::Permissions::from_mode(0o600))
+        .context("protect temporary credential")?;
+    file.write_all(bytes)
+        .context("write temporary credential")?;
+    file.flush().context("flush temporary credential")?;
+    Ok(file)
+}
+
+fn public_key_fields(value: &str) -> Option<(&str, &str)> {
+    let mut fields = value.split_whitespace();
+    Some((fields.next()?, fields.next()?))
 }
 
 fn require_server_user() -> Result<()> {
@@ -120,6 +249,8 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
             "build",
             "--release",
             "-p",
+            "wt-agent-git",
+            "-p",
             "wt-cli",
             "-p",
             "wt-guest",
@@ -129,6 +260,10 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         "build wt binaries",
     )?;
     for name in [
+        "wt-agent-git-gateway",
+        "wt-agent-git-relay",
+        "git-remote-ag",
+        "wt-agent-git-client",
         "wt",
         "wt-app-pane",
         "wt-app-info",
@@ -219,42 +354,175 @@ fn install_server_config(
     Ok(())
 }
 
-fn install_server_service(runner: &impl Runner, server: &ServerConfig) -> Result<()> {
+fn install_agent_git_credentials(
+    runner: &impl Runner,
+    providers: &[PreparedProviderCredentials],
+) -> Result<()> {
+    runner.run(
+        cmd!(
+            "sudo",
+            "install",
+            "-d",
+            "-o",
+            "root",
+            "-g",
+            "root",
+            "-m",
+            "0700",
+            CREDENTIAL_DIRECTORY,
+        ),
+        "create encrypted credential directory",
+    )?;
+    runner.run(
+        cmd!("sudo", "systemd-creds", "setup"),
+        "initialize systemd credential encryption",
+    )?;
+    for provider in providers {
+        for (suffix, source) in [
+            ("api-token", provider.api_token.path()),
+            ("ssh-private-key", provider.private_key.path()),
+            ("ssh-known-hosts", provider.known_hosts.path()),
+        ] {
+            let credential = format!("{}-{suffix}", provider.kind);
+            let destination =
+                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-agent-git-{credential}"));
+            let temporary = destination.with_extension("wt-new");
+            if temporary.exists() {
+                bail!(
+                    "stale credential install file exists: {}",
+                    temporary.display()
+                );
+            }
+            runner.run(
+                cmd!(
+                    "sudo",
+                    "systemd-creds",
+                    "encrypt",
+                    "--with-key=host",
+                    format!("--name={credential}"),
+                    source,
+                    &temporary,
+                ),
+                &format!("encrypt {credential}"),
+            )?;
+            sudo_move(runner, &temporary, &destination)?;
+        }
+    }
+    Ok(())
+}
+
+fn install_services(
+    runner: &impl Runner,
+    input: &InstallInput,
+    server: &ServerConfig,
+) -> Result<()> {
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
-    let bytes = server_service(&user, server);
-    let destination = Path::new(SERVER_SERVICE_PATH);
-    if destination.exists() {
-        require_root_file(destination, 0o644)?;
-        if fs::read(destination).context("read installed wt-server service")? != bytes {
-            bail!(
-                "service unit drift at {SERVER_SERVICE_PATH}; remove it only when intentionally reinstalling the WT server"
-            );
-        }
-    } else {
-        let local = Path::new("target").join("wt-server.service.install");
-        fs::write(&local, &bytes).context("stage wt-server service")?;
-        let temporary = Path::new("/etc/systemd/system/.wt-server.service.wt-new");
-        if temporary.exists() {
-            bail!("stale service install file exists: {}", temporary.display());
-        }
-        sudo_install(runner, &local, temporary, 0o644)?;
-        sudo_move(runner, temporary, destination)?;
-        let _ = fs::remove_file(local);
-    }
+    install_service_unit(
+        runner,
+        "wt-agent-git-gateway",
+        Path::new(GATEWAY_SERVICE_PATH),
+        &gateway_service(&user, input, server),
+    )?;
+    install_service_unit(
+        runner,
+        "wt-server",
+        Path::new(SERVER_SERVICE_PATH),
+        &server_service(&user, server),
+    )?;
     runner.run(
         cmd!("sudo", "systemctl", "daemon-reload"),
         "reload systemd units",
     )?;
-    runner.run(
-        cmd!("sudo", "systemctl", "enable", "wt-server.service"),
-        "enable wt-server service",
-    )?;
-    runner.run(
-        cmd!("sudo", "systemctl", "restart", "wt-server.service"),
-        "restart wt-server service",
+    for name in ["wt-agent-git-gateway.service", "wt-server.service"] {
+        runner.run(
+            cmd!("sudo", "systemctl", "enable", name),
+            &format!("enable {name}"),
+        )?;
+        runner.run(
+            cmd!("sudo", "systemctl", "restart", name),
+            &format!("restart {name}"),
+        )?;
+    }
+    Ok(())
+}
+
+fn install_service_unit(
+    runner: &impl Runner,
+    name: &str,
+    destination: &Path,
+    bytes: &[u8],
+) -> Result<()> {
+    if destination.exists() {
+        require_root_file(destination, 0o644)?;
+        if fs::read(destination).context("read installed wt-server service")? != bytes {
+            bail!(
+                "service unit drift at {}; run make nuke before reinstalling",
+                destination.display()
+            );
+        }
+    } else {
+        let local = Path::new("target").join(format!("{name}.service.install"));
+        fs::write(&local, bytes).with_context(|| format!("stage {name} service"))?;
+        let temporary = Path::new("/etc/systemd/system").join(format!(".{name}.service.wt-new"));
+        if temporary.exists() {
+            bail!("stale service install file exists: {}", temporary.display());
+        }
+        sudo_install(runner, &local, &temporary, 0o644)?;
+        sudo_move(runner, &temporary, destination)?;
+        let _ = fs::remove_file(local);
+    }
+    Ok(())
+}
+
+fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
+    let executable = server.install.binary_dir.join("wt-agent-git-gateway");
+    let mut command = format!("{} serve", systemd_quote(&executable.display().to_string()));
+    let mut credentials = String::new();
+    for (kind, provider) in input.agent_git.providers() {
+        let token = format!("%d/{kind}-api-token");
+        let key = format!("%d/{kind}-ssh-private-key");
+        let known_hosts = format!("%d/{kind}-ssh-known-hosts");
+        command.push_str(&format!(" --{kind}-provider "));
+        command.push_str(&systemd_quote(&format!(
+            "{}={token},{key},{known_hosts}",
+            provider.host
+        )));
+        for suffix in ["api-token", "ssh-private-key", "ssh-known-hosts"] {
+            let id = format!("{kind}-{suffix}");
+            credentials.push_str(&format!(
+                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-agent-git-{id}\n"
+            ));
+        }
+    }
+    format!(
+        "[Unit]\n\
+Description=WT agent Git gateway\n\
+Wants=network-online.target\n\
+After=network-online.target\n\
+\n\
+[Service]\n\
+Type=simple\n\
+User={}\n\
+Environment={}\n\
+{}\n\
+ExecStart={}\n\
+Restart=on-failure\n\
+RuntimeDirectory=wt\n\
+RuntimeDirectoryMode=0700\n\
+StateDirectory=wt/agent-git\n\
+StateDirectoryMode=0700\n\
+UMask=0077\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n",
+        user.name,
+        systemd_quote(&format!("HOME={}", user.dir.display())),
+        credentials.trim_end(),
+        command,
     )
+    .into_bytes()
 }
 
 fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
@@ -262,8 +530,9 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
+Requires=wt-agent-git-gateway.service\n\
 Wants=network-online.target\n\
-After=network-online.target docker.service libvirtd.service\n\
+After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -291,7 +560,72 @@ fn systemd_quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+
+    struct CapturedRunner;
+
+    impl Runner for CapturedRunner {
+        fn output(&self, mut command: std::process::Command) -> Result<std::process::Output> {
+            Ok(command.output()?)
+        }
+    }
+
+    #[test]
+    fn provider_credentials_are_validated_and_unlocked() {
+        let temp = tempfile::tempdir().unwrap();
+        let private = temp.path().join("id_ed25519");
+        let output = cmd!(
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-f",
+            &private,
+        )
+        .output()
+        .unwrap();
+        assert!(output.status.success());
+        let public = private.with_extension("pub");
+        let public_text = fs::read_to_string(&public).unwrap();
+        let mut fields = public_text.split_whitespace();
+        let known_hosts = temp.path().join("known_hosts");
+        fs::write(
+            &known_hosts,
+            format!(
+                "github.com {} {}\n",
+                fields.next().unwrap(),
+                fields.next().unwrap()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&known_hosts, fs::Permissions::from_mode(0o600)).unwrap();
+        let token = temp.path().join("token");
+        fs::write(&token, "test-token\n").unwrap();
+        fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
+        let provider = AgentGitProviderInstallConfig {
+            host: "github.com".to_owned(),
+            api_token_file: token,
+            ssh_private_key_file: private,
+            ssh_public_key_file: public,
+            ssh_known_hosts_file: known_hosts,
+        };
+        let prepared = prepare_provider_credentials(&CapturedRunner, "github", &provider).unwrap();
+        assert!(!fs::read(prepared.private_key.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn credential_paths_do_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        fs::write(&target, "secret").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        let link = temp.path().join("link");
+        symlink(&target, &link).unwrap();
+        assert!(read_owned_file(&link, true, "credential").is_err());
+    }
 
     #[test]
     fn config_drift_message_explains_recovery() {
@@ -321,45 +655,9 @@ mod tests {
     }
 
     #[test]
-    fn validates_git_known_hosts() {
-        let temp = tempfile::tempdir().unwrap();
-        let identity = temp.path().join("identity");
-        let output = cmd!(
-            "ssh-keygen",
-            "-q",
-            "-t",
-            "ed25519",
-            "-N",
-            "secret",
-            "-f",
-            &identity,
-        )
-        .output()
-        .unwrap();
-        assert!(output.status.success());
-        fs::set_permissions(&identity, fs::Permissions::from_mode(0o600)).unwrap();
-        let public = fs::read_to_string(identity.with_extension("pub")).unwrap();
-        let mut fields = public.split_whitespace();
-        let known_hosts = temp.path().join("known_hosts");
-        fs::write(
-            &known_hosts,
-            format!(
-                "example.test {} {}\n",
-                fields.next().unwrap(),
-                fields.next().unwrap()
-            ),
-        )
-        .unwrap();
-        let config = GitConfig {
-            known_hosts_file: known_hosts,
-        };
-        validate_git_known_hosts(&config).unwrap();
-    }
-
-    #[test]
     fn service_runs_as_the_installing_user() {
         let user = User::from_uid(Uid::effective()).unwrap().unwrap();
-        let server = toml::from_str::<InstallInput>(
+        let input = toml::from_str::<InstallInput>(
             r#"
 version = 1
 [image]
@@ -377,8 +675,12 @@ state_dir = "/var/lib/wt/cache"
 port = 3128
 max_size_gib = 1
 registries = ["docker.io"]
-[git]
-known_hosts_file = "~/.ssh/known_hosts"
+[agent_git.github]
+host = "github.com"
+api_token_file = "/tmp/github.token"
+ssh_private_key_file = "/tmp/id_ed25519"
+ssh_public_key_file = "/tmp/id_ed25519.pub"
+ssh_known_hosts_file = "/tmp/known_hosts"
 [guest]
 boot_timeout_seconds = 30
 recipe_timeout_seconds = 30
@@ -386,8 +688,8 @@ recipe_timeout_seconds = 30
 binary_dir = "/opt/wt bin"
 "#,
         )
-        .unwrap()
-        .materialize();
+        .unwrap();
+        let server = input.materialize();
         let unit = String::from_utf8(server_service(&user, &server)).unwrap();
         let unit = unit
             .replace(&user.dir.display().to_string(), "[HOME]")
@@ -395,8 +697,9 @@ binary_dir = "/opt/wt bin"
         insta::assert_snapshot!(unit, @r###"
         [Unit]
         Description=WT control-plane daemon
+        Requires=wt-agent-git-gateway.service
         Wants=network-online.target
-        After=network-online.target docker.service libvirtd.service
+        After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service
 
         [Service]
         Type=simple
@@ -411,5 +714,10 @@ binary_dir = "/opt/wt bin"
         [Install]
         WantedBy=multi-user.target
         "###);
+        let gateway = String::from_utf8(gateway_service(&user, &input, &server)).unwrap();
+        let gateway = gateway
+            .replace(&user.dir.display().to_string(), "[HOME]")
+            .replace(&format!("User={}", user.name), "User=[USER]");
+        insta::assert_snapshot!("gateway_service", gateway);
     }
 }

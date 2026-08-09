@@ -10,7 +10,7 @@ use wt_api::{
 };
 use wt_provider::{ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldWorker};
 use wt_server::operations::Operations;
-use wt_server::service::Service;
+use wt_server::service::{AgentGitGateway, Service};
 use wt_server::store::{Store, StoredInstance};
 
 #[derive(Clone, Default)]
@@ -18,14 +18,34 @@ struct Worker {
     provisions: Arc<AtomicUsize>,
     destroys: Arc<AtomicUsize>,
     inspections: Arc<AtomicUsize>,
-    forks: Arc<AtomicUsize>,
     destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     complete: bool,
     provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     missing: bool,
     changed_guest_identity: bool,
     changed_app_identity: bool,
-    fork_error_pivoted: Option<bool>,
+}
+
+#[derive(Clone, Default)]
+struct Gateway;
+
+impl AgentGitGateway for Gateway {
+    fn reserve(
+        &self,
+        world_id: Uuid,
+        _source: &str,
+        _base: &str,
+        _prefix: &str,
+    ) -> Result<wt_agent_git::Grant, String> {
+        Ok(wt_agent_git::Grant {
+            id: format!("grant-{world_id}"),
+            token: format!("token-{world_id}"),
+        })
+    }
+
+    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl WorldWorker for Worker {
@@ -49,16 +69,9 @@ impl WorldWorker for Worker {
         _spec: &ForkSpec<'_>,
         _log: &mut dyn std::io::Write,
     ) -> Result<World, ForkError> {
-        self.forks.fetch_add(1, Ordering::SeqCst);
-        if let Some(pivoted) = self.fork_error_pivoted {
-            let error = WorkerError::new("injected fork failure");
-            return Err(if pivoted {
-                ForkError::after_pivot(error)
-            } else {
-                ForkError::before_pivot(error)
-            });
-        }
-        Ok(fork_world())
+        Err(ForkError::before_pivot(WorkerError::new(
+            "world forks are unavailable",
+        )))
     }
     fn destroy(&self, _backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
@@ -80,15 +93,6 @@ impl WorldWorker for Worker {
         }
         Ok(Some(inspected))
     }
-}
-
-fn fork_world() -> World {
-    let mut fork = world(true);
-    fork.guest_ip = "192.0.2.3".into();
-    fork.ssh.host = "192.0.2.3".into();
-    fork.ssh.host_keys = vec!["ssh-ed25519 AAAAFORK guest".into()];
-    fork.app_ssh.as_mut().unwrap().host_keys = vec!["ssh-ed25519 AAAAFORKAPP app".into()];
-    fork
 }
 
 #[test]
@@ -135,8 +139,7 @@ fn create(name: &str) -> CreateInstance {
     CreateInstance {
         name: InstanceName::parse(name).unwrap(),
         source: "git@example.test:repo.git".into(),
-        git_branch: None,
-        git_ref: None,
+        git_base: "main".into(),
         git_user_name: "Test User".into(),
         git_user_email: "test@example.invalid".into(),
         vcpus: 1,
@@ -146,10 +149,11 @@ fn create(name: &str) -> CreateInstance {
     }
 }
 
-fn service(temp: &TempDir, worker: Worker) -> Service<Worker> {
+fn service(temp: &TempDir, worker: Worker) -> Service<Worker, Gateway> {
     Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
         worker,
+        Gateway,
         Operations::default(),
     )
 }
@@ -217,30 +221,10 @@ fn delete_removes_setup_world() {
     assert_eq!(destroys.load(Ordering::SeqCst), 1);
 }
 
-fn make_running(temp: &TempDir, name: &str) {
-    service(temp, Worker::default())
-        .execute("tester", Operation::Create(create(name)))
-        .unwrap();
-    service(
-        temp,
-        Worker {
-            complete: true,
-            ..Worker::default()
-        },
-    )
-    .execute("tester", Operation::List)
-    .unwrap();
-}
-
 #[test]
-fn fork_inherits_resources_and_replaces_ssh_identities() {
+fn fork_is_unavailable_for_every_world() {
     let temp = TempDir::new().unwrap();
-    make_running(&temp, "source");
-    let worker = Worker {
-        complete: true,
-        ..Worker::default()
-    };
-    let Response::Instance { instance } = service(&temp, worker.clone())
+    let error = service(&temp, Worker::default())
         .execute(
             "tester",
             Operation::Fork(ForkInstance {
@@ -248,140 +232,9 @@ fn fork_inherits_resources_and_replaces_ssh_identities() {
                 name: InstanceName::parse("fork").unwrap(),
             }),
         )
-        .unwrap()
-    else {
-        panic!()
-    };
-    assert_eq!(instance.status, InstanceStatus::Running);
-    assert_eq!(
-        (instance.vcpus, instance.memory_mib, instance.disk_gib),
-        (1, 1024, 8)
-    );
-    assert_eq!(
-        instance.ssh.unwrap().host_keys,
-        vec!["ssh-ed25519 AAAAFORK guest"]
-    );
-    assert_eq!(
-        instance.app_ssh.unwrap().host_keys,
-        vec!["ssh-ed25519 AAAAFORKAPP app"]
-    );
-    assert_eq!(worker.forks.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn fork_rejects_destination_collisions() {
-    let temp = TempDir::new().unwrap();
-    make_running(&temp, "source");
-    make_running(&temp, "existing");
-    let error = service(
-        &temp,
-        Worker {
-            complete: true,
-            ..Worker::default()
-        },
-    )
-    .execute(
-        "tester",
-        Operation::Fork(ForkInstance {
-            source: InstanceName::parse("source").unwrap(),
-            name: InstanceName::parse("existing").unwrap(),
-        }),
-    )
-    .unwrap_err();
-    assert_eq!(error.code, wt_api::ErrorCode::Conflict);
-}
-
-#[test]
-fn deleting_fork_siblings_garbage_collects_only_unreferenced_nodes() {
-    let temp = TempDir::new().unwrap();
-    make_running(&temp, "source");
-    service(
-        &temp,
-        Worker {
-            complete: true,
-            ..Worker::default()
-        },
-    )
-    .execute(
-        "tester",
-        Operation::Fork(ForkInstance {
-            source: InstanceName::parse("source").unwrap(),
-            name: InstanceName::parse("fork").unwrap(),
-        }),
-    )
-    .unwrap();
-    let worker = Worker::default();
-    for name in ["source", "fork"] {
-        service(&temp, worker.clone())
-            .execute(
-                "tester",
-                Operation::Delete {
-                    name: InstanceName::parse(name).unwrap(),
-                },
-            )
-            .unwrap();
-    }
-    let disk_counts = worker
-        .destroyed_disks
-        .lock()
-        .unwrap()
-        .iter()
-        .map(Vec::len)
-        .collect::<Vec<_>>();
-    assert_eq!(disk_counts, [1, 2]);
-}
-
-#[test]
-fn failed_forks_leave_the_source_running_and_retryable() {
-    for pivoted in [false, true] {
-        let temp = TempDir::new().unwrap();
-        make_running(&temp, "source");
-        let error = service(
-            &temp,
-            Worker {
-                complete: true,
-                fork_error_pivoted: Some(pivoted),
-                ..Worker::default()
-            },
-        )
-        .execute(
-            "tester",
-            Operation::Fork(ForkInstance {
-                source: InstanceName::parse("source").unwrap(),
-                name: InstanceName::parse("failed").unwrap(),
-            }),
-        )
         .unwrap_err();
-        assert_eq!(error.code, wt_api::ErrorCode::Backend);
-        let store = Store::open(&temp.path().join("instances.db")).unwrap();
-        assert_eq!(
-            store
-                .get("tester", &InstanceName::parse("source").unwrap())
-                .unwrap()
-                .instance
-                .status,
-            InstanceStatus::Running
-        );
-        assert!(matches!(
-            store.get("tester", &InstanceName::parse("failed").unwrap()),
-            Err(wt_server::store::StoreError::NotFound)
-        ));
-        service(
-            &temp,
-            Worker {
-                complete: true,
-                ..Worker::default()
-            },
-        )
-        .execute(
-            "tester",
-            Operation::Fork(ForkInstance {
-                source: InstanceName::parse("source").unwrap(),
-                name: InstanceName::parse("retry").unwrap(),
-            }),
-        )
-        .unwrap();
-    }
+    assert_eq!(error.code, wt_api::ErrorCode::InvalidRequest);
+    assert_eq!(error.message, "worlds cannot be forked");
 }
 
 #[test]
@@ -390,7 +243,7 @@ fn repeated_create_resumes_only_identical_setup() {
     let worker = Worker::default();
     let provisions = worker.provisions.clone();
     let mut first = create("sample");
-    first.git_branch = Some("feature".into());
+    first.git_base = "feature".into();
     let Response::Instance { instance: original } = service(&temp, worker.clone())
         .execute("tester", Operation::Create(first))
         .unwrap()
@@ -398,7 +251,7 @@ fn repeated_create_resumes_only_identical_setup() {
         panic!()
     };
     let mut same = create("sample");
-    same.git_branch = Some("feature".into());
+    same.git_base = "feature".into();
     let Response::Instance { instance: resumed } = service(&temp, worker.clone())
         .execute("tester", Operation::Create(same))
         .unwrap()
@@ -409,7 +262,7 @@ fn repeated_create_resumes_only_identical_setup() {
     assert_eq!(provisions.load(Ordering::SeqCst), 1);
 
     let mut different = create("sample");
-    different.git_branch = Some("other".into());
+    different.git_base = "other".into();
     let error = service(&temp, worker)
         .execute("tester", Operation::Create(different))
         .unwrap_err();
@@ -455,6 +308,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
             Service::new(
                 Store::open(&root.join("instances.db")).unwrap(),
                 worker,
+                Gateway,
                 operations,
             )
             .execute("tester", Operation::Create(create("sample")))
@@ -467,6 +321,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
     let delete_error = Service::new(
         Store::open(&root.join("instances.db")).unwrap(),
         Worker::default(),
+        Gateway,
         operations.clone(),
     )
     .execute(
@@ -485,6 +340,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
             let response = Service::new(
                 Store::open(&root.join("instances.db")).unwrap(),
                 Worker::default(),
+                Gateway,
                 operations,
             )
             .execute("tester", Operation::Create(create("sample")))
@@ -576,6 +432,8 @@ fn startup_recovery_marks_provisioning_as_error() {
                 owner: "tester".into(),
                 status: InstanceStatus::Provisioning,
                 source: "git@example.test:repo.git".into(),
+                git_base: "main".into(),
+                git_prefix: "sample/".into(),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
@@ -587,6 +445,7 @@ fn startup_recovery_marks_provisioning_as_error() {
             backend_id: format!("wt-{}", id.simple()),
             head_disk_id: Uuid::new_v4(),
             setup_fingerprint: "test".into(),
+            gateway_grant_id: "grant-test".into(),
         })
         .unwrap();
     store.reconcile_interrupted().unwrap();

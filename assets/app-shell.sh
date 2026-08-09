@@ -4,17 +4,9 @@ set -eu
 state=/var/lib/wt-setup
 tmux=/usr/bin/tmux
 byobu=/usr/bin/byobu-tmux
-agent_socket=$state/ssh-agent.sock
 exec 9>"$state/app-shell.lock"
 flock 9
-if test -n "${SSH_AUTH_SOCK:-}"; then
-    ln -sfn "$SSH_AUTH_SOCK" "$agent_socket"
-    SSH_AUTH_SOCK=$agent_socket
-    export SSH_AUTH_SOCK
-else
-    rm -f "$agent_socket"
-    unset SSH_AUTH_SOCK
-fi
+unset SSH_AUTH_SOCK
 if test -n "${BYOBU_ALT_TITLE:-}" && test -e "$state/complete"; then
     checkout=$(
         /usr/bin/git -C /workspace symbolic-ref --quiet --short HEAD 2>/dev/null ||
@@ -39,12 +31,6 @@ if ! "$tmux" has-session -t wt-app 2>/dev/null; then
         attempt=$((attempt + 1))
         sleep 1
     done
-else
-    if test -n "${SSH_AUTH_SOCK:-}"; then
-        "$tmux" set-environment -t wt-app SSH_AUTH_SOCK "$SSH_AUTH_SOCK"
-    else
-        "$tmux" set-environment -u -t wt-app SSH_AUTH_SOCK
-    fi
 fi
 if test -e "$state/complete"; then
     if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then

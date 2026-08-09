@@ -10,7 +10,7 @@ Copy it outside this directory and review every value. Setup writes the strict
 runtime config to `/etc/wt/server.toml`. Keep the input for reinstalling the same
 configuration.
 
-`git.known_hosts_file` pins Git host keys. Clone authentication comes from the
-workstation SSH agent forwarded during the first world connection. Paths may be
-absolute or start with `~/`. Changing strict server settings requires
-`make nuke` followed by reinstalling.
+Each `agent_git` provider names an API-token file, SSH key pair, and trusted
+host-key file. Paths may be absolute or start with `~/`. The installer validates
+them and stores encrypted copies for the gateway; worlds never receive them.
+Changing strict server settings requires `make nuke` followed by reinstalling.

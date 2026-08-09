@@ -7,14 +7,14 @@ pub mod service;
 pub mod store;
 
 pub use runtime_config::{
-    GitConfig, GuestConfig, ImageConfig, InstallConfig, RegistryCacheConfig, ServerConfig,
-    ServerLibvirtConfig, SERVER_CONFIG_PATH,
+    AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, SERVER_CONFIG_PATH,
 };
 
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION, WT_GIT_COMMIT};
 
-pub fn handle_request<W: wt_provider::WorldWorker>(
-    service: &service::Service<W>,
+pub fn handle_request<W: wt_provider::WorldWorker, G: service::AgentGitGateway>(
+    service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {

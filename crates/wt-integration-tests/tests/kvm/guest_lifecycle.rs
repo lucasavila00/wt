@@ -1,375 +1,161 @@
 use super::*;
+use std::path::Path;
 
-pub(super) fn verify_source_guest(
-    harness: &KvmHarness,
-    name: &InstanceName,
-    agent: &SshAgent,
-    timings: &mut Timings,
-) -> Result<(), String> {
-    let temp = &harness.temp;
-    let git = &harness.git;
-    let server_config_path = harness.server_config_path.clone();
-    let Response::Instances { instances } =
-        call_api(temp.path(), &server_config_path, Operation::List)
-    else {
-        return Err("expected list response".to_owned());
-    };
-    assert_eq!(instances.len(), 1);
-    timings.run("sync SSH inventory", || sync_inventory(&instances))?;
+#[test]
+#[ignore = "requires a configured Ubuntu/KVM host"]
+fn agent_git_transport_works_without_provider_credentials() {
+    let _serial = KVM_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut timings = Timings::new();
+    let mut harness = KvmHarness::new(&mut timings);
+    let name = unique_name("git");
 
-    let host_alias = format!("local.{}-host", name.as_str());
-    let vs_alias = format!("local.{}-vs", name.as_str());
-    let ssh_config = temp.path().join(".ssh/config");
-    let output = timings.run("verify guest SSH", || {
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "test -d /workspace/.git && test ! -e /etc/sudoers.d/wt-setup && test ! -e /var/lib/wt-setup/source && test ! -e /var/lib/wt-setup/git-known-hosts && test ! -e /var/lib/wt-setup/authorized-keys && test ! -e /var/lib/wt-setup/deferred-packages && test ! -e /var/lib/wt-setup/root-prepared && printf 'BACKGROUND=k\\nFOREGROUND=w\\nMONOCHROME=1\\n' | cmp - /home/wt/.byobu/color && test \"$(stat -c '%U:%G:%a' /home/wt/.byobu/color)\" = wt:wt:644 && test \"$(TERM=ghostty tput colors)\" = 256 && test \"$(TERM=xterm-ghostty tput colors)\" = 256 && test \"$(nproc)\" = 1 && memory=$(awk '/MemTotal/ {print $2}' /proc/meminfo) && test \"$memory\" -ge 800000 && test \"$memory\" -le 1100000 && sectors=$(cat /sys/block/vda/size) && test \"$sectors\" -ge 67108864",
-        )
-        .output()
-        .map_err(|error| error.to_string())
-    })?;
-    ensure_success("enter fixture guest host", &output)?;
-    let output = timings.run("verify direct devcontainer SSH", || {
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            &vs_alias,
-            "test -d /workspaces/small-devcontainer-fixture && ssh-add -L >/dev/null",
-        )
-        .env("SSH_AUTH_SOCK", &agent.socket)
-        .output()
-        .map_err(|error| error.to_string())
-    })?;
-    ensure_success("enter fixture devcontainer over SSH", &output)?;
-    let executable = "/usr/bin/byobu-tmux";
-    let output = cmd!(
-        "ssh",
-        "-F",
-        &ssh_config,
-        "-i",
-        &git.guest_key,
-        &host_alias,
-        format!("test -x {executable}"),
+    let created = timings.run("create world", || harness.create(&name));
+    assert_eq!(created.status, InstanceStatus::Setup);
+    harness.sync_inventory();
+    let ssh_config = fs::read_to_string(harness.temp.path().join(".ssh/wt/config")).unwrap();
+    assert!(!ssh_config.contains("ForwardAgent"));
+
+    let running = timings.run("finish setup without SSH_AUTH_SOCK", || {
+        harness.finish_setup(&name)
+    });
+    assert_eq!(running.status, InstanceStatus::Running);
+    harness.sync_inventory();
+
+    run_guest(
+        &harness,
+        &name,
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock",
+        "verify guest credential isolation",
+    );
+    app(
+        &harness,
+        &name,
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock && test \"$(git remote get-url origin)\" = ag::git@local.test:project.git",
+        "verify devcontainer gateway setup",
+    );
+
+    let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
+    assert!(help.contains("ag-git manages the pull or merge request"));
+    assert!(help.contains("open-mr [--draft]"));
+    let status = app_output(&harness, &name, "ag-git", "read ag-git status");
+    assert!(status.contains("Request base: main"));
+    harness.change_gateway_base("updated-base");
+    let status = app_output(&harness, &name, "ag-git", "read updated ag-git status");
+    assert!(status.contains("Request base: updated-base"));
+    harness.change_gateway_base("main");
+
+    let branch = format!("{name}/fix-login");
+    let output = app_command(
+        &harness,
+        &name,
+        &format!(
+            "set -eu; git switch -c '{branch}'; printf 'first\\n' >> README.md; git add README.md; git commit -m first; git push"
+        ),
     )
     .output()
-    .map_err(|error| error.to_string())?;
-    ensure_success("verify Byobu frontend", &output)?;
-    let byobu_version = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "dpkg-query",
-            "-W",
-            r"-f=\${Version}",
-            "byobu",
-        ),
-        "read Byobu package version",
+    .unwrap();
+    ensure_success("commit and push through gateway", &output).unwrap();
+    let diagnostics = String::from_utf8(output.stderr).unwrap();
+    assert!(diagnostics.contains("This is a WT-managed development environment"));
+    assert!(diagnostics.contains("Run ag-git --help"));
+    assert_ref(
+        &harness.git.repository,
+        &format!("refs/heads/{branch}"),
+        true,
     );
-    if byobu_version != "7.15-0ubuntu1" {
-        return Err(format!(
-            "unexpected Byobu version: {byobu_version:?}; expected 7.15-0ubuntu1"
-        ));
-    }
-    let tmux_version = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/byobu-tmux",
-            "-V",
-        ),
-        "read Byobu tmux version",
+    harness.restart_gateway();
+    harness.assert_prefix_is_reserved(&name);
+    app(
+        &harness,
+        &name,
+        "git fetch origin",
+        "fetch after gateway restart",
     );
-    if tmux_version.trim() != "tmux 3.6b" {
-        return Err(format!(
-            "unexpected Byobu tmux version: {tmux_version:?}; expected tmux 3.6b"
-        ));
-    }
-    let mut persistent = cmd!(
-        "ssh",
-        "-F",
-        &ssh_config,
-        "-i",
-        &git.guest_key,
-        name.as_str(),
-    )
-    .env("SSH_AUTH_SOCK", &agent.socket)
-    .env("TERM", "xterm-ghostty")
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::inherit())
-    .spawn()
-    .map_err(|error| format!("start persistent app shell: {error}"))?;
-    persistent
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(
-            b"ssh-add -L >/dev/null && export WT_PERSISTENCE_MARKER=retained; cd /tmp; printf '%s\\n' \"$WT_PERSISTENCE_MARKER:$PWD:$TERM\"\n",
-        )
-        .map_err(|error| format!("initialize persistent app shell: {error}"))?;
-    wait_for_line(&mut persistent, "retained:/tmp:tmux-256color")?;
-    disconnect(&mut persistent, "initial persistent app shell")?;
 
-    let mut reattached = cmd!(
-        "ssh",
-        "-F",
-        &ssh_config,
-        "-i",
-        &git.guest_key,
-        name.as_str(),
-    )
-    .env("SSH_AUTH_SOCK", &agent.socket)
-    .env("TERM", "xterm-ghostty")
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::inherit())
-    .spawn()
-    .map_err(|error| format!("reattach persistent app shell: {error}"))?;
-    reattached
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(
-            b"test \"$WT_PERSISTENCE_MARKER\" = retained && test \"$PWD\" = /tmp && printf 'persistence-%s\\n' \"$WT_PERSISTENCE_MARKER\"\n",
-        )
-        .map_err(|error| format!("verify persistent app shell: {error}"))?;
-    wait_for_line(&mut reattached, "persistence-retained")?;
-    disconnect(&mut reattached, "reattached app shell")?;
-
-    let output = cmd!(
-        "ssh",
-        "-F",
-        &ssh_config,
-        "-i",
-        &git.guest_key,
-        &host_alias,
-        "/usr/bin/byobu-tmux",
-        "source-file",
-        "/usr/share/byobu/profiles/tmuxrc",
-        "\\;",
-        "new-window",
-        "\\;",
-        "split-window",
-        "\\;",
-        "list-panes",
-        "-a",
-        "-F",
-        "'#{pane_start_command}'",
+    app(
+        &harness,
+        &name,
+        "set -eu; printf 'second\n' >> README.md; git commit -am second; git push; git reset --hard HEAD^; git push --force",
+        "force-push through gateway",
+    );
+    let local = app_output(&harness, &name, "git rev-parse HEAD", "read local Git head");
+    let upstream = cmd!(
+        "git",
+        "--git-dir",
+        &harness.git.repository,
+        "rev-parse",
+        format!("refs/heads/{branch}")
     )
     .output()
-    .map_err(|error| error.to_string())?;
-    ensure_success(
-        "reload Byobu profile and create persistent app window and split",
-        &output,
-    )?;
-    let panes = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
-    let mut panes = panes
-        .lines()
-        .filter(|pane| *pane != "byobu-janitor")
-        .collect::<Vec<_>>();
-    panes.sort_unstable();
-    if panes
-        != [
-            "/usr/local/bin/wt-app-pane",
-            "/usr/local/bin/wt-app-pane",
-            "/usr/local/bin/wt-setup-world",
-        ]
-    {
-        return Err(format!("unexpected tmux pane commands: {panes:?}"));
-    }
-    let prefix = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-gv",
-            "prefix",
-        ),
-        "read persistent session prefix",
+    .unwrap();
+    ensure_success("read published Git head", &upstream).unwrap();
+    assert_eq!(
+        local.trim(),
+        String::from_utf8(upstream.stdout).unwrap().trim()
     );
-    let expected_prefix = "F12";
-    if prefix.trim() != expected_prefix {
-        return Err(format!(
-            "unexpected Byobu session prefix: {prefix:?}; expected {expected_prefix}"
-        ));
-    }
-    let remain_on_exit = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-gv",
-            "remain-on-exit",
-        ),
-        "read persistent session remain-on-exit",
-    );
-    if remain_on_exit.trim() != "off" {
-        return Err(format!(
-            "unexpected remain-on-exit after setup: {remain_on_exit:?}; expected off"
-        ));
-    }
-    let focus_events = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-gv",
-            "focus-events",
-        ),
-        "read persistent session focus-events",
-    );
-    if focus_events.trim() != "on" {
-        return Err(format!(
-            "unexpected focus-events value: {focus_events:?}; expected on"
-        ));
-    }
-    let default_terminal = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-gv",
-            "default-terminal",
-        ),
-        "read persistent session default-terminal",
-    );
-    if default_terminal.trim() != "tmux-256color" {
-        return Err(format!(
-            "unexpected default-terminal value: {default_terminal:?}; expected tmux-256color"
-        ));
-    }
-    let mouse = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-gv",
-            "mouse",
-        ),
-        "read persistent session mouse setting",
-    );
-    if mouse.trim() != "on" {
-        return Err(format!("unexpected mouse value: {mouse:?}; expected on"));
-    }
-    let terminal_features = git_output(
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &host_alias,
-            "/usr/bin/tmux",
-            "show-options",
-            "-sv",
-            "terminal-features",
-        ),
-        "read persistent session terminal features",
-    );
-    if !terminal_features
-        .lines()
-        .any(|line| line == "xterm-ghostty:clipboard:hyperlinks")
-    {
-        return Err(format!(
-            "terminal features do not include Ghostty clipboard and hyperlinks: {terminal_features:?}"
-        ));
-    }
-    for (key, expected) in [
-        (
-            "WheelUpPane",
-            "bind-key -T root WheelUpPane if-shell -F -t = \"#{mouse_any_flag}\" \"send-keys -M\" \"copy-mode -e -t =\"",
-        ),
-        (
-            "WheelDownPane",
-            "bind-key -T root WheelDownPane if-shell -F -t = \"#{mouse_any_flag}\" \"send-keys -M\" \"select-pane -t =\"",
-        ),
-    ] {
-        let binding = git_output(
-            cmd!(
-                "ssh",
-                "-F",
-                &ssh_config,
-                "-i",
-                &git.guest_key,
-                &host_alias,
-                "/usr/bin/tmux",
-                "list-keys",
-                "-T",
-                "root",
-                key,
-            ),
-            "read persistent session mouse wheel binding",
-        );
-        if binding.trim() != expected {
-            return Err(format!(
-                "unexpected {key} binding: {binding:?}; expected {expected:?}"
-            ));
-        }
-    }
 
-    let branch = format!("wt-e2e-{}", std::process::id());
-    let app_commands = temp.path().join("app-commands");
-    fs::write(
-        &app_commands,
-        format!(
-            "set -eu\ntest -n \"$BASH_VERSION\"\ntest \"$(id -u)\" -eq 0\ntest \"$(pwd)\" = /workspaces/small-devcontainer-fixture\ntest \"$(git config user.name)\" = 'WT E2E'\ntest \"$(git config user.email)\" = wt@example.invalid\ngit switch -c {branch}\nprintf 'committed\\n' > wt-e2e.txt\ngit add wt-e2e.txt\ngit commit -m wt-e2e\n"
-        ),
+    app(
+        &harness,
+        &name,
+        "set -eu; git switch -c wrong; printf 'wrong\n' >> README.md; git commit -am wrong; ! git push origin wrong; git tag bad-tag; ! git push origin bad-tag",
+        "reject branches and tags outside the world scope",
+    );
+    assert_ref(&harness.git.repository, "refs/heads/wrong", false);
+    assert_ref(&harness.git.repository, "refs/tags/bad-tag", false);
+
+    app(
+        &harness,
+        &name,
+        &format!("git push origin --delete '{branch}'"),
+        "delete published branch through gateway",
+    );
+    assert_ref(
+        &harness.git.repository,
+        &format!("refs/heads/{branch}"),
+        false,
+    );
+    let token = harness.grant_token();
+    harness.delete(&name);
+    harness.assert_grant_is_revoked(token);
+}
+
+fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
+    let output = app_command(harness, name, command).output().unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
+fn app_output(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) -> String {
+    let output = app_command(harness, name, command).output().unwrap();
+    ensure_success(action, &output).unwrap();
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn app_command(harness: &KvmHarness, name: &InstanceName, command: &str) -> std::process::Command {
+    let mut command_process = cmd!(
+        "ssh",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}-vs"),
+        format!("cd /workspaces/workspace && {command}"),
+    );
+    command_process.env_remove("SSH_AUTH_SOCK");
+    command_process
+}
+
+fn assert_ref(repository: &Path, reference: &str, exists: bool) {
+    let output = cmd!(
+        "git",
+        "--git-dir",
+        repository,
+        "show-ref",
+        "--verify",
+        reference
     )
-    .map_err(|error| error.to_string())?;
-    let input = fs::File::open(&app_commands).map_err(|error| error.to_string())?;
-    let output = timings.run("commit from app container", || {
-        cmd!(
-            "ssh",
-            "-F",
-            &ssh_config,
-            "-i",
-            &git.guest_key,
-            &vs_alias,
-            "cd /workspaces/small-devcontainer-fixture && exec /bin/bash",
-        )
-        .stdin(Stdio::from(input))
-        .output()
-        .map_err(|error| error.to_string())
-    })?;
-    ensure_success("commit from fixture app container", &output)?;
-    Ok(())
+    .output()
+    .unwrap();
+    assert_eq!(output.status.success(), exists, "{reference}");
 }

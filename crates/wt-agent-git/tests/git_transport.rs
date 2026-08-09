@@ -5,12 +5,23 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 use wt_agent_git::{read_json_line, write_json_line, ControlRequest, ControlResponse};
 
-struct Process(Child);
+struct Process(Option<Child>);
+
+impl Process {
+    fn stop(mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
 
 impl Drop for Process {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -38,38 +49,36 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     let transport = temp.path().join("transport.sock");
     let relay_socket = temp.path().join("relay.sock");
     let state = temp.path().join("state.json");
-    let gateway = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway"))
-        .args([
-            "serve",
-            "--control-socket",
-            control.to_str().unwrap(),
-            "--transport-socket",
-            transport.to_str().unwrap(),
-            "--state-file",
-            state.to_str().unwrap(),
-            "--local-provider",
-            &format!("local.test={}", repositories.display()),
-            "--no-vsock",
-        ])
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
-    let _gateway = Process(gateway);
+    let mut gateway = spawn_gateway(&control, &transport, &state, &repositories);
     wait_for(&control);
     wait_for(&transport);
 
-    let mut stream = UnixStream::connect(&control).unwrap();
-    write_json_line(
-        &mut stream,
-        &ControlRequest::Reserve {
-            world_id: "world-1".to_owned(),
-            source: "git@local.test:project.git".to_owned(),
-            base: "main".to_owned(),
-            prefix: "df1/".to_owned(),
-        },
-    )
-    .unwrap();
-    let response: ControlResponse = read_json_line(&mut stream).unwrap();
+    let response = reserve(
+        &control,
+        "unconfigured",
+        "git@other.test:project.git",
+        "main",
+        "other/",
+    );
+    assert!(!response.ok);
+    assert!(response.error.unwrap().contains("is not configured"));
+    let response = reserve(
+        &control,
+        "missing-base",
+        "git@local.test:project.git",
+        "missing",
+        "missing/",
+    );
+    assert!(!response.ok);
+    assert!(response.error.unwrap().contains("does not exist"));
+
+    let response = reserve(
+        &control,
+        "world-1",
+        "git@local.test:project.git",
+        "main",
+        "df1/",
+    );
     assert!(response.ok, "{:?}", response.error);
     let grant = response.grant.unwrap();
     let grant_file = temp.path().join("grant");
@@ -85,9 +94,10 @@ fn normal_git_uses_the_scoped_gateway_transport() {
             transport.to_str().unwrap(),
         ])
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let _relay = Process(relay);
+    let _relay = Process(Some(relay));
     wait_for(&relay_socket);
 
     let checkout = temp.path().join("checkout");
@@ -116,11 +126,16 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     git(&checkout, &["switch", "-c", "df1/fix"]);
     fs::write(checkout.join("README.md"), "first\n").unwrap();
     git(&checkout, &["commit", "-am", "first"]);
-    assert_success(&git_output(
+    let published = git_output(
         &checkout,
         &["push", "-u", "origin", "df1/fix"],
         &relay_socket,
-    ));
+    );
+    assert_success(&published);
+    let diagnostics = String::from_utf8_lossy(&published.stderr);
+    assert!(diagnostics.contains("This is a WT-managed development environment"));
+    assert!(diagnostics.contains("Published branch `df1/fix`"));
+    assert!(diagnostics.contains("ag-git open-mr"));
     assert_ref(&upstream, "refs/heads/df1/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();
@@ -157,12 +172,75 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     assert!(!rejected.status.success());
     assert_ref(&upstream, "refs/tags/v1", false);
 
-    assert_success(&git_output(
+    let deleted = git_output(
         &checkout,
         &["push", "origin", "--delete", "df1/fix"],
         &relay_socket,
-    ));
+    );
+    assert_success(&deleted);
+    assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `df1/fix`"));
     assert_ref(&upstream, "refs/heads/df1/fix", false);
+
+    gateway.stop();
+    gateway = spawn_gateway(&control, &transport, &state, &repositories);
+    assert_success(&git_output(&checkout, &["fetch", "origin"], &relay_socket));
+
+    let mut stream = UnixStream::connect(&control).unwrap();
+    write_json_line(&mut stream, &ControlRequest::Revoke { grant_id: grant.id }).unwrap();
+    let response: ControlResponse = read_json_line(&mut stream).unwrap();
+    assert!(response.ok, "{:?}", response.error);
+    let rejected = git_output(&checkout, &["fetch", "origin"], &relay_socket);
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("invalid or revoked"),
+        "{}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    drop(gateway);
+}
+
+fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &Path) -> Process {
+    let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway"))
+        .args([
+            "serve",
+            "--control-socket",
+            control.to_str().unwrap(),
+            "--transport-socket",
+            transport.to_str().unwrap(),
+            "--state-file",
+            state.to_str().unwrap(),
+            "--local-provider",
+            &format!("local.test={}", repositories.display()),
+            "--no-vsock",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_listener(control);
+    wait_for_listener(transport);
+    Process(Some(child))
+}
+
+fn reserve(
+    control: &Path,
+    world_id: &str,
+    source: &str,
+    base: &str,
+    prefix: &str,
+) -> ControlResponse {
+    let mut stream = UnixStream::connect(control).unwrap();
+    write_json_line(
+        &mut stream,
+        &ControlRequest::Reserve {
+            world_id: world_id.to_owned(),
+            source: source.to_owned(),
+            base: base.to_owned(),
+            prefix: prefix.to_owned(),
+        },
+    )
+    .unwrap();
+    read_json_line(&mut stream).unwrap()
 }
 
 fn git(directory: &Path, args: &[&str]) {
@@ -226,6 +304,18 @@ fn git_stdout(directory: &Path, args: &[&str]) -> String {
 fn wait_for(path: &Path) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn wait_for_listener(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while UnixStream::connect(path).is_err() {
         assert!(
             Instant::now() < deadline,
             "timed out waiting for {}",

@@ -12,6 +12,7 @@ client: wt + OpenSSH
                             │
                      wt-server daemon
                        ├─ SQLite lifecycle registry
+                       ├─ Unix socket ── agent Git gateway ── Git provider
                        └─ wt-provider composite lifecycle
                           ├─ wt-libvirt
                           │  └─ KVM machine + QEMU guest transport
@@ -29,6 +30,7 @@ client: wt + OpenSSH
 | `wt-server` | Unix-socket API daemon, registry, and world-operation coordination |
 | `wt-provider` | Provider-neutral guest transport, embedded install flows, world provisioning, and composite lifecycle |
 | `wt-libvirt` | KVM machine creation, inspection, destruction, and QEMU guest-agent transport |
+| `wt-agent-git` | Scoped Git transport, provider authentication, and `ag-git` behavior |
 | `wt-server-setup` | Embedded host setup, runtime config, golden image, and registry cache |
 | `wt-guest` | Persistent app session and app SSH proxy helpers |
 
@@ -42,18 +44,15 @@ the daemon and registry records.
 | Operation | Result |
 |-----------|--------|
 | `create` | Create and prepare a guest through SSH readiness |
-| `fork` | Fork a running owned world on this server from a shared disk point |
 | `list` | Return the owner's worlds and SSH inventory |
 | `get` | Return one owned world |
 | `delete` | Destroy one owned world |
 
 The create operation returns when the guest is ready for setup. The client then
-replaces `wt new` with the first app-shell SSH connection, which forwards the
-workstation agent and runs the remaining installation inside Byobu, including
-Docker/Dev Container tooling verification and startup. Output remains visible
-in the pane and in a guest-local log, and post-clone work survives client
-disconnects. List, get, and sync reconcile the completion marker into the
-running state.
+replaces `wt new` with the first app-shell SSH connection. That session runs the
+remaining installation inside Byobu, cloning through the gateway before it
+starts the devcontainer. Output remains visible in the pane and in a guest-local
+log. List, get, and sync reconcile the completion marker into the running state.
 
 ## Data and trust
 
@@ -62,7 +61,8 @@ running state.
 - Runtime server config: `/etc/wt/server.toml`.
 - User registry: `~/.local/state/wt/instances.db`.
 - Checkout in each world: `/workspace`.
-- Git private keys and passphrases never cross the API or enter server state.
+- Provider keys and tokens stay in encrypted systemd credentials owned by the
+  agent Git gateway. Worlds receive only scoped gateway access.
 - Client-to-server, server-to-Git, guest, and app SSH identities have distinct
   roles.
 

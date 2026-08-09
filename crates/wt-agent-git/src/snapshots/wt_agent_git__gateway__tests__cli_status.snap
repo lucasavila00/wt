@@ -1,0 +1,14 @@
+---
+source: crates/wt-agent-git/src/gateway.rs
+expression: "cli_output(&[], Some(\"df1/fix-login\"), &grant)"
+---
+WT agent Git
+
+Project: git@github.com:group/project.git
+Current branch: df1/fix-login
+Required branch prefix: df1/
+Request base: main
+
+Pull or merge request, review, and CI commands are not available in this build yet.
+Normal Git fetch, pull, and push are available now.
+Run `ag-git --help` to see the command contract.

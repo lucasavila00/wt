@@ -44,6 +44,7 @@ host = "github.com"
 api_token_file = "~/.config/wt/credentials/github.token"
 ssh_private_key_file = "~/.ssh/id_ed25519"
 ssh_public_key_file = "~/.ssh/id_ed25519.pub"
+ssh_known_hosts_file = "~/.ssh/known_hosts"
 ```
 
 `DEVELOPMENT.md` tells the developer to create the token file outside the

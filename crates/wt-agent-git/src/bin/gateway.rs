@@ -4,7 +4,9 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use wt_agent_git::{Gateway, GatewayConfig, Provider, VsockListener, VSOCK_PORT};
+use wt_agent_git::{
+    Gateway, GatewayConfig, Provider, ProviderKind, VsockListener, CONTROL_SOCKET, VSOCK_PORT,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-git-gateway")]
@@ -16,12 +18,16 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve {
-        #[arg(long, default_value = "/run/wt/agent-git-control.sock")]
+        #[arg(long, default_value = CONTROL_SOCKET)]
         control_socket: PathBuf,
         #[arg(long, default_value = "/var/lib/wt/agent-git/state.json")]
         state_file: PathBuf,
         #[arg(long, value_parser = parse_local_provider)]
         local_provider: Vec<(String, PathBuf)>,
+        #[arg(long, value_parser = parse_ssh_provider)]
+        github_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
+        #[arg(long, value_parser = parse_ssh_provider)]
+        gitlab_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
         #[arg(long)]
         transport_socket: Option<PathBuf>,
         #[arg(long, default_value_t = VSOCK_PORT)]
@@ -43,14 +49,35 @@ fn run() -> Result<()> {
         control_socket,
         state_file,
         local_provider,
+        github_provider,
+        gitlab_provider,
         transport_socket,
         vsock_port,
         no_vsock,
     } = Cli::parse().command;
-    let providers = local_provider
+    let mut providers: Vec<_> = local_provider
         .into_iter()
         .map(|(host, repositories)| Provider::Local { host, repositories })
         .collect();
+    providers.extend(
+        [
+            (ProviderKind::GitHub, github_provider),
+            (ProviderKind::GitLab, gitlab_provider),
+        ]
+        .into_iter()
+        .filter_map(|(kind, provider)| provider.map(|provider| (kind, provider)))
+        .map(
+            |(kind, (host, api_token_file, private_key_file, known_hosts_file))| Provider::Ssh {
+                kind,
+                host,
+                user: "git".to_owned(),
+                port: None,
+                api_token_file,
+                private_key_file,
+                known_hosts_file,
+            },
+        ),
+    );
     let gateway = Gateway::open(GatewayConfig {
         state_file,
         providers,
@@ -144,4 +171,25 @@ fn parse_local_provider(value: &str) -> Result<(String, PathBuf), String> {
         ));
     }
     Ok((host.to_owned(), path))
+}
+
+fn parse_ssh_provider(value: &str) -> Result<(String, PathBuf, PathBuf, PathBuf), String> {
+    let (host, files) = value
+        .split_once('=')
+        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
+    let (api_token, files) = files
+        .split_once(',')
+        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
+    let (private_key, known_hosts) = files
+        .split_once(',')
+        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
+    if host.is_empty() || api_token.is_empty() || private_key.is_empty() || known_hosts.is_empty() {
+        return Err("expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned());
+    }
+    Ok((
+        host.to_owned(),
+        PathBuf::from(api_token),
+        PathBuf::from(private_key),
+        PathBuf::from(known_hosts),
+    ))
 }

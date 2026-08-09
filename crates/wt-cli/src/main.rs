@@ -9,7 +9,7 @@ use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
-use wt_api::{ApiRequest, CreateInstance, ForkInstance, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, Operation, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
@@ -27,8 +27,6 @@ enum Command {
     New,
     /// List worlds across every configured context.
     Ls,
-    /// Fork a running world using copy-on-write storage.
-    Fork { source: String, name: String },
     /// Remove a world.
     Rm { name: String },
     /// Open a world in VS Code Remote-SSH.
@@ -59,8 +57,7 @@ fn run() -> Result<()> {
                 &ApiRequest::new(Operation::Create(CreateInstance {
                     name: input.name.clone(),
                     source: input.source,
-                    git_branch: input.git_branch,
-                    git_ref: input.git_ref,
+                    git_base: input.git_base,
                     git_user_name: input.git_user_name,
                     git_user_email: input.git_user_email,
                     vcpus: input.vcpus,
@@ -122,31 +119,6 @@ fn run() -> Result<()> {
                 );
             }
         }
-        Command::Fork { source, name } => {
-            let (context, source, name) = resolve_fork_targets(&config, &source, &name)?;
-            let spinner = cliclack::spinner();
-            spinner.start("Forking world");
-            let response = wt_cli::transport::call(
-                context,
-                &ApiRequest::new(Operation::Fork(ForkInstance { source, name })),
-            );
-            match &response {
-                Ok(_) => spinner.stop("World forked"),
-                Err(_) => spinner.error("World fork did not complete"),
-            }
-            let response = response?;
-            let Response::Instance { instance } = response else {
-                bail!("helper returned the wrong response to fork");
-            };
-            warn_if_sync_skipped(&config)?;
-            println!(
-                "{}.{}\t{}\t{}",
-                context.name,
-                instance.name,
-                instance.status,
-                instance.guest_ip.as_deref().unwrap_or("-")
-            );
-        }
         Command::Rm { name } => {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
             let response = wt_cli::transport::call(
@@ -187,8 +159,7 @@ struct CreateInput {
     context: String,
     name: wt_api::InstanceName,
     source: String,
-    git_branch: Option<String>,
-    git_ref: Option<String>,
+    git_base: String,
     vcpus: u32,
     memory_mib: u64,
     disk_gib: u64,
@@ -272,24 +243,19 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
         })
         .interact()
         .map_err(prompt_error)?;
-    let revision_value: String = cliclack::input("Revision")
-        .default_input("default")
-        .placeholder("default, branch:NAME, or ref:VALUE")
-        .validate(|value: &String| parse_revision(value).map(|_| ()))
+    let git_base: String = cliclack::input("Base branch")
+        .placeholder("main")
+        .validate(|value: &String| {
+            wt_api::validate_git_branch(value).map_err(|error| error.to_string())
+        })
         .interact()
         .map_err(prompt_error)?;
-    let revision = parse_revision(&revision_value)?;
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
     let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
     let disk_gib = prompt_number("Disk (GiB)", DEFAULT_DISK_GIB)?;
     let keys = discover_public_keys()?;
-    let revision_summary = match &revision {
-        (Some(branch), None) => format!("branch:{branch}"),
-        (None, Some(reference)) => format!("ref:{reference}"),
-        _ => "default".to_owned(),
-    };
     let mut summary = format!(
-        "World       {name}\nContext     {context}\nRepository  {source}\nRevision    {revision_summary}\nGit author  {} <{}>\nResources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
+        "World       {name}\nContext     {context}\nRepository  {source}\nBase branch {git_base}\nGit author  {} <{}>\nResources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
         git_author.name,
         git_author.email,
         keys.len()
@@ -310,8 +276,7 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
         context,
         name,
         source,
-        git_branch: revision.0,
-        git_ref: revision.1,
+        git_base,
         vcpus,
         memory_mib,
         disk_gib,
@@ -342,22 +307,6 @@ where
         })
         .interact()
         .map_err(prompt_error)
-}
-
-fn parse_revision(value: &str) -> Result<(Option<String>, Option<String>)> {
-    if value == "default" {
-        return Ok((None, None));
-    }
-    if let Some(branch) = value
-        .strip_prefix("branch:")
-        .filter(|value| !value.is_empty())
-    {
-        return Ok((Some(branch.to_owned()), None));
-    }
-    if let Some(reference) = value.strip_prefix("ref:").filter(|value| !value.is_empty()) {
-        return Ok((None, Some(reference.to_owned())));
-    }
-    bail!("Use default, branch:NAME, or ref:VALUE.")
 }
 
 fn discover_public_keys() -> Result<Vec<(String, String)>> {
@@ -602,25 +551,6 @@ fn resolve_operation_target<'a>(
     Ok((context, selected.instance.name.clone()))
 }
 
-fn resolve_fork_targets<'a>(
-    config: &'a ClientConfig,
-    source: &str,
-    destination: &str,
-) -> Result<(&'a Context, wt_api::InstanceName, wt_api::InstanceName)> {
-    let (source_context, source_name) = resolve_operation_target(config, source)?;
-    let (destination_context, destination_name) = inventory::parse_target(config, destination)?;
-    if let Some(destination_context) = destination_context {
-        if destination_context.name != source_context.name {
-            bail!(
-                "cannot fork across contexts: source is on {} and destination is on {}",
-                source_context.name,
-                destination_context.name
-            );
-        }
-    }
-    Ok((source_context, source_name, destination_name))
-}
-
 fn warn_if_sync_skipped(config: &ClientConfig) -> Result<()> {
     let report = inventory::list_all(config);
     if report.failures.is_empty() {
@@ -670,6 +600,8 @@ mod tests {
                 owner: "tester".to_owned(),
                 status,
                 source: "git@example.test:repo.git".to_owned(),
+                git_base: "main".to_owned(),
+                git_prefix: format!("{name}/"),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
@@ -735,64 +667,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_fork_source_and_name() {
-        let cli = Cli::try_parse_from(["wt", "fork", "ars.jsdev", "ars.experiment"]).unwrap();
-        let Command::Fork { source, name } = cli.command else {
-            panic!("expected fork command");
-        };
-        assert_eq!(source, "ars.jsdev");
-        assert_eq!(name, "ars.experiment");
-    }
-
-    #[test]
-    fn fork_destinations_must_use_the_source_context() {
-        let config = ClientConfig {
-            contexts: vec![
-                Context {
-                    name: "ars".into(),
-                    kind: wt_cli::config::ContextKind::BareMetalLocal,
-                },
-                Context {
-                    name: "lab".into(),
-                    kind: wt_cli::config::ContextKind::BareMetalSsh {
-                        host: "wt-lab".into(),
-                    },
-                },
-            ],
-        };
-        let (context, source, destination) = resolve_fork_targets(&config, "ars.w1", "w2").unwrap();
-        assert_eq!(context.name, "ars");
-        assert_eq!(source.as_str(), "w1");
-        assert_eq!(destination.as_str(), "w2");
-
-        let (context, source, destination) =
-            resolve_fork_targets(&config, "ars.w1", "ars.w2").unwrap();
-        assert_eq!(context.name, "ars");
-        assert_eq!(source.as_str(), "w1");
-        assert_eq!(destination.as_str(), "w2");
-
-        let error = resolve_fork_targets(&config, "ars.w1", "lab.w2")
-            .unwrap_err()
-            .to_string();
-        insta::assert_snapshot!(error, @"cannot fork across contexts: source is on ars and destination is on lab");
-    }
-
-    #[test]
     fn new_is_interactive_only() {
         assert!(matches!(
             Cli::try_parse_from(["wt", "new"]).unwrap().command,
             Command::New
         ));
         assert!(Cli::try_parse_from(["wt", "new", "git@example.test:repo.git"]).is_err());
-        assert_eq!(
-            parse_revision("branch:work").unwrap(),
-            (Some("work".to_owned()), None)
-        );
-        assert_eq!(
-            parse_revision("ref:0123456789abcdef").unwrap(),
-            (None, Some("0123456789abcdef".to_owned()))
-        );
-        assert_eq!(parse_revision("default").unwrap(), (None, None));
     }
 
     #[test]

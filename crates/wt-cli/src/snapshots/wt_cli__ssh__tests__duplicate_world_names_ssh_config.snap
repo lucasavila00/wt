@@ -29,7 +29,6 @@ Host local.same
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='local.same - repo' /usr/local/bin/wt-app-shell
 
@@ -45,7 +44,6 @@ Host local.same-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.same-host /usr/local/bin/wt-app-proxy
 
@@ -76,7 +74,6 @@ Host lab.same
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   ProxyJump wt-server
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.same - repo' /usr/local/bin/wt-app-shell
 
@@ -92,6 +89,5 @@ Host lab.same-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.same-host /usr/local/bin/wt-app-proxy

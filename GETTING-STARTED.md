@@ -39,7 +39,8 @@ cp examples/server-config/wt-server.development.toml ./server.toml
 
 Edit `server.toml`. At minimum, check:
 
-- `git.known_hosts_file`: trusted Git host keys.
+- `agent_git`: at least one provider with its API token, SSH key pair, and
+  trusted host keys.
 - `image.build_memory_mib`, `image.build_vcpus`, and `image.build_disk_gib`:
   temporary resources used to build the golden image.
 - `registry_cache.registries`: registry hosts whose public images are cached.
@@ -52,7 +53,7 @@ scripts/install-server --config ./server.toml
 
 If setup changes group membership, log out, log back in, and run the same command
 again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`
-and installs and starts `wt-server.service`. Keep the install input for future
+and installs and starts the WT services. Keep the install input for future
 reinstalls. Reinstalling restarts the daemon; do not reinstall while a world is
 provisioning.
 

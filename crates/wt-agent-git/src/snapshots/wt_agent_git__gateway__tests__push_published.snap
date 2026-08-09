@@ -1,0 +1,10 @@
+---
+source: crates/wt-agent-git/src/gateway.rs
+expression: "push_success_message(&command(&\"a\".repeat(40),\n\"refs/heads/df1/fix-login\")).unwrap()"
+---
+Published branch `df1/fix-login`.
+This branch does not have a pull or merge request.
+Open one for review:
+  ag-git open-mr
+Or open it as a draft:
+  ag-git open-mr --draft

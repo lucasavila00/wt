@@ -1,23 +1,76 @@
 use crate::operations::Operations;
 use crate::store::{Store, StoreError, StoredInstance};
 use uuid::Uuid;
-use wt_api::{
-    ApiError, CreateInstance, ErrorCode, ForkInstance, Instance, InstanceStatus, Operation,
-    Response,
-};
+use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
 use wt_provider::WorldWorker;
 
-pub struct Service<W> {
+pub trait AgentGitGateway {
+    fn reserve(
+        &self,
+        world_id: Uuid,
+        source: &str,
+        base: &str,
+        prefix: &str,
+    ) -> Result<wt_agent_git::Grant, String>;
+    fn revoke(&self, grant_id: &str) -> Result<(), String>;
+}
+
+impl AgentGitGateway for wt_agent_git::ControlClient {
+    fn reserve(
+        &self,
+        world_id: Uuid,
+        source: &str,
+        base: &str,
+        prefix: &str,
+    ) -> Result<wt_agent_git::Grant, String> {
+        let response = self
+            .request(&wt_agent_git::ControlRequest::Reserve {
+                world_id: world_id.to_string(),
+                source: source.to_owned(),
+                base: base.to_owned(),
+                prefix: prefix.to_owned(),
+            })
+            .map_err(|error| error.to_string())?;
+        if response.ok {
+            response
+                .grant
+                .ok_or_else(|| "gateway reserve response has no grant".to_owned())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "gateway rejected grant".to_owned()))
+        }
+    }
+
+    fn revoke(&self, grant_id: &str) -> Result<(), String> {
+        let response = self
+            .request(&wt_agent_git::ControlRequest::Revoke {
+                grant_id: grant_id.to_owned(),
+            })
+            .map_err(|error| error.to_string())?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
+        }
+    }
+}
+
+pub struct Service<W, G> {
     store: Store,
     worker: W,
+    gateway: G,
     operations: Operations,
 }
 
-impl<W: WorldWorker> Service<W> {
-    pub fn new(store: Store, worker: W, operations: Operations) -> Self {
+impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
+    pub fn new(store: Store, worker: W, gateway: G, operations: Operations) -> Self {
         Self {
             store,
             worker,
+            gateway,
             operations,
         }
     }
@@ -28,7 +81,10 @@ impl<W: WorldWorker> Service<W> {
         }
         match operation {
             Operation::Create(request) => self.create(owner, request),
-            Operation::Fork(request) => self.fork(owner, request),
+            Operation::Fork(_) => Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "worlds cannot be forked",
+            )),
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
@@ -39,19 +95,14 @@ impl<W: WorldWorker> Service<W> {
         if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
             return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
         }
-        if request.git_branch.is_some() && request.git_ref.is_some() {
-            return Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "Git branch and ref are mutually exclusive",
-            ));
-        }
+        wt_api::validate_git_branch(&request.git_base)
+            .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
         wt_api::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = serde_json::to_string(&(
             &request.source,
-            &request.git_branch,
-            &request.git_ref,
+            &request.git_base,
             &request.git_user_name,
             &request.git_user_email,
             request.vcpus,
@@ -87,15 +138,22 @@ impl<W: WorldWorker> Service<W> {
             Err(error) => return Err(map_store_error(error)),
         }
         let id = Uuid::new_v4();
+        let git_prefix = format!("{}/", request.name);
+        let grant = self
+            .gateway
+            .reserve(id, &request.source, &request.git_base, &git_prefix)
+            .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
         let disk_id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let stored = StoredInstance {
             instance: Instance {
                 id,
-                name: request.name,
+                name: request.name.clone(),
                 owner: owner.to_owned(),
                 status: InstanceStatus::Provisioning,
                 source: request.source,
+                git_base: request.git_base,
+                git_prefix,
                 vcpus: request.vcpus,
                 memory_mib: request.memory_mib,
                 disk_gib: request.disk_gib,
@@ -107,8 +165,12 @@ impl<W: WorldWorker> Service<W> {
             backend_id,
             head_disk_id: disk_id,
             setup_fingerprint,
+            gateway_grant_id: grant.id.clone(),
         };
         if let Err(error) = self.store.insert(&stored) {
+            if let Err(cleanup) = self.gateway.revoke(&grant.id) {
+                eprintln!("wt-server: revoke unused Git grant: {cleanup}");
+            }
             return Err(map_store_error(error));
         }
 
@@ -119,8 +181,8 @@ impl<W: WorldWorker> Service<W> {
             owner,
             name: &stored.instance.name,
             source: &stored.instance.source,
-            git_branch: request.git_branch.as_deref(),
-            git_ref: request.git_ref.as_deref(),
+            git_base: &stored.instance.git_base,
+            git_grant: &grant.token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
             memory_mib: request.memory_mib,
@@ -147,6 +209,12 @@ impl<W: WorldWorker> Service<W> {
                         stored.instance.name
                     );
                 }
+                if let Err(cleanup) = self.gateway.revoke(&grant.id) {
+                    eprintln!(
+                        "wt-server: revoke failed create Git grant {}: {cleanup}",
+                        stored.instance.name
+                    );
+                }
                 return Err(ApiError::new(ErrorCode::Backend, error.to_string()));
             }
         }
@@ -158,170 +226,6 @@ impl<W: WorldWorker> Service<W> {
         Ok(Response::Instance {
             instance: Box::new(instance),
         })
-    }
-
-    fn fork(&self, owner: &str, request: ForkInstance) -> Result<Response, ApiError> {
-        if request.source == request.name {
-            return Err(ApiError::new(
-                ErrorCode::Conflict,
-                "fork destination already exists",
-            ));
-        }
-        let _source_operation = self.operations.lock(owner, &request.source);
-        let _destination_operation = self
-            .operations
-            .try_lock(owner, &request.name)
-            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
-
-        let source = self
-            .store
-            .get(owner, &request.source)
-            .map_err(map_store_error)?;
-        self.reconcile(&source)?;
-        let source = self
-            .store
-            .get(owner, &request.source)
-            .map_err(map_store_error)?;
-        if source.instance.status != InstanceStatus::Running {
-            return Err(ApiError::new(
-                ErrorCode::Conflict,
-                format!(
-                    "source world must be running; {} is {}",
-                    request.source, source.instance.status
-                ),
-            ));
-        }
-        match self.store.get(owner, &request.name) {
-            Ok(_) => {
-                return Err(ApiError::new(
-                    ErrorCode::Conflict,
-                    "fork destination already exists",
-                ));
-            }
-            Err(StoreError::NotFound) => {}
-            Err(error) => return Err(map_store_error(error)),
-        }
-
-        let id = Uuid::new_v4();
-        let source_head_disk_id = Uuid::new_v4();
-        let fork_disk_id = Uuid::new_v4();
-        let backend_id = format!("wt-{}", id.simple());
-        let fork = StoredInstance {
-            instance: Instance {
-                id,
-                name: request.name,
-                owner: owner.to_owned(),
-                status: InstanceStatus::Provisioning,
-                source: source.instance.source.clone(),
-                vcpus: source.instance.vcpus,
-                memory_mib: source.instance.memory_mib,
-                disk_gib: source.instance.disk_gib,
-                guest_ip: None,
-                last_error: None,
-                ssh: None,
-                app_ssh: None,
-            },
-            backend_id,
-            head_disk_id: fork_disk_id,
-            setup_fingerprint: format!("fork:{}", source.instance.id),
-        };
-        self.store
-            .reserve_fork(
-                source.instance.id,
-                source.head_disk_id,
-                source_head_disk_id,
-                &fork,
-            )
-            .map_err(map_store_error)?;
-        let spec = wt_provider::ForkSpec {
-            source_backend_id: &source.backend_id,
-            source_disk_id: source.head_disk_id,
-            source_head_disk_id,
-            backend_id: &fork.backend_id,
-            disk_id: fork_disk_id,
-            memory_mib: fork.instance.memory_mib,
-            vcpus: fork.instance.vcpus,
-            disk_gib: fork.instance.disk_gib,
-        };
-        let world = match self.worker.fork(&spec, &mut std::io::stderr()) {
-            Ok(world) => world,
-            Err(error) => {
-                self.cleanup_failed_fork(
-                    &source,
-                    &fork,
-                    source_head_disk_id,
-                    error.source_pivoted(),
-                );
-                return Err(ApiError::new(ErrorCode::Backend, error.to_string()));
-            }
-        };
-        let Some(app_ssh) = &world.app_ssh else {
-            self.cleanup_failed_fork(&source, &fork, source_head_disk_id, true);
-            return Err(ApiError::new(
-                ErrorCode::Backend,
-                "fork verification did not find the running app SSH service",
-            ));
-        };
-        let same_guest_identity = source
-            .instance
-            .ssh
-            .as_ref()
-            .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-        let same_app_identity = source
-            .instance
-            .app_ssh
-            .as_ref()
-            .is_some_and(|ssh| ssh.host_keys == app_ssh.host_keys);
-        if same_guest_identity || same_app_identity {
-            self.cleanup_failed_fork(&source, &fork, source_head_disk_id, true);
-            return Err(ApiError::new(
-                ErrorCode::Backend,
-                "fork retained a source SSH host identity",
-            ));
-        }
-        self.store
-            .mark_running(id, &world.guest_ip, &world.ssh, app_ssh)
-            .map_err(map_store_error)?;
-        let instance = self
-            .store
-            .get(owner, &fork.instance.name)
-            .map_err(map_store_error)?
-            .instance;
-        Ok(Response::Instance {
-            instance: Box::new(instance),
-        })
-    }
-
-    fn cleanup_failed_fork(
-        &self,
-        source: &StoredInstance,
-        fork: &StoredInstance,
-        source_head_disk_id: Uuid,
-        source_pivoted: bool,
-    ) {
-        let mut disks = vec![fork.head_disk_id];
-        if !source_pivoted {
-            disks.push(source_head_disk_id);
-        }
-        if let Err(error) = self.worker.destroy(&fork.backend_id, &disks) {
-            eprintln!(
-                "wt-server: clean up failed fork {}: {error}",
-                fork.instance.name
-            );
-        }
-        if let Err(error) = self.store.discard_fork(
-            source.instance.id,
-            source.head_disk_id,
-            source_head_disk_id,
-            fork.instance.id,
-            fork.head_disk_id,
-            source_pivoted,
-        ) {
-            eprintln!(
-                "wt-server: clean up failed fork registry {}: {error}",
-                fork.instance.name
-            );
-        }
     }
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
@@ -408,6 +312,9 @@ impl<W: WorldWorker> Service<W> {
             .try_lock(owner, name)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        self.gateway
+            .revoke(&stored.gateway_grant_id)
+            .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;

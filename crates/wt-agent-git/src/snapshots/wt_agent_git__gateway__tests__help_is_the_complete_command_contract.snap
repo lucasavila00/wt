@@ -1,0 +1,34 @@
+---
+source: crates/wt-agent-git/src/gateway.rs
+expression: HELP
+---
+ag-git manages the pull or merge request for the current WT branch.
+
+USAGE:
+ag-git [COMMAND] [OPTIONS]
+
+Run `ag-git` with no command to show the current branch, request, reviews, and CI.
+
+COMMANDS:
+open-mr [--draft]       Open or show the branch's pull or merge request
+ready                   Mark the request ready for review
+draft                   Return the request to draft
+comment TEXT            Add a request comment
+edit [--title TEXT] [--body TEXT]
+review                  Show review threads and their handles
+reply HANDLE TEXT       Reply to a review thread
+resolve HANDLE          Resolve a review thread
+reopen HANDLE           Reopen a review thread
+reviewers [add|remove] [USER...]
+assignees [add|remove] [USER...]
+labels [add|remove] [LABEL...]
+ci                      Show CI jobs for the current commit
+log JOB                 Show one CI job's log
+retry JOB               Retry a CI job when the provider allows it
+cancel JOB              Cancel a CI job when the provider allows it
+wait                    Wait for review or CI state to change
+close                   Close the request
+reopen-mr               Reopen the request
+help                    Show this help
+
+Use normal Git for commits, fetches, pulls, and pushes.

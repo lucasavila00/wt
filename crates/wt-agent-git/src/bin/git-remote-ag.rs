@@ -64,6 +64,9 @@ fn run() -> Result<()> {
                 .unwrap_or("gateway rejected Git operation")
         );
     }
+    if let Some(message) = response.message {
+        eprint!("{message}");
+    }
     writeln!(output)?;
     output.flush()?;
     drop(input);

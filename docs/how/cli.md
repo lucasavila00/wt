@@ -25,17 +25,12 @@ host = "wt-server"
 The client resolves `context.world` directly. It resolves a short name only when
 the name is unique across all contexts.
 
-`wt fork SOURCE NEW` resolves both operands with the same rules. An unqualified
-`NEW` inherits the resolved source context. A qualified destination must name
-that same context; the client rejects cross-context forks before contacting a
-server.
-
 ## World setup
 
-`wt new` requires a terminal and guides the user through interactive prompts. World name and Git
-repository are required. Context, revision, CPU, RAM, disk, and confirmation
-have defaults. The client validates every answer and reads all regular
-`~/.ssh/*.pub` files before it sends one complete create request.
+`wt new` requires a terminal and guides the user through interactive prompts.
+World name, Git repository, and base branch are required. Context, CPU, RAM,
+disk, and confirmation have defaults. The client validates every answer and
+reads all regular `~/.ssh/*.pub` files before it sends one create request.
 
 The request owns the world resources and authorized keys. The server config
 owns only infrastructure, image-build settings, trust, and timeouts.
@@ -45,11 +40,26 @@ CPU/RAM/disk resources, and any lifecycle error. Guest IP addresses
 and raw SSH endpoints are omitted because managed world aliases are the client
 connection interface.
 
-After the guest and its SSH endpoint are ready, `wt new` synchronizes the SSH
-inventory and replaces itself with `ssh CONTEXT.NAME`. That connection forwards
-the workstation SSH agent and starts the remaining install inside Byobu.
-Reconnect with `ssh NAME` to attach to the same session and retry a failed
-installer with the newly forwarded agent socket.
+The server gives the world a scoped gateway grant, clones through the gateway,
+and finishes the devcontainer setup. After the guest SSH endpoint is ready,
+`wt new` synchronizes the SSH inventory and replaces itself with
+`ssh CONTEXT.NAME`. Reconnect with `ssh NAME` to attach to the same Byobu
+session.
+
+## Git inside a world
+
+Every checkout uses an `ag::` origin. Normal `git fetch`, `git pull`, and
+`git push` go through the local guest relay; the world has no provider key or
+token. A world named `df1` can push branches under `df1/`:
+
+```bash
+git switch -c df1/fix-login
+git push
+```
+
+The gateway rejects other branch namespaces and tags. Run `ag-git` for the
+current branch's pull or merge request, reviews, and CI, or `ag-git --help` for
+the complete command list.
 
 ## VS Code launch
 
@@ -78,9 +88,10 @@ Include ~/.ssh/wt/config
 `~/.ssh/wt/known_hosts`; it does not edit the main SSH config.
 
 Qualified aliases always exist. Short aliases exist only for globally unique
-names. Host keys are pinned. Guest and app aliases use `ForwardAgent yes` so
-the workstation agent is available inside the devcontainer. Running worlds
-add the app alias.
+names. Host keys are pinned. Generated aliases do not forward the workstation
+SSH agent. A developer may explicitly use `ssh -A NAME-host` for the guest or
+`ssh -A NAME-vs` for the devcontainer; WT does not relay that agent through the
+`NAME` Byobu path. Running worlds add the app alias.
 
 Guest aliases for `bare_metal_ssh` contexts use the context's configured
 OpenSSH host as a `ProxyJump`. OpenSSH connects to that server and asks it to

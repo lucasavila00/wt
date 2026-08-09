@@ -22,9 +22,11 @@ pub struct GatewayConfig {
 #[derive(Clone, Debug)]
 pub enum Provider {
     Ssh {
+        kind: ProviderKind,
         host: String,
         user: String,
         port: Option<u16>,
+        api_token_file: PathBuf,
         private_key_file: PathBuf,
         known_hosts_file: PathBuf,
     },
@@ -32,6 +34,12 @@ pub enum Provider {
         host: String,
         repositories: PathBuf,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderKind {
+    GitHub,
+    GitLab,
 }
 
 impl Provider {
@@ -123,12 +131,20 @@ impl Gateway {
                 return Ok(());
             }
         };
-        crate::write_json_line(&mut stream, &TransportResponse::ok())?;
+        let response = match &request.operation {
+            ClientOperation::Git { .. } => {
+                TransportResponse::with_message(git_context_header(&grant))
+            }
+            ClientOperation::Cli { .. } => TransportResponse::ok(),
+        };
+        crate::write_json_line(&mut stream, &response)?;
         match request.operation {
             ClientOperation::Git { service, source } => {
                 self.serve_git(stream, service, &source, &grant)
             }
-            ClientOperation::Cli { args } => self.serve_cli(stream, &args, &grant),
+            ClientOperation::Cli { args, branch } => {
+                self.serve_cli(stream, &args, branch.as_deref(), &grant)
+            }
         }
     }
 
@@ -143,20 +159,34 @@ impl Gateway {
             bail!("invalid gateway grant scope");
         }
         let parsed = parse_source(source)?;
-        self.provider(&parsed.host)?;
+        let provider = self.provider(&parsed.host)?;
+        {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
+            if let Some(existing) = state.grants.iter().find(|grant| grant.world_id == world_id) {
+                if existing.source != source || existing.base != base || existing.prefix != prefix {
+                    bail!("world already reserved with a different Git scope");
+                }
+                return Ok(ControlResponse::ok(Some(Grant {
+                    id: existing.id.clone(),
+                    token: existing.token.clone(),
+                })));
+            }
+            if state
+                .grants
+                .iter()
+                .any(|grant| !grant.revoked && grant.source == source && grant.prefix == prefix)
+            {
+                bail!("branch prefix {prefix} is already reserved for this project");
+            }
+        }
+        verify_repository(provider, &parsed, base)?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if let Some(existing) = state.grants.iter().find(|grant| grant.world_id == world_id) {
-            if existing.source != source || existing.base != base || existing.prefix != prefix {
-                bail!("world already reserved with a different Git scope");
-            }
-            return Ok(ControlResponse::ok(Some(Grant {
-                id: existing.id.clone(),
-                token: existing.token.clone(),
-            })));
-        }
         if state
             .grants
             .iter()
@@ -192,6 +222,9 @@ impl Gateway {
             .iter_mut()
             .find(|grant| grant.id == id)
             .ok_or_else(|| anyhow::anyhow!("gateway grant not found"))?;
+        if grant.revoked {
+            return Ok(ControlResponse::ok(None));
+        }
         grant.revoked = true;
         self.save(&state)?;
         Ok(ControlResponse::ok(None))
@@ -275,27 +308,40 @@ impl Gateway {
                 .context("Git service has no stdin")?
                 .write_all(&commands)
                 .context("forward push commands")?;
+            let sideband = push_uses_sideband(&commands)?;
+            let message = push_success_message(&commands)?;
+            return bridge_child(stream, child, sideband.then_some(message.as_bytes()));
         }
-        bridge_child(stream, child)
+        bridge_child(stream, child, None)
     }
 
     fn serve_cli<S: DuplexStream>(
         &self,
         mut stream: S,
         args: &[String],
+        branch: Option<&str>,
         grant: &GrantRecord,
     ) -> Result<()> {
-        let output = if args == ["--help"] || args == ["-h"] {
-            HELP.to_owned()
-        } else {
-            format!(
-                "WT agent Git environment\n\nProject: {}\nBranch prefix: {}\nPull or merge request support is not installed yet.\nRun `ag-git --help` to see the command contract.\n",
-                grant.source, grant.prefix
-            )
-        };
+        let output = cli_output(args, branch, grant);
         stream
             .write_all(output.as_bytes())
             .context("write ag-git output")
+    }
+}
+
+fn cli_output(args: &[String], branch: Option<&str>, grant: &GrantRecord) -> String {
+    if args == ["--help"] || args == ["-h"] || args == ["help"] {
+        HELP.to_owned()
+    } else if args.is_empty() {
+        format!(
+            "WT agent Git\n\nProject: {}\nCurrent branch: {}\nRequired branch prefix: {}\nRequest base: {}\n\nPull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n",
+            grant.source,
+            branch.unwrap_or("detached HEAD"),
+            grant.prefix,
+            grant.base,
+        )
+    } else {
+        "ag-git: pull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n".to_owned()
     }
 }
 
@@ -305,6 +351,25 @@ fn valid_host(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
         })
+}
+
+fn git_context_header(grant: &GrantRecord) -> String {
+    let project = parse_source(&grant.source)
+        .map(|source| source.path.trim_end_matches(".git").to_owned())
+        .unwrap_or_else(|_| grant.source.clone());
+    format!(
+        "remote: This is a WT-managed development environment for a coding agent.\n\
+remote: The developer's SSH keys and GitHub or GitLab credentials are not available here.\n\
+remote: Do not look for credentials or use gh or glab.\n\
+remote: WT gives you scoped access to project {project}.\n\
+remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
+remote: Every branch you push must start with {}. Pull or merge requests target {}.\n\
+remote: ag-git is the installed CLI for pull or merge requests, reviews, and CI.\n\
+remote: Run ag-git for the current branch's status and suggested next actions.\n\
+remote: Run ag-git --help to discover every available command.\n\
+remote:\n",
+        grant.prefix, grant.base
+    )
 }
 
 fn valid_prefix(value: &str) -> bool {
@@ -411,7 +476,60 @@ fn spawn_git(provider: &Provider, source: &GitSource, service: GitService) -> Re
         .with_context(|| format!("start {}", service.command()))
 }
 
-fn bridge_child<S: DuplexStream>(mut stream: S, mut child: Child) -> Result<()> {
+fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Result<()> {
+    let mut child = spawn_git(provider, source, GitService::UploadPack)
+        .context("open Git repository with the configured gateway key")?;
+    let mut advertisement = Vec::new();
+    let result = copy_packet_section(
+        child.stdout.as_mut().context("Git service has no stdout")?,
+        &mut advertisement,
+    );
+    let _ = child.kill();
+    let _ = child.wait();
+    result.with_context(|| {
+        format!(
+            "the gateway SSH key cannot read repository {} on {}",
+            source.path, source.host
+        )
+    })?;
+    let expected = format!("refs/heads/{base}");
+    if !packet_lines(&advertisement)?.any(|line| {
+        line.split(|byte| byte.is_ascii_whitespace() || *byte == 0)
+            .nth(1)
+            == Some(expected.as_bytes())
+    }) {
+        bail!("Git base branch `{base}` does not exist");
+    }
+    Ok(())
+}
+
+fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>> {
+    let mut offset = 0;
+    let mut lines = Vec::new();
+    while offset + 4 <= section.len() {
+        let length = usize::from_str_radix(
+            std::str::from_utf8(&section[offset..offset + 4]).context("decode Git packet")?,
+            16,
+        )
+        .context("parse Git packet")?;
+        offset += 4;
+        if length == 0 {
+            break;
+        }
+        if length < 4 || offset + length - 4 > section.len() {
+            bail!("invalid Git packet section");
+        }
+        lines.push(&section[offset..offset + length - 4]);
+        offset += length - 4;
+    }
+    Ok(lines.into_iter())
+}
+
+fn bridge_child<S: DuplexStream>(
+    mut stream: S,
+    mut child: Child,
+    progress: Option<&[u8]>,
+) -> Result<()> {
     let mut request_stream = stream.try_clone_stream().context("clone gateway stream")?;
     let shutdown = stream.try_clone_stream().context("clone gateway stream")?;
     let mut child_stdin = child.stdin.take().context("Git service has no stdin")?;
@@ -434,7 +552,28 @@ fn bridge_child<S: DuplexStream>(mut stream: S, mut child: Child) -> Result<()> 
         result
     });
     let mut child_stdout = child.stdout.take().context("Git service has no stdout")?;
-    let response = std::io::copy(&mut child_stdout, &mut stream);
+    let response = if let Some(progress) = progress {
+        let mut response = Vec::new();
+        child_stdout
+            .read_to_end(&mut response)
+            .context("read Git response")?;
+        if let Some(body) = response.strip_suffix(b"0000") {
+            stream.write_all(body).context("forward Git response")?;
+            let mut packet = Vec::with_capacity(progress.len() + 1);
+            packet.push(2);
+            packet.extend_from_slice(progress);
+            write_packet(&mut stream, &packet)?;
+            stream.write_all(b"0000").context("finish Git response")?;
+        } else {
+            stream
+                .write_all(&response)
+                .context("forward Git response")?;
+        }
+        stream.flush().context("flush Git response")?;
+        Ok(response.len() as u64)
+    } else {
+        std::io::copy(&mut child_stdout, &mut stream)
+    };
     let _ = shutdown.shutdown_stream(Shutdown::Both);
     let request = request
         .join()
@@ -551,7 +690,7 @@ fn push_commands(section: &[u8]) -> Result<Vec<(String, String)>> {
         if fields.next().is_some() || !valid_object_id(old) || !valid_object_id(new) {
             bail!("invalid Git push command");
         }
-        commands.push((reference.to_owned(), reference.to_owned()));
+        commands.push((new.to_owned(), reference.to_owned()));
     }
     if commands.is_empty() {
         bail!("Git push did not contain a ref update");
@@ -561,6 +700,24 @@ fn push_commands(section: &[u8]) -> Result<Vec<(String, String)>> {
 
 fn valid_object_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn push_success_message(section: &[u8]) -> Result<String> {
+    let mut message = String::new();
+    for (new, reference) in push_commands(section)? {
+        let branch = reference
+            .strip_prefix("refs/heads/")
+            .context("validated push contains a non-branch ref")?;
+        if new.bytes().all(|byte| byte == b'0') {
+            message.push_str(&format!("Deleted branch `{branch}`.\n"));
+        } else {
+            message.push_str(&format!("Published branch `{branch}`.\n"));
+            message.push_str("This branch does not have a pull or merge request.\n");
+            message.push_str("Open one for review:\n  ag-git open-mr\n");
+            message.push_str("Or open it as a draft:\n  ag-git open-mr --draft\n");
+        }
+    }
+    Ok(message)
 }
 
 fn reject_push(stream: &mut impl Write, section: &[u8], reason: &str) -> Result<()> {
@@ -624,10 +781,14 @@ COMMANDS:\n\
     ready                   Mark the request ready for review\n\
     draft                   Return the request to draft\n\
     comment TEXT            Add a request comment\n\
+    edit [--title TEXT] [--body TEXT]\n\
     review                  Show review threads and their handles\n\
     reply HANDLE TEXT       Reply to a review thread\n\
     resolve HANDLE          Resolve a review thread\n\
     reopen HANDLE           Reopen a review thread\n\
+    reviewers [add|remove] [USER...]\n\
+    assignees [add|remove] [USER...]\n\
+    labels [add|remove] [LABEL...]\n\
     ci                      Show CI jobs for the current commit\n\
     log JOB                 Show one CI job's log\n\
     retry JOB               Retry a CI job when the provider allows it\n\
@@ -666,5 +827,60 @@ mod tests {
         assert!(validate_push(&command("refs/heads/df1/fix"), "df1/").is_ok());
         assert!(validate_push(&command("refs/heads/fix"), "df1/").is_err());
         assert!(validate_push(&command("refs/tags/v1"), "df1/").is_err());
+    }
+
+    #[test]
+    fn help_is_the_complete_command_contract() {
+        insta::assert_snapshot!(HELP);
+    }
+
+    #[test]
+    fn git_header_explains_the_environment_without_prior_context() {
+        let grant = test_grant();
+        insta::assert_snapshot!(git_context_header(&grant));
+    }
+
+    #[test]
+    fn cli_status_and_unavailable_command_are_actionable() {
+        let grant = test_grant();
+        insta::assert_snapshot!("cli_status", cli_output(&[], Some("df1/fix-login"), &grant));
+        insta::assert_snapshot!(
+            "cli_unavailable",
+            cli_output(&["open-mr".to_owned()], Some("df1/fix-login"), &grant)
+        );
+    }
+
+    #[test]
+    fn push_messages_cover_publish_delete_and_rejection() {
+        let command = |new: &str, reference: &str| {
+            let payload = format!("{} {new} {reference}\0report-status\n", "0".repeat(40));
+            format!("{:04x}{payload}0000", payload.len() + 4).into_bytes()
+        };
+        insta::assert_snapshot!(
+            "push_published",
+            push_success_message(&command(&"a".repeat(40), "refs/heads/df1/fix-login")).unwrap()
+        );
+        insta::assert_snapshot!(
+            "push_deleted",
+            push_success_message(&command(&"0".repeat(40), "refs/heads/df1/fix-login")).unwrap()
+        );
+        insta::assert_snapshot!(
+            "push_rejected",
+            validate_push(&command(&"a".repeat(40), "refs/heads/fix-login"), "df1/")
+                .unwrap_err()
+                .to_string()
+        );
+    }
+
+    fn test_grant() -> GrantRecord {
+        GrantRecord {
+            id: "id".to_owned(),
+            token: "token".to_owned(),
+            world_id: "world".to_owned(),
+            source: "git@github.com:group/project.git".to_owned(),
+            base: "main".to_owned(),
+            prefix: "df1/".to_owned(),
+            revoked: false,
+        }
     }
 }

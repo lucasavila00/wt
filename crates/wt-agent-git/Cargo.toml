@@ -31,4 +31,5 @@ socket2 = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = "3.27.0"
