@@ -2,7 +2,8 @@
 
 Keep the transport and CLI from milestone 1. Add GitHub authentication and the
 provider implementation inside the gateway. Validate the configured API
-identity and repository permissions before creating a GitHub world.
+identity and repository permissions before creating a world for a GitHub
+repository.
 
 Implement the operations in this order:
 

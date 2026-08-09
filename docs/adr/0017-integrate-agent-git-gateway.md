@@ -1,26 +1,27 @@
-# ADR 0017: Give agent worlds scoped Git access
+# ADR 0017: Give every world scoped Git access
 
 - Status: Proposed
 - Date: 2026-08-09
 
 ## Context
 
-WT normally forwards the developer's SSH agent into a world. Agent worlds must
-not inherit access to the developer's SSH credentials or provider permissions.
+WT currently forwards the developer's SSH agent into every world. That gives
+code in the world the developer's Git access and makes safe automation harder.
 
 Agents still need to push code, open a pull or merge request, respond to
 reviews, and work through CI failures.
 
 ## Decision
 
-Add an agent mode to `wt new`. Normal worlds keep the existing SSH-agent flow.
+Use the gateway for every world. Remove SSH-agent forwarding from the normal
+world setup; there is no legacy mode or opt-out.
 
 Build and release the gateway, guest relay, `git-remote-ag`, and `ag-git` in the
 WT monorepo. `wt-server-setup` installs and manages every component. The systemd
 service layout is internal to WT.
 
-Agent mode requires a branch revision. That branch becomes the immutable base
-for the world's pull or merge requests.
+`wt new` requires a branch revision. That branch becomes the immutable base for
+the world's pull or merge requests.
 
 ## Local transport
 
@@ -58,7 +59,7 @@ selected project, base branch, and world name. World setup stores it on the
 private disk, outside the checkout, and starts the relay.
 
 Worlds never receive the developer's SSH keys or provider credentials. WT does
-not forward the workstation's SSH agent into an agent world. Using `ssh -A`
+not forward the workstation's SSH agent during world setup. Using `ssh -A`
 explicitly bypasses this isolation and gives the world access to that agent.
 
 The gateway is the central trust boundary. `wt-server-setup` configures provider
@@ -115,7 +116,7 @@ Git renders the same gateway header with `remote:` in place of `WT:`.
 Checking out an invalid branch explains the rule and the fix:
 
 ```text
-WT: This agent world can only push branches that start with `df1/`.
+WT: This world can only push branches that start with `df1/`.
 WT: Rename the current branch before pushing:
 WT:   git branch -m df1/fix-login
 ```
@@ -172,4 +173,4 @@ Comments use the gateway's provider identity and include the world name.
 intact. Recreating the same world for the same project gets a new token and
 continues the existing namespace.
 
-`wt fork` rejects agent worlds because it would copy their token and namespace.
+`wt fork` is unavailable because it would copy a world's token and namespace.

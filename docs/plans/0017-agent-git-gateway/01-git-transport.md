@@ -1,13 +1,13 @@
 # Milestone 1: Git transport and world integration
 
-This milestone makes normal Git work from an agent world. It does not call a
+This milestone makes normal Git work from every world. It does not call a
 GitHub or GitLab API.
 
 Implement it in this order:
 
-1. Add agent mode to the client request, server state, and world lifecycle.
-   Require a branch base and record the project, base, world prefix, and gateway
-   grant. Reject `wt fork` for agent worlds.
+1. Replace the current SSH-agent Git path in the client request, server state,
+   and world lifecycle. Require a branch base and record the project, base,
+   world prefix, and gateway grant. Reject `wt fork` for every world.
 2. Add the gateway, guest relay, `git-remote-ag`, and `ag-git` to the workspace
    and installer as unconditional WT components. Connect `wt-server` to the
    gateway by Unix socket and each guest relay to it by KVM vsock.
@@ -16,7 +16,7 @@ Implement it in this order:
    provider is not configured.
 4. Issue one revocable gateway grant when a world is created. Store it on the
    world's private disk outside the checkout. Revoke it before deleting the
-   world. Do not forward the developer's SSH agent into an agent world.
+   world. Do not forward the developer's SSH agent during world setup.
 5. Configure `origin` with an `ag::` URL. Stream the real Git protocol through
    the remote helper, relay, and gateway so ordinary `git fetch`, `git pull`,
    and `git push` work.
@@ -39,8 +39,8 @@ The test also runs the real WT server, VM, guest relay, devcontainer, and Git
 client.
 
 The test uses no network service, SSH agent, GitHub or GitLab account, SSH key,
-or provider credential. It must prove that an agent world can clone, fetch,
-push, force-push, and delete its own branch with normal Git. It must also prove:
+or provider credential. It must prove that a world can clone, fetch, push,
+force-push, and delete its own branch with normal Git. It must also prove:
 
 - another prefix and tags are rejected;
 - a rejected push leaves the upstream unchanged;

@@ -19,7 +19,8 @@ migrations, configuration compatibility, or upgrade paths for the pre-ADR
 system.
 
 `ag-git`, `git-remote-ag`, the guest relay, and the gateway are always built and
-installed. There is no feature flag.
+installed. Every world uses them. There is no feature flag, legacy Git path, or
+opt-out.
 
 ## Provider configuration
 
