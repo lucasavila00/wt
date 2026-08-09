@@ -54,9 +54,19 @@ project and world name. The gateway manages Forgejo and publishes branches to
 GitHub or GitLab. The world connects to Forgejo through Git. `wt-server` does
 not call the gateway or any Git provider.
 
-WT sends the fork credential through the setup SSH connection. The credential
-stays on the world's private disk, outside the checkout. WT does not write it to
-its database, logs, VM images, or shared disks.
+The client generates a new SSH keypair for the world. It gives the public key to
+the gateway and includes the private key in the world creation request.
+`wt-server` writes the private key to the world's private disk, outside the
+checkout. It does not write the key to its database, logs, VM images, or shared
+disks.
+
+The create request identifies the world as either a normal world, which uses the
+developer's forwarded SSH agent, or an agent world, which uses the supplied
+Forgejo remote and private key.
+
+The server is already trusted in WT's self-hosted model. Sending this disposable
+key through the existing protected API keeps world setup in one place without
+giving `wt-server` access to Forgejo.
 
 Agent worlds do not forward the workstation's SSH agent during setup or normal
 connections. A developer can still opt in for a connection with `ssh -A`.
