@@ -1,6 +1,6 @@
 # ADR 0017: Give every world scoped Git access
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-09
 - Supersedes: [ADR 0001](0001-agent-forwarded-first-ssh-provisioning.md)'s
   Git authentication and

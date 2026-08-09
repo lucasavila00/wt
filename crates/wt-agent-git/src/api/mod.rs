@@ -500,6 +500,19 @@ fn render_threads(threads: &[ReviewThread]) -> String {
             }
         }
     }
+    output.push_str("\nReply with `ag-git reply HANDLE TEXT`.\n");
+    if threads
+        .iter()
+        .any(|thread| thread.resolvable && !thread.resolved)
+    {
+        output.push_str("Resolve addressed feedback with `ag-git resolve HANDLE`.\n");
+    }
+    if threads
+        .iter()
+        .any(|thread| thread.resolvable && thread.resolved)
+    {
+        output.push_str("Reopen feedback with `ag-git reopen HANDLE`.\n");
+    }
     output
 }
 
@@ -507,7 +520,8 @@ fn render_jobs(jobs: &[CiJob]) -> String {
     if jobs.is_empty() {
         return "No CI jobs for the current commit.\n".to_owned();
     }
-    jobs.iter()
+    let mut output = jobs
+        .iter()
         .map(|job| {
             let url = job
                 .url
@@ -516,7 +530,11 @@ fn render_jobs(jobs: &[CiJob]) -> String {
                 .unwrap_or_default();
             format!("{} [{}] {}{url}\n", job.handle, job.state, job.name)
         })
-        .collect()
+        .collect::<String>();
+    output.push_str(
+        "\nInspect a job with `ag-git log JOB`. Retry or cancel it with `ag-git retry JOB` or `ag-git cancel JOB` when the provider allows it.\n",
+    );
+    output
 }
 
 fn no_args(rest: &[String], command: ProviderCommand, usage: &str) -> Result<ProviderCommand> {
@@ -683,6 +701,31 @@ mod tests {
         Mark it ready with `ag-git ready`.
         Read and answer review feedback with `ag-git review`.
         Inspect failures with `ag-git ci`, then `ag-git log JOB`.
+        "###);
+    }
+
+    #[test]
+    fn review_output_includes_actionable_commands() {
+        let threads = vec![ReviewThread {
+            handle: ReviewThreadHandle::new("T:thread-1"),
+            resolvable: true,
+            resolved: false,
+            path: Some("src/login.rs".to_owned()),
+            line: Some(42),
+            comments: vec![ReviewComment {
+                author: "reviewer".to_owned(),
+                body: "Handle this error.".to_owned(),
+                url: Some("https://github.test/thread-1".to_owned()),
+            }],
+        }];
+
+        insta::assert_snapshot!(render_threads(&threads), @r###"
+        T:thread-1 [open] src/login.rs:42
+          reviewer: Handle this error.
+          https://github.test/thread-1
+
+        Reply with `ag-git reply HANDLE TEXT`.
+        Resolve addressed feedback with `ag-git resolve HANDLE`.
         "###);
     }
 }
