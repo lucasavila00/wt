@@ -1,0 +1,11 @@
+mutation GitlabCreateMergeRequest($project: ID!, $branch: String!, $base: String!, $title: String!) {
+  mergeRequestCreate(input: {
+    projectPath: $project
+    sourceBranch: $branch
+    targetBranch: $base
+    title: $title
+  }) {
+    errors
+    mergeRequest { id iid webUrl }
+  }
+}

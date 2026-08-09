@@ -1,0 +1,40 @@
+query GitlabReadMergeRequest($project: ID!, $branches: [String!], $bases: [String!]) {
+  currentUser { username }
+  project(fullPath: $project) {
+    id
+    fullPath
+    mergeRequests(
+      sourceBranches: $branches
+      targetBranches: $bases
+      state: all
+      first: 10
+      sort: UPDATED_DESC
+    ) {
+      nodes {
+        id
+        iid
+        title
+        webUrl
+        state
+        draft
+        diffHeadSha
+        sourceBranch
+        targetBranch
+        discussions(first: 100) {
+          nodes {
+            id
+            resolved
+            resolvable
+            notes(first: 100) {
+              nodes {
+                author { username }
+                body
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

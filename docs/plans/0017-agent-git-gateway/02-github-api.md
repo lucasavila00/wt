@@ -5,8 +5,8 @@ gateway.
 
 ## API
 
-Use GitHub GraphQL for pull requests, reviews, threads, comments, reviewers,
-assignees, labels, and check status. Commit GitHub's
+Use GitHub GraphQL for pull requests, reviews, threads, comments, and check
+status. Commit GitHub's
 [public schema](https://docs.github.com/en/graphql/overview/public-schema) and
 the queries to the repository. Generate request and response types at compile
 time. Builds never download a schema or introspect GitHub.
@@ -25,8 +25,7 @@ crosses into command handling or user-visible output.
 2. Find, open, show, edit, draft, ready, close, and reopen the branch's pull
    request.
 3. Read, reply to, resolve, and reopen review threads. Add normal comments.
-4. Manage reviewers, assignees, and labels.
-5. Show checks and logs, control eligible Actions jobs, and wait for review or
+4. Show checks and logs, control eligible Actions jobs, and wait for review or
    CI state to change.
 
 Every request is rebuilt from the grant's project, base, prefix, and current

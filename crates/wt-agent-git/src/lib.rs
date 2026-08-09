@@ -1,3 +1,4 @@
+mod api;
 mod gateway;
 mod protocol;
 mod stream;

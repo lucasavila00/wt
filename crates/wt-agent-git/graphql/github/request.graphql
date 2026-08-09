@@ -1,0 +1,43 @@
+query GithubReadPullRequest($owner: String!, $name: String!, $branch: String!, $base: String!) {
+  viewer {
+    login
+  }
+  repository(owner: $owner, name: $name) {
+    id
+    nameWithOwner
+    viewerPermission
+    pullRequests(
+      headRefName: $branch
+      baseRefName: $base
+      states: [OPEN, CLOSED]
+      first: 10
+      orderBy: { field: UPDATED_AT, direction: DESC }
+    ) {
+      nodes {
+        id
+        number
+        url
+        title
+        state
+        isDraft
+        headRefOid
+        baseRefName
+        reviewDecision
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            path
+            line
+            comments(first: 100) {
+              nodes {
+                body
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+mutation GithubCreatePullRequest($repository: ID!, $base: String!, $branch: String!, $title: String!, $draft: Boolean!) {
+  createPullRequest(input: {
+    repositoryId: $repository
+    baseRefName: $base
+    headRefName: $branch
+    title: $title
+    body: ""
+    draft: $draft
+  }) {
+    pullRequest { id number url title state isDraft headRefOid baseRefName reviewDecision }
+  }
+}

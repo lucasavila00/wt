@@ -28,8 +28,7 @@ GitHub. A GitLab-specific exception belongs in the provider, not the CLI.
 2. Find, open, show, edit, draft, ready, close, and reopen the branch's merge
    request.
 3. Read, reply to, resolve, and reopen discussions. Add normal comments.
-4. Manage reviewers, assignees, and labels.
-5. Show pipelines, jobs, and traces; control eligible jobs; and wait for review
+4. Show pipelines, jobs, and traces; control eligible jobs; and wait for review
    or CI state to change.
 
 Every request is rebuilt from the grant's project, base, prefix, and current

@@ -1,5 +1,5 @@
 use crate::{
-    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
+    api, ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
@@ -321,10 +321,46 @@ impl Gateway {
         &self,
         args: &[String],
         branch: Option<&str>,
-        _head: Option<&str>,
+        head: Option<&str>,
         grant: &GrantRecord,
     ) -> Result<String> {
-        Ok(cli_output(args, branch, grant))
+        if args == ["--help"] || args == ["-h"] || args == ["help"] {
+            return Ok(HELP.to_owned());
+        }
+        let source = parse_source(&grant.source)?;
+        let provider = self.provider(&source.host)?;
+        let Provider::Ssh {
+            kind,
+            api_token_file,
+            ..
+        } = provider
+        else {
+            return Ok(cli_output(args, branch, grant));
+        };
+        let branch = branch.context("ag-git requires a branch checkout")?;
+        let head = head.context("ag-git requires a commit checkout")?;
+        if !branch.starts_with(&grant.prefix) || branch.len() == grant.prefix.len() {
+            bail!(
+                "branch `{branch}` must use this world's `{}` prefix; rename it with `git branch -m {}NAME`",
+                grant.prefix,
+                grant.prefix
+            );
+        }
+        if !valid_object_id(head) {
+            bail!("current Git commit is invalid");
+        }
+        let project = source.path.trim_end_matches(".git");
+        let command = api::ProviderCommand::parse(args)?;
+        let scope = api::ProviderCommandScope {
+            host: &source.host,
+            project,
+            base: &grant.base,
+            prefix: &grant.prefix,
+            branch,
+            head,
+        };
+        api::execute_provider_command(*kind, api_token_file, &scope, &command)
+            .map(|output| api::render_provider_command_output(output, &scope))
     }
 }
 
@@ -785,9 +821,6 @@ COMMANDS:\n\
     reply HANDLE TEXT       Reply to a review thread\n\
     resolve HANDLE          Resolve a review thread\n\
     reopen HANDLE           Reopen a review thread\n\
-    reviewers [add|remove] [USER...]\n\
-    assignees [add|remove] [USER...]\n\
-    labels [add|remove] [LABEL...]\n\
     ci                      Show CI jobs for the current commit\n\
     log JOB                 Show one CI job's log\n\
     retry JOB               Retry a CI job when the provider allows it\n\

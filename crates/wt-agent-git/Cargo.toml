@@ -25,9 +25,12 @@ path = "src/bin/ag-git.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 socket2 = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
