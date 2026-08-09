@@ -8,8 +8,8 @@
 
 ## Context
 
-WT currently forwards the developer's SSH agent into every world. That gives
-code in the world the developer's Git access and makes safe automation harder.
+WT forwarded the developer's SSH agent into every world. That gave code in the
+world the developer's Git access and made safe automation harder.
 
 Agents still need to push code, open a pull or merge request, respond to
 reviews, and work through CI failures.
@@ -76,6 +76,15 @@ Worlds never receive the developer's SSH keys or provider credentials.
 The gateway is the central trust boundary. `wt-server-setup` configures provider
 credentials once on the Linux host. If the gateway is unavailable, worlds can
 keep working locally but cannot fetch, push, or use `ag-git` until it returns.
+
+GitHub and GitLab are configured independently, and an installation needs at
+least one. WT selects the provider from the repository host and rejects a world
+before creation when that host is not configured.
+
+The installer reads each provider's API token, SSH key, and known-hosts file,
+validates them, and installs encrypted systemd credentials for the gateway.
+Their contents never enter WT configuration, command arguments, or environment
+variables.
 
 ## SSH agent forwarding
 
@@ -198,6 +207,11 @@ The gateway owns the provider workflow exposed through `ag-git`: opening or
 showing the request, addressing reviews, investigating or controlling CI, and
 waiting for review or CI changes. Its output uses short handles and shows the
 relevant next commands.
+
+Provider GraphQL operations compile against schemas committed to the WT
+repository. The gateway uses small typed REST calls only for operations GraphQL
+does not cover, such as CI logs and controls. Builds and tests never download a
+schema or contact GitHub or GitLab.
 
 The gateway enforces branch, request, review, and CI scope. The agent can prepare
 its request for human merge, but cannot merge or approve it, change its base,
