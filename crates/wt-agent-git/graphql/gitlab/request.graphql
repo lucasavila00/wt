@@ -3,6 +3,7 @@ query GitlabReadMergeRequest($project: ID!, $branches: [String!], $bases: [Strin
   project(fullPath: $project) {
     id
     fullPath
+    userPermissions { createMergeRequestIn }
     mergeRequests(
       sourceBranches: $branches
       targetBranches: $bases

@@ -162,6 +162,20 @@ impl GithubApi {
         })
     }
 
+    #[cfg(test)]
+    fn with_base_url(base_url: String, token: &str) -> Result<Self> {
+        Ok(Self {
+            graphql: ProviderHttpClient::new(
+                base_url.clone(),
+                token,
+                ProviderAuthentication::Github,
+            )?,
+            rest: ProviderHttpClient::new(base_url, token, ProviderAuthentication::Github)?,
+            graphql_path: "graphql",
+            rest_prefix: "",
+        })
+    }
+
     fn read_change_request_snapshot(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -342,6 +356,35 @@ impl GithubApi {
 }
 
 impl GitProviderApi for GithubApi {
+    fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
+        let (owner, name) = split_project(project)?;
+        let data = self.graphql.execute_graphql::<GithubReadPullRequest>(
+            self.graphql_path,
+            github_read_pull_request::Variables {
+                owner: owner.to_owned(),
+                name: name.to_owned(),
+                branch: "__wt_access_check__".to_owned(),
+                base: base.to_owned(),
+            },
+        )?;
+        let repository = data
+            .repository
+            .with_context(|| format!("GitHub repository {project} was not found"))?;
+        let permission = repository
+            .viewer_permission
+            .context("GitHub did not report repository permission")?;
+        if matches!(
+            permission,
+            github_read_pull_request::RepositoryPermission::WRITE
+                | github_read_pull_request::RepositoryPermission::MAINTAIN
+                | github_read_pull_request::RepositoryPermission::ADMIN
+        ) {
+            Ok(())
+        } else {
+            bail!("GitHub API credential cannot create pull requests in {project}")
+        }
+    }
+
     fn execute_command(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -543,4 +586,160 @@ fn title_from_branch(scope: &ProviderCommandScope<'_>) -> String {
         .strip_prefix(scope.prefix)
         .unwrap_or(scope.branch)
         .replace(['-', '_'], " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::test_server::{serve, ExpectedRequest};
+
+    const PULL_REQUEST_RESPONSE: &str = r#"{
+        "data": {
+            "viewer": { "login": "agent" },
+            "repository": {
+                "id": "repository-1",
+                "nameWithOwner": "acme/widget",
+                "viewerPermission": "WRITE",
+                "pullRequests": {
+                    "nodes": [{
+                        "id": "pull-request-7",
+                        "number": 7,
+                        "url": "https://github.test/acme/widget/pull/7",
+                        "title": "Fix login",
+                        "state": "OPEN",
+                        "isDraft": false,
+                        "headRefOid": "abc123",
+                        "baseRefName": "main",
+                        "reviewDecision": "CHANGES_REQUESTED",
+                        "reviewThreads": {
+                            "nodes": [{
+                                "id": "thread-1",
+                                "isResolved": false,
+                                "path": "src/login.rs",
+                                "line": 12,
+                                "comments": {
+                                    "nodes": [{
+                                        "author": { "__typename": "User", "login": "reviewer" },
+                                        "body": "Handle the error here.",
+                                        "url": "https://github.test/acme/widget/pull/7#discussion"
+                                    }]
+                                }
+                            }]
+                        }
+                    }]
+                }
+            }
+        }
+    }"#;
+
+    const NO_PULL_REQUEST_RESPONSE: &str = r#"{
+        "data": {
+            "viewer": { "login": "agent" },
+            "repository": {
+                "id": "repository-1",
+                "nameWithOwner": "acme/widget",
+                "viewerPermission": "WRITE",
+                "pullRequests": { "nodes": [] }
+            }
+        }
+    }"#;
+
+    #[test]
+    fn reads_pull_request_reviews_and_ci_from_local_fixture() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/graphql",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: Some("GithubReadPullRequest"),
+                response_content_type: "application/json",
+                response_body: PULL_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"workflow_runs":[{"id":91}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"jobs":[{"id":44,"name":"test","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}]}"#,
+            },
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+        let scope = scope();
+
+        let output = provider
+            .execute_command(&scope, &ProviderCommand::ReadCurrentStatus)
+            .unwrap();
+
+        let ProviderCommandOutput::CurrentStatus(Some(request)) = output else {
+            panic!("expected current pull request status");
+        };
+        assert_eq!(request.handle, "#7");
+        assert_eq!(request.threads[0].comments[0].author, "reviewer");
+        assert_eq!(request.jobs[0].handle, CiJobHandle::new("44"));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn opens_pull_request_through_typed_graphql_mutation() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/graphql",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: Some("GithubReadPullRequest"),
+                response_content_type: "application/json",
+                response_body: NO_PULL_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/graphql",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: Some("GithubCreatePullRequest"),
+                response_content_type: "application/json",
+                response_body: r#"{"data":{"createPullRequest":{"pullRequest":{"id":"pull-request-7","number":7,"url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"OPEN","isDraft":false,"headRefOid":"abc123","baseRefName":"main","reviewDecision":null}}}}"#,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/graphql",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: Some("GithubReadPullRequest"),
+                response_content_type: "application/json",
+                response_body: PULL_REQUEST_RESPONSE,
+            },
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::OpenChangeRequest { draft: false },
+            )
+            .unwrap();
+
+        let ProviderCommandOutput::ChangeRequest(request) = output else {
+            panic!("expected opened pull request");
+        };
+        assert_eq!(request.handle, "#7");
+        server.join().unwrap().unwrap();
+    }
+
+    fn scope() -> ProviderCommandScope<'static> {
+        ProviderCommandScope {
+            host: "github.test",
+            project: "acme/widget",
+            base: "main",
+            prefix: "df1/",
+            branch: "df1/fix-login",
+            head: "abc123",
+        }
+    }
 }

@@ -12,6 +12,8 @@
 mod github;
 mod gitlab;
 mod http;
+#[cfg(test)]
+mod test_server;
 
 use crate::ProviderKind;
 use anyhow::{bail, Result};
@@ -156,11 +158,31 @@ pub(crate) enum ProviderCommandOutput {
 }
 
 pub(crate) trait GitProviderApi {
+    fn verify_repository_access(&self, project: &str, base: &str) -> Result<()>;
+
     fn execute_command(
         &self,
         scope: &ProviderCommandScope<'_>,
         command: &ProviderCommand,
     ) -> Result<ProviderCommandOutput>;
+}
+
+pub(crate) fn verify_provider_access(
+    kind: ProviderKind,
+    token_file: &Path,
+    host: &str,
+    project: &str,
+    base: &str,
+) -> Result<()> {
+    let token = read_provider_token(token_file)?;
+    match kind {
+        ProviderKind::GitHub => {
+            github::GithubApi::new(host, &token)?.verify_repository_access(project, base)
+        }
+        ProviderKind::GitLab => {
+            gitlab::GitlabApi::new(host, &token)?.verify_repository_access(project, base)
+        }
+    }
 }
 
 fn wait_for_review_or_ci_change(
@@ -184,20 +206,25 @@ pub(crate) fn execute_provider_command(
     scope: &ProviderCommandScope<'_>,
     command: &ProviderCommand,
 ) -> Result<ProviderCommandOutput> {
+    let token = read_provider_token(token_file)?;
+    match kind {
+        ProviderKind::GitHub => {
+            github::GithubApi::new(scope.host, &token)?.execute_command(scope, command)
+        }
+        ProviderKind::GitLab => {
+            gitlab::GitlabApi::new(scope.host, &token)?.execute_command(scope, command)
+        }
+    }
+}
+
+fn read_provider_token(token_file: &Path) -> Result<String> {
     let token = std::fs::read_to_string(token_file)
         .map_err(|error| anyhow::anyhow!("read provider API credential: {error}"))?;
     let token = token.trim();
     if token.is_empty() {
         bail!("provider API credential is empty");
     }
-    match kind {
-        ProviderKind::GitHub => {
-            github::GithubApi::new(scope.host, token)?.execute_command(scope, command)
-        }
-        ProviderKind::GitLab => {
-            gitlab::GitlabApi::new(scope.host, token)?.execute_command(scope, command)
-        }
-    }
+    Ok(token.to_owned())
 }
 
 impl ProviderCommand {

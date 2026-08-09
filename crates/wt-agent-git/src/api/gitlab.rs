@@ -136,6 +136,13 @@ impl GitlabApi {
         })
     }
 
+    #[cfg(test)]
+    fn with_base_url(base_url: String, token: &str) -> Result<Self> {
+        Ok(Self {
+            http: ProviderHttpClient::new(base_url, token, ProviderAuthentication::Gitlab)?,
+        })
+    }
+
     fn read_change_request_snapshot(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -326,6 +333,25 @@ impl GitlabApi {
 }
 
 impl GitProviderApi for GitlabApi {
+    fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
+        let data = self.http.execute_graphql::<GitlabReadMergeRequest>(
+            "api/graphql",
+            gitlab_read_merge_request::Variables {
+                project: project.to_owned(),
+                branches: Some(vec!["__wt_access_check__".to_owned()]),
+                bases: Some(vec![base.to_owned()]),
+            },
+        )?;
+        let project_data = data
+            .project
+            .with_context(|| format!("GitLab project {project} was not found"))?;
+        if project_data.user_permissions.create_merge_request_in {
+            Ok(())
+        } else {
+            bail!("GitLab API credential cannot create merge requests in {project}")
+        }
+    }
+
     fn execute_command(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -591,4 +617,159 @@ fn title_from_branch(scope: &ProviderCommandScope<'_>) -> String {
         .strip_prefix(scope.prefix)
         .unwrap_or(scope.branch)
         .replace(['-', '_'], " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::test_server::{serve, ExpectedRequest};
+
+    const MERGE_REQUEST_RESPONSE: &str = r#"{
+        "data": {
+            "currentUser": { "username": "agent" },
+            "project": {
+                "id": "project-1",
+                "fullPath": "acme/widget",
+                "userPermissions": { "createMergeRequestIn": true },
+                "mergeRequests": {
+                    "nodes": [{
+                        "id": "merge-request-8",
+                        "iid": "8",
+                        "title": "Fix login",
+                        "webUrl": "https://gitlab.test/acme/widget/-/merge_requests/8",
+                        "state": "opened",
+                        "draft": false,
+                        "diffHeadSha": "abc123",
+                        "sourceBranch": "df1/fix-login",
+                        "targetBranch": "main",
+                        "discussions": {
+                            "nodes": [{
+                                "id": "discussion-1",
+                                "resolved": false,
+                                "resolvable": true,
+                                "notes": {
+                                    "nodes": [{
+                                        "author": { "username": "reviewer" },
+                                        "body": "Handle the error here.",
+                                        "url": "https://gitlab.test/acme/widget/-/merge_requests/8#note_1"
+                                    }]
+                                }
+                            }]
+                        }
+                    }]
+                }
+            }
+        }
+    }"#;
+
+    const NO_MERGE_REQUEST_RESPONSE: &str = r#"{
+        "data": {
+            "currentUser": { "username": "agent" },
+            "project": {
+                "id": "project-1",
+                "fullPath": "acme/widget",
+                "userPermissions": { "createMergeRequestIn": true },
+                "mergeRequests": { "nodes": [] }
+            }
+        }
+    }"#;
+
+    #[test]
+    fn reads_merge_request_discussions_and_ci_from_local_fixture() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: MERGE_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8/pipelines",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"[{"id":92,"sha":"abc123"}]"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/pipelines/92/jobs?include_retried=false&per_page=100",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"[{"id":45,"name":"test","status":"success","web_url":"https://gitlab.test/jobs/45"}]"#,
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+        let scope = scope();
+
+        let output = provider
+            .execute_command(&scope, &ProviderCommand::ReadCurrentStatus)
+            .unwrap();
+
+        let ProviderCommandOutput::CurrentStatus(Some(request)) = output else {
+            panic!("expected current merge request status");
+        };
+        assert_eq!(request.handle, "!8");
+        assert_eq!(request.threads[0].comments[0].author, "reviewer");
+        assert_eq!(request.jobs[0].handle, CiJobHandle::new("45"));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn opens_merge_request_through_typed_graphql_mutation() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: NO_MERGE_REQUEST_RESPONSE,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabCreateMergeRequest"),
+                response_content_type: "application/json",
+                response_body: r#"{"data":{"mergeRequestCreate":{"errors":[],"mergeRequest":{"id":"merge-request-8","iid":"8","webUrl":"https://gitlab.test/acme/widget/-/merge_requests/8"}}}}"#,
+            },
+            ExpectedRequest {
+                method: "POST",
+                path: "/api/graphql",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: Some("GitlabReadMergeRequest"),
+                response_content_type: "application/json",
+                response_body: MERGE_REQUEST_RESPONSE,
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::OpenChangeRequest { draft: false },
+            )
+            .unwrap();
+
+        let ProviderCommandOutput::ChangeRequest(request) = output else {
+            panic!("expected opened merge request");
+        };
+        assert_eq!(request.handle, "!8");
+        server.join().unwrap().unwrap();
+    }
+
+    fn scope() -> ProviderCommandScope<'static> {
+        ProviderCommandScope {
+            host: "gitlab.test",
+            project: "acme/widget",
+            base: "main",
+            prefix: "df1/",
+            branch: "df1/fix-login",
+            head: "abc123",
+        }
+    }
 }

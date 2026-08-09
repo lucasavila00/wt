@@ -535,6 +535,21 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
     }) {
         bail!("Git base branch `{base}` does not exist");
     }
+    if let Provider::Ssh {
+        kind,
+        api_token_file,
+        ..
+    } = provider
+    {
+        api::verify_provider_access(
+            *kind,
+            api_token_file,
+            &source.host,
+            source.path.trim_end_matches(".git"),
+            base,
+        )
+        .context("verify provider API access")?;
+    }
     Ok(())
 }
 
