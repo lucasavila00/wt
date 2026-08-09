@@ -20,6 +20,15 @@ Build and release the gateway, guest relay, `git-remote-ag`, and `ag-git` in the
 WT monorepo. `wt-server-setup` installs and manages every component. The systemd
 service layout is internal to WT.
 
+`ag-git` is a small POSIX shell frontend. It forwards its arguments and streams
+to the gateway; it does not implement provider behavior or carry the help text.
+The gateway owns commands, output, policy, and provider integrations. Updating
+the host services fixes every existing world without rebuilding it.
+
+The guest relay and `git-remote-ag` are stable transport shims. Ordinary
+gateway changes must not require changes inside a world. A transport protocol
+change may require `make clear` or `make nuke` and a rebuild.
+
 `wt new` requires a branch revision. That branch becomes the immutable base for
 the world's pull or merge requests.
 
@@ -155,9 +164,10 @@ Pushing only publishes the branch. `ag-git open-mr` opens a ready request
 against the world's base; `--draft` opens a draft. If a request already exists,
 the command shows it.
 
-`ag-git` owns the provider workflow: opening or showing the request, addressing
-reviews, investigating or controlling CI, and waiting for review or CI changes.
-Its output uses short handles and shows the relevant next commands.
+The gateway owns the provider workflow exposed through `ag-git`: opening or
+showing the request, addressing reviews, investigating or controlling CI, and
+waiting for review or CI changes. Its output uses short handles and shows the
+relevant next commands.
 
 The gateway enforces branch, request, review, and CI scope. The agent can prepare
 its request for human merge, but cannot merge or approve it, change its base,
