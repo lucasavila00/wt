@@ -13,8 +13,10 @@ reviews, and work through CI failures.
 
 ## Decision
 
-Use the gateway for every world. Remove SSH-agent forwarding from the normal
-world setup; there is no legacy mode or opt-out.
+Use the gateway for every world. Delete WT's SSH-agent forwarding code; there
+is no legacy mode or opt-out. Generated SSH config does not set `ForwardAgent`,
+world setup does not read `SSH_AUTH_SOCK`, and guests and devcontainers do not
+receive a forwarded socket.
 
 Build and release the gateway, guest relay, `git-remote-ag`, and `ag-git` in the
 WT monorepo. `wt-server-setup` installs and manages every component. The systemd
@@ -68,8 +70,11 @@ selected project, base branch, and world name. World setup stores it on the
 private disk, outside the checkout, and starts the relay.
 
 Worlds never receive the developer's SSH keys or provider credentials. WT does
-not forward the workstation's SSH agent during world setup. Using `ssh -A`
-explicitly bypasses this isolation and gives the world access to that agent.
+not configure, carry, or manage SSH-agent forwarding.
+
+WT does not block OpenSSH's own forwarding. A developer may explicitly run
+`ssh -A NAME`, but that is their connection and their responsibility. It
+bypasses WT's credential isolation and is outside the gateway contract.
 
 The gateway is the central trust boundary. `wt-server-setup` configures provider
 credentials once on the Linux host. If the gateway is unavailable, worlds can
