@@ -24,10 +24,16 @@ struct Worker {
     missing: bool,
     changed_guest_identity: bool,
     changed_app_identity: bool,
+    provision_error: bool,
 }
 
 #[derive(Clone, Default)]
 struct Gateway;
+
+#[derive(Clone, Default)]
+struct UnavailableGateway {
+    revocations: Arc<AtomicUsize>,
+}
 
 impl AgentGitGateway for Gateway {
     fn reserve(
@@ -48,6 +54,26 @@ impl AgentGitGateway for Gateway {
     }
 }
 
+impl AgentGitGateway for UnavailableGateway {
+    fn reserve(
+        &self,
+        world_id: Uuid,
+        _source: &str,
+        _base: &str,
+        _prefix: &str,
+    ) -> Result<wt_agent_git::Grant, String> {
+        Ok(wt_agent_git::Grant {
+            id: format!("grant-{world_id}"),
+            token: format!("token-{world_id}"),
+        })
+    }
+
+    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
+        self.revocations.fetch_add(1, Ordering::SeqCst);
+        Err("gateway unavailable".to_owned())
+    }
+}
+
 impl WorldWorker for Worker {
     fn provision(
         &self,
@@ -61,6 +87,9 @@ impl WorldWorker for Worker {
             while !*released {
                 released = wake.wait(released).unwrap();
             }
+        }
+        if self.provision_error {
+            return Err(WorkerError::new("provision failed"));
         }
         Ok(world(false))
     }
@@ -219,6 +248,55 @@ fn delete_removes_setup_world() {
         )
         .unwrap();
     assert_eq!(destroys.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_create_keeps_registry_until_grant_revocation_succeeds() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker {
+        provision_error: true,
+        ..Worker::default()
+    };
+    let gateway = UnavailableGateway::default();
+    let revocations = gateway.revocations.clone();
+    let error = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        worker.clone(),
+        gateway,
+        Operations::default(),
+    )
+    .execute("tester", Operation::Create(create("sample")))
+    .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Backend);
+    assert_eq!(error.message, "provision failed");
+    assert_eq!(revocations.load(Ordering::SeqCst), 1);
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
+
+    let stored = Store::open(&temp.path().join("instances.db"))
+        .unwrap()
+        .get("tester", &InstanceName::parse("sample").unwrap())
+        .unwrap();
+    assert_eq!(stored.instance.status, InstanceStatus::Error);
+    assert_eq!(
+        stored.instance.last_error.as_deref(),
+        Some("provision failed; Git grant revocation failed: gateway unavailable")
+    );
+
+    service(&temp, worker.clone())
+        .execute(
+            "tester",
+            Operation::Delete {
+                name: InstanceName::parse("sample").unwrap(),
+            },
+        )
+        .unwrap();
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        Store::open(&temp.path().join("instances.db"))
+            .unwrap()
+            .get("tester", &InstanceName::parse("sample").unwrap()),
+        Err(wt_server::store::StoreError::NotFound)
+    ));
 }
 
 #[test]

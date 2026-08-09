@@ -46,6 +46,19 @@ fn agent_git_transport_works_without_provider_credentials() {
     assert!(status.contains("Request base: updated-base"));
     harness.change_gateway_base("main");
 
+    run_guest(
+        &harness,
+        &name,
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-relay.service); kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done",
+        "restart the guest Git relay",
+    );
+    app(
+        &harness,
+        &name,
+        "git fetch origin",
+        "fetch through the restarted relay from the existing devcontainer",
+    );
+
     let branch = format!("{name}/fix-login");
     let output = app_command(
         &harness,

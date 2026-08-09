@@ -88,6 +88,7 @@ ExecStart=/usr/local/bin/wt-agent-git-relay
 Restart=on-failure
 RuntimeDirectory=wt-agent-git
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
 UMask=0077
 
 [Install]

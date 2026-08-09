@@ -174,7 +174,7 @@ pull or merge requests, reviews, and CI.
 ## Requirements and limits
 
 - Ubuntu 24.04 amd64 servers with KVM.
-- App images derived from Debian or Ubuntu with `apt`.
+- App images based on Ubuntu 24.04 or newer, or Debian 13 or newer, with `apt`.
 - The devcontainer configuration explicitly sets an existing `remoteUser`.
 - The stock devcontainer recipe remains the environment contract.
 - No KVM emulation fallback.

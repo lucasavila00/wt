@@ -81,10 +81,18 @@ GitHub and GitLab are configured independently, and an installation needs at
 least one. WT selects the provider from the repository host and rejects a world
 before creation when that host is not configured.
 
+Provider SSH endpoints use the standard `git@HOST` endpoint on port 22, and
+provider APIs use HTTPS on their standard host. Custom SSH ports and separate
+self-hosted API endpoints are outside this decision.
+
 The installer reads each provider's API token, SSH key, and known-hosts file,
 validates them, and installs encrypted systemd credentials for the gateway.
 Their contents never enter WT configuration, command arguments, or environment
 variables.
+
+This is a clean-install change. Moving from the pre-gateway server requires
+`make clear` or `make nuke`; WT does not migrate old worlds, gateway state, or
+the earlier database schema.
 
 ## SSH agent forwarding
 

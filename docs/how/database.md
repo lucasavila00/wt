@@ -44,4 +44,8 @@ This also regenerates `src/schema.rs`.
 Run `make clear` once when moving from the old `rusqlite` database. Later
 schema changes migrate automatically.
 
+An accepted ADR may explicitly require a clean install instead. ADR 0017 does:
+its branch rewrites the initial schema, and installations moving to it must run
+`make clear` or `make nuke`. WT does not migrate a pre-ADR-0017 database.
+
 See [ADR 0007](../adr/0007-use-diesel-for-registry-persistence.md).

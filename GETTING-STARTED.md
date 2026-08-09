@@ -99,7 +99,8 @@ Remove the world:
 wt rm local.repo-feature
 ```
 
-App images must be Debian- or Ubuntu-derived and support `apt`.
+App images must be based on Ubuntu 24.04 or newer, or Debian 13 or newer, and
+support `apt`.
 
 ## Use a remote server
 

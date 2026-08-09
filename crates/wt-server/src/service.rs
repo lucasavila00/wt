@@ -197,25 +197,35 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 .mark_setup(id, &world.guest_ip, &world.ssh)
                 .map_err(map_store_error)?,
             Err(error) => {
-                if let Err(cleanup) = self.worker.destroy(&stored.backend_id, &[disk_id]) {
+                let provisioning_error = error.to_string();
+                let cleanup = self
+                    .gateway
+                    .revoke(&grant.id)
+                    .map_err(|error| format!("Git grant revocation failed: {error}"))
+                    .and_then(|()| {
+                        self.worker
+                            .destroy(&stored.backend_id, &[disk_id])
+                            .map_err(|error| format!("world cleanup failed: {error}"))
+                    })
+                    .and_then(|()| {
+                        self.store
+                            .delete(id, &[disk_id])
+                            .map_err(|error| format!("registry cleanup failed: {error}"))
+                    });
+                if let Err(cleanup) = cleanup {
+                    let cleanup_error = format!("{provisioning_error}; {cleanup}");
                     eprintln!(
-                        "wt-server: clean up failed create {}: {cleanup}",
+                        "wt-server: failed create cleanup {}: {cleanup}",
                         stored.instance.name
                     );
+                    if let Err(store_error) = self.store.mark_error(id, &cleanup_error) {
+                        eprintln!(
+                            "wt-server: record failed create cleanup {}: {store_error}",
+                            stored.instance.name
+                        );
+                    }
                 }
-                if let Err(cleanup) = self.store.delete(id, &[disk_id]) {
-                    eprintln!(
-                        "wt-server: clean up failed create registry {}: {cleanup}",
-                        stored.instance.name
-                    );
-                }
-                if let Err(cleanup) = self.gateway.revoke(&grant.id) {
-                    eprintln!(
-                        "wt-server: revoke failed create Git grant {}: {cleanup}",
-                        stored.instance.name
-                    );
-                }
-                return Err(ApiError::new(ErrorCode::Backend, error.to_string()));
+                return Err(ApiError::new(ErrorCode::Backend, provisioning_error));
             }
         }
         let instance = self
