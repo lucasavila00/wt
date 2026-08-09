@@ -1,28 +1,27 @@
 # Agent Git gateway
 
-This is a temporary home for a standalone tool that gives agents a disposable
-Git workspace and synchronizes their owned branches to GitHub or GitLab.
+The agent Git gateway gives each agent its own private Forgejo fork and
+publishes its branches to GitHub or GitLab under a fixed namespace.
 
-The gateway knows about projects, workspaces, branch grants, and ref mappings.
-It does not know about WT, VMs, devcontainers, or any other runner. A runner
-creates a workspace, gives its agent the returned Git access, and revokes the
-workspace when the job ends.
-
-These documents can move to their own repository later without changing that
-boundary.
+The gateway is a standalone service. It knows about projects, Forgejo mirrors,
+private forks, public keys, and branch mappings. It does not know about WT, VMs,
+or devcontainers. WT is one client of the gateway.
 
 ## Flow
 
-1. A trusted runner selects a project and base ref.
-2. The gateway syncs its read-only mirror and creates a provisional workspace.
-3. The runner gives the workspace's Git-only credential to its agent.
-4. The agent works freely in the private fork.
-5. Branches under the workspace's reserved prefix sync to an external staging
-   fork.
-6. The runner isolates the workload. The gateway fences Git and sync, then
-   revokes the workspace. Synced branches remain.
+1. A client supplies a project, namespace, base branch, and public key. WT uses
+   the world name as the namespace.
+2. The gateway creates or reuses the private Forgejo fork for that project and
+   namespace, authorizes the public key, and returns the Git remotes.
+3. The agent uses the private fork as `origin` and the read-only project mirror
+   as `upstream`.
+4. A branch such as `fix-login` is published to the external project as
+   `<namespace>/fix-login`.
+5. Later pushes, force-pushes, and deletions update the same external branch.
 
-## Decisions
+The gateway never receives the private key and does not remove private forks or
+authorized public keys.
 
-- [ADR 0001: Isolate agent Git work in Forgejo](./adr/0001-isolate-agent-git-work-in-forgejo.md)
-- [ADR 0002: Sync agent branch namespaces](./adr/0002-sync-agent-branch-namespaces.md)
+## Decision
+
+- [ADR 0001: Provide private Forgejo forks and publish agent branches](./adr/0001-provide-private-forgejo-forks-and-publish-agent-branches.md)
