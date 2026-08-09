@@ -1,68 +1,67 @@
-# ADR 0017: Integrate the agent Git gateway from the WT client
+# ADR 0017: Add gateway-backed Git access to agent worlds
 
 - Status: Proposed
 - Date: 2026-08-09
 
 ## Context
 
-WT and the agent Git gateway are separate today. Creating a world does not
-create a gateway workspace, install its Git credential, publish agent branches,
-or revoke Git access when the world is removed.
+WT relies on the developer's forwarded SSH agent for all Git access. It uses the
+agent to clone the repository during setup and forwards it into the devcontainer
+for later Git commands.
 
-Doing those steps by hand would make the developer manage two lifecycles for
-one disposable environment.
+An agent therefore uses the developer's Git identity and permissions. WT cannot
+give the agent limited access or revoke that access independently.
 
 ## Developer experience
 
-Configure a gateway once. When creating an agent world, choose the gateway
-project and base branch. WT creates the matching Git workspace and installs its
-credential before the agent starts.
+Configure the gateway in WT once. When creating an agent world, choose a
+project and base branch in addition to the world name.
 
-The agent works with ordinary branch names:
+For a world named `df1`, WT creates a private Forgejo fork for that project and
+world name. It checks out the selected base branch, configures the fork as
+`origin`, and installs its credential. The agent does not need the developer's
+SSH agent to use this remote.
+
+The agent uses ordinary branch names inside the world:
 
 ```text
 git switch -c fix-login
 git push -u origin fix-login
 ```
 
-The gateway publishes that branch as `df1/fix-login`, using the world name as a
-fixed prefix. The same mapping applies to updates, force-pushes, and deletions.
-The agent never needs to know the prefix and cannot publish outside it. Tags are
-rejected.
+The gateway publishes `origin/fix-login` to the project's GitHub or GitLab
+repository as `df1/fix-login`. The `df1/` prefix comes from the world name and
+is added by the gateway. Pushing more commits, force-pushing, or deleting
+`origin/fix-login` updates the same branch in the project repository.
 
-Opening a pull or merge request remains a separate action.
+The agent cannot publish a branch without the `df1/` prefix, publish under
+another world's prefix, or push tags. Opening a pull or merge request remains a
+separate action.
 
-Removing the world also revokes its gateway workspace. Branches already
-published to GitHub or GitLab remain in the project repository. Gateway worlds
-cannot be copied with `wt fork`.
+Running `wt rm df1` deletes the world as usual. It does not delete the Forgejo
+fork, its branches, its identity, or its authorized public key. The private key
+installed by WT disappears with the world's disk.
 
-If creation or removal is interrupted, the developer can run it again from any
-authorized workstation. WT continues instead of creating a second workspace or
-leaving Git access behind.
+Creating another `df1` for the same project reuses the retained fork and
+installs a new credential. Existing credentials remain authorized. `wt fork`
+rejects agent worlds because it must not copy a Git credential or identity.
 
 ## Decision
 
-The `wt` client coordinates the WT and gateway operations. The gateway stays a
-separate service, and `wt-server` never needs access to Forgejo, GitHub, or
-GitLab.
+The gateway runs as a separate service. When creating an agent world, the `wt`
+client calls the gateway API to create or find the private Forgejo fork for the
+project and world name. The gateway manages Forgejo and publishes branches to
+GitHub or GitLab. The world connects to Forgejo through Git. `wt-server` does
+not call the gateway or any Git provider.
 
-WT passes the world's limited Git credential through the setup SSH connection.
-It stays on the world's private disk, outside the checkout, and is not written
-to WT state, logs, images, or shared disks. Agent worlds do not forward the
-workstation's SSH agent unless the developer explicitly connects with `ssh -A`.
+WT sends the fork credential through the setup SSH connection. The credential
+stays on the world's private disk, outside the checkout. WT does not write it to
+its database, logs, VM images, or shared disks.
 
-WT removes access before deleting the world. A removal that is waiting on the
-gateway leaves the world stopped and inaccessible. Once access is revoked, WT
-deletes the private disk.
+Agent worlds do not forward the workstation's SSH agent during setup or normal
+connections. A developer can still opt in for a connection with `ssh -A`.
+Normal worlds keep their existing agent-forwarding behavior.
 
-## Verification
-
-- Creating an agent world also creates and configures its gateway workspace.
-- Pushing `fix-login` from `df1` publishes only `df1/fix-login`.
-- Updates, force-pushes, and deletions follow the same branch mapping.
-- The agent cannot publish outside its prefix or push tags.
-- Retrying creation does not create a second gateway workspace.
-- Removing a world revokes its Git access before deleting its disk.
-- Interrupted creation and removal can be resumed safely.
-- The Git credential never appears in WT state, logs, images, shared disks, or
-  the checkout.
+`wt rm` uses the existing server deletion path and does not contact the gateway.
+Retained forks accumulate by design so work can be recovered after an accidental
+world deletion.
