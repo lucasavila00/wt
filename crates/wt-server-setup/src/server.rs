@@ -12,32 +12,40 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use wt_command::cmd;
 use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
+use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
+    phase("Validating the installation");
     require_server_user()?;
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     require_installed_config_compatible(input_path, &server)?;
     let replace_runtime = !Path::new(SERVER_CONFIG_PATH).exists();
-    let credentials = prepare_agent_git_credentials(runner, &input)?;
+
+    phase("Preparing Git provider credentials");
+    let credentials = prepare_agent_git_credentials(runner, &TerminalPassphrasePrompt, &input)?;
+
+    phase("Preparing host state and caches");
     prepare_host(runner, &server)?;
     registry_cache::ensure(runner, &server)?;
+
+    phase("Preparing the golden image");
     image::ensure(runner, &input, &server, &server_bytes)?;
-    println!("Building and installing wt binaries...");
+
+    phase("Building and installing WT binaries");
     build_and_install_binaries(runner, &server)?;
-    println!("Installing server config at {SERVER_CONFIG_PATH}...");
+
+    phase("Installing configuration and credentials");
     install_server_config(runner, input_path, &server, &server_bytes)?;
     install_agent_git_credentials(runner, &credentials)?;
-    println!("Installing and starting WT services...");
+
+    phase("Starting WT services");
     install_services(runner, &input, &server, replace_runtime)?;
-    println!(
-        "installed wt server from install input {}",
-        input_path.display()
-    );
+    println!("\n{}", success_message(input_path));
     Ok(())
 }
 
@@ -110,18 +118,20 @@ fn validate_agent_git_files(input: &InstallInput) -> Result<()> {
 
 fn prepare_agent_git_credentials(
     runner: &impl Runner,
+    prompt: &impl PassphrasePrompt,
     input: &InstallInput,
 ) -> Result<Vec<PreparedProviderCredentials>> {
     validate_agent_git_files(input)?;
     input
         .agent_git
         .providers()
-        .map(|(kind, provider)| prepare_provider_credentials(runner, kind, provider))
+        .map(|(kind, provider)| prepare_provider_credentials(runner, prompt, kind, provider))
         .collect()
 }
 
 fn prepare_provider_credentials(
     runner: &impl Runner,
+    prompt: &impl PassphrasePrompt,
     kind: &'static str,
     provider: &AgentGitProviderInstallConfig,
 ) -> Result<PreparedProviderCredentials> {
@@ -130,23 +140,36 @@ fn prepare_provider_credentials(
         true,
         &format!("agent_git.{kind}.api_token_file"),
     )?)?;
-    let mut private_key = temporary_credential(&read_owned_file(
+    let private_key_bytes = read_owned_file(
         &provider.ssh_private_key_file,
         true,
         &format!("agent_git.{kind}.ssh_private_key_file"),
-    )?)?;
-    runner.run(
-        cmd!("ssh-keygen", "-p", "-N", "", "-f", private_key.path(),),
-        &format!("unlock agent_git.{kind}.ssh_private_key_file"),
     )?;
-    private_key
-        .as_file_mut()
-        .flush()
-        .context("flush unlocked SSH private key")?;
-    let derived_public = runner.text(
-        cmd!("ssh-keygen", "-y", "-f", private_key.path()),
-        &format!("read agent_git.{kind} SSH public key"),
-    )?;
+    let private_key = ssh_key::PrivateKey::from_openssh(&private_key_bytes).with_context(|| {
+        format!(
+            "parse {kind} SSH private key {}",
+            provider.ssh_private_key_file.display()
+        )
+    })?;
+    let private_key = if private_key.is_encrypted() {
+        let passphrase = prompt.read(kind, &provider.ssh_private_key_file, &private_key)?;
+        private_key.decrypt(&passphrase).with_context(|| {
+            format!(
+                "unlock {kind} SSH private key {}",
+                provider.ssh_private_key_file.display()
+            )
+        })?
+    } else {
+        private_key
+    };
+    let unlocked = private_key
+        .to_openssh(ssh_key::LineEnding::LF)
+        .with_context(|| format!("encode unlocked {kind} SSH private key"))?;
+    let private_key_file = temporary_credential(unlocked.as_bytes())?;
+    let derived_public = private_key
+        .public_key()
+        .to_openssh()
+        .with_context(|| format!("encode {kind} SSH public key"))?;
     let configured_public = String::from_utf8(read_owned_file(
         &provider.ssh_public_key_file,
         false,
@@ -181,9 +204,78 @@ fn prepare_provider_credentials(
     Ok(PreparedProviderCredentials {
         kind,
         api_token,
-        private_key,
+        private_key: private_key_file,
         known_hosts,
     })
+}
+
+trait PassphrasePrompt {
+    fn read(
+        &self,
+        kind: &str,
+        path: &Path,
+        private_key: &ssh_key::PrivateKey,
+    ) -> Result<Zeroizing<String>>;
+}
+
+struct TerminalPassphrasePrompt;
+
+impl PassphrasePrompt for TerminalPassphrasePrompt {
+    fn read(
+        &self,
+        kind: &str,
+        path: &Path,
+        private_key: &ssh_key::PrivateKey,
+    ) -> Result<Zeroizing<String>> {
+        eprintln!("\n{}", ssh_key_passphrase_context(kind, path));
+        let key = private_key.clone();
+        let passphrase = cliclack::password(format!("Passphrase for {}", path.display()))
+            .validate(move |value: &String| validate_passphrase(&key, value))
+            .interact()
+            .with_context(|| format!("read {kind} SSH key passphrase"))?;
+        Ok(Zeroizing::new(passphrase))
+    }
+}
+
+fn validate_passphrase(
+    private_key: &ssh_key::PrivateKey,
+    passphrase: &str,
+) -> std::result::Result<(), &'static str> {
+    private_key
+        .decrypt(passphrase)
+        .map(|_| ())
+        .map_err(|_| "That passphrase did not unlock this SSH key. Try again.")
+}
+
+fn ssh_key_passphrase_context(kind: &str, path: &Path) -> String {
+    let provider = match kind {
+        "github" => "GitHub",
+        "gitlab" => "GitLab",
+        _ => kind,
+    };
+    format!(
+        "{provider} SSH key is passphrase-protected\n\n\
+Key: {}\n\
+WT needs an unlocked copy so the local agent Git gateway can fetch and push.\n\
+The original key will not be changed. WT verifies the key pair, encrypts the\n\
+unlocked copy as a systemd credential, and removes the temporary copy.",
+        path.display()
+    )
+}
+
+fn phase(message: &str) {
+    println!("\n{}", phase_message(message));
+}
+
+fn phase_message(message: &str) -> String {
+    format!("==> {message}")
+}
+
+fn success_message(input_path: &Path) -> String {
+    format!(
+        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-git-gateway\nNext: configure a WT client, then run `wt new`.",
+        input_path.display()
+    )
 }
 
 fn read_owned_file(path: &Path, private: bool, name: &str) -> Result<Vec<u8>> {
@@ -248,6 +340,7 @@ fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Re
         cmd!(
             "cargo",
             "build",
+            "--quiet",
             "--release",
             "-p",
             "wt-agent-git",
@@ -588,17 +681,28 @@ mod tests {
         }
     }
 
-    #[test]
-    fn provider_credentials_are_validated_and_unlocked() {
-        let temp = tempfile::tempdir().unwrap();
-        let private = temp.path().join("id_ed25519");
+    struct FixedPassphrase(&'static str);
+
+    impl PassphrasePrompt for FixedPassphrase {
+        fn read(
+            &self,
+            _kind: &str,
+            _path: &Path,
+            _private_key: &ssh_key::PrivateKey,
+        ) -> Result<Zeroizing<String>> {
+            Ok(Zeroizing::new(self.0.to_owned()))
+        }
+    }
+
+    fn provider_config(temp: &Path, passphrase: &str) -> AgentGitProviderInstallConfig {
+        let private = temp.join("id_ed25519");
         let output = cmd!(
             "ssh-keygen",
             "-q",
             "-t",
             "ed25519",
             "-N",
-            "",
+            passphrase,
             "-f",
             &private,
         )
@@ -608,7 +712,7 @@ mod tests {
         let public = private.with_extension("pub");
         let public_text = fs::read_to_string(&public).unwrap();
         let mut fields = public_text.split_whitespace();
-        let known_hosts = temp.path().join("known_hosts");
+        let known_hosts = temp.join("known_hosts");
         fs::write(
             &known_hosts,
             format!(
@@ -619,18 +723,86 @@ mod tests {
         )
         .unwrap();
         fs::set_permissions(&known_hosts, fs::Permissions::from_mode(0o600)).unwrap();
-        let token = temp.path().join("token");
+        let token = temp.join("token");
         fs::write(&token, "test-token\n").unwrap();
         fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
-        let provider = AgentGitProviderInstallConfig {
+        AgentGitProviderInstallConfig {
             host: "github.com".to_owned(),
             api_token_file: token,
             ssh_private_key_file: private,
             ssh_public_key_file: public,
             ssh_known_hosts_file: known_hosts,
-        };
-        let prepared = prepare_provider_credentials(&CapturedRunner, "github", &provider).unwrap();
-        assert!(!fs::read(prepared.private_key.path()).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn provider_credentials_are_validated_and_unlocked() {
+        let temp = tempfile::tempdir().unwrap();
+        let provider = provider_config(temp.path(), "");
+        let prepared = prepare_provider_credentials(
+            &CapturedRunner,
+            &FixedPassphrase("unused"),
+            "github",
+            &provider,
+        )
+        .unwrap();
+        let prepared = ssh_key::PrivateKey::read_openssh_file(prepared.private_key.path()).unwrap();
+        assert!(!prepared.is_encrypted());
+    }
+
+    #[test]
+    fn encrypted_provider_key_is_unlocked_without_modifying_the_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let provider = provider_config(temp.path(), "correct horse battery staple");
+        let original = fs::read(&provider.ssh_private_key_file).unwrap();
+        let encrypted = ssh_key::PrivateKey::from_openssh(&original).unwrap();
+        assert!(encrypted.is_encrypted());
+        assert_eq!(
+            validate_passphrase(&encrypted, "wrong passphrase"),
+            Err("That passphrase did not unlock this SSH key. Try again.")
+        );
+        assert_eq!(
+            validate_passphrase(&encrypted, "correct horse battery staple"),
+            Ok(())
+        );
+
+        let prepared = prepare_provider_credentials(
+            &CapturedRunner,
+            &FixedPassphrase("correct horse battery staple"),
+            "github",
+            &provider,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&provider.ssh_private_key_file).unwrap(), original);
+        let prepared = ssh_key::PrivateKey::read_openssh_file(prepared.private_key.path()).unwrap();
+        assert!(!prepared.is_encrypted());
+        assert_eq!(
+            prepared.public_key().key_data(),
+            encrypted.public_key().key_data()
+        );
+    }
+
+    #[test]
+    fn setup_messages_explain_the_operation() {
+        insta::assert_snapshot!(
+            ssh_key_passphrase_context("github", Path::new("/home/wt/.ssh/id_ed25519")),
+            @"
+        GitHub SSH key is passphrase-protected
+
+        Key: /home/wt/.ssh/id_ed25519
+        WT needs an unlocked copy so the local agent Git gateway can fetch and push.
+        The original key will not be changed. WT verifies the key pair, encrypts the
+        unlocked copy as a systemd credential, and removes the temporary copy.
+        "
+        );
+        insta::assert_snapshot!(phase_message("Preparing Git provider credentials"), @"==> Preparing Git provider credentials");
+        insta::assert_snapshot!(success_message(Path::new("./server.toml")), @"
+        WT server is ready.
+        Config: ./server.toml
+        Services started: wt-server, wt-agent-git-gateway
+        Next: configure a WT client, then run `wt new`.
+        ");
     }
 
     #[test]

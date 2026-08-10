@@ -2431,6 +2431,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "cliclack",
  "insta",
  "nix",
  "serde",
@@ -2443,6 +2444,7 @@ dependencies = [
  "wt-libvirt",
  "wt-provider",
  "wt-server",
+ "zeroize",
 ]
 
 [[package]]

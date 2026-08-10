@@ -61,7 +61,7 @@ fn main() {
 }
 
 fn failure_message(error: &anyhow::Error) -> String {
-    format!("ERROR: wt-server-setup: {error:#}")
+    format!("WT server setup failed: {error:#}")
 }
 
 fn run() -> Result<()> {
@@ -69,7 +69,7 @@ fn run() -> Result<()> {
     match Cli::parse().command {
         SetupCommand::Validate { config } => {
             server::validate(&config).context("configuration validation stopped")?;
-            println!("valid {}", config.display());
+            println!("Configuration is valid: {}", config.display());
         }
         SetupCommand::Install { config } => {
             server::install(&runner, &config).context("server installation stopped")?
@@ -94,6 +94,6 @@ mod tests {
         let error = anyhow!("image package manifest must contain exactly nine packages")
             .context("server installation stopped");
 
-        insta::assert_snapshot!(failure_message(&error), @"ERROR: wt-server-setup: server installation stopped: image package manifest must contain exactly nine packages");
+        insta::assert_snapshot!(failure_message(&error), @"WT server setup failed: server installation stopped: image package manifest must contain exactly nine packages");
     }
 }
