@@ -73,10 +73,11 @@ fn run_server() -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
     let worker = CompositeWorker::new(provider, provisioner);
+    let gateway = wt_agent_git::ControlClient::new(wt_agent_git::CONTROL_SOCKET);
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
-        handle_daemon_request(&state, &operations, &worker, &owner, request)
+        handle_daemon_request(&state, &operations, &worker, &gateway, &owner, request)
     })
 }
 
@@ -84,12 +85,13 @@ fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
     worker: &CompositeWorker<LibvirtProvider>,
+    gateway: &wt_agent_git::ControlClient,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
-        let service = Service::new(store, worker.clone(), operations.clone());
+        let service = Service::new(store, worker.clone(), gateway.clone(), operations.clone());
         Ok::<_, anyhow::Error>(wt_server::handle_request(&service, owner, request))
     })();
     result.unwrap_or_else(|error| {

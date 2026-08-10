@@ -19,6 +19,7 @@ const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
 const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/setup-world.sh");
 const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
+const AGENT_GIT_HINT: &[u8] = include_bytes!("../../../assets/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 
 #[derive(Clone, Debug)]
@@ -26,9 +27,11 @@ pub struct ProvisionerConfig {
     pub app_pane_binary: PathBuf,
     pub app_info_binary: PathBuf,
     pub app_proxy_binary: PathBuf,
+    pub agent_git_relay_binary: PathBuf,
+    pub agent_git_remote_binary: PathBuf,
+    pub agent_git_cli_binary: PathBuf,
     pub registry_cache_url: String,
     pub registry_cache_ca_file: PathBuf,
-    pub git_known_hosts_file: PathBuf,
     pub recipe_timeout: Duration,
     pub bootstrap: BootstrapPolicy,
 }
@@ -40,7 +43,9 @@ pub struct WorldProvisioner {
     app_pane: Vec<u8>,
     app_info: Vec<u8>,
     app_proxy: Vec<u8>,
-    git_known_hosts: Vec<u8>,
+    agent_git_relay: Vec<u8>,
+    agent_git_remote: Vec<u8>,
+    agent_git_cli: Vec<u8>,
     registry_cache_ca: Vec<u8>,
 }
 
@@ -58,19 +63,26 @@ impl WorldProvisioner {
         let app_pane = require_and_read(&config.app_pane_binary, "guest app-pane binary")?;
         let app_info = require_and_read(&config.app_info_binary, "guest app-info binary")?;
         let app_proxy = require_and_read(&config.app_proxy_binary, "guest app-proxy binary")?;
+        let agent_git_relay =
+            require_and_read(&config.agent_git_relay_binary, "agent Git relay binary")?;
+        let agent_git_remote = require_and_read(
+            &config.agent_git_remote_binary,
+            "agent Git remote helper binary",
+        )?;
+        let agent_git_cli = require_and_read(&config.agent_git_cli_binary, "agent Git CLI binary")?;
         let registry_cache_ca = require_and_read(
             &config.registry_cache_ca_file,
             "registry cache certificate authority",
         )?;
-        let git_known_hosts =
-            require_and_read(&config.git_known_hosts_file, "Git known-hosts file")?;
         Ok(Self {
             config,
             app_shell,
             app_pane,
             app_info,
             app_proxy,
-            git_known_hosts,
+            agent_git_relay,
+            agent_git_remote,
+            agent_git_cli,
             registry_cache_ca,
         })
     }
@@ -200,6 +212,10 @@ impl WorldProvisioner {
             ("-app-pane", self.app_pane.as_slice()),
             ("-app-info", self.app_info.as_slice()),
             ("-app-proxy", self.app_proxy.as_slice()),
+            ("-agent-git-relay", self.agent_git_relay.as_slice()),
+            ("-agent-git-remote", self.agent_git_remote.as_slice()),
+            ("-ag-git", self.agent_git_cli.as_slice()),
+            ("-agent-git-hint", AGENT_GIT_HINT),
             ("-setup-world", SETUP_WORLD),
             ("-setup-world-root", SETUP_WORLD_ROOT),
         ] {
@@ -209,10 +225,12 @@ impl WorldProvisioner {
                 contents,
             )?;
         }
+        let git_prefix = format!("{}/", spec.name);
         for (name, contents) in [
             ("source", spec.source),
-            ("git-branch", spec.git_branch.unwrap_or("")),
-            ("git-ref", spec.git_ref.unwrap_or("")),
+            ("git-base", spec.git_base),
+            ("git-grant", spec.git_grant),
+            ("git-prefix", git_prefix.as_str()),
             ("git-user-name", spec.git_user_name),
             ("git-user-email", spec.git_user_email),
         ] {
@@ -222,12 +240,6 @@ impl WorldProvisioner {
                 contents.as_bytes(),
             )?;
         }
-        guest::write(
-            transport,
-            "/tmp/wt-setup-git-known-hosts",
-            &self.git_known_hosts,
-        )?;
-
         let packages = self.config.bootstrap.pinned_packages();
         let mut args: Vec<&str> = vec![
             self.config.bootstrap.devcontainer_cli_version.as_str(),
@@ -253,6 +265,10 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-app-pane",
                 "/tmp/wt-install-guest-app-info",
                 "/tmp/wt-install-guest-app-proxy",
+                "/tmp/wt-install-guest-agent-git-relay",
+                "/tmp/wt-install-guest-agent-git-remote",
+                "/tmp/wt-install-guest-ag-git",
+                "/tmp/wt-install-guest-agent-git-hint",
                 "/tmp/wt-install-guest-setup-world",
                 "/tmp/wt-install-guest-setup-world-root",
             ],

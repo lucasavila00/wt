@@ -41,37 +41,49 @@ if test -e "$state/complete"; then
 fi
 
 if test -e "$state/source"; then
-    test -S "${SSH_AUTH_SOCK:-}" || {
-        echo "No forwarded SSH agent is available. Reconnect with agent forwarding enabled." >&2
-        exit 1
-    }
     source=$(cat "$state/source")
-    branch=$(cat "$state/git-branch")
-    git_ref=$(cat "$state/git-ref")
+    base=$(cat "$state/git-base")
+    prefix=$(cat "$state/git-prefix")
     git_name=$(cat "$state/git-user-name")
     git_email=$(cat "$state/git-user-email")
-    export GIT_SSH_COMMAND="ssh -o IdentitiesOnly=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$state/git-known-hosts"
+    origin="ag::$source"
 
     if test -d "$workspace/.git" &&
-        test "$(git -C "$workspace" remote get-url origin)" = "$source" &&
+        test "$(git -C "$workspace" remote get-url origin)" = "$origin" &&
         git -C "$workspace" rev-parse --verify HEAD >/dev/null 2>&1; then
         :
     else
         find "$workspace" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-        git clone "$source" "$workspace"
+        git clone "$origin" "$workspace"
     fi
-    if test -n "$branch"; then
-        git -C "$workspace" fetch origin "$branch"
-        git -C "$workspace" checkout -B "$branch" "origin/$branch"
-    elif test -n "$git_ref"; then
-        git -C "$workspace" fetch origin "$git_ref"
-        git -C "$workspace" checkout --detach FETCH_HEAD
-    fi
+    git -C "$workspace" fetch origin "$base"
+    git -C "$workspace" checkout -B "$base" "origin/$base"
     git -C "$workspace" config user.name "$git_name"
     git -C "$workspace" config user.email "$git_email"
-    unset GIT_SSH_COMMAND
-    rm -f "$state/source" "$state/git-branch" "$state/git-ref" \
-        "$state/git-user-name" "$state/git-user-email" "$state/git-known-hosts"
+    git -C "$workspace" config push.autoSetupRemote true
+    git -C "$workspace" config wt.project "$source"
+    git -C "$workspace" config wt.base "$base"
+    git -C "$workspace" config wt.prefix "$prefix"
+    for spec in "post-checkout checkout" "post-commit commit"; do
+        hook_name=${spec%% *}
+        hint_mode=${spec#* }
+        hook="$workspace/.git/hooks/$hook_name"
+        project_hook="$hook.wt-project"
+        if test -e "$hook" && ! grep -q '^# WT agent Git hint$' "$hook"; then
+            mv "$hook" "$project_hook"
+        fi
+        cat > "$hook" <<EOF
+#!/bin/sh
+# WT agent Git hint
+status=0
+test ! -x '$project_hook' || '$project_hook' "\$@" || status=\$?
+/usr/local/bin/wt-agent-git-hint '$hint_mode'
+exit "\$status"
+EOF
+        chmod 0755 "$hook"
+    done
+    rm -f "$state/source" "$state/git-base" "$state/git-prefix" \
+        "$state/git-user-name" "$state/git-user-email"
 fi
 
 sudo /usr/local/libexec/wt-setup-root prepare
@@ -84,7 +96,11 @@ app_user=$(
 devcontainer up --log-level debug --log-format text --workspace-folder "$workspace" \
     --additional-features "$additional_features" \
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
-    --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config
+    --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config \
+    --mount type=bind,source=/run/wt-agent-git,target=/run/wt-agent-git \
+    --mount type=bind,source=/usr/local/bin/git-remote-ag,target=/usr/local/bin/git-remote-ag \
+    --mount type=bind,source=/usr/local/bin/ag-git,target=/usr/local/bin/ag-git \
+    --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
     'workspace=$(pwd -P) && git config --global --add safe.directory "$workspace"'
 /usr/local/bin/wt-app-info verify-user "$app_user"

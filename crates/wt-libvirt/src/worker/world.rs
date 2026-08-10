@@ -92,6 +92,7 @@ pub(super) fn domain_xml(
 {interface}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
+    <vsock model='virtio'><cid auto='yes'/></vsock>
     <serial type='pty'><target port='0'/></serial>
     <console type='pty'><target type='serial' port='0'/></console>
     <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>

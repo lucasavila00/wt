@@ -60,7 +60,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             proxy_jump,
         );
         let app_common = instance.app_ssh.as_ref().map(|app_ssh| format!(
-            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  ForwardAgent yes\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-app-proxy\n",
+            "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-app-proxy\n",
             app_ssh.user,
             app_ssh.port,
             qualified,
@@ -68,12 +68,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             ssh_quote(&main_config_path),
             qualified,
         ));
-        config.push_str(&format!("\nHost {qualified}-host\n{guest_common}\nHost {qualified}\n{guest_common}  ForwardAgent yes\n  RequestTTY force\n  RemoteCommand {app_shell}\n"));
+        config.push_str(&format!("\nHost {qualified}-host\n{guest_common}\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n"));
         if let Some(app_common) = &app_common {
             config.push_str(&format!("\nHost {qualified}-vs\n{app_common}"));
         }
         if counts.get(instance.name.as_str()) == Some(&1) {
-            config.push_str(&format!("\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  ForwardAgent yes\n  RequestTTY force\n  RemoteCommand {app_shell}\n", instance.name, instance.name));
+            config.push_str(&format!("\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n", instance.name, instance.name));
             if let Some(app_common) = &app_common {
                 config.push_str(&format!("\nHost {}-vs\n{app_common}", instance.name));
             }
@@ -219,6 +219,8 @@ mod tests {
             owner: "lucas".into(),
             status: InstanceStatus::Running,
             source: "git@example.test:repo.git".into(),
+            git_base: "main".into(),
+            git_prefix: "repo-feature/".into(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
@@ -276,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_world_forwards_agent_without_app_alias() {
+    fn setup_world_has_no_app_alias_or_agent_forwarding() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
@@ -286,6 +288,8 @@ mod tests {
             owner: "lucas".into(),
             status: InstanceStatus::Setup,
             source: "git@example.test:repo.git".into(),
+            git_base: "main".into(),
+            git_prefix: "repo-feature/".into(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
@@ -329,6 +333,8 @@ mod tests {
                 owner: "lucas".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
+                git_base: "main".into(),
+                git_prefix: "same/".into(),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
@@ -390,6 +396,8 @@ mod tests {
                 owner: "lucas".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
+                git_base: "main".into(),
+                git_prefix: format!("{name}/"),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,

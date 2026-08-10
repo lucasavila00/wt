@@ -88,7 +88,7 @@ pub trait MachineProvider: Clone + Send + Sync + 'static {
     fn delete(&self, provider_id: &ProviderId, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ProvisionSpec<'a> {
     pub id: Uuid,
     pub backend_id: &'a str,
@@ -96,8 +96,8 @@ pub struct ProvisionSpec<'a> {
     pub owner: &'a str,
     pub name: &'a InstanceName,
     pub source: &'a str,
-    pub git_branch: Option<&'a str>,
-    pub git_ref: Option<&'a str>,
+    pub git_base: &'a str,
+    pub git_grant: &'a str,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
     pub memory_mib: u64,
@@ -342,7 +342,15 @@ mod tests {
     #[test]
     fn provision_failure_keeps_primary_error_and_logs_cleanup_failure() {
         let temp = tempfile::tempdir().unwrap();
-        for name in ["app-pane", "app-info", "app-proxy", "ca.crt"] {
+        for name in [
+            "app-pane",
+            "app-info",
+            "app-proxy",
+            "agent-git-relay",
+            "agent-git-remote",
+            "agent-git-cli",
+            "ca.crt",
+        ] {
             fs::write(temp.path().join(name), name).unwrap();
         }
         let known_hosts = temp.path().join("known_hosts");
@@ -364,9 +372,11 @@ mod tests {
             app_pane_binary: temp.path().join("app-pane"),
             app_info_binary: temp.path().join("app-info"),
             app_proxy_binary: temp.path().join("app-proxy"),
+            agent_git_relay_binary: temp.path().join("agent-git-relay"),
+            agent_git_remote_binary: temp.path().join("agent-git-remote"),
+            agent_git_cli_binary: temp.path().join("agent-git-cli"),
             registry_cache_url: format!("http://{registry_address}"),
             registry_cache_ca_file: temp.path().join("ca.crt"),
-            git_known_hosts_file: known_hosts,
             recipe_timeout: Duration::from_secs(10),
             bootstrap: BootstrapPolicy {
                 packages,
@@ -391,8 +401,8 @@ mod tests {
             owner: "tester",
             name: &name,
             source: "git@example.test:repo.git",
-            git_branch: None,
-            git_ref: None,
+            git_base: "main",
+            git_grant: "test-grant",
             git_user_name: "Test User",
             git_user_email: "test@example.invalid",
             memory_mib: 1024,

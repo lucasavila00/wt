@@ -19,29 +19,13 @@ devcontainer.
    domain, then waits for the guest agent and current DHCP address.
 2. `wt-provider` verifies and bootstraps Ubuntu, installs the locked toolchain,
    and configures the user, workspace, registry trust, and guest SSH identity.
-3. `wt-provider` clones the SSH Git source, installs checkout-local credentials,
-   starts the stock devcontainer, and installs the session and proxy helpers.
-4. `wt-provider` verifies guest and app SSH and returns the running world.
+3. `wt-provider` installs the gateway relay and session helpers, then returns a
+   guest ready for setup.
+4. The persistent setup session clones through the gateway, starts the stock
+   devcontainer, and verifies app SSH.
 
 A create failure removes the domain and world files. Endpoint host-key mismatch
 is an error and never removes another domain automatically.
-
-## Fork
-
-1. The registry reserves two new writable disk heads below the source's current
-   head and makes the shared point immutable.
-2. Libvirt uses the QEMU guest agent to quiesce the running source and performs
-   an atomic, disk-only external snapshot to its new head. WT checks that the
-   guest is thawed on both success and failure paths.
-3. The fork boots from the sibling head without a virtual NIC. Through
-   the guest agent, WT replaces the hostname, machine ID, guest SSH host keys,
-   app SSH host key, and guest-held app session key.
-4. WT attaches the NIC, waits for DHCP, and verifies guest and app SSH before
-   recording the fork as running.
-
-The source is never stopped. The fork receives persistent disk state but no RAM
-or processes. A post-pivot failure keeps the source on its new writable head;
-a pre-pivot failure rolls the graph reservation back.
 
 `wt-server-setup` builds and verifies the golden image. Its provenance pins the
 source image, build config, recipe, packages, Dev Container CLI, and result

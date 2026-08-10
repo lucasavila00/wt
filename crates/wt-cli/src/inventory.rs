@@ -115,6 +115,8 @@ mod tests {
                 owner: "tester".into(),
                 status: InstanceStatus::Running,
                 source: "git@example.test:repo.git".into(),
+                git_base: "main".into(),
+                git_prefix: format!("{name}/"),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,

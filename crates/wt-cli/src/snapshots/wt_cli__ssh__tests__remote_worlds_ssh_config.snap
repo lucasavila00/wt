@@ -31,7 +31,6 @@ Host lab.world-one
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   ProxyJump wt-server
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-one - repo' /usr/local/bin/wt-app-shell
 
@@ -47,7 +46,6 @@ Host lab.world-one-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-app-proxy
 
@@ -78,7 +76,6 @@ Host world-one
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   ProxyJump wt-server
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-one - repo' /usr/local/bin/wt-app-shell
 
@@ -94,7 +91,6 @@ Host world-one-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-app-proxy
 
@@ -125,7 +121,6 @@ Host lab.world-two
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   ProxyJump wt-server
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-two - repo' /usr/local/bin/wt-app-shell
 
@@ -141,7 +136,6 @@ Host lab.world-two-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-app-proxy
 
@@ -172,7 +166,6 @@ Host world-two
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   ProxyJump wt-server
-  ForwardAgent yes
   RequestTTY force
   RemoteCommand BYOBU_ALT_TITLE='lab.world-two - repo' /usr/local/bin/wt-app-shell
 
@@ -188,6 +181,5 @@ Host world-two-vs
   ServerAliveCountMax 3
   PasswordAuthentication no
   KbdInteractiveAuthentication no
-  ForwardAgent yes
   SetEnv TERM=xterm-256color
   ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-app-proxy

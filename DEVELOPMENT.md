@@ -6,14 +6,28 @@ enabled.
 
 ## Install the local server
 
-Review `examples/server-config/wt-server.development.toml`, then run:
+The development config enables GitHub. Follow the
+[GitHub credential instructions](GETTING-STARTED.md#github-credential) to create
+`~/.config/wt/credentials/github.token`. WT requires a personal access token
+(classic) with the `repo` scope; a fine-grained token cannot provide the CI
+check data used by `ag-git`.
+
+Make sure the SSH key configured in the example can read and write the
+repositories you will use. Its public key and `~/.ssh/known_hosts` must also
+exist. The API token handles pull requests, reviews, and CI; the SSH key handles
+Git fetch and push.
+
+Review `examples/server-config/wt-server.development.toml`, then run from an
+interactive terminal:
 
 ```bash
 scripts/install-server --config examples/server-config/wt-server.development.toml
 ```
 
-Run as a normal user in an interactive terminal. If setup changes group
-membership, log out, log back in, and rerun it.
+Run as a normal user. The installer asks for the SSH key passphrase when needed,
+checks that the key pair matches, and gives encrypted copies of the token and
+unlocked key to the local gateway service. If setup changes group membership,
+log out, log back in, and rerun it.
 
 Install the local client config:
 
@@ -68,9 +82,10 @@ Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 make clear
 ```
 
-This destroys `wt-*` domains and removes worlds, the golden image, the server
-database, and generated SSH inventory. It keeps the server installation,
-configuration, Ubuntu source image, and registry cache.
+This destroys `wt-*` domains and removes worlds, gateway grants, the golden
+image, the server database, and generated SSH inventory. It keeps the server
+installation, provider credentials, configuration, Ubuntu source image, and
+registry cache.
 
 Use `make nuke` for a full teardown, including configuration and registry-cache
 state. Neither target uninstalls packages or binaries.

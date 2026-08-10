@@ -7,7 +7,7 @@ devcontainer recipe. Each environment is called a world.
 
 Suppose a repository named `foo` contains `.devcontainer/devcontainer.json`.
 Running `wt new` opens an interactive prompt for the world name, Git source,
-revision, CPU, RAM, disk, and confirmation:
+base branch, CPU, RAM, disk, and confirmation:
 
 ```text
 wt new
@@ -18,17 +18,9 @@ by that file. If the recipe uses Docker Compose, it starts the referenced
 services. The primary devcontainer is the container that VS Code or the Dev
 Container CLI would normally open for development.
 
-By default, WT checks out the repository's default branch. The revision prompt
-also accepts:
-
-- `branch:BRANCH` checks out a branch with an attached HEAD. New commits made
-  in the world are added to that branch.
-- `ref:REF` checks out a tag, commit SHA, or other Git commit-ish with a
-  detached HEAD. Use this to create a world pinned to a specific revision.
-
-WT performs the checkout before it reads and starts the devcontainer recipe, so
-the selected revision supplies `.devcontainer/devcontainer.json` and any files
-referenced by that recipe.
+WT checks out the selected base before it reads and starts the devcontainer
+recipe. That base is also the fixed target for the world's pull or merge
+requests.
 
 The resource prompts default to 2 CPUs, 4096 MiB RAM, and 32 GiB disk. WT reads
 and authorizes every valid regular `~/.ssh/*.pub` file from the workstation.
@@ -50,7 +42,7 @@ while starting the devcontainer.
 | Location | Tools | Role |
 |----------|-------|------|
 | Workstation | `wt`, OpenSSH, optional VS Code Remote-SSH | Manage and enter worlds |
-| Server | OpenSSH, `wt-server`, SQLite, libvirt, QEMU/KVM, registry proxy | Store world state and run VMs |
+| Server | OpenSSH, `wt-server`, agent Git gateway, SQLite, libvirt, QEMU/KVM, registry proxy | Store world state, authenticate Git, and run VMs |
 | Guest | Ubuntu, cloud-init, QEMU guest agent, Git, OpenSSH, Docker Engine, Buildx, Compose, Dev Container CLI, Byobu | Host one checkout and devcontainer |
 | Primary devcontainer | Repository tooling and an injected OpenSSH server | Run the development environment |
 | Git host | Existing SSH Git service | Supply the repository |
@@ -60,7 +52,6 @@ while starting the devcontainer.
 | Command | Result |
 |---------|--------|
 | `wt new` | Interactively create a guest, then enter its setup SSH session |
-| `wt fork SOURCE NEW` | Fork a running world on the same context using copy-on-write storage |
 | `wt ls` | List worlds, resources, and status across configured contexts |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
@@ -75,13 +66,6 @@ devcontainer's current workspace mount, and runs the local VS Code CLI against
 the `ars.jsdev-vs` Remote-SSH alias. It requires the `code` command and VS Code's
 Remote-SSH extension on the workstation.
 
-Fork operands may be qualified (`ars.w1`) or unqualified (`w1`). An
-unqualified destination uses the source context. The source and destination
-must be on the same context, and the destination name must be unused. A fork
-inherits the source disk state, resources, and authorized access, but boots as
-a separate machine with new guest and app SSH identities and no copied running
-processes.
-
 ## SSH access
 
 ### `ssh NAME`
@@ -89,7 +73,9 @@ processes.
 1. The workstation's SSH connection terminates at the guest SSH server and
    verifies its host key. For a remote context, OpenSSH reaches the guest's
    private address through the context server as a jump host.
-2. The guest runs `wt-app-shell`, which attaches to Byobu in the guest. On the first connection it starts the world installer using the workstation's forwarded SSH agent.
+2. The guest runs `wt-app-shell`, which attaches to Byobu. On the first
+   connection it starts the world installer and clones through the agent Git
+   gateway.
 3. Each pane runs `wt-app-pane`. It finds the current primary devcontainer and
    opens a separate guest-to-app SSH connection with a guest-held session key.
 4. The pane opens a login shell at the mounted workspace.
@@ -143,11 +129,11 @@ World SSH connections use the same configured server destination as an
 OpenSSH jump host. The server must allow TCP forwarding and be able to reach
 the guests; the workstation does not need a route to the libvirt network.
 
-## Git credentials
+## Git access
 
-The server config points to a Git known-hosts file. Git authentication comes
-from the workstation's forwarded SSH agent during setup and later work inside
-the devcontainer.
+The server's agent Git gateway owns the provider SSH key and API token. The
+world receives a revocable grant limited to its project, base, and branch
+prefix. Provider credentials never enter the guest or devcontainer.
 
 When creating a world, `wt` reads the workstation's global Git `user.name` and
 `user.email`. Both values are required. If either is missing, empty, or cannot be
@@ -155,14 +141,12 @@ read, world creation stops before contacting the server. Both values are sent in
 the create request and written to the checkout's local Git config. WT does not
 copy other Git configuration.
 
-After creating the guest, `wt new` replaces itself with `ssh NAME`. That SSH
-session forwards the workstation agent and starts the installer in Byobu. The
-installer clones with strict host-key checking, finishes package and Docker
-setup, starts the devcontainer, and tees its output to both Byobu and a
-guest-held log. Clone trust is removed after checkout; the narrowly scoped
-setup privilege and remaining inputs are removed before completion. Later
-connections forward the agent into the devcontainer. No private key or
-passphrase crosses the WT API or remains in the world.
+After creating the guest, `wt new` replaces itself with `ssh NAME`. The
+installer clones through an `ag::` remote, finishes package and Docker setup,
+starts the devcontainer, and tees its output to Byobu and a guest-held log.
+Normal Git continues through that remote. A world named `df1` may push only
+branches under `df1/`; tags and other namespaces are rejected. `ag-git` handles
+pull or merge requests, reviews, and CI.
 
 ## Safety model
 
@@ -173,7 +157,7 @@ passphrase crosses the WT API or remains in the world.
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | SSH connections forward the workstation agent into the devcontainer. The socket dies with the connection. Temporary clone known hosts are removed after checkout. |
+| Git credentials | Only the host gateway holds provider credentials. Each world gets one project- and namespace-scoped grant, revoked before its disk is deleted. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries
@@ -190,7 +174,7 @@ passphrase crosses the WT API or remains in the world.
 ## Requirements and limits
 
 - Ubuntu 24.04 amd64 servers with KVM.
-- App images derived from Debian or Ubuntu with `apt`.
+- App images based on Ubuntu 24.04 or newer, or Debian 13 or newer, with `apt`.
 - The devcontainer configuration explicitly sets an existing `remoteUser`.
 - The stock devcontainer recipe remains the environment contract.
 - No KVM emulation fallback.

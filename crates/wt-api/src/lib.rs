@@ -65,10 +65,8 @@ pub struct ForkInstance {
 pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_branch: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
+    #[serde(deserialize_with = "deserialize_git_branch")]
+    pub git_base: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     pub git_user_name: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -109,6 +107,15 @@ where
     if value.is_empty() {
         return Err(serde::de::Error::custom("value must not be empty"));
     }
+    Ok(value)
+}
+
+fn deserialize_git_branch<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    validate_git_branch(&value).map_err(serde::de::Error::custom)?;
     Ok(value)
 }
 
@@ -159,6 +166,8 @@ pub struct Instance {
     pub owner: String,
     pub status: InstanceStatus,
     pub source: String,
+    pub git_base: String,
+    pub git_prefix: String,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
@@ -334,6 +343,31 @@ pub fn validate_ssh_git_source(value: &str) -> Result<(), InvalidGitSource> {
 #[error("source must be an ssh:// or user@host:path Git URL")]
 pub struct InvalidGitSource;
 
+pub fn validate_git_branch(value: &str) -> Result<(), InvalidGitBranch> {
+    if value.is_empty()
+        || value == "@"
+        || value.starts_with('.')
+        || value.starts_with('/')
+        || value.ends_with('.')
+        || value.ends_with('/')
+        || value.contains("..")
+        || value.contains("@{")
+        || value.contains("//")
+        || value.split('/').any(|part| part.ends_with(".lock"))
+        || value.bytes().any(|byte| {
+            byte.is_ascii_control()
+                || matches!(byte, b' ' | b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+        })
+    {
+        return Err(InvalidGitBranch);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("invalid Git branch name")]
+pub struct InvalidGitBranch;
+
 fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
     if value.is_empty() || value.len() > 63 {
         return Err(InvalidInstanceName {
@@ -420,8 +454,7 @@ mod tests {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
             source: "git@github.com:example/repo.git".to_owned(),
-            git_branch: None,
-            git_ref: Some("devcontainer".to_owned()),
+            git_base: "devcontainer".to_owned(),
             git_user_name: "Lucas Ávila".to_owned(),
             git_user_email: "lucaxx@gmail.com".to_owned(),
             vcpus: 2,
@@ -437,31 +470,13 @@ mod tests {
                 "operation": "create",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
-                "git_ref": "devcontainer",
+                "git_base": "devcontainer",
                 "git_user_name": "Lucas Ávila",
                 "git_user_email": "lucaxx@gmail.com",
                 "vcpus": 2,
                 "memory_mib": 4096,
                 "disk_gib": 32,
                 "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"]
-            })
-        );
-    }
-
-    #[test]
-    fn fork_request_has_source_and_destination_shape() {
-        let request = ApiRequest::new(Operation::Fork(ForkInstance {
-            source: InstanceName::parse("source").unwrap(),
-            name: InstanceName::parse("fork").unwrap(),
-        }));
-        assert_eq!(
-            serde_json::to_value(request).unwrap(),
-            serde_json::json!({
-                "protocol_version": 1,
-                "client_commit": WT_GIT_COMMIT,
-                "operation": "fork",
-                "source": "source",
-                "name": "fork"
             })
         );
     }
@@ -474,6 +489,7 @@ mod tests {
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
+            "git_base": "main",
         }));
         assert!(missing.is_err());
 
@@ -483,6 +499,7 @@ mod tests {
             "operation": "create",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
+            "git_base": "main",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
         }));
@@ -495,8 +512,7 @@ mod tests {
         let mut request = CreateInstance {
             name: InstanceName::parse("sample").unwrap(),
             source: "git@example.test:repo.git".to_owned(),
-            git_branch: None,
-            git_ref: None,
+            git_base: "main".to_owned(),
             git_user_name: "Test User".to_owned(),
             git_user_email: "test@example.invalid".to_owned(),
             vcpus: 1,

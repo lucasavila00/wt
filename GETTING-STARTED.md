@@ -39,10 +39,38 @@ cp examples/server-config/wt-server.development.toml ./server.toml
 
 Edit `server.toml`. At minimum, check:
 
-- `git.known_hosts_file`: trusted Git host keys.
+- `agent_git`: at least one provider with its API token, SSH key pair, and
+  trusted host keys.
 - `image.build_memory_mib`, `image.build_vcpus`, and `image.build_disk_gib`:
   temporary resources used to build the golden image.
 - `registry_cache.registries`: registry hosts whose public images are cached.
+
+### GitHub credential
+
+The example config enables GitHub and expects
+`~/.config/wt/credentials/github.token`. Create a
+[GitHub personal access token (classic)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic)
+with the `repo` scope and no additional scopes. Set an expiration and, when
+required by an organization, authorize the token for SAML SSO. The user that
+creates the token must have write access to every repository WT will use.
+
+WT cannot currently use a fine-grained personal access token. `ag-git` reads
+individual CI checks, and GitHub does not allow fine-grained tokens to call the
+Checks API. See GitHub's documentation on
+[personal access token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-token-limitations).
+
+Create the credential file without putting the token in shell history:
+
+```bash
+install -d -m 0700 ~/.config/wt/credentials
+touch ~/.config/wt/credentials/github.token
+chmod 0600 ~/.config/wt/credentials/github.token
+${EDITOR:-vi} ~/.config/wt/credentials/github.token
+```
+
+The file contains only the token; a trailing newline is allowed. The token
+handles pull requests, reviews, and CI. The SSH key configured under
+`agent_git.github` handles Git fetch and push.
 
 Install:
 
@@ -52,7 +80,7 @@ scripts/install-server --config ./server.toml
 
 If setup changes group membership, log out, log back in, and run the same command
 again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`
-and installs and starts `wt-server.service`. Keep the install input for future
+and installs and starts the WT services. Keep the install input for future
 reinstalls. Reinstalling restarts the daemon; do not reinstall while a world is
 provisioning.
 
@@ -98,7 +126,8 @@ Remove the world:
 wt rm local.repo-feature
 ```
 
-App images must be Debian- or Ubuntu-derived and support `apt`.
+App images must be based on Ubuntu 24.04 or newer, or Debian 13 or newer, and
+support `apt`.
 
 ## Use a remote server
 

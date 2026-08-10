@@ -1,0 +1,37 @@
+mutation GithubUpdatePullRequest($id: ID!, $title: String, $body: String, $state: PullRequestUpdateState) {
+  updatePullRequest(input: { pullRequestId: $id, title: $title, body: $body, state: $state }) {
+    pullRequest { id number url title state isDraft headRefOid baseRefName reviewDecision }
+  }
+}
+
+mutation GithubMarkPullRequestReady($id: ID!) {
+  markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+    pullRequest { id number url title state isDraft headRefOid baseRefName reviewDecision }
+  }
+}
+
+mutation GithubMarkPullRequestDraft($id: ID!) {
+  convertPullRequestToDraft(input: { pullRequestId: $id }) {
+    pullRequest { id number url title state isDraft headRefOid baseRefName reviewDecision }
+  }
+}
+
+mutation GithubAddPullRequestComment($id: ID!, $body: String!) {
+  addComment(input: { subjectId: $id, body: $body }) {
+    commentEdge { node { url } }
+  }
+}
+
+mutation GithubReplyToReviewThread($thread: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) {
+    comment { url }
+  }
+}
+
+mutation GithubResolveReviewThread($thread: ID!) {
+  resolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } }
+}
+
+mutation GithubReopenReviewThread($thread: ID!) {
+  unresolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } }
+}

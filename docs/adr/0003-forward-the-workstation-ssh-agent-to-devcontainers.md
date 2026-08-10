@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-15
+- Forwarding decision: Superseded by
+  [ADR 0017](0017-integrate-agent-git-gateway.md)
 
 ## Context
 

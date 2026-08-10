@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wt-agent-git",
     "crates/wt-api",
     "crates/wt-cli",
     "crates/wt-command",
@@ -33,13 +34,17 @@ base64 = "0.22.1"
 insta = "1.47.0"
 diesel = { version = "2.3.11", features = ["sqlite"] }
 diesel_migrations = "2.3.2"
+graphql_client = "0.16.0"
 libsqlite3-sys = { version = "0.36.0", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"
+socket2 = { version = "0.6.5", features = ["all"] }
 ssh-key = { version = "0.6.7", features = ["encryption"] }
 thiserror = "2.0.18"
 toml = "1.0.3"
+ureq = { version = "3.4.0", features = ["json"] }
+url = "2.5.8"
 uuid = { version = "1.21.0", features = ["serde", "v4"] }
 virt = { version = "0.4.3", features = ["qemu"] }
 zeroize = { version = "1.9.0", features = ["derive"] }

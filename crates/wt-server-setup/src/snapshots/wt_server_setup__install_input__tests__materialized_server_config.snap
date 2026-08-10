@@ -17,8 +17,8 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io"]
 
-[git]
-known_hosts_file = "/tmp/wt-test-git-known-hosts"
+[agent_git.github]
+host = "github.com"
 
 [guest]
 boot_timeout_seconds = 300
