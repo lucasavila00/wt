@@ -1,6 +1,6 @@
 ---
 source: crates/wt-agent-git/src/gateway.rs
-expression: "cli_output(&[\"open-mr\".to_owned()], Some(\"df1/fix-login\"), &grant)"
+expression: "cli_output(&[\"open-mr\".to_owned()], Some(\"wt/fix-login\"), &grant)"
 ---
 ag-git: pull or merge request, review, and CI commands are not available in this build yet.
 Normal Git fetch, pull, and push are available now.

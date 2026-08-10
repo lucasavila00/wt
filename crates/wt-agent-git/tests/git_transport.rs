@@ -48,7 +48,7 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         &[
             "push",
             upstream.to_str().unwrap(),
-            "main:refs/heads/taken/existing",
+            "main:refs/heads/wt/existing",
         ],
     );
     git(&upstream, &["symbolic-ref", "HEAD", "refs/heads/main"]);
@@ -56,6 +56,7 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     let control = temp.path().join("control.sock");
     let transport = temp.path().join("transport.sock");
     let relay_socket = temp.path().join("relay.sock");
+    let second_relay_socket = temp.path().join("second-relay.sock");
     let state = temp.path().join("state.json");
     let mut gateway = spawn_gateway(&control, &transport, &state, &repositories);
     wait_for(&control);
@@ -66,7 +67,6 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         "unconfigured",
         "git@other.test:project.git",
         "main",
-        "other/",
     );
     assert!(!response.ok);
     assert!(response.error.unwrap().contains("is not configured"));
@@ -75,57 +75,28 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         "missing-base",
         "git@local.test:project.git",
         "missing",
-        "missing/",
     );
     assert!(!response.ok);
     assert!(response.error.unwrap().contains("does not exist"));
-    let response = reserve(
-        &control,
-        "existing-prefix",
-        "git@local.test:project.git",
-        "main",
-        "taken/",
-    );
-    assert!(!response.ok);
-    assert!(response.error.unwrap().contains("already present"));
 
-    let response = reserve(
-        &control,
-        "world-1",
-        "git@local.test:project.git",
-        "main",
-        "df1/",
-    );
+    let response = reserve(&control, "world-1", "git@local.test:project.git", "main");
     assert!(response.ok, "{:?}", response.error);
     let grant = response.grant.unwrap();
-    let response = reserve(
-        &control,
-        "world-2",
-        "ssh://git@local.test/project.git",
-        "main",
-        "df1/",
-    );
-    assert!(!response.ok);
-    assert!(response.error.unwrap().contains("already reserved"));
+    let retry = reserve(&control, "world-1", "git@local.test:project.git", "main");
+    assert_eq!(retry.grant.as_ref(), Some(&grant));
+    let response = reserve(&control, "world-2", "git@local.test:project.git", "main");
+    assert!(response.ok, "{:?}", response.error);
+    let second_grant = response.grant.unwrap();
     let grant_file = temp.path().join("grant");
+    let second_grant_file = temp.path().join("second-grant");
     let original_token = grant.token.clone();
     fs::write(&grant_file, &grant.token).unwrap();
+    fs::write(&second_grant_file, &second_grant.token).unwrap();
 
-    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-relay"))
-        .args([
-            "--socket",
-            relay_socket.to_str().unwrap(),
-            "--grant-file",
-            grant_file.to_str().unwrap(),
-            "--gateway-unix",
-            transport.to_str().unwrap(),
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let _relay = Process(Some(relay));
+    let _relay = spawn_relay(&relay_socket, &grant_file, &transport);
+    let _second_relay = spawn_relay(&second_relay_socket, &second_grant_file, &transport);
     wait_for(&relay_socket);
+    wait_for(&second_relay_socket);
 
     let checkout = temp.path().join("checkout");
     let output = git_output(
@@ -150,36 +121,36 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         git_stdout(&checkout, &["rev-parse", "origin/main"])
     );
 
-    git(&checkout, &["switch", "-c", "df1/fix"]);
+    git(&checkout, &["switch", "-c", "wt/fix"]);
     fs::write(checkout.join("README.md"), "first\n").unwrap();
     git(&checkout, &["commit", "-am", "first"]);
     let published = git_output(
         &checkout,
-        &["push", "-u", "origin", "df1/fix"],
+        &["push", "-u", "origin", "wt/fix"],
         &relay_socket,
     );
     assert_success(&published);
     let diagnostics = String::from_utf8_lossy(&published.stderr);
     assert!(diagnostics.contains("This is a WT-managed development environment"));
-    assert!(diagnostics.contains("Published branch `df1/fix`"));
+    assert!(diagnostics.contains("Published branch `wt/fix`"));
     assert!(diagnostics.contains("ag-git open-mr"));
-    assert_ref(&upstream, "refs/heads/df1/fix", true);
+    assert_ref(&upstream, "refs/heads/wt/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();
     git(&checkout, &["commit", "-am", "second"]);
     assert_success(&git_output(
         &checkout,
-        &["push", "origin", "df1/fix"],
-        &relay_socket,
+        &["push", "origin", "wt/fix"],
+        &second_relay_socket,
     ));
     git(&checkout, &["reset", "--hard", "HEAD^"]);
     assert_success(&git_output(
         &checkout,
-        &["push", "--force", "origin", "df1/fix"],
-        &relay_socket,
+        &["push", "--force", "origin", "wt/fix"],
+        &second_relay_socket,
     ));
-    let local = git_stdout(&checkout, &["rev-parse", "df1/fix"]);
-    let published = git_stdout(&upstream, &["rev-parse", "refs/heads/df1/fix"]);
+    let local = git_stdout(&checkout, &["rev-parse", "wt/fix"]);
+    let published = git_stdout(&upstream, &["rev-parse", "refs/heads/wt/fix"]);
     assert_eq!(local, published);
 
     git(&checkout, &["switch", "-c", "wrong"]);
@@ -188,7 +159,7 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     let rejected = git_output(&checkout, &["push", "origin", "wrong"], &relay_socket);
     assert!(!rejected.status.success());
     assert!(
-        String::from_utf8_lossy(&rejected.stderr).contains("must use this world's `df1/` prefix"),
+        String::from_utf8_lossy(&rejected.stderr).contains("must use the shared `wt/` prefix"),
         "{}",
         String::from_utf8_lossy(&rejected.stderr)
     );
@@ -201,12 +172,12 @@ fn normal_git_uses_the_scoped_gateway_transport() {
 
     let deleted = git_output(
         &checkout,
-        &["push", "origin", "--delete", "df1/fix"],
-        &relay_socket,
+        &["push", "origin", "--delete", "wt/fix"],
+        &second_relay_socket,
     );
     assert_success(&deleted);
-    assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `df1/fix`"));
-    assert_ref(&upstream, "refs/heads/df1/fix", false);
+    assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `wt/fix`"));
+    assert_ref(&upstream, "refs/heads/wt/fix", false);
 
     gateway.stop();
     gateway = spawn_gateway(&control, &transport, &state, &repositories);
@@ -229,13 +200,12 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         "{}",
         String::from_utf8_lossy(&rejected.stderr)
     );
-    let replacement = reserve(
-        &control,
-        "world-1",
-        "git@local.test:project.git",
-        "main",
-        "df1/",
-    );
+    assert_success(&git_output(
+        &checkout,
+        &["fetch", "origin"],
+        &second_relay_socket,
+    ));
+    let replacement = reserve(&control, "world-3", "git@local.test:project.git", "main");
     assert!(replacement.ok, "{:?}", replacement.error);
     assert_ne!(replacement.grant.unwrap().token, original_token);
     drop(gateway);
@@ -264,13 +234,7 @@ fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &
     Process(Some(child))
 }
 
-fn reserve(
-    control: &Path,
-    world_id: &str,
-    source: &str,
-    base: &str,
-    prefix: &str,
-) -> ControlResponse {
+fn reserve(control: &Path, world_id: &str, source: &str, base: &str) -> ControlResponse {
     let mut stream = UnixStream::connect(control).unwrap();
     write_json_line(
         &mut stream,
@@ -278,11 +242,27 @@ fn reserve(
             world_id: world_id.to_owned(),
             source: source.to_owned(),
             base: base.to_owned(),
-            prefix: prefix.to_owned(),
         },
     )
     .unwrap();
     read_json_line(&mut stream).unwrap()
+}
+
+fn spawn_relay(socket: &Path, grant_file: &Path, transport: &Path) -> Process {
+    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-relay"))
+        .args([
+            "--socket",
+            socket.to_str().unwrap(),
+            "--grant-file",
+            grant_file.to_str().unwrap(),
+            "--gateway-unix",
+            transport.to_str().unwrap(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    Process(Some(relay))
 }
 
 fn git(directory: &Path, args: &[&str]) {

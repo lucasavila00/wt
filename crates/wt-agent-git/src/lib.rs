@@ -14,6 +14,7 @@ pub use vsock::{VsockListener, VsockStream};
 
 pub const VSOCK_PORT: u32 = 18017;
 pub const CONTROL_SOCKET: &str = "/run/wt-agent-git/control.sock";
+pub const BRANCH_PREFIX: &str = "wt/";
 
 #[derive(Clone, Debug)]
 pub struct ControlClient {

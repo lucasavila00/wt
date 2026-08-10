@@ -190,7 +190,7 @@ impl KvmHarness {
         self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir, None);
     }
 
-    pub(crate) fn assert_prefix_is_reserved(&self, name: &InstanceName) {
+    pub(crate) fn assert_shared_prefix_is_available(&self) {
         let mut stream =
             std::os::unix::net::UnixStream::connect(self.temp.path().join("gateway-control.sock"))
                 .unwrap();
@@ -200,12 +200,11 @@ impl KvmHarness {
                 world_id: "different-world".to_owned(),
                 source: self.git.url(),
                 base: "main".to_owned(),
-                prefix: format!("{name}/"),
             },
         )
         .unwrap();
         let response: ControlResponse = read_json_line(&mut stream).unwrap();
-        assert!(!response.ok, "another world acquired {name}'s prefix");
+        assert!(response.ok, "another world could not share the WT prefix");
     }
 
     pub(crate) fn grant_token(&self) -> String {

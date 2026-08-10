@@ -225,12 +225,11 @@ impl WorldProvisioner {
                 contents,
             )?;
         }
-        let git_prefix = format!("{}/", spec.name);
         for (name, contents) in [
             ("source", spec.source),
             ("git-base", spec.git_base),
             ("git-grant", spec.git_grant),
-            ("git-prefix", git_prefix.as_str()),
+            ("git-prefix", spec.git_prefix),
             ("git-user-name", spec.git_user_name),
             ("git-user-email", spec.git_user_email),
         ] {

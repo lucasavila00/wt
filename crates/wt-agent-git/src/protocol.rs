@@ -9,7 +9,6 @@ pub enum ControlRequest {
         world_id: String,
         source: String,
         base: String,
-        prefix: String,
     },
     Revoke {
         grant_id: String,

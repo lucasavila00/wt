@@ -1,12 +1,12 @@
 ---
 source: crates/wt-agent-git/src/gateway.rs
-expression: "cli_output(&[], Some(\"df1/fix-login\"), &grant)"
+expression: "cli_output(&[], Some(\"wt/fix-login\"), &grant)"
 ---
 WT agent Git
 
 Project: git@github.com:group/project.git
-Current branch: df1/fix-login
-Required branch prefix: df1/
+Current branch: wt/fix-login
+Shared branch prefix: wt/
 Request base: main
 
 Pull or merge request, review, and CI commands are not available in this build yet.

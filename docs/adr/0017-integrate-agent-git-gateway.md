@@ -68,8 +68,8 @@ connecting to the Linux server and its worlds over SSH.
 | Agent Git gateway | Dedicated GitHub or GitLab Git and API credentials |
 
 During creation, `wt-server` asks the gateway for a token limited to the
-selected project, base branch, and world name. World setup stores it on the
-private disk, outside the checkout, and starts the relay.
+selected project, base branch, and shared `wt/` branch namespace. World setup
+stores it on the private disk, outside the checkout, and starts the relay.
 
 Worlds never receive the developer's SSH keys or provider credentials.
 
@@ -90,9 +90,9 @@ validates them, and installs encrypted systemd credentials for the gateway.
 Their contents never enter WT configuration, command arguments, or environment
 variables.
 
-This is a clean-install change. Moving from the pre-gateway server requires
-`make clear` or `make nuke`; WT does not migrate old worlds, gateway state, or
-the earlier database schema.
+This is a clean-install change. Moving from the pre-gateway server or the
+per-world-prefix design requires `make nuke`; WT does not migrate old worlds,
+gateway state, or the earlier database schema.
 
 ## SSH agent forwarding
 
@@ -120,10 +120,10 @@ continues to work normally.
 
 ## Git workflow
 
-The world name is the required branch prefix. In a world named `df1`:
+Every world for a project shares the `wt/` branch namespace:
 
 ```text
-git switch -c df1/fix-login
+git switch -c wt/fix-login
 # edit and commit
 git push
 ```
@@ -132,12 +132,9 @@ WT configures `origin` with an `ag::` URL and enables automatic upstream setup.
 Normal `git push`, `git fetch`, and `git pull` invoke `git-remote-ag` and need no
 gateway URL or extra command.
 
-The gateway pushes branches unchanged and accepts only the world's prefix.
-
-The token allows updates, force-pushes, and deletions under `df1/`. The gateway
-rejects other branches and tags. The `df1/` namespace is reserved for this
-project and world. Creation fails if the prefix already exists unless an earlier
-instance of the same project and world owns it.
+The gateway pushes branches unchanged. Every token for the project allows
+updates, force-pushes, and deletions under `wt/`. This lets agents continue or
+take over each other's work. The gateway rejects other branches and tags.
 
 GitHub or GitLab is the durable Git store. Gateway caches are disposable.
 
@@ -155,8 +152,9 @@ WT: This is a WT-managed development environment for a coding agent.
 WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
 WT: not available here. Do not look for credentials or use `gh` or `glab`.
 WT: WT gives you scoped access to project `group/project`.
-WT: Use normal Git for commits, fetches, pulls, and pushes. Every branch you
-WT: push must start with `df1/`. Pull or merge requests target `main`.
+WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
+WT: this project can write branches under `wt/`. Pull or merge requests target
+WT: `main`.
 WT: `ag-git` is the installed CLI for pull or merge requests, reviews, and CI.
 WT: Run `ag-git` for the current branch's status and suggested next actions.
 WT: Run `ag-git --help` to discover every available command.
@@ -168,15 +166,15 @@ Git renders the same gateway header with `remote:` in place of `WT:`.
 Checking out an invalid branch explains the rule and the fix:
 
 ```text
-WT: This world can only push branches that start with `df1/`.
+WT: Branches pushed from a WT world must start with `wt/`.
 WT: Rename the current branch before pushing:
-WT:   git branch -m df1/fix-login
+WT:   git branch -m wt/fix-login
 ```
 
 After a commit, WT explains the whole next step:
 
 ```text
-WT: Commit created on `df1/fix-login`.
+WT: Commit created on `wt/fix-login`.
 WT: Publish it with:
 WT:   git push
 WT: After pushing, run `ag-git` to open or manage its pull or merge request.
@@ -186,7 +184,7 @@ The gateway repeats the branch-name guidance if a bad branch reaches it. After
 a successful push without a request, it prints:
 
 ```text
-remote: Published branch `df1/fix-login`.
+remote: Published branch `wt/fix-login`.
 remote: This branch does not have a pull or merge request.
 remote: Open one for review:
 remote:   ag-git open-mr
@@ -197,7 +195,7 @@ remote:   ag-git open-mr --draft
 If a request already exists, the push output says what changed:
 
 ```text
-remote: Published branch `df1/fix-login`.
+remote: Published branch `wt/fix-login`.
 remote: Updated request !123: https://gitlab.example/project/-/merge_requests/123
 remote: Run `ag-git` to see review comments and CI.
 ```
@@ -232,7 +230,7 @@ Comments use the gateway's provider identity and include the world name.
 ## Lifecycle
 
 `wt rm` revokes the world's token but leaves external branches and requests
-intact. Recreating the same world for the same project gets a new token and
-continues the existing namespace.
+intact. Other worlds for the project retain access to the shared namespace.
+Creating or recreating a world gets a new token without reserving a prefix.
 
-`wt fork` is unavailable because it would copy a world's token and namespace.
+`wt fork` is unavailable because it would copy a world's token.
