@@ -78,6 +78,12 @@ Install:
 scripts/install-server --config ./server.toml
 ```
 
+If the configured SSH key is encrypted, setup asks for that key's existing
+passphrase. The prompt names the provider and key before asking. WT verifies the
+key pair, creates an unlocked temporary copy, encrypts that copy as a systemd
+credential for the local Git gateway, and removes the temporary copy. It never
+changes the configured SSH key.
+
 If setup changes group membership, log out, log back in, and run the same command
 again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`
 and installs and starts the WT services. Keep the install input for future

@@ -24,10 +24,11 @@ interactive terminal:
 scripts/install-server --config examples/server-config/wt-server.development.toml
 ```
 
-Run as a normal user. The installer asks for the SSH key passphrase when needed,
-checks that the key pair matches, and gives encrypted copies of the token and
-unlocked key to the local gateway service. If setup changes group membership,
-log out, log back in, and rerun it.
+Run as a normal user. If the configured SSH key is encrypted, the installer
+names the key and asks for its existing passphrase. It checks that the key pair
+matches, encrypts an unlocked copy for the local gateway service, and leaves the
+configured key unchanged. If setup changes group membership, log out, log back
+in, and rerun it.
 
 Install the local client config:
 
