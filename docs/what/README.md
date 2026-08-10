@@ -132,8 +132,9 @@ the guests; the workstation does not need a route to the libvirt network.
 ## Git access
 
 The server's agent Git gateway owns the provider SSH key and API token. The
-world receives a revocable grant limited to its project, base, and branch
-prefix. Provider credentials never enter the guest or devcontainer.
+world receives a revocable grant limited to its project, base, and the shared
+`wt/` branch namespace. Provider credentials never enter the guest or
+devcontainer.
 
 When creating a world, `wt` reads the workstation's global Git `user.name` and
 `user.email`. Both values are required. If either is missing, empty, or cannot be
@@ -144,9 +145,9 @@ copy other Git configuration.
 After creating the guest, `wt new` replaces itself with `ssh NAME`. The
 installer clones through an `ag::` remote, finishes package and Docker setup,
 starts the devcontainer, and tees its output to Byobu and a guest-held log.
-Normal Git continues through that remote. A world named `df1` may push only
-branches under `df1/`; tags and other namespaces are rejected. `ag-git` handles
-pull or merge requests, reviews, and CI.
+Normal Git continues through that remote. Every world for the project may
+update, force-push, or delete branches under `wt/`; tags and other namespaces
+are rejected. `ag-git` handles pull or merge requests, reviews, and CI.
 
 ## Safety model
 
@@ -157,7 +158,7 @@ pull or merge requests, reviews, and CI.
 | SSH authentication | Server access follows the user's OpenSSH policy. Guest and app access require configured public keys. |
 | SSH identity | Every world gets unique guest and app host keys. WT verifies and pins both identities with strict host-key checking. |
 | App SSH exposure | The app SSH server is reached through the guest proxy; no app SSH port is published on the KVM host. |
-| Git credentials | Only the host gateway holds provider credentials. Each world gets one project- and namespace-scoped grant, revoked before its disk is deleted. |
+| Git credentials | Only the host gateway holds provider credentials. Each world gets one project- and shared-namespace-scoped grant, revoked before its disk is deleted. |
 | Configuration | Setup installs one strict server config and fails when installed state drifts from it. |
 
 ### Trust boundaries

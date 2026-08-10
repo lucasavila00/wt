@@ -10,7 +10,6 @@ pub trait AgentGitGateway {
         world_id: Uuid,
         source: &str,
         base: &str,
-        prefix: &str,
     ) -> Result<wt_agent_git::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
@@ -21,14 +20,12 @@ impl AgentGitGateway for wt_agent_git::ControlClient {
         world_id: Uuid,
         source: &str,
         base: &str,
-        prefix: &str,
     ) -> Result<wt_agent_git::Grant, String> {
         let response = self
             .request(&wt_agent_git::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
                 source: source.to_owned(),
                 base: base.to_owned(),
-                prefix: prefix.to_owned(),
             })
             .map_err(|error| error.to_string())?;
         if response.ok {
@@ -138,10 +135,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Err(error) => return Err(map_store_error(error)),
         }
         let id = Uuid::new_v4();
-        let git_prefix = format!("{}/", request.name);
+        let git_prefix = wt_agent_git::BRANCH_PREFIX.to_owned();
         let grant = self
             .gateway
-            .reserve(id, &request.source, &request.git_base, &git_prefix)
+            .reserve(id, &request.source, &request.git_base)
             .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
         let disk_id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
@@ -182,6 +179,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             name: &stored.instance.name,
             source: &stored.instance.source,
             git_base: &stored.instance.git_base,
+            git_prefix: &stored.instance.git_prefix,
             git_grant: &grant.token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,

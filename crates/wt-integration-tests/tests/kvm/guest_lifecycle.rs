@@ -59,7 +59,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         "fetch through the restarted relay from the existing devcontainer",
     );
 
-    let branch = format!("{name}/fix-login");
+    let branch = "wt/fix-login";
     let output = app_command(
         &harness,
         &name,
@@ -79,7 +79,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         true,
     );
     harness.restart_gateway();
-    harness.assert_prefix_is_reserved(&name);
+    harness.assert_shared_prefix_is_available();
     app(
         &harness,
         &name,

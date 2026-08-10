@@ -8,12 +8,12 @@ fn checkout_and_commit_hints_explain_the_environment() {
     for (key, value) in [
         ("wt.project", "git@github.com:group/project.git"),
         ("wt.base", "main"),
-        ("wt.prefix", "df1/"),
+        ("wt.prefix", "wt/"),
     ] {
         git(temp.path(), &["config", key, value]);
     }
     insta::assert_snapshot!("checkout_hint", stderr(run_hint(temp.path(), "checkout")));
-    git(temp.path(), &["branch", "-m", "df1/fix-login"]);
+    git(temp.path(), &["branch", "-m", "wt/fix-login"]);
     insta::assert_snapshot!("commit_hint", stderr(run_hint(temp.path(), "commit")));
 }
 

@@ -41,7 +41,6 @@ impl AgentGitGateway for Gateway {
         world_id: Uuid,
         _source: &str,
         _base: &str,
-        _prefix: &str,
     ) -> Result<wt_agent_git::Grant, String> {
         Ok(wt_agent_git::Grant {
             id: format!("grant-{world_id}"),
@@ -60,7 +59,6 @@ impl AgentGitGateway for UnavailableGateway {
         world_id: Uuid,
         _source: &str,
         _base: &str,
-        _prefix: &str,
     ) -> Result<wt_agent_git::Grant, String> {
         Ok(wt_agent_git::Grant {
             id: format!("grant-{world_id}"),
@@ -202,6 +200,7 @@ fn create_returns_setup_ready_world_synchronously() {
     assert_eq!(instance.vcpus, 1);
     assert_eq!(instance.memory_mib, 1024);
     assert_eq!(instance.disk_gib, 8);
+    assert_eq!(instance.git_prefix, "wt/");
     assert!(instance.ssh.is_some());
     assert!(instance.app_ssh.is_none());
     assert_eq!(calls.load(Ordering::SeqCst), 1);

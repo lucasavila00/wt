@@ -1,6 +1,6 @@
 use crate::{
     api, ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION,
+    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -120,8 +120,7 @@ impl Gateway {
                 world_id,
                 source,
                 base,
-                prefix,
-            } => self.reserve(&world_id, &source, &base, &prefix),
+            } => self.reserve(&world_id, &source, &base),
             ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
         }
     }
@@ -163,14 +162,8 @@ impl Gateway {
         }
     }
 
-    fn reserve(
-        &self,
-        world_id: &str,
-        source: &str,
-        base: &str,
-        prefix: &str,
-    ) -> Result<ControlResponse> {
-        if world_id.is_empty() || base.is_empty() || !valid_prefix(prefix) {
+    fn reserve(&self, world_id: &str, source: &str, base: &str) -> Result<ControlResponse> {
+        if world_id.is_empty() || base.is_empty() {
             bail!("invalid gateway grant scope");
         }
         let parsed = parse_source(source)?;
@@ -185,7 +178,7 @@ impl Gateway {
                 .iter()
                 .find(|grant| grant.world_id == world_id && !grant.revoked)
             {
-                if existing.source != source || existing.base != base || existing.prefix != prefix {
+                if existing.source != source || existing.base != base {
                     bail!("world already reserved with a different Git scope");
                 }
                 return Ok(ControlResponse::ok(Some(Grant {
@@ -193,33 +186,24 @@ impl Gateway {
                     token: existing.token.clone(),
                 })));
             }
-            if state.grants.iter().any(|grant| {
-                !grant.revoked && same_project(&grant.source, &parsed) && grant.prefix == prefix
-            }) {
-                bail!("branch prefix {prefix} is already reserved for this project");
-            }
         }
-        let reclaims_prefix = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?
-            .grants
-            .iter()
-            .any(|grant| {
-                grant.revoked
-                    && grant.world_id == world_id
-                    && same_project(&grant.source, &parsed)
-                    && grant.prefix == prefix
-            });
-        verify_repository(provider, &parsed, base, prefix, reclaims_prefix)?;
+        verify_repository(provider, &parsed, base)?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if state.grants.iter().any(|grant| {
-            !grant.revoked && same_project(&grant.source, &parsed) && grant.prefix == prefix
-        }) {
-            bail!("branch prefix {prefix} is already reserved for this project");
+        if let Some(existing) = state
+            .grants
+            .iter()
+            .find(|grant| grant.world_id == world_id && !grant.revoked)
+        {
+            if existing.source != source || existing.base != base {
+                bail!("world already reserved with a different Git scope");
+            }
+            return Ok(ControlResponse::ok(Some(Grant {
+                id: existing.id.clone(),
+                token: existing.token.clone(),
+            })));
         }
         let record = GrantRecord {
             id: Uuid::new_v4().to_string(),
@@ -227,7 +211,7 @@ impl Gateway {
             world_id: world_id.to_owned(),
             source: source.to_owned(),
             base: base.to_owned(),
-            prefix: prefix.to_owned(),
+            prefix: BRANCH_PREFIX.to_owned(),
             revoked: false,
         };
         let response = ControlResponse::ok(Some(Grant {
@@ -375,7 +359,7 @@ impl Gateway {
         let head = head.context("ag-git requires a commit checkout")?;
         if !branch.starts_with(&grant.prefix) || branch.len() == grant.prefix.len() {
             bail!(
-                "branch `{branch}` must use this world's `{}` prefix; rename it with `git branch -m {}NAME`",
+                "branch `{branch}` must use the shared `{}` prefix; rename it with `git branch -m {}NAME`",
                 grant.prefix,
                 grant.prefix
             );
@@ -498,7 +482,7 @@ fn cli_output(args: &[String], branch: Option<&str>, grant: &GrantRecord) -> Str
         HELP.to_owned()
     } else if args.is_empty() {
         format!(
-            "WT agent Git\n\nProject: {}\nCurrent branch: {}\nRequired branch prefix: {}\nRequest base: {}\n\nPull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n",
+            "WT agent Git\n\nProject: {}\nCurrent branch: {}\nShared branch prefix: {}\nRequest base: {}\n\nPull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n",
             grant.source,
             branch.unwrap_or("detached HEAD"),
             grant.prefix,
@@ -527,21 +511,14 @@ remote: The developer's SSH keys and GitHub or GitLab credentials are not availa
 remote: Do not look for credentials or use gh or glab.\n\
 remote: WT gives you scoped access to project {project}.\n\
 remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
-remote: Every branch you push must start with {}. Pull or merge requests target {}.\n\
+remote: Every WT world for this project can write branches under {}.\n\
+remote: Pull or merge requests target {}.\n\
 remote: ag-git is the installed CLI for pull or merge requests, reviews, and CI.\n\
 remote: Run ag-git for the current branch's status and suggested next actions.\n\
 remote: Run ag-git --help to discover every available command.\n\
 remote:\n",
         grant.prefix, grant.base
     )
-}
-
-fn valid_prefix(value: &str) -> bool {
-    value.ends_with('/')
-        && value.len() > 1
-        && value[..value.len() - 1]
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 struct GitSource {
@@ -676,13 +653,7 @@ fn repository_refs(provider: &Provider, source: &GitSource) -> Result<Vec<(Strin
     Ok(refs)
 }
 
-fn verify_repository(
-    provider: &Provider,
-    source: &GitSource,
-    base: &str,
-    prefix: &str,
-    reclaims_prefix: bool,
-) -> Result<()> {
+fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Result<()> {
     let refs = repository_refs(provider, source).with_context(|| {
         format!(
             "the gateway SSH key cannot read repository {} on {}",
@@ -692,16 +663,6 @@ fn verify_repository(
     let expected = format!("refs/heads/{base}");
     if !refs.iter().any(|(_, reference)| reference == &expected) {
         bail!("Git base branch `{base}` does not exist");
-    }
-    let prefixed_ref = format!("refs/heads/{prefix}");
-    if !reclaims_prefix
-        && refs
-            .iter()
-            .any(|(_, reference)| reference.starts_with(&prefixed_ref))
-    {
-        bail!(
-            "branch prefix `{prefix}` is already present in the project; choose a different world name"
-        );
     }
     if let Provider::Ssh {
         kind,
@@ -719,13 +680,6 @@ fn verify_repository(
         .context("verify provider API access")?;
     }
     Ok(())
-}
-
-fn same_project(source: &str, expected: &GitSource) -> bool {
-    parse_source(source).is_ok_and(|source| {
-        source.host == expected.host
-            && source.path.trim_end_matches(".git") == expected.path.trim_end_matches(".git")
-    })
 }
 
 fn capture_stderr(mut stderr: impl Read) -> Vec<u8> {
@@ -928,7 +882,7 @@ fn validate_push(section: &[u8], prefix: &str) -> Result<()> {
         };
         if !branch.starts_with(prefix) || branch.len() == prefix.len() {
             bail!(
-                "branch `{branch}` must use this world's `{prefix}` prefix; rename it with `git branch -m {prefix}NAME`"
+                "branch `{branch}` must use the shared `{prefix}` prefix; rename it with `git branch -m {prefix}NAME`"
             );
         }
     }
@@ -1115,9 +1069,9 @@ mod tests {
             );
             format!("{:04x}{payload}0000", payload.len() + 4).into_bytes()
         };
-        assert!(validate_push(&command("refs/heads/df1/fix"), "df1/").is_ok());
-        assert!(validate_push(&command("refs/heads/fix"), "df1/").is_err());
-        assert!(validate_push(&command("refs/tags/v1"), "df1/").is_err());
+        assert!(validate_push(&command("refs/heads/wt/fix"), "wt/").is_ok());
+        assert!(validate_push(&command("refs/heads/fix"), "wt/").is_err());
+        assert!(validate_push(&command("refs/tags/v1"), "wt/").is_err());
     }
 
     #[test]
@@ -1134,10 +1088,10 @@ mod tests {
     #[test]
     fn cli_status_and_unavailable_command_are_actionable() {
         let grant = test_grant();
-        insta::assert_snapshot!("cli_status", cli_output(&[], Some("df1/fix-login"), &grant));
+        insta::assert_snapshot!("cli_status", cli_output(&[], Some("wt/fix-login"), &grant));
         insta::assert_snapshot!(
             "cli_unavailable",
-            cli_output(&["open-mr".to_owned()], Some("df1/fix-login"), &grant)
+            cli_output(&["open-mr".to_owned()], Some("wt/fix-login"), &grant)
         );
     }
 
@@ -1161,32 +1115,32 @@ mod tests {
         };
         assert_eq!(
             successful_push_updates(
-                &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
-                &response("ok refs/heads/df1/fix-login"),
+                &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
+                &response("ok refs/heads/wt/fix-login"),
                 true,
             )
             .unwrap(),
-            vec![("a".repeat(40), "df1/fix-login".to_owned())]
+            vec![("a".repeat(40), "wt/fix-login".to_owned())]
         );
         assert_eq!(
             successful_push_updates(
-                &command(&"0".repeat(40), "refs/heads/df1/fix-login"),
-                &response("ok refs/heads/df1/fix-login"),
+                &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
+                &response("ok refs/heads/wt/fix-login"),
                 true,
             )
             .unwrap(),
-            vec![("0".repeat(40), "df1/fix-login".to_owned())]
+            vec![("0".repeat(40), "wt/fix-login".to_owned())]
         );
         assert!(successful_push_updates(
-            &command(&"a".repeat(40), "refs/heads/df1/fix-login"),
-            &response("ng refs/heads/df1/fix-login protected branch"),
+            &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
+            &response("ng refs/heads/wt/fix-login protected branch"),
             true,
         )
         .unwrap()
         .is_empty());
         insta::assert_snapshot!(
             "push_rejected",
-            validate_push(&command(&"a".repeat(40), "refs/heads/fix-login"), "df1/")
+            validate_push(&command(&"a".repeat(40), "refs/heads/fix-login"), "wt/")
                 .unwrap_err()
                 .to_string()
         );
@@ -1199,7 +1153,7 @@ mod tests {
             world_id: "world".to_owned(),
             source: "git@github.com:group/project.git".to_owned(),
             base: "main".to_owned(),
-            prefix: "df1/".to_owned(),
+            prefix: BRANCH_PREFIX.to_owned(),
             revoked: false,
         }
     }

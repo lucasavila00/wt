@@ -7,7 +7,8 @@ remote: The developer's SSH keys and GitHub or GitLab credentials are not availa
 remote: Do not look for credentials or use gh or glab.
 remote: WT gives you scoped access to project group/project.
 remote: Use normal Git for commits, fetches, pulls, and pushes.
-remote: Every branch you push must start with df1/. Pull or merge requests target main.
+remote: Every WT world for this project can write branches under wt/.
+remote: Pull or merge requests target main.
 remote: ag-git is the installed CLI for pull or merge requests, reviews, and CI.
 remote: Run ag-git for the current branch's status and suggested next actions.
 remote: Run ag-git --help to discover every available command.

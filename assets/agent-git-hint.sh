@@ -17,8 +17,8 @@ WT: This is a WT-managed development environment for a coding agent.
 WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
 WT: not available here. Do not look for credentials or use gh or glab.
 WT: WT gives you scoped access to project $project.
-WT: Use normal Git for commits, fetches, pulls, and pushes. Every branch you
-WT: push must start with $prefix. Pull or merge requests target $base.
+WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
+WT: this project can write branches under $prefix. Pull or merge requests target $base.
 WT: ag-git is the installed CLI for pull or merge requests, reviews, and CI.
 WT: Run ag-git for the current branch's status and suggested next actions.
 WT: Run ag-git --help to discover every available command.
@@ -32,7 +32,7 @@ checkout)
     '') ;;
     *)
         cat >&2 <<EOF
-WT: This world can only push branches that start with $prefix.
+WT: Branches pushed from a WT world must start with $prefix.
 WT: Rename the current branch before pushing:
 WT:   git branch -m ${prefix}fix-name
 EOF

@@ -50,16 +50,17 @@ session.
 
 Every checkout uses an `ag::` origin. Normal `git fetch`, `git pull`, and
 `git push` go through the local guest relay; the world has no provider key or
-token. A world named `df1` can push branches under `df1/`:
+token. Every world for the project can push branches under `wt/`:
 
 ```bash
-git switch -c df1/fix-login
+git switch -c wt/fix-login
 git push
 ```
 
-The gateway rejects other branch namespaces and tags. Run `ag-git` for the
-current branch's pull or merge request, reviews, and CI, or `ag-git --help` for
-the complete command list.
+Worlds may update, force-push, or delete each other's `wt/` branches. The
+gateway rejects other branch namespaces and tags. Run `ag-git` for the current
+branch's pull or merge request, reviews, and CI, or `ag-git --help` for the
+complete command list.
 
 ## VS Code launch
 
