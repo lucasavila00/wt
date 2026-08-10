@@ -108,7 +108,8 @@ Then, as wt:
   cd wt
   cp examples/server-config/wt-server.development.toml ./server.toml
 
-Install stable Rust with rustup, configure the GitHub token file and SSH files
-named by server.toml, then run from an interactive terminal:
+Install stable Rust with rustup, then follow GETTING-STARTED.md to configure the
+GitHub token and SSH files named by server.toml. Then run from an interactive
+terminal:
   scripts/install-server --config ./server.toml
 EOF

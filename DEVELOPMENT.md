@@ -6,10 +6,16 @@ enabled.
 
 ## Install the local server
 
-The development config enables GitHub. Before installing, create
-`~/.config/wt/credentials/github.token` as a nonempty `0600` file and make sure
-the SSH key configured in the example can read and write the repositories you
-will use. Its public key and `~/.ssh/known_hosts` must also exist.
+The development config enables GitHub. Follow the
+[GitHub credential instructions](GETTING-STARTED.md#github-credential) to create
+`~/.config/wt/credentials/github.token`. WT requires a personal access token
+(classic) with the `repo` scope; a fine-grained token cannot provide the CI
+check data used by `ag-git`.
+
+Make sure the SSH key configured in the example can read and write the
+repositories you will use. Its public key and `~/.ssh/known_hosts` must also
+exist. The API token handles pull requests, reviews, and CI; the SSH key handles
+Git fetch and push.
 
 Review `examples/server-config/wt-server.development.toml`, then run from an
 interactive terminal:

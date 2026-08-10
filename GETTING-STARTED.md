@@ -45,6 +45,33 @@ Edit `server.toml`. At minimum, check:
   temporary resources used to build the golden image.
 - `registry_cache.registries`: registry hosts whose public images are cached.
 
+### GitHub credential
+
+The example config enables GitHub and expects
+`~/.config/wt/credentials/github.token`. Create a
+[GitHub personal access token (classic)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic)
+with the `repo` scope and no additional scopes. Set an expiration and, when
+required by an organization, authorize the token for SAML SSO. The user that
+creates the token must have write access to every repository WT will use.
+
+WT cannot currently use a fine-grained personal access token. `ag-git` reads
+individual CI checks, and GitHub does not allow fine-grained tokens to call the
+Checks API. See GitHub's documentation on
+[personal access token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-token-limitations).
+
+Create the credential file without putting the token in shell history:
+
+```bash
+install -d -m 0700 ~/.config/wt/credentials
+touch ~/.config/wt/credentials/github.token
+chmod 0600 ~/.config/wt/credentials/github.token
+${EDITOR:-vi} ~/.config/wt/credentials/github.token
+```
+
+The file contains only the token; a trailing newline is allowed. The token
+handles pull requests, reviews, and CI. The SSH key configured under
+`agent_git.github` handles Git fetch and push.
+
 Install:
 
 ```bash
