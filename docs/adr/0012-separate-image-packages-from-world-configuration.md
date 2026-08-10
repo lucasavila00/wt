@@ -25,8 +25,9 @@ state instead: the `wt` user, credentials, services, and user configuration.
 
 When a pinned package changes, bump the image recipe version. Rebuild with
 `make clear`, `make prepare-image`, and `make install-server`; `clear` keeps the
-Ubuntu source image and registry cache. Use `make nuke` only when configuration
-or cache state must also be removed.
+Ubuntu source image and registry cache. ADR 0018 makes `clear` the normal runtime
+reset. Use `make nuke` only when installed service, credential, download, or
+cache state must also be removed.
 
 Installing the expected version is not enough to prove compatibility. Run the
 real KVM end-to-end test after the rebuild. Put runtime overrides in the final

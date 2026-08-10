@@ -83,9 +83,11 @@ make clear
 ```
 
 This destroys `wt-*` domains and removes worlds, gateway grants, the golden
-image, the server database, and generated SSH inventory. It keeps the server
-installation, provider credentials, configuration, Ubuntu source image, and
-registry cache.
+image, the server database, generated runtime configuration, and generated SSH
+inventory. It keeps installed services and provider credentials, source
+credential files, downloaded image and package artifacts, and the registry
+cache. Rerun `scripts/install-server --config PATH` afterward.
 
-Use `make nuke` for a full teardown, including configuration and registry-cache
-state. Neither target uninstalls packages or binaries.
+Use `make nuke` for a full teardown, including installed services and
+credentials, downloaded artifacts, and registry-cache state. Neither target
+removes source credential files or uninstalls packages and binaries.

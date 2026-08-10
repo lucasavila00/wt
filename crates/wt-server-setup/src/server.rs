@@ -22,6 +22,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     require_installed_config_compatible(input_path, &server)?;
+    let replace_runtime = !Path::new(SERVER_CONFIG_PATH).exists();
     let credentials = prepare_agent_git_credentials(runner, &input)?;
     prepare_host(runner, &server)?;
     registry_cache::ensure(runner, &server)?;
@@ -32,7 +33,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     install_server_config(runner, input_path, &server, &server_bytes)?;
     install_agent_git_credentials(runner, &credentials)?;
     println!("Installing and starting WT services...");
-    install_services(runner, &input, &server)?;
+    install_services(runner, &input, &server, replace_runtime)?;
     println!(
         "installed wt server from install input {}",
         input_path.display()
@@ -310,12 +311,12 @@ Accidental change: re-run with the install input that produced the current serve
   scripts/install-server --config {input_path}
 
 Intentional change: clear WT server state, then reinstall:
-  make nuke   # or: scripts/nuke
+  make clear   # or: scripts/clear
   scripts/install-server --config {input_path}
 
-`make nuke` destroys every wt-* domain and removes installed WT state
-(config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
-Packages and binaries stay installed."
+`make clear` destroys every wt-* domain and removes generated runtime state
+(config, golden image, worlds, grants, database, and generated SSH inventory).
+It keeps installed services and credentials, source downloads, and caches."
     )
 }
 
@@ -415,6 +416,7 @@ fn install_services(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
+    replace_runtime: bool,
 ) -> Result<()> {
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
@@ -424,12 +426,14 @@ fn install_services(
         "wt-agent-git-gateway",
         Path::new(GATEWAY_SERVICE_PATH),
         &gateway_service(&user, input, server),
+        replace_runtime,
     )?;
     install_service_unit(
         runner,
         "wt-server",
         Path::new(SERVER_SERVICE_PATH),
         &server_service(&user, server),
+        replace_runtime,
     )?;
     runner.run(
         cmd!("sudo", "systemctl", "daemon-reload"),
@@ -453,27 +457,43 @@ fn install_service_unit(
     name: &str,
     destination: &Path,
     bytes: &[u8],
+    replace_runtime: bool,
 ) -> Result<()> {
     if destination.exists() {
         require_root_file(destination, 0o644)?;
-        if fs::read(destination).context("read installed wt-server service")? != bytes {
-            bail!(
-                "service unit drift at {}; run make nuke before reinstalling",
-                destination.display()
-            );
+        let installed = fs::read(destination).context("read installed WT service")?;
+        if !service_unit_needs_replacement(destination, &installed, bytes, replace_runtime)? {
+            return Ok(());
         }
-    } else {
-        let local = Path::new("target").join(format!("{name}.service.install"));
-        fs::write(&local, bytes).with_context(|| format!("stage {name} service"))?;
-        let temporary = Path::new("/etc/systemd/system").join(format!(".{name}.service.wt-new"));
-        if temporary.exists() {
-            bail!("stale service install file exists: {}", temporary.display());
-        }
-        sudo_install(runner, &local, &temporary, 0o644)?;
-        sudo_move(runner, &temporary, destination)?;
-        let _ = fs::remove_file(local);
     }
+    let local = Path::new("target").join(format!("{name}.service.install"));
+    fs::write(&local, bytes).with_context(|| format!("stage {name} service"))?;
+    let temporary = Path::new("/etc/systemd/system").join(format!(".{name}.service.wt-new"));
+    if temporary.exists() {
+        bail!("stale service install file exists: {}", temporary.display());
+    }
+    sudo_install(runner, &local, &temporary, 0o644)?;
+    sudo_move(runner, &temporary, destination)?;
+    let _ = fs::remove_file(local);
     Ok(())
+}
+
+fn service_unit_needs_replacement(
+    destination: &Path,
+    installed: &[u8],
+    requested: &[u8],
+    replace_runtime: bool,
+) -> Result<bool> {
+    if installed == requested {
+        return Ok(false);
+    }
+    if replace_runtime {
+        return Ok(true);
+    }
+    bail!(
+        "service unit drift at {}; run make clear before reinstalling",
+        destination.display()
+    )
 }
 
 fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
@@ -643,13 +663,26 @@ mod tests {
           scripts/install-server --config ./server.toml
 
         Intentional change: clear WT server state, then reinstall:
-          make nuke   # or: scripts/nuke
+          make clear   # or: scripts/clear
           scripts/install-server --config ./server.toml
 
-        `make nuke` destroys every wt-* domain and removes installed WT state
-        (config, images, registry cache, worlds, client inventory under ~/.local/state/wt).
-        Packages and binaries stay installed.
+        `make clear` destroys every wt-* domain and removes generated runtime state
+        (config, golden image, worlds, grants, database, and generated SSH inventory).
+        It keeps installed services and credentials, source downloads, and caches.
         "
+        );
+    }
+
+    #[test]
+    fn service_unit_drift_requires_a_runtime_reset() {
+        let path = Path::new("/etc/systemd/system/wt-server.service");
+        assert!(!service_unit_needs_replacement(path, b"same", b"same", false).unwrap());
+        assert!(service_unit_needs_replacement(path, b"old", b"new", true).unwrap());
+        insta::assert_snapshot!(
+            service_unit_needs_replacement(path, b"old", b"new", false)
+                .unwrap_err()
+                .to_string(),
+            @"service unit drift at /etc/systemd/system/wt-server.service; run make clear before reinstalling"
         );
     }
 
