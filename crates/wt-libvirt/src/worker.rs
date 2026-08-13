@@ -18,8 +18,8 @@ use virt::error::ErrorNumber;
 use virt::network::Network;
 use wt_command::cmd;
 use wt_provider::{
-    CaptureRequest, ForkError, ForkMachineSpec, GuestTransport, Machine, MachineProvider,
-    MachineSpec, ProviderId, RunRequest, WorkerError,
+    CaptureRequest, ForkError, ForkMachineSpec, GuestTransport, Machine, MachineInspection,
+    MachineProvider, MachineSpec, ProviderId, RunRequest, WorkerError,
 };
 
 const GUEST_AGENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -591,7 +591,7 @@ impl MachineProvider for LibvirtProvider {
         self.fork_inner(spec, progress)
     }
 
-    fn inspect(&self, provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError> {
+    fn inspect(&self, provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
         let directory = self.config.worlds_dir.join(provider_id.as_str());
         let connection = LibvirtConnection::open()?;
         let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
@@ -600,7 +600,7 @@ impl MachineProvider for LibvirtProvider {
             Err(error) => return Err(context("look up libvirt domain", error)),
         };
         match (domain, directory.exists()) {
-            (None, false) => Ok(None),
+            (None, false) => Ok(MachineInspection::Missing),
             (None, true) => Err(WorkerError::new(format!(
                 "partial libvirt machine {}: files exist but domain is missing",
                 provider_id
@@ -628,9 +628,12 @@ impl MachineProvider for LibvirtProvider {
                     .is_active()
                     .map_err(|error| context("check domain state", error))?
                 {
-                    return Err(WorkerError::new(format!(
-                        "libvirt machine {provider_id} is stopped"
-                    )));
+                    let (_, reason) = domain
+                        .get_state()
+                        .map_err(|error| context("read stopped domain state", error))?;
+                    return Ok(MachineInspection::Stopped {
+                        reason: shutdown_reason(reason).map(str::to_owned),
+                    });
                 }
                 domain
                     .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
@@ -638,13 +641,48 @@ impl MachineProvider for LibvirtProvider {
                 let guest_ip = domain_ip(provider_id)?.ok_or_else(|| {
                     WorkerError::new(format!("libvirt machine {provider_id} has no IPv4 address"))
                 })?;
-                Ok(Some(self.machine(provider_id, guest_ip)))
+                Ok(MachineInspection::Running(
+                    self.machine(provider_id, guest_ip),
+                ))
             }
         }
     }
 
+    fn start(&self, provider_id: &ProviderId) -> Result<Machine, WorkerError> {
+        match self.inspect(provider_id)? {
+            MachineInspection::Missing => {
+                return Err(WorkerError::new(format!(
+                    "libvirt machine {provider_id} is missing"
+                )))
+            }
+            MachineInspection::Running(machine) => return Ok(machine),
+            MachineInspection::Stopped { .. } => {}
+        }
+        let domain = lookup_domain(provider_id)?;
+        domain
+            .create()
+            .map_err(|error| context("start KVM domain", error))?;
+        self.wait_for_agent(provider_id)?;
+        let guest_ip = self.wait_for_ip(provider_id)?;
+        Ok(self.machine(provider_id, guest_ip))
+    }
+
     fn delete(&self, provider_id: &ProviderId, disk_ids: &[uuid::Uuid]) -> Result<(), WorkerError> {
         self.cleanup(provider_id, disk_ids)
+    }
+}
+
+fn shutdown_reason(reason: i32) -> Option<&'static str> {
+    match reason as u32 {
+        virt::sys::VIR_DOMAIN_SHUTOFF_SHUTDOWN => Some("shutdown"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_DESTROYED => Some("destroyed"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_CRASHED => Some("crashed"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_MIGRATED => Some("migrated"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_SAVED => Some("saved"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_FAILED => Some("failed"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_FROM_SNAPSHOT => Some("from snapshot"),
+        virt::sys::VIR_DOMAIN_SHUTOFF_DAEMON => Some("daemon"),
+        _ => None,
     }
 }
 
@@ -736,4 +774,18 @@ fn run(mut command: Command, action: &str) -> Result<(), WorkerError> {
 
 fn context(action: &str, error: impl std::fmt::Display) -> WorkerError {
     WorkerError::new(format!("{action}: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shutdown_reason;
+
+    #[test]
+    fn names_known_libvirt_shutdown_reasons() {
+        assert_eq!(
+            shutdown_reason(virt::sys::VIR_DOMAIN_SHUTOFF_CRASHED as i32),
+            Some("crashed")
+        );
+        assert_eq!(shutdown_reason(-1), None);
+    }
 }

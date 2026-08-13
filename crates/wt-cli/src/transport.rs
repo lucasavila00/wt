@@ -53,13 +53,22 @@ pub fn call(
 ) -> std::result::Result<Response, ContextError> {
     match call_outcome(context, request)? {
         Outcome::Ok { response } => Ok(*response),
-        Outcome::Error { error } => Err(context_error(
-            context,
-            "server rejected the request",
-            Some(format_api_error(&error)),
-            server_hint(context),
-        )),
+        Outcome::Error { error } => Err(rejection(context, &error)),
     }
+}
+
+pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
+    let hint = if error.code == wt_api::ErrorCode::Capacity {
+        "free world memory with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
+    } else {
+        server_hint(context)
+    };
+    context_error(
+        context,
+        "server rejected the request",
+        Some(format_api_error(error)),
+        hint,
+    )
 }
 
 pub fn call_outcome(
@@ -235,6 +244,7 @@ fn error_code(code: wt_api::ErrorCode) -> &'static str {
         wt_api::ErrorCode::UnsupportedProtocol => "unsupported protocol",
         wt_api::ErrorCode::Conflict => "conflict",
         wt_api::ErrorCode::NotFound => "not found",
+        wt_api::ErrorCode::Capacity => "capacity unavailable",
         wt_api::ErrorCode::Backend => "backend error",
         wt_api::ErrorCode::Internal => "internal error",
     }
