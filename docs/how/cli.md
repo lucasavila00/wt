@@ -35,10 +35,19 @@ reads all regular `~/.ssh/*.pub` files before it sends one create request.
 The request owns the world resources and authorized keys. The server config
 owns only infrastructure, image-build settings, trust, and timeouts.
 
+The server admits a create only when the configured memory of all retained
+worlds plus the new world fits in the host's total physical RAM. When capacity
+is full, `wt new` lets the user remove a world in another terminal and retry the
+same confirmed request.
+
 `wt ls` shows each world's context, name, status, repository name, requested
 CPU/RAM/disk resources, and any lifecycle error. Guest IP addresses
 and raw SSH endpoints are omitted because managed world aliases are the client
 connection interface.
+
+A stopped guest is shown as `stopped` with `wt start CONTEXT.WORLD` and
+`wt rm CONTEXT.WORLD` recovery commands. `wt start` keeps the existing writable
+disk and SSH identities; WT does not restart stopped guests automatically.
 
 The server gives the world a scoped gateway grant, clones through the gateway,
 and finishes the devcontainer setup. After the guest SSH endpoint is ready,

@@ -52,6 +52,7 @@ pub enum Operation {
     Fork(ForkInstance),
     List,
     Get { name: InstanceName },
+    Start { name: InstanceName },
     Delete { name: InstanceName },
 }
 
@@ -61,7 +62,7 @@ pub struct ForkInstance {
     pub name: InstanceName,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
     pub name: InstanceName,
     pub source: String,
@@ -202,6 +203,7 @@ pub enum InstanceStatus {
     Provisioning,
     Setup,
     Running,
+    Stopped,
     Destroying,
     Error,
 }
@@ -212,6 +214,7 @@ impl fmt::Display for InstanceStatus {
             Self::Provisioning => "provisioning",
             Self::Setup => "setup",
             Self::Running => "running",
+            Self::Stopped => "stopped",
             Self::Destroying => "destroying",
             Self::Error => "error",
         };
@@ -227,6 +230,7 @@ impl FromStr for InstanceStatus {
             "provisioning" => Ok(Self::Provisioning),
             "setup" => Ok(Self::Setup),
             "running" => Ok(Self::Running),
+            "stopped" => Ok(Self::Stopped),
             "destroying" => Ok(Self::Destroying),
             "error" => Ok(Self::Error),
             _ => Err(ParseStatusError(value.to_owned())),
@@ -242,6 +246,8 @@ pub struct ParseStatusError(String);
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<MemoryCapacity>,
 }
 
 impl ApiError {
@@ -249,8 +255,24 @@ impl ApiError {
         Self {
             code,
             message: message.into(),
+            capacity: None,
         }
     }
+
+    pub fn capacity(capacity: MemoryCapacity) -> Self {
+        Self {
+            code: ErrorCode::Capacity,
+            message: "world memory capacity is full".to_owned(),
+            capacity: Some(capacity),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MemoryCapacity {
+    pub total_mib: u64,
+    pub reserved_mib: u64,
+    pub requested_mib: u64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -260,6 +282,7 @@ pub enum ErrorCode {
     UnsupportedProtocol,
     Conflict,
     NotFound,
+    Capacity,
     Backend,
     Internal,
 }
@@ -447,6 +470,46 @@ mod tests {
                 "name": "repo-feature"
             })
         );
+    }
+
+    #[test]
+    fn start_request_has_stable_shape() {
+        let request = ApiRequest::new(Operation::Start {
+            name: InstanceName::parse("repo-feature").unwrap(),
+        });
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 1,
+                "client_commit": WT_GIT_COMMIT,
+                "operation": "start",
+                "name": "repo-feature"
+            })
+        );
+    }
+
+    #[test]
+    fn capacity_error_has_typed_memory_details() {
+        let response = ApiResponse::error(ApiError::capacity(MemoryCapacity {
+            total_mib: 32_000,
+            reserved_mib: 24_000,
+            requested_mib: 8_000,
+        }));
+        insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
+        {
+          "protocol_version": 1,
+          "outcome": "error",
+          "error": {
+            "code": "capacity",
+            "message": "world memory capacity is full",
+            "capacity": {
+              "total_mib": 32000,
+              "reserved_mib": 24000,
+              "requested_mib": 8000
+            }
+          }
+        }
+        "###);
     }
 
     #[test]

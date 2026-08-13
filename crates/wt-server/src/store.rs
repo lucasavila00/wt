@@ -31,6 +31,14 @@ pub enum StoreError {
     Conflict,
     #[error("instance not found")]
     NotFound,
+    #[error(
+        "world memory capacity is full: {reserved_mib} MiB of {total_mib} MiB reserved; requested {requested_mib} MiB"
+    )]
+    Capacity {
+        total_mib: u64,
+        reserved_mib: u64,
+        requested_mib: u64,
+    },
     #[error("database connection error: {0}")]
     Connection(#[from] diesel::ConnectionError),
     #[error("database error: {0}")]
@@ -108,6 +116,12 @@ struct DiskNodeRow {
     immutable: bool,
 }
 
+#[derive(QueryableByName)]
+struct MemorySum {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    total: i64,
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         if let Some(parent) = path.parent() {
@@ -135,6 +149,38 @@ impl Store {
             insert_disk(connection, stored.head_disk_id, None, false)?;
             insert_instance(connection, stored)
         })
+    }
+
+    pub fn insert_with_memory_limit(
+        &self,
+        stored: &StoredInstance,
+        total_mib: u64,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .borrow_mut()
+            .immediate_transaction(|connection| {
+                let reserved = reserved_memory(connection)?;
+                let reserved_mib = u64::try_from(reserved)
+                    .map_err(|_| invalid_number("reserved memory_mib", reserved))?;
+                let requested_mib = stored.instance.memory_mib;
+                if reserved_mib
+                    .checked_add(requested_mib)
+                    .is_none_or(|sum| sum > total_mib)
+                {
+                    return Err(StoreError::Capacity {
+                        total_mib,
+                        reserved_mib,
+                        requested_mib,
+                    });
+                }
+                insert_disk(connection, stored.head_disk_id, None, false)?;
+                insert_instance(connection, stored)
+            })
+    }
+
+    pub fn reserved_memory_mib(&self) -> Result<u64, StoreError> {
+        let reserved = reserved_memory(&mut self.connection.borrow_mut())?;
+        u64::try_from(reserved).map_err(|_| invalid_number("reserved memory_mib", reserved))
     }
 
     pub fn reserve_fork(
@@ -302,6 +348,10 @@ impl Store {
         self.update_state(id, InstanceStatus::Error, None, Some(message))
     }
 
+    pub fn mark_stopped(&self, id: Uuid, message: &str) -> Result<(), StoreError> {
+        self.update_state(id, InstanceStatus::Stopped, None, Some(message))
+    }
+
     fn update_state(
         &self,
         id: Uuid,
@@ -347,6 +397,14 @@ impl Store {
             Ok(())
         })
     }
+}
+
+fn reserved_memory(connection: &mut SqliteConnection) -> Result<i64, StoreError> {
+    Ok(
+        diesel::sql_query("SELECT COALESCE(SUM(memory_mib), 0) AS total FROM instances")
+            .get_result::<MemorySum>(connection)?
+            .total,
+    )
 }
 
 impl TryFrom<InstanceRow> for StoredInstance {

@@ -31,7 +31,8 @@ Git, devcontainer, registry-cache, or app-SSH provisioning.
 ```text
 create(MachineSpec, progress) -> Machine
 fork(ForkMachineSpec, progress) -> Machine
-inspect(provider_id) -> Option<Machine>
+inspect(provider_id) -> Missing | Running(Machine) | Stopped(reason)
+start(provider_id) -> Machine
 delete(provider_id, garbage_disk_ids)
 ```
 
@@ -43,8 +44,10 @@ memory, and disk. `Machine` contains the provider ID, current network data, and 
   attempts to remove partial resources without hiding the original error.
 - `fork` atomically pivots a quiesced source, boots the sibling with networking
   disabled, replaces machine and SSH identities, then enables networking.
-- `inspect` returns `None` only when no provider resource exists. It refreshes
-  network data without changing the guest.
+- `inspect` distinguishes a missing, running, or stopped provider resource. It
+  refreshes network data without changing the guest.
+- `start` boots a stopped provider resource without replacing its disk or
+  identity.
 - `delete` is idempotent and attempts independent domain, machine-file, and
   registry-selected disk-node cleanup after errors.
 - The stored provider ID is sufficient to retry deletion after interruption.

@@ -53,6 +53,7 @@ while starting the devcontainer.
 |---------|--------|
 | `wt new` | Interactively create a guest, then enter its setup SSH session |
 | `wt ls` | List worlds, resources, and status across configured contexts |
+| `wt start NAME` | Start a stopped world's existing guest and disk |
 | `wt code NAME` | Open the running world's mounted workspace in VS Code Remote-SSH |
 | `wt rm NAME` | Destroy a world |
 | `wt sync` | Update managed OpenSSH aliases (`new`, `ls`, and `rm` do this automatically; run `sync` on another workstation after changing worlds elsewhere) |

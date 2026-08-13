@@ -70,6 +70,13 @@ pub struct Machine {
     pub transport: Arc<dyn GuestTransport>,
 }
 
+#[derive(Clone, Debug)]
+pub enum MachineInspection {
+    Missing,
+    Running(Machine),
+    Stopped { reason: Option<String> },
+}
+
 impl fmt::Debug for Machine {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -84,7 +91,8 @@ impl fmt::Debug for Machine {
 pub trait MachineProvider: Clone + Send + Sync + 'static {
     fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError>;
     fn fork(&self, spec: &ForkMachineSpec, progress: &mut dyn Write) -> Result<Machine, ForkError>;
-    fn inspect(&self, provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError>;
+    fn inspect(&self, provider_id: &ProviderId) -> Result<MachineInspection, WorkerError>;
+    fn start(&self, provider_id: &ProviderId) -> Result<Machine, WorkerError>;
     fn delete(&self, provider_id: &ProviderId, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
 }
 
@@ -126,6 +134,13 @@ pub struct World {
     pub app_ssh: Option<AppSshAccess>,
 }
 
+#[derive(Clone, Debug)]
+pub enum WorldInspection {
+    Missing,
+    Running(World),
+    Stopped { reason: Option<String> },
+}
+
 pub trait WorldWorker {
     fn provision(
         &self,
@@ -134,7 +149,8 @@ pub trait WorldWorker {
     ) -> Result<World, WorkerError>;
     fn fork(&self, spec: &ForkSpec<'_>, log: &mut dyn Write) -> Result<World, ForkError>;
     fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
-    fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError>;
+    fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
+    fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
 }
 
 #[derive(Clone)]
@@ -200,11 +216,20 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             .delete(&ProviderId::parse(backend_id)?, disk_ids)
     }
 
-    fn inspect(&self, backend_id: &str) -> Result<Option<World>, WorkerError> {
-        let Some(machine) = self.provider.inspect(&ProviderId::parse(backend_id)?)? else {
-            return Ok(None);
-        };
-        self.provisioner.inspect(&machine).map(Some)
+    fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError> {
+        match self.provider.inspect(&ProviderId::parse(backend_id)?)? {
+            MachineInspection::Missing => Ok(WorldInspection::Missing),
+            MachineInspection::Running(machine) => self
+                .provisioner
+                .inspect(&machine)
+                .map(WorldInspection::Running),
+            MachineInspection::Stopped { reason } => Ok(WorldInspection::Stopped { reason }),
+        }
+    }
+
+    fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
+        let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
+        self.provisioner.inspect(&machine)
     }
 }
 
@@ -302,7 +327,11 @@ mod tests {
             unreachable!()
         }
 
-        fn inspect(&self, _provider_id: &ProviderId) -> Result<Option<Machine>, WorkerError> {
+        fn inspect(&self, _provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
+            unreachable!()
+        }
+
+        fn start(&self, _provider_id: &ProviderId) -> Result<Machine, WorkerError> {
             unreachable!()
         }
 

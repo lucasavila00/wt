@@ -9,7 +9,7 @@ use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
-use wt_api::{ApiRequest, CreateInstance, Operation, Response};
+use wt_api::{ApiRequest, CreateInstance, MemoryCapacity, Operation, Outcome, Response};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
@@ -29,6 +29,8 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: String },
+    /// Start a stopped world.
+    Start { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },
     /// Update managed OpenSSH inventory.
@@ -50,31 +52,18 @@ fn run() -> Result<()> {
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;
-            let spinner = cliclack::spinner();
-            spinner.start("Creating world");
-            let response = wt_cli::transport::call(
-                context,
-                &ApiRequest::new(Operation::Create(CreateInstance {
-                    name: input.name.clone(),
-                    source: input.source,
-                    git_base: input.git_base,
-                    git_user_name: input.git_user_name,
-                    git_user_email: input.git_user_email,
-                    vcpus: input.vcpus,
-                    memory_mib: input.memory_mib,
-                    disk_gib: input.disk_gib,
-                    ssh_authorized_keys: input.ssh_authorized_keys,
-                })),
-            );
-            match &response {
-                Ok(_) => spinner.stop("World created"),
-                Err(_) => spinner.error("World creation did not complete"),
-            }
-            let response = response.map_err(|error| {
-                anyhow::anyhow!(
-                    "create did not complete; run `wt ls` to check the world: {error:#}"
-                )
-            })?;
+            let request = CreateInstance {
+                name: input.name.clone(),
+                source: input.source,
+                git_base: input.git_base,
+                git_user_name: input.git_user_name,
+                git_user_email: input.git_user_email,
+                vcpus: input.vcpus,
+                memory_mib: input.memory_mib,
+                disk_gib: input.disk_gib,
+                ssh_authorized_keys: input.ssh_authorized_keys,
+            };
+            let response = create_with_capacity_retry(context, &request)?;
             let Response::Instance { instance } = response else {
                 bail!("helper returned the wrong response to create");
             };
@@ -133,6 +122,23 @@ fn run() -> Result<()> {
             warn_if_sync_skipped(&config)?;
             println!("removed {}.{}", context.name, world_name);
         }
+        Command::Start { name } => {
+            let (context, world_name) = resolve_operation_target(&config, &name)?;
+            let response = wt_cli::transport::call(
+                context,
+                &ApiRequest::new(Operation::Start {
+                    name: world_name.clone(),
+                }),
+            )?;
+            let Response::Instance { instance } = response else {
+                bail!("helper returned the wrong response to start");
+            };
+            warn_if_sync_skipped(&config)?;
+            println!(
+                "started {}.{} ({})",
+                context.name, world_name, instance.status
+            );
+        }
         Command::Code { name } => open_in_code(&config, &name)?,
         Command::Sync => {
             let report = inventory::list_all(&config);
@@ -148,6 +154,75 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Result<Response> {
+    loop {
+        let spinner = cliclack::spinner();
+        spinner.start("Creating world");
+        let outcome = wt_cli::transport::call_outcome(
+            context,
+            &ApiRequest::new(Operation::Create(request.clone())),
+        );
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                spinner.error("World creation did not complete");
+                return Err(anyhow::anyhow!(
+                    "create did not complete; run `wt ls` to check the world: {error:#}"
+                ));
+            }
+        };
+        match outcome {
+            Outcome::Ok { response } => {
+                spinner.stop("World created");
+                return Ok(*response);
+            }
+            Outcome::Error { error } if error.code == wt_api::ErrorCode::Capacity => {
+                spinner.error("World memory capacity is full");
+                let capacity = error
+                    .capacity
+                    .as_ref()
+                    .context("server returned a capacity error without memory capacity details")?;
+                if !prompt_capacity_retry(context, &request.name, capacity)? {
+                    bail!("creation cancelled");
+                }
+            }
+            Outcome::Error { error } => {
+                spinner.error("World creation did not complete");
+                let error = wt_cli::transport::rejection(context, &error);
+                return Err(anyhow::anyhow!(
+                    "create did not complete; run `wt ls` to check the world: {error:#}"
+                ));
+            }
+        }
+    }
+}
+
+fn prompt_capacity_retry(
+    context: &Context,
+    name: &wt_api::InstanceName,
+    capacity: &MemoryCapacity,
+) -> Result<bool> {
+    cliclack::note(
+        "World memory capacity",
+        capacity_message(&context.name, name, capacity),
+    )?;
+    cliclack::confirm("Retry after freeing capacity in another terminal?")
+        .initial_value(true)
+        .interact()
+        .map_err(prompt_error)
+}
+
+fn capacity_message(
+    context: &str,
+    name: &wt_api::InstanceName,
+    capacity: &MemoryCapacity,
+) -> String {
+    format!(
+        "{context} has {} MiB of {} MiB world memory reserved; {name} requests {} MiB.\nFree capacity with `wt ls` and `wt rm CONTEXT.WORLD`.",
+        capacity.reserved_mib, capacity.total_mib, capacity.requested_mib
+    )
 }
 
 const DEFAULT_VCPUS: u32 = 2;
@@ -478,7 +553,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
                 .unwrap_or("-")
                 .to_owned(),
             format_resources(instance.vcpus, instance.memory_mib, instance.disk_gib),
-            instance.last_error.as_deref().unwrap_or("-").to_owned(),
+            instance_detail(item),
         ]
     }));
 
@@ -509,6 +584,18 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         .expect("writing to a String cannot fail");
     }
     output
+}
+
+fn instance_detail(item: &ContextInstance) -> String {
+    let instance = &item.instance;
+    if instance.status != wt_api::InstanceStatus::Stopped {
+        return instance.last_error.as_deref().unwrap_or("-").to_owned();
+    }
+    let target = format!("{}.{}", item.context, instance.name);
+    format!(
+        "{}; run `wt start {target}` or `wt rm {target}`",
+        instance.last_error.as_deref().unwrap_or("guest stopped")
+    )
 }
 
 fn format_resources(vcpus: u32, memory_mib: u64, disk_gib: u64) -> String {
@@ -653,6 +740,36 @@ mod tests {
     }
 
     #[test]
+    fn formats_stopped_world_with_recovery_commands() {
+        let mut stopped = item("ars", "mt3", InstanceStatus::Stopped);
+        stopped.instance.last_error = Some("guest stopped (crashed)".to_owned());
+
+        insta::assert_snapshot!(format_instances(&[stopped]), @r###"
+        CONTEXT  NAME  STATUS   REPO  RESOURCES         DETAIL
+        ars      mt3   stopped  repo  2 CPU · 4G · 32G  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
+        "###);
+    }
+
+    #[test]
+    fn explains_memory_capacity() {
+        insta::assert_snapshot!(
+            capacity_message(
+                "ars",
+                &wt_api::InstanceName::parse("mt3").unwrap(),
+                &MemoryCapacity {
+                    total_mib: 32_000,
+                    reserved_mib: 32_000,
+                    requested_mib: 8_000,
+                },
+            ),
+            @r###"
+        ars has 32000 MiB of 32000 MiB world memory reserved; mt3 requests 8000 MiB.
+        Free capacity with `wt ls` and `wt rm CONTEXT.WORLD`.
+        "###
+        );
+    }
+
+    #[test]
     fn rejects_removed_ssh_subcommand() {
         assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
     }
@@ -664,6 +781,15 @@ mod tests {
             panic!("expected code command");
         };
         assert_eq!(name, "ars.jsdev");
+    }
+
+    #[test]
+    fn parses_start_target() {
+        let cli = Cli::try_parse_from(["wt", "start", "ars.mt3"]).unwrap();
+        let Command::Start { name } = cli.command else {
+            panic!("expected start command");
+        };
+        assert_eq!(name, "ars.mt3");
     }
 
     #[test]

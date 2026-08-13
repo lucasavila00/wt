@@ -93,6 +93,18 @@ impl ProviderHttpClient {
         read_response(response, "GET", &url)
     }
 
+    pub(crate) fn read_optional_text(&self, path: &str) -> Result<Option<String>> {
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.get(&url))
+            .call()
+            .with_context(|| connection_context("GET", &url))?;
+        if response.status() == ureq::http::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        read_response(response, "GET", &url).map(Some)
+    }
+
     pub(crate) fn post_without_body(&self, path: &str) -> Result<()> {
         let url = self.url(path);
         let response = self

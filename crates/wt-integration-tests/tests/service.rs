@@ -8,7 +8,9 @@ use wt_api::{
     CreateInstance, ForkInstance, Instance, InstanceName, InstanceStatus, Operation, Response,
     SshAccess,
 };
-use wt_provider::{ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldWorker};
+use wt_provider::{
+    ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldInspection, WorldWorker,
+};
 use wt_server::operations::Operations;
 use wt_server::service::{AgentGitGateway, Service};
 use wt_server::store::{Store, StoredInstance};
@@ -18,6 +20,7 @@ struct Worker {
     provisions: Arc<AtomicUsize>,
     destroys: Arc<AtomicUsize>,
     inspections: Arc<AtomicUsize>,
+    starts: Arc<AtomicUsize>,
     destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     complete: bool,
     provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
@@ -25,6 +28,7 @@ struct Worker {
     changed_guest_identity: bool,
     changed_app_identity: bool,
     provision_error: bool,
+    stopped: bool,
 }
 
 #[derive(Clone, Default)]
@@ -105,10 +109,15 @@ impl WorldWorker for Worker {
         self.destroyed_disks.lock().unwrap().push(disk_ids.to_vec());
         Ok(())
     }
-    fn inspect(&self, _backend_id: &str) -> Result<Option<World>, WorkerError> {
+    fn inspect(&self, _backend_id: &str) -> Result<WorldInspection, WorkerError> {
         self.inspections.fetch_add(1, Ordering::SeqCst);
         if self.missing {
-            return Ok(None);
+            return Ok(WorldInspection::Missing);
+        }
+        if self.stopped {
+            return Ok(WorldInspection::Stopped {
+                reason: Some("crashed".into()),
+            });
         }
         let mut inspected = world(self.complete);
         if self.changed_guest_identity {
@@ -118,7 +127,11 @@ impl WorldWorker for Worker {
             inspected.app_ssh.as_mut().unwrap().host_keys =
                 vec!["ssh-ed25519 AAAACHANGED app".into()];
         }
-        Ok(Some(inspected))
+        Ok(WorldInspection::Running(inspected))
+    }
+    fn start(&self, _backend_id: &str) -> Result<World, WorkerError> {
+        self.starts.fetch_add(1, Ordering::SeqCst);
+        Ok(world(self.complete))
     }
 }
 
@@ -182,6 +195,7 @@ fn service(temp: &TempDir, worker: Worker) -> Service<Worker, Gateway> {
         worker,
         Gateway,
         Operations::default(),
+        64 * 1024,
     )
 }
 
@@ -231,6 +245,135 @@ fn list_reconciles_completed_setup_to_running() {
 }
 
 #[test]
+fn stopped_world_can_be_started() {
+    let temp = TempDir::new().unwrap();
+    service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+    let stopped_worker = Worker {
+        stopped: true,
+        ..Worker::default()
+    };
+    let Response::Instances { instances } = service(&temp, stopped_worker)
+        .execute("tester", Operation::List)
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Stopped);
+    assert_eq!(
+        instances[0].last_error.as_deref(),
+        Some("guest stopped (crashed)")
+    );
+
+    let worker = Worker {
+        stopped: true,
+        ..Worker::default()
+    };
+    let starts = worker.starts.clone();
+    let Response::Instance { instance } = service(&temp, worker)
+        .execute(
+            "tester",
+            Operation::Start {
+                name: InstanceName::parse("sample").unwrap(),
+            },
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(instance.status, InstanceStatus::Setup);
+    assert_eq!(starts.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn create_rejects_full_memory_capacity_without_provisioning() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let service = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        worker.clone(),
+        Gateway,
+        Operations::default(),
+        1024,
+    );
+    service
+        .execute("tester", Operation::Create(create("first")))
+        .unwrap();
+    let error = service
+        .execute("tester", Operation::Create(create("second")))
+        .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Capacity);
+    assert_eq!(
+        error.capacity,
+        Some(wt_api::MemoryCapacity {
+            total_mib: 1024,
+            reserved_mib: 1024,
+            requested_mib: 1024,
+        })
+    );
+    assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn create_rejects_a_world_larger_than_host_memory() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let mut request = create("sample");
+    request.memory_mib = 2048;
+    let error = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        worker.clone(),
+        Gateway,
+        Operations::default(),
+        1024,
+    )
+    .execute("tester", Operation::Create(request))
+    .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::InvalidRequest);
+    assert_eq!(error.capacity, None);
+    assert_eq!(worker.provisions.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn concurrent_creates_cannot_claim_the_same_memory() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().to_owned();
+    let barrier = Arc::new(std::sync::Barrier::new(3));
+    let mut creates = Vec::new();
+    for name in ["first", "second"] {
+        let root = root.clone();
+        let barrier = barrier.clone();
+        creates.push(std::thread::spawn(move || {
+            let service = Service::new(
+                Store::open(&root.join("instances.db")).unwrap(),
+                Worker::default(),
+                Gateway,
+                Operations::default(),
+                1024,
+            );
+            barrier.wait();
+            service.execute("tester", Operation::Create(create(name)))
+        }));
+    }
+    barrier.wait();
+    let results = creates
+        .into_iter()
+        .map(|create| create.join().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(
+                |result| matches!(result, Err(error) if error.code == wt_api::ErrorCode::Capacity)
+            )
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn delete_removes_setup_world() {
     let temp = TempDir::new().unwrap();
     let worker = Worker::default();
@@ -263,6 +406,7 @@ fn failed_create_keeps_registry_until_grant_revocation_succeeds() {
         worker.clone(),
         gateway,
         Operations::default(),
+        64 * 1024,
     )
     .execute("tester", Operation::Create(create("sample")))
     .unwrap_err();
@@ -387,6 +531,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
                 worker,
                 Gateway,
                 operations,
+                64 * 1024,
             )
             .execute("tester", Operation::Create(create("sample")))
             .unwrap()
@@ -400,6 +545,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
         Worker::default(),
         Gateway,
         operations.clone(),
+        64 * 1024,
     )
     .execute(
         "tester",
@@ -419,6 +565,7 @@ fn matching_retry_waits_for_synchronous_preparation() {
                 Worker::default(),
                 Gateway,
                 operations,
+                64 * 1024,
             )
             .execute("tester", Operation::Create(create("sample")))
             .unwrap();

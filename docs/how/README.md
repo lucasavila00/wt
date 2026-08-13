@@ -46,6 +46,7 @@ the daemon and registry records.
 | `create` | Create and prepare a guest through SSH readiness |
 | `list` | Return the owner's worlds and SSH inventory |
 | `get` | Return one owned world |
+| `start` | Start and inspect one stopped owned world |
 | `delete` | Destroy one owned world |
 
 The create operation returns when the guest is ready for setup. The client then

@@ -1,8 +1,11 @@
 use crate::operations::Operations;
 use crate::store::{Store, StoreError, StoredInstance};
 use uuid::Uuid;
-use wt_api::{ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, Operation, Response};
-use wt_provider::WorldWorker;
+use wt_api::{
+    ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, MemoryCapacity, Operation,
+    Response,
+};
+use wt_provider::{World, WorldInspection, WorldWorker};
 
 pub trait AgentGitGateway {
     fn reserve(
@@ -60,15 +63,23 @@ pub struct Service<W, G> {
     worker: W,
     gateway: G,
     operations: Operations,
+    memory_limit_mib: u64,
 }
 
 impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
-    pub fn new(store: Store, worker: W, gateway: G, operations: Operations) -> Self {
+    pub fn new(
+        store: Store,
+        worker: W,
+        gateway: G,
+        operations: Operations,
+        memory_limit_mib: u64,
+    ) -> Self {
         Self {
             store,
             worker,
             gateway,
             operations,
+            memory_limit_mib,
         }
     }
 
@@ -84,6 +95,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             )),
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
+            Operation::Start { name } => self.start(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
         }
     }
@@ -134,6 +146,15 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Err(StoreError::NotFound) => {}
             Err(error) => return Err(map_store_error(error)),
         }
+        if request.memory_mib > self.memory_limit_mib {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "world requests {} MiB RAM but the server has {} MiB",
+                    request.memory_mib, self.memory_limit_mib
+                ),
+            ));
+        }
         let id = Uuid::new_v4();
         let git_prefix = wt_agent_git::BRANCH_PREFIX.to_owned();
         let grant = self
@@ -164,7 +185,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             setup_fingerprint,
             gateway_grant_id: grant.id.clone(),
         };
-        if let Err(error) = self.store.insert(&stored) {
+        if let Err(error) = self
+            .store
+            .insert_with_memory_limit(&stored, self.memory_limit_mib)
+        {
             if let Err(cleanup) = self.gateway.revoke(&grant.id) {
                 eprintln!("wt-server: revoke unused Git grant: {cleanup}");
             }
@@ -254,39 +278,17 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
     fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {
         if !matches!(
             stored.instance.status,
-            InstanceStatus::Setup | InstanceStatus::Running
+            InstanceStatus::Setup | InstanceStatus::Running | InstanceStatus::Stopped
         ) {
             return Ok(());
         }
         match self.worker.inspect(&stored.backend_id) {
-            Ok(Some(world)) => {
-                let same_guest_identity = stored
-                    .instance
-                    .ssh
-                    .as_ref()
-                    .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-                let same_app_identity = match (&stored.instance.app_ssh, &world.app_ssh) {
-                    (Some(previous), Some(current)) => previous.host_keys == current.host_keys,
-                    (None, _) => true,
-                    _ => false,
-                };
-                if same_guest_identity && same_app_identity {
-                    if let Some(app_ssh) = &world.app_ssh {
-                        self.store
-                            .mark_running(stored.instance.id, &world.guest_ip, &world.ssh, app_ssh)
-                            .map_err(map_store_error)?;
-                    } else {
-                        self.store
-                            .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
-                            .map_err(map_store_error)?;
-                    }
-                } else {
-                    self.store
-                        .mark_error(stored.instance.id, "SSH host identity changed")
-                        .map_err(map_store_error)?;
-                }
-            }
-            Ok(None) => self
+            Ok(WorldInspection::Running(world)) => self.apply_world(stored, &world)?,
+            Ok(WorldInspection::Stopped { reason }) => self
+                .store
+                .mark_stopped(stored.instance.id, &stopped_message(reason.as_deref()))
+                .map_err(map_store_error)?,
+            Ok(WorldInspection::Missing) => self
                 .store
                 .mark_error(stored.instance.id, "guest domain is missing")
                 .map_err(map_store_error)?,
@@ -301,9 +303,82 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         Ok(())
     }
 
+    fn apply_world(&self, stored: &StoredInstance, world: &World) -> Result<(), ApiError> {
+        let same_guest_identity = stored
+            .instance
+            .ssh
+            .as_ref()
+            .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
+        let same_app_identity = match (&stored.instance.app_ssh, &world.app_ssh) {
+            (Some(previous), Some(current)) => previous.host_keys == current.host_keys,
+            (None, _) => true,
+            _ => false,
+        };
+        if !same_guest_identity || !same_app_identity {
+            return self
+                .store
+                .mark_error(stored.instance.id, "SSH host identity changed")
+                .map_err(map_store_error);
+        }
+        if let Some(app_ssh) = &world.app_ssh {
+            self.store
+                .mark_running(stored.instance.id, &world.guest_ip, &world.ssh, app_ssh)
+                .map_err(map_store_error)
+        } else {
+            self.store
+                .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                .map_err(map_store_error)
+        }
+    }
+
     fn get(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
         self.reconcile(&stored)?;
+        let instance = self
+            .store
+            .get(owner, name)
+            .map_err(map_store_error)?
+            .instance;
+        Ok(Response::Instance {
+            instance: Box::new(instance),
+        })
+    }
+
+    fn start(&self, owner: &str, name: &wt_api::InstanceName) -> Result<Response, ApiError> {
+        let _operation = self
+            .operations
+            .try_lock(owner, name)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
+        let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        self.reconcile(&stored)?;
+        let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        if matches!(
+            stored.instance.status,
+            InstanceStatus::Setup | InstanceStatus::Running
+        ) {
+            return Ok(Response::Instance {
+                instance: Box::new(stored.instance),
+            });
+        }
+        if stored.instance.status != InstanceStatus::Stopped {
+            return Err(ApiError::new(
+                ErrorCode::Conflict,
+                format!("world is {}; expected stopped", stored.instance.status),
+            ));
+        }
+        let reserved_mib = self.store.reserved_memory_mib().map_err(map_store_error)?;
+        if reserved_mib > self.memory_limit_mib {
+            return Err(ApiError::capacity(MemoryCapacity {
+                total_mib: self.memory_limit_mib,
+                reserved_mib,
+                requested_mib: 0,
+            }));
+        }
+        let world = self
+            .worker
+            .start(&stored.backend_id)
+            .map_err(|error| ApiError::new(ErrorCode::Backend, format!("start world: {error}")))?;
+        self.apply_world(&stored, &world)?;
         let instance = self
             .store
             .get(owner, name)
@@ -348,6 +423,22 @@ fn map_store_error(error: StoreError) -> ApiError {
     match error {
         StoreError::Conflict => ApiError::new(ErrorCode::Conflict, "instance already exists"),
         StoreError::NotFound => ApiError::new(ErrorCode::NotFound, "instance not found"),
+        StoreError::Capacity {
+            total_mib,
+            reserved_mib,
+            requested_mib,
+        } => ApiError::capacity(MemoryCapacity {
+            total_mib,
+            reserved_mib,
+            requested_mib,
+        }),
         other => ApiError::new(ErrorCode::Internal, other.to_string()),
     }
+}
+
+fn stopped_message(reason: Option<&str>) -> String {
+    reason.map_or_else(
+        || "guest stopped".to_owned(),
+        |reason| format!("guest stopped ({reason})"),
+    )
 }

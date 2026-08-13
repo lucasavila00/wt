@@ -484,18 +484,19 @@ impl GithubApi {
         Ok(jobs)
     }
 
-    fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
-        if self
-            .read_action_jobs(scope)?
-            .iter()
-            .any(|job| job.handle.as_str() == handle.as_str())
-        {
-            Ok(())
-        } else {
-            bail!(
-                "CI check `{handle}` is not a controllable GitHub Actions job for the current commit; run `ag-git ci` and use a current numeric Actions job handle"
-            )
-        }
+    fn require_ci_job(
+        &self,
+        scope: &ProviderCommandScope<'_>,
+        handle: &CiJobHandle,
+    ) -> Result<CiJob> {
+        self.read_action_jobs(scope)?
+            .into_iter()
+            .find(|job| job.handle.as_str() == handle.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "CI check `{handle}` is not a controllable GitHub Actions job for the current commit; run `ag-git ci` and use a current numeric Actions job handle"
+                )
+            })
     }
 
     fn review_target(
@@ -695,13 +696,27 @@ impl GitProviderApi for GithubApi {
                 self.read_change_request_snapshot(scope, true)?.jobs,
             )),
             ProviderCommand::ReadCiJobLog { job } => {
-                self.require_ci_job(scope, job)?;
-                Ok(ProviderCommandOutput::CiJobLog(self.rest.read_text(
-                    &format!(
-                        "{}repos/{}/actions/jobs/{job}/logs",
-                        self.rest_prefix, scope.project
+                let current = self.require_ci_job(scope, job)?;
+                let path = format!(
+                    "{}repos/{}/actions/jobs/{job}/logs",
+                    self.rest_prefix, scope.project
+                );
+                match self.rest.read_optional_text(&path)? {
+                    Some(log) => Ok(ProviderCommandOutput::CiJobLog(log)),
+                    None if github_job_log_pending(&current.state) => {
+                        Ok(ProviderCommandOutput::CiJobLog(format!(
+                            "Job: {} ({})\nState: {}\nLog: GitHub has not published live log bytes for this running job.\n",
+                            current.handle, current.name, current.state
+                        )))
+                    }
+                    None => bail!(
+                        "GitHub Actions job `{}` ({}) is {}, but its log is not available\nNext step: retry `ag-git log {job}`; if it remains unavailable, open {}",
+                        current.handle,
+                        current.name,
+                        current.state,
+                        current.url.as_deref().unwrap_or("the job in GitHub Actions")
                     ),
-                )?))
+                }
             }
             ProviderCommand::RetryCiJob { job } => {
                 self.require_ci_job(scope, job)?;
@@ -747,6 +762,13 @@ impl GitProviderApi for GithubApi {
     }
 }
 
+fn github_job_log_pending(state: &str) -> bool {
+    matches!(
+        state,
+        "queued" | "in_progress" | "waiting" | "pending" | "requested"
+    )
+}
+
 fn split_project(project: &str) -> Result<(&str, &str)> {
     let (owner, name) = project
         .split_once('/')
@@ -786,7 +808,7 @@ fn title_from_branch(scope: &ProviderCommandScope<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::test_server::{serve, ExpectedRequest};
+    use crate::api::test_server::{serve, serve_with_statuses, ExpectedRequest};
 
     const PULL_REQUEST_RESPONSE: &str = r#"{
         "data": {
@@ -1074,6 +1096,110 @@ mod tests {
         assert!(error
             .to_string()
             .contains("only cancel the entire workflow run"));
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn running_job_log_is_a_bounded_provider_snapshot() {
+        let (base_url, server) = serve_with_statuses(vec![
+            (
+                ExpectedRequest {
+                    method: "GET",
+                    path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                    required_header: Some(("authorization", "Bearer fixture-token")),
+                    body_contains: None,
+                    response_content_type: "application/json",
+                    response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
+                },
+                200,
+            ),
+            (
+                ExpectedRequest {
+                    method: "GET",
+                    path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
+                    required_header: Some(("authorization", "Bearer fixture-token")),
+                    body_contains: None,
+                    response_content_type: "application/json",
+                    response_body: r#"{"total_count":1,"jobs":[{"id":94318091035,"name":"Linux","status":"in_progress","conclusion":null,"html_url":"https://github.test/jobs/94318091035","run_id":91}]}"#,
+                },
+                200,
+            ),
+            (
+                ExpectedRequest {
+                    method: "GET",
+                    path: "/repos/acme/widget/actions/jobs/94318091035/logs",
+                    required_header: Some(("authorization", "Bearer fixture-token")),
+                    body_contains: None,
+                    response_content_type: "application/xml",
+                    response_body: "<Error><Code>BlobNotFound</Code></Error>",
+                },
+                404,
+            ),
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::ReadCiJobLog {
+                    job: CiJobHandle::new("94318091035"),
+                },
+            )
+            .unwrap();
+
+        let ProviderCommandOutput::CiJobLog(output) = output else {
+            panic!("expected a CI job log")
+        };
+        insta::assert_snapshot!(output, @r###"
+        Job: 94318091035 (Linux)
+        State: in_progress
+        Log: GitHub has not published live log bytes for this running job.
+        "###);
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn completed_job_log_is_downloaded() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":1,"jobs":[{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/jobs/44/logs",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "text/plain",
+                response_body: "build complete\n",
+            },
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::ReadCiJobLog {
+                    job: CiJobHandle::new("44"),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
+        );
         server.join().unwrap().unwrap();
     }
 
