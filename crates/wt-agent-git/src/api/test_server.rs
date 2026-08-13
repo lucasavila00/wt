@@ -22,7 +22,7 @@ pub(crate) fn serve_one_with_status(
     serve_with_statuses(vec![(expected, status)])
 }
 
-fn serve_with_statuses(
+pub(crate) fn serve_with_statuses(
     expected: Vec<(ExpectedRequest, u16)>,
 ) -> (String, JoinHandle<Result<(), String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture server");

@@ -20,6 +20,9 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+const CI_JOB_LOG_TAIL_LIMIT: usize = 64 * 1024;
+const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
+
 pub(crate) struct ProviderCommandScope<'a> {
     pub host: &'a str,
     pub project: &'a str,
@@ -386,9 +389,25 @@ pub(crate) fn render_provider_command_output(
         }
         ProviderCommandOutput::ReviewThreads(threads) => render_threads(&threads),
         ProviderCommandOutput::CiJobs(jobs) => render_jobs(&jobs),
-        ProviderCommandOutput::CiJobLog(log) => log,
+        ProviderCommandOutput::CiJobLog(log) => tail_ci_job_log(log),
         ProviderCommandOutput::Confirmation(message) => format!("{message}\n"),
     }
+}
+
+fn tail_ci_job_log(log: String) -> String {
+    tail_ci_job_log_at_limit(log, CI_JOB_LOG_TAIL_LIMIT)
+}
+
+fn tail_ci_job_log_at_limit(log: String, limit: usize) -> String {
+    if log.len() <= limit {
+        return log;
+    }
+    let retained = limit - CI_JOB_LOG_TRUNCATION_NOTICE.len();
+    let mut start = log.len() - retained;
+    while !log.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("{CI_JOB_LOG_TRUNCATION_NOTICE}{}", &log[start..])
 }
 
 fn render_status(
@@ -595,6 +614,19 @@ fn parse_edit(args: &[String]) -> Result<ProviderCommand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ci_job_logs_keep_only_a_bounded_tail() {
+        let output = tail_ci_job_log_at_limit(
+            "012345678901234567890123456789αβγδεζηθικλμνξ".to_owned(),
+            48,
+        );
+
+        insta::assert_snapshot!(output, @r###"
+        [earlier CI log output omitted]
+        ηθικλμνξ
+        "###);
+    }
 
     #[test]
     fn command_parser_rejects_ambiguous_inputs() {
