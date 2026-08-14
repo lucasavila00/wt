@@ -3,8 +3,10 @@ use super::*;
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
+const HOST_IMAGE_PREREQUISITES: &[u8] =
+    include_bytes!("../../../../assets/world/host/install-image-prerequisites.sh");
 const HOST_RESOLVER_PATH: &str = "/run/systemd/resolve/resolv.conf";
-const RECIPE_VERSION: u32 = 2;
+const RECIPE_VERSION: u32 = 3;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -58,6 +60,10 @@ pub(super) fn build(
         fs::write(terminal.join("wt-tmux.conf"), TMUX_CONFIG)?;
         fs::write(terminal.join("byobu-color"), BYOBU_COLOR)?;
         fs::write(terminal.join("wt-host-shell"), HOST_SHELL)?;
+        fs::write(
+            terminal.join("install-image-prerequisites.sh"),
+            HOST_IMAGE_PREREQUISITES,
+        )?;
         runner.run(
             cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, &build),
             "copy host source image",
@@ -182,10 +188,10 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
             "--network",
             "--run-command",
             "rm -f /etc/resolv.conf",
-            "--upload",
-            format!("{}:/etc/resolv.conf", resolver.display()),
-            "--run-command",
-            install_prerequisites_command(),
+            "--copy-in",
+            format!("{}:/etc", resolver.display()),
+            "--run",
+            terminal.join("install-image-prerequisites.sh"),
             "--upload",
             format!("{}:/var/tmp/wt-byobu.deb", byobu.display()),
             "--upload",
@@ -217,10 +223,6 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
         ),
         "install host image prerequisites",
     )
-}
-
-fn install_prerequisites_command() -> &'static str {
-    "export DEBIAN_FRONTEND=noninteractive; log=/var/tmp/wt-host-image-apt.log; attempt=1; while ! (apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent) >\"$log\" 2>&1; do if test \"$attempt\" -ge 30; then echo \"wt-host-image: package installation failed after $attempt attempts; final apt output follows\" >&2; cat \"$log\" >&2; exit 1; fi; echo \"wt-host-image: package installation attempt $attempt/30 failed; retrying in 2 seconds\" >&2; attempt=$((attempt + 1)); sleep 2; done; echo \"wt-host-image: packages installed on attempt $attempt/30\" >&2; rm -f \"$log\" /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
 }
 
 fn install_command() -> String {
@@ -284,12 +286,4 @@ fn verify(
         &manifest.image_sha256,
         "installed host image",
     )
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn host_package_install_retries_transient_failures() {
-        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; log=/var/tmp/wt-host-image-apt.log; attempt=1; while ! (apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent) >\"$log\" 2>&1; do if test \"$attempt\" -ge 30; then echo \"wt-host-image: package installation failed after $attempt attempts; final apt output follows\" >&2; cat \"$log\" >&2; exit 1; fi; echo \"wt-host-image: package installation attempt $attempt/30 failed; retrying in 2 seconds\" >&2; attempt=$((attempt + 1)); sleep 2; done; echo \"wt-host-image: packages installed on attempt $attempt/30\" >&2; rm -f \"$log\" /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf");
-    }
 }
