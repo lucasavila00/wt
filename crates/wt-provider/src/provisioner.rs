@@ -58,6 +58,12 @@ struct AppTarget {
     address: String,
 }
 
+#[derive(Clone, Copy)]
+enum InspectionMode {
+    Observe,
+    RecoverAfterStart,
+}
+
 impl WorldProvisioner {
     pub fn new(config: ProvisionerConfig) -> Result<Self, WorkerError> {
         config.bootstrap.validate().map_err(WorkerError::new)?;
@@ -122,14 +128,14 @@ impl WorldProvisioner {
 
     pub fn inspect(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
-        self.inspect_with_deadline(machine, deadline, false)
+        self.inspect_with_deadline(machine, deadline, InspectionMode::Observe)
     }
 
     fn inspect_with_deadline(
         &self,
         machine: &Machine,
         deadline: Instant,
-        restore_app_access: bool,
+        mode: InspectionMode,
     ) -> Result<World, WorkerError> {
         let transport = machine.transport.as_ref();
         let host_keys = self.read_host_keys(transport, deadline)?;
@@ -144,7 +150,7 @@ impl WorldProvisioner {
             == 0;
         let app_ssh = if complete {
             let target = self.read_app_target(transport, deadline)?;
-            if restore_app_access {
+            if matches!(mode, InspectionMode::RecoverAfterStart) {
                 containers::restore_app_access(transport, &target.user, deadline)?;
             }
             let host_keys = self.configure_and_verify_app_ssh(
@@ -177,7 +183,7 @@ impl WorldProvisioner {
         let deadline = Instant::now() + self.config.recipe_timeout;
         containers::start_all(machine.transport.as_ref(), deadline)?;
         loop {
-            match self.inspect_with_deadline(machine, deadline, true) {
+            match self.inspect_with_deadline(machine, deadline, InspectionMode::RecoverAfterStart) {
                 Ok(world) => return Ok(world),
                 Err(_) if Instant::now() < deadline => {
                     std::thread::sleep(START_READINESS_POLL_INTERVAL);

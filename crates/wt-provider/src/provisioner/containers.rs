@@ -128,6 +128,67 @@ fn authorized_keys(workstation: &[u8], session: &[u8]) -> Result<Vec<u8>, Worker
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        CaptureRequest, CapturedOutput, RunOutput, RunRequest, TransportError, WriteFileRequest,
+    };
+    use std::io::Write;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct RecordedWrite {
+        path: String,
+        contents: Vec<u8>,
+        owner: String,
+        group: String,
+        mode: u32,
+    }
+
+    #[derive(Default)]
+    struct RestoreTransport {
+        writes: Mutex<Vec<RecordedWrite>>,
+        runs: Mutex<Vec<(String, Vec<String>)>>,
+    }
+
+    impl GuestTransport for RestoreTransport {
+        fn run(
+            &self,
+            request: &RunRequest<'_>,
+            _output: &mut dyn Write,
+        ) -> Result<RunOutput, TransportError> {
+            self.runs.lock().unwrap().push((
+                request.executable.to_owned(),
+                request.args.iter().map(|arg| (*arg).to_owned()).collect(),
+            ));
+            Ok(RunOutput {
+                exit_code: 0,
+                diagnostic_tail: Vec::new(),
+            })
+        }
+
+        fn capture(&self, request: &CaptureRequest<'_>) -> Result<CapturedOutput, TransportError> {
+            let stdout = match request.args {
+                ["/home/wt/.ssh/authorized_keys"] => b"ssh-ed25519 workstation\n".to_vec(),
+                ["/var/lib/wt-app-ssh/session_identity.pub"] => b"ssh-ed25519 session\n".to_vec(),
+                _ => panic!("unexpected capture: {request:?}"),
+            };
+            Ok(CapturedOutput {
+                exit_code: 0,
+                stdout,
+                stderr: Vec::new(),
+            })
+        }
+
+        fn write_file(&self, request: &WriteFileRequest<'_>) -> Result<(), TransportError> {
+            self.writes.lock().unwrap().push(RecordedWrite {
+                path: request.path.to_owned(),
+                contents: request.contents.to_vec(),
+                owner: request.owner.to_owned(),
+                group: request.group.to_owned(),
+                mode: request.mode,
+            });
+            Ok(())
+        }
+    }
 
     #[test]
     fn validates_full_docker_container_ids() {
@@ -156,5 +217,33 @@ mod tests {
             b"ssh-ed25519 session\n"
         );
         assert!(authorized_keys(b"ssh-ed25519 workstation\n", b"").is_err());
+    }
+
+    #[test]
+    fn atomically_restores_app_authorized_keys() {
+        let transport = RestoreTransport::default();
+        restore_app_access(&transport, "root", Instant::now() + Duration::from_secs(1)).unwrap();
+
+        assert_eq!(
+            *transport.writes.lock().unwrap(),
+            [RecordedWrite {
+                path: APP_AUTHORIZED_KEYS_TEMP.to_owned(),
+                contents: b"ssh-ed25519 workstation\nssh-ed25519 session\n".to_vec(),
+                owner: "root".to_owned(),
+                group: "root".to_owned(),
+                mode: 0o644,
+            }]
+        );
+        assert_eq!(
+            *transport.runs.lock().unwrap(),
+            [(
+                "/bin/mv".to_owned(),
+                vec![
+                    "--".to_owned(),
+                    APP_AUTHORIZED_KEYS_TEMP.to_owned(),
+                    "/var/lib/wt-app-ssh/public/authorized_keys/root".to_owned(),
+                ],
+            )]
+        );
     }
 }
