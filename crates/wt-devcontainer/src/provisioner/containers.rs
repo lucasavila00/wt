@@ -1,6 +1,6 @@
 use super::guest;
-use crate::{GuestTransport, WorkerError};
 use std::time::{Duration, Instant};
+use wt_provider::{GuestTransport, WorkerError};
 
 const APP_AUTHORIZED_KEYS: &str = "/var/lib/wt-app-ssh/public/authorized_keys";
 const APP_AUTHORIZED_KEYS_TEMP: &str =
@@ -128,11 +128,11 @@ fn authorized_keys(workstation: &[u8], session: &[u8]) -> Result<Vec<u8>, Worker
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        CaptureRequest, CapturedOutput, RunOutput, RunRequest, TransportError, WriteFileRequest,
-    };
     use std::io::Write;
     use std::sync::Mutex;
+    use wt_provider::{
+        CaptureRequest, CapturedOutput, RunOutput, RunRequest, TransportError, WriteFileRequest,
+    };
 
     #[derive(Debug, Eq, PartialEq)]
     struct RecordedWrite {

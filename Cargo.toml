@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/wt-devcontainer-git",
+    "crates/wt-devcontainer",
     "crates/wt-api",
     "crates/wt-cli",
     "crates/wt-command",
@@ -24,6 +25,7 @@ publish = false
 [workspace.dependencies]
 wt-api = { path = "crates/wt-api" }
 wt-command = { path = "crates/wt-command" }
+wt-devcontainer = { path = "crates/wt-devcontainer" }
 wt-libvirt = { path = "crates/wt-libvirt" }
 wt-provider = { path = "crates/wt-provider" }
 wt-registry = { path = "crates/wt-registry" }

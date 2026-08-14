@@ -3,10 +3,7 @@ mod identity;
 
 use crate::bootstrap::BootstrapPolicy;
 use crate::devcontainer;
-use crate::{
-    CaptureRequest, CapturedOutput, GuestTransport, Machine, ProvisionSpec, RunRequest,
-    WorkerError, World, WriteFileRequest,
-};
+use crate::{ProvisionSpec, World};
 use identity::{endpoint_identity_error, host_keys_match, normalized_host_keys};
 use serde::Deserialize;
 use std::fs;
@@ -15,6 +12,10 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
+use wt_provider::{
+    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
+    WriteFileRequest,
+};
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/world/devcontainer/install-guest.sh");

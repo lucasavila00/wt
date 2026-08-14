@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use wt_provider::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
+use wt_devcontainer::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 3;
 const BYOBU_VERSION: &str = "7.15-0ubuntu1";

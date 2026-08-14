@@ -17,9 +17,9 @@ devcontainer.
 
 1. `wt-libvirt` validates the provider ID, creates the overlay, seed, and
    domain, then waits for the guest agent and current DHCP address.
-2. `wt-provider` verifies and bootstraps Ubuntu, installs the locked toolchain,
+2. `wt-devcontainer` verifies and bootstraps Ubuntu, installs the locked toolchain,
    and configures the user, workspace, registry trust, and guest SSH identity.
-3. `wt-provider` installs the gateway relay and session helpers, then returns a
+3. `wt-devcontainer` installs the gateway relay and session helpers, then returns a
    guest ready for setup.
 4. The persistent setup session clones through the gateway, starts the stock
    devcontainer, and verifies app SSH.
@@ -35,6 +35,7 @@ match before the image is reused. Machine bootstrap and world provisioning
 still install or verify their requirements so correctness does not depend on
 the golden image. The image contains no reusable machine ID or SSH host keys.
 
-Implementations: [`wt-provider`](../../crates/wt-provider/) and
+Implementations: [`wt-devcontainer`](../../crates/wt-devcontainer/),
+[`wt-provider`](../../crates/wt-provider/), and
 [`wt-libvirt`](../../crates/wt-libvirt/). Parent:
 [How WT works](./README.md).

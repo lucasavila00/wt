@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use wt_command::cmd;
+use wt_devcontainer::PackageVersions;
 use wt_libvirt::LIBVIRT_URI;
-use wt_provider::PackageVersions;
 use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";

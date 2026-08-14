@@ -13,7 +13,7 @@ pub use runtime_config::{
 
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION, WT_GIT_COMMIT};
 
-pub fn handle_request<W: wt_provider::WorldWorker, G: service::AgentGitGateway>(
+pub fn handle_request<W: wt_devcontainer::WorldWorker, G: service::AgentGitGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

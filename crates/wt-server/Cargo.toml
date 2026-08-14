@@ -11,10 +11,10 @@ name = "wt-server"
 path = "src/main.rs"
 
 [dependencies]
+wt-devcontainer = { workspace = true }
 wt-devcontainer-git = { path = "../wt-devcontainer-git" }
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
-wt-provider = { workspace = true }
 wt-registry = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
+use wt_devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 use wt_libvirt::MachineConfig;
-use wt_provider::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 

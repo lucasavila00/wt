@@ -5,9 +5,8 @@ use std::sync::{
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_api::{CreateInstance, InstanceName, SshAccess};
-use wt_provider::{
-    ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldInspection, WorldWorker,
-};
+use wt_devcontainer::{ForkSpec, ProvisionSpec, World, WorldInspection, WorldWorker};
+use wt_provider::{ForkError, WorkerError};
 use wt_server::operations::Operations;
 use wt_server::service::{AgentGitGateway, Service};
 use wt_server::store::Store;

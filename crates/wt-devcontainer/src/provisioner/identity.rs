@@ -1,6 +1,6 @@
-use super::WorkerError;
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
+use wt_provider::WorkerError;
 
 pub(super) fn normalized_host_keys(lines: &str) -> BTreeSet<String> {
     lines

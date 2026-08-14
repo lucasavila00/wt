@@ -5,7 +5,7 @@ use wt_api::{
     ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
     Operation, Response,
 };
-use wt_provider::{World, WorldInspection, WorldWorker};
+use wt_devcontainer::{World, WorldInspection, WorldWorker};
 use wt_registry::Resources;
 
 pub trait AgentGitGateway {
@@ -235,7 +235,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             return Err(map_store_error(error));
         }
 
-        let spec = wt_provider::ProvisionSpec {
+        let spec = wt_devcontainer::ProvisionSpec {
             id,
             backend_id: &stored.backend_id,
             disk_id,

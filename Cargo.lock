@@ -2466,6 +2466,21 @@ name = "wt-command"
 version = "0.0.0"
 
 [[package]]
+name = "wt-devcontainer"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tempfile",
+ "uuid",
+ "wt-api",
+ "wt-command",
+ "wt-provider",
+]
+
+[[package]]
 name = "wt-devcontainer-git"
 version = "0.0.0"
 dependencies = [
@@ -2526,6 +2541,7 @@ dependencies = [
  "wt-api",
  "wt-cli",
  "wt-command",
+ "wt-devcontainer",
  "wt-devcontainer-git",
  "wt-libvirt",
  "wt-provider",
@@ -2552,16 +2568,8 @@ dependencies = [
 name = "wt-provider"
 version = "0.0.0"
 dependencies = [
- "insta",
- "nix",
- "serde",
- "serde_json",
- "ssh-key",
- "tempfile",
  "thiserror 2.0.18",
  "uuid",
- "wt-api",
- "wt-command",
 ]
 
 [[package]]
@@ -2594,9 +2602,9 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "uuid",
  "wt-api",
+ "wt-devcontainer",
  "wt-devcontainer-git",
  "wt-libvirt",
- "wt-provider",
  "wt-registry",
 ]
 
@@ -2616,8 +2624,8 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "wt-command",
+ "wt-devcontainer",
  "wt-libvirt",
- "wt-provider",
  "wt-server",
  "zeroize",
 ]

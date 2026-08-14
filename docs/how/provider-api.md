@@ -1,11 +1,13 @@
 # Provider architecture
 
-`wt-provider` separates machine management from world provisioning.
-`wt-libvirt` supplies the current machine implementation.
+`wt-provider` defines machine management and guest transport. `wt-libvirt`
+supplies the current machine implementation. `wt-devcontainer` owns
+devcontainer world provisioning.
 
 ```text
-wt-server -> wt-provider <- wt-libvirt
-wt-server-setup -> wt-provider + wt-libvirt
+wt-server -> wt-devcontainer + wt-libvirt
+wt-devcontainer + wt-libvirt -> wt-provider
+wt-server-setup -> wt-devcontainer + wt-libvirt
 ```
 
 ## Ownership
@@ -13,9 +15,10 @@ wt-server-setup -> wt-provider + wt-libvirt
 `wt-provider` owns:
 
 - provider-neutral types and lifecycle;
-- guest command and file transport;
-- OS bootstrap and world provisioning;
-- bootstrap package and version policy.
+- guest command and file transport.
+
+`wt-devcontainer` owns OS bootstrap, package policy, repository checkout,
+devcontainer setup, and guest/app SSH readiness.
 
 `wt-libvirt` owns:
 
@@ -64,10 +67,10 @@ It distinguishes transport, deadline, output-limit, exit-status, and log-sink
 errors. Output limits are enforced while reading. Command input and file
 contents are never included in logs or errors.
 
-The libvirt implementation uses the QEMU guest agent. Shared provisioning uses
-only `GuestTransport`, never a libvirt domain.
+The libvirt implementation uses the QEMU guest agent. Provisioning uses only
+`GuestTransport`, never a libvirt domain.
 
-## World provisioner
+## Devcontainer provisioner
 
 Given a `Machine`, provision specification, and output sink, the
 provisioner:

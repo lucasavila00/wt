@@ -4,18 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Provider-neutral machine and world provisioning contracts for wt"
+description = "Provider-neutral machine and guest transport contracts for wt"
 
 [dependencies]
-wt-api = { workspace = true }
-wt-command = { workspace = true }
-nix = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-ssh-key = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
-
-[dev-dependencies]
-insta = { workspace = true }
-tempfile = "3.27.0"

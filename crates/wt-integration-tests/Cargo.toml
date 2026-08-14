@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+wt-devcontainer = { workspace = true }
 wt-devcontainer-git = { path = "../wt-devcontainer-git" }
 wt-api = { workspace = true }
 wt-command = { workspace = true }
