@@ -1,50 +1,76 @@
 # Development
 
-Use the devcontainer for normal Rust development and tests. Installing a local
-server and running the end-to-end test require Ubuntu 24.04 amd64 with KVM
-enabled.
+WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust
+through rustup. Run setup as a normal user, never as root.
 
-## Install the local server
+## Prepare a fresh server
 
-The development config enables GitHub. Follow the
-[server installation instructions](GETTING-STARTED.md#install-the-server) to
-create `~/.config/wt/credentials/github.token`.
+When the server has only root SSH access, run this from a root shell in a WT
+checkout:
 
-Make sure the SSH key configured in the example can read and write the
-repositories you will use. Its public key and `~/.ssh/known_hosts` must also
-exist. The API token handles pull requests, reviews, and CI; the SSH key handles
-Git fetch and push.
+```text
+scripts/bootstrap-server-user
+```
 
-Review `examples/server-config/wt-server.development.toml`, then run from an
-interactive terminal:
+Reconnect as `wt` before continuing.
+
+## Install the server
+
+The development config enables GitHub. Create its token file without putting
+the value in shell history:
+
+```bash
+install -d -m 0700 ~/.config/wt/credentials
+touch ~/.config/wt/credentials/github.token
+chmod 0600 ~/.config/wt/credentials/github.token
+${EDITOR:-vi} ~/.config/wt/credentials/github.token
+```
+
+Use a classic personal access token with the `repo` scope. The SSH key in
+`examples/server-config/wt-server.development.toml` must have repository access,
+and its public key and `~/.ssh/known_hosts` must exist. The private key must be
+mode `0600`; the public files may be `0600` or `0644`.
+
+Review the config, then install from an interactive terminal:
 
 ```bash
 scripts/install-server --config examples/server-config/wt-server.development.toml
 ```
 
-Run as a normal user. If the configured SSH key is encrypted, the installer
-names the key and asks for its existing passphrase. It checks that the key pair
-matches, encrypts an unlocked copy for the local gateway service, and leaves the
-configured key unchanged. If setup changes group membership, log out, log back
-in, and rerun it.
+If the key is encrypted, the installer asks for its existing passphrase. If
+setup changes group membership, log out, reconnect, and rerun the command.
 
-Install the local client config:
+## Install the client
 
 ```bash
+scripts/install-client
 mkdir -p ~/.wt
 cp examples/client-config/wt.development.toml ~/.wt/config.toml
 ```
 
-After CLI-only changes, rebuild and reinstall just the local client:
-
-```bash
-scripts/install-client
-```
-
-Add this before every `Host` block in `~/.ssh/config`:
+The client needs at least one regular public key in `~/.ssh/*.pub`. Put this
+before every `Host` block in `~/.ssh/config`:
 
 ```sshconfig
 Include ~/.ssh/wt/config
+```
+
+The example client config includes a local context and a remote `lab` context.
+For the remote context, add its server alias to `~/.ssh/config`:
+
+```sshconfig
+Host wt-server
+    HostName SERVER_ADDRESS
+    User wt
+```
+
+The server must allow TCP forwarding and reach its libvirt guest network. The
+client does not need a direct route to guest addresses.
+
+After CLI-only changes, rebuild and reinstall just the client:
+
+```bash
+scripts/install-client
 ```
 
 ## Checks
@@ -62,7 +88,7 @@ a configured Ubuntu/KVM host:
 make e2e-tests
 ```
 
-## Manual test
+## Manual devcontainer test
 
 ```bash
 wt new
@@ -74,8 +100,23 @@ wt rm jsdev-manual
 ```
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
-To exercise host worlds, create a small cloud-init file and run `wt new host
-FILE`; `NAME` attaches to Byobu and `NAME-vs` is direct guest SSH.
+
+## Manual host test
+
+The checked-in [host recipe](examples/host-world/cloud-init.yaml) is the manual
+host-world test. Choose the `local` context and the name `host-manual` when
+prompted:
+
+```bash
+wt new host examples/host-world/cloud-init.yaml
+wt ls
+ssh host-manual-vs /usr/local/bin/wt-host-example
+ssh host-manual-vs sudo -n test -f /var/lib/wt-host-example-ready
+ssh host-manual
+wt rm host-manual
+```
+
+`host-manual` attaches to Byobu. `host-manual-vs` is direct guest SSH.
 
 ## Reset
 
