@@ -20,7 +20,7 @@ reply HANDLE TEXT       Reply to a review thread
 resolve HANDLE          Resolve a review thread
 reopen HANDLE           Reopen a review thread
 ci                      Show CI jobs for the current commit
-log JOB                 Show one CI job's log
+log JOB                 Show any CI job log in this project by provider ID
 retry JOB               Retry a CI job when the provider allows it
 cancel JOB              Cancel a CI job when the provider allows it
 wait                    Wait for review or CI state to change

@@ -1035,7 +1035,7 @@ COMMANDS:\n\
     resolve HANDLE          Resolve a review thread\n\
     reopen HANDLE           Reopen a review thread\n\
     ci                      Show CI jobs for the current commit\n\
-    log JOB                 Show one CI job's log\n\
+    log JOB                 Show any CI job log in this project by provider ID\n\
     retry JOB               Retry a CI job when the provider allows it\n\
     cancel JOB              Cancel a CI job when the provider allows it\n\
     wait                    Wait for review or CI state to change\n\
