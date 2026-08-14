@@ -1,3 +1,4 @@
+mod containers;
 mod identity;
 
 use crate::bootstrap::BootstrapPolicy;
@@ -22,6 +23,7 @@ const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
 const AGENT_GIT_HINT: &[u8] = include_bytes!("../../../assets/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
+const START_READINESS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug)]
 pub struct ProvisionerConfig {
@@ -157,6 +159,24 @@ impl WorldProvisioner {
             },
             app_ssh,
         })
+    }
+
+    pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
+        let deadline = Instant::now() + self.config.recipe_timeout;
+        containers::start_all(machine.transport.as_ref(), deadline)?;
+        loop {
+            match self.inspect(machine) {
+                Ok(world) => return Ok(world),
+                Err(_) if Instant::now() < deadline => {
+                    std::thread::sleep(START_READINESS_POLL_INTERVAL);
+                }
+                Err(error) => {
+                    return Err(WorkerError::new(format!(
+                        "world readiness after start: {error}"
+                    )))
+                }
+            }
+        }
     }
 
     fn bootstrap(

@@ -229,7 +229,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
 
     fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
-        self.provisioner.inspect(&machine)
+        self.provisioner.start(&machine)
     }
 }
 

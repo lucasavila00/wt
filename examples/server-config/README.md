@@ -14,3 +14,7 @@ Each `agent_git` provider names an API-token file, SSH key pair, and trusted
 host-key file. Paths may be absolute or start with `~/`. The installer validates
 them and stores encrypted copies for the gateway; worlds never receive them.
 Changing strict server settings requires `make nuke` followed by reinstalling.
+
+`wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated
+KVM test host with disposable provider fixtures. It must not be used to run a
+real WT server. See the [integration-test instructions](../../crates/wt-integration-tests/README.md#clean-kvm-test-host).

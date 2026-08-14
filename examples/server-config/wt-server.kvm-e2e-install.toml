@@ -1,0 +1,36 @@
+# Test-only install input for preparing a clean host for make e2e-tests.
+# The provider files are disposable fixtures created by the instructions in
+# crates/wt-integration-tests/README.md. Do not put real credentials there.
+version = 1
+
+[image]
+source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
+source_sha256 = "5fa5b05e5ec239858c4531485d6023b0896448c2df7c63b34f8dae6ea6051a44"
+installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+build_memory_mib = 8192
+build_vcpus = 8
+build_disk_gib = 32
+
+[libvirt]
+network = "default"
+worlds_dir = "/var/lib/libvirt/images/wt"
+
+[registry_cache]
+state_dir = "/var/lib/wt/registry-cache"
+port = 3128
+max_size_gib = 64
+registries = ["docker.io"]
+
+[agent_git.github]
+host = "github.com"
+api_token_file = "~/.config/wt/kvm-test/github.token"
+ssh_private_key_file = "~/.config/wt/kvm-test/id_ed25519"
+ssh_public_key_file = "~/.config/wt/kvm-test/id_ed25519.pub"
+ssh_known_hosts_file = "~/.config/wt/kvm-test/known_hosts"
+
+[guest]
+boot_timeout_seconds = 300
+recipe_timeout_seconds = 900
+
+[install]
+binary_dir = "/usr/local/bin"
