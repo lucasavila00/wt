@@ -57,7 +57,7 @@ if [[ $(dpkg --print-architecture) != amd64 ]]; then
     echo "amd64 is required" >&2
     exit 1
 fi
-if ! command -v cargo >/dev/null; then
+if ! command -v cargo >/dev/null || ! command -v rustup >/dev/null; then
     echo "Rust stable via rustup is required" >&2
     exit 1
 fi
@@ -66,6 +66,7 @@ show_phase "Installing host packages"
 sudo apt-get update -qq
 packages=( \
     build-essential \
+    musl-tools \
     pkg-config \
     git \
     curl \
@@ -87,6 +88,7 @@ if ! command -v docker >/dev/null; then
     packages+=(docker.io)
 fi
 sudo apt-get install -y -qq "${packages[@]}"
+rustup target add x86_64-unknown-linux-musl
 
 cd "$root"
 show_phase "Building the setup tool"

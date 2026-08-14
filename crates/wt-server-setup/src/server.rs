@@ -1,3 +1,5 @@
+mod binaries;
+
 use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
@@ -17,7 +19,6 @@ use zeroize::Zeroizing;
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
-
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
     require_server_user()?;
@@ -37,7 +38,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     image::ensure(runner, &input, &server, &server_bytes)?;
 
     phase("Building and installing WT binaries");
-    build_and_install_binaries(runner, &server)?;
+    binaries::build_and_install(runner, &server)?;
 
     phase("Installing configuration and credentials");
     install_server_config(runner, input_path, &server, &server_bytes)?;
@@ -331,47 +332,6 @@ fn require_workspace() -> Result<()> {
         || !Path::new("crates/wt-server/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");
-    }
-    Ok(())
-}
-
-fn build_and_install_binaries(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
-    runner.run(
-        cmd!(
-            "cargo",
-            "build",
-            "--quiet",
-            "--release",
-            "-p",
-            "wt-agent-git",
-            "-p",
-            "wt-cli",
-            "-p",
-            "wt-guest",
-            "-p",
-            "wt-server",
-        ),
-        "build wt binaries",
-    )?;
-    for name in [
-        "wt-agent-git-gateway",
-        "wt-agent-git-relay",
-        "git-remote-ag",
-        "ag-git",
-        "wt",
-        "wt-app-pane",
-        "wt-app-info",
-        "wt-app-proxy",
-        "wt-server",
-    ] {
-        let source = Path::new("target/release").join(name);
-        let destination = config.install.binary_dir.join(name);
-        let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));
-        if temporary.exists() {
-            bail!("stale binary install file exists: {}", temporary.display());
-        }
-        sudo_install(runner, &source, &temporary, 0o755)?;
-        sudo_move(runner, &temporary, &destination)?;
     }
     Ok(())
 }
