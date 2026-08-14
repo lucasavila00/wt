@@ -86,9 +86,10 @@ does not need a TCP proxy: `wt-app-pane` runs inside the guest, where it can
 connect directly to the app's private Docker address.
 
 Byobu stays in the guest when the workstation disconnects. It does not need to
-be provided by the devcontainer. If the
-devcontainer stops, the pane's SSH connection ends; new panes resolve the
-current container when it is running again.
+be provided by the devcontainer. If the devcontainer stops, the pane's SSH
+connection ends; new panes resolve the current container when it is running
+again. WT keeps failed panes visible with their error and recovery hint. A
+successful shell logout still closes its pane.
 
 When Byobu is selected, WT sets the terminal title to the qualified world,
 repository, and current Git checkout, such as `ars.wt2 - repo@feature`. A
