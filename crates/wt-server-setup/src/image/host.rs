@@ -170,8 +170,8 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
             "-a",
             build,
             "--network",
-            "--install",
-            "openssh-server,qemu-guest-agent",
+            "--run-command",
+            install_prerequisites_command(),
             "--upload",
             format!("{}:/var/tmp/wt-byobu.deb", byobu.display()),
             "--upload",
@@ -203,6 +203,10 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
         ),
         "install host image prerequisites",
     )
+}
+
+fn install_prerequisites_command() -> &'static str {
+    "export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done"
 }
 
 fn install_command() -> String {
@@ -266,4 +270,12 @@ fn verify(
         &manifest.image_sha256,
         "installed host image",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn host_package_install_retries_transient_failures() {
+        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done");
+    }
 }
