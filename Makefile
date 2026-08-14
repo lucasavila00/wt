@@ -1,7 +1,17 @@
-.PHONY: bootstrap-server-user clear e2e-tests install-client install-server nuke prepare-image
+.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-server nuke prepare-image
 
 bootstrap-server-user:
 	scripts/bootstrap-server-user
+
+check-file-lines:
+	@rg --files -g '*.rs' | { failed=; while IFS= read -r file; do \
+		lines=$$(wc -l < "$$file"); \
+		if [ "$$lines" -gt 700 ]; then \
+			printf '%s has %s lines (maximum 700)\n' "$$file" "$$lines"; \
+			failed=1; \
+		fi; \
+	done; \
+	test -z "$$failed"; }
 
 clear:
 	scripts/clear
