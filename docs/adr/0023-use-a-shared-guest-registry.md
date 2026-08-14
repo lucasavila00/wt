@@ -38,8 +38,9 @@ limits to the registry. Do not derive admission from currently free resources;
 they change while a request is running.
 
 Capacity errors identify whether CPU, memory, or disk is full and report its
-limit, reserved amount, and request. This replaces the memory-only wire shape
-and bumps the WT protocol version.
+limit, reserved amount, and request. This replaces the memory-only wire shape.
+Keep protocol version 1: installation requires a full reset, and ADR 0007's
+exact client/server commit check already rejects mismatched wire types.
 
 Every retained guest reserves its configured resources regardless of lifecycle
 state. Delete the guest row only after its libvirt machine and disposable disks

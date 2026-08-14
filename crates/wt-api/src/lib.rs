@@ -6,7 +6,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 1;
 pub const WT_GIT_COMMIT: &str = env!("WT_GIT_COMMIT");
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -483,7 +483,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 1,
                 "client_commit": WT_GIT_COMMIT,
                 "operation": "get",
                 "name": "repo-feature"
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 1,
                 "client_commit": WT_GIT_COMMIT,
                 "operation": "start",
                 "name": "repo-feature"
@@ -517,7 +517,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 2,
+          "protocol_version": 1,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 1,
                 "client_commit": WT_GIT_COMMIT,
                 "operation": "create",
                 "name": "repo-feature",
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
             "name": "repo-feature",
@@ -578,7 +578,7 @@ mod tests {
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
             "name": "repo-feature",
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "get",
             "name": "Not-Valid"
@@ -632,7 +632,7 @@ mod tests {
             Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ] {
             let mut value = serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 1,
                 "operation": "list"
             });
             if let Some(client_commit) = client_commit {
