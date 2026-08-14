@@ -53,6 +53,7 @@ pub(super) fn build(
     }
     fs::create_dir(&terminal).context("create host terminal asset directory")?;
     let result = (|| {
+        println!("Preparing dedicated host image and shared terminal assets...");
         extract_terminal_files(runner, server, &terminal)?;
         fs::write(terminal.join("wt-tmux.conf"), TMUX_CONFIG)?;
         fs::write(terminal.join("byobu-color"), BYOBU_COLOR)?;
@@ -70,7 +71,9 @@ pub(super) fn build(
             ),
             "resize host image",
         )?;
+        println!("Installing host image packages and terminal assets...");
         customize(runner, &build, byobu, &terminal)?;
+        println!("Host image packages and terminal assets installed.");
         runner.run(
             cmd!(
                 "sudo",
@@ -217,7 +220,7 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
 }
 
 fn install_prerequisites_command() -> &'static str {
-    "export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done; rm -f /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
+    "export DEBIAN_FRONTEND=noninteractive; log=/var/tmp/wt-host-image-apt.log; attempt=1; while ! (apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent) >\"$log\" 2>&1; do if test \"$attempt\" -ge 30; then echo \"wt-host-image: package installation failed after $attempt attempts; final apt output follows\" >&2; cat \"$log\" >&2; exit 1; fi; echo \"wt-host-image: package installation attempt $attempt/30 failed; retrying in 2 seconds\" >&2; attempt=$((attempt + 1)); sleep 2; done; echo \"wt-host-image: packages installed on attempt $attempt/30\" >&2; rm -f \"$log\" /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
 }
 
 fn install_command() -> String {
@@ -287,6 +290,6 @@ fn verify(
 mod tests {
     #[test]
     fn host_package_install_retries_transient_failures() {
-        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done; rm -f /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf");
+        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; log=/var/tmp/wt-host-image-apt.log; attempt=1; while ! (apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent) >\"$log\" 2>&1; do if test \"$attempt\" -ge 30; then echo \"wt-host-image: package installation failed after $attempt attempts; final apt output follows\" >&2; cat \"$log\" >&2; exit 1; fi; echo \"wt-host-image: package installation attempt $attempt/30 failed; retrying in 2 seconds\" >&2; attempt=$((attempt + 1)); sleep 2; done; echo \"wt-host-image: packages installed on attempt $attempt/30\" >&2; rm -f \"$log\" /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf");
     }
 }
