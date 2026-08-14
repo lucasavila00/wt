@@ -35,12 +35,12 @@ embed Actions Runner Controller, Kubernetes, or another runner manager.
 
 For each requested runner, `wt-runner` will:
 
-1. Reserves CPU, memory, and disk capacity.
-2. Creates a copy-on-write disk from a dedicated runner image.
-3. Starts a guest with a unique identity on a dedicated runner network.
-4. Starts one official GitHub Actions runner with a short-lived JIT config.
-5. Waits for the runner process to finish.
-6. Preserves diagnostics, destroys the guest and disk, and releases capacity.
+1. Reserve CPU, memory, and disk capacity.
+2. Create a copy-on-write disk from a dedicated runner image.
+3. Start a guest with a unique identity on a dedicated runner network.
+4. Start one official GitHub Actions runner with a short-lived JIT config.
+5. Wait for the runner process to finish.
+6. Preserve diagnostics, destroy the guest and disk, and release capacity.
 
 Cleanup will run after success, failure, cancellation, timeout, or loss of the
 runner process. On startup, `wt-runner` will destroy recorded runner guests and

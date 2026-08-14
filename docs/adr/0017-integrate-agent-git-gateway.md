@@ -30,12 +30,12 @@ service layout is internal to WT.
 and provider integrations. Updating the host services fixes every existing
 devcontainer world without rebuilding it.
 
-The guest relay and `git-remote-ag` are stable transport shims. Ordinary
-gateway changes must not require changes inside a devcontainer world. A transport protocol
-change may require `make clear` or `make nuke` and a rebuild.
+The guest relay and `git-remote-ag` are stable transport shims. Ordinary gateway
+changes must not require changes inside a devcontainer world. A transport
+protocol change may require `make clear` or `make nuke` and a rebuild.
 
-`wt new` requires a branch revision. That branch becomes the immutable base for
-the devcontainer world's pull or merge requests.
+Creating a devcontainer world requires a branch revision. That branch becomes
+the immutable base for its pull or merge requests.
 
 ## Local transport
 
@@ -51,8 +51,8 @@ devcontainer ── Unix socket ──> guest relay ── KVM vsock ──> gat
 The gateway is the only component that connects to GitHub or GitLab. It needs
 outbound provider access.
 
-The guest relay avoids giving the devcontainer direct vsock access. World setup
-mounts the relay's Unix socket into the primary devcontainer, where
+The guest relay avoids giving the devcontainer direct vsock access.
+Devcontainer setup mounts the relay's Unix socket into the primary container.
 `git-remote-ag` and `ag-git` use it automatically.
 
 The workstation never talks to the gateway. A Mac continues to use WT by
@@ -72,15 +72,15 @@ During creation, `wt-server` asks the gateway for a token limited to the
 selected project, base branch, and shared `wt/` branch namespace. World setup
 stores it on the private disk, outside the checkout, and starts the relay.
 
-Worlds never receive the developer's SSH keys or provider credentials.
+Devcontainer worlds never receive developer private keys or provider
+credentials.
 
 The gateway is the central trust boundary. `wt-server-setup` configures provider
-credentials once on the Linux host. If the gateway is unavailable, devcontainer worlds can
-keep working locally but cannot fetch, push, or use `ag-git` until it returns.
+credentials once on the Linux host. If it is unavailable, devcontainer worlds
+can work locally but cannot fetch, push, or use `ag-git`.
 
-GitHub and GitLab are configured independently, and an installation needs at
-least one. WT selects the provider from the repository host and rejects a devcontainer world
-before creation when that host is not configured.
+GitHub and GitLab are configured independently; an installation needs at least
+one. WT rejects a devcontainer world when its repository host is not configured.
 
 Provider SSH endpoints use the standard `git@HOST` endpoint on port 22, and
 provider APIs use HTTPS on their standard host. Custom SSH ports and separate
@@ -91,9 +91,9 @@ validates them, and installs encrypted systemd credentials for the gateway.
 Their contents never enter WT configuration, command arguments, or environment
 variables.
 
-This is a clean-install change. Moving from the pre-gateway server or the
-per-world-prefix design requires `make nuke`; WT does not migrate old devcontainer worlds,
-gateway state, or the earlier database schema.
+Moving from the pre-gateway server or per-world prefixes requires `make nuke`.
+WT does not migrate old devcontainer worlds, gateway state, or the earlier
+database schema.
 
 ## SSH agent forwarding
 
@@ -153,7 +153,7 @@ WT: This is a WT-managed development environment for a coding agent.
 WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
 WT: not available here. Do not look for credentials or use `gh` or `glab`.
 WT: WT gives you scoped access to project `group/project`.
-WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT devcontainer world for
+WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
 WT: this project can write branches under `wt/`. Pull or merge requests target
 WT: `main`.
 WT: `ag-git` uses explicit provider resource types and IDs; it does not infer
@@ -162,12 +162,15 @@ WT: Run `ag-git --help` to discover every available command.
 WT:
 ```
 
+This message appears only in devcontainer worlds; "WT world" here means a
+devcontainer world.
+
 Git renders the same gateway header with `remote:` in place of `WT:`.
 
 Checking out an invalid branch explains the rule and the fix:
 
 ```text
-WT: Branches pushed from a WT devcontainer world must start with `wt/`.
+WT: Branches pushed from a WT world must start with `wt/`.
 WT: Rename the current branch before pushing:
 WT:   git branch -m wt/fix-login
 ```
@@ -235,4 +238,5 @@ requests intact. Other devcontainer worlds retain access to the shared
 namespace. Creating or recreating one gets a new token without reserving a
 prefix.
 
-`wt fork` is unavailable because it would copy a world's token.
+`wt fork` is unavailable for a devcontainer world because it would copy the
+world's token.

@@ -56,7 +56,8 @@ the destructive reset described in [Server operations](./docs/guides/server.md#r
 
 ## Configure the client
 
-On the workstation, install the client from a WT checkout:
+On the workstation, install stable Rust through rustup, then install the client
+from a WT checkout:
 
 ```text
 scripts/install-client

@@ -44,8 +44,8 @@ Each kind has one reserved build domain and directory: `wt-image-build` or
 `wt-host-image-build`. Setup holds one exclusive host build lock before checking
 or creating either name, so image builds cannot overlap. Existing state under
 either exact name is a conflict. The guest attaches to the configured libvirt
-network. DHCP, DNS, or package failure is retried by the recipe and bounded by
-the 30-minute build timeout.
+network. Package installation retries transient apt or DNS failures. The whole
+build is bounded by 30 minutes.
 
 The recipe writes `/var/lib/wt-image-result` as root mode `0644` only after all
 installation and validation succeeds. It contains exactly:

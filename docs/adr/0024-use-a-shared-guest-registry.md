@@ -7,8 +7,9 @@
 
 ## Context
 
-The current registry stores development worlds directly in `instances`. Its
-memory sum is enough while `wt-server` is the only guest creator.
+Before this decision, the registry stored development worlds directly in
+`instances`. Its memory sum was enough while `wt-server` was the only guest
+creator.
 
 `wt-runner` will create guests in another process. Separate world and runner
 capacity tables could both admit the last host capacity. A standalone capacity

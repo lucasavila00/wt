@@ -6,8 +6,9 @@
 
 ## Context
 
-`wt-server` uses `rusqlite` directly. Queries repeat column names and decode
-rows by column position. Schema setup is hand-written in `Store::open`.
+Before this decision, `wt-server` used `rusqlite` directly. Queries repeated
+column names and decoded rows by position. `Store::open` created the schema by
+hand.
 
 We want simple database code and automatic migrations. The store is
 synchronous and uses SQLite.
