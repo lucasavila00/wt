@@ -29,6 +29,14 @@ struct GithubReadPullRequest;
 #[derive(GraphQLQuery)]
 #[graphql(
     schema_path = "graphql/github/schema.graphql",
+    query_path = "graphql/github/pull_request_by_number.graphql",
+    response_derives = "Debug"
+)]
+struct GithubReadPullRequestByNumber;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "graphql/github/schema.graphql",
     query_path = "graphql/github/create.graphql",
     response_derives = "Debug"
 )]
@@ -537,18 +545,64 @@ impl GithubApi {
             .read_json(&format!("{}repos/{project}/pulls/{mr}", self.rest_prefix))
     }
 
-    fn project_scope_for_pull_request<'a>(
-        project_scope: &'a ProviderProjectScope<'a>,
-        request: &'a PullRequest,
-    ) -> ProviderCommandScope<'a> {
-        ProviderCommandScope {
-            host: project_scope.host,
-            project: project_scope.project,
-            base: &request.base.reference,
-            prefix: project_scope.prefix,
-            branch: &request.head.reference,
-            head: &request.head.sha,
-        }
+    fn read_review_threads(&self, project: &str, mr: u64) -> Result<Vec<ReviewThread>> {
+        let (owner, name) = split_project(project)?;
+        let data = self
+            .graphql
+            .execute_graphql::<GithubReadPullRequestByNumber>(
+                self.graphql_path,
+                github_read_pull_request_by_number::Variables {
+                    owner: owner.to_owned(),
+                    name: name.to_owned(),
+                    number: i64::try_from(mr).context("GitHub pull request number is too large")?,
+                },
+            )?;
+        let request = data
+            .repository
+            .with_context(|| format!("GitHub repository {project} was not found"))?
+            .pull_request
+            .with_context(|| format!("GitHub pull request {mr} was not found"))?;
+        ensure_complete_connection(
+            "review threads",
+            request.review_threads.page_info.has_next_page,
+            request.review_threads.total_count,
+        )?;
+        request
+            .review_threads
+            .nodes
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|thread| {
+                ensure_complete_connection(
+                    &format!("comments in review thread {}", thread.id),
+                    thread.comments.page_info.has_next_page,
+                    thread.comments.total_count,
+                )?;
+                Ok(ReviewThread {
+                    handle: ReviewThreadHandle::new(thread.id),
+                    resolvable: true,
+                    resolved: thread.is_resolved,
+                    path: Some(thread.path),
+                    line: thread.line.map(|line| line as u64),
+                    comments: thread
+                        .comments
+                        .nodes
+                        .unwrap_or_default()
+                        .into_iter()
+                        .flatten()
+                        .map(|comment| ReviewComment {
+                            author: comment
+                                .author
+                                .map(|author| author.login)
+                                .unwrap_or_else(|| "unknown".to_owned()),
+                            body: comment.body,
+                            url: Some(comment.url.0),
+                        })
+                        .collect(),
+                })
+            })
+            .collect()
     }
 
     fn require_writable_pull_request(
@@ -949,17 +1003,9 @@ impl GitProviderApi for GithubApi {
             CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(ci_job(
                 self.read_workflow_job(scope.project, *job)?,
             ))),
-            CliCommand::ListThreads { mr } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                let ProviderCommandOutput::ReviewThreads(mut threads) =
-                    self.execute_command(&current, &ProviderCommand::ReadReviewThreads)?
-                else {
-                    unreachable!("review command returned another output type")
-                };
-                threads.retain(|thread| thread.resolvable);
-                Ok(ProviderCommandOutput::ReviewThreads(threads))
-            }
+            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_review_threads(scope.project, *mr)?,
+            )),
             CliCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
@@ -1688,7 +1734,7 @@ mod tests {
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"{"number":7,"html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
+                response_body: r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
             },
             ExpectedRequest {
                 method: "GET",
@@ -1717,6 +1763,55 @@ mod tests {
         };
         assert_eq!(mr.handle, "7");
         assert_eq!(job.state, "success");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn lists_threads_by_pull_request_number() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/graphql",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: Some("GithubReadPullRequestByNumber"),
+            response_content_type: "application/json",
+            response_body: r#"{
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "pageInfo": { "hasNextPage": false },
+                                "totalCount": 1,
+                                "nodes": [{
+                                    "id": "PRRT_thread_7",
+                                    "isResolved": false,
+                                    "path": "src/lib.rs",
+                                    "line": 12,
+                                    "comments": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "totalCount": 1,
+                                        "nodes": [{
+                                            "author": { "__typename": "User", "login": "reviewer" },
+                                            "body": "Please clarify this.",
+                                            "url": "https://github.test/thread/7"
+                                        }]
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#,
+        }]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 7 })
+            .unwrap();
+
+        let ProviderCommandOutput::ReviewThreads(threads) = output else {
+            panic!("expected review threads")
+        };
+        assert_eq!(threads[0].handle.as_str(), "PRRT_thread_7");
         server.join().unwrap().unwrap();
     }
 

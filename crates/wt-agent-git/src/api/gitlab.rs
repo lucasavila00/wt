@@ -33,6 +33,14 @@ struct GitlabReadMergeRequest;
 #[derive(GraphQLQuery)]
 #[graphql(
     schema_path = "graphql/gitlab/schema.json",
+    query_path = "graphql/gitlab/merge_request_by_iid.graphql",
+    response_derives = "Debug"
+)]
+struct GitlabReadMergeRequestByIid;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "graphql/gitlab/schema.json",
     query_path = "graphql/gitlab/create.graphql",
     response_derives = "Debug"
 )]
@@ -91,6 +99,13 @@ struct GitlabChangeRequestSnapshot {
     merge_request_id: Option<GitlabMergeRequestId>,
     merge_request_number: Option<GitlabMergeRequestNumber>,
     request: Option<ChangeRequestStatus>,
+    discussions: Vec<(ReviewThreadHandle, GitlabDiscussionId)>,
+}
+
+struct GitlabDirectMergeRequest {
+    id: GitlabMergeRequestId,
+    head: Option<String>,
+    threads: Vec<ReviewThread>,
     discussions: Vec<(ReviewThreadHandle, GitlabDiscussionId)>,
 }
 
@@ -338,11 +353,10 @@ impl GitlabApi {
     }
 
     fn discussion_id(
-        snapshot: &GitlabChangeRequestSnapshot,
+        discussions: &[(ReviewThreadHandle, GitlabDiscussionId)],
         handle: &ReviewThreadHandle,
     ) -> Result<GitlabDiscussionId> {
-        let matches = snapshot
-            .discussions
+        let matches = discussions
             .iter()
             .filter(|(candidate, _)| candidate == handle)
             .map(|(_, id)| id)
@@ -448,6 +462,83 @@ impl GitlabApi {
         ))
     }
 
+    fn read_merge_request_by_iid(
+        &self,
+        project: &str,
+        mr: u64,
+    ) -> Result<GitlabDirectMergeRequest> {
+        let data = self.http.execute_graphql::<GitlabReadMergeRequestByIid>(
+            "api/graphql",
+            gitlab_read_merge_request_by_iid::Variables {
+                project: project.to_owned(),
+                iid: mr.to_string(),
+            },
+        )?;
+        let node = data
+            .project
+            .with_context(|| format!("GitLab project {project} was not found"))?
+            .merge_request
+            .with_context(|| format!("GitLab merge request {mr} was not found"))?;
+        if node.discussions.page_info.has_next_page {
+            bail!(
+                "GitLab returned more than 100 review discussions; refusing to show an incomplete result"
+            );
+        }
+        let mut discussions = Vec::new();
+        let threads = node
+            .discussions
+            .nodes
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .filter(|thread| thread.resolvable)
+            .map(|thread| {
+                if thread.notes.page_info.has_next_page {
+                    bail!(
+                        "GitLab returned more than 100 comments in one review discussion; refusing to show an incomplete thread"
+                    );
+                }
+                let discussion_id = GitlabDiscussionId(thread.id.0);
+                let handle = review_thread_handle(&discussion_id);
+                discussions.push((handle.clone(), discussion_id));
+                let notes = thread
+                    .notes
+                    .nodes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let position = notes.iter().find_map(|note| note.position.as_ref());
+                Ok(ReviewThread {
+                    handle,
+                    resolvable: true,
+                    resolved: thread.resolved,
+                    path: position.map(|position| position.file_path.clone()),
+                    line: position
+                        .and_then(|position| position.new_line.or(position.old_line))
+                        .and_then(|line| u64::try_from(line).ok()),
+                    comments: notes
+                        .into_iter()
+                        .map(|note| ReviewComment {
+                            author: note
+                                .author
+                                .map(|author| author.username)
+                                .unwrap_or_else(|| "unknown".to_owned()),
+                            body: note.body,
+                            url: note.url,
+                        })
+                        .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(GitlabDirectMergeRequest {
+            id: GitlabMergeRequestId(node.id),
+            head: node.diff_head_sha,
+            threads,
+            discussions,
+        })
+    }
+
     fn read_pipeline(&self, project: &str, run: u64) -> Result<Pipeline> {
         self.http.read_json(&format!(
             "api/v4/projects/{}/pipelines/{run}",
@@ -460,20 +551,6 @@ impl GitlabApi {
             "api/v4/projects/{}/jobs/{job}",
             encoded_project(project)
         ))
-    }
-
-    fn command_scope_for_merge_request<'a>(
-        project_scope: &'a ProviderProjectScope<'a>,
-        request: &'a MergeRequest,
-    ) -> ProviderCommandScope<'a> {
-        ProviderCommandScope {
-            host: project_scope.host,
-            project: project_scope.project,
-            base: &request.target_branch,
-            prefix: project_scope.prefix,
-            branch: &request.source_branch,
-            head: &request.sha,
-        }
     }
 
     fn require_writable_merge_request(
@@ -615,7 +692,7 @@ impl GitProviderApi for GitlabApi {
                     let snapshot = self.require_change_request(scope)?;
                     set_change_request_draft(
                         &self.http,
-                        scope,
+                        scope.project,
                         snapshot
                             .merge_request_number
                             .context("merge request has no number")?,
@@ -631,7 +708,7 @@ impl GitProviderApi for GitlabApi {
                     .context("merge request has no number")?;
                 set_change_request_draft(
                     &self.http,
-                    scope,
+                    scope.project,
                     merge_request_number,
                     matches!(command, ProviderCommand::MarkChangeRequestDraft),
                 )?;
@@ -688,7 +765,7 @@ impl GitProviderApi for GitlabApi {
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
                 let snapshot = self.require_change_request(scope)?;
-                let discussion = Self::discussion_id(&snapshot, thread)?;
+                let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let id = snapshot
                     .merge_request_id
                     .context("merge request has no ID")?;
@@ -712,7 +789,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
                 let snapshot = self.require_change_request(scope)?;
-                let discussion = Self::discussion_id(&snapshot, thread)?;
+                let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
                     gitlab_set_discussion_resolved::Variables {
@@ -821,11 +898,9 @@ impl GitProviderApi for GitlabApi {
             CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(gitlab_job(
                 self.read_job(scope.project, *job)?,
             ))),
-            CliCommand::ListThreads { mr } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                self.execute_command(&current, &ProviderCommand::ReadReviewThreads)
-            }
+            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_merge_request_by_iid(scope.project, *mr)?.threads,
+            )),
             CliCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
@@ -900,47 +975,107 @@ impl GitProviderApi for GitlabApi {
             CliCommand::SetMr { mr, state } => {
                 let request = self.read_merge_request(scope.project, *mr)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                let provider_command = match state {
-                    ChangeRequestState::Ready => ProviderCommand::MarkChangeRequestReady,
-                    ChangeRequestState::Draft => ProviderCommand::MarkChangeRequestDraft,
-                    ChangeRequestState::Open => ProviderCommand::ReopenChangeRequest,
-                    ChangeRequestState::Closed => ProviderCommand::CloseChangeRequest,
-                };
-                self.execute_command(&current, &provider_command)
+                match state {
+                    ChangeRequestState::Ready | ChangeRequestState::Draft => {
+                        set_change_request_draft(
+                            &self.http,
+                            scope.project,
+                            GitlabMergeRequestNumber(mr.to_string()),
+                            matches!(state, ChangeRequestState::Draft),
+                        )?;
+                    }
+                    ChangeRequestState::Open | ChangeRequestState::Closed => {
+                        let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
+                            "api/graphql",
+                            gitlab_update_merge_request::Variables {
+                                project: scope.project.to_owned(),
+                                iid: mr.to_string(),
+                                title: None,
+                                description: None,
+                                state: Some(if matches!(state, ChangeRequestState::Open) {
+                                    gitlab_update_merge_request::MergeRequestNewState::OPEN
+                                } else {
+                                    gitlab_update_merge_request::MergeRequestNewState::CLOSED
+                                }),
+                            },
+                        )?;
+                        ensure_errors(
+                            data.merge_request_update
+                                .context("GitLab returned no result")?
+                                .errors,
+                        )?;
+                    }
+                }
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_merge_request(scope.project, *mr)?,
+                )))
             }
             CliCommand::EditMr { mr, title, body } => {
                 let request = self.read_merge_request(scope.project, *mr)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::EditChangeRequest {
+                let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
+                    "api/graphql",
+                    gitlab_update_merge_request::Variables {
+                        project: scope.project.to_owned(),
+                        iid: mr.to_string(),
                         title: title.clone(),
-                        body: body.clone(),
+                        description: body.clone(),
+                        state: None,
                     },
-                )
+                )?;
+                ensure_errors(
+                    data.merge_request_update
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_merge_request(scope.project, *mr)?,
+                )))
             }
             CliCommand::CommentMr { mr, body } => {
                 let request = self.read_merge_request(scope.project, *mr)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::AddChangeRequestComment { body: body.clone() },
-                )
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
+                    "api/graphql",
+                    gitlab_add_merge_request_comment::Variables {
+                        id: NoteableID(direct.id.0),
+                        body: super::attributed_project_comment(scope, body),
+                    },
+                )?;
+                ensure_errors(
+                    data.create_note
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Comment added.".to_owned(),
+                ))
             }
             CliCommand::ReplyThread { mr, thread, body } => {
                 let request = self.read_merge_request(scope.project, *mr)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::ReplyToReviewThread {
-                        thread: thread.clone(),
-                        body: body.clone(),
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
+                    "api/graphql",
+                    gitlab_reply_to_discussion::Variables {
+                        id: NoteableID(direct.id.0),
+                        discussion: DiscussionID(discussion.0),
+                        body: super::attributed_project_comment(scope, body),
+                        head: direct
+                            .head
+                            .context("GitLab merge request has no head commit")?,
                     },
-                )
+                )?;
+                ensure_errors(
+                    data.create_note
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Reply added.".to_owned(),
+                ))
             }
             CliCommand::SetThread {
                 mr,
@@ -949,14 +1084,25 @@ impl GitProviderApi for GitlabApi {
             } => {
                 let request = self.read_merge_request(scope.project, *mr)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let current = Self::command_scope_for_merge_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::SetReviewThreadResolved {
-                        thread: thread.clone(),
-                        resolved: *resolved,
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
+                    "api/graphql",
+                    gitlab_set_discussion_resolved::Variables {
+                        discussion: DiscussionID(discussion.0),
+                        resolve: *resolved,
                     },
-                )
+                )?;
+                ensure_errors(
+                    data.discussion_toggle_resolve
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(if *resolved {
+                    "Thread resolved.".to_owned()
+                } else {
+                    "Thread reopened.".to_owned()
+                }))
             }
             CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
                 let current = self.read_job(scope.project, *job)?;
@@ -996,14 +1142,14 @@ impl GitProviderApi for GitlabApi {
 
 fn set_change_request_draft(
     http: &ProviderHttpClient,
-    scope: &ProviderCommandScope<'_>,
+    project: &str,
     merge_request_number: GitlabMergeRequestNumber,
     draft: bool,
 ) -> Result<()> {
     let data = http.execute_graphql::<GitlabSetMergeRequestDraft>(
         "api/graphql",
         gitlab_set_merge_request_draft::Variables {
-            project: scope.project.to_owned(),
+            project: project.to_owned(),
             iid: merge_request_number.0,
             draft,
         },
@@ -1592,6 +1738,62 @@ mod tests {
         };
         assert_eq!(mr.handle, "8");
         assert_eq!(job.state, "success");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn lists_threads_by_merge_request_iid() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/api/graphql",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: Some("GitlabReadMergeRequestByIid"),
+            response_content_type: "application/json",
+            response_body: r#"{
+                "data": {
+                    "project": {
+                        "mergeRequest": {
+                            "id": "gid://gitlab/MergeRequest/8",
+                            "diffHeadSha": "abc123",
+                            "discussions": {
+                                "pageInfo": { "hasNextPage": false },
+                                "nodes": [{
+                                    "id": "gid://gitlab/Discussion/thread-8",
+                                    "resolved": false,
+                                    "resolvable": true,
+                                    "notes": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "nodes": [{
+                                            "author": { "username": "reviewer" },
+                                            "body": "Please clarify this.",
+                                            "url": "https://gitlab.test/thread/8",
+                                            "position": {
+                                                "filePath": "src/lib.rs",
+                                                "newLine": 12,
+                                                "oldLine": null
+                                            }
+                                        }]
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#,
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 8 })
+            .unwrap();
+
+        let ProviderCommandOutput::ReviewThreads(threads) = output else {
+            panic!("expected review threads")
+        };
+        assert_eq!(
+            threads[0].handle.as_str(),
+            "gid://gitlab/Discussion/thread-8"
+        );
         server.join().unwrap().unwrap();
     }
 
