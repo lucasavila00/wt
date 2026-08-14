@@ -2,10 +2,11 @@ use crate::operations::Operations;
 use crate::store::{Store, StoreError, StoredInstance};
 use uuid::Uuid;
 use wt_api::{
-    ApiError, CreateInstance, ErrorCode, Instance, InstanceStatus, MemoryCapacity, Operation,
-    Response,
+    ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
+    Operation, Response,
 };
 use wt_provider::{World, WorldInspection, WorldWorker};
+use wt_registry::Resources;
 
 pub trait AgentGitGateway {
     fn reserve(
@@ -63,7 +64,7 @@ pub struct Service<W, G> {
     worker: W,
     gateway: G,
     operations: Operations,
-    memory_limit_mib: u64,
+    capacity_limit: Resources,
 }
 
 impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
@@ -79,7 +80,26 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             worker,
             gateway,
             operations,
-            memory_limit_mib,
+            capacity_limit: Resources {
+                memory_mib: memory_limit_mib,
+                ..Resources::UNLIMITED
+            },
+        }
+    }
+
+    pub fn with_capacity_limit(
+        store: Store,
+        worker: W,
+        gateway: G,
+        operations: Operations,
+        capacity_limit: Resources,
+    ) -> Self {
+        Self {
+            store,
+            worker,
+            gateway,
+            operations,
+            capacity_limit,
         }
     }
 
@@ -146,14 +166,34 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Err(StoreError::NotFound) => {}
             Err(error) => return Err(map_store_error(error)),
         }
-        if request.memory_mib > self.memory_limit_mib {
-            return Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                format!(
-                    "world requests {} MiB RAM but the server has {} MiB",
-                    request.memory_mib, self.memory_limit_mib
-                ),
-            ));
+        for (resource, requested, total, unit) in [
+            (
+                CapacityResource::Cpu,
+                u64::from(request.vcpus),
+                self.capacity_limit.vcpus,
+                "CPU",
+            ),
+            (
+                CapacityResource::Memory,
+                request.memory_mib,
+                self.capacity_limit.memory_mib,
+                "MiB RAM",
+            ),
+            (
+                CapacityResource::Disk,
+                request.disk_gib,
+                self.capacity_limit.disk_gib,
+                "GiB disk",
+            ),
+        ] {
+            if requested > total {
+                return Err(ApiError::new(
+                    ErrorCode::InvalidRequest,
+                    format!(
+                        "world requests {requested} {unit} but the server {resource} limit is {total}"
+                    ),
+                ));
+            }
         }
         let id = Uuid::new_v4();
         let git_prefix = wt_agent_git::BRANCH_PREFIX.to_owned();
@@ -187,7 +227,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         };
         if let Err(error) = self
             .store
-            .insert_with_memory_limit(&stored, self.memory_limit_mib)
+            .insert_with_capacity_limit(&stored, self.capacity_limit)
         {
             if let Err(cleanup) = self.gateway.revoke(&grant.id) {
                 eprintln!("wt-server: revoke unused Git grant: {cleanup}");
@@ -366,13 +406,32 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 format!("world is {}; expected stopped", stored.instance.status),
             ));
         }
-        let reserved_mib = self.store.reserved_memory_mib().map_err(map_store_error)?;
-        if reserved_mib > self.memory_limit_mib {
-            return Err(ApiError::capacity(MemoryCapacity {
-                total_mib: self.memory_limit_mib,
-                reserved_mib,
-                requested_mib: 0,
-            }));
+        let reserved = self.store.reserved_resources().map_err(map_store_error)?;
+        for (resource, reserved, total) in [
+            (
+                CapacityResource::Cpu,
+                reserved.vcpus,
+                self.capacity_limit.vcpus,
+            ),
+            (
+                CapacityResource::Memory,
+                reserved.memory_mib,
+                self.capacity_limit.memory_mib,
+            ),
+            (
+                CapacityResource::Disk,
+                reserved.disk_gib,
+                self.capacity_limit.disk_gib,
+            ),
+        ] {
+            if reserved > total {
+                return Err(ApiError::capacity(Capacity {
+                    resource,
+                    total,
+                    reserved,
+                    requested: 0,
+                }));
+            }
         }
         let world = self
             .worker
@@ -424,13 +483,19 @@ fn map_store_error(error: StoreError) -> ApiError {
         StoreError::Conflict => ApiError::new(ErrorCode::Conflict, "instance already exists"),
         StoreError::NotFound => ApiError::new(ErrorCode::NotFound, "instance not found"),
         StoreError::Capacity {
-            total_mib,
-            reserved_mib,
-            requested_mib,
-        } => ApiError::capacity(MemoryCapacity {
-            total_mib,
-            reserved_mib,
-            requested_mib,
+            resource,
+            total,
+            reserved,
+            requested,
+        } => ApiError::capacity(Capacity {
+            resource: match resource {
+                wt_registry::Resource::Cpu => CapacityResource::Cpu,
+                wt_registry::Resource::Memory => CapacityResource::Memory,
+                wt_registry::Resource::Disk => CapacityResource::Disk,
+            },
+            total,
+            reserved,
+            requested,
         }),
         other => ApiError::new(ErrorCode::Internal, other.to_string()),
     }

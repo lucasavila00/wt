@@ -5,12 +5,14 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use schema::{disk_nodes, guests, runners};
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+pub const CAPACITY_CONFIG_PATH: &str = "/etc/wt/capacity.toml";
 
 pub struct Registry {
     connection: RefCell<SqliteConnection>,
@@ -31,11 +33,47 @@ impl GuestKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Resources {
     pub vcpus: u64,
     pub memory_mib: u64,
     pub disk_gib: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CapacityConfig {
+    pub version: u32,
+    pub limits: Resources,
+}
+
+impl CapacityConfig {
+    pub fn load() -> Result<Self, String> {
+        Self::load_from(Path::new(CAPACITY_CONFIG_PATH))
+    }
+
+    pub fn load_from(path: &Path) -> Result<Self, String> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|error| format!("read capacity config {}: {error}", path.display()))?;
+        let config: Self = toml::from_str(&contents)
+            .map_err(|error| format!("parse capacity config {}: {error}", path.display()))?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != 1 {
+            return Err(format!(
+                "unsupported capacity config version {}; expected 1",
+                self.version
+            ));
+        }
+        if self.limits.vcpus == 0 || self.limits.memory_mib == 0 || self.limits.disk_gib == 0 {
+            return Err("capacity limits must be greater than zero".into());
+        }
+        Ok(())
+    }
 }
 
 impl Resources {
@@ -558,5 +596,33 @@ mod tests {
                 disk_gib: 0,
             }
         );
+    }
+
+    #[test]
+    fn capacity_config_is_strict() {
+        let config: CapacityConfig = toml::from_str(
+            r#"
+version = 1
+
+[limits]
+vcpus = 16
+memory_mib = 32768
+disk_gib = 512
+"#,
+        )
+        .unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.limits.memory_mib, 32768);
+        assert!(toml::from_str::<CapacityConfig>(
+            r#"
+version = 1
+unknown = true
+[limits]
+vcpus = 16
+memory_mib = 32768
+disk_gib = 512
+"#
+        )
+        .is_err());
     }
 }

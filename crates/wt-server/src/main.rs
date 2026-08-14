@@ -56,13 +56,9 @@ fn run_server() -> Result<()> {
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
     let operations = Operations::default();
-    let memory_limit_mib = nix::sys::sysinfo::sysinfo()
-        .context("read host memory")?
-        .ram_total()
-        / (1024 * 1024);
-    if memory_limit_mib == 0 {
-        anyhow::bail!("host reports no physical memory");
-    }
+    let capacity_limit = wt_registry::CapacityConfig::load()
+        .map_err(anyhow::Error::msg)?
+        .limits;
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
@@ -90,7 +86,7 @@ fn run_server() -> Result<()> {
             &worker,
             &gateway,
             &owner,
-            memory_limit_mib,
+            capacity_limit,
             request,
         )
     })
@@ -102,17 +98,17 @@ fn handle_daemon_request(
     worker: &CompositeWorker<LibvirtProvider>,
     gateway: &wt_agent_git::ControlClient,
     owner: &str,
-    memory_limit_mib: u64,
+    capacity_limit: wt_registry::Resources,
     request: ApiRequest,
 ) -> ApiResponse {
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
-        let service = Service::new(
+        let service = Service::with_capacity_limit(
             store,
             worker.clone(),
             gateway.clone(),
             operations.clone(),
-            memory_limit_mib,
+            capacity_limit,
         );
         Ok::<_, anyhow::Error>(wt_server::handle_request(&service, owner, request))
     })();

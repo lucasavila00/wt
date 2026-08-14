@@ -30,7 +30,7 @@ restart marks interrupted operations `error` at startup; cleanup requires
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-server api
+printf '%s\n' '{"protocol_version":2,"operation":"list"}' | wt-server api
 ```
 
 Install: [Getting started](../../GETTING-STARTED.md). System flow:

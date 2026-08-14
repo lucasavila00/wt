@@ -27,13 +27,12 @@ pub enum StoreError {
     Conflict,
     #[error("instance not found")]
     NotFound,
-    #[error(
-        "world memory capacity is full: {reserved_mib} MiB of {total_mib} MiB reserved; requested {requested_mib} MiB"
-    )]
+    #[error("world {resource:?} capacity is full: {reserved} of {total} reserved; requested {requested}")]
     Capacity {
-        total_mib: u64,
-        reserved_mib: u64,
-        requested_mib: u64,
+        resource: wt_registry::Resource,
+        total: u64,
+        reserved: u64,
+        requested: u64,
     },
     #[error("database error: {0}")]
     Database(#[from] DieselError),
@@ -129,6 +128,23 @@ impl Store {
                     ..Resources::UNLIMITED
                 },
             )
+        })
+    }
+
+    pub fn insert_with_capacity_limit(
+        &self,
+        stored: &StoredInstance,
+        limit: Resources,
+    ) -> Result<(), StoreError> {
+        self.registry.immediate_transaction(|connection| {
+            insert_disk(connection, stored.head_disk_id, None, false)?;
+            insert_world(connection, stored, limit)
+        })
+    }
+
+    pub fn reserved_resources(&self) -> Result<Resources, StoreError> {
+        self.registry.read(|connection| {
+            wt_registry::reserved_resources(connection).map_err(map_registry_error)
         })
     }
 
@@ -492,14 +508,15 @@ fn insert_world(
 fn map_registry_error(error: RegistryError) -> StoreError {
     match error {
         RegistryError::Capacity {
-            resource: wt_registry::Resource::Memory,
+            resource,
             total,
             reserved,
             requested,
         } => StoreError::Capacity {
-            total_mib: total,
-            reserved_mib: reserved,
-            requested_mib: requested,
+            resource,
+            total,
+            reserved,
+            requested,
         },
         RegistryError::Database(DieselError::DatabaseError(
             DatabaseErrorKind::UniqueViolation,

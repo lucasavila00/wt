@@ -59,7 +59,7 @@ pub fn call(
 
 pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
     let hint = if error.code == wt_api::ErrorCode::Capacity {
-        "free world memory with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
+        "free guest capacity with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
     } else {
         server_hint(context)
     };

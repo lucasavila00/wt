@@ -5,8 +5,8 @@ use std::sync::{
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_api::{
-    CreateInstance, ForkInstance, Instance, InstanceName, InstanceStatus, Operation, Response,
-    SshAccess,
+    Capacity, CapacityResource, CreateInstance, ForkInstance, Instance, InstanceName,
+    InstanceStatus, Operation, Response, SshAccess,
 };
 use wt_provider::{
     ForkError, ForkSpec, ProvisionSpec, WorkerError, World, WorldInspection, WorldWorker,
@@ -306,13 +306,53 @@ fn create_rejects_full_memory_capacity_without_provisioning() {
     assert_eq!(error.code, wt_api::ErrorCode::Capacity);
     assert_eq!(
         error.capacity,
-        Some(wt_api::MemoryCapacity {
-            total_mib: 1024,
-            reserved_mib: 1024,
-            requested_mib: 1024,
+        Some(Capacity {
+            resource: CapacityResource::Memory,
+            total: 1024,
+            reserved: 1024,
+            requested: 1024,
         })
     );
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn worlds_share_cpu_and_disk_capacity() {
+    for (resource, limit) in [
+        (
+            CapacityResource::Cpu,
+            wt_registry::Resources {
+                vcpus: 1,
+                memory_mib: 64 * 1024,
+                disk_gib: 1024,
+            },
+        ),
+        (
+            CapacityResource::Disk,
+            wt_registry::Resources {
+                vcpus: 64,
+                memory_mib: 64 * 1024,
+                disk_gib: 8,
+            },
+        ),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let service = Service::with_capacity_limit(
+            Store::open(&temp.path().join("instances.db")).unwrap(),
+            Worker::default(),
+            Gateway,
+            Operations::default(),
+            limit,
+        );
+        service
+            .execute("tester", Operation::Create(create("first")))
+            .unwrap();
+        let error = service
+            .execute("tester", Operation::Create(create("second")))
+            .unwrap_err();
+        assert_eq!(error.code, wt_api::ErrorCode::Capacity);
+        assert_eq!(error.capacity.unwrap().resource, resource);
+    }
 }
 
 #[test]
