@@ -48,6 +48,33 @@ and devcontainer inputs.
 WT does not place developer private keys, provider tokens, or GitHub App
 credentials in worlds.
 
+## Code layout
+
+Generic names are reserved for code used by more than one world kind.
+Kind-specific names include the kind.
+
+- `wt-api`, `wt-cli`, `wt-command`, `wt-integration-tests`, `wt-libvirt`,
+  `wt-provider`, `wt-registry`, `wt-server`, and `wt-server-setup` remain shared
+  crates.
+- Devcontainer provisioning moves from `wt-provider` to
+  `wt-world-devcontainer`.
+- `wt-guest` becomes `wt-world-devcontainer-guest`.
+- `wt-agent-git` becomes `wt-world-devcontainer-agent-git`.
+- Host provisioning lives in `wt-world-host`.
+- The `wt-runner` crate becomes `wt-world-github-ci`; its service binary remains
+  `wt-runner`.
+
+Executable and service names remain unchanged.
+
+Assets live under `assets/world/shared`, `assets/world/devcontainer`,
+`assets/world/host`, or `assets/world/github-ci`. Physical server assets live
+under `assets/server`; they do not use the host-world namespace.
+
+Mixed crates use `shared`, `devcontainer`, `host`, and `github_ci` module
+names. Kind-specific examples live under `examples/world/KIND`; KVM tests live
+under `tests/kvm/KIND`. Flat or generic names must not contain kind-specific
+behavior.
+
 ## Reset and protocol
 
 Installing this change requires `make nuke`. It destroys all WT guests and
