@@ -17,11 +17,13 @@ use std::time::{Duration, Instant};
 use wt_command::cmd;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
-const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/install-guest.sh");
-const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/setup-world.sh");
-const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root.sh");
-const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
-const AGENT_GIT_HINT: &[u8] = include_bytes!("../../../assets/agent-git-hint.sh");
+const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/world/devcontainer/install-guest.sh");
+const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/world/devcontainer/setup-world.sh");
+const SETUP_WORLD_ROOT: &[u8] =
+    include_bytes!("../../../assets/world/devcontainer/setup-world-root.sh");
+const APP_SHELL: &[u8] = include_bytes!("../../../assets/world/devcontainer/app-shell.sh");
+const AGENT_GIT_HINT: &[u8] =
+    include_bytes!("../../../assets/world/devcontainer/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 const START_READINESS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 

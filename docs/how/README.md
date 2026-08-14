@@ -30,9 +30,9 @@ client: wt + OpenSSH
 | `wt-server` | Unix-socket API daemon, registry, and world-operation coordination |
 | `wt-provider` | Provider-neutral guest transport, embedded install flows, world provisioning, and composite lifecycle |
 | `wt-libvirt` | KVM machine creation, inspection, destruction, and QEMU guest-agent transport |
-| `wt-agent-git` | Scoped Git transport, provider authentication, and `ag-git` behavior |
+| `wt-devcontainer-git` | Scoped Git transport, provider authentication, and `ag-git` behavior |
 | `wt-server-setup` | Embedded host setup, runtime config, golden image, and registry cache |
-| `wt-guest` | Persistent app session and app SSH proxy helpers |
+| `wt-devcontainer-guest` | Persistent app session and app SSH proxy helpers |
 
 ## Control plane
 

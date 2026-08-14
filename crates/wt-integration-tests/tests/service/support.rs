@@ -42,8 +42,8 @@ impl AgentGitGateway for Gateway {
         world_id: Uuid,
         _source: &str,
         _base: &str,
-    ) -> Result<wt_agent_git::Grant, String> {
-        Ok(wt_agent_git::Grant {
+    ) -> Result<wt_devcontainer_git::Grant, String> {
+        Ok(wt_devcontainer_git::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })
@@ -60,8 +60,8 @@ impl AgentGitGateway for UnavailableGateway {
         world_id: Uuid,
         _source: &str,
         _base: &str,
-    ) -> Result<wt_agent_git::Grant, String> {
-        Ok(wt_agent_git::Grant {
+    ) -> Result<wt_devcontainer_git::Grant, String> {
+        Ok(wt_devcontainer_git::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })

@@ -328,7 +328,7 @@ fn require_server_user() -> Result<()> {
 fn require_workspace() -> Result<()> {
     if !Path::new("Cargo.toml").is_file()
         || !Path::new("crates/wt-cli/Cargo.toml").is_file()
-        || !Path::new("crates/wt-guest/Cargo.toml").is_file()
+        || !Path::new("crates/wt-devcontainer-guest/Cargo.toml").is_file()
         || !Path::new("crates/wt-server/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");

@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use wt_server::ServerConfig;
 
-const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../assets/install-server-host.sh");
+const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../assets/server/install-host.sh");
 
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let image_dir = config

@@ -8,15 +8,15 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_agent_git::{
-    read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION,
-};
 use wt_api::{
     ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
     Response,
 };
 use wt_command::cmd;
+use wt_devcontainer_git::{
+    read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
+    TransportRequest, TransportResponse, PROTOCOL_VERSION,
+};
 use wt_server::ServerConfig;
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -42,9 +42,9 @@ impl KvmHarness {
                 env!("CARGO"),
                 "build",
                 "-p",
-                "wt-guest",
+                "wt-devcontainer-guest",
                 "-p",
-                "wt-agent-git",
+                "wt-devcontainer-git",
             );
             command.current_dir(&workspace);
             run(command, "build guest helpers")
