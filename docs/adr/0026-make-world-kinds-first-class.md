@@ -34,7 +34,7 @@ proves direct login with a one-use WT key, removes that key, and fails unless
 SSH is ready.
 
 WT adds no checkout, agent Git grant, devcontainer, or app SSH to a host world.
-The recipe receives no implicit WT credentials.
+Ubuntu's Git remains available; the recipe receives no implicit WT credentials.
 
 World names cannot end in `-host` or `-vs`; those suffixes are reserved for SSH
 aliases.

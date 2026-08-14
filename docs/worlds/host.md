@@ -32,8 +32,8 @@ plain SSH, SFTP, or an editor.
 
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
-the shared WT terminal profile. The recipe receives no WT Git or provider
-credentials.
+the shared WT terminal profile. Ubuntu's Git remains available, but WT adds no
+checkout, Git grant, agent socket, or provider credentials.
 
 Example:
 
