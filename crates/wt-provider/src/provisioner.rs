@@ -122,6 +122,15 @@ impl WorldProvisioner {
 
     pub fn inspect(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
+        self.inspect_with_deadline(machine, deadline, false)
+    }
+
+    fn inspect_with_deadline(
+        &self,
+        machine: &Machine,
+        deadline: Instant,
+        restore_app_access: bool,
+    ) -> Result<World, WorkerError> {
         let transport = machine.transport.as_ref();
         let host_keys = self.read_host_keys(transport, deadline)?;
         self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
@@ -135,6 +144,9 @@ impl WorldProvisioner {
             == 0;
         let app_ssh = if complete {
             let target = self.read_app_target(transport, deadline)?;
+            if restore_app_access {
+                containers::restore_app_access(transport, &target.user, deadline)?;
+            }
             let host_keys = self.configure_and_verify_app_ssh(
                 transport,
                 &target,
@@ -165,7 +177,7 @@ impl WorldProvisioner {
         let deadline = Instant::now() + self.config.recipe_timeout;
         containers::start_all(machine.transport.as_ref(), deadline)?;
         loop {
-            match self.inspect(machine) {
+            match self.inspect_with_deadline(machine, deadline, true) {
                 Ok(world) => return Ok(world),
                 Err(_) if Instant::now() < deadline => {
                     std::thread::sleep(START_READINESS_POLL_INTERVAL);

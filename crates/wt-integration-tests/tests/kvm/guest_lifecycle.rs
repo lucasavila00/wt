@@ -118,7 +118,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "printf 'persistent app state\n' > /tmp/wt-kvm-e2e-restart",
+        "printf 'persistent app state\n' > /workspaces/workspace/.wt-kvm-e2e-restart && sync",
         "write app state before KVM restart",
     );
     let stopped = timings.run("stop and reconcile world", || {
@@ -147,7 +147,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test \"$(cat /tmp/wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
+        "test \"$(cat /workspaces/workspace/.wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
         "verify app state and Git after KVM restart",
     );
 

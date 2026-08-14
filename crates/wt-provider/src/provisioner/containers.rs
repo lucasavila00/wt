@@ -2,6 +2,10 @@ use super::guest;
 use crate::{GuestTransport, WorkerError};
 use std::time::{Duration, Instant};
 
+const APP_AUTHORIZED_KEYS: &str = "/var/lib/wt-app-ssh/public/authorized_keys";
+const APP_AUTHORIZED_KEYS_TEMP: &str =
+    "/var/lib/wt-app-ssh/public/authorized_keys/.wt-restart-authorized-keys";
+
 pub(super) fn start_all(
     transport: &dyn GuestTransport,
     deadline: Instant,
@@ -17,6 +21,46 @@ pub(super) fn start_all(
         "start world containers",
         "/usr/bin/docker",
         &args,
+        deadline,
+        &mut std::io::sink(),
+    )
+}
+
+pub(super) fn restore_app_access(
+    transport: &dyn GuestTransport,
+    user: &str,
+    deadline: Instant,
+) -> Result<(), WorkerError> {
+    let workstation = guest::capture_phase(
+        transport,
+        "world SSH authorized keys",
+        "/bin/cat",
+        &["/home/wt/.ssh/authorized_keys"],
+        deadline,
+    )?;
+    let session = guest::capture_phase(
+        transport,
+        "app session public key",
+        "/bin/cat",
+        &["/var/lib/wt-app-ssh/session_identity.pub"],
+        deadline,
+    )?;
+    let contents = authorized_keys(&workstation, &session)?;
+    guest::write_owned(
+        transport,
+        APP_AUTHORIZED_KEYS_TEMP,
+        &contents,
+        "root",
+        "root",
+        0o644,
+        deadline,
+    )?;
+    let destination = format!("{APP_AUTHORIZED_KEYS}/{user}");
+    guest::run_phase(
+        transport,
+        "restore app SSH authorized keys",
+        "/bin/mv",
+        &["--", APP_AUTHORIZED_KEYS_TEMP, &destination],
         deadline,
         &mut std::io::sink(),
     )
@@ -66,6 +110,21 @@ fn container_ids(output: &[u8]) -> Result<Vec<String>, WorkerError> {
         .collect()
 }
 
+fn authorized_keys(workstation: &[u8], session: &[u8]) -> Result<Vec<u8>, WorkerError> {
+    if session.is_empty() {
+        return Err(WorkerError::new("app session public key is empty"));
+    }
+    let mut contents = workstation.to_vec();
+    if !contents.is_empty() && !contents.ends_with(b"\n") {
+        contents.push(b'\n');
+    }
+    contents.extend_from_slice(session);
+    if !contents.ends_with(b"\n") {
+        contents.push(b'\n');
+    }
+    Ok(contents)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +138,23 @@ mod tests {
             [first, second]
         );
         assert!(container_ids(b"short\n").is_err());
+        assert!(container_ids(
+            b"ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789\n"
+        )
+        .is_err());
+        assert!(container_ids(b"\xff\n").is_err());
+    }
+
+    #[test]
+    fn assembles_complete_app_authorized_keys() {
+        assert_eq!(
+            authorized_keys(b"ssh-ed25519 workstation", b"ssh-ed25519 session\n").unwrap(),
+            b"ssh-ed25519 workstation\nssh-ed25519 session\n"
+        );
+        assert_eq!(
+            authorized_keys(b"", b"ssh-ed25519 session\n").unwrap(),
+            b"ssh-ed25519 session\n"
+        );
+        assert!(authorized_keys(b"ssh-ed25519 workstation\n", b"").is_err());
     }
 }
