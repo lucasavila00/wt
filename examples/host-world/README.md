@@ -1,15 +1,18 @@
 # Host world
 
-`cloud-init.yaml` is a complete host-world recipe. It writes a root-owned
-configuration file, installs a small command, and records that `runcmd`
-finished.
+`cloud-init.yaml` creates a development environment for this repository. It
+installs Rust, Clippy, rustfmt, libvirt headers, and Codex; clones WT into
+`~/wt`; and runs strict workspace Clippy before creation completes.
 
 ```text
 wt new host examples/host-world/cloud-init.yaml
 ssh CONTEXT.NAME
-ssh CONTEXT.NAME-vs /usr/local/bin/wt-host-example
-ssh CONTEXT.NAME-vs sudo -n test -f /var/lib/wt-host-example-ready
+ssh CONTEXT.NAME-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
+ssh CONTEXT.NAME-vs codex --version
 ```
 
-The regular alias attaches to Byobu. Use `-vs` for direct SSH and remote
-commands.
+The generated aliases log in as `wt`. The regular alias attaches to Byobu; use
+`-vs` for direct SSH and remote commands. Run `codex` interactively once to
+sign in. The recipe does not contain Codex or Git credentials.
+
+The environment can run normal workspace checks, but not the real KVM E2E.

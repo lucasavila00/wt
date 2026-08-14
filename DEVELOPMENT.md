@@ -100,6 +100,8 @@ wt rm jsdev-manual
 ```
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
+The project devcontainer includes Codex and logs in as its configured
+`remoteUser`, which is `root`. Run `codex` once inside the session to sign in.
 
 ## Manual host test
 
@@ -110,13 +112,17 @@ prompted:
 ```bash
 wt new host examples/host-world/cloud-init.yaml
 wt ls
-ssh host-manual-vs /usr/local/bin/wt-host-example
-ssh host-manual-vs sudo -n test -f /var/lib/wt-host-example-ready
+ssh host-manual-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
+ssh host-manual-vs codex --version
 ssh host-manual
 wt rm host-manual
 ```
 
-`host-manual` attaches to Byobu. `host-manual-vs` is direct guest SSH.
+`host-manual` attaches to Byobu as `wt`. `host-manual-vs` is direct guest SSH.
+Run `codex` once inside the session to sign in.
+
+Both environments run the normal Rust checks for this workspace. They cannot
+run the real KVM E2E from inside a world.
 
 ## Reset
 

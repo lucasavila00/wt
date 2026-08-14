@@ -1,7 +1,8 @@
 # Host worlds
 
 A host world is a retained Ubuntu guest configured by cloud-init. It has no
-checkout, Git grant, Docker setup, devcontainer, or app SSH server.
+implicit checkout, Git grant, Docker setup, devcontainer, or app SSH server. A
+recipe may create its own checkout, as the project example does.
 
 Create one with a non-empty cloud-init user-data file:
 
@@ -37,4 +38,5 @@ checkout, Git grant, agent socket, or provider credentials.
 
 Use the checked-in
 [host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete
-example.
+WT development environment with Rust, Codex, and a public checkout. It contains
+no credentials and cannot run the real KVM E2E from inside the world.
