@@ -32,6 +32,11 @@ Creating a world or runner inserts its disk node, guest, and subtype in one
 immediate SQLite transaction. Admission sums `guests` in that transaction, so
 `wt-server` and `wt-runner` cannot over-admit each other.
 
+`wt-server-setup` installs one strict host-capacity configuration containing the
+CPU, memory, and disk limits. Both services read that file and pass the same
+limits to the registry. Do not derive admission from currently free resources;
+they change while a request is running.
+
 Every retained guest reserves its configured resources regardless of lifecycle
 state. Delete the guest row only after its libvirt machine and disposable disks
 have been removed. Failed cleanup keeps the row and its reservation for later
