@@ -1,16 +1,17 @@
 mod containers;
 mod identity;
+mod support;
 
 use crate::bootstrap::BootstrapPolicy;
 use crate::devcontainer;
 use crate::{ProvisionSpec, World};
 use identity::{endpoint_identity_error, host_keys_match, normalized_host_keys};
 use serde::Deserialize;
-use std::fs;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use support::{context, log_line, require_and_read, verify_registry_cache};
 use wt_command::cmd;
 use wt_provider::{
     CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
@@ -665,42 +666,4 @@ pub(crate) mod guest {
             .trim()
             .to_owned()
     }
-}
-
-fn require_and_read(path: &PathBuf, label: &str) -> Result<Vec<u8>, WorkerError> {
-    if !path.is_file() {
-        return Err(WorkerError::new(format!(
-            "{label} not found: {}",
-            path.display()
-        )));
-    }
-    fs::read(path).map_err(|error| context(&format!("read {label}"), error))
-}
-
-fn verify_registry_cache(url: &str) -> Result<(), WorkerError> {
-    let output = cmd!(
-        "/usr/bin/curl",
-        "-fsS",
-        "--output",
-        "/dev/null",
-        format!("{url}/ca.crt")
-    )
-    .output()
-    .map_err(|error| context("verify registry cache", error))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(WorkerError::new(format!(
-            "verify registry cache: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )))
-    }
-}
-
-fn context(action: &str, error: impl std::fmt::Display) -> WorkerError {
-    WorkerError::new(format!("{action}: {error}"))
-}
-
-fn log_line(log: &mut dyn Write, message: &str) -> Result<(), WorkerError> {
-    writeln!(log, "{message}").map_err(|error| context("write provisioning log", error))
 }

@@ -1,10 +1,12 @@
 //! Libvirt/KVM machine lifecycle.
 
 mod guest_agent;
+mod image;
 mod provider;
 mod world;
 
 use crate::{MachineConfig, LIBVIRT_URI};
+use image::{read_virtual_size as read_image_virtual_size, validate_disk_size};
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
@@ -649,40 +651,6 @@ fn require_file(path: &std::path::Path, label: &str) -> Result<(), WorkerError> 
             path.display()
         )))
     }
-}
-
-fn read_image_virtual_size(path: &std::path::Path) -> Result<u64, WorkerError> {
-    let output = cmd!("qemu-img", "info", "--output=json", path)
-        .output()
-        .map_err(|error| context("read guest image size", error))?;
-    if !output.status.success() {
-        return Err(WorkerError::new(format!(
-            "read guest image size: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    parse_image_virtual_size(&output.stdout)
-}
-
-fn parse_image_virtual_size(output: &[u8]) -> Result<u64, WorkerError> {
-    serde_json::from_slice::<serde_json::Value>(output)
-        .map_err(|error| context("decode guest image information", error))?
-        .get("virtual-size")
-        .and_then(serde_json::Value::as_u64)
-        .filter(|size| *size > 0)
-        .ok_or_else(|| WorkerError::new("guest image has no positive virtual size"))
-}
-
-fn validate_disk_size(disk_gib: u64, image_virtual_size: u64) -> Result<(), WorkerError> {
-    const GIB: u64 = 1024 * 1024 * 1024;
-    let requested = disk_gib.saturating_mul(GIB);
-    if requested >= image_virtual_size {
-        return Ok(());
-    }
-    let minimum_gib = image_virtual_size.div_ceil(GIB);
-    Err(WorkerError::new(format!(
-        "machine disk is {disk_gib} GiB but the guest image requires at least {minimum_gib} GiB"
-    )))
 }
 
 fn prepare_qemu_file_access(
