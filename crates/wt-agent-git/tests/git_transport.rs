@@ -133,7 +133,7 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     let diagnostics = String::from_utf8_lossy(&published.stderr);
     assert!(diagnostics.contains("This is a WT-managed development environment"));
     assert!(diagnostics.contains("Published branch `wt/fix`"));
-    assert!(diagnostics.contains("ag-git open-mr"));
+    assert!(diagnostics.contains("ag-git --help"));
     assert_ref(&upstream, "refs/heads/wt/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();

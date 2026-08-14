@@ -37,14 +37,8 @@ fn agent_git_transport_works_without_provider_credentials() {
     );
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
-    assert!(help.contains("ag-git manages the pull or merge request"));
-    assert!(help.contains("open-mr [--draft]"));
-    let status = app_output(&harness, &name, "ag-git", "read ag-git status");
-    assert!(status.contains("Request base: main"));
-    harness.change_gateway_base("updated-base");
-    let status = app_output(&harness, &name, "ag-git", "read updated ag-git status");
-    assert!(status.contains("Request base: updated-base"));
-    harness.change_gateway_base("main");
+    assert!(help.contains("explicitly identified Git provider resources"));
+    assert!(help.contains("wait mr|run|job ID"));
 
     run_guest(
         &harness,
@@ -114,11 +108,10 @@ fn agent_git_transport_works_without_provider_credentials() {
         let status = app_output(
             &harness,
             &name,
-            "ag-git",
-            "read ag-git status through provider API fixture",
+            &format!("ag-git list ci commit {}", local.trim()),
+            "read explicit CI through provider API fixture",
         );
-        assert!(status.contains("Project: acme/widget"));
-        assert!(status.contains("Request: none"));
+        assert!(status.contains("No CI resources for the commit"));
         harness.restart_gateway();
     }
 

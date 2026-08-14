@@ -1,6 +1,7 @@
 use super::{
-    ChangeRequestStatus, CiJob, CiJobHandle, GitProviderApi, ProviderCommand,
-    ProviderCommandOutput, ProviderCommandScope, ReviewComment, ReviewThread, ReviewThreadHandle,
+    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, GitProviderApi,
+    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
+    ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -28,6 +29,14 @@ struct DiscussionID(String);
     response_derives = "Debug"
 )]
 struct GitlabReadMergeRequest;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "graphql/gitlab/schema.json",
+    query_path = "graphql/gitlab/merge_request_by_iid.graphql",
+    response_derives = "Debug"
+)]
+struct GitlabReadMergeRequestByIid;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -93,6 +102,13 @@ struct GitlabChangeRequestSnapshot {
     discussions: Vec<(ReviewThreadHandle, GitlabDiscussionId)>,
 }
 
+struct GitlabDirectMergeRequest {
+    id: GitlabMergeRequestId,
+    head: Option<String>,
+    threads: Vec<ReviewThread>,
+    discussions: Vec<(ReviewThreadHandle, GitlabDiscussionId)>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 struct GitlabMergeRequestId(String);
@@ -111,12 +127,16 @@ impl std::fmt::Display for GitlabMergeRequestNumber {
 #[serde(transparent)]
 struct GitlabDiscussionId(String);
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 struct Pipeline {
     id: u64,
     status: String,
     web_url: Option<String>,
     yaml_errors: Option<String>,
+    #[serde(default)]
+    sha: String,
+    #[serde(default, rename = "ref")]
+    reference: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -125,12 +145,39 @@ struct MergeRequestDetails {
     head_pipeline: Option<Pipeline>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 struct PipelineJob {
     id: u64,
     name: String,
     status: String,
     web_url: Option<String>,
+    #[serde(default, rename = "ref")]
+    reference: Option<String>,
+    #[serde(default)]
+    pipeline: Option<JobPipeline>,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct JobPipeline {
+    id: u64,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct MergeRequest {
+    iid: u64,
+    title: String,
+    web_url: String,
+    state: String,
+    #[serde(default)]
+    draft: bool,
+    sha: String,
+    source_branch: String,
+    target_branch: String,
+}
+
+#[derive(Deserialize)]
+struct Commit {
+    id: String,
 }
 
 impl GitlabApi {
@@ -289,7 +336,7 @@ impl GitlabApi {
     ) -> Result<GitlabChangeRequestSnapshot> {
         let snapshot = self.read_change_request_snapshot(scope, false)?;
         if snapshot.request.is_none() {
-            bail!("this branch has no merge request; run `ag-git open-mr`");
+            bail!("the explicitly identified branch has no merge request");
         }
         Ok(snapshot)
     }
@@ -306,11 +353,10 @@ impl GitlabApi {
     }
 
     fn discussion_id(
-        snapshot: &GitlabChangeRequestSnapshot,
+        discussions: &[(ReviewThreadHandle, GitlabDiscussionId)],
         handle: &ReviewThreadHandle,
     ) -> Result<GitlabDiscussionId> {
-        let matches = snapshot
-            .discussions
+        let matches = discussions
             .iter()
             .filter(|(candidate, _)| candidate == handle)
             .map(|(_, id)| id)
@@ -318,10 +364,10 @@ impl GitlabApi {
         match matches.as_slice() {
             [id] => Ok((*id).clone()),
             [] => bail!(
-                "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
+                "review thread `{handle}` was not found; run `ag-git list threads mr ID` and use its provider ID"
             ),
             _ => bail!(
-                "review thread handle `{handle}` is ambiguous; no thread was changed; run `ag-git review` after the discussions change"
+                "review thread ID `{handle}` is ambiguous; no thread was changed"
             ),
         }
     }
@@ -356,6 +402,10 @@ impl GitlabApi {
             .into_iter()
             .map(|job| CiJob {
                 handle: CiJobHandle::new(job.id.to_string()),
+                run: job
+                    .pipeline
+                    .as_ref()
+                    .map(|pipeline| pipeline.id.to_string()),
                 name: job.name,
                 state: normalized_ci_state(job.status),
                 url: job.web_url,
@@ -369,6 +419,7 @@ impl GitlabApi {
                 0,
                 CiJob {
                     handle: CiJobHandle::new(format!("pipeline-{}", pipeline.id)),
+                    run: Some(pipeline.id.to_string()),
                     name: pipeline
                         .yaml_errors
                         .map(|error| format!("pipeline configuration: {error}"))
@@ -402,6 +453,180 @@ impl GitlabApi {
                 "CI job `{handle}` does not belong to the current commit; run `ag-git ci` and use a current job handle"
             )
         }
+    }
+
+    fn read_merge_request(&self, project: &str, mr: u64) -> Result<MergeRequest> {
+        self.http.read_json(&format!(
+            "api/v4/projects/{}/merge_requests/{mr}",
+            encoded_project(project)
+        ))
+    }
+
+    fn read_merge_request_by_iid(
+        &self,
+        project: &str,
+        mr: u64,
+    ) -> Result<GitlabDirectMergeRequest> {
+        let data = self.http.execute_graphql::<GitlabReadMergeRequestByIid>(
+            "api/graphql",
+            gitlab_read_merge_request_by_iid::Variables {
+                project: project.to_owned(),
+                iid: mr.to_string(),
+            },
+        )?;
+        let node = data
+            .project
+            .with_context(|| format!("GitLab project {project} was not found"))?
+            .merge_request
+            .with_context(|| format!("GitLab merge request {mr} was not found"))?;
+        if node.discussions.page_info.has_next_page {
+            bail!(
+                "GitLab returned more than 100 review discussions; refusing to show an incomplete result"
+            );
+        }
+        let mut discussions = Vec::new();
+        let threads = node
+            .discussions
+            .nodes
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .filter(|thread| thread.resolvable)
+            .map(|thread| {
+                if thread.notes.page_info.has_next_page {
+                    bail!(
+                        "GitLab returned more than 100 comments in one review discussion; refusing to show an incomplete thread"
+                    );
+                }
+                let discussion_id = GitlabDiscussionId(thread.id.0);
+                let handle = review_thread_handle(&discussion_id);
+                discussions.push((handle.clone(), discussion_id));
+                let notes = thread
+                    .notes
+                    .nodes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let position = notes.iter().find_map(|note| note.position.as_ref());
+                Ok(ReviewThread {
+                    handle,
+                    resolvable: true,
+                    resolved: thread.resolved,
+                    path: position.map(|position| position.file_path.clone()),
+                    line: position
+                        .and_then(|position| position.new_line.or(position.old_line))
+                        .and_then(|line| u64::try_from(line).ok()),
+                    comments: notes
+                        .into_iter()
+                        .map(|note| ReviewComment {
+                            author: note
+                                .author
+                                .map(|author| author.username)
+                                .unwrap_or_else(|| "unknown".to_owned()),
+                            body: note.body,
+                            url: note.url,
+                        })
+                        .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(GitlabDirectMergeRequest {
+            id: GitlabMergeRequestId(node.id),
+            head: node.diff_head_sha,
+            threads,
+            discussions,
+        })
+    }
+
+    fn read_pipeline(&self, project: &str, run: u64) -> Result<Pipeline> {
+        self.http.read_json(&format!(
+            "api/v4/projects/{}/pipelines/{run}",
+            encoded_project(project)
+        ))
+    }
+
+    fn read_job(&self, project: &str, job: u64) -> Result<PipelineJob> {
+        self.http.read_json(&format!(
+            "api/v4/projects/{}/jobs/{job}",
+            encoded_project(project)
+        ))
+    }
+
+    fn require_writable_merge_request(
+        scope: &ProviderProjectScope<'_>,
+        request: &MergeRequest,
+    ) -> Result<()> {
+        if !request.source_branch.starts_with(scope.prefix) || request.target_branch != scope.base {
+            bail!(
+                "MR {} is outside the writable {}* -> {} scope",
+                request.iid,
+                scope.prefix,
+                scope.base
+            );
+        }
+        Ok(())
+    }
+
+    fn require_writable_ref(
+        scope: &ProviderProjectScope<'_>,
+        reference: Option<&str>,
+    ) -> Result<()> {
+        if !reference.is_some_and(|reference| reference.starts_with(scope.prefix)) {
+            bail!("CI resource is not for a writable {}* ref", scope.prefix);
+        }
+        Ok(())
+    }
+
+    fn list_pipeline_jobs(&self, project: &str, run: u64) -> Result<Vec<CiJob>> {
+        let mut page = 1;
+        let mut result = Vec::new();
+        loop {
+            let page_suffix = if page == 1 {
+                String::new()
+            } else {
+                format!("&page={page}")
+            };
+            let jobs: Vec<PipelineJob> = self.http.read_json(&format!(
+                "api/v4/projects/{}/pipelines/{run}/jobs?include_retried=false&per_page=100{page_suffix}",
+                encoded_project(project)
+            ))?;
+            let complete = jobs.len() < 100;
+            result.extend(jobs.into_iter().map(gitlab_job));
+            if complete {
+                return Ok(result);
+            }
+            page += 1;
+        }
+    }
+
+    fn list_ci_for_commit(&self, project: &str, commit: &str) -> Result<(Vec<CiRun>, Vec<CiJob>)> {
+        let mut page = 1;
+        let mut pipelines = Vec::new();
+        loop {
+            let page_suffix = if page == 1 {
+                String::new()
+            } else {
+                format!("&page={page}")
+            };
+            let response: Vec<Pipeline> = self.http.read_json(&format!(
+                "api/v4/projects/{}/pipelines?sha={commit}&per_page=100{page_suffix}",
+                encoded_project(project)
+            ))?;
+            let complete = response.len() < 100;
+            pipelines.extend(response);
+            if complete {
+                break;
+            }
+            page += 1;
+        }
+        let mut runs = Vec::new();
+        let mut jobs = Vec::new();
+        for pipeline in pipelines {
+            jobs.extend(self.list_pipeline_jobs(project, pipeline.id)?);
+            runs.push(gitlab_run(pipeline));
+        }
+        Ok((runs, jobs))
     }
 }
 
@@ -467,7 +692,7 @@ impl GitProviderApi for GitlabApi {
                     let snapshot = self.require_change_request(scope)?;
                     set_change_request_draft(
                         &self.http,
-                        scope,
+                        scope.project,
                         snapshot
                             .merge_request_number
                             .context("merge request has no number")?,
@@ -483,7 +708,7 @@ impl GitProviderApi for GitlabApi {
                     .context("merge request has no number")?;
                 set_change_request_draft(
                     &self.http,
-                    scope,
+                    scope.project,
                     merge_request_number,
                     matches!(command, ProviderCommand::MarkChangeRequestDraft),
                 )?;
@@ -540,7 +765,7 @@ impl GitProviderApi for GitlabApi {
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
                 let snapshot = self.require_change_request(scope)?;
-                let discussion = Self::discussion_id(&snapshot, thread)?;
+                let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let id = snapshot
                     .merge_request_id
                     .context("merge request has no ID")?;
@@ -564,7 +789,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
                 let snapshot = self.require_change_request(scope)?;
-                let discussion = Self::discussion_id(&snapshot, thread)?;
+                let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
                     gitlab_set_discussion_resolved::Variables {
@@ -657,18 +882,274 @@ impl GitProviderApi for GitlabApi {
             }
         }
     }
+
+    fn execute_cli_command(
+        &self,
+        scope: &ProviderProjectScope<'_>,
+        command: &CliCommand,
+    ) -> Result<ProviderCommandOutput> {
+        match command {
+            CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
+                merge_request_status(self.read_merge_request(scope.project, *mr)?),
+            )),
+            CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
+                self.read_pipeline(scope.project, *run)?,
+            ))),
+            CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(gitlab_job(
+                self.read_job(scope.project, *job)?,
+            ))),
+            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_merge_request_by_iid(scope.project, *mr)?.threads,
+            )),
+            CliCommand::ListCi { commit } => {
+                let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
+                Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
+            }
+            CliCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
+                self.list_pipeline_jobs(scope.project, *run)?,
+            )),
+            CliCommand::LogJob { job } => Ok(ProviderCommandOutput::CiJobLog(
+                self.http.read_text(&format!(
+                    "api/v4/projects/{}/jobs/{job}/trace",
+                    encoded_project(scope.project)
+                ))?,
+            )),
+            CliCommand::WaitMr { mr } => {
+                let initial = self.read_merge_request(scope.project, *mr)?;
+                if matches!(initial.state.as_str(), "closed" | "merged") {
+                    return Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                        initial,
+                    )));
+                }
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    let current = self.read_merge_request(scope.project, *mr)?;
+                    if current != initial {
+                        return Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                            current,
+                        )));
+                    }
+                }
+            }
+            CliCommand::WaitRun { run } => loop {
+                let output = gitlab_run(self.read_pipeline(scope.project, *run)?);
+                if gitlab_ci_terminal(&output.state) {
+                    return Ok(ProviderCommandOutput::CiRun(output));
+                }
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            },
+            CliCommand::WaitJob { job } => loop {
+                let output = gitlab_job(self.read_job(scope.project, *job)?);
+                if gitlab_ci_terminal(&output.state) {
+                    return Ok(ProviderCommandOutput::CiJob(output));
+                }
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            },
+            CliCommand::OpenMr { head, base, draft } => {
+                if !head.starts_with(scope.prefix) || base != scope.base {
+                    bail!(
+                        "open mr must use a {}* head and the granted {} base",
+                        scope.prefix,
+                        scope.base
+                    );
+                }
+                let encoded: String =
+                    url::form_urlencoded::byte_serialize(head.as_bytes()).collect();
+                let commit: Commit = self.http.read_json(&format!(
+                    "api/v4/projects/{}/repository/commits/{encoded}",
+                    encoded_project(scope.project)
+                ))?;
+                let current = ProviderCommandScope {
+                    host: scope.host,
+                    project: scope.project,
+                    base,
+                    prefix: scope.prefix,
+                    branch: head,
+                    head: &commit.id,
+                };
+                self.execute_command(
+                    &current,
+                    &ProviderCommand::OpenChangeRequest { draft: *draft },
+                )
+            }
+            CliCommand::SetMr { mr, state } => {
+                let request = self.read_merge_request(scope.project, *mr)?;
+                Self::require_writable_merge_request(scope, &request)?;
+                match state {
+                    ChangeRequestState::Ready | ChangeRequestState::Draft => {
+                        set_change_request_draft(
+                            &self.http,
+                            scope.project,
+                            GitlabMergeRequestNumber(mr.to_string()),
+                            matches!(state, ChangeRequestState::Draft),
+                        )?;
+                    }
+                    ChangeRequestState::Open | ChangeRequestState::Closed => {
+                        let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
+                            "api/graphql",
+                            gitlab_update_merge_request::Variables {
+                                project: scope.project.to_owned(),
+                                iid: mr.to_string(),
+                                title: None,
+                                description: None,
+                                state: Some(if matches!(state, ChangeRequestState::Open) {
+                                    gitlab_update_merge_request::MergeRequestNewState::OPEN
+                                } else {
+                                    gitlab_update_merge_request::MergeRequestNewState::CLOSED
+                                }),
+                            },
+                        )?;
+                        ensure_errors(
+                            data.merge_request_update
+                                .context("GitLab returned no result")?
+                                .errors,
+                        )?;
+                    }
+                }
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_merge_request(scope.project, *mr)?,
+                )))
+            }
+            CliCommand::EditMr { mr, title, body } => {
+                let request = self.read_merge_request(scope.project, *mr)?;
+                Self::require_writable_merge_request(scope, &request)?;
+                let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
+                    "api/graphql",
+                    gitlab_update_merge_request::Variables {
+                        project: scope.project.to_owned(),
+                        iid: mr.to_string(),
+                        title: title.clone(),
+                        description: body.clone(),
+                        state: None,
+                    },
+                )?;
+                ensure_errors(
+                    data.merge_request_update
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_merge_request(scope.project, *mr)?,
+                )))
+            }
+            CliCommand::CommentMr { mr, body } => {
+                let request = self.read_merge_request(scope.project, *mr)?;
+                Self::require_writable_merge_request(scope, &request)?;
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
+                    "api/graphql",
+                    gitlab_add_merge_request_comment::Variables {
+                        id: NoteableID(direct.id.0),
+                        body: super::attributed_project_comment(scope, body),
+                    },
+                )?;
+                ensure_errors(
+                    data.create_note
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Comment added.".to_owned(),
+                ))
+            }
+            CliCommand::ReplyThread { mr, thread, body } => {
+                let request = self.read_merge_request(scope.project, *mr)?;
+                Self::require_writable_merge_request(scope, &request)?;
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
+                    "api/graphql",
+                    gitlab_reply_to_discussion::Variables {
+                        id: NoteableID(direct.id.0),
+                        discussion: DiscussionID(discussion.0),
+                        body: super::attributed_project_comment(scope, body),
+                        head: direct
+                            .head
+                            .context("GitLab merge request has no head commit")?,
+                    },
+                )?;
+                ensure_errors(
+                    data.create_note
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Reply added.".to_owned(),
+                ))
+            }
+            CliCommand::SetThread {
+                mr,
+                thread,
+                resolved,
+            } => {
+                let request = self.read_merge_request(scope.project, *mr)?;
+                Self::require_writable_merge_request(scope, &request)?;
+                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
+                    "api/graphql",
+                    gitlab_set_discussion_resolved::Variables {
+                        discussion: DiscussionID(discussion.0),
+                        resolve: *resolved,
+                    },
+                )?;
+                ensure_errors(
+                    data.discussion_toggle_resolve
+                        .context("GitLab returned no result")?
+                        .errors,
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(if *resolved {
+                    "Thread resolved.".to_owned()
+                } else {
+                    "Thread reopened.".to_owned()
+                }))
+            }
+            CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
+                let current = self.read_job(scope.project, *job)?;
+                Self::require_writable_ref(scope, current.reference.as_deref())?;
+                let action = if matches!(command, CliCommand::RetryJob { .. }) {
+                    "retry"
+                } else {
+                    "cancel"
+                };
+                self.http.post_without_body(&format!(
+                    "api/v4/projects/{}/jobs/{job}/{action}",
+                    encoded_project(scope.project)
+                ))?;
+                Ok(ProviderCommandOutput::Confirmation(format!(
+                    "{} requested for job {job}.",
+                    if action == "retry" {
+                        "Retry"
+                    } else {
+                        "Cancellation"
+                    }
+                )))
+            }
+            CliCommand::CancelRun { run } => {
+                let current = self.read_pipeline(scope.project, *run)?;
+                Self::require_writable_ref(scope, current.reference.as_deref())?;
+                self.http.post_without_body(&format!(
+                    "api/v4/projects/{}/pipelines/{run}/cancel",
+                    encoded_project(scope.project)
+                ))?;
+                Ok(ProviderCommandOutput::Confirmation(format!(
+                    "Cancellation requested for run {run}."
+                )))
+            }
+        }
+    }
 }
 
 fn set_change_request_draft(
     http: &ProviderHttpClient,
-    scope: &ProviderCommandScope<'_>,
+    project: &str,
     merge_request_number: GitlabMergeRequestNumber,
     draft: bool,
 ) -> Result<()> {
     let data = http.execute_graphql::<GitlabSetMergeRequestDraft>(
         "api/graphql",
         gitlab_set_merge_request_draft::Variables {
-            project: scope.project.to_owned(),
+            project: project.to_owned(),
             iid: merge_request_number.0,
             draft,
         },
@@ -689,19 +1170,7 @@ fn ensure_errors(errors: Vec<String>) -> Result<()> {
 }
 
 fn review_thread_handle(id: &GitlabDiscussionId) -> ReviewThreadHandle {
-    let stable_suffix =
-        id.0.rsplit(['/', ':'])
-            .find(|part| !part.is_empty())
-            .unwrap_or(&id.0);
-    let short = stable_suffix
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-        .take(12)
-        .collect::<String>();
-    ReviewThreadHandle::new(format!(
-        "T-{}",
-        if short.is_empty() { "unknown" } else { &short }
-    ))
+    ReviewThreadHandle::new(id.0.clone())
 }
 
 fn normalized_ci_state(state: String) -> String {
@@ -709,6 +1178,49 @@ fn normalized_ci_state(state: String) -> String {
         "cancelled".to_owned()
     } else {
         state
+    }
+}
+
+fn gitlab_job(job: PipelineJob) -> CiJob {
+    CiJob {
+        handle: CiJobHandle::new(job.id.to_string()),
+        run: job.pipeline.map(|pipeline| pipeline.id.to_string()),
+        name: job.name,
+        state: normalized_ci_state(job.status),
+        url: job.web_url,
+    }
+}
+
+fn gitlab_run(pipeline: Pipeline) -> CiRun {
+    CiRun {
+        handle: pipeline.id.to_string(),
+        name: "pipeline".to_owned(),
+        state: normalized_ci_state(pipeline.status),
+        url: pipeline.web_url,
+        head: pipeline.sha,
+        branch: pipeline.reference,
+    }
+}
+
+fn gitlab_ci_terminal(state: &str) -> bool {
+    !matches!(
+        state,
+        "created" | "waiting_for_resource" | "preparing" | "pending" | "running" | "scheduled"
+    )
+}
+
+fn merge_request_status(request: MergeRequest) -> ChangeRequestStatus {
+    ChangeRequestStatus {
+        handle: request.iid.to_string(),
+        url: request.web_url,
+        title: request.title,
+        state: request.state,
+        draft: request.draft,
+        head: request.sha,
+        base: request.target_branch,
+        review_state: None,
+        threads: Vec::new(),
+        jobs: Vec::new(),
     }
 }
 
@@ -933,7 +1445,7 @@ mod tests {
         assert_eq!(request.handle, "!8");
         assert_eq!(
             request.threads[0].handle,
-            ReviewThreadHandle::new("T-discussion-1")
+            ReviewThreadHandle::new("discussion-1")
         );
         assert_eq!(request.threads[0].comments[0].author, "reviewer");
         assert_eq!(request.threads[0].path.as_deref(), Some("src/login.rs"));
@@ -1012,7 +1524,7 @@ mod tests {
             .execute_command(
                 &scope(),
                 &ProviderCommand::ReplyToReviewThread {
-                    thread: ReviewThreadHandle::new("T-abcdef123456"),
+                    thread: ReviewThreadHandle::new("gid://gitlab/Discussion/abcdef123456-target"),
                     body: "Fixed.".to_owned(),
                 },
             )
@@ -1189,6 +1701,120 @@ mod tests {
     }
 
     #[test]
+    fn explicit_resource_commands_do_not_need_checkout_context() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/merge_requests/8",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"iid":8,"title":"Fix login","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main"}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/api/v4/projects/acme%2Fwidget/jobs/45",
+                required_header: Some(("private-token", "fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"id":45,"name":"test","status":"success","web_url":"https://gitlab.test/jobs/45","ref":"wt/fix-login","pipeline":{"id":92}}"#,
+            },
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+        let scope = project_scope();
+
+        let mr = provider
+            .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 8 })
+            .unwrap();
+        let job = provider
+            .execute_cli_command(&scope, &CliCommand::WaitJob { job: 45 })
+            .unwrap();
+
+        let ProviderCommandOutput::ChangeRequest(mr) = mr else {
+            panic!("expected MR")
+        };
+        let ProviderCommandOutput::CiJob(job) = job else {
+            panic!("expected job")
+        };
+        assert_eq!(mr.handle, "8");
+        assert_eq!(job.state, "success");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn lists_threads_by_merge_request_iid() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/api/graphql",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: Some("GitlabReadMergeRequestByIid"),
+            response_content_type: "application/json",
+            response_body: r#"{
+                "data": {
+                    "project": {
+                        "mergeRequest": {
+                            "id": "gid://gitlab/MergeRequest/8",
+                            "diffHeadSha": "abc123",
+                            "discussions": {
+                                "pageInfo": { "hasNextPage": false },
+                                "nodes": [{
+                                    "id": "gid://gitlab/Discussion/thread-8",
+                                    "resolved": false,
+                                    "resolvable": true,
+                                    "notes": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "nodes": [{
+                                            "author": { "username": "reviewer" },
+                                            "body": "Please clarify this.",
+                                            "url": "https://gitlab.test/thread/8",
+                                            "position": {
+                                                "filePath": "src/lib.rs",
+                                                "newLine": 12,
+                                                "oldLine": null
+                                            }
+                                        }]
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#,
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 8 })
+            .unwrap();
+
+        let ProviderCommandOutput::ReviewThreads(threads) = output else {
+            panic!("expected review threads")
+        };
+        assert_eq!(
+            threads[0].handle.as_str(),
+            "gid://gitlab/Discussion/thread-8"
+        );
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn write_scope_comes_from_provider_resource_metadata() {
+        let mut request = MergeRequest {
+            iid: 8,
+            title: String::new(),
+            web_url: String::new(),
+            state: "opened".to_owned(),
+            draft: false,
+            sha: "abc123".to_owned(),
+            source_branch: "main".to_owned(),
+            target_branch: "main".to_owned(),
+        };
+        assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
+        request.source_branch = "wt/fix".to_owned();
+        assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_ok());
+    }
+
+    #[test]
     fn retries_only_a_job_from_the_current_head_pipeline() {
         let (base_url, server) = serve(vec![
             ExpectedRequest {
@@ -1250,6 +1876,15 @@ mod tests {
             prefix: "df1/",
             branch: "df1/fix-login",
             head: "abc123",
+        }
+    }
+
+    fn project_scope() -> ProviderProjectScope<'static> {
+        ProviderProjectScope {
+            host: "gitlab.test",
+            project: "acme/widget",
+            base: "main",
+            prefix: "wt/",
         }
     }
 }

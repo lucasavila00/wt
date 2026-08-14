@@ -1,0 +1,25 @@
+query GithubReadPullRequestByNumber($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        pageInfo { hasNextPage }
+        totalCount
+        nodes {
+          id
+          isResolved
+          path
+          line
+          comments(first: 100) {
+            pageInfo { hasNextPage }
+            totalCount
+            nodes {
+              author { __typename login }
+              body
+              url
+            }
+          }
+        }
+      }
+    }
+  }
+}
