@@ -26,7 +26,7 @@ a persistent Byobu session. Its `-vs` alias is direct guest SSH with no forced
 command. Creation requires cloud-init user-data. WT passes it through unchanged
 and keeps machine identity, network, login, and SSH configuration in separate
 NoCloud data. Readiness requires successful cloud-init completion. The exact
-user-data is part of the hashed create fingerprint and is not stored.
+user-data is part of the hashed create fingerprint and is not stored in SQLite.
 
 A `host` world boots from a dedicated Ubuntu image with OpenSSH, QEMU guest
 support, and Byobu. User-data runs as root and may break WT SSH access. Creation
@@ -35,6 +35,9 @@ SSH is ready.
 
 WT adds no checkout, agent Git grant, devcontainer, or app SSH to a host world.
 The recipe receives no implicit WT credentials.
+
+World names cannot end in `-host` or `-vs`; those suffixes are reserved for SSH
+aliases.
 
 A `github-ci` world uses the single-job lifecycle in `wt-github-ci`. It cannot
 be restarted, forked, reused, or accessed interactively. The operator service
@@ -74,16 +77,12 @@ Assets live under `assets/world/shared`, `assets/world/devcontainer`,
 `assets/world/host`, or `assets/world/github-ci`. Physical server assets live
 under `assets/server`; they do not use the host-world namespace.
 
-Mixed crates use `shared`, `devcontainer`, `host`, and `github_ci` module
-names. Kind-specific examples live under `examples/world/KIND`; KVM tests live
-under `tests/kvm/KIND`. Flat or generic names must not contain kind-specific
-behavior.
-
 ## Reset and protocol
 
-Installing this change requires `make nuke`. It destroys all WT guests and
-disks and deletes the SQLite registry and installed configuration. There is no
-migration or preserved state.
+Installing this change requires `make nuke`. On the standard installation it
+destroys all WT guests and disks and deletes the SQLite registry and installed
+configuration. Source credentials and installed binaries remain. There is no
+migration or preserved runtime state.
 
 The protocol remains version 1. Request, response, and registry definitions are
 replaced in place.

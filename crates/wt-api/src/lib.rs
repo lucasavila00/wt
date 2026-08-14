@@ -514,6 +514,11 @@ fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
             reason: "only lowercase letters, digits, and hyphens are allowed",
         });
     }
+    if value.ends_with("-host") || value.ends_with("-vs") {
+        return Err(InvalidInstanceName {
+            reason: "must not end with the reserved SSH alias suffix -host or -vs",
+        });
+    }
     Ok(())
 }
 
@@ -526,9 +531,26 @@ mod tests {
         for valid in ["repo-feature", "a", "app-123"] {
             assert!(InstanceName::parse(valid).is_ok(), "{valid}");
         }
-        for invalid in ["", "UPPER", "-leading", "trailing-", "has.dot", "has_space"] {
+        for invalid in [
+            "",
+            "UPPER",
+            "-leading",
+            "trailing-",
+            "has.dot",
+            "has_space",
+            "repo-host",
+            "repo-vs",
+        ] {
             assert!(InstanceName::parse(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn explains_reserved_ssh_alias_suffixes() {
+        insta::assert_snapshot!(
+            InstanceName::parse("repo-vs").unwrap_err().to_string(),
+            @"invalid instance name: must not end with the reserved SSH alias suffix -host or -vs"
+        );
     }
 
     #[test]
@@ -649,7 +671,7 @@ mod tests {
     #[test]
     fn host_create_request_has_tagged_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
-            name: InstanceName::parse("build-host").unwrap(),
+            name: InstanceName::parse("build-world").unwrap(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
@@ -666,7 +688,7 @@ mod tests {
           "disk_gib": 32,
           "kind": "host",
           "memory_mib": 4096,
-          "name": "build-host",
+          "name": "build-world",
           "operation": "create",
           "protocol_version": 1,
           "ssh_authorized_keys": [
