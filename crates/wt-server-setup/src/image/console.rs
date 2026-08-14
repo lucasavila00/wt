@@ -94,7 +94,7 @@ pub(super) fn wait_for_shutdown(
             next_heartbeat = now + Duration::from_secs(60);
         }
         if now >= deadline {
-            bail!("timed out waiting for KVM image build guest");
+            bail!("timed out waiting for KVM image build guest; last phase: {phase}");
         }
         thread::sleep(Duration::from_millis(250));
     }

@@ -26,23 +26,33 @@ fn image_manifest_records_structured_package_versions() {
         recipe_version: recipe::RECIPE_VERSION,
         source_sha256: "source".to_owned(),
         config_sha256: "config".to_owned(),
+        inputs: BTreeMap::new(),
         golden_sha256: "golden".to_owned(),
+        tmux_sha256: "tmux".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
         devcontainer_cli: wt_devcontainer::DEVCONTAINER_CLI_VERSION.to_owned(),
     };
 
     let json = serde_json::to_value(manifest).unwrap();
-    assert_eq!(json["version"], 1);
-    assert_eq!(json["recipe_version"], 3);
+    assert_eq!(json["version"], 2);
+    assert_eq!(json["recipe_version"], 4);
     assert_eq!(json["packages"]["tmux"], "3.4-1");
 }
 
 #[test]
-fn image_recipe_clears_reusable_machine_identity() {
-    assert_eq!(
-        CLEAR_MACHINE_ID,
-        "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id"
-    );
+fn result_marker_requires_root_0644_metadata() {
+    validate_result_metadata("- 0644 46 0 0 /var/lib/wt-image-result").unwrap();
+    assert!(validate_result_metadata("- 0600 46 0 0 /var/lib/wt-image-result").is_err());
+    assert!(validate_result_metadata("- 0644 46 1000 1000 /var/lib/wt-image-result").is_err());
+}
+
+#[test]
+fn image_build_lock_is_exclusive_and_released() {
+    let directory = tempfile::tempdir().unwrap();
+    let lock = BuildLock::acquire(directory.path()).unwrap();
+    assert!(BuildLock::acquire(directory.path()).is_err());
+    drop(lock);
+    BuildLock::acquire(directory.path()).unwrap();
 }
 
 #[test]

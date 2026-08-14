@@ -67,9 +67,14 @@ power_state:
     }
 }
 
-pub(super) fn build_environment(kind: &str, recipe_version: u32) -> String {
+pub(super) fn build_environment(
+    kind: &str,
+    recipe_version: u32,
+    tmux_config_sha256: &str,
+    byobu_color_sha256: &str,
+) -> String {
     format!(
-        "WT_IMAGE_KIND='{}'\nWT_IMAGE_RECIPE_VERSION='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_IMAGE_RECIPE_VERSION='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
         kind,
         recipe_version,
         BYOBU_VERSION,
@@ -79,6 +84,8 @@ pub(super) fn build_environment(kind: &str, recipe_version: u32) -> String {
         NCURSES_TERM_DEB,
         NCURSES_TERM_SHA256,
         GHOSTTY_TERMINFO_SHA256,
+        tmux_config_sha256,
+        byobu_color_sha256,
         DEVCONTAINER_CLI_VERSION,
     )
 }
@@ -113,46 +120,8 @@ mod tests {
 #cloud-config
 output:
   all: '| tee -a /var/log/cloud-init-output.log'
-bootcmd:
-  - echo 'WT_IMAGE_PHASE=updating package indexes and installing guest packages' > /dev/ttyS0
-package_update: true
-packages:
-  - ca-certificates
-  - docker.io
-  - docker-buildx
-  - docker-compose-v2
-  - git
-  - openssh-server
-  - nodejs
-  - npm
-  - tmux
-  - qemu-guest-agent
-  - bison
-  - build-essential
-  - curl
-  - libevent-dev
-  - libncurses-dev
-  - pkg-config
 runcmd:
-  - set -eux
-  - echo 'WT_IMAGE_PHASE=validating guest services' > /dev/ttyS0
-  - systemctl enable --now docker.service qemu-guest-agent.service ssh.service
-  - docker info
-  - docker buildx version
-  - docker compose version
-  - echo 'WT_IMAGE_PHASE=installing Byobu 7.15-0ubuntu1' > /dev/ttyS0
-  - printf '%s  %s\n' 7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc /var/tmp/wt-byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /var/tmp/wt-byobu.deb && test "$(dpkg-query -W -f='${Version}' byobu)" = '7.15-0ubuntu1' && rm -f /var/tmp/wt-byobu.deb && printf 'ready\n' > /var/lib/wt-byobu-ready
-  - echo 'WT_IMAGE_PHASE=installing and validating Dev Container CLI' > /dev/ttyS0
-  - npm install --global @devcontainers/cli@0.80.2
-  - devcontainer --version
-  - echo 'WT_IMAGE_PHASE=installing tmux 3.6b' > /dev/ttyS0
-  - curl -fL --output /tmp/tmux.tar.gz https://github.com/tmux/tmux/releases/download/3.6b/tmux-3.6b.tar.gz && printf '%s  %s\n' 390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7 /tmp/tmux.tar.gz | sha256sum --check --strict && tar -xzf /tmp/tmux.tar.gz -C /tmp && cd /tmp/tmux-3.6b && ./configure --prefix=/usr && make -j2 && make install && install -m 0755 /usr/bin/tmux /var/lib/wt-tmux && test "$(/var/lib/wt-tmux -V)" = 'tmux 3.6b' && cd / && rm -rf /tmp/tmux.tar.gz /tmp/tmux-3.6b && printf 'ready\n' > /var/lib/wt-tmux-ready
-  - echo 'WT_IMAGE_PHASE=installing Ghostty terminfo' > /dev/ttyS0
-  - curl -fL --output /tmp/ncurses-term.deb https://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/ncurses-term_6.6+20260608-2_all.deb && printf '%s  %s\n' 2696f4d2430b44c1ed25dd20fe91c6bf9811194bfb19a6c5408c83789f9f0cb4 /tmp/ncurses-term.deb | sha256sum --check --strict && install -d -m 0755 /usr/share/terminfo/g /usr/share/terminfo/x && dpkg-deb --fsys-tarfile /tmp/ncurses-term.deb | tar -xO ./usr/share/terminfo/g/ghostty > /usr/share/terminfo/g/ghostty && cp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && printf '%s  %s\n' 1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /tmp/ncurses-term.deb && printf 'ready\n' > /var/lib/wt-ghostty-terminfo-ready
-  - echo 'WT_IMAGE_PHASE=recording installed package versions' > /dev/ttyS0
-  - dpkg-query -W -f='${Package}\t${Version}\n' ca-certificates docker.io docker-buildx docker-compose-v2 git openssh-server nodejs npm byobu tmux qemu-guest-agent | sort > /var/lib/wt-image-packages
-  - printf 'ready\n' > /var/lib/wt-image-ready
-  - echo 'WT_IMAGE_PHASE=build ready; requesting shutdown' > /dev/ttyS0
+  - /bin/sh /var/tmp/wt-image-build.sh
 power_state:
   mode: poweroff
   timeout: 60

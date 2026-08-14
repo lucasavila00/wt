@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+. /var/tmp/wt-image-build.env
+
 /bin/sh /var/tmp/wt-install-packages.sh \
     ca-certificates docker.io docker-buildx docker-compose-v2 git nodejs npm
 
@@ -9,7 +11,8 @@ docker info
 docker buildx version
 docker compose version
 
-npm install --global "@devcontainers/cli@$DEVCONTAINER_CLI_VERSION"
+npm install --global --fetch-retries=10 \
+    "@devcontainers/cli@$DEVCONTAINER_CLI_VERSION"
 test "$(devcontainer --version)" = "$DEVCONTAINER_CLI_VERSION"
 
 dpkg-query -W -f='${Package}\t${Version}\n' \

@@ -18,7 +18,9 @@ use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::Read;
 #[cfg(test)]
 use std::io::Write;
@@ -35,14 +37,15 @@ use wt_server::ServerConfig;
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
-const IMAGE_MANIFEST_VERSION: u32 = 1;
-const CLEAR_MACHINE_ID: &str =
-    "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
+const IMAGE_MANIFEST_VERSION: u32 = 2;
 const INSTALL_PACKAGES: &[u8] = include_bytes!("../../../assets/world/shared/install-packages.sh");
 const INSTALL_TERMINAL: &[u8] = include_bytes!("../../../assets/world/shared/install-terminal.sh");
 const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../assets/world/shared/build-image.sh");
+const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../assets/world/shared/finalize-image.sh");
 const DEVCONTAINER_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../assets/world/devcontainer/build-image.sh");
+const TMUX_CONFIG: &[u8] = include_bytes!("../../../assets/world/shared/tmux.conf");
+const BYOBU_COLOR: &[u8] = include_bytes!("../../../assets/world/shared/byobu-color");
 
 pub(super) struct BuildSpec<'a> {
     name: &'a str,
@@ -63,6 +66,46 @@ pub(super) struct StagedInput<'a> {
     guest_path: &'a str,
 }
 
+pub(super) struct BuildContext<'a, R: Runner> {
+    runner: &'a R,
+    input: &'a InstallInput,
+    server: &'a ServerConfig,
+    source: &'a Path,
+    byobu: &'a Path,
+}
+
+struct BuildLock {
+    path: PathBuf,
+}
+
+impl BuildLock {
+    fn acquire(worlds_dir: &Path) -> Result<Self> {
+        let path = worlds_dir.join(".image-build.lock");
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .with_context(|| {
+                format!(
+                    "acquire exclusive image build lock {}; remove stale lock only after confirming no image build is active",
+                    path.display()
+                )
+            })?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for BuildLock {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path) {
+            eprintln!(
+                "Could not remove image build lock {}: {error}",
+                self.path.display()
+            );
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
@@ -70,7 +113,9 @@ struct ImageManifest {
     recipe_version: u32,
     source_sha256: String,
     config_sha256: String,
+    inputs: BTreeMap<String, String>,
     golden_sha256: String,
+    tmux_sha256: String,
     packages: PackageVersions,
     devcontainer_cli: String,
 }
@@ -81,6 +126,9 @@ pub(crate) fn ensure(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
+    let _lock = BuildLock::acquire(&server.libvirt.worlds_dir)?;
+    require_clean_build_state(runner, server)?;
+    require_clean_publication_state(server)?;
     let manifest_path = manifest_path(&server.image.devcontainer_path);
     match (
         server.image.devcontainer_path.exists(),
@@ -117,6 +165,9 @@ pub(crate) fn rebuild(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
+    let _lock = BuildLock::acquire(&server.libvirt.worlds_dir)?;
+    require_clean_build_state(runner, server)?;
+    require_clean_publication_state(server)?;
     refuse_active_worlds(runner)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
@@ -210,22 +261,21 @@ fn build_image(
         bail!("stale image build state exists for {BUILD_NAME}");
     }
     fs::create_dir(&build_dir).context("create image build directory")?;
+    let context = BuildContext {
+        runner,
+        input,
+        server,
+        source,
+        byobu,
+    };
     let result = (|| {
         fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
             .context("set image build directory permissions")?;
         host::ensure_qemu_search_acl(runner, &build_dir)?;
-        build_image_inner(
-            runner,
-            input,
-            server,
-            server_bytes,
-            source,
-            byobu,
-            manifest_path,
-            &build_dir,
-        )
+        build_image_inner(&context, server_bytes, manifest_path, &build_dir)
     })();
     if let Err(primary) = result {
+        let primary = attach_console_tail(primary, &build_dir);
         return match cleanup_failed_build(runner, &build_dir, BUILD_NAME) {
             Ok(()) => Err(primary),
             Err(cleanup) => {
@@ -236,16 +286,15 @@ fn build_image(
     Ok(())
 }
 
-fn build_image_inner(
-    runner: &impl Runner,
-    input: &InstallInput,
-    server: &ServerConfig,
+fn build_image_inner<R: Runner>(
+    context: &BuildContext<'_, R>,
     server_bytes: &[u8],
-    source: &Path,
-    byobu: &Path,
     manifest_path: &Path,
     build_dir: &Path,
 ) -> Result<()> {
+    let runner = context.runner;
+    let input = context.input;
+    let server = context.server;
     let recipe = ImageRecipe::new();
     let spec = BuildSpec {
         name: BUILD_NAME,
@@ -253,7 +302,7 @@ fn build_image_inner(
         recipe_version: recipe::RECIPE_VERSION,
         recipe: DEVCONTAINER_IMAGE_BUILD,
     };
-    let paths = run_kvm_build(runner, input, server, source, byobu, build_dir, &spec, &[])?;
+    let paths = run_kvm_build(context, build_dir, &spec, &[])?;
     let package_output = runner.text(
         cmd!(
             "sudo",
@@ -272,38 +321,7 @@ fn build_image_inner(
         .join(", ");
     println!("Verified packages: {package_summary}");
 
-    runner.run(
-        cmd!(
-            "sudo",
-            "virt-copy-out",
-            "-a",
-            &paths.disk,
-            "/var/lib/wt-tmux",
-            &paths.dir
-        ),
-        "preserve pinned tmux across image sysprep",
-    )?;
-    println!("Sysprepping golden image...");
-    runner.run(
-        cmd!("sudo", "virt-sysprep", "-a", &paths.disk),
-        "sysprep golden image",
-    )?;
-    runner.run(
-        cmd!(
-            "sudo",
-            "virt-customize",
-            "-a",
-            &paths.disk,
-            "--upload",
-            format!("{}:/var/tmp/wt-tmux", paths.dir.join("wt-tmux").display()),
-            "--run-command",
-            format!(
-                "install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && /usr/bin/tmux -V > /var/lib/wt-tmux-version && printf '%s  %s\\n' {} /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /var/tmp/wt-tmux /var/lib/wt-tmux /var/lib/wt-image-result /var/lib/wt-image-packages",
-                recipe::GHOSTTY_TERMINFO_SHA256
-            ),
-        ),
-        "restore tmux, verify Ghostty terminfo, and clear golden image machine identity",
-    )?;
+    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
     let tmux_version = runner.text(
         cmd!(
             "sudo",
@@ -320,7 +338,20 @@ fn build_image_inner(
             tmux_version.trim()
         );
     }
-    sanitize_reusable_image(runner, &paths.disk)?;
+    let finalized_package_output = runner.text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-image-packages"
+        ),
+        "revalidate finalized guest package versions",
+    )?;
+    let finalized_packages = recipe.parse_package_versions(&finalized_package_output)?;
+    if finalized_packages != packages {
+        bail!("finalized image package versions changed during sanitization");
+    }
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
@@ -357,7 +388,9 @@ fn build_image_inner(
         recipe_version: recipe::RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
+        inputs: staged_input_hashes(&spec, &[]),
         golden_sha256: sha_file(&paths.prepared)?,
+        tmux_sha256,
         packages,
         devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
     };
@@ -373,16 +406,15 @@ fn build_image_inner(
     Ok(())
 }
 
-pub(super) fn run_kvm_build(
-    runner: &impl Runner,
-    input: &InstallInput,
-    server: &ServerConfig,
-    source: &Path,
-    byobu: &Path,
+pub(super) fn run_kvm_build<R: Runner>(
+    context: &BuildContext<'_, R>,
     build_dir: &Path,
     spec: &BuildSpec<'_>,
     extra_inputs: &[StagedInput<'_>],
 ) -> Result<BuildPaths> {
+    let runner = context.runner;
+    let input = context.input;
+    let server = context.server;
     let paths = BuildPaths {
         dir: build_dir.to_path_buf(),
         disk: build_dir.join("disk.qcow2"),
@@ -397,6 +429,8 @@ pub(super) fn run_kvm_build(
     let install_terminal = build_dir.join("install-terminal.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
     let kind_recipe = build_dir.join("kind-build-image.sh");
+    let tmux_config = build_dir.join("tmux.conf");
+    let byobu_color = build_dir.join("byobu-color");
 
     println!("Preparing temporary {} KVM build disk...", spec.kind);
     runner.run(
@@ -406,7 +440,7 @@ pub(super) fn run_kvm_build(
             "-p",
             "-O",
             "qcow2",
-            source,
+            context.source,
             &paths.disk
         ),
         "copy source image",
@@ -423,18 +457,25 @@ pub(super) fn run_kvm_build(
 
     fs::write(
         &environment,
-        recipe::build_environment(spec.kind, spec.recipe_version),
+        recipe::build_environment(
+            spec.kind,
+            spec.recipe_version,
+            &sha_bytes(TMUX_CONFIG),
+            &sha_bytes(BYOBU_COLOR),
+        ),
     )
     .context("write image build environment")?;
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
     fs::write(&shared_recipe, SHARED_IMAGE_BUILD).context("write shared image recipe")?;
     fs::write(&kind_recipe, spec.recipe).context("write kind image recipe")?;
+    fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
+    fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
 
     let mut customize = Command::new("sudo");
     customize.arg("virt-customize").arg("-a").arg(&paths.disk);
     for (source, guest_path) in [
-        (byobu, "/var/tmp/wt-byobu.deb"),
+        (context.byobu, "/var/tmp/wt-byobu.deb"),
         (environment.as_path(), "/var/tmp/wt-image-build.env"),
         (
             install_packages.as_path(),
@@ -446,6 +487,8 @@ pub(super) fn run_kvm_build(
         ),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
         (kind_recipe.as_path(), "/var/tmp/wt-kind-image-build.sh"),
+        (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
+        (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
     ] {
         customize
             .arg("--upload")
@@ -498,6 +541,20 @@ pub(super) fn run_kvm_build(
         "/var/lib/wt-image-result",
         "verify image build result",
     )?;
+    let marker_metadata = runner.text(
+        cmd!(
+            "sudo",
+            "virt-ls",
+            "--long",
+            "--recursive",
+            "--uids",
+            "-a",
+            &paths.disk,
+            "/var/lib"
+        ),
+        "verify image build result metadata",
+    )?;
+    validate_result_metadata(&marker_metadata)?;
     let expected = format!(
         "kind={}\nstatus=ready\nrecipe_version={}\n",
         spec.kind, spec.recipe_version
@@ -513,34 +570,56 @@ pub(super) fn run_kvm_build(
     Ok(paths)
 }
 
-pub(super) fn sanitize_reusable_image(runner: &impl Runner, disk: &Path) -> Result<()> {
-    println!("Clearing reusable image cloud-init, network, and machine identity...");
+pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<String> {
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-copy-out",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-tmux",
+            &paths.dir
+        ),
+        "preserve pinned tmux across image sysprep",
+    )?;
+    println!("Sysprepping and sanitizing reusable image...");
+    runner.run(
+        cmd!("sudo", "virt-sysprep", "-a", &paths.disk),
+        "sysprep reusable image",
+    )?;
+    let finalizer = paths.dir.join("finalize-image.sh");
+    fs::write(&finalizer, FINALIZE_IMAGE).context("write image finalizer")?;
     runner.run(
         cmd!(
             "sudo",
             "virt-customize",
             "-a",
-            disk,
-            "--run-command",
+            &paths.disk,
+            "--upload",
+            format!("{}:/var/tmp/wt-tmux", paths.dir.join("wt-tmux").display()),
+            "--upload",
             format!(
-                "cloud-init clean --logs --seed --configs network && rm -rf /var/lib/cloud/instance /var/lib/cloud/instances /etc/netplan/50-cloud-init.yaml && rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env /var/lib/wt-image-result /var/lib/wt-image-packages /var/lib/wt-tmux-version && {CLEAR_MACHINE_ID}"
-            )
+                "{}:/var/tmp/wt-image-build.env",
+                paths.dir.join("build.env").display()
+            ),
+            "--run",
+            &finalizer
         ),
-        "clear reusable image cloud-init and machine state",
+        "finalize reusable image",
     )?;
     runner.run(
         cmd!(
             "sudo",
             "virt-sysprep",
             "-a",
-            disk,
+            &paths.disk,
             "--operations",
             "ssh-hostkeys"
         ),
         "clear reusable image SSH host keys",
     )?;
     let machine_id = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/etc/machine-id"),
+        cmd!("sudo", "virt-cat", "-a", &paths.disk, "/etc/machine-id"),
         "verify empty reusable image machine identity",
     )?;
     if !machine_id.is_empty() {
@@ -552,22 +631,129 @@ pub(super) fn sanitize_reusable_image(runner: &impl Runner, disk: &Path) -> Resu
         "/var/lib/cloud/seed",
         "/etc/netplan/50-cloud-init.yaml",
     ] {
-        let output = runner.output(cmd!("sudo", "virt-ls", "-a", disk, path))?;
+        let output = runner.output(cmd!("sudo", "virt-ls", "-a", &paths.disk, path))?;
         if output.status.success() {
             bail!("reusable image retained cloud-init state at {path}");
         }
     }
     let ssh_files = runner.text(
-        cmd!("sudo", "virt-ls", "-a", disk, "/etc/ssh"),
+        cmd!("sudo", "virt-ls", "-a", &paths.disk, "/etc/ssh"),
         "inspect reusable image SSH state",
     )?;
     if ssh_files.lines().any(|name| name.starts_with("ssh_host_")) {
         bail!("reusable image retained SSH host keys");
     }
+    let tmux_sha256 = runner
+        .text(
+            cmd!(
+                "sudo",
+                "virt-cat",
+                "-a",
+                &paths.disk,
+                "/var/lib/wt-tmux-sha256"
+            ),
+            "read finalized tmux checksum",
+        )?
+        .trim()
+        .to_owned();
+    if tmux_sha256.len() != 64 || !tmux_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("finalized image recorded an invalid tmux checksum");
+    }
+    Ok(tmux_sha256)
+}
+
+pub(super) fn staged_input_hashes(
+    spec: &BuildSpec<'_>,
+    extra_inputs: &[(&str, &[u8])],
+) -> BTreeMap<String, String> {
+    let environment = recipe::build_environment(
+        spec.kind,
+        spec.recipe_version,
+        &sha_bytes(TMUX_CONFIG),
+        &sha_bytes(BYOBU_COLOR),
+    );
+    let mut inputs = BTreeMap::from([
+        (
+            "/var/tmp/wt-byobu.deb".to_owned(),
+            recipe::BYOBU_SHA256.to_owned(),
+        ),
+        (
+            "/var/tmp/wt-image-build.env".to_owned(),
+            sha_bytes(environment.as_bytes()),
+        ),
+        (
+            "/var/tmp/wt-install-packages.sh".to_owned(),
+            sha_bytes(INSTALL_PACKAGES),
+        ),
+        (
+            "/var/tmp/wt-install-terminal.sh".to_owned(),
+            sha_bytes(INSTALL_TERMINAL),
+        ),
+        (
+            "/var/tmp/wt-image-build.sh".to_owned(),
+            sha_bytes(SHARED_IMAGE_BUILD),
+        ),
+        (
+            "/var/tmp/wt-kind-image-build.sh".to_owned(),
+            sha_bytes(spec.recipe),
+        ),
+        ("/var/tmp/wt-tmux.conf".to_owned(), sha_bytes(TMUX_CONFIG)),
+        ("/var/tmp/wt-byobu-color".to_owned(), sha_bytes(BYOBU_COLOR)),
+        (
+            "offline:/wt-finalize-image.sh".to_owned(),
+            sha_bytes(FINALIZE_IMAGE),
+        ),
+        (
+            "nocloud:user-data".to_owned(),
+            sha_bytes(ImageRecipe::new().cloud_config().as_bytes()),
+        ),
+        (
+            "nocloud:meta-data".to_owned(),
+            sha_bytes(
+                format!(
+                    "instance-id: {}\nlocal-hostname: {}\n",
+                    spec.name, spec.name
+                )
+                .as_bytes(),
+            ),
+        ),
+    ]);
+    for (path, bytes) in extra_inputs {
+        inputs.insert((*path).to_owned(), sha_bytes(bytes));
+    }
+    inputs
+}
+
+fn validate_result_metadata(listing: &str) -> Result<()> {
+    let fields = listing
+        .lines()
+        .find(|line| line.ends_with(" /var/lib/wt-image-result"))
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .unwrap_or_default();
+    if fields.len() < 6
+        || fields[0] != "-"
+        || fields[1] != "0644"
+        || fields[3] != "0"
+        || fields[4] != "0"
+    {
+        bail!("image build result must be owned by root:root with mode 0644");
+    }
     Ok(())
 }
 
-pub(super) fn start_kvm_build_guest(
+fn attach_console_tail(error: anyhow::Error, build_dir: &Path) -> anyhow::Error {
+    let console = build_dir.join("console.log");
+    let Ok(log) = fs::read_to_string(&console) else {
+        return error;
+    };
+    let tail = log.lines().rev().take(500).collect::<Vec<_>>();
+    error.context(format!(
+        "Image build console tail:\n{}",
+        tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+    ))
+}
+
+fn start_kvm_build_guest(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
@@ -618,8 +804,37 @@ pub(super) fn start_kvm_build_guest(
 }
 
 pub(super) fn domain_exists(runner: &impl Runner, name: &str) -> Result<bool> {
-    let output = runner.output(cmd!("virsh", "-c", LIBVIRT_URI, "dominfo", name))?;
-    Ok(output.status.success())
+    let names = runner.text(
+        cmd!("virsh", "-c", LIBVIRT_URI, "list", "--all", "--name"),
+        "list libvirt domains",
+    )?;
+    Ok(names.lines().any(|candidate| candidate == name))
+}
+
+fn require_clean_build_state(runner: &impl Runner, server: &ServerConfig) -> Result<()> {
+    for name in [BUILD_NAME, host_image::BUILD_NAME] {
+        let directory = server.libvirt.worlds_dir.join(name);
+        if directory.exists() || domain_exists(runner, name)? {
+            bail!("stale image build state exists for {name}");
+        }
+    }
+    Ok(())
+}
+
+fn require_clean_publication_state(server: &ServerConfig) -> Result<()> {
+    for image in [&server.image.devcontainer_path, &server.image.host_path] {
+        let manifest = manifest_path(image);
+        let image_temporary = sibling_temporary(image)?;
+        let manifest_temporary = sibling_temporary(&manifest)?;
+        if image_temporary.exists() || manifest_temporary.exists() {
+            bail!(
+                "image publication drift: remove abandoned temporary files {} and {} with make nuke",
+                image_temporary.display(),
+                manifest_temporary.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn undefine_build_domain(runner: &impl Runner, name: &str) -> Result<()> {
@@ -655,24 +870,6 @@ pub(super) fn cleanup_failed_build(
     name: &str,
 ) -> Result<()> {
     let mut failures = Vec::new();
-    let console = build_dir.join("console.log");
-    if console.exists() {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or_default();
-        let destination = build_dir.with_file_name(format!(
-            "{name}.failed-{suffix}-{}.console.log",
-            std::process::id()
-        ));
-        match fs::copy(&console, &destination) {
-            Ok(_) => eprintln!(
-                "Preserved failed image build console: {}",
-                destination.display()
-            ),
-            Err(error) => eprintln!("Could not preserve failed image build console: {error}"),
-        }
-    }
 
     let mut domain_removed = true;
     match domain_exists(runner, name) {
@@ -707,6 +904,27 @@ pub(super) fn cleanup_failed_build(
         Err(error) => {
             failures.push(error.to_string());
             domain_removed = false;
+        }
+    }
+    let console = build_dir.join("console.log");
+    if console.exists() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
+        let destination = build_dir.with_file_name(format!(
+            "{name}.failed-{suffix}-{}.console.log",
+            std::process::id()
+        ));
+        match fs::copy(&console, &destination) {
+            Ok(_) => eprintln!(
+                "Preserved failed image build console: {}",
+                destination.display()
+            ),
+            Err(error) => {
+                failures.push(format!("preserve failed image build console: {error}"));
+                domain_removed = false;
+            }
         }
     }
     if domain_removed && build_dir.exists() {
@@ -790,7 +1008,18 @@ pub(crate) fn verify_installed_image(
         || manifest.recipe_version != recipe::RECIPE_VERSION
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
+        || manifest.inputs
+            != staged_input_hashes(
+                &BuildSpec {
+                    name: BUILD_NAME,
+                    kind: "devcontainer",
+                    recipe_version: recipe::RECIPE_VERSION,
+                    recipe: DEVCONTAINER_IMAGE_BUILD,
+                },
+                &[],
+            )
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
+        || !is_sha256(&manifest.tmux_sha256)
     {
         bail!("installed image provenance differs from the current install input");
     }
@@ -870,6 +1099,10 @@ pub(crate) fn sha_file(path: &Path) -> Result<String> {
 
 fn sha_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+pub(super) fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

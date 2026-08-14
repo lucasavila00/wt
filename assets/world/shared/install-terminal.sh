@@ -12,7 +12,7 @@ set -eu
 
 printf '%s  %s\n' "$BYOBU_SHA256" /var/tmp/wt-byobu.deb |
     sha256sum --check --strict
-apt-get install -y --no-install-recommends /var/tmp/wt-byobu.deb
+/bin/sh /var/tmp/wt-install-packages.sh /var/tmp/wt-byobu.deb
 test "$(dpkg-query -W -f='${Version}' byobu)" = "$BYOBU_VERSION"
 
 curl -fL --retry 10 --retry-all-errors --retry-delay 2 \
