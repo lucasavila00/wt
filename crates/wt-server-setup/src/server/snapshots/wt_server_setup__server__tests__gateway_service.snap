@@ -1,5 +1,6 @@
 ---
-source: crates/wt-server-setup/src/server.rs
+source: crates/wt-server-setup/src/server/tests.rs
+assertion_line: 251
 expression: gateway
 ---
 [Unit]

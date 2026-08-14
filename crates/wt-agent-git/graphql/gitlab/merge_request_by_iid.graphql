@@ -1,0 +1,25 @@
+query GitlabReadMergeRequestByIid($project: ID!, $iid: String!) {
+  project(fullPath: $project) {
+    mergeRequest(iid: $iid) {
+      id
+      diffHeadSha
+      discussions(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          id
+          resolved
+          resolvable
+          notes(first: 100) {
+            pageInfo { hasNextPage }
+            nodes {
+              author { username }
+              body
+              url
+              position { filePath newLine oldLine }
+            }
+          }
+        }
+      }
+    }
+  }
+}

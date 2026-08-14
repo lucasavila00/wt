@@ -1,4 +1,4 @@
-# ADR 0023: Use a shared guest registry
+# ADR 0024: Use a shared guest registry
 
 - Status: Accepted
 - Date: 2026-08-14

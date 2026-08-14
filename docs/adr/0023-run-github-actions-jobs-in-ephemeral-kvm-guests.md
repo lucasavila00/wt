@@ -1,4 +1,4 @@
-# ADR 0022: Run GitHub Actions jobs in ephemeral KVM guests
+# ADR 0023: Run GitHub Actions jobs in ephemeral KVM guests
 
 - Status: Proposed
 - Date: 2026-08-14

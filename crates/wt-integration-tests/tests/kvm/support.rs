@@ -177,19 +177,6 @@ impl KvmHarness {
         self.api_fixture = Some(fixture);
     }
 
-    pub(crate) fn change_gateway_base(&mut self, base: &str) {
-        self.gateway.kill().unwrap();
-        self.gateway.wait().unwrap();
-        let state_path = self.temp.path().join("gateway-state.json");
-        let mut state: serde_json::Value =
-            serde_json::from_slice(&fs::read(&state_path).unwrap()).unwrap();
-        for grant in state["grants"].as_array_mut().unwrap() {
-            grant["base"] = serde_json::Value::String(base.to_owned());
-        }
-        fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
-        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir, None);
-    }
-
     pub(crate) fn assert_shared_prefix_is_available(&self) {
         let mut stream =
             std::os::unix::net::UnixStream::connect(self.temp.path().join("gateway-control.sock"))
@@ -348,6 +335,9 @@ fn serve_provider_api_request(mut stream: TcpStream, kind: &str, head: &str) -> 
         ("gitlab", "/api/graphql") => format!(
             r#"{{"data":{{"currentUser":{{"username":"agent"}},"project":{{"id":"project-1","fullPath":"acme/widget","userPermissions":{{"createMergeRequestIn":true}},"repository":{{"commit":{{"sha":"{head}"}}}},"mergeRequests":{{"pageInfo":{{"hasNextPage":false}},"nodes":[]}}}}}}}}"#
         ),
+        ("gitlab", path) if path.starts_with("/api/v4/projects/acme%2Fwidget/pipelines?") => {
+            "[]".to_owned()
+        }
         _ => return Err(format!("unexpected {kind} fixture request path: {path}")),
     };
     let response = format!(

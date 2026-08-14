@@ -19,8 +19,8 @@ WT: not available here. Do not look for credentials or use gh or glab.
 WT: WT gives you scoped access to project $project.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
 WT: this project can write branches under $prefix. Pull or merge requests target $base.
-WT: ag-git is the installed CLI for pull or merge requests, reviews, and CI.
-WT: Run ag-git for the current branch's status and suggested next actions.
+WT: ag-git uses explicit provider resource types and IDs; it does not infer
+WT: resources from the current checkout.
 WT: Run ag-git --help to discover every available command.
 WT:
 EOF
@@ -44,7 +44,7 @@ commit)
 WT: Commit created on $branch.
 WT: Publish it with:
 WT:   git push
-WT: After pushing, run ag-git to open or manage its pull or merge request.
+WT: After pushing, use the explicit ag-git commands printed by the Git gateway.
 EOF
     ;;
 *)
