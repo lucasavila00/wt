@@ -21,7 +21,34 @@ fn agent_git_transport_works_without_provider_credentials() {
         harness.finish_setup(&name)
     });
     assert_eq!(running.status, InstanceStatus::Running);
-    harness.sync_inventory();
+    let host_name = unique_name("host");
+    let host_user_data =
+        "#cloud-config\nwrite_files:\n  - path: /var/tmp/wt-host-e2e\n    content: persistent-host-state\n";
+    let host = timings.run("create host world", || {
+        harness.create_host(&host_name, host_user_data)
+    });
+    assert_eq!(host.status, InstanceStatus::Running);
+    assert_eq!(host.kind(), wt_api::WorldKind::Host);
+    let host_machine = harness
+        .config
+        .libvirt
+        .worlds_dir
+        .join(format!("wt-{}", host.id.simple()));
+    assert_eq!(
+        fs::read_to_string(host_machine.join("user-data")).unwrap(),
+        host_user_data
+    );
+    let vendor_data = fs::read_to_string(host_machine.join("vendor-data")).unwrap();
+    assert!(vendor_data.contains("name: wt"));
+    assert!(!vendor_data.contains("persistent-host-state"));
+    let inventory = harness.sync_inventory();
+    assert_eq!(inventory.len(), 2);
+    run_host(
+        &harness,
+        &host_name,
+        "set -eu; test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state; sudo -n true; test -z \"${SSH_AUTH_SOCK:-}\"; test ! -S /run/wt-agent-git/gateway.sock; ! command -v docker; ! command -v devcontainer; ! command -v git; test ! -e /workspace; test ! -e /usr/local/bin/wt-app-shell; test ! -e /usr/local/bin/wt-agent-git-relay",
+        "verify raw host world",
+    );
 
     run_guest(
         &harness,
@@ -151,6 +178,25 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify app state and Git after KVM restart",
     );
 
+    let stopped_host = timings.run("stop and reconcile host world", || {
+        harness.stop(&host);
+        harness
+            .sync_inventory()
+            .into_iter()
+            .find(|instance| instance.name == host_name)
+            .unwrap()
+    });
+    assert_eq!(stopped_host.status, InstanceStatus::Stopped);
+    let restarted_host = timings.run("restart host world", || harness.start(&host_name));
+    assert_eq!(restarted_host.status, InstanceStatus::Running);
+    harness.sync_inventory();
+    run_host(
+        &harness,
+        &host_name,
+        "test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state",
+        "verify host state after KVM restart",
+    );
+
     app(
         &harness,
         &name,
@@ -174,6 +220,45 @@ fn agent_git_transport_works_without_provider_credentials() {
     let token = harness.grant_token();
     harness.delete(&name);
     harness.assert_grant_is_revoked(token);
+    harness.delete(&host_name);
+
+    let broken_name = unique_name("host-no-ssh");
+    let disks_before = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    let error = timings.run("reject host without WT SSH", || {
+        harness
+            .create_host_result(
+                &broken_name,
+                "#cloud-config\nruncmd:\n  - rm -f /home/wt/.ssh/authorized_keys\n",
+            )
+            .unwrap_err()
+    });
+    assert!(error.contains("SSH login readiness failed"), "{error}");
+    assert_eq!(
+        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        disks_before
+    );
+    let missing = call_api_result(
+        harness.temp.path(),
+        &harness.server_config_path,
+        wt_api::Operation::Get { name: broken_name },
+    )
+    .unwrap_err();
+    assert!(missing.contains("instance not found"), "{missing}");
+}
+
+fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
+    let output = cmd!(
+        "ssh",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}"),
+        command,
+    )
+    .output()
+    .unwrap();
+    ensure_success(action, &output).unwrap();
 }
 
 fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {

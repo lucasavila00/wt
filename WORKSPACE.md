@@ -16,6 +16,7 @@ version, Rust edition, license, and common dependencies from the root
 | [`wt-devcontainer-git`](./crates/wt-devcontainer-git/) | Library and binaries | Scoped Git transport for devcontainer worlds |
 | [`wt-devcontainer-guest`](./crates/wt-devcontainer-guest/) | Binaries | Devcontainer session and SSH helpers |
 | [`wt-github-ci`](./crates/wt-github-ci/) | Library | Ephemeral GitHub Actions world lifecycle |
+| [`wt-host`](./crates/wt-host/) | Library | Raw Ubuntu host world lifecycle |
 | [`wt-libvirt`](./crates/wt-libvirt/) | Library | Libvirt/KVM backend |
 | [`wt-provider`](./crates/wt-provider/) | Library | Shared machine-provider contracts |
 | [`wt-registry`](./crates/wt-registry/) | Library | Shared guest registry and capacity admission |

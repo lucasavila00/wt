@@ -8,9 +8,9 @@ const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../assets/server/instal
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let image_dir = config
         .image
-        .installed_path
+        .devcontainer_path
         .parent()
-        .context("image.installed_path has no parent directory")?;
+        .context("image.devcontainer_path has no parent directory")?;
     runner.run_script(
         SERVER_HOST_INSTALL,
         &[

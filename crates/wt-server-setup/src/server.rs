@@ -66,7 +66,11 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     } else {
         image::ensure(runner, &input, &server, &server_bytes)?;
     }
-    println!("image ready: {}", server.image.installed_path.display());
+    println!(
+        "images ready: {}, {}",
+        server.image.devcontainer_path.display(),
+        server.image.host_path.display()
+    );
     Ok(())
 }
 

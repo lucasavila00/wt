@@ -11,7 +11,74 @@ use wt_server::store::{Store, StoredApplication, StoredInstance};
 
 #[path = "service/support.rs"]
 mod support;
-use support::{create, service, Gateway, UnavailableGateway, Worker};
+use support::{
+    create, create_host, service, Gateway, RejectingGateway, UnavailableGateway, Worker,
+};
+
+#[test]
+fn host_create_is_running_without_git_or_devcontainer_state() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let user_data = "#cloud-config\nruncmd:\n  - touch /host-ready\n";
+    let service = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        worker.clone(),
+        RejectingGateway,
+        Operations::default(),
+        u64::MAX,
+    );
+
+    let Response::Instance { instance } = service
+        .execute(
+            "tester",
+            Operation::Create(create_host("ubuntu", user_data)),
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(instance.status, InstanceStatus::Running);
+    assert_eq!(instance.kind(), wt_api::WorldKind::Host);
+    assert!(instance.ssh.is_some());
+    assert!(instance.application.app_ssh().is_none());
+    assert_eq!(
+        worker.host_user_data.lock().unwrap().as_slice(),
+        &[user_data]
+    );
+
+    let Response::Instance { instance: retry } = service
+        .execute(
+            "tester",
+            Operation::Create(create_host("ubuntu", user_data)),
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(retry.id, instance.id);
+    assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
+
+    let error = service
+        .execute(
+            "tester",
+            Operation::Create(create_host(
+                "ubuntu",
+                "#cloud-config\nruncmd:\n  - touch /different\n",
+            )),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+
+    service
+        .execute(
+            "tester",
+            Operation::Delete {
+                name: InstanceName::parse("ubuntu").unwrap(),
+            },
+        )
+        .unwrap();
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
+}
 
 #[test]
 fn get_reconciles_only_the_requested_world() {
@@ -371,6 +438,28 @@ fn repeated_create_resumes_only_identical_setup() {
     set_git_base(&mut different, "other");
     let error = service(&temp, worker)
         .execute("tester", Operation::Create(different))
+        .unwrap_err();
+    assert_eq!(error.code, wt_api::ErrorCode::Conflict);
+}
+
+#[test]
+fn repeated_create_does_not_reopen_a_running_devcontainer() {
+    let temp = TempDir::new().unwrap();
+    service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+    service(
+        &temp,
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+    )
+    .execute("tester", Operation::List)
+    .unwrap();
+
+    let error = service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
         .unwrap_err();
     assert_eq!(error.code, wt_api::ErrorCode::Conflict);
 }

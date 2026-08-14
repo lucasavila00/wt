@@ -276,6 +276,7 @@ impl<P: MachineProvider> RunnerBackend for LibvirtRunnerBackend<P> {
                     vcpus: u32::try_from(runner.guest.resources.vcpus)
                         .map_err(|_| "runner vcpus exceed u32".to_owned())?,
                     disk_gib: runner.guest.resources.disk_gib,
+                    cloud_init: wt_provider::NoCloudConfig::default(),
                 },
                 log,
             )

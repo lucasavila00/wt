@@ -44,7 +44,8 @@ pub struct AgentGitProviderConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
-    pub installed_path: PathBuf,
+    pub devcontainer_path: PathBuf,
+    pub host_path: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -89,7 +90,8 @@ impl ServerConfig {
             ));
         }
         for (name, path) in [
-            ("image.installed_path", &self.image.installed_path),
+            ("image.devcontainer_path", &self.image.devcontainer_path),
+            ("image.host_path", &self.image.host_path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
@@ -107,30 +109,40 @@ impl ServerConfig {
                 ));
             }
         }
-        if self
-            .image
-            .installed_path
-            .extension()
-            .and_then(|value| value.to_str())
-            != Some("qcow2")
-        {
-            return Err("image.installed_path must end in .qcow2".to_owned());
+        for (name, path) in [
+            ("image.devcontainer_path", &self.image.devcontainer_path),
+            ("image.host_path", &self.image.host_path),
+        ] {
+            if path.extension().and_then(|value| value.to_str()) != Some("qcow2") {
+                return Err(format!("{name} must end in .qcow2"));
+            }
         }
-        let image_dir = self
+        let devcontainer_image_dir = self
             .image
-            .installed_path
+            .devcontainer_path
             .parent()
-            .ok_or_else(|| "image.installed_path must have a parent directory".to_owned())?;
+            .ok_or_else(|| "image.devcontainer_path must have a parent directory".to_owned())?;
+        let host_image_dir = self
+            .image
+            .host_path
+            .parent()
+            .ok_or_else(|| "image.host_path must have a parent directory".to_owned())?;
+        if self.image.devcontainer_path == self.image.host_path {
+            return Err("devcontainer and host images must use different files".to_owned());
+        }
+        if devcontainer_image_dir != host_image_dir {
+            return Err("devcontainer and host images must use the same directory".to_owned());
+        }
         for (left_name, left, right_name, right) in [
             (
                 "image directory",
-                image_dir,
+                devcontainer_image_dir,
                 "libvirt.worlds_dir",
                 self.libvirt.worlds_dir.as_path(),
             ),
             (
                 "image directory",
-                image_dir,
+                devcontainer_image_dir,
                 "install.binary_dir",
                 self.install.binary_dir.as_path(),
             ),
@@ -144,7 +156,7 @@ impl ServerConfig {
                 "registry_cache.state_dir",
                 self.registry_cache.state_dir.as_path(),
                 "image directory",
-                image_dir,
+                devcontainer_image_dir,
             ),
             (
                 "registry_cache.state_dir",
@@ -174,9 +186,18 @@ impl ServerConfig {
         Ok(())
     }
 
-    pub fn machine_config(&self) -> MachineConfig {
+    pub fn devcontainer_machine_config(&self) -> MachineConfig {
         MachineConfig {
-            image: self.image.installed_path.clone(),
+            image: self.image.devcontainer_path.clone(),
+            worlds_dir: self.libvirt.worlds_dir.clone(),
+            network: self.libvirt.network.clone(),
+            boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
+        }
+    }
+
+    pub fn host_machine_config(&self) -> MachineConfig {
+        MachineConfig {
+            image: self.image.host_path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
@@ -210,7 +231,7 @@ impl ServerConfig {
         }
         let manifest_path = PathBuf::from(format!(
             "{}.manifest.json",
-            self.image.installed_path.display()
+            self.image.devcontainer_path.display()
         ));
         let bytes = std::fs::read(&manifest_path)
             .map_err(|error| format!("read image manifest {}: {error}", manifest_path.display()))?;
@@ -289,7 +310,8 @@ mod tests {
 version = 1
 
 [image]
-installed_path = "/var/lib/wt/images/wt.qcow2"
+devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
+host_path = "/var/lib/wt/images/host.qcow2"
 
 [libvirt]
 network = "default"
@@ -315,14 +337,17 @@ binary_dir = "/usr/local/bin"
     fn parse(value: &str) -> Result<(ServerConfig, MachineConfig), String> {
         let config: ServerConfig = toml::from_str(value).map_err(|error| error.to_string())?;
         config.validate()?;
-        let machine = config.machine_config();
+        let machine = config.devcontainer_machine_config();
         Ok((config, machine))
     }
 
     #[test]
     fn complete_config_is_valid() {
         let (_config, machine) = parse(VALID).unwrap();
-        assert_eq!(machine.image, Path::new("/var/lib/wt/images/wt.qcow2"));
+        assert_eq!(
+            machine.image,
+            Path::new("/var/lib/wt/images/devcontainer.qcow2")
+        );
         assert_eq!(machine.network, "default");
     }
 
@@ -353,9 +378,17 @@ binary_dir = "/usr/local/bin"
         .is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(&VALID.replace(
-            "installed_path = \"/var/lib/wt/images/wt.qcow2\"",
-            "installed_path = \"/var/lib/wt/images/wt.qcow2\"\nsource_url = \"https://example.com/img\""
+            "host_path = \"/var/lib/wt/images/host.qcow2\"",
+            "host_path = \"/var/lib/wt/images/host.qcow2\"\nsource_url = \"https://example.com/img\""
         ))
         .is_err());
+        assert_eq!(
+            parse(&VALID.replace(
+                "/var/lib/wt/images/host.qcow2",
+                "/var/lib/wt/images/devcontainer.qcow2"
+            ))
+            .unwrap_err(),
+            "devcontainer and host images must use different files"
+        );
     }
 }

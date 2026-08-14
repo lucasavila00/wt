@@ -4,12 +4,12 @@ use std::sync::{
 };
 use tempfile::TempDir;
 use uuid::Uuid;
-use wt_api::{CreateApplication, CreateInstance, InstanceName, SshAccess};
-use wt_devcontainer::{ForkSpec, ProvisionSpec, World, WorldInspection, WorldWorker};
-use wt_provider::{ForkError, WorkerError};
+use wt_api::{CreateApplication, CreateInstance, InstanceName, SshAccess, WorldKind};
+use wt_provider::WorkerError;
 use wt_server::operations::Operations;
 use wt_server::service::{AgentGitGateway, Service};
 use wt_server::store::Store;
+use wt_server::worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
 
 #[derive(Clone, Default)]
 pub(crate) struct Worker {
@@ -18,6 +18,7 @@ pub(crate) struct Worker {
     pub(crate) inspections: Arc<AtomicUsize>,
     pub(crate) starts: Arc<AtomicUsize>,
     pub(crate) destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
+    pub(crate) host_user_data: Arc<Mutex<Vec<String>>>,
     pub(crate) complete: bool,
     pub(crate) provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     pub(crate) missing: bool,
@@ -34,6 +35,9 @@ pub(crate) struct Gateway;
 pub(crate) struct UnavailableGateway {
     pub(crate) revocations: Arc<AtomicUsize>,
 }
+
+#[derive(Clone, Default)]
+pub(crate) struct RejectingGateway;
 
 impl AgentGitGateway for Gateway {
     fn reserve(
@@ -72,10 +76,25 @@ impl AgentGitGateway for UnavailableGateway {
     }
 }
 
+impl AgentGitGateway for RejectingGateway {
+    fn reserve(
+        &self,
+        _world_id: Uuid,
+        _source: &str,
+        _base: &str,
+    ) -> Result<wt_devcontainer_git::Grant, String> {
+        Err("Git gateway must not be used".into())
+    }
+
+    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
+        Err("Git gateway must not be used".into())
+    }
+}
+
 impl WorldWorker for Worker {
     fn provision(
         &self,
-        _spec: &ProvisionSpec<'_>,
+        spec: ProvisionSpec<'_>,
         _log: &mut dyn std::io::Write,
     ) -> Result<World, WorkerError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
@@ -89,26 +108,31 @@ impl WorldWorker for Worker {
         if self.provision_error {
             return Err(WorkerError::new("provision failed"));
         }
-        Ok(world(false))
+        let kind = match spec {
+            ProvisionSpec::Devcontainer(_) => WorldKind::Devcontainer,
+            ProvisionSpec::Host(spec) => {
+                self.host_user_data
+                    .lock()
+                    .unwrap()
+                    .push(spec.user_data.to_owned());
+                WorldKind::Host
+            }
+        };
+        Ok(world(kind, false))
     }
 
-    fn fork(
+    fn destroy(
         &self,
-        _spec: &ForkSpec<'_>,
-        _log: &mut dyn std::io::Write,
-    ) -> Result<World, ForkError> {
-        Err(ForkError::before_pivot(WorkerError::new(
-            "world forks are unavailable",
-        )))
-    }
-
-    fn destroy(&self, _backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
+        _kind: WorldKind,
+        _backend_id: &str,
+        disk_ids: &[Uuid],
+    ) -> Result<(), WorkerError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
         self.destroyed_disks.lock().unwrap().push(disk_ids.to_vec());
         Ok(())
     }
 
-    fn inspect(&self, _backend_id: &str) -> Result<WorldInspection, WorkerError> {
+    fn inspect(&self, kind: WorldKind, _backend_id: &str) -> Result<WorldInspection, WorkerError> {
         self.inspections.fetch_add(1, Ordering::SeqCst);
         if self.missing {
             return Ok(WorldInspection::Missing);
@@ -118,24 +142,26 @@ impl WorldWorker for Worker {
                 reason: Some("crashed".into()),
             });
         }
-        let mut inspected = world(self.complete);
+        let mut inspected = world(kind, self.complete);
         if self.changed_guest_identity {
             inspected.ssh.host_keys = vec!["ssh-ed25519 AAAACHANGED guest".into()];
         }
         if self.changed_app_identity {
-            inspected.app_ssh.as_mut().unwrap().host_keys =
-                vec!["ssh-ed25519 AAAACHANGED app".into()];
+            let WorldApplication::Devcontainer { app_ssh } = &mut inspected.application else {
+                panic!("changed app identity requires a devcontainer")
+            };
+            app_ssh.as_mut().unwrap().host_keys = vec!["ssh-ed25519 AAAACHANGED app".into()];
         }
         Ok(WorldInspection::Running(inspected))
     }
 
-    fn start(&self, _backend_id: &str) -> Result<World, WorkerError> {
+    fn start(&self, kind: WorldKind, _backend_id: &str) -> Result<World, WorkerError> {
         self.starts.fetch_add(1, Ordering::SeqCst);
-        Ok(world(self.complete))
+        Ok(world(kind, self.complete))
     }
 }
 
-fn world(complete: bool) -> World {
+fn world(kind: WorldKind, complete: bool) -> World {
     World {
         guest_ip: "192.0.2.2".into(),
         ssh: SshAccess {
@@ -144,11 +170,17 @@ fn world(complete: bool) -> World {
             port: 22,
             host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
         },
-        app_ssh: complete.then(|| wt_api::AppSshAccess {
-            user: "vscode".into(),
-            port: 2222,
-            host_keys: vec!["ssh-ed25519 AAAAAPP app".into()],
-        }),
+        application: match kind {
+            WorldKind::Devcontainer => WorldApplication::Devcontainer {
+                app_ssh: complete.then(|| wt_api::AppSshAccess {
+                    user: "vscode".into(),
+                    port: 2222,
+                    host_keys: vec!["ssh-ed25519 AAAAAPP app".into()],
+                }),
+            },
+            WorldKind::Host => WorldApplication::Host,
+            WorldKind::GithubCi => panic!("github-ci is not a retained world"),
+        },
     }
 }
 
@@ -164,6 +196,19 @@ pub(crate) fn create(name: &str) -> CreateInstance {
             git_base: "main".into(),
             git_user_name: "Test User".into(),
             git_user_email: "test@example.invalid".into(),
+        },
+    }
+}
+
+pub(crate) fn create_host(name: &str, user_data: &str) -> CreateInstance {
+    CreateInstance {
+        name: InstanceName::parse(name).unwrap(),
+        vcpus: 1,
+        memory_mib: 1024,
+        disk_gib: 8,
+        ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".into()],
+        application: CreateApplication::Host {
+            user_data: user_data.into(),
         },
     }
 }

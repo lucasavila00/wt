@@ -194,7 +194,8 @@ version = 1
 [image]
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-installed_path = "/var/lib/wt/image.qcow2"
+devcontainer_path = "/var/lib/wt/devcontainer.qcow2"
+host_path = "/var/lib/wt/host.qcow2"
 build_memory_mib = 1024
 build_vcpus = 1
 build_disk_gib = 8

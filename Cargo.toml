@@ -12,6 +12,7 @@ members = [
     "crates/wt-provider",
     "crates/wt-registry",
     "crates/wt-github-ci",
+    "crates/wt-host",
     "crates/wt-server",
     "crates/wt-server-setup",
 ]
@@ -30,6 +31,7 @@ wt-libvirt = { path = "crates/wt-libvirt" }
 wt-provider = { path = "crates/wt-provider" }
 wt-registry = { path = "crates/wt-registry" }
 wt-github-ci = { path = "crates/wt-github-ci" }
+wt-host = { path = "crates/wt-host" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }

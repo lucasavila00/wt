@@ -25,10 +25,11 @@ A `host` world exposes the Ubuntu guest directly over SSH. Creation requires
 cloud-init user-data. WT passes it through unchanged and keeps machine identity,
 network, login, and SSH configuration in separate NoCloud data. Readiness
 requires successful cloud-init completion. The exact user-data is part of the
-create fingerprint.
+hashed create fingerprint and is not stored.
 
 A `host` world boots from a dedicated minimal Ubuntu image. User-data runs as
-root and may break WT SSH access; creation fails unless direct SSH becomes ready.
+root and may break WT SSH access. Creation proves direct login with a one-use WT
+key, removes that key, and fails unless SSH is ready.
 
 WT adds no checkout, agent Git grant, devcontainer, app SSH, or editor
 integration to a host world. The recipe receives no implicit WT credentials.

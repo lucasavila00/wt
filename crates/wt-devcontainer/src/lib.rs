@@ -9,8 +9,8 @@ use std::io::Write;
 use uuid::Uuid;
 use wt_api::{AppSshAccess, InstanceName, SshAccess};
 use wt_provider::{
-    ForkError, ForkMachineSpec, MachineInspection, MachineProvider, MachineSpec, ProviderId,
-    WorkerError,
+    ForkError, ForkMachineSpec, MachineInspection, MachineProvider, MachineSpec, NoCloudConfig,
+    ProviderId, WorkerError,
 };
 
 #[derive(Clone)]
@@ -99,6 +99,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
                 memory_mib: spec.memory_mib,
                 vcpus: spec.vcpus,
                 disk_gib: spec.disk_gib,
+                cloud_init: NoCloudConfig::default(),
             },
             log,
         )?;
@@ -119,6 +120,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
                     memory_mib: spec.memory_mib,
                     vcpus: spec.vcpus,
                     disk_gib: spec.disk_gib,
+                    cloud_init: NoCloudConfig::default(),
                 },
             },
             log,

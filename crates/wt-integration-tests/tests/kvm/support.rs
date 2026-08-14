@@ -128,6 +128,35 @@ impl KvmHarness {
         *instance
     }
 
+    pub(crate) fn create_host(&self, name: &InstanceName, user_data: &str) -> wt_api::Instance {
+        let Response::Instance { instance } = self.create_host_result(name, user_data).unwrap()
+        else {
+            panic!("expected instance response");
+        };
+        *instance
+    }
+
+    pub(crate) fn create_host_result(
+        &self,
+        name: &InstanceName,
+        user_data: &str,
+    ) -> Result<Response, String> {
+        call_api_result(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::Create(CreateInstance {
+                name: name.clone(),
+                vcpus: 1,
+                memory_mib: 1024,
+                disk_gib: 16,
+                ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                application: CreateApplication::Host {
+                    user_data: user_data.to_owned(),
+                },
+            }),
+        )
+    }
+
     pub(crate) fn sync_inventory(&self) -> Vec<wt_api::Instance> {
         let Response::Instances { instances } =
             call_api(self.temp.path(), &self.server_config_path, Operation::List)

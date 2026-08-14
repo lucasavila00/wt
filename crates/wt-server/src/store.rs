@@ -362,6 +362,30 @@ impl Store {
         })
     }
 
+    pub fn mark_host_running(
+        &self,
+        id: Uuid,
+        guest_ip: &str,
+        ssh: &SshAccess,
+    ) -> Result<(), StoreError> {
+        let host_keys = serde_json::to_string(&ssh.host_keys)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        self.registry.read(|connection| {
+            let changed = diesel::update(worlds::table.find(id.to_string()))
+                .set((
+                    worlds::status.eq(InstanceStatus::Running.to_string()),
+                    worlds::guest_ip.eq(guest_ip),
+                    worlds::last_error.eq(None::<String>),
+                    worlds::ssh_user.eq(&ssh.user),
+                    worlds::ssh_host.eq(&ssh.host),
+                    worlds::ssh_port.eq(i32::from(ssh.port)),
+                    worlds::ssh_host_keys.eq(host_keys),
+                ))
+                .execute(connection)?;
+            changed_one(changed)
+        })
+    }
+
     pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
         self.update_state(id, InstanceStatus::Destroying, None, None)
     }

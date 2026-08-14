@@ -506,7 +506,7 @@ mod tests {
     use crate::schema::disk_nodes;
 
     #[test]
-    fn world_and_runner_share_atomic_capacity() {
+    fn all_world_kinds_share_atomic_capacity() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("registry.db");
         let first = Registry::open(&path).unwrap();
@@ -536,21 +536,23 @@ mod tests {
                 insert_guest(connection, &world, limit)
             })
             .unwrap();
-        let runner = guest(GuestKind::GithubCi);
-        let error = second
-            .immediate_transaction::<_, RegistryError>(|connection| {
-                insert_guest(connection, &runner, limit)
-            })
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            RegistryError::Capacity {
-                resource: Resource::Memory,
-                total: 2048,
-                reserved: 2048,
-                requested: 2048,
-            }
-        ));
+        for kind in [GuestKind::Host, GuestKind::GithubCi] {
+            let candidate = guest(kind);
+            let error = second
+                .immediate_transaction::<_, RegistryError>(|connection| {
+                    insert_guest(connection, &candidate, limit)
+                })
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                RegistryError::Capacity {
+                    resource: Resource::Memory,
+                    total: 2048,
+                    reserved: 2048,
+                    requested: 2048,
+                }
+            ));
+        }
     }
 
     #[test]

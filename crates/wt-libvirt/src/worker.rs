@@ -134,8 +134,10 @@ impl LibvirtProvider {
         let paths = world::Paths::new(&self.config.worlds_dir, &spec.provider_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| context("create machine directory", error))?;
-        fs::write(&paths.user_data, world::cloud_config())
+        fs::write(&paths.user_data, &spec.cloud_init.user_data)
             .map_err(|error| context("write cloud-init user-data", error))?;
+        fs::write(&paths.vendor_data, &spec.cloud_init.vendor_data)
+            .map_err(|error| context("write cloud-init vendor-data", error))?;
         fs::write(
             &paths.meta_data,
             format!(
@@ -151,6 +153,8 @@ impl LibvirtProvider {
                 "cloud-localds",
                 "--network-config",
                 &paths.network_config,
+                "--vendor-data",
+                &paths.vendor_data,
                 &paths.seed,
                 &paths.user_data,
                 &paths.meta_data

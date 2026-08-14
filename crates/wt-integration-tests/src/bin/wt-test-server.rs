@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_devcontainer::{CompositeWorker, WorldProvisioner};
 use wt_libvirt::LibvirtProvider;
@@ -8,6 +9,7 @@ use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::Store;
+use wt_server::worlds::Workers;
 use wt_server::ServerConfig;
 
 fn main() {
@@ -33,7 +35,10 @@ fn run_api(config_path: &Path) -> Result<()> {
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
     let server = ServerConfig::load_from(config_path).map_err(anyhow::Error::msg)?;
-    let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
+    let provider =
+        LibvirtProvider::new(server.devcontainer_machine_config()).map_err(anyhow::Error::msg)?;
+    let host_provider =
+        LibvirtProvider::new(server.host_machine_config()).map_err(anyhow::Error::msg)?;
     let registry_cache_url = format!(
         "http://{}:{}",
         provider
@@ -47,7 +52,11 @@ fn run_api(config_path: &Path) -> Result<()> {
             .map_err(anyhow::Error::msg)?,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = CompositeWorker::new(provider, provisioner);
+    let host_worker = wt_host::CompositeWorker::new(
+        host_provider,
+        Duration::from_secs(server.guest.recipe_timeout_seconds),
+    );
+    let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
     let gateway_socket = std::env::var_os("WT_AGENT_GIT_TEST_CONTROL_SOCKET")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(wt_devcontainer_git::CONTROL_SOCKET));

@@ -2528,6 +2528,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-host"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "ssh-key",
+ "tempfile",
+ "uuid",
+ "wt-api",
+ "wt-provider",
+]
+
+[[package]]
 name = "wt-integration-tests"
 version = "0.0.0"
 dependencies = [
@@ -2543,6 +2555,7 @@ dependencies = [
  "wt-command",
  "wt-devcontainer",
  "wt-devcontainer-git",
+ "wt-host",
  "wt-libvirt",
  "wt-provider",
  "wt-registry",
@@ -2605,7 +2618,9 @@ dependencies = [
  "wt-api",
  "wt-devcontainer",
  "wt-devcontainer-git",
+ "wt-host",
  "wt-libvirt",
+ "wt-provider",
  "wt-registry",
 ]
 
