@@ -35,7 +35,7 @@ fn image_manifest_records_structured_package_versions() {
 
     let json = serde_json::to_value(manifest).unwrap();
     assert_eq!(json["version"], 2);
-    assert_eq!(json["recipe_version"], 4);
+    assert_eq!(json["recipe_version"], 5);
     assert_eq!(json["packages"]["tmux"], "3.4-1");
 }
 
@@ -49,10 +49,11 @@ fn result_marker_requires_root_0644_metadata() {
 #[test]
 fn image_build_lock_is_exclusive_and_released() {
     let directory = tempfile::tempdir().unwrap();
-    let lock = BuildLock::acquire(directory.path()).unwrap();
-    assert!(BuildLock::acquire(directory.path()).is_err());
+    let path = directory.path().join("lock");
+    let lock = BuildLock::acquire_at(&path).unwrap();
+    assert!(BuildLock::acquire_at(&path).is_err());
     drop(lock);
-    BuildLock::acquire(directory.path()).unwrap();
+    BuildLock::acquire_at(&path).unwrap();
 }
 
 #[test]

@@ -31,6 +31,16 @@ printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
 phase "installing $WT_IMAGE_KIND application stack"
 /bin/sh /var/tmp/wt-kind-image-build.sh
 
+phase "removing shared build dependencies"
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
+    bison build-essential curl libevent-dev libncurses-dev pkg-config
+apt-get clean
+! command -v cc
+! command -v gcc
+! command -v g++
+! command -v make
+! command -v curl
+
 phase "validating shared terminal stack"
 test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"
 test "$(dpkg-query -W -f='${Version}' byobu)" = "$BYOBU_VERSION"

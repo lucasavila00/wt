@@ -1,4 +1,9 @@
 use super::*;
+use std::io::Read;
+use std::thread;
+use std::time::{Duration, Instant};
+
+const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
 
 pub(super) struct ConsoleLog {
     file: fs::File,

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 pub(super) const BUILD_NAME: &str = "wt-host-image-build";
 const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
 const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/host/build-image.sh");
-pub(super) const RECIPE_VERSION: u32 = 4;
+pub(super) const RECIPE_VERSION: u32 = 5;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

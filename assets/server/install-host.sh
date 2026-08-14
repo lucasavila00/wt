@@ -90,6 +90,7 @@ case ${1-} in
 
         ensure_directory 0 0 755 "$image_dir"
         ensure_directory 0 0 755 "$binary_dir"
+        ensure_directory "$(id -u)" "$(id -g)" 700 /run/wt-image-build
         ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
         ensure_directory 0 0 755 "$registry_dir"
         ensure_qemu_acl "$worlds_dir"

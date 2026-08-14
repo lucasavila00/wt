@@ -64,13 +64,14 @@ checksums.
 
 The installed manifest records the base-image SHA, recipe version, install
 configuration digest, and SHA-256 of every staged script, configuration file,
-and pinned artifact. It also records the resolved Ubuntu package versions and
-the finalized image SHA-256. A changed input cannot reuse an old image, and the
-manifest cannot validate a different image.
+and pinned artifact. It also records retained Ubuntu package versions and the
+finalized image SHA-256. Build-only packages are removed before acceptance. A
+changed input cannot reuse an old image, and the manifest cannot validate a
+different image.
 
-Ubuntu packages other than explicitly pinned artifacts resolve from the
-configured Ubuntu repositories at build time. Their exact versions are recorded
-and validated, but two fresh builds are not promised to be byte-identical.
+Retained contract packages other than pinned artifacts resolve from the Ubuntu
+repositories at build time. Their exact versions are recorded and validated;
+two fresh builds are not promised to be byte-identical.
 
 Scripts write `WT_IMAGE_PHASE=TEXT` lines to the serial console. Setup prints a
 heartbeat with the last phase at least once per minute. Package and download
