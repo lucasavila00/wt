@@ -111,7 +111,7 @@ impl KvmHarness {
             &self.server_config_path,
             Operation::Create(CreateInstance {
                 name: name.clone(),
-                vcpus: 1,
+                vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
@@ -146,7 +146,7 @@ impl KvmHarness {
             &self.server_config_path,
             Operation::Create(CreateInstance {
                 name: name.clone(),
-                vcpus: 1,
+                vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
@@ -282,6 +282,7 @@ impl KvmHarness {
 fn spawn_gateway(temp: &Path, binary_dir: &Path, api: Option<(&str, &str, &Path)>) -> Child {
     let control_socket = temp.join("gateway-control.sock");
     let transport_socket = temp.join("gateway-transport.sock");
+    let log_path = temp.join("gateway.log");
     for socket in [&control_socket, &transport_socket] {
         match fs::remove_file(socket) {
             Ok(()) => {}
@@ -308,15 +309,40 @@ fn spawn_gateway(temp: &Path, binary_dir: &Path, api: Option<(&str, &str, &Path)
             .env("WT_AGENT_GIT_TEST_API_BASE", base_url)
             .env("WT_AGENT_GIT_TEST_TOKEN_FILE", token_file);
     }
-    let gateway = gateway.stderr(Stdio::inherit()).spawn().unwrap();
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+    let mut gateway = gateway
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     for socket in [&control_socket, &transport_socket] {
         while !socket.exists() {
+            assert_gateway_running(&mut gateway, &log_path);
             assert!(Instant::now() < deadline, "gateway socket did not appear");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    std::thread::sleep(Duration::from_millis(100));
+    assert_gateway_running(&mut gateway, &log_path);
     gateway
+}
+
+fn assert_gateway_running(gateway: &mut Child, log_path: &Path) {
+    let Some(status) = gateway.try_wait().unwrap() else {
+        return;
+    };
+    let log = fs::read_to_string(log_path).unwrap_or_else(|error| error.to_string());
+    panic!(
+        "test gateway exited during startup ({status}); stop any installed \
+         wt-agent-git-gateway service before running the KVM E2E\n\
+         gateway log ({}):\n{log}",
+        log_path.display()
+    );
 }
 
 fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Result<(), String>>) {
