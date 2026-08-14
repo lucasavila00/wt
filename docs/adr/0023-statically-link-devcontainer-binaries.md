@@ -33,6 +33,9 @@ The installed musl artifacts must have no dynamic program interpreter or GLIBC
 symbol-version requirement. Installation fails rather than falling back to a
 dynamically linked devcontainer binary.
 
+`scripts/install-server` installs the musl linker toolchain and the Rust musl
+target. `wt-server-setup` inspects both artifacts before installing them.
+
 This changes only executable packaging. The relay socket, transport protocol,
 commands, and authorization model remain unchanged.
 
