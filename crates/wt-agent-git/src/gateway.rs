@@ -333,8 +333,8 @@ impl Gateway {
     fn serve_cli(
         &self,
         args: &[String],
-        branch: Option<&str>,
-        head: Option<&str>,
+        _branch: Option<&str>,
+        _head: Option<&str>,
         grant: &GrantRecord,
     ) -> Result<String> {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
@@ -342,6 +342,7 @@ impl Gateway {
         }
         let source = parse_source(&grant.source)?;
         let provider = self.provider(&source.host)?;
+        let command = api::CliCommand::parse(args)?;
         let api = match provider {
             Provider::Ssh {
                 kind,
@@ -353,52 +354,26 @@ impl Gateway {
                 .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
         };
         let Some((kind, api_token_file, api_base)) = api else {
-            return Ok(cli_output(args, branch, grant));
+            return Ok(cli_unavailable());
         };
-        let branch = branch.context("ag-git requires a branch checkout")?;
-        let head = head.context("ag-git requires a commit checkout")?;
-        if !branch.starts_with(&grant.prefix) || branch.len() == grant.prefix.len() {
-            bail!(
-                "branch `{branch}` must use the shared `{}` prefix; rename it with `git branch -m {}NAME`",
-                grant.prefix,
-                grant.prefix
-            );
-        }
-        if !valid_object_id(head) {
-            bail!("current Git commit is invalid");
-        }
-        let published_head = repository_refs(provider, &source)?
-            .into_iter()
-            .find_map(|(object, reference)| {
-                (reference == format!("refs/heads/{branch}")).then_some(object)
-            })
-            .with_context(|| {
-                format!(
-                    "branch `{branch}` is not published; run `git push -u origin {branch}` and retry"
-                )
-            })?;
-        if published_head != head {
-            bail!(
-                "branch `{branch}` is published at {published_head}, but this checkout is at {head}; run `git push origin {branch}` and retry"
-            );
-        }
         let project = source.path.trim_end_matches(".git");
-        let command = api::ProviderCommand::parse(args)?;
-        let scope = api::ProviderCommandScope {
+        let scope = api::ProviderProjectScope {
             host: &source.host,
             project,
             base: &grant.base,
             prefix: &grant.prefix,
-            branch,
-            head,
         };
         let output = match api_base {
-            Some(base) => {
-                api::execute_provider_command_at_base(kind, api_token_file, base, &scope, &command)
-            }
-            None => api::execute_provider_command(kind, api_token_file, &scope, &command),
+            Some(base) => api::execute_cli_provider_command_at_base(
+                kind,
+                api_token_file,
+                base,
+                &scope,
+                &command,
+            ),
+            None => api::execute_cli_provider_command(kind, api_token_file, &scope, &command),
         }?;
-        Ok(api::render_provider_command_output(output, &scope))
+        Ok(api::render_cli_command_output(output))
     }
 
     fn push_result_message(
@@ -429,9 +404,7 @@ impl Gateway {
                     .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
             };
             let Some((kind, api_token_file, api_base)) = api else {
-                message
-                    .push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n");
-                message.push_str("If it has no request, open one with `ag-git open-mr`.\n");
+                message.push_str("Run `ag-git --help` for explicit provider commands.\n");
                 continue;
             };
             let scope = api::ProviderCommandScope {
@@ -459,38 +432,30 @@ impl Gateway {
             };
             match result {
                 Ok(api::ProviderCommandOutput::CurrentStatus(Some(request))) => {
+                    let mr = request.handle.trim_start_matches(['#', '!']);
                     message.push_str(&format!(
-                        "Updated request {}: {}\nRun `ag-git` to see review comments and CI.\n",
-                        request.handle, request.url
+                        "Updated MR {mr}: {}\nInspect it with:\n  ag-git show mr {mr}\n  ag-git list threads mr {mr}\n  ag-git list ci commit {head}\n",
+                        request.url
                     ));
                 }
                 Ok(api::ProviderCommandOutput::CurrentStatus(None)) => {
                     message.push_str("This branch does not have a pull or merge request.\n");
-                    message.push_str("Open one for review:\n  ag-git open-mr\n");
-                    message.push_str("Or open it as a draft:\n  ag-git open-mr --draft\n");
+                    message.push_str(&format!(
+                        "Open one with:\n  ag-git open mr --head {branch} --base {}\n",
+                        grant.base
+                    ));
                 }
-                Ok(_) | Err(_) => message
-                    .push_str("Run `ag-git` to see its pull or merge request, reviews, and CI.\n"),
+                Ok(_) | Err(_) => {
+                    message.push_str("Run `ag-git --help` for explicit provider commands.\n")
+                }
             }
         }
         Ok(message)
     }
 }
 
-fn cli_output(args: &[String], branch: Option<&str>, grant: &GrantRecord) -> String {
-    if args == ["--help"] || args == ["-h"] || args == ["help"] {
-        HELP.to_owned()
-    } else if args.is_empty() {
-        format!(
-            "WT agent Git\n\nProject: {}\nCurrent branch: {}\nShared branch prefix: {}\nRequest base: {}\n\nPull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n",
-            grant.source,
-            branch.unwrap_or("detached HEAD"),
-            grant.prefix,
-            grant.base,
-        )
-    } else {
-        "ag-git: pull or merge request, review, and CI commands are not available in this build yet.\nNormal Git fetch, pull, and push are available now.\nRun `ag-git --help` to see the command contract.\n".to_owned()
-    }
+fn cli_unavailable() -> String {
+    "ag-git: provider API commands are not available for this project.\nNormal Git fetch, pull, and push are available.\n".to_owned()
 }
 
 fn valid_host(value: &str) -> bool {
@@ -513,8 +478,8 @@ remote: WT gives you scoped access to project {project}.\n\
 remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
 remote: Every WT world for this project can write branches under {}.\n\
 remote: Pull or merge requests target {}.\n\
-remote: ag-git is the installed CLI for pull or merge requests, reviews, and CI.\n\
-remote: Run ag-git for the current branch's status and suggested next actions.\n\
+remote: ag-git uses explicit provider resource types and IDs; it does not infer\n\
+remote: resources from the current checkout.\n\
 remote: Run ag-git --help to discover every available command.\n\
 remote:\n",
         grant.prefix, grant.base
@@ -1017,33 +982,30 @@ fn write_packet(to: &mut impl Write, payload: &[u8]) -> Result<()> {
 }
 
 const HELP: &str = "\
-ag-git manages the pull or merge request for the current WT branch.\n\
+ag-git reads and changes explicitly identified Git provider resources.\n\
 \n\
 USAGE:\n\
-    ag-git [COMMAND] [OPTIONS]\n\
-\n\
-Run `ag-git` with no command to show the current branch, request, reviews, and CI.\n\
+    ag-git COMMAND RESOURCE [ID] [OPTIONS]\n\
 \n\
 COMMANDS:\n\
-    open-mr [--draft]       Open or show the branch's pull or merge request\n\
-    ready                   Mark the request ready for review\n\
-    draft                   Return the request to draft\n\
-    comment TEXT            Add a request comment\n\
-    edit [--title TEXT] [--body TEXT]\n\
-    review                  Show review threads and their handles\n\
-    reply HANDLE TEXT       Reply to a review thread\n\
-    resolve HANDLE          Resolve a review thread\n\
-    reopen HANDLE           Reopen a review thread\n\
-    ci                      Show CI jobs for the current commit\n\
-    log JOB                 Show any CI job log in this project by provider ID\n\
-    retry JOB               Retry a CI job when the provider allows it\n\
-    cancel JOB              Cancel a CI job when the provider allows it\n\
-    wait                    Wait for review or CI state to change\n\
-    close                   Close the request\n\
-    reopen-mr               Reopen the request\n\
-    help                    Show this help\n\
+    show mr|run|job ID\n\
+    list threads mr ID\n\
+    list ci commit SHA\n\
+    list jobs run ID\n\
+    log job ID\n\
+    wait mr|run|job ID\n\
+    open mr --head BRANCH --base BRANCH [--draft]\n\
+    set mr ID ready|draft|open|closed\n\
+    edit mr ID [--title TEXT] [--body TEXT]\n\
+    comment mr ID TEXT\n\
+    reply thread ID --mr MR_ID TEXT\n\
+    set thread ID --mr MR_ID resolved|open\n\
+    retry job ID\n\
+    cancel job|run ID\n\
+    help                              Show this help\n\
 \n\
-Use normal Git for commits, fetches, pulls, and pushes.\n";
+The provider and project come from this world's gateway grant. Every other\n\
+resource is explicit. Use normal Git for commits, fetches, pulls, and pushes.\n";
 
 #[cfg(test)]
 mod tests {
@@ -1087,12 +1049,7 @@ mod tests {
 
     #[test]
     fn cli_status_and_unavailable_command_are_actionable() {
-        let grant = test_grant();
-        insta::assert_snapshot!("cli_status", cli_output(&[], Some("wt/fix-login"), &grant));
-        insta::assert_snapshot!(
-            "cli_unavailable",
-            cli_output(&["open-mr".to_owned()], Some("wt/fix-login"), &grant)
-        );
+        insta::assert_snapshot!("cli_unavailable", cli_unavailable());
     }
 
     #[test]

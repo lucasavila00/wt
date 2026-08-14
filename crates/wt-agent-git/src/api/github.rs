@@ -1,6 +1,7 @@
 use super::{
-    ChangeRequestStatus, CiJob, CiJobHandle, GitProviderApi, ProviderCommand,
-    ProviderCommandOutput, ProviderCommandScope, ReviewComment, ReviewThread, ReviewThreadHandle,
+    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, GitProviderApi,
+    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
+    ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -24,6 +25,14 @@ struct GitObjectID(String);
     response_derives = "Debug"
 )]
 struct GithubReadPullRequest;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "graphql/github/schema.graphql",
+    query_path = "graphql/github/pull_request_by_number.graphql",
+    response_derives = "Debug"
+)]
+struct GithubReadPullRequestByNumber;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -136,9 +145,18 @@ struct WorkflowRuns {
     workflow_runs: Vec<WorkflowRun>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 struct WorkflowRun {
     id: u64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: String,
+    conclusion: Option<String>,
+    html_url: Option<String>,
+    #[serde(default)]
+    head_sha: String,
+    head_branch: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -147,13 +165,45 @@ struct WorkflowJobs {
     jobs: Vec<WorkflowJob>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 struct WorkflowJob {
     id: u64,
     name: String,
     status: String,
     conclusion: Option<String>,
     html_url: Option<String>,
+    #[serde(default)]
+    run_id: u64,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct PullRequest {
+    number: u64,
+    node_id: String,
+    html_url: String,
+    title: String,
+    state: String,
+    draft: bool,
+    head: PullRequestRef,
+    base: PullRequestRef,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct PullRequestRef {
+    #[serde(rename = "ref")]
+    reference: String,
+    sha: String,
+    repo: Option<PullRequestRepository>,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct PullRequestRepository {
+    full_name: String,
+}
+
+#[derive(Deserialize)]
+struct Commit {
+    sha: String,
 }
 
 impl GithubApi {
@@ -264,6 +314,7 @@ impl GithubApi {
                                 .map(|id| id.to_string())
                                 .unwrap_or_else(|| format!("C:{}", check.id)),
                         ),
+                        run: None,
                         name: check.name,
                         state: check
                             .conclusion
@@ -273,6 +324,7 @@ impl GithubApi {
                     }),
                     StatusNode::StatusContext(status) => jobs.push(CiJob {
                         handle: CiJobHandle::new(format!("S:{}", status.id)),
+                        run: None,
                         name: status.context,
                         state: format!("{:?}", status.state).to_ascii_lowercase(),
                         url: status.target_url.map(|url| url.0),
@@ -317,7 +369,7 @@ impl GithubApi {
                     thread.comments.page_info.has_next_page,
                     thread.comments.total_count,
                 )?;
-                let handle = format!("T:{}", thread.id);
+                let handle = thread.id.clone();
                 review_targets.push((
                     handle.clone(),
                     GithubReviewTarget::Thread(GithubReviewThreadId(thread.id.clone())),
@@ -353,7 +405,7 @@ impl GithubApi {
                 reviews.total_count,
             )?;
             for review in reviews.nodes.unwrap_or_default().into_iter().flatten() {
-                let handle = format!("R:{}", review.id);
+                let handle = review.id.clone();
                 review_targets.push((
                     handle.clone(),
                     GithubReviewTarget::PullRequest(pull_request_id.clone()),
@@ -387,7 +439,7 @@ impl GithubApi {
             .into_iter()
             .flatten()
         {
-            let handle = format!("C:{}", comment.id);
+            let handle = comment.id.clone();
             review_targets.push((
                 handle.clone(),
                 GithubReviewTarget::PullRequest(pull_request_id.clone()),
@@ -437,7 +489,7 @@ impl GithubApi {
     ) -> Result<GithubChangeRequestSnapshot> {
         let snapshot = self.read_change_request_snapshot(scope, false)?;
         if snapshot.request.is_none() {
-            bail!("this branch has no pull request; run `ag-git open-mr`");
+            bail!("the explicitly identified branch has no pull request");
         }
         Ok(snapshot)
     }
@@ -454,29 +506,7 @@ impl GithubApi {
     }
 
     fn read_action_jobs(&self, scope: &ProviderCommandScope<'_>) -> Result<Vec<CiJob>> {
-        let runs: WorkflowRuns = self.rest.read_json(&format!(
-            "{}repos/{}/actions/runs?head_sha={}&per_page=100",
-            self.rest_prefix, scope.project, scope.head
-        ))?;
-        ensure_complete_rest_collection(
-            "Actions workflow runs",
-            runs.total_count,
-            runs.workflow_runs.len(),
-        )?;
-        let mut jobs = Vec::new();
-        for run in runs.workflow_runs {
-            let response: WorkflowJobs = self.rest.read_json(&format!(
-                "{}repos/{}/actions/runs/{}/jobs?filter=latest&per_page=100",
-                self.rest_prefix, scope.project, run.id
-            ))?;
-            ensure_complete_rest_collection(
-                &format!("jobs in Actions workflow run {}", run.id),
-                response.total_count,
-                response.jobs.len(),
-            )?;
-            jobs.extend(response.jobs.into_iter().map(ci_job));
-        }
-        Ok(jobs)
+        Ok(self.list_ci_for_commit(scope.project, scope.head)?.1)
     }
 
     fn read_action_job(
@@ -494,6 +524,191 @@ impl GithubApi {
             self.rest_prefix, scope.project
         ))?;
         Ok(ci_job(job))
+    }
+
+    fn read_workflow_job(&self, project: &str, job: u64) -> Result<WorkflowJob> {
+        self.rest.read_json(&format!(
+            "{}repos/{project}/actions/jobs/{job}",
+            self.rest_prefix
+        ))
+    }
+
+    fn read_workflow_run(&self, project: &str, run: u64) -> Result<WorkflowRun> {
+        self.rest.read_json(&format!(
+            "{}repos/{project}/actions/runs/{run}",
+            self.rest_prefix
+        ))
+    }
+
+    fn read_pull_request(&self, project: &str, mr: u64) -> Result<PullRequest> {
+        self.rest
+            .read_json(&format!("{}repos/{project}/pulls/{mr}", self.rest_prefix))
+    }
+
+    fn read_review_threads(&self, project: &str, mr: u64) -> Result<Vec<ReviewThread>> {
+        let (owner, name) = split_project(project)?;
+        let data = self
+            .graphql
+            .execute_graphql::<GithubReadPullRequestByNumber>(
+                self.graphql_path,
+                github_read_pull_request_by_number::Variables {
+                    owner: owner.to_owned(),
+                    name: name.to_owned(),
+                    number: i64::try_from(mr).context("GitHub pull request number is too large")?,
+                },
+            )?;
+        let request = data
+            .repository
+            .with_context(|| format!("GitHub repository {project} was not found"))?
+            .pull_request
+            .with_context(|| format!("GitHub pull request {mr} was not found"))?;
+        ensure_complete_connection(
+            "review threads",
+            request.review_threads.page_info.has_next_page,
+            request.review_threads.total_count,
+        )?;
+        request
+            .review_threads
+            .nodes
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|thread| {
+                ensure_complete_connection(
+                    &format!("comments in review thread {}", thread.id),
+                    thread.comments.page_info.has_next_page,
+                    thread.comments.total_count,
+                )?;
+                Ok(ReviewThread {
+                    handle: ReviewThreadHandle::new(thread.id),
+                    resolvable: true,
+                    resolved: thread.is_resolved,
+                    path: Some(thread.path),
+                    line: thread.line.map(|line| line as u64),
+                    comments: thread
+                        .comments
+                        .nodes
+                        .unwrap_or_default()
+                        .into_iter()
+                        .flatten()
+                        .map(|comment| ReviewComment {
+                            author: comment
+                                .author
+                                .map(|author| author.login)
+                                .unwrap_or_else(|| "unknown".to_owned()),
+                            body: comment.body,
+                            url: Some(comment.url.0),
+                        })
+                        .collect(),
+                })
+            })
+            .collect()
+    }
+
+    fn require_writable_pull_request(
+        scope: &ProviderProjectScope<'_>,
+        request: &PullRequest,
+    ) -> Result<()> {
+        if request
+            .head
+            .repo
+            .as_ref()
+            .map(|repo| repo.full_name.as_str())
+            != Some(scope.project)
+            || !request.head.reference.starts_with(scope.prefix)
+            || request.base.reference != scope.base
+        {
+            bail!(
+                "MR {} is outside the writable {}* -> {} scope",
+                request.number,
+                scope.prefix,
+                scope.base
+            );
+        }
+        Ok(())
+    }
+
+    fn require_writable_run(scope: &ProviderProjectScope<'_>, run: &WorkflowRun) -> Result<()> {
+        if !run
+            .head_branch
+            .as_deref()
+            .is_some_and(|branch| branch.starts_with(scope.prefix))
+        {
+            bail!(
+                "CI run {} is not for a writable {}* ref",
+                run.id,
+                scope.prefix
+            );
+        }
+        Ok(())
+    }
+
+    fn list_run_jobs(&self, project: &str, run: u64) -> Result<Vec<CiJob>> {
+        let mut page = 1;
+        let mut jobs = Vec::new();
+        loop {
+            let page_suffix = if page == 1 {
+                String::new()
+            } else {
+                format!("&page={page}")
+            };
+            let response: WorkflowJobs = self.rest.read_json(&format!(
+                "{}repos/{project}/actions/runs/{run}/jobs?filter=latest&per_page=100{page_suffix}",
+                self.rest_prefix
+            ))?;
+            let total = response.total_count;
+            let received = response.jobs.len();
+            jobs.extend(response.jobs.into_iter().map(ci_job));
+            if jobs.len() as u64 >= total {
+                return Ok(jobs);
+            }
+            if received == 0 {
+                return ensure_complete_rest_collection(
+                    &format!("jobs in Actions workflow run {run}"),
+                    total,
+                    jobs.len(),
+                )
+                .map(|()| jobs);
+            }
+            page += 1;
+        }
+    }
+
+    fn list_ci_for_commit(&self, project: &str, commit: &str) -> Result<(Vec<CiRun>, Vec<CiJob>)> {
+        let mut page = 1;
+        let mut workflow_runs = Vec::new();
+        loop {
+            let page_suffix = if page == 1 {
+                String::new()
+            } else {
+                format!("&page={page}")
+            };
+            let response: WorkflowRuns = self.rest.read_json(&format!(
+                "{}repos/{project}/actions/runs?head_sha={commit}&per_page=100{page_suffix}",
+                self.rest_prefix
+            ))?;
+            let total = response.total_count;
+            let received = response.workflow_runs.len();
+            workflow_runs.extend(response.workflow_runs);
+            if workflow_runs.len() as u64 >= total {
+                break;
+            }
+            if received == 0 {
+                ensure_complete_rest_collection(
+                    "Actions workflow runs",
+                    total,
+                    workflow_runs.len(),
+                )?;
+            }
+            page += 1;
+        }
+        let mut runs = Vec::new();
+        let mut jobs = Vec::new();
+        for run in workflow_runs {
+            jobs.extend(self.list_run_jobs(project, run.id)?);
+            runs.push(ci_run(run));
+        }
+        Ok((runs, jobs))
     }
 
     fn require_ci_job(
@@ -522,7 +737,7 @@ impl GithubApi {
             .map(|(_, target)| target.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "review thread `{handle}` was not found; run `ag-git review` and use a current thread handle"
+                    "review thread `{handle}` was not found; run `ag-git list threads mr ID` and use its provider ID"
                 )
             })
     }
@@ -772,6 +987,267 @@ impl GitProviderApi for GithubApi {
             }
         }
     }
+
+    fn execute_cli_command(
+        &self,
+        scope: &ProviderProjectScope<'_>,
+        command: &CliCommand,
+    ) -> Result<ProviderCommandOutput> {
+        match command {
+            CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
+                pull_request_status(self.read_pull_request(scope.project, *mr)?),
+            )),
+            CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
+                self.read_workflow_run(scope.project, *run)?,
+            ))),
+            CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(ci_job(
+                self.read_workflow_job(scope.project, *job)?,
+            ))),
+            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_review_threads(scope.project, *mr)?,
+            )),
+            CliCommand::ListCi { commit } => {
+                let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
+                Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
+            }
+            CliCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
+                self.list_run_jobs(scope.project, *run)?,
+            )),
+            CliCommand::LogJob { job } => {
+                let project_scope = ProviderCommandScope {
+                    host: scope.host,
+                    project: scope.project,
+                    base: scope.base,
+                    prefix: scope.prefix,
+                    branch: "",
+                    head: "",
+                };
+                self.execute_command(
+                    &project_scope,
+                    &ProviderCommand::ReadCiJobLog {
+                        job: CiJobHandle::new(job.to_string()),
+                    },
+                )
+            }
+            CliCommand::WaitMr { mr } => {
+                let initial = self.read_pull_request(scope.project, *mr)?;
+                if matches!(initial.state.as_str(), "closed" | "merged") {
+                    return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                        initial,
+                    )));
+                }
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    let current = self.read_pull_request(scope.project, *mr)?;
+                    if current != initial {
+                        return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                            current,
+                        )));
+                    }
+                }
+            }
+            CliCommand::WaitRun { run } => loop {
+                let current = self.read_workflow_run(scope.project, *run)?;
+                let output = ci_run(current);
+                if ci_terminal(&output.state) {
+                    return Ok(ProviderCommandOutput::CiRun(output));
+                }
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            },
+            CliCommand::WaitJob { job } => loop {
+                let current = self.read_workflow_job(scope.project, *job)?;
+                let output = ci_job(current);
+                if ci_terminal(&output.state) {
+                    return Ok(ProviderCommandOutput::CiJob(output));
+                }
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            },
+            CliCommand::OpenMr { head, base, draft } => {
+                if !head.starts_with(scope.prefix) || base != scope.base {
+                    bail!(
+                        "open mr must use a {}* head and the granted {} base",
+                        scope.prefix,
+                        scope.base
+                    );
+                }
+                let encoded: String =
+                    url::form_urlencoded::byte_serialize(head.as_bytes()).collect();
+                let commit: Commit = self.rest.read_json(&format!(
+                    "{}repos/{}/commits/{encoded}",
+                    self.rest_prefix, scope.project
+                ))?;
+                let current = ProviderCommandScope {
+                    host: scope.host,
+                    project: scope.project,
+                    base,
+                    prefix: scope.prefix,
+                    branch: head,
+                    head: &commit.sha,
+                };
+                self.execute_command(
+                    &current,
+                    &ProviderCommand::OpenChangeRequest { draft: *draft },
+                )
+            }
+            CliCommand::SetMr { mr, state } => {
+                let request = self.read_pull_request(scope.project, *mr)?;
+                Self::require_writable_pull_request(scope, &request)?;
+                match state {
+                    ChangeRequestState::Ready => {
+                        self.graphql.execute_graphql::<GithubMarkPullRequestReady>(
+                            self.graphql_path,
+                            github_mark_pull_request_ready::Variables {
+                                id: request.node_id,
+                            },
+                        )?;
+                    }
+                    ChangeRequestState::Draft => {
+                        self.graphql.execute_graphql::<GithubMarkPullRequestDraft>(
+                            self.graphql_path,
+                            github_mark_pull_request_draft::Variables {
+                                id: request.node_id,
+                            },
+                        )?;
+                    }
+                    ChangeRequestState::Open | ChangeRequestState::Closed => {
+                        self.graphql.execute_graphql::<GithubUpdatePullRequest>(
+                            self.graphql_path,
+                            github_update_pull_request::Variables {
+                                id: request.node_id,
+                                title: None,
+                                body: None,
+                                state: Some(if matches!(state, ChangeRequestState::Open) {
+                                    github_update_pull_request::PullRequestUpdateState::OPEN
+                                } else {
+                                    github_update_pull_request::PullRequestUpdateState::CLOSED
+                                }),
+                            },
+                        )?;
+                    }
+                }
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_pull_request(scope.project, *mr)?,
+                )))
+            }
+            CliCommand::EditMr { mr, title, body } => {
+                let request = self.read_pull_request(scope.project, *mr)?;
+                Self::require_writable_pull_request(scope, &request)?;
+                self.graphql.execute_graphql::<GithubUpdatePullRequest>(
+                    self.graphql_path,
+                    github_update_pull_request::Variables {
+                        id: request.node_id,
+                        title: title.clone(),
+                        body: body.clone(),
+                        state: None,
+                    },
+                )?;
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_pull_request(scope.project, *mr)?,
+                )))
+            }
+            CliCommand::CommentMr { mr, body } => {
+                let request = self.read_pull_request(scope.project, *mr)?;
+                Self::require_writable_pull_request(scope, &request)?;
+                self.graphql
+                    .execute_graphql::<GithubAddPullRequestComment>(
+                        self.graphql_path,
+                        github_add_pull_request_comment::Variables {
+                            id: request.node_id,
+                            body: super::attributed_project_comment(scope, body),
+                        },
+                    )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Comment added.".to_owned(),
+                ))
+            }
+            CliCommand::ReplyThread { mr, thread, body } => {
+                let request = self.read_pull_request(scope.project, *mr)?;
+                Self::require_writable_pull_request(scope, &request)?;
+                self.graphql.execute_graphql::<GithubReplyToReviewThread>(
+                    self.graphql_path,
+                    github_reply_to_review_thread::Variables {
+                        thread: thread.as_str().to_owned(),
+                        body: super::attributed_project_comment(scope, body),
+                    },
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Reply added.".to_owned(),
+                ))
+            }
+            CliCommand::SetThread {
+                mr,
+                thread,
+                resolved,
+            } => {
+                let request = self.read_pull_request(scope.project, *mr)?;
+                Self::require_writable_pull_request(scope, &request)?;
+                if *resolved {
+                    self.graphql.execute_graphql::<GithubResolveReviewThread>(
+                        self.graphql_path,
+                        github_resolve_review_thread::Variables {
+                            thread: thread.as_str().to_owned(),
+                        },
+                    )?;
+                } else {
+                    self.graphql.execute_graphql::<GithubReopenReviewThread>(
+                        self.graphql_path,
+                        github_reopen_review_thread::Variables {
+                            thread: thread.as_str().to_owned(),
+                        },
+                    )?;
+                }
+                Ok(ProviderCommandOutput::Confirmation(if *resolved {
+                    "Thread resolved.".to_owned()
+                } else {
+                    "Thread reopened.".to_owned()
+                }))
+            }
+            CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
+                let current = self.read_workflow_job(scope.project, *job)?;
+                let run = self.read_workflow_run(scope.project, current.run_id)?;
+                Self::require_writable_run(scope, &run)?;
+                if matches!(command, CliCommand::CancelJob { .. }) {
+                    bail!(
+                        "GitHub cannot cancel one job; use `ag-git cancel run {}`",
+                        run.id
+                    );
+                }
+                self.rest.post_without_body(&format!(
+                    "{}repos/{}/actions/jobs/{job}/rerun",
+                    self.rest_prefix, scope.project
+                ))?;
+                Ok(ProviderCommandOutput::Confirmation(format!(
+                    "Retry requested for job {job} and its dependent jobs."
+                )))
+            }
+            CliCommand::CancelRun { run } => {
+                let current = self.read_workflow_run(scope.project, *run)?;
+                Self::require_writable_run(scope, &current)?;
+                self.rest.post_without_body(&format!(
+                    "{}repos/{}/actions/runs/{run}/cancel",
+                    self.rest_prefix, scope.project
+                ))?;
+                Ok(ProviderCommandOutput::Confirmation(format!(
+                    "Cancellation requested for run {run}."
+                )))
+            }
+        }
+    }
+}
+
+fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {
+    ChangeRequestStatus {
+        handle: request.number.to_string(),
+        url: request.html_url,
+        title: request.title,
+        state: request.state,
+        draft: request.draft,
+        head: request.head.sha,
+        base: request.base.reference,
+        review_state: None,
+        threads: Vec::new(),
+        jobs: Vec::new(),
+    }
 }
 
 fn github_job_log_pending(state: &str) -> bool {
@@ -784,10 +1260,33 @@ fn github_job_log_pending(state: &str) -> bool {
 fn ci_job(job: WorkflowJob) -> CiJob {
     CiJob {
         handle: CiJobHandle::new(job.id.to_string()),
+        run: (job.run_id != 0).then(|| job.run_id.to_string()),
         name: job.name,
         state: job.conclusion.unwrap_or(job.status),
         url: job.html_url,
     }
+}
+
+fn ci_run(run: WorkflowRun) -> CiRun {
+    CiRun {
+        handle: run.id.to_string(),
+        name: if run.name.is_empty() {
+            "workflow run".to_owned()
+        } else {
+            run.name
+        },
+        state: run.conclusion.unwrap_or(run.status),
+        url: run.html_url,
+        head: run.head_sha,
+        branch: run.head_branch,
+    }
+}
+
+fn ci_terminal(state: &str) -> bool {
+    !matches!(
+        state,
+        "queued" | "in_progress" | "waiting" | "pending" | "requested"
+    )
 }
 
 fn split_project(project: &str) -> Result<(&str, &str)> {
@@ -979,10 +1478,10 @@ mod tests {
         };
         assert_eq!(request.handle, "#7");
         assert_eq!(request.threads[0].comments[0].author, "reviewer");
-        assert_eq!(request.threads[0].handle.as_str(), "T:thread-1");
-        assert_eq!(request.threads[1].handle.as_str(), "R:review-1");
+        assert_eq!(request.threads[0].handle.as_str(), "thread-1");
+        assert_eq!(request.threads[1].handle.as_str(), "review-1");
         assert_eq!(request.threads[1].comments[0].author, "lead");
-        assert_eq!(request.threads[2].handle.as_str(), "C:comment-1");
+        assert_eq!(request.threads[2].handle.as_str(), "comment-1");
         assert_eq!(request.threads[2].comments[0].author, "maintainer");
         assert_eq!(request.jobs[0].handle, CiJobHandle::new("44"));
         assert_eq!(request.jobs[1].handle, CiJobHandle::new("S:status-1"));
@@ -1053,7 +1552,7 @@ mod tests {
         snapshot.review_targets.reverse();
 
         let target =
-            GithubApi::review_target(&snapshot, &ReviewThreadHandle::new("T:thread-1")).unwrap();
+            GithubApi::review_target(&snapshot, &ReviewThreadHandle::new("thread-1")).unwrap();
 
         assert_eq!(
             target,
@@ -1063,23 +1562,44 @@ mod tests {
     }
 
     #[test]
-    fn refuses_truncated_actions_results_instead_of_issuing_incomplete_handles() {
-        let (base_url, server) = serve(vec![ExpectedRequest {
-            method: "GET",
-            path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
-            required_header: Some(("authorization", "Bearer fixture-token")),
-            body_contains: None,
-            response_content_type: "application/json",
-            response_body: r#"{"total_count":2,"workflow_runs":[{"id":91}]}"#,
-        }]);
+    fn paginates_actions_results() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":2,"workflow_runs":[{"id":91}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100&page=2",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":2,"workflow_runs":[{"id":92}]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":0,"jobs":[]}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/runs/92/jobs?filter=latest&per_page=100",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"total_count":0,"jobs":[]}"#,
+            },
+        ]);
         let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
 
-        let error = provider.read_action_jobs(&scope()).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "GitHub returned only 1 of 2 Actions workflow runs; ag-git refuses to continue with incomplete CI handles or status"
-        );
+        assert!(provider.read_action_jobs(&scope()).unwrap().is_empty());
         server.join().unwrap().unwrap();
     }
 
@@ -1206,6 +1726,125 @@ mod tests {
     }
 
     #[test]
+    fn explicit_resource_commands_do_not_need_checkout_context() {
+        let (base_url, server) = serve(vec![
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/pulls/7",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
+            },
+            ExpectedRequest {
+                method: "GET",
+                path: "/repos/acme/widget/actions/jobs/44",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "application/json",
+                response_body: r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#,
+            },
+        ]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+        let scope = project_scope();
+
+        let mr = provider
+            .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 7 })
+            .unwrap();
+        let job = provider
+            .execute_cli_command(&scope, &CliCommand::WaitJob { job: 44 })
+            .unwrap();
+
+        let ProviderCommandOutput::ChangeRequest(mr) = mr else {
+            panic!("expected MR")
+        };
+        let ProviderCommandOutput::CiJob(job) = job else {
+            panic!("expected job")
+        };
+        assert_eq!(mr.handle, "7");
+        assert_eq!(job.state, "success");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn lists_threads_by_pull_request_number() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "POST",
+            path: "/graphql",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: Some("GithubReadPullRequestByNumber"),
+            response_content_type: "application/json",
+            response_body: r#"{
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "pageInfo": { "hasNextPage": false },
+                                "totalCount": 1,
+                                "nodes": [{
+                                    "id": "PRRT_thread_7",
+                                    "isResolved": false,
+                                    "path": "src/lib.rs",
+                                    "line": 12,
+                                    "comments": {
+                                        "pageInfo": { "hasNextPage": false },
+                                        "totalCount": 1,
+                                        "nodes": [{
+                                            "author": { "__typename": "User", "login": "reviewer" },
+                                            "body": "Please clarify this.",
+                                            "url": "https://github.test/thread/7"
+                                        }]
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#,
+        }]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 7 })
+            .unwrap();
+
+        let ProviderCommandOutput::ReviewThreads(threads) = output else {
+            panic!("expected review threads")
+        };
+        assert_eq!(threads[0].handle.as_str(), "PRRT_thread_7");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn write_scope_comes_from_provider_resource_metadata() {
+        let mut request = PullRequest {
+            number: 7,
+            node_id: "pull-request-7".to_owned(),
+            html_url: String::new(),
+            title: String::new(),
+            state: "open".to_owned(),
+            draft: false,
+            head: PullRequestRef {
+                reference: "main".to_owned(),
+                sha: "abc123".to_owned(),
+                repo: Some(PullRequestRepository {
+                    full_name: "acme/widget".to_owned(),
+                }),
+            },
+            base: PullRequestRef {
+                reference: "main".to_owned(),
+                sha: "def456".to_owned(),
+                repo: Some(PullRequestRepository {
+                    full_name: "acme/widget".to_owned(),
+                }),
+            },
+        };
+        assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_err());
+        request.head.reference = "wt/fix".to_owned();
+        assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_ok());
+    }
+
+    #[test]
     fn opens_pull_request_through_typed_graphql_mutation() {
         let (base_url, server) = serve(vec![
             ExpectedRequest {
@@ -1273,5 +1912,14 @@ mod tests {
 
     fn leak_fixture(value: String) -> &'static str {
         Box::leak(value.into_boxed_str())
+    }
+
+    fn project_scope() -> ProviderProjectScope<'static> {
+        ProviderProjectScope {
+            host: "github.test",
+            project: "acme/widget",
+            base: "main",
+            prefix: "wt/",
+        }
     }
 }
