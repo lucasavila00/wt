@@ -1,0 +1,17 @@
+#cloud-config
+write_files:
+  - path: /etc/wt-host-example
+    owner: root:root
+    permissions: "0644"
+    content: |
+      configured by cloud-init
+  - path: /usr/local/bin/wt-host-example
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      set -eu
+      printf 'host=%s\n' "$(hostname)"
+      cat /etc/wt-host-example
+runcmd:
+  - [touch, /var/lib/wt-host-example-ready]
