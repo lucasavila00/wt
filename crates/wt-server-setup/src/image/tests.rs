@@ -35,7 +35,7 @@ fn image_manifest_records_structured_package_versions() {
 
     let json = serde_json::to_value(manifest).unwrap();
     assert_eq!(json["version"], 2);
-    assert_eq!(json["recipe_version"], 5);
+    assert_eq!(json["recipe_version"], 1);
     assert_eq!(json["packages"]["tmux"], "3.4-1");
 }
 

@@ -53,14 +53,14 @@ installation and validation succeeds. It contains exactly:
 ```text
 kind=KIND
 status=ready
-recipe_version=N
+recipe_version=1
 ```
 
-Setup requires the expected kind and recipe version before treating guest
-shutdown as success. It then runs `cloud-init clean` offline, removes cached
-seed and generated network state, clears machine identity and SSH host keys,
-and revalidates the cleaned state plus required package versions and asset
-checksums.
+The compatibility field stays at `1`; staged-input hashes detect recipe drift.
+Setup requires the exact marker before treating guest shutdown as success. It
+then runs `cloud-init clean` offline, removes cached seed and generated network
+state, clears machine identity and SSH host keys, and revalidates the cleaned
+state plus required package versions and asset checksums.
 
 The installed manifest records the base-image SHA, recipe version, install
 configuration digest, and SHA-256 of every staged script, configuration file,
