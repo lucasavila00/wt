@@ -24,7 +24,7 @@ wt-server
 One backend per server.
 
 The existing machine-provider and world-provisioner boundaries are described in
-[Provider architecture](../../how/provider-api.md).
+[Provider architecture](../../internals/provider.md).
 
 | Crate | Role |
 |-------|------|

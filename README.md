@@ -1,6 +1,8 @@
 # wt
 
-WT creates named, parallel devcontainer environments on Ubuntu/KVM servers.
+WT models devcontainer, raw Ubuntu, and GitHub CI worlds on KVM. Devcontainer
+and host worlds are operator-ready; the GitHub CI service is still foundation
+code.
 
 [Getting started](./GETTING-STARTED.md)
 
@@ -8,8 +10,7 @@ WT creates named, parallel devcontainer environments on Ubuntu/KVM servers.
 
 | Document | Contents |
 |----------|----------|
-| [What WT does](./docs/what/README.md) | Concepts, interface, and constraints |
-| [How WT works](./docs/how/README.md) | Components, data flow, and implementation |
+| [Documentation](./docs/README.md) | World kinds, guides, and internals |
 | [Rust workspace](./WORKSPACE.md) | Packages and build commands |
 | [Development](./DEVELOPMENT.md) | Local setup and checks |
 | [Examples](./examples/) | Client and server configuration samples |

@@ -8,8 +8,8 @@ Cross-crate tests. This package contains no production code.
 | Full lifecycle | Production `wt-libvirt` and local KVM |
 
 Tests use the production API, reservation, background job, lock, registry, log,
-and recovery paths. The KVM test uses the installed golden image and registry
-cache.
+and recovery paths. The KVM test uses the installed devcontainer and host
+images and registry cache.
 
 Run from the workspace root:
 
@@ -47,7 +47,7 @@ chmod 0600 "$fixture_dir/github.token" "$fixture_dir/known_hosts"
 
 Prepare the host with the test-only install input, then stop the installed
 services. The test starts its own server and agent Git gateway, while retaining
-the installed golden image and registry cache:
+the installed images and registry cache:
 
 ```bash
 scripts/install-server \
@@ -56,9 +56,15 @@ sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service
 make e2e-tests
 ```
 
+The serialized KVM flow creates devcontainer and host worlds together. It
+checks exact host user-data, Byobu and direct host SSH, restart persistence,
+app-container recovery, fake-provider Git traffic, and cleanup. A second host
+recipe removes WT SSH access and must fail creation without leaving a disk or
+registry row.
+
 To discard an existing installation first, run `make nuke`. This is destructive:
-it removes every `wt-*` libvirt domain, the world disks and SQLite registry, the
-golden image, registry cache, installed services, and encrypted credentials.
+it removes every `wt-*` libvirt domain, the world disks and SQLite registry,
+installed images, registry cache, installed services, and encrypted credentials.
 Re-run the test-only install command afterward. A clean libvirt inventory can
 be confirmed with:
 

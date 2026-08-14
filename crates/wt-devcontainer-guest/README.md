@@ -9,4 +9,4 @@ Programs installed in each devcontainer world for app access.
 | `wt-app-proxy` | Proxy client OpenSSH to the current app container |
 | `wt-app-info` | Report the current app SSH target |
 
-Connection flow: [SSH inventory](../../docs/how/cli.md#ssh-inventory).
+Connection flow: [Devcontainer access](../../docs/worlds/devcontainer.md#access).

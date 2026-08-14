@@ -9,11 +9,12 @@ request and response between stdio and the daemon.
 
 ## Owns
 
-- Create, fork, list, get, start, and delete operations.
-- SQLite world and copy-on-write disk-graph registry.
+- Create, list, get, start, and delete operations for retained worlds.
+- Typed dispatch to devcontainer and host lifecycles.
+- Shared SQLite guest, capacity, and copy-on-write disk-graph registry.
 - In-memory coordination of concurrent world operations.
 - Reconciliation after worker failure.
-- Dispatch to `wt-libvirt`.
+- Rejection of GitHub CI worlds, whose operator service is not shipped yet.
 
 It does not listen on TCP, manage SSH authentication, or implement KVM lifecycle.
 
@@ -22,6 +23,7 @@ It does not listen on TCP, manage SSH authentication, or implement KVM lifecycle
 | Path | Contents |
 |------|----------|
 | `/etc/wt/server.toml` | Strict runtime configuration |
+| `/etc/wt/capacity.toml` | Shared CPU, RAM, and disk limits |
 | `~/.local/state/wt/instances.db` | User registry |
 Accepted provisioning operations survive client disconnects. A daemon crash or
 restart marks interrupted operations `error` at startup; cleanup requires
@@ -30,8 +32,8 @@ restart marks interrupted operations `error` at startup; cleanup requires
 ## Smoke test
 
 ```text
-printf '%s\n' '{"protocol_version":1,"operation":"list"}' | wt-server api
+wt ls
 ```
 
 Install: [Getting started](../../GETTING-STARTED.md). System flow:
-[How WT works](../../docs/how/README.md).
+[Architecture](../../docs/internals/architecture.md).
