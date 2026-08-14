@@ -2417,6 +2417,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-runner"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+ "wt-libvirt",
+ "wt-provider",
+ "wt-registry",
+ "zeroize",
+]
+
+[[package]]
 name = "wt-server"
 version = "0.0.0"
 dependencies = [

@@ -1,0 +1,18 @@
+[package]
+name = "wt-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Ephemeral GitHub Actions runner service for WT"
+
+[dependencies]
+wt-libvirt = { workspace = true }
+wt-provider = { workspace = true }
+wt-registry = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"
