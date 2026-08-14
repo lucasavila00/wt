@@ -118,6 +118,42 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
+        "printf 'persistent app state\n' > /workspaces/workspace/.wt-kvm-e2e-restart && sync",
+        "write app state before KVM restart",
+    );
+    let stopped = timings.run("stop and reconcile world", || {
+        harness.stop(&running);
+        harness
+            .sync_inventory()
+            .into_iter()
+            .find(|instance| instance.name == name)
+            .unwrap()
+    });
+    assert_eq!(stopped.status, InstanceStatus::Stopped);
+    assert_eq!(
+        stopped.last_error.as_deref(),
+        Some("guest stopped (destroyed)")
+    );
+
+    let restarted = timings.run("restart world", || harness.start(&name));
+    assert_eq!(restarted.status, InstanceStatus::Running);
+    harness.sync_inventory();
+    run_guest(
+        &harness,
+        &name,
+        "test -S /run/wt-agent-git/gateway.sock && systemctl is-active --quiet docker.service wt-agent-git-relay.service",
+        "verify guest services after KVM restart",
+    );
+    app(
+        &harness,
+        &name,
+        "test \"$(cat /workspaces/workspace/.wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
+        "verify app state and Git after KVM restart",
+    );
+
+    app(
+        &harness,
+        &name,
         "set -eu; git switch -c wrong; printf 'wrong\n' >> README.md; git commit -am wrong; ! git push origin wrong; git tag bad-tag; ! git push origin bad-tag",
         "reject branches and tags outside the world scope",
     );

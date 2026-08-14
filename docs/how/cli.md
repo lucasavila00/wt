@@ -47,7 +47,9 @@ connection interface.
 
 A stopped guest is shown as `stopped` with `wt start CONTEXT.WORLD` and
 `wt rm CONTEXT.WORLD` recovery commands. `wt start` keeps the existing writable
-disk and SSH identities; WT does not restart stopped guests automatically.
+disk and SSH identities, restarts the world's Docker containers, and waits for
+the primary devcontainer's SSH endpoint. WT does not restart stopped guests
+automatically.
 
 The server gives the world a scoped gateway grant, clones through the gateway,
 and finishes the devcontainer setup. After the guest SSH endpoint is ready,

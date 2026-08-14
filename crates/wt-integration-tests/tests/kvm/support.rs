@@ -154,6 +154,30 @@ impl KvmHarness {
         );
     }
 
+    pub(crate) fn stop(&self, instance: &wt_api::Instance) {
+        run(
+            cmd!(
+                "virsh",
+                "--connect",
+                "qemu:///system",
+                "destroy",
+                format!("wt-{}", instance.id.simple()),
+            ),
+            "stop KVM world",
+        );
+    }
+
+    pub(crate) fn start(&self, name: &InstanceName) -> wt_api::Instance {
+        let Response::Instance { instance } = call_api(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::Start { name: name.clone() },
+        ) else {
+            panic!("expected instance response");
+        };
+        *instance
+    }
+
     pub(crate) fn restart_gateway(&mut self) {
         self.gateway.kill().unwrap();
         self.gateway.wait().unwrap();
@@ -269,14 +293,11 @@ fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Res
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let kind = kind.to_owned();
     let head = head.to_owned();
-    let requests = if kind == "github" { 2 } else { 1 };
     let fixture = std::thread::spawn(move || {
-        for _ in 0..requests {
-            let (stream, _) = listener
-                .accept()
-                .map_err(|error| format!("accept provider fixture request: {error}"))?;
-            serve_provider_api_request(stream, &kind, &head)?;
-        }
+        let (stream, _) = listener
+            .accept()
+            .map_err(|error| format!("accept provider fixture request: {error}"))?;
+        serve_provider_api_request(stream, &kind, &head)?;
         Ok(())
     });
     (base_url, fixture)
@@ -434,10 +455,30 @@ pub(crate) fn wait_for_running(
             "setup failed: {instance:?}"
         );
         if let Some(status) = setup.try_wait().unwrap() {
-            panic!("world setup SSH exited before completion: {status}");
+            let log = guest_setup_log(home, name);
+            panic!("world setup SSH exited before completion: {status}\n{log}");
         }
         assert!(Instant::now() < deadline, "timed out waiting for setup");
         std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+fn guest_setup_log(home: &Path, name: &InstanceName) -> String {
+    let output = cmd!(
+        "ssh",
+        "-F",
+        home.join(".ssh/config"),
+        format!("local.{name}-host"),
+        "tail -n 200 /var/lib/wt-setup/install.log",
+    )
+    .output();
+    match output {
+        Ok(output) => format!(
+            "guest setup log:\n{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(error) => format!("could not read guest setup log: {error}"),
     }
 }
 

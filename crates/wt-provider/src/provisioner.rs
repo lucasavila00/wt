@@ -1,3 +1,4 @@
+mod containers;
 mod identity;
 
 use crate::bootstrap::BootstrapPolicy;
@@ -22,6 +23,7 @@ const SETUP_WORLD_ROOT: &[u8] = include_bytes!("../../../assets/setup-world-root
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/app-shell.sh");
 const AGENT_GIT_HINT: &[u8] = include_bytes!("../../../assets/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
+const START_READINESS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug)]
 pub struct ProvisionerConfig {
@@ -54,6 +56,12 @@ pub struct WorldProvisioner {
 struct AppTarget {
     user: String,
     address: String,
+}
+
+#[derive(Clone, Copy)]
+enum InspectionMode {
+    Observe,
+    RecoverAfterStart,
 }
 
 impl WorldProvisioner {
@@ -120,6 +128,15 @@ impl WorldProvisioner {
 
     pub fn inspect(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
+        self.inspect_with_deadline(machine, deadline, InspectionMode::Observe)
+    }
+
+    fn inspect_with_deadline(
+        &self,
+        machine: &Machine,
+        deadline: Instant,
+        mode: InspectionMode,
+    ) -> Result<World, WorkerError> {
         let transport = machine.transport.as_ref();
         let host_keys = self.read_host_keys(transport, deadline)?;
         self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
@@ -133,6 +150,9 @@ impl WorldProvisioner {
             == 0;
         let app_ssh = if complete {
             let target = self.read_app_target(transport, deadline)?;
+            if matches!(mode, InspectionMode::RecoverAfterStart) {
+                containers::restore_app_access(transport, &target.user, deadline)?;
+            }
             let host_keys = self.configure_and_verify_app_ssh(
                 transport,
                 &target,
@@ -157,6 +177,24 @@ impl WorldProvisioner {
             },
             app_ssh,
         })
+    }
+
+    pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
+        let deadline = Instant::now() + self.config.recipe_timeout;
+        containers::start_all(machine.transport.as_ref(), deadline)?;
+        loop {
+            match self.inspect_with_deadline(machine, deadline, InspectionMode::RecoverAfterStart) {
+                Ok(world) => return Ok(world),
+                Err(_) if Instant::now() < deadline => {
+                    std::thread::sleep(START_READINESS_POLL_INTERVAL);
+                }
+                Err(error) => {
+                    return Err(WorkerError::new(format!(
+                        "world readiness after start: {error}"
+                    )))
+                }
+            }
+        }
     }
 
     fn bootstrap(
