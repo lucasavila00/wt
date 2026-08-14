@@ -13,7 +13,7 @@ registry code, but no operator service or image installer yet.
 
 ## Use WT
 
-- [Getting started](../GETTING-STARTED.md)
+- [Development and setup](../DEVELOPMENT.md)
 - [World contracts](./worlds/README.md): [devcontainer](./worlds/devcontainer.md),
   [host](./worlds/host.md), and [GitHub CI](./worlds/github-ci.md)
 - [Client and SSH](./guides/client.md) and [server operations](./guides/server.md)

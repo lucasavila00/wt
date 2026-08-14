@@ -35,5 +35,5 @@ restart marks interrupted operations `error` at startup; cleanup requires
 wt ls
 ```
 
-Install: [Getting started](../../GETTING-STARTED.md). System flow:
+Install: [Development and setup](../../DEVELOPMENT.md). System flow:
 [Architecture](../../docs/internals/architecture.md).

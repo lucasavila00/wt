@@ -35,13 +35,6 @@ guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
 the shared WT terminal profile. Ubuntu's Git remains available, but WT adds no
 checkout, Git grant, agent socket, or provider credentials.
 
-Example:
-
-```yaml
-#cloud-config
-package_update: true
-packages: [nginx]
-write_files:
-  - path: /etc/motd
-    content: managed by wt
-```
+Use the checked-in
+[host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete
+example.
