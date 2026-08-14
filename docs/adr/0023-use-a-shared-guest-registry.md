@@ -37,6 +37,10 @@ CPU, memory, and disk limits. Both services read that file and pass the same
 limits to the registry. Do not derive admission from currently free resources;
 they change while a request is running.
 
+Capacity errors identify whether CPU, memory, or disk is full and report its
+limit, reserved amount, and request. This replaces the memory-only wire shape
+and bumps the WT protocol version.
+
 Every retained guest reserves its configured resources regardless of lifecycle
 state. Delete the guest row only after its libvirt machine and disposable disks
 have been removed. Failed cleanup keeps the row and its reservation for later
