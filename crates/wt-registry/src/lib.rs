@@ -4,7 +4,7 @@ use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use schema::guests;
+use schema::{disk_nodes, guests, runners};
 use std::cell::RefCell;
 use std::path::Path;
 use thiserror::Error;
@@ -56,6 +56,46 @@ pub struct Guest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunnerStatus {
+    Reserved,
+    Starting,
+    Running,
+    CleanupPending,
+}
+
+impl RunnerStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Reserved => "reserved",
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::CleanupPending => "cleanup_pending",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, RegistryError> {
+        match value {
+            "reserved" => Ok(Self::Reserved),
+            "starting" => Ok(Self::Starting),
+            "running" => Ok(Self::Running),
+            "cleanup_pending" => Ok(Self::CleanupPending),
+            _ => Err(RegistryError::InvalidData(format!(
+                "invalid runner status: {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Runner {
+    pub guest: Guest,
+    pub name: String,
+    pub status: RunnerStatus,
+    pub github_runner_id: Option<u64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Resource {
     Cpu,
     Memory,
@@ -97,6 +137,22 @@ struct NewGuest<'a> {
     disk_gib: i64,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = disk_nodes)]
+struct NewDiskNode {
+    id: String,
+    parent_id: Option<String>,
+    immutable: bool,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = runners)]
+struct NewRunner<'a> {
+    id: String,
+    name: &'a str,
+    status: &'static str,
+}
+
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = guests)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
@@ -108,6 +164,17 @@ pub struct GuestRow {
     pub vcpus: i64,
     pub memory_mib: i64,
     pub disk_gib: i64,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = runners)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct RunnerRow {
+    id: String,
+    name: String,
+    status: String,
+    github_runner_id: Option<i64>,
+    last_error: Option<String>,
 }
 
 #[derive(QueryableByName)]
@@ -238,6 +305,123 @@ pub fn reserved_resources(connection: &mut SqliteConnection) -> Result<Resources
     })
 }
 
+impl Registry {
+    pub fn reserve_runner(
+        &self,
+        id: Uuid,
+        name: &str,
+        backend_id: String,
+        disk_id: Uuid,
+        resources: Resources,
+        limit: Resources,
+    ) -> Result<Runner, RegistryError> {
+        self.immediate_transaction(|connection| {
+            diesel::insert_into(disk_nodes::table)
+                .values(NewDiskNode {
+                    id: disk_id.to_string(),
+                    parent_id: None,
+                    immutable: false,
+                })
+                .execute(connection)?;
+            let guest = Guest {
+                id,
+                kind: GuestKind::Runner,
+                backend_id,
+                head_disk_id: disk_id,
+                resources,
+            };
+            insert_guest(connection, &guest, limit)?;
+            diesel::insert_into(runners::table)
+                .values(NewRunner {
+                    id: id.to_string(),
+                    name,
+                    status: RunnerStatus::Reserved.as_str(),
+                })
+                .execute(connection)?;
+            Ok(Runner {
+                guest,
+                name: name.to_owned(),
+                status: RunnerStatus::Reserved,
+                github_runner_id: None,
+                last_error: None,
+            })
+        })
+    }
+
+    pub fn list_runners(&self) -> Result<Vec<Runner>, RegistryError> {
+        self.read(|connection| {
+            guests::table
+                .inner_join(runners::table)
+                .order(runners::name)
+                .select((GuestRow::as_select(), RunnerRow::as_select()))
+                .load::<(GuestRow, RunnerRow)>(connection)?
+                .into_iter()
+                .map(runner_from_rows)
+                .collect()
+        })
+    }
+
+    pub fn mark_runner(
+        &self,
+        id: Uuid,
+        status: RunnerStatus,
+        github_runner_id: Option<u64>,
+        last_error: Option<&str>,
+    ) -> Result<(), RegistryError> {
+        let github_runner_id = github_runner_id
+            .map(|value| to_i64(value, "github_runner_id"))
+            .transpose()?;
+        self.read(|connection| {
+            let changed = diesel::update(runners::table.find(id.to_string()))
+                .set((
+                    runners::status.eq(status.as_str()),
+                    runners::github_runner_id.eq(github_runner_id),
+                    runners::last_error.eq(last_error),
+                ))
+                .execute(connection)?;
+            if changed == 1 {
+                Ok(())
+            } else {
+                Err(RegistryError::InvalidData("runner not found".into()))
+            }
+        })
+    }
+
+    pub fn release_runner(&self, id: Uuid) -> Result<(), RegistryError> {
+        self.transaction(|connection| {
+            let head_disk_id = guests::table
+                .find(id.to_string())
+                .filter(guests::kind.eq(GuestKind::Runner.as_str()))
+                .select(guests::head_disk_id)
+                .first::<String>(connection)
+                .optional()?
+                .ok_or_else(|| RegistryError::InvalidData("runner not found".into()))?;
+            diesel::delete(guests::table.find(id.to_string())).execute(connection)?;
+            diesel::delete(disk_nodes::table.find(head_disk_id)).execute(connection)?;
+            Ok(())
+        })
+    }
+}
+
+fn runner_from_rows((guest_row, row): (GuestRow, RunnerRow)) -> Result<Runner, RegistryError> {
+    let guest: Guest = guest_row.try_into()?;
+    if guest.kind != GuestKind::Runner || guest.id.to_string() != row.id {
+        return Err(RegistryError::InvalidData(
+            "runner is linked to an invalid guest".into(),
+        ));
+    }
+    Ok(Runner {
+        guest,
+        name: row.name,
+        status: RunnerStatus::parse(&row.status)?,
+        github_runner_id: row
+            .github_runner_id
+            .map(|value| to_u64(value, "github_runner_id"))
+            .transpose()?,
+        last_error: row.last_error,
+    })
+}
+
 impl TryFrom<GuestRow> for Guest {
     type Error = RegistryError;
 
@@ -326,5 +510,53 @@ mod tests {
                 requested: 2048,
             }
         ));
+    }
+
+    #[test]
+    fn runner_release_removes_its_guest_and_reservation() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
+        let id = Uuid::new_v4();
+        let disk_id = Uuid::new_v4();
+        let resources = Resources {
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+        };
+        let runner = registry
+            .reserve_runner(
+                id,
+                "runner-test",
+                format!("wt-{}", id.simple()),
+                disk_id,
+                resources,
+                resources,
+            )
+            .unwrap();
+        assert_eq!(runner.status, RunnerStatus::Reserved);
+        registry
+            .mark_runner(
+                id,
+                RunnerStatus::CleanupPending,
+                Some(42),
+                Some("runner exited"),
+            )
+            .unwrap();
+        let listed = registry.list_runners().unwrap();
+        assert_eq!(listed[0].status, RunnerStatus::CleanupPending);
+        assert_eq!(listed[0].github_runner_id, Some(42));
+        assert_eq!(listed[0].last_error.as_deref(), Some("runner exited"));
+
+        registry.release_runner(id).unwrap();
+
+        assert!(registry.list_runners().unwrap().is_empty());
+        assert_eq!(
+            registry.read(reserved_resources).unwrap(),
+            Resources {
+                vcpus: 0,
+                memory_mib: 0,
+                disk_gib: 0,
+            }
+        );
     }
 }
