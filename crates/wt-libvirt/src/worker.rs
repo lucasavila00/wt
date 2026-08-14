@@ -30,6 +30,9 @@ struct LibvirtConnection(Connect);
 
 impl LibvirtConnection {
     fn open() -> Result<Self, WorkerError> {
+        // Libvirt's default callback prints every failed poll even though callers
+        // handle and report the returned error with more useful context.
+        virt::error::clear_error_callback();
         Connect::open(Some(LIBVIRT_URI))
             .map(Self)
             .map_err(|error| context("connect to libvirt", error))
@@ -53,6 +56,7 @@ impl Drop for LibvirtConnection {
 #[derive(Clone)]
 pub struct LibvirtProvider {
     config: MachineConfig,
+    image_virtual_size: u64,
 }
 
 impl LibvirtProvider {
@@ -77,7 +81,11 @@ impl LibvirtProvider {
         let connection = LibvirtConnection::open()?;
         Network::lookup_by_name(&connection, &config.network)
             .map_err(|error| context("look up libvirt network", error))?;
-        Ok(Self { config })
+        let image_virtual_size = read_image_virtual_size(&config.image)?;
+        Ok(Self {
+            config,
+            image_virtual_size,
+        })
     }
 
     pub fn network_bridge_address(&self) -> Result<String, WorkerError> {
@@ -89,14 +97,14 @@ impl LibvirtProvider {
         let deadline = Instant::now() + self.config.boot_timeout;
         loop {
             let domain = lookup_domain(provider_id)?;
-            if domain
-                .qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0)
-                .is_ok()
-            {
-                return Ok(());
-            }
+            let error = match domain.qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0) {
+                Ok(_) => return Ok(()),
+                Err(error) => error,
+            };
             if Instant::now() >= deadline {
-                return Err(WorkerError::new("timed out waiting for QEMU guest agent"));
+                return Err(WorkerError::new(format!(
+                    "timed out waiting for QEMU guest agent in domain {provider_id}; last libvirt error: {error}"
+                )));
             }
             std::thread::sleep(GUEST_AGENT_POLL_INTERVAL);
         }
@@ -260,6 +268,7 @@ impl LibvirtProvider {
                 "machine CPU, memory, and disk resources must be greater than zero",
             ));
         }
+        validate_disk_size(spec.disk_gib, self.image_virtual_size)?;
         writeln!(progress, "Creating KVM guest {}...", spec.provider_id)
             .map_err(|error| context("write machine progress", error))?;
         let disk = world::disk_path(&self.config.worlds_dir, spec.disk_id);
@@ -640,6 +649,40 @@ fn require_file(path: &std::path::Path, label: &str) -> Result<(), WorkerError> 
             path.display()
         )))
     }
+}
+
+fn read_image_virtual_size(path: &std::path::Path) -> Result<u64, WorkerError> {
+    let output = cmd!("qemu-img", "info", "--output=json", path)
+        .output()
+        .map_err(|error| context("read guest image size", error))?;
+    if !output.status.success() {
+        return Err(WorkerError::new(format!(
+            "read guest image size: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    parse_image_virtual_size(&output.stdout)
+}
+
+fn parse_image_virtual_size(output: &[u8]) -> Result<u64, WorkerError> {
+    serde_json::from_slice::<serde_json::Value>(output)
+        .map_err(|error| context("decode guest image information", error))?
+        .get("virtual-size")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|size| *size > 0)
+        .ok_or_else(|| WorkerError::new("guest image has no positive virtual size"))
+}
+
+fn validate_disk_size(disk_gib: u64, image_virtual_size: u64) -> Result<(), WorkerError> {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    let requested = disk_gib.saturating_mul(GIB);
+    if requested >= image_virtual_size {
+        return Ok(());
+    }
+    let minimum_gib = image_virtual_size.div_ceil(GIB);
+    Err(WorkerError::new(format!(
+        "machine disk is {disk_gib} GiB but the guest image requires at least {minimum_gib} GiB"
+    )))
 }
 
 fn prepare_qemu_file_access(

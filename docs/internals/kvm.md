@@ -24,12 +24,15 @@ source:
 - host: OpenSSH, QEMU guest agent, Byobu, tmux, and shared terminal assets.
 
 Each image has its own provenance manifest and checksum. Image paths cannot be
-the same file. Per-world writable disks and SSH host keys remain unique.
+the same file. A world disk cannot be smaller than its backing image; the
+provider rejects it before creating the overlay. Per-world writable disks and
+SSH host keys remain unique.
 
 ## Readiness
 
-Libvirt waits for QEMU guest agent and an IPv4 address. The kind lifecycle then
-defines readiness:
+Libvirt waits for QEMU guest agent and an IPv4 address. Expected failed agent
+polls are silent; a timeout names the domain and reports the last libvirt error.
+The kind lifecycle then defines readiness:
 
 - devcontainer verifies guest setup and app SSH;
 - host waits for cloud-init, pins host SSH, proves `wt` login, and removes its

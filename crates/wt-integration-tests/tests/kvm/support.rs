@@ -148,7 +148,7 @@ impl KvmHarness {
                 name: name.clone(),
                 vcpus: 1,
                 memory_mib: 1024,
-                disk_gib: 16,
+                disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 application: CreateApplication::Host {
                     user_data: user_data.to_owned(),

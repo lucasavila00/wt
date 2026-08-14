@@ -97,6 +97,15 @@ Libguestfs may stage and inspect files and clear identity while the disk is
 offline. Package installation and recipe execution happen only in KVM and do
 not depend on libguestfs networking.
 
+The first combined KVM E2E exposed a disk-size failure after image publication:
+the host test requested a 16 GiB overlay on a 32 GiB backing image. QEMU
+presented the smaller disk, truncating the backing image's GPT and root
+partition. Ubuntu fell into initramfs while repeated expected guest-agent poll
+errors hid the useful timeout. The provider now reads the backing virtual size
+at startup, rejects smaller world disks before creation, suppresses libvirt's
+duplicate default poll output, and reports the domain and last agent error on
+timeout.
+
 ## Rejected
 
 - Libguestfs package installation depends on appliance networking that is not
