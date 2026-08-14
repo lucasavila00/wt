@@ -3,6 +3,7 @@ use super::*;
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
+const HOST_RESOLVER_PATH: &str = "/run/systemd/resolve/resolv.conf";
 const RECIPE_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -163,6 +164,12 @@ fn extract_terminal_files(
 }
 
 fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) -> Result<()> {
+    let resolver = Path::new(HOST_RESOLVER_PATH);
+    if !resolver.is_file() {
+        bail!(
+            "host image build resolver is unavailable at {HOST_RESOLVER_PATH}; systemd-resolved must be active"
+        );
+    }
     runner.run(
         cmd!(
             "sudo",
@@ -170,6 +177,10 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
             "-a",
             build,
             "--network",
+            "--run-command",
+            "rm -f /etc/resolv.conf",
+            "--upload",
+            format!("{}:/etc/resolv.conf", resolver.display()),
             "--run-command",
             install_prerequisites_command(),
             "--upload",
@@ -206,7 +217,7 @@ fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) 
 }
 
 fn install_prerequisites_command() -> &'static str {
-    "export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done"
+    "export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done; rm -f /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
 }
 
 fn install_command() -> String {
@@ -276,6 +287,6 @@ fn verify(
 mod tests {
     #[test]
     fn host_package_install_retries_transient_failures() {
-        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done");
+        insta::assert_snapshot!(super::install_prerequisites_command(), @"export DEBIAN_FRONTEND=noninteractive; attempt=0; until apt-get update && apt-get install -y --no-install-recommends openssh-server qemu-guest-agent; do attempt=$((attempt + 1)); test \"$attempt\" -lt 30 || exit 1; sleep 2; done; rm -f /etc/resolv.conf; ln -s ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf");
     }
 }
