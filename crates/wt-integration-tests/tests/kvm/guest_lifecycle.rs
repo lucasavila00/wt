@@ -1,5 +1,6 @@
 use super::*;
 use std::path::Path;
+use std::process::Stdio;
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
@@ -43,10 +44,11 @@ fn agent_git_transport_works_without_provider_credentials() {
     assert!(!vendor_data.contains("persistent-host-state"));
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
+    start_host_byobu(&harness, &host_name);
     run_host(
         &harness,
         &host_name,
-        "set -eu; test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state; sudo -n true; test -z \"${SSH_AUTH_SOCK:-}\"; test ! -S /run/wt-agent-git/gateway.sock; ! command -v docker; ! command -v devcontainer; ! command -v git; test ! -e /workspace; test ! -e /usr/local/bin/wt-app-shell; test ! -e /usr/local/bin/wt-agent-git-relay",
+        "set -eu; test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state; sudo -n true; test -z \"${SSH_AUTH_SOCK:-}\"; test ! -S /run/wt-agent-git/gateway.sock; ! command -v docker; ! command -v devcontainer; ! command -v git; test ! -e /workspace; test ! -e /usr/local/bin/wt-app-shell; test ! -e /usr/local/bin/wt-agent-git-relay; test -x /usr/local/bin/wt-host-shell; test \"$(tmux -V)\" = 'tmux 3.6b'; test \"$(dpkg-query -W -f='${Version}' byobu)\" = '7.15-0ubuntu1'; TERM=ghostty tput colors >/dev/null; TERM=xterm-ghostty tput colors >/dev/null; tmux has-session -t wt-host",
         "verify raw host world",
     );
 
@@ -253,12 +255,55 @@ fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &s
         harness.temp.path().join(".ssh/config"),
         "-i",
         &harness.git.guest_key,
-        format!("local.{name}"),
+        format!("local.{name}-vs"),
         command,
     )
     .output()
     .unwrap();
     ensure_success(action, &output).unwrap();
+}
+
+fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
+    let mut command = cmd!(
+        "ssh",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}"),
+    );
+    command
+        .env_remove("SSH_AUTH_SOCK")
+        .env("TERM", "xterm-ghostty")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = command.spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let output = cmd!(
+            "ssh",
+            "-F",
+            harness.temp.path().join(".ssh/config"),
+            "-i",
+            &harness.git.guest_key,
+            format!("local.{name}-vs"),
+            "tmux has-session -t wt-host",
+        )
+        .output()
+        .unwrap();
+        if output.status.success() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "host Byobu session did not start: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {

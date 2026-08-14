@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use wt_devcontainer::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
 pub(super) const RECIPE_VERSION: u32 = 3;
-const BYOBU_VERSION: &str = "7.15-0ubuntu1";
+pub(super) const BYOBU_VERSION: &str = "7.15-0ubuntu1";
 pub(super) const BYOBU_DEB: &str = "byobu_7.15-0ubuntu1_all.deb";
 pub(super) const BYOBU_SHA256: &str =
     "7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc";

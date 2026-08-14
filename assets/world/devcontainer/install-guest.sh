@@ -33,18 +33,10 @@ install -d -m 0755 -o wt -g wt /workspace
 install -d -m 0700 -o wt -g wt /home/wt/.ssh
 install -o wt -g wt -m 0600 "$stage-authorized-keys" /home/wt/.ssh/authorized_keys
 install -d -m 0755 -o wt -g wt /home/wt/.byobu
-printf '%s\n' \
-    'set-option -g default-command /usr/local/bin/wt-app-pane' \
-    'set-option -g default-terminal tmux-256color' \
-    'set-option -g mouse on' \
-    "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
-    "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
-    'set-option -s set-clipboard on' \
-    'set-option -g allow-passthrough on' \
-    'set-option -g focus-events on' \
-    "set-option -as terminal-features ',xterm-ghostty:clipboard:hyperlinks'" \
+printf '%s\n' 'set-option -g default-command /usr/local/bin/wt-app-pane' \
     > /home/wt/.byobu/.tmux.conf
-printf 'BACKGROUND=k\nFOREGROUND=w\nMONOCHROME=1\n' > /home/wt/.byobu/color
+cat "$stage-tmux-config" >> /home/wt/.byobu/.tmux.conf
+install -m 0644 "$stage-byobu-color" /home/wt/.byobu/color
 chown wt:wt /home/wt/.byobu/.tmux.conf /home/wt/.byobu/color
 chmod 0644 /home/wt/.byobu/.tmux.conf /home/wt/.byobu/color
 ssh-keygen -A
@@ -60,18 +52,9 @@ install -m 0755 "$stage-agent-git-relay" /usr/local/bin/wt-agent-git-relay
 install -m 0755 "$stage-agent-git-remote" /usr/local/bin/git-remote-ag
 install -m 0755 "$stage-ag-git" /usr/local/bin/ag-git
 install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-hint
-printf '%s\n' \
-    'set-option -g default-command /usr/local/bin/wt-app-pane' \
-    'set-option -g remain-on-exit failed' \
-    'set-option -g default-terminal tmux-256color' \
-    'set-option -g mouse on' \
-    "bind-key -n WheelUpPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'copy-mode -e -t ='" \
-    "bind-key -n WheelDownPane if-shell -F -t = '#{mouse_any_flag}' 'send-keys -M' 'select-pane -t ='" \
-    'set-option -s set-clipboard on' \
-    'set-option -g allow-passthrough on' \
-    'set-option -g focus-events on' \
-    "set-option -as terminal-features ',xterm-ghostty:clipboard:hyperlinks'" \
+printf '%s\n' 'set-option -g default-command /usr/local/bin/wt-app-pane' \
     > /usr/local/share/wt-tmux.conf
+cat "$stage-tmux-config" >> /usr/local/share/wt-tmux.conf
 chmod 0644 /usr/local/share/wt-tmux.conf
 install -d -m 0755 -o wt -g wt /var/lib/wt-setup
 install -d -m 0700 -o wt -g wt /var/lib/wt-agent-git

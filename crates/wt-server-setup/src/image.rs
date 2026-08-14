@@ -1,4 +1,6 @@
 mod console;
+#[path = "image/host.rs"]
+mod host_image;
 mod recipe;
 
 #[cfg(test)]
@@ -48,18 +50,6 @@ struct ImageManifest {
     devcontainer_cli: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct HostImageManifest {
-    version: u32,
-    recipe_version: u32,
-    source_sha256: String,
-    config_sha256: String,
-    image_sha256: String,
-}
-
-const HOST_IMAGE_RECIPE_VERSION: u32 = 1;
-
 pub(crate) fn ensure(
     runner: &impl Runner,
     input: &InstallInput,
@@ -92,7 +82,8 @@ pub(crate) fn ensure(
         _ => bail!("image drift: image and manifest must either both exist or both be absent"),
     }
     let source = source_image(input, runner)?;
-    ensure_host_image(runner, input, server, server_bytes, &source)
+    let byobu = byobu_package(runner)?;
+    host_image::ensure(runner, input, server, server_bytes, &source, &byobu)
 }
 
 pub(crate) fn rebuild(
@@ -114,146 +105,7 @@ pub(crate) fn rebuild(
         &byobu,
         &manifest,
     )?;
-    build_host_image(runner, input, server, server_bytes, &source)
-}
-
-fn ensure_host_image(
-    runner: &impl Runner,
-    input: &InstallInput,
-    server: &ServerConfig,
-    server_bytes: &[u8],
-    source: &Path,
-) -> Result<()> {
-    let manifest_path = manifest_path(&server.image.host_path);
-    match (server.image.host_path.exists(), manifest_path.exists()) {
-        (true, true) => verify_host_image(input, server, server_bytes, &manifest_path),
-        (false, false) => build_host_image(runner, input, server, server_bytes, source),
-        _ => bail!("host image drift: image and manifest must both exist or both be absent"),
-    }
-}
-
-fn build_host_image(
-    runner: &impl Runner,
-    input: &InstallInput,
-    server: &ServerConfig,
-    server_bytes: &[u8],
-    source: &Path,
-) -> Result<()> {
-    let build = server.libvirt.worlds_dir.join("wt-host-image-build.qcow2");
-    if build.exists() {
-        bail!("stale host image build exists: {}", build.display());
-    }
-    let result = (|| {
-        runner.run(
-            cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, &build),
-            "copy host source image",
-        )?;
-        runner.run(
-            cmd!(
-                "qemu-img",
-                "resize",
-                &build,
-                format!("{}G", input.image.build_disk_gib)
-            ),
-            "resize host image",
-        )?;
-        runner.run(
-            cmd!(
-                "sudo",
-                "virt-customize",
-                "-a",
-                &build,
-                "--network",
-                "--install",
-                "openssh-server,qemu-guest-agent",
-                "--run-command",
-                "systemctl enable qemu-guest-agent.service ssh.service"
-            ),
-            "install host image prerequisites",
-        )?;
-        runner.run(
-            cmd!(
-                "sudo",
-                "virt-sysprep",
-                "-a",
-                &build,
-                "--operations",
-                "machine-id,ssh-hostkeys"
-            ),
-            "clear host image identity",
-        )?;
-        runner.run(
-            cmd!("sudo", "chown", "wt:wt", &build),
-            "own prepared host image",
-        )?;
-        runner.run(
-            cmd!("sudo", "chmod", "0640", &build),
-            "permit prepared host image reading",
-        )?;
-        runner.run(cmd!("qemu-img", "check", &build), "check host image")?;
-        let manifest = HostImageManifest {
-            version: IMAGE_MANIFEST_VERSION,
-            recipe_version: HOST_IMAGE_RECIPE_VERSION,
-            source_sha256: input.source_sha256().to_ascii_lowercase(),
-            config_sha256: image_config_sha(server_bytes, input),
-            image_sha256: sha_file(&build)?,
-        };
-        publish_host_image(runner, server, &build, &manifest)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&build);
-    }
-    result
-}
-
-fn publish_host_image(
-    runner: &impl Runner,
-    server: &ServerConfig,
-    prepared: &Path,
-    manifest: &HostImageManifest,
-) -> Result<()> {
-    let manifest_path = manifest_path(&server.image.host_path);
-    let image_temporary = sibling_temporary(&server.image.host_path)?;
-    let manifest_temporary = sibling_temporary(&manifest_path)?;
-    let local_manifest = prepared.with_extension("manifest.json");
-    fs::write(&local_manifest, serde_json::to_vec_pretty(manifest)?)?;
-    sudo_install_owned(
-        runner,
-        prepared,
-        &image_temporary,
-        "libvirt-qemu",
-        "kvm",
-        0o644,
-    )?;
-    sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
-    sudo_move(runner, &image_temporary, &server.image.host_path)?;
-    sudo_move(runner, &manifest_temporary, &manifest_path)?;
-    fs::remove_file(local_manifest)?;
-    fs::remove_file(prepared)?;
-    Ok(())
-}
-
-fn verify_host_image(
-    input: &InstallInput,
-    server: &ServerConfig,
-    server_bytes: &[u8],
-    manifest_path: &Path,
-) -> Result<()> {
-    require_named_file(&server.image.host_path, "libvirt-qemu", "kvm", 0o644)?;
-    require_root_file(manifest_path, 0o644)?;
-    let manifest: HostImageManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
-    if manifest.version != IMAGE_MANIFEST_VERSION
-        || manifest.recipe_version != HOST_IMAGE_RECIPE_VERSION
-        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
-        || manifest.config_sha256 != image_config_sha(server_bytes, input)
-    {
-        bail!("installed host image provenance differs from the current install input");
-    }
-    require_sha(
-        &server.image.host_path,
-        &manifest.image_sha256,
-        "installed host image",
-    )
+    host_image::build(runner, input, server, server_bytes, &source, &byobu)
 }
 
 fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {

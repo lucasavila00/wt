@@ -96,7 +96,8 @@ fn run() -> Result<()> {
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
             if instance.kind() == WorldKind::Host {
-                println!("\nConnect: ssh {}.{}", context.name, instance.name);
+                println!("\nByobu: ssh {}.{}", context.name, instance.name);
+                println!("Direct: ssh {}.{}-vs", context.name, instance.name);
                 println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
                 return Ok(());
             }
