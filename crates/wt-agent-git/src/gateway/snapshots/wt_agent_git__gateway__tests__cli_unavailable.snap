@@ -1,5 +1,6 @@
 ---
-source: crates/wt-agent-git/src/gateway.rs
+source: crates/wt-agent-git/src/gateway/tests.rs
+assertion_line: 41
 expression: cli_unavailable()
 ---
 ag-git: provider API commands are not available for this project.
