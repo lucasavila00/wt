@@ -112,7 +112,7 @@ impl KvmHarness {
             Operation::Create(CreateInstance {
                 name: name.clone(),
                 vcpus: 1,
-                memory_mib: 1024,
+                memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 application: CreateApplication::Devcontainer {
@@ -147,7 +147,7 @@ impl KvmHarness {
             Operation::Create(CreateInstance {
                 name: name.clone(),
                 vcpus: 1,
-                memory_mib: 1024,
+                memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 application: CreateApplication::Host {
