@@ -20,12 +20,12 @@ impl GitFixture {
         fs::create_dir(seed.join(".devcontainer")).unwrap();
         fs::write(
             seed.join(".devcontainer/devcontainer.json"),
-            r#"{"build":{"dockerfile":"Dockerfile"},"remoteUser":"root"}\n"#,
+            include_str!("../../../../.devcontainer/devcontainer.json"),
         )
         .unwrap();
         fs::write(
             seed.join(".devcontainer/Dockerfile"),
-            "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git openssh-client && rm -rf /var/lib/apt/lists/*\n",
+            include_str!("../../../../.devcontainer/Dockerfile"),
         )
         .unwrap();
         fs::write(seed.join("README.md"), "WT agent Git fixture\n").unwrap();

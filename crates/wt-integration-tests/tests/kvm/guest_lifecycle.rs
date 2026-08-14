@@ -2,6 +2,9 @@ use super::*;
 use std::path::Path;
 use std::process::Stdio;
 
+const HOST_PROJECT_USER_DATA: &str =
+    include_str!("../../../../examples/host-world/cloud-init.yaml");
+
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
 fn agent_git_transport_works_without_provider_credentials() {
@@ -23,10 +26,8 @@ fn agent_git_transport_works_without_provider_credentials() {
     });
     assert_eq!(running.status, InstanceStatus::Running);
     let host_name = unique_name("host");
-    let host_user_data =
-        "#cloud-config\nwrite_files:\n  - path: /var/tmp/wt-host-e2e\n    content: persistent-host-state\n";
     let host = timings.run("create host world", || {
-        harness.create_host(&host_name, host_user_data)
+        harness.create_host(&host_name, HOST_PROJECT_USER_DATA)
     });
     assert_eq!(host.status, InstanceStatus::Running);
     assert_eq!(host.kind(), wt_api::WorldKind::Host);
@@ -37,18 +38,41 @@ fn agent_git_transport_works_without_provider_credentials() {
         .join(format!("wt-{}", host.id.simple()));
     assert_eq!(
         fs::read_to_string(host_machine.join("user-data")).unwrap(),
-        host_user_data
+        HOST_PROJECT_USER_DATA
     );
     let vendor_data = fs::read_to_string(host_machine.join("vendor-data")).unwrap();
     assert!(vendor_data.contains("name: wt"));
-    assert!(!vendor_data.contains("persistent-host-state"));
+    assert!(!vendor_data.contains("wt-project-development"));
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
     start_host_byobu(&harness, &host_name);
     run_host(
         &harness,
         &host_name,
-        "set -eu; test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state; sudo -n true; test -z \"${SSH_AUTH_SOCK:-}\"; test ! -S /run/wt-agent-git/gateway.sock; ! command -v docker; ! command -v devcontainer; git --version; test ! -e /workspace; test ! -e /usr/local/bin/wt-app-shell; test ! -e /usr/local/bin/wt-agent-git-relay; test -x /usr/local/bin/wt-host-shell; test \"$(tmux -V)\" = 'tmux 3.6b'; test \"$(dpkg-query -W -f='${Version}' byobu)\" = '7.15-0ubuntu1'; TERM=ghostty tput colors >/dev/null; TERM=xterm-ghostty tput colors >/dev/null; tmux has-session -t wt-host",
+        concat!(
+            "set -eu; ",
+            "test \"$(id -un)\" = wt; ",
+            "test -f /var/lib/wt-host-example-ready; ",
+            "test -d /home/wt/wt/.git; ",
+            "sudo -n true; ",
+            "test -z \"${SSH_AUTH_SOCK:-}\"; ",
+            "test ! -S /run/wt-agent-git/gateway.sock; ",
+            "test ! -e /home/wt/.codex/auth.json; ",
+            "! command -v docker; ",
+            "! command -v devcontainer; ",
+            "git --version; rustc --version; cargo clippy --version; rustfmt --version; ",
+            "codex --version; pkg-config --exists libvirt; ",
+            "cd /home/wt/wt; cargo clippy --workspace --all-targets -- -D warnings; ",
+            "test ! -e /workspace; ",
+            "test ! -e /usr/local/bin/wt-app-shell; ",
+            "test ! -e /usr/local/bin/wt-agent-git-relay; ",
+            "test -x /usr/local/bin/wt-host-shell; ",
+            "test \"$(tmux -V)\" = 'tmux 3.6b'; ",
+            "test \"$(dpkg-query -W -f='${Version}' byobu)\" = '7.15-0ubuntu1'; ",
+            "TERM=ghostty tput colors >/dev/null; ",
+            "TERM=xterm-ghostty tput colors >/dev/null; ",
+            "tmux has-session -t wt-host",
+        ),
         "verify raw host world",
     );
 
@@ -63,6 +87,18 @@ fn agent_git_transport_works_without_provider_credentials() {
         &name,
         "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock && test \"$(git remote get-url origin)\" = ag::git@local.test:acme/widget.git",
         "verify devcontainer gateway setup",
+    );
+    app(
+        &harness,
+        &name,
+        concat!(
+            "set -eu; ",
+            "test \"$(id -un)\" = root; ",
+            "rustc --version; cargo clippy --version; rustfmt --version; ",
+            "codex --version; pkg-config --exists libvirt; ",
+            "test ! -e /root/.codex/auth.json",
+        ),
+        "verify devcontainer project tools",
     );
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
@@ -195,7 +231,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "test \"$(cat /var/tmp/wt-host-e2e)\" = persistent-host-state",
+        "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git",
         "verify host state after KVM restart",
     );
 
