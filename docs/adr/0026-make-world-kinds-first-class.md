@@ -2,8 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-14
-- Amends: [ADR 0023](0023-run-github-actions-jobs-in-ephemeral-kvm-guests.md)
-  and [ADR 0024](0024-use-a-shared-guest-registry.md)
+- Amends: [ADR 0016](0016-keep-qemu-and-remove-redundant-world-boot-work.md),
+  [ADR 0023](0023-run-github-actions-jobs-in-ephemeral-kvm-guests.md), and
+  [ADR 0024](0024-use-a-shared-guest-registry.md)
 
 ## Context
 
@@ -33,12 +34,25 @@ grant, devcontainer, guest and app SSH, persistent session, and editor support.
 
 A **host world** stops at Ubuntu guest readiness. Here `host` means the guest,
 not the physical WT server. It has OpenSSH, a managed login account, authorized
-public keys, and unique machine and SSH identities. It has no Git input, WT
+public keys, and unique machine and SSH identities. WT gives it no Git input,
 checkout, agent Git grant, devcontainer, app SSH, or editor flow. Connecting to
 it opens a normal Ubuntu shell.
 
 A host world is not a devcontainer world with empty fields. It gets a small
-host-specific provisioner so Git and app state cannot appear accidentally.
+host-specific provisioner so WT does not create Git or app state accidentally.
+
+Host creation requires a cloud-init user-data document as its recipe; a minimal
+`#cloud-config` is valid. WT passes that document through without merging YAML.
+WT-owned identity, networking, login, and authorized-key data stay in separate
+NoCloud metadata, network configuration, and vendor data. The host becomes
+ready only after cloud-init finishes successfully. The exact recipe is part of
+the create fingerprint.
+
+This amends ADR 0016 only for host worlds. Other world kinds keep their existing
+cloud-init ownership.
+
+The recipe runs as root and may install anything. That does not make installed
+software a WT-managed capability or grant it WT credentials.
 
 A **GitHub CI world** is the existing runner guest. `wt-runner` creates it with
 short-lived JIT material, runs one job, and destroys it. It has no interactive
@@ -57,8 +71,9 @@ Keep the common guest record for machine, disk, and capacity state. Store the
 world kind and owner with it, and keep application state in kind-specific
 records. Do not force interactive and CI worlds into one lifecycle enum.
 
-Creation requests are tagged by kind. `wt new host` skips Git and devcontainer
-questions. CI worlds are created only by `wt-runner`.
+Creation requests are tagged by kind. `wt new host` asks for the cloud-init
+recipe instead of Git and devcontainer inputs. CI worlds are created only by
+`wt-runner`.
 
 Credential boundaries stay strict:
 
@@ -67,8 +82,8 @@ Credential boundaries stay strict:
 - Host worlds receive authorized public keys only.
 - GitHub CI worlds receive one job's JIT runner material only.
 
-GitHub App credentials stay on the WT server. No world receives a developer's
-private key or provider token.
+GitHub App credentials stay on the WT server. WT never supplies a developer's
+private key or provider token to a world.
 
 ## Reset and protocol
 
@@ -86,4 +101,5 @@ mixed binaries.
 model without pretending the three applications have the same lifecycle.
 
 Each kind needs a real KVM lifecycle test using local fixtures, not real
-developer or provider credentials.
+developer or provider credentials. The host test verifies its cloud-init recipe
+before testing stop, start, and deletion.
