@@ -1,19 +1,15 @@
-use crate::schema::{disk_nodes, instances};
-use diesel::connection::SimpleConnection;
+use crate::schema::{disk_nodes, guests, worlds};
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::sqlite::SqliteConnection;
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use std::cell::RefCell;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
 use wt_api::{AppSshAccess, Instance, InstanceName, InstanceStatus, SshAccess};
-
-const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+use wt_registry::{Guest, GuestKind, GuestRow, Registry, RegistryError, Resources};
 
 pub struct Store {
-    connection: RefCell<SqliteConnection>,
+    registry: Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -39,56 +35,44 @@ pub enum StoreError {
         reserved_mib: u64,
         requested_mib: u64,
     },
-    #[error("database connection error: {0}")]
-    Connection(#[from] diesel::ConnectionError),
     #[error("database error: {0}")]
     Database(#[from] DieselError),
-    #[error("database migration error: {0}")]
-    Migration(String),
+    #[error("registry error: {0}")]
+    Registry(String),
     #[error("invalid stored data: {0}")]
     InvalidData(String),
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = instances)]
-struct NewInstance<'a> {
+#[diesel(table_name = worlds)]
+struct NewWorld<'a> {
     id: String,
     owner: &'a str,
     name: &'a str,
     status: String,
-    backend_id: &'a str,
-    head_disk_id: String,
     source: &'a str,
     git_base: &'a str,
     git_prefix: &'a str,
     gateway_grant_id: &'a str,
-    vcpus: i64,
-    memory_mib: i64,
-    disk_gib: i64,
     setup_fingerprint: &'a str,
     ssh_host_keys: &'static str,
     app_ssh_host_keys: &'static str,
 }
 
 #[derive(Queryable, Selectable)]
-#[diesel(table_name = instances)]
+#[diesel(table_name = worlds)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct InstanceRow {
+struct WorldRow {
     id: String,
     owner: String,
     name: String,
     status: String,
     guest_ip: Option<String>,
     last_error: Option<String>,
-    backend_id: String,
-    head_disk_id: String,
     source: String,
     git_base: String,
     git_prefix: String,
     gateway_grant_id: String,
-    vcpus: i64,
-    memory_mib: i64,
-    disk_gib: i64,
     setup_fingerprint: String,
     ssh_user: Option<String>,
     ssh_host: Option<String>,
@@ -116,38 +100,17 @@ struct DiskNodeRow {
     immutable: bool,
 }
 
-#[derive(QueryableByName)]
-struct MemorySum {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    total: i64,
-}
-
 impl Store {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| {
-                StoreError::InvalidData(format!("create state directory: {error}"))
-            })?;
-        }
-        let path = path
-            .to_str()
-            .ok_or_else(|| StoreError::InvalidData("database path is not UTF-8".into()))?;
-        let mut connection = SqliteConnection::establish(path)?;
-        connection.batch_execute(
-            "PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;",
-        )?;
-        connection
-            .run_pending_migrations(MIGRATIONS)
-            .map_err(|error| StoreError::Migration(error.to_string()))?;
         Ok(Self {
-            connection: RefCell::new(connection),
+            registry: Registry::open(path).map_err(map_registry_error)?,
         })
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
-        self.connection.borrow_mut().transaction(|connection| {
+        self.registry.transaction(|connection| {
             insert_disk(connection, stored.head_disk_id, None, false)?;
-            insert_instance(connection, stored)
+            insert_world(connection, stored, Resources::UNLIMITED)
         })
     }
 
@@ -156,31 +119,25 @@ impl Store {
         stored: &StoredInstance,
         total_mib: u64,
     ) -> Result<(), StoreError> {
-        self.connection
-            .borrow_mut()
-            .immediate_transaction(|connection| {
-                let reserved = reserved_memory(connection)?;
-                let reserved_mib = u64::try_from(reserved)
-                    .map_err(|_| invalid_number("reserved memory_mib", reserved))?;
-                let requested_mib = stored.instance.memory_mib;
-                if reserved_mib
-                    .checked_add(requested_mib)
-                    .is_none_or(|sum| sum > total_mib)
-                {
-                    return Err(StoreError::Capacity {
-                        total_mib,
-                        reserved_mib,
-                        requested_mib,
-                    });
-                }
-                insert_disk(connection, stored.head_disk_id, None, false)?;
-                insert_instance(connection, stored)
-            })
+        self.registry.immediate_transaction(|connection| {
+            insert_disk(connection, stored.head_disk_id, None, false)?;
+            insert_world(
+                connection,
+                stored,
+                Resources {
+                    memory_mib: total_mib,
+                    ..Resources::UNLIMITED
+                },
+            )
+        })
     }
 
     pub fn reserved_memory_mib(&self) -> Result<u64, StoreError> {
-        let reserved = reserved_memory(&mut self.connection.borrow_mut())?;
-        u64::try_from(reserved).map_err(|_| invalid_number("reserved memory_mib", reserved))
+        self.registry.read(|connection| {
+            wt_registry::reserved_resources(connection)
+                .map(|resources| resources.memory_mib)
+                .map_err(map_registry_error)
+        })
     }
 
     pub fn reserve_fork(
@@ -190,7 +147,7 @@ impl Store {
         source_head_disk_id: Uuid,
         fork: &StoredInstance,
     ) -> Result<(), StoreError> {
-        self.connection.borrow_mut().transaction(|connection| {
+        self.registry.transaction(|connection| {
             let changed = diesel::update(
                 disk_nodes::table
                     .find(expected_source_disk_id.to_string())
@@ -212,14 +169,14 @@ impl Store {
                 false,
             )?;
             let changed = diesel::update(
-                instances::table
+                guests::table
                     .find(source_id.to_string())
-                    .filter(instances::head_disk_id.eq(expected_source_disk_id.to_string())),
+                    .filter(guests::head_disk_id.eq(expected_source_disk_id.to_string())),
             )
-            .set(instances::head_disk_id.eq(source_head_disk_id.to_string()))
+            .set(guests::head_disk_id.eq(source_head_disk_id.to_string()))
             .execute(connection)?;
             changed_one(changed)?;
-            insert_instance(connection, fork)
+            insert_world(connection, fork, Resources::UNLIMITED)
         })
     }
 
@@ -232,13 +189,13 @@ impl Store {
         fork_disk_id: Uuid,
         source_pivoted: bool,
     ) -> Result<Vec<Uuid>, StoreError> {
-        self.connection.borrow_mut().transaction(|connection| {
-            diesel::delete(instances::table.find(fork_id.to_string())).execute(connection)?;
+        self.registry.transaction(|connection| {
+            diesel::delete(guests::table.find(fork_id.to_string())).execute(connection)?;
             diesel::delete(disk_nodes::table.find(fork_disk_id.to_string())).execute(connection)?;
             let mut removed = vec![fork_disk_id];
             if !source_pivoted {
-                let changed = diesel::update(instances::table.find(source_id.to_string()))
-                    .set(instances::head_disk_id.eq(source_disk_id.to_string()))
+                let changed = diesel::update(guests::table.find(source_id.to_string()))
+                    .set(guests::head_disk_id.eq(source_disk_id.to_string()))
                     .execute(connection)?;
                 changed_one(changed)?;
                 diesel::delete(disk_nodes::table.find(source_head_disk_id.to_string()))
@@ -254,62 +211,73 @@ impl Store {
     }
 
     pub fn garbage_for_delete(&self, id: Uuid) -> Result<Vec<Uuid>, StoreError> {
-        garbage_for_delete(&mut self.connection.borrow_mut(), id)
+        self.registry
+            .read(|connection| garbage_for_delete(connection, id))
     }
 
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
-        instances::table
-            .filter(instances::owner.eq(owner))
-            .filter(instances::name.eq(name.as_str()))
-            .select(InstanceRow::as_select())
-            .first(&mut *self.connection.borrow_mut())
-            .optional()?
-            .ok_or(StoreError::NotFound)?
-            .try_into()
+        self.registry.read(|connection| {
+            guests::table
+                .inner_join(worlds::table)
+                .filter(worlds::owner.eq(owner))
+                .filter(worlds::name.eq(name.as_str()))
+                .select((GuestRow::as_select(), WorldRow::as_select()))
+                .first::<(GuestRow, WorldRow)>(connection)
+                .optional()?
+                .ok_or(StoreError::NotFound)?
+                .try_into()
+        })
     }
 
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
-        instances::table
-            .filter(instances::owner.eq(owner))
-            .order(instances::name)
-            .select(InstanceRow::as_select())
-            .load(&mut *self.connection.borrow_mut())?
-            .into_iter()
-            .map(TryInto::try_into)
-            .collect()
+        self.registry.read(|connection| {
+            guests::table
+                .inner_join(worlds::table)
+                .filter(worlds::owner.eq(owner))
+                .order(worlds::name)
+                .select((GuestRow::as_select(), WorldRow::as_select()))
+                .load::<(GuestRow, WorldRow)>(connection)?
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect()
+        })
     }
 
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
-        diesel::update(
-            instances::table.filter(
-                instances::status
-                    .eq("provisioning")
-                    .or(instances::status.eq("destroying")),
-            ),
-        )
-        .set((
-            instances::status.eq("error"),
-            instances::last_error.eq("operation was interrupted; remove the world and retry"),
-        ))
-        .execute(&mut *self.connection.borrow_mut())?;
-        Ok(())
+        self.registry.read(|connection| {
+            diesel::update(
+                worlds::table.filter(
+                    worlds::status
+                        .eq("provisioning")
+                        .or(worlds::status.eq("destroying")),
+                ),
+            )
+            .set((
+                worlds::status.eq("error"),
+                worlds::last_error.eq("operation was interrupted; remove the world and retry"),
+            ))
+            .execute(connection)?;
+            Ok(())
+        })
     }
 
     pub fn mark_setup(&self, id: Uuid, guest_ip: &str, ssh: &SshAccess) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let changed = diesel::update(instances::table.find(id.to_string()))
-            .set((
-                instances::status.eq(InstanceStatus::Setup.to_string()),
-                instances::guest_ip.eq(guest_ip),
-                instances::last_error.eq(None::<String>),
-                instances::ssh_user.eq(&ssh.user),
-                instances::ssh_host.eq(&ssh.host),
-                instances::ssh_port.eq(i32::from(ssh.port)),
-                instances::ssh_host_keys.eq(host_keys),
-            ))
-            .execute(&mut *self.connection.borrow_mut())?;
-        changed_one(changed)
+        self.registry.read(|connection| {
+            let changed = diesel::update(worlds::table.find(id.to_string()))
+                .set((
+                    worlds::status.eq(InstanceStatus::Setup.to_string()),
+                    worlds::guest_ip.eq(guest_ip),
+                    worlds::last_error.eq(None::<String>),
+                    worlds::ssh_user.eq(&ssh.user),
+                    worlds::ssh_host.eq(&ssh.host),
+                    worlds::ssh_port.eq(i32::from(ssh.port)),
+                    worlds::ssh_host_keys.eq(host_keys),
+                ))
+                .execute(connection)?;
+            changed_one(changed)
+        })
     }
 
     pub fn mark_running(
@@ -323,21 +291,23 @@ impl Store {
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let changed = diesel::update(instances::table.find(id.to_string()))
-            .set((
-                instances::status.eq(InstanceStatus::Running.to_string()),
-                instances::guest_ip.eq(guest_ip),
-                instances::last_error.eq(None::<String>),
-                instances::ssh_user.eq(&ssh.user),
-                instances::ssh_host.eq(&ssh.host),
-                instances::ssh_port.eq(i32::from(ssh.port)),
-                instances::ssh_host_keys.eq(host_keys),
-                instances::app_ssh_user.eq(&app_ssh.user),
-                instances::app_ssh_port.eq(i32::from(app_ssh.port)),
-                instances::app_ssh_host_keys.eq(app_host_keys),
-            ))
-            .execute(&mut *self.connection.borrow_mut())?;
-        changed_one(changed)
+        self.registry.read(|connection| {
+            let changed = diesel::update(worlds::table.find(id.to_string()))
+                .set((
+                    worlds::status.eq(InstanceStatus::Running.to_string()),
+                    worlds::guest_ip.eq(guest_ip),
+                    worlds::last_error.eq(None::<String>),
+                    worlds::ssh_user.eq(&ssh.user),
+                    worlds::ssh_host.eq(&ssh.host),
+                    worlds::ssh_port.eq(i32::from(ssh.port)),
+                    worlds::ssh_host_keys.eq(host_keys),
+                    worlds::app_ssh_user.eq(&app_ssh.user),
+                    worlds::app_ssh_port.eq(i32::from(app_ssh.port)),
+                    worlds::app_ssh_host_keys.eq(app_host_keys),
+                ))
+                .execute(connection)?;
+            changed_one(changed)
+        })
     }
 
     pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
@@ -359,35 +329,36 @@ impl Store {
         guest_ip: Option<&str>,
         last_error: Option<&str>,
     ) -> Result<(), StoreError> {
-        let target = instances::table.find(id.to_string());
-        let changed = if let Some(guest_ip) = guest_ip {
-            diesel::update(target)
-                .set((
-                    instances::status.eq(status.to_string()),
-                    instances::guest_ip.eq(guest_ip),
-                    instances::last_error.eq(last_error),
-                ))
-                .execute(&mut *self.connection.borrow_mut())?
-        } else {
-            diesel::update(target)
-                .set((
-                    instances::status.eq(status.to_string()),
-                    instances::last_error.eq(last_error),
-                ))
-                .execute(&mut *self.connection.borrow_mut())?
-        };
-        changed_one(changed)
+        self.registry.read(|connection| {
+            let target = worlds::table.find(id.to_string());
+            let changed = if let Some(guest_ip) = guest_ip {
+                diesel::update(target)
+                    .set((
+                        worlds::status.eq(status.to_string()),
+                        worlds::guest_ip.eq(guest_ip),
+                        worlds::last_error.eq(last_error),
+                    ))
+                    .execute(connection)?
+            } else {
+                diesel::update(target)
+                    .set((
+                        worlds::status.eq(status.to_string()),
+                        worlds::last_error.eq(last_error),
+                    ))
+                    .execute(connection)?
+            };
+            changed_one(changed)
+        })
     }
 
     pub fn delete(&self, id: Uuid, garbage: &[Uuid]) -> Result<(), StoreError> {
-        self.connection.borrow_mut().transaction(|connection| {
+        self.registry.transaction(|connection| {
             if garbage_for_delete(connection, id)? != garbage {
                 return Err(StoreError::InvalidData(
                     "disk graph changed while deleting world".into(),
                 ));
             }
-            let changed =
-                diesel::delete(instances::table.find(id.to_string())).execute(connection)?;
+            let changed = diesel::delete(guests::table.find(id.to_string())).execute(connection)?;
             changed_one(changed)?;
             for disk_id in garbage {
                 let changed = diesel::delete(disk_nodes::table.find(disk_id.to_string()))
@@ -399,18 +370,16 @@ impl Store {
     }
 }
 
-fn reserved_memory(connection: &mut SqliteConnection) -> Result<i64, StoreError> {
-    Ok(
-        diesel::sql_query("SELECT COALESCE(SUM(memory_mib), 0) AS total FROM instances")
-            .get_result::<MemorySum>(connection)?
-            .total,
-    )
-}
-
-impl TryFrom<InstanceRow> for StoredInstance {
+impl TryFrom<(GuestRow, WorldRow)> for StoredInstance {
     type Error = StoreError;
 
-    fn try_from(row: InstanceRow) -> Result<Self, Self::Error> {
+    fn try_from((guest_row, row): (GuestRow, WorldRow)) -> Result<Self, Self::Error> {
+        let guest: Guest = guest_row.try_into().map_err(map_registry_error)?;
+        if guest.kind != GuestKind::World || guest.id.to_string() != row.id {
+            return Err(StoreError::InvalidData(
+                "world is linked to an invalid guest".into(),
+            ));
+        }
         let ssh = match row.ssh_user {
             Some(user) => Some(SshAccess {
                 user,
@@ -430,8 +399,7 @@ impl TryFrom<InstanceRow> for StoredInstance {
         };
         Ok(Self {
             instance: Instance {
-                id: Uuid::parse_str(&row.id)
-                    .map_err(|error| StoreError::InvalidData(error.to_string()))?,
+                id: guest.id,
                 owner: row.owner,
                 name: InstanceName::parse(row.name)
                     .map_err(|error| StoreError::InvalidData(error.to_string()))?,
@@ -446,17 +414,15 @@ impl TryFrom<InstanceRow> for StoredInstance {
                 source: row.source,
                 git_base: row.git_base,
                 git_prefix: row.git_prefix,
-                vcpus: u32::try_from(row.vcpus).map_err(|_| invalid_number("vcpus", row.vcpus))?,
-                memory_mib: u64::try_from(row.memory_mib)
-                    .map_err(|_| invalid_number("memory_mib", row.memory_mib))?,
-                disk_gib: u64::try_from(row.disk_gib)
-                    .map_err(|_| invalid_number("disk_gib", row.disk_gib))?,
+                vcpus: u32::try_from(guest.resources.vcpus)
+                    .map_err(|_| invalid_number("vcpus", guest.resources.vcpus))?,
+                memory_mib: guest.resources.memory_mib,
+                disk_gib: guest.resources.disk_gib,
                 ssh,
                 app_ssh,
             },
-            backend_id: row.backend_id,
-            head_disk_id: Uuid::parse_str(&row.head_disk_id)
-                .map_err(|error| StoreError::InvalidData(error.to_string()))?,
+            backend_id: guest.backend_id,
+            head_disk_id: guest.head_disk_id,
             setup_fingerprint: row.setup_fingerprint,
             gateway_grant_id: row.gateway_grant_id,
         })
@@ -481,34 +447,66 @@ fn insert_disk(
     )
 }
 
-fn insert_instance(
+fn insert_world(
     connection: &mut SqliteConnection,
     stored: &StoredInstance,
+    limit: Resources,
 ) -> Result<(), StoreError> {
     let instance = &stored.instance;
-    let row = NewInstance {
+    wt_registry::insert_guest(
+        connection,
+        &Guest {
+            id: instance.id,
+            kind: GuestKind::World,
+            backend_id: stored.backend_id.clone(),
+            head_disk_id: stored.head_disk_id,
+            resources: Resources {
+                vcpus: instance.vcpus.into(),
+                memory_mib: instance.memory_mib,
+                disk_gib: instance.disk_gib,
+            },
+        },
+        limit,
+    )
+    .map_err(map_registry_error)?;
+    let row = NewWorld {
         id: instance.id.to_string(),
         owner: &instance.owner,
         name: instance.name.as_str(),
         status: instance.status.to_string(),
-        backend_id: &stored.backend_id,
-        head_disk_id: stored.head_disk_id.to_string(),
         source: &instance.source,
         git_base: &instance.git_base,
         git_prefix: &instance.git_prefix,
         gateway_grant_id: &stored.gateway_grant_id,
-        vcpus: instance.vcpus.into(),
-        memory_mib: to_i64(instance.memory_mib, "memory_mib")?,
-        disk_gib: to_i64(instance.disk_gib, "disk_gib")?,
         setup_fingerprint: &stored.setup_fingerprint,
         ssh_host_keys: "[]",
         app_ssh_host_keys: "[]",
     };
     insert_result(
-        diesel::insert_into(instances::table)
+        diesel::insert_into(worlds::table)
             .values(row)
             .execute(connection),
     )
+}
+
+fn map_registry_error(error: RegistryError) -> StoreError {
+    match error {
+        RegistryError::Capacity {
+            resource: wt_registry::Resource::Memory,
+            total,
+            reserved,
+            requested,
+        } => StoreError::Capacity {
+            total_mib: total,
+            reserved_mib: reserved,
+            requested_mib: requested,
+        },
+        RegistryError::Database(DieselError::DatabaseError(
+            DatabaseErrorKind::UniqueViolation,
+            _,
+        )) => StoreError::Conflict,
+        other => StoreError::Registry(other.to_string()),
+    }
 }
 
 fn insert_result(result: Result<usize, DieselError>) -> Result<(), StoreError> {
@@ -525,9 +523,9 @@ fn garbage_for_delete(
     connection: &mut SqliteConnection,
     instance_id: Uuid,
 ) -> Result<Vec<Uuid>, StoreError> {
-    let mut current = instances::table
+    let mut current = guests::table
         .find(instance_id.to_string())
-        .select(instances::head_disk_id)
+        .select(guests::head_disk_id)
         .first::<String>(connection)
         .optional()?
         .ok_or(StoreError::NotFound)?;
@@ -554,8 +552,8 @@ fn garbage_for_delete(
             .filter(disk_nodes::id.ne(&current))
             .count()
             .get_result::<i64>(connection)?;
-        let direct_heads = instances::table
-            .filter(instances::head_disk_id.eq(&parent_id))
+        let direct_heads = guests::table
+            .filter(guests::head_disk_id.eq(&parent_id))
             .count()
             .get_result::<i64>(connection)?;
         if other_children != 0 || direct_heads != 0 {
@@ -582,10 +580,6 @@ fn parse_keys(value: &str) -> Result<Vec<String>, StoreError> {
     serde_json::from_str(value).map_err(|error| StoreError::InvalidData(error.to_string()))
 }
 
-fn to_i64(value: u64, field: &str) -> Result<i64, StoreError> {
-    i64::try_from(value).map_err(|_| invalid_number(field, value))
-}
-
 fn to_u16(value: i32, field: &str) -> Result<u16, StoreError> {
     u16::try_from(value).map_err(|_| invalid_number(field, value))
 }
@@ -599,22 +593,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn open_applies_embedded_migrations() {
+    fn open_applies_shared_registry_migration() {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&temp.path().join("instances.db")).unwrap();
 
         assert!(store.list("owner").unwrap().is_empty());
-        let migrations: i64 =
-            diesel::sql_query("SELECT COUNT(*) AS count FROM __diesel_schema_migrations")
-                .load::<Count>(&mut *store.connection.borrow_mut())
-                .unwrap()[0]
-                .count;
-        assert_eq!(migrations, 1);
-    }
-
-    #[derive(QueryableByName)]
-    struct Count {
-        #[diesel(sql_type = diesel::sql_types::BigInt)]
-        count: i64,
     }
 }

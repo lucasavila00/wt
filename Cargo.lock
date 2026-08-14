@@ -2403,13 +2403,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-registry"
+version = "0.0.0"
+dependencies = [
+ "diesel",
+ "diesel_migrations",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "wt-server"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
  "diesel",
- "diesel_migrations",
  "insta",
  "libsqlite3-sys",
  "nix",
@@ -2423,6 +2433,7 @@ dependencies = [
  "wt-api",
  "wt-libvirt",
  "wt-provider",
+ "wt-registry",
 ]
 
 [[package]]

@@ -15,11 +15,11 @@ wt-agent-git = { path = "../wt-agent-git" }
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-provider = { workspace = true }
+wt-registry = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }
 diesel = { workspace = true }
-diesel_migrations = { workspace = true }
 libsqlite3-sys = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
