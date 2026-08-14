@@ -9,8 +9,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_api::{
-    ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
-    Response,
+    ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
+    Operation, Outcome, Response,
 };
 use wt_command::cmd;
 use wt_devcontainer_git::{
@@ -111,14 +111,16 @@ impl KvmHarness {
             &self.server_config_path,
             Operation::Create(CreateInstance {
                 name: name.clone(),
-                source: self.git.url(),
-                git_base: "main".into(),
-                git_user_name: "WT E2E".to_owned(),
-                git_user_email: "wt@example.invalid".to_owned(),
                 vcpus: 1,
                 memory_mib: 1024,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                application: CreateApplication::Devcontainer {
+                    source: self.git.url(),
+                    git_base: "main".into(),
+                    git_user_name: "WT E2E".to_owned(),
+                    git_user_email: "wt@example.invalid".to_owned(),
+                },
             }),
         ) else {
             panic!("expected instance response");

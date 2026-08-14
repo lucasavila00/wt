@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wt_api::{
-    ApiRequest, Capacity, CapacityResource, CreateInstance, Operation, Outcome, Response,
+    ApiRequest, Capacity, CapacityResource, CreateApplication, CreateInstance, InstanceApplication,
+    Operation, Outcome, Response, WorldKind,
 };
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
@@ -25,8 +26,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create a devcontainer-ready world.
-    New,
+    /// Create a world.
+    New {
+        #[command(subcommand)]
+        kind: Option<NewKind>,
+    },
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -39,6 +43,12 @@ enum Command {
     Sync,
 }
 
+#[derive(Debug, Subcommand)]
+enum NewKind {
+    /// Create a raw Ubuntu world from cloud-init user-data.
+    Host { user_data: PathBuf },
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("wt: {error:#}");
@@ -49,21 +59,24 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New => {
-            let input = prompt_create(&config)?;
+        Command::New { kind } => {
+            let application = match kind {
+                None => CreateKind::Devcontainer,
+                Some(NewKind::Host { user_data }) => CreateKind::Host {
+                    user_data: read_user_data(&user_data)?,
+                },
+            };
+            let input = prompt_create(&config, application)?;
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;
             let request = CreateInstance {
                 name: input.name.clone(),
-                source: input.source,
-                git_base: input.git_base,
-                git_user_name: input.git_user_name,
-                git_user_email: input.git_user_email,
                 vcpus: input.vcpus,
                 memory_mib: input.memory_mib,
                 disk_gib: input.disk_gib,
                 ssh_authorized_keys: input.ssh_authorized_keys,
+                application: input.application,
             };
             let response = create_with_capacity_retry(context, &request)?;
             let Response::Instance { instance } = response else {
@@ -82,6 +95,11 @@ fn run() -> Result<()> {
                 .ssh
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
+            if instance.kind() == WorldKind::Host {
+                println!("\nConnect: ssh {}.{}", context.name, instance.name);
+                println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
+                return Ok(());
+            }
             println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
             println!("Guest host: ssh {}.{}-host", context.name, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
@@ -236,14 +254,16 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 struct CreateInput {
     context: String,
     name: wt_api::InstanceName,
-    source: String,
-    git_base: String,
     vcpus: u32,
     memory_mib: u64,
     disk_gib: u64,
     ssh_authorized_keys: Vec<String>,
-    git_user_name: String,
-    git_user_email: String,
+    application: CreateApplication,
+}
+
+enum CreateKind {
+    Devcontainer,
+    Host { user_data: String },
 }
 
 extern "C" fn cancel_prompt(_: i32) {
@@ -278,12 +298,11 @@ fn install_cancel_handlers() -> Result<SignalGuard> {
     Ok(SignalGuard(previous))
 }
 
-fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
+fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput> {
     if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
     let _signals = install_cancel_handlers()?;
-    let git_author = read_git_author()?;
     cliclack::intro("Create a new world")?;
     let default_context = config
         .contexts
@@ -314,28 +333,48 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
         .interact()
         .map_err(prompt_error)?;
     let name = wt_api::InstanceName::parse(name)?;
-    let source: String = cliclack::input("Git repository")
-        .placeholder("git@example.com:team/repository.git")
-        .validate(|value: &String| {
-            wt_api::validate_ssh_git_source(value).map_err(|error| error.to_string())
-        })
-        .interact()
-        .map_err(prompt_error)?;
-    let git_base: String = cliclack::input("Base branch")
-        .placeholder("main")
-        .validate(|value: &String| {
-            wt_api::validate_git_branch(value).map_err(|error| error.to_string())
-        })
-        .interact()
-        .map_err(prompt_error)?;
+    let (application, application_summary) = match kind {
+        CreateKind::Devcontainer => {
+            let git_author = read_git_author()?;
+            let source: String = cliclack::input("Git repository")
+                .placeholder("git@example.com:team/repository.git")
+                .validate(|value: &String| {
+                    wt_api::validate_ssh_git_source(value).map_err(|error| error.to_string())
+                })
+                .interact()
+                .map_err(prompt_error)?;
+            let git_base: String = cliclack::input("Base branch")
+                .placeholder("main")
+                .validate(|value: &String| {
+                    wt_api::validate_git_branch(value).map_err(|error| error.to_string())
+                })
+                .interact()
+                .map_err(prompt_error)?;
+            let summary = format!(
+                "Repository  {source}\nBase branch {git_base}\nGit author  {} <{}>\n",
+                git_author.name, git_author.email
+            );
+            (
+                CreateApplication::Devcontainer {
+                    source,
+                    git_base,
+                    git_user_name: git_author.name,
+                    git_user_email: git_author.email,
+                },
+                summary,
+            )
+        }
+        CreateKind::Host { user_data } => (
+            CreateApplication::Host { user_data },
+            "Kind        host\n".to_owned(),
+        ),
+    };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
     let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
     let disk_gib = prompt_number("Disk (GiB)", DEFAULT_DISK_GIB)?;
     let keys = discover_public_keys()?;
     let mut summary = format!(
-        "World       {name}\nContext     {context}\nRepository  {source}\nBase branch {git_base}\nGit author  {} <{}>\nResources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
-        git_author.name,
-        git_author.email,
+        "World       {name}\nContext     {context}\n{application_summary}Resources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
         keys.len()
     );
     for (_, fingerprint) in &keys {
@@ -353,15 +392,21 @@ fn prompt_create(config: &ClientConfig) -> Result<CreateInput> {
     Ok(CreateInput {
         context,
         name,
-        source,
-        git_base,
         vcpus,
         memory_mib,
         disk_gib,
         ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
-        git_user_name: git_author.name,
-        git_user_email: git_author.email,
+        application,
     })
+}
+
+fn read_user_data(path: &Path) -> Result<String> {
+    let user_data = std::fs::read_to_string(path)
+        .with_context(|| format!("read cloud-init user-data {}", path.display()))?;
+    if user_data.is_empty() {
+        bail!("cloud-init user-data {} is empty", path.display());
+    }
+    Ok(user_data)
 }
 
 fn prompt_error(error: std::io::Error) -> anyhow::Error {
@@ -442,7 +487,14 @@ fn open_in_code(config: &ClientConfig, target: &str) -> Result<()> {
             selected.instance.status
         );
     }
-    if selected.instance.ssh.is_none() || selected.instance.app_ssh.is_none() {
+    if selected.instance.kind() != WorldKind::Devcontainer {
+        bail!(
+            "world {} is {}; VS Code only supports devcontainer worlds",
+            selected.qualified_name(),
+            selected.instance.kind()
+        );
+    }
+    if selected.instance.ssh.is_none() || selected.instance.application.app_ssh().is_none() {
         bail!(
             "world {} has incomplete SSH access information",
             selected.qualified_name()
@@ -541,6 +593,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     rows.push([
         "CONTEXT".to_owned(),
         "NAME".to_owned(),
+        "KIND".to_owned(),
         "STATUS".to_owned(),
         "REPO".to_owned(),
         "RESOURCES".to_owned(),
@@ -551,16 +604,21 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         [
             item.context.clone(),
             instance.name.to_string(),
+            instance.kind().to_string(),
             instance.status.to_string(),
-            wt_cli::ssh::repository_name(&instance.source)
-                .unwrap_or("-")
-                .to_owned(),
+            match &instance.application {
+                InstanceApplication::Devcontainer { source, .. } => {
+                    wt_cli::ssh::repository_name(source).unwrap_or("-")
+                }
+                InstanceApplication::Host => "-",
+            }
+            .to_owned(),
             format_resources(instance.vcpus, instance.memory_mib, instance.disk_gib),
             instance_detail(item),
         ]
     }));
 
-    let mut widths = [0; 5];
+    let mut widths = [0; 6];
     for row in &rows {
         for (width, value) in widths.iter_mut().zip(row) {
             *width = (*width).max(value.chars().count());
@@ -571,18 +629,20 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     for row in rows {
         writeln!(
             output,
-            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<repo_width$}  {:<resources_width$}  {}",
+            "{:<context_width$}  {:<name_width$}  {:<kind_width$}  {:<status_width$}  {:<repo_width$}  {:<resources_width$}  {}",
             row[0],
             row[1],
             row[2],
             row[3],
             row[4],
             row[5],
+            row[6],
             context_width = widths[0],
             name_width = widths[1],
-            status_width = widths[2],
-            repo_width = widths[3],
-            resources_width = widths[4],
+            kind_width = widths[2],
+            status_width = widths[3],
+            repo_width = widths[4],
+            resources_width = widths[5],
         )
         .expect("writing to a String cannot fail");
     }

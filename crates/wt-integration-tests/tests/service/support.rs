@@ -4,7 +4,7 @@ use std::sync::{
 };
 use tempfile::TempDir;
 use uuid::Uuid;
-use wt_api::{CreateInstance, InstanceName, SshAccess};
+use wt_api::{CreateApplication, CreateInstance, InstanceName, SshAccess};
 use wt_devcontainer::{ForkSpec, ProvisionSpec, World, WorldInspection, WorldWorker};
 use wt_provider::{ForkError, WorkerError};
 use wt_server::operations::Operations;
@@ -155,14 +155,16 @@ fn world(complete: bool) -> World {
 pub(crate) fn create(name: &str) -> CreateInstance {
     CreateInstance {
         name: InstanceName::parse(name).unwrap(),
-        source: "git@example.test:repo.git".into(),
-        git_base: "main".into(),
-        git_user_name: "Test User".into(),
-        git_user_email: "test@example.invalid".into(),
         vcpus: 1,
         memory_mib: 1024,
         disk_gib: 8,
         ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".into()],
+        application: CreateApplication::Devcontainer {
+            source: "git@example.test:repo.git".into(),
+            git_base: "main".into(),
+            git_user_name: "Test User".into(),
+            git_user_email: "test@example.invalid".into(),
+        },
     }
 }
 

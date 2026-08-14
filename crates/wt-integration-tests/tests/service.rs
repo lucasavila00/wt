@@ -2,12 +2,12 @@ use std::sync::{atomic::Ordering, mpsc, Arc, Condvar, Mutex};
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_api::{
-    Capacity, CapacityResource, ForkInstance, Instance, InstanceName, InstanceStatus, Operation,
-    Response,
+    Capacity, CapacityResource, CreateApplication, ForkInstance, Instance, InstanceApplication,
+    InstanceName, InstanceStatus, Operation, Response,
 };
 use wt_server::operations::Operations;
 use wt_server::service::Service;
-use wt_server::store::{Store, StoredInstance};
+use wt_server::store::{Store, StoredApplication, StoredInstance};
 
 #[path = "service/support.rs"]
 mod support;
@@ -51,9 +51,17 @@ fn create_returns_setup_ready_world_synchronously() {
     assert_eq!(instance.vcpus, 1);
     assert_eq!(instance.memory_mib, 1024);
     assert_eq!(instance.disk_gib, 8);
-    assert_eq!(instance.git_prefix, "wt/");
+    let InstanceApplication::Devcontainer {
+        git_prefix,
+        app_ssh,
+        ..
+    } = &instance.application
+    else {
+        panic!("expected devcontainer")
+    };
+    assert_eq!(git_prefix, "wt/");
     assert!(instance.ssh.is_some());
-    assert!(instance.app_ssh.is_none());
+    assert!(app_ssh.is_none());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
@@ -78,7 +86,7 @@ fn list_reconciles_completed_setup_to_running() {
     assert_eq!(instances[0].vcpus, 1);
     assert_eq!(instances[0].memory_mib, 1024);
     assert_eq!(instances[0].disk_gib, 8);
-    assert!(instances[0].app_ssh.is_some());
+    assert!(instances[0].application.app_ssh().is_some());
 }
 
 #[test]
@@ -341,7 +349,7 @@ fn repeated_create_resumes_only_identical_setup() {
     let worker = Worker::default();
     let provisions = worker.provisions.clone();
     let mut first = create("sample");
-    first.git_base = "feature".into();
+    set_git_base(&mut first, "feature");
     let Response::Instance { instance: original } = service(&temp, worker.clone())
         .execute("tester", Operation::Create(first))
         .unwrap()
@@ -349,7 +357,7 @@ fn repeated_create_resumes_only_identical_setup() {
         panic!()
     };
     let mut same = create("sample");
-    same.git_base = "feature".into();
+    set_git_base(&mut same, "feature");
     let Response::Instance { instance: resumed } = service(&temp, worker.clone())
         .execute("tester", Operation::Create(same))
         .unwrap()
@@ -360,7 +368,7 @@ fn repeated_create_resumes_only_identical_setup() {
     assert_eq!(provisions.load(Ordering::SeqCst), 1);
 
     let mut different = create("sample");
-    different.git_base = "other".into();
+    set_git_base(&mut different, "other");
     let error = service(&temp, worker)
         .execute("tester", Operation::Create(different))
         .unwrap_err();
@@ -532,21 +540,25 @@ fn startup_recovery_marks_provisioning_as_error() {
                 name: name.clone(),
                 owner: "tester".into(),
                 status: InstanceStatus::Provisioning,
-                source: "git@example.test:repo.git".into(),
-                git_base: "main".into(),
-                git_prefix: "sample/".into(),
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
-                app_ssh: None,
+                application: InstanceApplication::Devcontainer {
+                    source: "git@example.test:repo.git".into(),
+                    git_base: "main".into(),
+                    git_prefix: "sample/".into(),
+                    app_ssh: None,
+                },
             },
             backend_id: format!("wt-{}", id.simple()),
             head_disk_id: Uuid::new_v4(),
             setup_fingerprint: "test".into(),
-            gateway_grant_id: "grant-test".into(),
+            application: StoredApplication::Devcontainer {
+                gateway_grant_id: "grant-test".into(),
+            },
         })
         .unwrap();
     store.reconcile_interrupted().unwrap();
@@ -554,4 +566,11 @@ fn startup_recovery_marks_provisioning_as_error() {
         store.get("tester", &name).unwrap().instance.status,
         InstanceStatus::Error
     );
+}
+
+fn set_git_base(request: &mut wt_api::CreateInstance, value: &str) {
+    let CreateApplication::Devcontainer { git_base, .. } = &mut request.application else {
+        panic!("expected devcontainer request")
+    };
+    *git_base = value.to_owned();
 }

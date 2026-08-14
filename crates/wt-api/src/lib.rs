@@ -65,17 +65,45 @@ pub struct ForkInstance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
     pub name: InstanceName,
-    pub source: String,
-    #[serde(deserialize_with = "deserialize_git_branch")]
-    pub git_base: String,
-    #[serde(deserialize_with = "deserialize_nonempty_string")]
-    pub git_user_name: String,
-    #[serde(deserialize_with = "deserialize_nonempty_string")]
-    pub git_user_email: String,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
     pub ssh_authorized_keys: Vec<String>,
+    #[serde(flatten)]
+    pub application: CreateApplication,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CreateApplication {
+    Devcontainer {
+        source: String,
+        #[serde(deserialize_with = "deserialize_git_branch")]
+        git_base: String,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        git_user_name: String,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        git_user_email: String,
+    },
+    Host {
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        user_data: String,
+    },
+}
+
+impl CreateInstance {
+    pub fn kind(&self) -> WorldKind {
+        self.application.kind()
+    }
+}
+
+impl CreateApplication {
+    pub fn kind(&self) -> WorldKind {
+        match self {
+            Self::Devcontainer { .. } => WorldKind::Devcontainer,
+            Self::Host { .. } => WorldKind::Host,
+        }
+    }
 }
 
 pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
@@ -166,9 +194,6 @@ pub struct Instance {
     pub name: InstanceName,
     pub owner: String,
     pub status: InstanceStatus,
-    pub source: String,
-    pub git_base: String,
-    pub git_prefix: String,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
@@ -178,8 +203,61 @@ pub struct Instance {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshAccess>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_ssh: Option<AppSshAccess>,
+    #[serde(flatten)]
+    pub application: InstanceApplication,
+}
+
+impl Instance {
+    pub fn kind(&self) -> WorldKind {
+        self.application.kind()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InstanceApplication {
+    Devcontainer {
+        source: String,
+        git_base: String,
+        git_prefix: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_ssh: Option<AppSshAccess>,
+    },
+    Host,
+}
+
+impl InstanceApplication {
+    pub fn kind(&self) -> WorldKind {
+        match self {
+            Self::Devcontainer { .. } => WorldKind::Devcontainer,
+            Self::Host => WorldKind::Host,
+        }
+    }
+
+    pub fn app_ssh(&self) -> Option<&AppSshAccess> {
+        match self {
+            Self::Devcontainer { app_ssh, .. } => app_ssh.as_ref(),
+            Self::Host => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldKind {
+    Devcontainer,
+    Host,
+    GithubCi,
+}
+
+impl fmt::Display for WorldKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Devcontainer => "devcontainer",
+            Self::Host => "host",
+            Self::GithubCi => "github-ci",
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -537,14 +615,16 @@ mod tests {
     fn create_request_has_setup_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
-            source: "git@github.com:example/repo.git".to_owned(),
-            git_base: "devcontainer".to_owned(),
-            git_user_name: "Lucas Ávila".to_owned(),
-            git_user_email: "lucaxx@gmail.com".to_owned(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            application: CreateApplication::Devcontainer {
+                source: "git@github.com:example/repo.git".to_owned(),
+                git_base: "devcontainer".to_owned(),
+                git_user_name: "Lucas Ávila".to_owned(),
+                git_user_email: "lucaxx@gmail.com".to_owned(),
+            },
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -552,6 +632,7 @@ mod tests {
                 "protocol_version": 1,
                 "client_commit": WT_GIT_COMMIT,
                 "operation": "create",
+                "kind": "devcontainer",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
                 "git_base": "devcontainer",
@@ -566,11 +647,44 @@ mod tests {
     }
 
     #[test]
+    fn host_create_request_has_tagged_shape() {
+        let request = ApiRequest::new(Operation::Create(CreateInstance {
+            name: InstanceName::parse("build-host").unwrap(),
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            application: CreateApplication::Host {
+                user_data: "#cloud-config\nruncmd:\n  - touch /ready\n".to_owned(),
+            },
+        }));
+        let mut value = serde_json::to_value(request).unwrap();
+        value["client_commit"] = "<commit>".into();
+        insta::assert_snapshot!(serde_json::to_string_pretty(&value).unwrap(), @r###"
+        {
+          "client_commit": "<commit>",
+          "disk_gib": 32,
+          "kind": "host",
+          "memory_mib": 4096,
+          "name": "build-host",
+          "operation": "create",
+          "protocol_version": 1,
+          "ssh_authorized_keys": [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
+          ],
+          "user_data": "#cloud-config\nruncmd:\n  - touch /ready\n",
+          "vcpus": 2
+        }
+        "###);
+    }
+
+    #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
+            "kind": "devcontainer",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
             "git_base": "main",
@@ -581,6 +695,7 @@ mod tests {
             "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
+            "kind": "devcontainer",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
             "git_base": "main",
@@ -595,14 +710,16 @@ mod tests {
         let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example";
         let mut request = CreateInstance {
             name: InstanceName::parse("sample").unwrap(),
-            source: "git@example.test:repo.git".to_owned(),
-            git_base: "main".to_owned(),
-            git_user_name: "Test User".to_owned(),
-            git_user_email: "test@example.invalid".to_owned(),
             vcpus: 1,
             memory_mib: 1024,
             disk_gib: 8,
             ssh_authorized_keys: vec![key.to_owned()],
+            application: CreateApplication::Devcontainer {
+                source: "git@example.test:repo.git".to_owned(),
+                git_base: "main".to_owned(),
+                git_user_name: "Test User".to_owned(),
+                git_user_email: "test@example.invalid".to_owned(),
+            },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));
         request.vcpus = 0;
