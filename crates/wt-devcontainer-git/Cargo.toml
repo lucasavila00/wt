@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Scoped Git transport for WT worlds"
+description = "Scoped Git transport for WT devcontainer worlds"
 
 [[bin]]
 name = "wt-agent-git-gateway"

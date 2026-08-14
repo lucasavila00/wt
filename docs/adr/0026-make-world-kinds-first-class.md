@@ -27,9 +27,11 @@ network, login, and SSH configuration in separate NoCloud data. Readiness
 requires successful cloud-init completion. The exact user-data is part of the
 create fingerprint.
 
+A `host` world boots from a dedicated minimal Ubuntu image. User-data runs as
+root and may break WT SSH access; creation fails unless direct SSH becomes ready.
+
 WT adds no checkout, agent Git grant, devcontainer, app SSH, or editor
-integration to a host world. The cloud-init recipe runs as root and receives no
-implicit WT credentials.
+integration to a host world. The recipe receives no implicit WT credentials.
 
 A `github-ci` world uses the runner lifecycle from ADR 0023. `wt-runner`
 creates it for one job and destroys it afterward. It cannot be restarted,
