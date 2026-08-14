@@ -9,6 +9,8 @@ members = [
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
     "crates/wt-provider",
+    "crates/wt-registry",
+    "crates/wt-runner",
     "crates/wt-server",
     "crates/wt-server-setup",
 ]
@@ -24,6 +26,8 @@ wt-api = { path = "crates/wt-api" }
 wt-command = { path = "crates/wt-command" }
 wt-libvirt = { path = "crates/wt-libvirt" }
 wt-provider = { path = "crates/wt-provider" }
+wt-registry = { path = "crates/wt-registry" }
+wt-runner = { path = "crates/wt-runner" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
@@ -32,6 +36,7 @@ nix = { version = "0.31.2", features = ["signal", "user"] }
 quick-xml = "0.39.2"
 base64 = "0.22.1"
 insta = "1.47.0"
+jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 diesel = { version = "2.3.11", features = ["sqlite"] }
 diesel_migrations = "2.3.2"
 graphql_client = "0.16.0"

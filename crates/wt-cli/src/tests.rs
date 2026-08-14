@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 static PROMPT_LOCK: Mutex<()> = Mutex::new(());
 use uuid::Uuid;
-use wt_api::{Instance, InstanceName, InstanceStatus, SshAccess};
+use wt_api::{Capacity, CapacityResource, Instance, InstanceName, InstanceStatus, SshAccess};
 
 fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
     ContextInstance {
@@ -83,14 +83,15 @@ fn explains_memory_capacity() {
         capacity_message(
             "ars",
             &wt_api::InstanceName::parse("mt3").unwrap(),
-            &MemoryCapacity {
-                total_mib: 32_000,
-                reserved_mib: 32_000,
-                requested_mib: 8_000,
+            &Capacity {
+                resource: CapacityResource::Memory,
+                total: 32_000,
+                reserved: 32_000,
+                requested: 8_000,
             },
         ),
         @r###"
-    ars has 32000 MiB of 32000 MiB world memory reserved; mt3 requests 8000 MiB.
+    ars has 32000 MiB of 32000 MiB world and runner memory reserved; mt3 requests 8000 MiB.
     Free capacity with `wt ls` and `wt rm CONTEXT.WORLD`.
     "###
     );

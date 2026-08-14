@@ -247,7 +247,7 @@ pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capacity: Option<MemoryCapacity>,
+    pub capacity: Option<Capacity>,
 }
 
 impl ApiError {
@@ -259,20 +259,39 @@ impl ApiError {
         }
     }
 
-    pub fn capacity(capacity: MemoryCapacity) -> Self {
+    pub fn capacity(capacity: Capacity) -> Self {
         Self {
             code: ErrorCode::Capacity,
-            message: "world memory capacity is full".to_owned(),
+            message: format!("world {} capacity is full", capacity.resource),
             capacity: Some(capacity),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct MemoryCapacity {
-    pub total_mib: u64,
-    pub reserved_mib: u64,
-    pub requested_mib: u64,
+pub struct Capacity {
+    pub resource: CapacityResource,
+    pub total: u64,
+    pub reserved: u64,
+    pub requested: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapacityResource {
+    Cpu,
+    Memory,
+    Disk,
+}
+
+impl fmt::Display for CapacityResource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Cpu => "CPU",
+            Self::Memory => "memory",
+            Self::Disk => "disk",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -489,11 +508,12 @@ mod tests {
     }
 
     #[test]
-    fn capacity_error_has_typed_memory_details() {
-        let response = ApiResponse::error(ApiError::capacity(MemoryCapacity {
-            total_mib: 32_000,
-            reserved_mib: 24_000,
-            requested_mib: 8_000,
+    fn capacity_error_identifies_the_resource() {
+        let response = ApiResponse::error(ApiError::capacity(Capacity {
+            resource: CapacityResource::Memory,
+            total: 32_000,
+            reserved: 24_000,
+            requested: 8_000,
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
@@ -503,9 +523,10 @@ mod tests {
             "code": "capacity",
             "message": "world memory capacity is full",
             "capacity": {
-              "total_mib": 32000,
-              "reserved_mib": 24000,
-              "requested_mib": 8000
+              "resource": "memory",
+              "total": 32000,
+              "reserved": 24000,
+              "requested": 8000
             }
           }
         }

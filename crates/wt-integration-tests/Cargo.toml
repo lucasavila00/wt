@@ -11,6 +11,7 @@ wt-api = { workspace = true }
 wt-command = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-provider = { workspace = true }
+wt-registry = { workspace = true }
 wt-server = { workspace = true }
 wt-cli = { path = "../wt-cli" }
 anyhow = { workspace = true }

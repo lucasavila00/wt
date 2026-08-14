@@ -9,7 +9,9 @@ use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
-use wt_api::{ApiRequest, CreateInstance, MemoryCapacity, Operation, Outcome, Response};
+use wt_api::{
+    ApiRequest, Capacity, CapacityResource, CreateInstance, Operation, Outcome, Response,
+};
 use wt_cli::config::{ClientConfig, Context};
 use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
@@ -179,11 +181,11 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
                 return Ok(*response);
             }
             Outcome::Error { error } if error.code == wt_api::ErrorCode::Capacity => {
-                spinner.error("World memory capacity is full");
+                spinner.error("World capacity is full");
                 let capacity = error
                     .capacity
                     .as_ref()
-                    .context("server returned a capacity error without memory capacity details")?;
+                    .context("server returned a capacity error without capacity details")?;
                 if !prompt_capacity_retry(context, &request.name, capacity)? {
                     bail!("creation cancelled");
                 }
@@ -202,7 +204,7 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
 fn prompt_capacity_retry(
     context: &Context,
     name: &wt_api::InstanceName,
-    capacity: &MemoryCapacity,
+    capacity: &Capacity,
 ) -> Result<bool> {
     cliclack::note(
         "World memory capacity",
@@ -214,14 +216,15 @@ fn prompt_capacity_retry(
         .map_err(prompt_error)
 }
 
-fn capacity_message(
-    context: &str,
-    name: &wt_api::InstanceName,
-    capacity: &MemoryCapacity,
-) -> String {
+fn capacity_message(context: &str, name: &wt_api::InstanceName, capacity: &Capacity) -> String {
+    let (resource, unit) = match capacity.resource {
+        CapacityResource::Cpu => ("CPU", "CPU"),
+        CapacityResource::Memory => ("memory", "MiB"),
+        CapacityResource::Disk => ("disk", "GiB"),
+    };
     format!(
-        "{context} has {} MiB of {} MiB world memory reserved; {name} requests {} MiB.\nFree capacity with `wt ls` and `wt rm CONTEXT.WORLD`.",
-        capacity.reserved_mib, capacity.total_mib, capacity.requested_mib
+        "{context} has {} {unit} of {} {unit} world and runner {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt rm CONTEXT.WORLD`.",
+        capacity.reserved, capacity.total, capacity.requested
     )
 }
 
