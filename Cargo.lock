@@ -2642,6 +2642,7 @@ dependencies = [
  "wt-command",
  "wt-devcontainer",
  "wt-libvirt",
+ "wt-registry",
  "wt-server",
  "zeroize",
 ]

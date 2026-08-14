@@ -34,6 +34,9 @@ fn run() -> Result<()> {
 fn run_api(config_path: &Path) -> Result<()> {
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
+    let capacity = wt_registry::CapacityConfig::load()
+        .map_err(anyhow::Error::msg)?
+        .limits;
     let server = ServerConfig::load_from(config_path).map_err(anyhow::Error::msg)?;
     let provider =
         LibvirtProvider::new(server.devcontainer_machine_config()).map_err(anyhow::Error::msg)?;
@@ -61,7 +64,8 @@ fn run_api(config_path: &Path) -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(wt_devcontainer_git::CONTROL_SOCKET));
     let gateway = wt_devcontainer_git::ControlClient::new(gateway_socket);
-    let service = Service::new(store, worker, gateway, Operations::default(), u64::MAX);
+    let service =
+        Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
         Ok(request) => wt_server::handle_request(&service, "lucas", request),
         Err(error) => ApiResponse::error(ApiError::new(

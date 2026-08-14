@@ -3,7 +3,9 @@ mod binaries;
 use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
-use crate::install_input::{serialize_server_config, AgentGitProviderInstallConfig, InstallInput};
+use crate::install_input::{
+    serialize_capacity_config, serialize_server_config, AgentGitProviderInstallConfig, InstallInput,
+};
 use crate::registry_cache;
 use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
@@ -13,6 +15,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use wt_command::cmd;
+use wt_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
 use zeroize::Zeroizing;
 
@@ -25,6 +28,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     require_installed_config_compatible(input_path, &server)?;
+    require_installed_capacity_compatible(input_path, &input.capacity)?;
     let replace_runtime = !Path::new(SERVER_CONFIG_PATH).exists();
 
     phase("Preparing Git provider credentials");
@@ -42,6 +46,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
 
     phase("Installing configuration and credentials");
     install_server_config(runner, input_path, &server, &server_bytes)?;
+    install_capacity_config(runner, input_path, &input.capacity)?;
     install_agent_git_credentials(runner, &credentials)?;
 
     phase("Starting WT services");
@@ -352,6 +357,24 @@ fn require_installed_config_compatible(input_path: &Path, requested: &ServerConf
     require_root_file(path, 0o644)
 }
 
+fn require_installed_capacity_compatible(
+    input_path: &Path,
+    requested: &CapacityConfig,
+) -> Result<()> {
+    let path = Path::new(CAPACITY_CONFIG_PATH);
+    if !path.exists() {
+        return Ok(());
+    }
+    let installed = CapacityConfig::load_from(path).map_err(anyhow::Error::msg)?;
+    if installed != *requested {
+        bail!(
+            "installed capacity config differs from {}; run make clear before reinstalling",
+            input_path.display()
+        );
+    }
+    require_root_file(path, 0o644)
+}
+
 fn config_drift_message(input_path: &Path) -> String {
     let input_path = input_path.display();
     format!(
@@ -410,6 +433,30 @@ fn install_server_config(
     sudo_move(runner, temporary, Path::new(SERVER_CONFIG_PATH))?;
     let _ = fs::remove_file(local);
     Ok(())
+}
+
+fn install_capacity_config(
+    runner: &impl Runner,
+    input_path: &Path,
+    capacity: &CapacityConfig,
+) -> Result<()> {
+    let path = Path::new(CAPACITY_CONFIG_PATH);
+    if path.exists() {
+        return require_installed_capacity_compatible(input_path, capacity);
+    }
+    let local = Path::new("target").join("wt-capacity.toml.install");
+    let bytes = serialize_capacity_config(capacity).map_err(anyhow::Error::msg)?;
+    fs::write(&local, bytes).context("stage capacity config")?;
+    let temporary = Path::new("/etc/wt/.capacity.toml.wt-new");
+    if temporary.exists() {
+        bail!(
+            "stale capacity config install file exists: {}",
+            temporary.display()
+        );
+    }
+    sudo_install(runner, &local, temporary, 0o644)?;
+    sudo_move(runner, temporary, path)?;
+    require_root_file(path, 0o644)
 }
 
 fn install_agent_git_credentials(

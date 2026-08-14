@@ -11,6 +11,7 @@ use wt_server::{
 #[serde(deny_unknown_fields)]
 pub(crate) struct InstallInput {
     pub version: u32,
+    pub capacity: wt_registry::CapacityConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
@@ -98,6 +99,7 @@ impl InstallInput {
         {
             return Err("image build resource values must be greater than zero".to_owned());
         }
+        self.capacity.validate()?;
         self.materialize().validate()
     }
 
@@ -189,12 +191,24 @@ pub(crate) fn serialize_server_config(config: &ServerConfig) -> Result<Vec<u8>, 
     Ok(text.into_bytes())
 }
 
+pub(crate) fn serialize_capacity_config(
+    config: &wt_registry::CapacityConfig,
+) -> Result<Vec<u8>, String> {
+    let text = toml::to_string_pretty(config)
+        .map_err(|error| format!("serialize capacity config: {error}"))?;
+    Ok(text.into_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const VALID: &str = r#"
 version = 1
+
+[capacity]
+version = 1
+limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"
@@ -247,6 +261,20 @@ binary_dir = "/usr/local/bin"
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         insta::assert_snapshot!("materialized_server_config", text);
+    }
+
+    #[test]
+    fn capacity_config_is_materialized_separately() {
+        let input: InstallInput = toml::from_str(VALID).unwrap();
+        let text = String::from_utf8(serialize_capacity_config(&input.capacity).unwrap()).unwrap();
+        insta::assert_snapshot!(text, @r###"
+        version = 1
+
+        [limits]
+        vcpus = 32
+        memory_mib = 131072
+        disk_gib = 2048
+        "###);
     }
 
     #[test]
