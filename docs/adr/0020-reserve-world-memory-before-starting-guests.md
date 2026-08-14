@@ -44,6 +44,11 @@ Represent a stopped guest as `stopped`, not generic `error`. Add
 `running`. `wt ls` shows the provider reason when available and suggests the
 qualified `wt start` and `wt rm` commands.
 
+Starting the domain alone does not recover its stopped devcontainer. The
+container, Compose-sidecar, bounded-readiness, and app-SSH recovery behavior is
+defined by
+[ADR 0025](0025-recover-world-containers-after-guest-start.md).
+
 Do not restart stopped guests automatically. The condition that stopped the
 guest may still exist. Do not suggest `virsh`; recovery must work through WT for
 local, remote, and future providers.
@@ -54,6 +59,8 @@ local, remote, and future providers.
 - Users can free capacity in another terminal and retry without re-entering the
   world configuration.
 - Stopped worlds keep their memory reservation until started or removed.
+- Starting a stopped world restores its retained containers and verifies the
+  primary devcontainer before returning it to `running`.
 - No server capacity setting is required.
 - Total RAM does not reserve headroom for the host, QEMU overhead, or unrelated
   processes, so this prevents WT allocation oversubscription but cannot prevent

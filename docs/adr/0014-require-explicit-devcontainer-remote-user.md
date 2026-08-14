@@ -24,6 +24,11 @@ Before starting the devcontainer, WT reads the resolved configuration and
 validates `remoteUser` in Rust. After startup, WT verifies that the account
 exists in the container and that runtime metadata reports the same user.
 
+When recovering a stopped world, WT again reads and validates the live runtime
+metadata before restoring the user's app SSH authorized keys. It does not trust
+a separately persisted username. See
+[ADR 0025](0025-recover-world-containers-after-guest-start.md).
+
 Missing, invalid, nonexistent, or conflicting users fail setup with a direct
 error. WT does not install keys or mark the world complete.
 
@@ -34,6 +39,7 @@ An explicit `remoteUser: "root"` is allowed. Implicit root is not.
 - Missing or invalid `remoteUser` fails before container startup.
 - A user that does not exist fails before setup completes.
 - Runtime metadata cannot replace the configured user.
+- Restart recovery accepts only the validated live runtime user.
 - SSH, Byobu, VS Code, and Git configuration use the declared user.
 - Explicit root still works.
 
