@@ -474,14 +474,26 @@ impl GithubApi {
                 response.total_count,
                 response.jobs.len(),
             )?;
-            jobs.extend(response.jobs.into_iter().map(|job| CiJob {
-                handle: CiJobHandle::new(job.id.to_string()),
-                name: job.name,
-                state: job.conclusion.unwrap_or(job.status),
-                url: job.html_url,
-            }));
+            jobs.extend(response.jobs.into_iter().map(ci_job));
         }
         Ok(jobs)
+    }
+
+    fn read_action_job(
+        &self,
+        scope: &ProviderCommandScope<'_>,
+        handle: &CiJobHandle,
+    ) -> Result<CiJob> {
+        let job_id = handle.as_str().parse::<u64>().map_err(|_| {
+            anyhow::anyhow!(
+                "`{handle}` is not a numeric GitHub Actions job ID; use the job ID from its GitHub Actions URL"
+            )
+        })?;
+        let job: WorkflowJob = self.rest.read_json(&format!(
+            "{}repos/{}/actions/jobs/{job_id}",
+            self.rest_prefix, scope.project
+        ))?;
+        Ok(ci_job(job))
     }
 
     fn require_ci_job(
@@ -696,10 +708,10 @@ impl GitProviderApi for GithubApi {
                 self.read_change_request_snapshot(scope, true)?.jobs,
             )),
             ProviderCommand::ReadCiJobLog { job } => {
-                let current = self.require_ci_job(scope, job)?;
+                let current = self.read_action_job(scope, job)?;
                 let path = format!(
-                    "{}repos/{}/actions/jobs/{job}/logs",
-                    self.rest_prefix, scope.project
+                    "{}repos/{}/actions/jobs/{}/logs",
+                    self.rest_prefix, scope.project, current.handle
                 );
                 match self.rest.read_optional_text(&path)? {
                     Some(log) => Ok(ProviderCommandOutput::CiJobLog(log)),
@@ -767,6 +779,15 @@ fn github_job_log_pending(state: &str) -> bool {
         state,
         "queued" | "in_progress" | "waiting" | "pending" | "requested"
     )
+}
+
+fn ci_job(job: WorkflowJob) -> CiJob {
+    CiJob {
+        handle: CiJobHandle::new(job.id.to_string()),
+        name: job.name,
+        state: job.conclusion.unwrap_or(job.status),
+        url: job.html_url,
+    }
 }
 
 fn split_project(project: &str) -> Result<(&str, &str)> {
@@ -1100,27 +1121,16 @@ mod tests {
     }
 
     #[test]
-    fn running_job_log_is_a_bounded_provider_snapshot() {
+    fn running_job_log_can_be_read_outside_the_current_commit() {
         let (base_url, server) = serve_with_statuses(vec![
             (
                 ExpectedRequest {
                     method: "GET",
-                    path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                    path: "/repos/acme/widget/actions/jobs/94318091035",
                     required_header: Some(("authorization", "Bearer fixture-token")),
                     body_contains: None,
                     response_content_type: "application/json",
-                    response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
-                },
-                200,
-            ),
-            (
-                ExpectedRequest {
-                    method: "GET",
-                    path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
-                    required_header: Some(("authorization", "Bearer fixture-token")),
-                    body_contains: None,
-                    response_content_type: "application/json",
-                    response_body: r#"{"total_count":1,"jobs":[{"id":94318091035,"name":"Linux","status":"in_progress","conclusion":null,"html_url":"https://github.test/jobs/94318091035","run_id":91}]}"#,
+                    response_body: r#"{"id":94318091035,"name":"Linux","status":"in_progress","conclusion":null,"html_url":"https://github.test/jobs/94318091035","run_id":91}"#,
                 },
                 200,
             ),
@@ -1162,19 +1172,11 @@ mod tests {
         let (base_url, server) = serve(vec![
             ExpectedRequest {
                 method: "GET",
-                path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                path: "/repos/acme/widget/actions/jobs/44",
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"{"total_count":1,"workflow_runs":[{"id":91}]}"#,
-            },
-            ExpectedRequest {
-                method: "GET",
-                path: "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
-                required_header: Some(("authorization", "Bearer fixture-token")),
-                body_contains: None,
-                response_content_type: "application/json",
-                response_body: r#"{"total_count":1,"jobs":[{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}]}"#,
+                response_body: r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#,
             },
             ExpectedRequest {
                 method: "GET",

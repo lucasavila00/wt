@@ -593,10 +593,14 @@ impl GitProviderApi for GitlabApi {
                 ))
             }
             ProviderCommand::ReadCiJobLog { job } => {
-                self.require_ci_job(scope, job)?;
+                let job_id = job.as_str().parse::<u64>().map_err(|_| {
+                    anyhow::anyhow!(
+                        "`{job}` is not a numeric GitLab CI job ID; use the job ID from its GitLab CI URL"
+                    )
+                })?;
                 Ok(ProviderCommandOutput::CiJobLog(self.http.read_text(
                     &format!(
-                        "api/v4/projects/{}/jobs/{job}/trace",
+                        "api/v4/projects/{}/jobs/{job_id}/trace",
                         encoded_project(scope.project)
                     ),
                 )?))
@@ -1154,6 +1158,34 @@ mod tests {
     fn normalizes_gitlabs_canceled_spelling_for_shared_status_output() {
         assert_eq!(normalized_ci_state("canceled".to_owned()), "cancelled");
         assert_eq!(normalized_ci_state("failed".to_owned()), "failed");
+    }
+
+    #[test]
+    fn job_log_can_be_read_outside_the_current_commit() {
+        let (base_url, server) = serve(vec![ExpectedRequest {
+            method: "GET",
+            path: "/api/v4/projects/acme%2Fwidget/jobs/94633136939/trace",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: None,
+            response_content_type: "text/plain",
+            response_body: "build complete\n",
+        }]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let output = provider
+            .execute_command(
+                &scope(),
+                &ProviderCommand::ReadCiJobLog {
+                    job: CiJobHandle::new("94633136939"),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            output,
+            ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
+        );
+        server.join().unwrap().unwrap();
     }
 
     #[test]

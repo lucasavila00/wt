@@ -221,9 +221,10 @@ schema or contact GitHub or GitLab.
 
 The gateway enforces branch, request, review, and CI scope. The agent can prepare
 its request for human merge, but cannot merge or approve it, change its base,
-dismiss reviews, or act outside its namespace. CI commands apply only to the
-current commit. GitHub or GitLab remains authoritative for repository
-permissions and protections.
+dismiss reviews, or act outside its namespace. CI discovery and control apply
+only to the current commit. [ADR 0021](0021-allow-project-wide-provider-reads.md)
+extends CI log reads across the granted project. GitHub or GitLab remains
+authoritative for repository permissions and protections.
 
 Comments use the gateway's provider identity and include the world name.
 
