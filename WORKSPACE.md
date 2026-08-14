@@ -1,9 +1,8 @@
 # Workspace
 
-The repository is one Cargo workspace plus embedded POSIX shell installers in
-`assets/`. Rust packages are private and share their
-version, Rust edition, license, and common dependencies from the root
-`Cargo.toml`.
+The repository is one Cargo workspace plus [shell assets](./assets/README.md).
+Rust packages are private and share their version, Rust edition, license, and
+common dependencies from the root `Cargo.toml`.
 
 ## Packages
 

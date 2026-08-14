@@ -31,7 +31,7 @@ other.
 Shared machine and terminal provisioning has one implementation. In particular,
 one shared recipe installs and validates Byobu, tmux, terminfo, and terminal
 settings for both kinds. Kind recipes contain only their application contract:
-the devcontainer stack or the minimal host stack from
+the devcontainer stack or the host additions from
 [ADR 0026](0026-make-world-kinds-first-class.md).
 
 Whole image installation flows are readable `.sh` assets under
@@ -97,14 +97,10 @@ Libguestfs may stage and inspect files and clear identity while the disk is
 offline. Package installation and recipe execution happen only in KVM and do
 not depend on libguestfs networking.
 
-The first combined KVM E2E exposed a disk-size failure after image publication:
-the host test requested a 16 GiB overlay on a 32 GiB backing image. QEMU
-presented the smaller disk, truncating the backing image's GPT and root
-partition. Ubuntu fell into initramfs while repeated expected guest-agent poll
-errors hid the useful timeout. The provider now reads the backing virtual size
-at startup, rejects smaller world disks before creation, suppresses libvirt's
-duplicate default poll output, and reports the domain and last agent error on
-timeout.
+The first combined KVM E2E used a 16 GiB overlay on a 32 GiB image. The truncated
+partition table sent Ubuntu to initramfs, while repeated agent polls hid the
+cause. The provider now rejects undersized disks before creation and reports
+the domain and last agent error on timeout.
 
 ## Rejected
 

@@ -1,7 +1,7 @@
 # Getting started
 
-WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust. Run
-setup as a normal server user, never as root.
+WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust through
+rustup. Run setup as a normal server user, never as root.
 
 ## Prepare a fresh server
 
@@ -12,8 +12,8 @@ WT checkout:
 scripts/bootstrap-server-user
 ```
 
-It creates the fixed `wt` account, copies root's authorized keys, and grants the
-trusted account the sudo, Docker, libvirt, and KVM access needed by setup.
+It creates the fixed `wt` account, copies root's authorized keys, and grants it
+passwordless sudo. The installer adds Docker, libvirt, and KVM access later.
 Reconnect as `wt` before continuing.
 
 ## Install the server
@@ -24,9 +24,9 @@ scripts/install-server --config ./server.toml
 ```
 
 Review capacity limits, image resources, registry-cache hosts, and the agent
-Git provider in the install input. The current installer requires one provider
-for devcontainer worlds. Its API token and SSH key stay on the server; host
-worlds never receive them.
+Git providers in the install input. The current installer requires at least one
+provider for devcontainer worlds. Its API token and SSH key stay on the server;
+host worlds never receive them.
 
 The example expects the token at
 `~/.config/wt/credentials/github.token`. Create it without putting the value in
@@ -43,6 +43,11 @@ The current GitHub integration uses a classic personal access token with the
 `repo` scope. Give it an expiry, repository access, and organization SSO access
 appropriate for the repositories this server manages.
 
+The sample also reads `~/.ssh/id_ed25519`, its matching `.pub` file, and
+`~/.ssh/known_hosts`. The key needs repository access, and `known_hosts` needs
+a verified key for `github.com`. All three must be regular files owned by `wt`;
+use mode `0600` for the private key and `0600` or `0644` for the public files.
+
 If setup changes group membership, log out, reconnect, and rerun the same
 install command. Keep the install input for later reinstalls.
 
@@ -56,6 +61,9 @@ On the workstation, install the client from a WT checkout:
 ```text
 scripts/install-client
 ```
+
+`wt new` also needs at least one regular public key in `~/.ssh/*.pub`. Generate
+one with `ssh-keygen` if the workstation has none.
 
 ```text
 mkdir -p ~/.wt

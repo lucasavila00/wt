@@ -17,7 +17,7 @@ computes unreachable nodes from leaf to root and removes only those disks.
 Capacity changes and guest insertion happen in one immediate transaction. CPU,
 RAM, and disk reservations therefore apply atomically across devcontainer,
 host, and GitHub CI worlds when both services use the same registry path. The
-future CI operator must use the retained server's registry.
+CI operator must open that same registry path and capacity configuration.
 
 ## Schema changes
 

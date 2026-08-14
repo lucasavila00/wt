@@ -1,4 +1,4 @@
-# ADR 0021: Allow project-wide provider reads
+# ADR 0031: Allow project-wide provider reads
 
 - Status: Accepted
 - Date: 2026-08-14
@@ -25,7 +25,7 @@ GitHub Actions or GitLab CI job ID in the granted project. It reads through a
 project-qualified provider endpoint, so a job ID from another project is still
 rejected by GitHub or GitLab. The gateway does not accept a project override.
 
-Keep mutations scoped more narrowly. ADR 0022 replaces checkout scoping with
+Keep mutations scoped more narrowly. ADR 0032 replaces checkout scoping with
 validation of the explicitly named resource's provider metadata.
 
 Future read-only commands may use the same project-wide rule. Each must use a

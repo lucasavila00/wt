@@ -8,22 +8,20 @@ WT runs isolated KVM guests called worlds.
 | `host` | Raw Ubuntu with cloud-init | Named, retained | Byobu and direct guest SSH |
 | `github-ci` | GitHub Actions job foundation | One job | None |
 
-Start with [Worlds](./worlds/README.md), then read the page for the kind you
-need:
+Devcontainer and host worlds are available now. GitHub CI has lifecycle and
+registry code, but no operator service or image installer yet.
 
-- [Devcontainer](./worlds/devcontainer.md)
-- [Host](./worlds/host.md)
-- [GitHub CI](./worlds/github-ci.md)
+## Use WT
 
-Devcontainer and host worlds are available through the installed server. The
-GitHub CI lifecycle and registry kind exist, but its operator service and image
-installer are not implemented yet.
+- [Getting started](../GETTING-STARTED.md)
+- [World contracts](./worlds/README.md): [devcontainer](./worlds/devcontainer.md),
+  [host](./worlds/host.md), and [GitHub CI](./worlds/github-ci.md)
+- [Client and SSH](./guides/client.md) and [server operations](./guides/server.md)
 
-User guides: [client](./guides/client.md) and [server](./guides/server.md).
+## Work on WT
 
-Implementation: [architecture](./internals/architecture.md),
-[KVM](./internals/kvm.md), [provider boundaries](./internals/provider.md),
-[database](./internals/database.md), and
-[registry cache](./internals/registry-cache.md).
-
-Decisions are recorded in [ADRs](./adr/).
+- [Architecture](./internals/architecture.md)
+- [KVM](./internals/kvm.md), [provider boundaries](./internals/provider.md),
+  [database](./internals/database.md), and
+  [registry cache](./internals/registry-cache.md)
+- [Decision records](./adr/README.md)

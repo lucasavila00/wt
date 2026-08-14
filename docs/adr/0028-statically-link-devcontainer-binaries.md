@@ -1,4 +1,4 @@
-# ADR 0023: Statically link WT binaries that run in devcontainers
+# ADR 0028: Statically link WT binaries that run in devcontainers
 
 - Status: Accepted
 - Date: 2026-08-14

@@ -21,7 +21,12 @@ Retained worlds use two installed images built from the same pinned Ubuntu
 source:
 
 - devcontainer: Docker, Git, Dev Container CLI, Byobu, and tmux;
-- host: OpenSSH, QEMU guest agent, Byobu, tmux, and shared terminal assets.
+- host: upstream Ubuntu plus OpenSSH, QEMU guest agent, Byobu, tmux, and shared
+  terminal assets.
+
+`wt-server-setup` builds each image independently through one KVM builder.
+Shared recipes live in `assets/world/shared`; kind recipes live beside their
+kind. [ADR 0027](../adr/0027-build-images-in-kvm.md) records the build contract.
 
 Each image has its own provenance manifest and checksum. Image paths cannot be
 the same file. A world disk cannot be smaller than its backing image; the

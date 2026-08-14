@@ -1,7 +1,8 @@
-# ADR 0007: Use Diesel for the registry
+# ADR 0030: Use Diesel for the registry
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-17
+- Amended by: [ADR 0024](0024-use-a-shared-guest-registry.md)
 
 ## Context
 
@@ -19,20 +20,20 @@ Replace `rusqlite` with Diesel and its SQLite backend.
 - Use Diesel models and query builders for normal database work.
 - Keep raw SQL only when it is clearer, such as SQLite connection settings.
 - Keep SQLite bundled in the binary.
-- Store migrations in `wt-server` and embed them in the binary.
-- Run pending migrations in `Store::open`. Fail startup if they fail.
+- Store migrations and generated schema in `wt-registry` and embed them.
+- Run pending migrations when the registry opens. Fail startup if they fail.
 - Use explicit SQL migrations. Do not generate schema changes at runtime.
 
 The first migration creates the whole schema. We will run `make clear` during
 the change. We will not migrate or detect the old database format.
 
-Run Diesel CLI commands from `crates/wt-server`. Its config regenerates
-`src/schema.rs` when migrations run. The CLI is not needed on the server.
+Run Diesel CLI commands from `crates/wt-registry`. Its config regenerates
+`src/schema.rs`. The CLI is not needed on the server.
 
 ## Consequences
 
 - Queries and row types are checked at compile time.
-- New migrations run automatically when `wt-server` starts.
+- New migrations run automatically when a registry owner starts.
 - Schema changes stay explicit and reviewable.
 - Diesel adds build time and dependencies.
 - Old development registry data is deleted.

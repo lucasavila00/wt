@@ -14,7 +14,8 @@ Kind crates compose machines into applications:
 
 - `wt-devcontainer` owns checkout, bootstrap, Docker/devcontainer, app SSH, and
   restart recovery;
-- `wt-host` owns vendor-data, cloud-init readiness, and direct SSH;
+- `wt-host` owns vendor-data, cloud-init readiness, one-use login proof and key
+  removal, and direct SSH;
 - `wt-github-ci` defines JIT runner execution and one-job cleanup; its operator
   process is not shipped yet.
 

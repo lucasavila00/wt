@@ -1,12 +1,12 @@
-# ADR 0006: Show the current Git checkout in the Byobu title
+# ADR 0029: Show a devcontainer checkout in the Byobu title
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-16
 
 ## Problem statement
 
-WT sets the terminal title for a Byobu connection from client-side world state.
-It contains the qualified world name and repository name, for example
+WT sets a devcontainer world's terminal title from client-side state. It
+contains the qualified world name and repository name, for example
 `ars.jsdev1 - frontend`.
 
 The title does not identify the checkout currently open in the world. Worlds
@@ -53,7 +53,7 @@ Byobu session rather than varying by pane.
 
 ## Consequences
 
-- Terminal titles distinguish worlds by their live checkout.
+- Terminal titles distinguish devcontainer worlds by their live checkout.
 - The displayed checkout follows changes made after world creation.
 - A title can remain stale while an existing connection stays attached; the
   next attach refreshes it.

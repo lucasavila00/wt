@@ -45,9 +45,8 @@ and image installer remain follow-up work under ADR 0023.
 
 ## Ownership
 
-All kinds share KVM, capacity admission, disk ownership, registry identity,
-reconciliation, and cleanup. Application state and lifecycle remain typed by
-kind.
+All kinds share KVM, capacity admission, disk ownership, and registry identity.
+Reconciliation and cleanup remain typed by kind and owned by their lifecycle.
 
 `wt-server` owns `devcontainer` and `host` worlds. The future runner service
 will own `github-ci` worlds. `wt new host` accepts cloud-init user-data instead

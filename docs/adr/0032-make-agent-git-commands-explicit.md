@@ -1,9 +1,9 @@
-# ADR 0022: Make agent Git commands explicit
+# ADR 0032: Make agent Git commands explicit
 
 - Status: Accepted
 - Date: 2026-08-14
 - Amends: [ADR 0017](0017-integrate-agent-git-gateway.md) and
-  [ADR 0021](0021-allow-project-wide-provider-reads.md)
+  [ADR 0031](0031-allow-project-wide-provider-reads.md)
 
 ## Context
 

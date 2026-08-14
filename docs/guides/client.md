@@ -33,7 +33,10 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | `wt rm NAME` | retained | Destroy the world |
 | `wt sync` | retained | Rewrite managed SSH inventory |
 
-The client reads valid regular `~/.ssh/*.pub` files for new retained worlds.
+There is no `wt stop`. Shut a guest down from inside it, then use `wt start` to
+resume it.
+
+New retained worlds require at least one valid regular `~/.ssh/*.pub` file.
 Private keys are never sent to the server.
 
 Devcontainer creation also requires an SSH-form Git source and global Git
