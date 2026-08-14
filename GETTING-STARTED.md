@@ -1,173 +1,92 @@
 # Getting started
 
-WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust. Install
-and run WT as a normal server user, never as root.
+WT servers require Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust through
+rustup. Run setup as a normal server user, never as root.
 
-## Prepare a fresh hosted server
+## Prepare a fresh server
 
-Fresh hosted servers often provide only root SSH access. From a WT source
-checkout on that server, run:
+When a hosted server has only root SSH access, run this from a root shell in a
+WT checkout:
 
-```bash
+```text
 scripts/bootstrap-server-user
 ```
 
-The bootstrap must run directly from a root shell. It creates the fixed `wt`
-login account, copies `/root/.ssh/authorized_keys` for SSH access, and grants the
-trusted account passwordless sudo. The account is intentionally privileged:
-server setup also grants it Docker, libvirt, and KVM access.
+It creates the fixed `wt` account, copies root's authorized keys, and grants it
+passwordless sudo. The installer adds Docker, libvirt, and KVM access later.
+Reconnect as `wt` before continuing.
 
-Reconnect as `wt`, clone a new checkout under `/home/wt`, and continue with the
-installation below:
+## Install the server
 
-```bash
-ssh wt@SERVER_ADDRESS
-git clone https://github.com/lucasavila00/wt.git
-cd wt
-```
-
-The bootstrap does not transfer the root checkout, private Git keys, or server
-configuration. A matching rerun is safe; conflicting account, authorized-key,
-or sudoers state is reported and left unchanged. Existing servers that already
-have a suitable normal server user do not need the bootstrap.
-
-## Install a server
-
-```bash
+```text
 cp examples/server-config/wt-server.development.toml ./server.toml
+scripts/install-server --config ./server.toml
 ```
 
-Edit `server.toml`. At minimum, check:
+Review capacity limits, image resources, registry-cache hosts, and the agent
+Git providers in the install input. The current installer requires at least one
+provider for devcontainer worlds. Its API token and SSH key stay on the server;
+host worlds never receive them.
 
-- `agent_git`: at least one provider with its API token, SSH key pair, and
-  trusted host keys.
-- `image.build_memory_mib`, `image.build_vcpus`, and `image.build_disk_gib`:
-  temporary resources used to build the golden image.
-- `registry_cache.registries`: registry hosts whose public images are cached.
+The example expects the token at
+`~/.config/wt/credentials/github.token`. Create it without putting the value in
+shell history:
 
-### GitHub credential
-
-The example config enables GitHub and expects
-`~/.config/wt/credentials/github.token`. Create a
-[GitHub personal access token (classic)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic)
-with the `repo` scope and no additional scopes. Set an expiration and, when
-required by an organization, authorize the token for SAML SSO. The user that
-creates the token must have write access to every repository WT will use.
-
-WT cannot currently use a fine-grained personal access token. `ag-git` reads
-individual CI checks, and GitHub does not allow fine-grained tokens to call the
-Checks API. See GitHub's documentation on
-[personal access token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-token-limitations).
-
-Create the credential file without putting the token in shell history:
-
-```bash
+```text
 install -d -m 0700 ~/.config/wt/credentials
 touch ~/.config/wt/credentials/github.token
 chmod 0600 ~/.config/wt/credentials/github.token
 ${EDITOR:-vi} ~/.config/wt/credentials/github.token
 ```
 
-The file contains only the token; a trailing newline is allowed. The token
-handles pull requests, reviews, and CI. The SSH key configured under
-`agent_git.github` handles Git fetch and push.
+The current GitHub integration uses a classic personal access token with the
+`repo` scope. Give it an expiry, repository access, and organization SSO access
+appropriate for the repositories this server manages.
 
-Install:
+The sample also reads `~/.ssh/id_ed25519`, its matching `.pub` file, and
+`~/.ssh/known_hosts`. The key needs repository access, and `known_hosts` needs
+a verified key for `github.com`. All three must be regular files owned by `wt`;
+use mode `0600` for the private key and `0600` or `0644` for the public files.
 
-```bash
-scripts/install-server --config ./server.toml
+If setup changes group membership, log out, reconnect, and rerun the same
+install command. Keep the install input for later reinstalls.
+
+Moving an existing installation to the first-class world-kind schema requires
+the destructive reset described in [Server operations](./docs/guides/server.md#reset).
+
+## Configure the client
+
+On the workstation, install stable Rust through rustup, then install the client
+from a WT checkout:
+
+```text
+scripts/install-client
 ```
 
-If the configured SSH key is encrypted, setup asks for that key's existing
-passphrase. The prompt names the provider and key before asking. WT verifies the
-key pair, creates an unlocked temporary copy, encrypts that copy as a systemd
-credential for the local Git gateway, and removes the temporary copy. It never
-changes the configured SSH key.
+`wt new` also needs at least one regular public key in `~/.ssh/*.pub`. Generate
+one with `ssh-keygen` if the workstation has none.
 
-If setup changes group membership, log out, log back in, and run the same command
-again. Setup writes the strict runtime configuration to `/etc/wt/server.toml`
-and installs and starts the WT services. Keep the install input for future
-reinstalls. Reinstalling restarts the daemon; do not reinstall while a world is
-provisioning.
-
-## Configure a local client
-
-Install the local client config:
-
-```bash
+```text
 mkdir -p ~/.wt
 cp examples/client-config/wt.development.toml ~/.wt/config.toml
-```
-
-Add this before every `Host` block in `~/.ssh/config`:
-
-```bash
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 ```
 
-```sshconfig
-Include ~/.ssh/wt/config
-```
-
-## Create and enter a world
-
-```bash
-wt new
-wt ls
-ssh local.repo-feature
-```
-
-Managed aliases:
-
-| Alias | Target |
-|-------|--------|
-| `NAME` | Persistent app session |
-| `NAME-vs` | Devcontainer; use for editor Remote-SSH |
-| `NAME-host` | Guest shell and recovery |
-
-Remove the world:
-
-```bash
-wt rm local.repo-feature
-```
-
-App images must be based on Ubuntu 24.04 or newer, or Debian 13 or newer, and
-support `apt`.
-
-## Use a remote server
-
-Give the server a normal OpenSSH alias on the client:
+Put this before other `Host` blocks in `~/.ssh/config`:
 
 ```sshconfig
 Include ~/.ssh/wt/config
+```
 
+For a remote context, give the WT server a normal OpenSSH alias and reference it
+from `~/.wt/config.toml`:
+
+```sshconfig
 Host wt-server
     HostName SERVER_ADDRESS
     User wt
 ```
-
-WT also uses this alias as the OpenSSH jump host for worlds in the remote
-context. The server's SSH service must allow TCP forwarding, and the server
-must be able to reach its libvirt guests. The workstation does not need a route
-to the libvirt network.
-
-Install the server from the sample config. World SSH keys are collected from
-`~/.ssh/*.pub` on the workstation when `wt new` runs. They do not need to be
-copied to the server.
-
-Install the client:
-
-```bash
-git clone https://github.com/lucasavila00/wt.git
-wt/scripts/install-client
-```
-
-Rerun `scripts/install-client` from the checkout after updating it. The script
-builds and replaces only the local `wt` client; it does not require KVM or alter
-the remote server.
-
-Create `~/.wt/config.toml`:
 
 ```toml
 version = 1
@@ -178,16 +97,31 @@ kind = "bare_metal_ssh"
 host = "wt-server"
 ```
 
-Use it:
+The server must allow TCP forwarding and reach its libvirt guest network. The
+workstation does not need a direct route to guest addresses.
 
-```bash
+## Create worlds
+
+Create a repository devcontainer and complete setup:
+
+```text
 wt new
-ssh lab.repo-feature
 ```
 
-The resulting connection follows
-`workstation -> wt-server -> guest private address`. WT does not publish a
-per-world port on the server.
+`wt new` enters the setup session itself. Reconnect later with
+`ssh CONTEXT.NAME`.
 
-Client-to-server, server-to-Git, and client-to-world SSH keys are separate roles.
-The same key may serve more than one role.
+Create a raw Ubuntu host from cloud-init:
+
+```text
+wt new host ./host.yaml
+ssh lab.ubuntu
+ssh lab.ubuntu-vs
+```
+
+The first host alias attaches to Byobu; `-vs` is direct guest SSH.
+
+Then use `wt ls`, `wt start NAME`, and `wt rm NAME` for retained worlds.
+`wt code NAME` is devcontainer-only.
+
+See [WT documentation](./docs/README.md) for world contracts and internals.

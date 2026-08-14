@@ -1,14 +1,15 @@
+mod builder;
 mod console;
+#[path = "image/host.rs"]
+mod host_image;
 mod recipe;
 
 #[cfg(test)]
-use console::{extract_phase_markers, progress_message};
-use console::{wait_for_shutdown, ConsoleLog};
+use console::{extract_phase_markers, progress_message, ConsoleLog};
 
+use self::builder::*;
 use self::recipe::ImageRecipe;
-use crate::files::{
-    require_named_file, require_root_file, sudo_install, sudo_install_owned, sudo_move,
-};
+use crate::files::{require_named_file, require_root_file};
 use crate::host;
 use crate::install_input::InstallInput;
 use crate::runner::Runner;
@@ -16,25 +17,24 @@ use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
 #[cfg(test)]
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(test)]
+use std::time::Duration;
 use wt_command::cmd;
+use wt_devcontainer::PackageVersions;
 use wt_libvirt::LIBVIRT_URI;
-use wt_provider::PackageVersions;
 use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
-const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
-const IMAGE_MANIFEST_VERSION: u32 = 1;
-const CLEAR_MACHINE_ID: &str =
-    "truncate -s 0 /etc/machine-id && ln -sfn /etc/machine-id /var/lib/dbus/machine-id";
+const IMAGE_MANIFEST_VERSION: u32 = 2;
+const DEVCONTAINER_IMAGE_BUILD: &[u8] =
+    include_bytes!("../../../assets/world/devcontainer/build-image.sh");
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -43,7 +43,9 @@ struct ImageManifest {
     recipe_version: u32,
     source_sha256: String,
     config_sha256: String,
+    inputs: BTreeMap<String, String>,
     golden_sha256: String,
+    tmux_sha256: String,
     packages: PackageVersions,
     devcontainer_cli: String,
 }
@@ -54,29 +56,37 @@ pub(crate) fn ensure(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
-    let manifest_path = manifest_path(&server.image.installed_path);
-    match (server.image.installed_path.exists(), manifest_path.exists()) {
+    let _lock = BuildLock::acquire()?;
+    require_clean_build_state(runner, server)?;
+    require_clean_publication_state(server)?;
+    let manifest_path = manifest_path(&server.image.devcontainer_path);
+    match (
+        server.image.devcontainer_path.exists(),
+        manifest_path.exists(),
+    ) {
         (true, true) => {
             println!("Verifying installed golden image and provenance...");
             verify_installed_image(input, server, server_bytes, &manifest_path)?;
             println!("Reusing verified golden image.");
-            return Ok(());
         }
-        (false, false) => {}
+        (false, false) => {
+            let source = source_image(input, runner)?;
+            let byobu = byobu_package(runner)?;
+            build_image(
+                runner,
+                input,
+                server,
+                server_bytes,
+                &source,
+                &byobu,
+                &manifest_path,
+            )?;
+        }
         _ => bail!("image drift: image and manifest must either both exist or both be absent"),
     }
-
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    build_image(
-        runner,
-        input,
-        server,
-        server_bytes,
-        &source,
-        &byobu,
-        &manifest_path,
-    )
+    host_image::ensure(runner, input, server, server_bytes, &source, &byobu)
 }
 
 pub(crate) fn rebuild(
@@ -85,10 +95,13 @@ pub(crate) fn rebuild(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
+    let _lock = BuildLock::acquire()?;
+    require_clean_build_state(runner, server)?;
+    require_clean_publication_state(server)?;
     refuse_active_worlds(runner)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let manifest = manifest_path(&server.image.installed_path);
+    let manifest = manifest_path(&server.image.devcontainer_path);
     build_image(
         runner,
         input,
@@ -97,7 +110,8 @@ pub(crate) fn rebuild(
         &source,
         &byobu,
         &manifest,
-    )
+    )?;
+    host_image::build(runner, input, server, server_bytes, &source, &byobu)
 }
 
 fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
@@ -172,187 +186,61 @@ fn build_image(
     manifest_path: &Path,
 ) -> Result<()> {
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
-    let disk = build_dir.join("disk.qcow2");
-    let seed = build_dir.join("seed.img");
-    let user_data = build_dir.join("user-data");
-    let meta_data = build_dir.join("meta-data");
-    let console = build_dir.join("console.log");
-    let prepared = build_dir.join("golden.qcow2");
 
-    if build_dir.exists() || domain_exists(runner)? {
+    if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
         bail!("stale image build state exists for {BUILD_NAME}");
     }
     fs::create_dir(&build_dir).context("create image build directory")?;
+    let context = BuildContext {
+        runner,
+        input,
+        server,
+        source,
+        byobu,
+    };
     let result = (|| {
         fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
             .context("set image build directory permissions")?;
         host::ensure_qemu_search_acl(runner, &build_dir)?;
-        build_image_inner(
-            runner,
-            input,
-            server,
-            server_bytes,
-            source,
-            byobu,
-            manifest_path,
-            &disk,
-            &seed,
-            &user_data,
-            &meta_data,
-            &console,
-            &prepared,
-        )
+        build_image_inner(&context, server_bytes, manifest_path, &build_dir)
     })();
-    if result.is_err() {
-        cleanup_failed_build(runner, &build_dir);
+    if let Err(primary) = result {
+        let primary = attach_console_tail(primary, &build_dir);
+        return match cleanup_failed_build(runner, &build_dir, BUILD_NAME) {
+            Ok(()) => Err(primary),
+            Err(cleanup) => {
+                Err(primary.context(format!("image build cleanup also failed: {cleanup}")))
+            }
+        };
     }
-    result
+    Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_image_inner(
-    runner: &impl Runner,
-    input: &InstallInput,
-    server: &ServerConfig,
+fn build_image_inner<R: Runner>(
+    context: &BuildContext<'_, R>,
     server_bytes: &[u8],
-    source: &Path,
-    byobu: &Path,
     manifest_path: &Path,
-    disk: &Path,
-    seed: &Path,
-    user_data: &Path,
-    meta_data: &Path,
-    console: &Path,
-    prepared: &Path,
+    build_dir: &Path,
 ) -> Result<()> {
+    let runner = context.runner;
+    let input = context.input;
+    let server = context.server;
     let recipe = ImageRecipe::new();
-    let build_dir = disk.parent().context("image build disk has no parent")?;
-    println!("Preparing temporary KVM build disk...");
-    runner.run(
-        cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, disk),
-        "copy source image",
-    )?;
-    runner.run(
-        cmd!(
-            "qemu-img",
-            "resize",
-            disk,
-            format!("{}G", input.image.build_disk_gib),
-        ),
-        "resize image build disk",
-    )?;
-    runner.run(
+    let spec = BuildSpec {
+        name: BUILD_NAME,
+        kind: "devcontainer",
+        recipe_version: recipe::RECIPE_VERSION,
+        recipe: DEVCONTAINER_IMAGE_BUILD,
+    };
+    let paths = run_kvm_build(context, build_dir, &spec, &[])?;
+    let package_output = runner.text(
         cmd!(
             "sudo",
-            "virt-customize",
+            "virt-cat",
             "-a",
-            disk,
-            "--upload",
-            format!("{}:/var/tmp/wt-byobu.deb", byobu.display()),
+            &paths.disk,
+            "/var/lib/wt-image-packages",
         ),
-        "stage pinned Byobu package in image build disk",
-    )?;
-    fs::write(user_data, recipe.cloud_config()).context("write image cloud-init user-data")?;
-    fs::write(
-        meta_data,
-        format!("instance-id: {BUILD_NAME}\nlocal-hostname: {BUILD_NAME}\n"),
-    )
-    .context("write image cloud-init meta-data")?;
-    runner.run(
-        cmd!("cloud-localds", seed, user_data, meta_data),
-        "create image build seed",
-    )?;
-    fs::File::create_new(console).context("create image build console log")?;
-    fs::set_permissions(console, fs::Permissions::from_mode(0o660))
-        .context("set image build console log permissions")?;
-    runner.run(
-        cmd!(
-            "virt-install",
-            "--connect",
-            LIBVIRT_URI,
-            "--name",
-            BUILD_NAME,
-            "--memory",
-            input.image.build_memory_mib.to_string(),
-            "--vcpus",
-            input.image.build_vcpus.to_string(),
-            "--virt-type",
-            "kvm",
-            "--os-variant",
-            "ubuntu24.04",
-            "--import",
-            "--boot",
-            "uefi",
-            "--disk",
-            format!("path={},format=qcow2,bus=virtio", disk.display()),
-            "--disk",
-            format!("path={},device=cdrom", seed.display()),
-            "--network",
-            format!("network={},model=virtio", server.libvirt.network),
-            "--serial",
-            format!("file,path={}", console.display()),
-            "--graphics",
-            "none",
-            "--noautoconsole",
-            "--wait",
-            "0",
-        ),
-        "start KVM image build guest",
-    )?;
-    runner.run(
-        cmd!("sudo", "chmod", "0640", console),
-        "permit image build console reading",
-    )?;
-    let mut console_log = ConsoleLog::open(console)?;
-    println!(
-        "KVM build guest started. Waiting for cloud-init to install Docker, Compose, and guest agent."
-    );
-    println!("The guest will power off when ready. Timeout: 30 minutes.");
-    wait_for_shutdown(runner, &mut console_log)?;
-
-    println!("Guest powered off. Verifying readiness and package versions...");
-    let marker = read_build_file(
-        runner,
-        disk,
-        console,
-        "/var/lib/wt-image-ready",
-        "verify image readiness marker",
-    )?;
-    if marker.trim() != "ready" {
-        bail!("image build finished without the expected readiness marker");
-    }
-    let byobu_marker = read_build_file(
-        runner,
-        disk,
-        console,
-        "/var/lib/wt-byobu-ready",
-        "verify pinned Byobu readiness marker",
-    )?;
-    if byobu_marker.trim() != "ready" {
-        bail!("image build finished without the pinned Byobu readiness marker");
-    }
-    let tmux_marker = read_build_file(
-        runner,
-        disk,
-        console,
-        "/var/lib/wt-tmux-ready",
-        "verify pinned tmux readiness marker",
-    )?;
-    if tmux_marker.trim() != "ready" {
-        bail!("image build finished without the pinned tmux readiness marker");
-    }
-    let ghostty_terminfo_marker = read_build_file(
-        runner,
-        disk,
-        console,
-        "/var/lib/wt-ghostty-terminfo-ready",
-        "verify Ghostty terminfo readiness marker",
-    )?;
-    if ghostty_terminfo_marker.trim() != "ready" {
-        bail!("image build finished without the Ghostty terminfo readiness marker");
-    }
-    let package_output = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-image-packages",),
         "read installed guest package versions",
     )?;
     let packages = recipe.parse_package_versions(&package_output)?;
@@ -363,41 +251,15 @@ fn build_image_inner(
         .join(", ");
     println!("Verified packages: {package_summary}");
 
-    undefine_build_domain(runner)?;
-    runner.run(
-        cmd!(
-            "sudo",
-            "virt-copy-out",
-            "-a",
-            disk,
-            "/var/lib/wt-tmux",
-            &build_dir
-        ),
-        "preserve pinned tmux across image sysprep",
-    )?;
-    println!("Sysprepping golden image...");
-    runner.run(
-        cmd!("sudo", "virt-sysprep", "-a", disk),
-        "sysprep golden image",
-    )?;
-    runner.run(
-        cmd!(
-            "sudo",
-            "virt-customize",
-            "-a",
-            disk,
-            "--upload",
-            format!("{}:/var/tmp/wt-tmux", build_dir.join("wt-tmux").display()),
-            "--run-command",
-            format!(
-                "install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && /usr/bin/tmux -V > /var/lib/wt-tmux-version && printf '%s  %s\\n' {} /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && rm -f /var/tmp/wt-tmux /var/lib/wt-tmux /var/lib/wt-byobu-ready /var/lib/wt-tmux-ready /var/lib/wt-ghostty-terminfo-ready && {CLEAR_MACHINE_ID}",
-                recipe::GHOSTTY_TERMINFO_SHA256
-            ),
-        ),
-        "restore tmux, verify Ghostty terminfo, and clear golden image machine identity",
-    )?;
+    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
     let tmux_version = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/var/lib/wt-tmux-version",),
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-tmux-version",
+        ),
         "read pinned tmux version after image sysprep",
     )?;
     if tmux_version.trim() != format!("tmux {}", recipe::TMUX_VERSION) {
@@ -406,12 +268,19 @@ fn build_image_inner(
             tmux_version.trim()
         );
     }
-    let machine_id = runner.text(
-        cmd!("sudo", "virt-cat", "-a", disk, "/etc/machine-id"),
-        "verify empty golden image machine identity",
+    let finalized_package_output = runner.text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-image-packages"
+        ),
+        "revalidate finalized guest package versions",
     )?;
-    if !machine_id.is_empty() {
-        bail!("golden image machine identity was not cleared");
+    let finalized_packages = recipe.parse_package_versions(&finalized_package_output)?;
+    if finalized_packages != packages {
+        bail!("finalized image package versions changed during sanitization");
     }
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
@@ -421,16 +290,27 @@ fn build_image_inner(
             "sudo",
             "chown",
             format!("{}:{}", user.uid.as_raw(), user.gid.as_raw()),
-            disk,
+            &paths.disk,
         ),
         "restore image build disk ownership",
     )?;
     println!("Compacting golden image...");
     runner.run(
-        cmd!("qemu-img", "convert", "-p", "-O", "qcow2", disk, prepared,),
+        cmd!(
+            "qemu-img",
+            "convert",
+            "-p",
+            "-O",
+            "qcow2",
+            &paths.disk,
+            &paths.prepared,
+        ),
         "compact golden image",
     )?;
-    runner.run(cmd!("qemu-img", "check", prepared), "check golden image")?;
+    runner.run(
+        cmd!("qemu-img", "check", &paths.prepared),
+        "check golden image",
+    )?;
 
     println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
@@ -438,118 +318,21 @@ fn build_image_inner(
         recipe_version: recipe::RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
-        golden_sha256: sha_file(prepared)?,
+        inputs: staged_input_hashes(&spec, &[]),
+        golden_sha256: sha_file(&paths.prepared)?,
+        tmux_sha256,
         packages,
         devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
     };
-    publish_image(runner, server, prepared, manifest_path, &manifest)?;
-    fs::remove_dir_all(server.libvirt.worlds_dir.join(BUILD_NAME))
-        .context("remove image build directory")?;
-    Ok(())
-}
-
-fn domain_exists(runner: &impl Runner) -> Result<bool> {
-    let output = runner.output(cmd!("virsh", "-c", LIBVIRT_URI, "dominfo", BUILD_NAME))?;
-    Ok(output.status.success())
-}
-
-fn undefine_build_domain(runner: &impl Runner) -> Result<()> {
-    runner.run(
-        cmd!(
-            "virsh",
-            "-c",
-            LIBVIRT_URI,
-            "undefine",
-            BUILD_NAME,
-            "--nvram",
-        ),
-        "undefine image build domain",
-    )
-}
-
-fn read_build_file(
-    runner: &impl Runner,
-    disk: &Path,
-    console: &Path,
-    guest_path: &str,
-    action: &str,
-) -> Result<String> {
-    match runner.text(cmd!("sudo", "virt-cat", "-a", disk, guest_path), action) {
-        Ok(text) => Ok(text),
-        Err(error) => {
-            let log = fs::read_to_string(console).context("read failed image build console")?;
-            let tail = log.lines().rev().take(500).collect::<Vec<_>>();
-            bail!(
-                "{error}\nImage build console tail:\n{}",
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            )
-        }
-    }
-}
-
-fn cleanup_failed_build(runner: &impl Runner, build_dir: &Path) {
-    if domain_exists(runner).unwrap_or(false) {
-        let state = runner
-            .text(
-                cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
-                "read failed build domain state",
-            )
-            .unwrap_or_default();
-        if state.trim() != "shut off" {
-            let _ = runner.run(
-                cmd!("virsh", "-c", LIBVIRT_URI, "destroy", BUILD_NAME),
-                "destroy failed build domain",
-            );
-        }
-        let _ = undefine_build_domain(runner);
-    }
-    let console = build_dir.join("console.log");
-    if console.exists() {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or_default();
-        let destination = build_dir.with_file_name(format!(
-            "{BUILD_NAME}.failed-{suffix}-{}.console.log",
-            std::process::id()
-        ));
-        match fs::copy(&console, &destination) {
-            Ok(_) => eprintln!(
-                "Preserved failed image build console: {}",
-                destination.display()
-            ),
-            Err(error) => eprintln!("Could not preserve failed image build console: {error}"),
-        }
-    }
-    let _ = fs::remove_dir_all(build_dir);
-}
-
-fn publish_image(
-    runner: &impl Runner,
-    server: &ServerConfig,
-    prepared: &Path,
-    manifest_path: &Path,
-    manifest: &ImageManifest,
-) -> Result<()> {
-    let image_temporary = sibling_temporary(&server.image.installed_path)?;
-    let manifest_temporary = sibling_temporary(manifest_path)?;
-    if image_temporary.exists() || manifest_temporary.exists() {
-        bail!("stale temporary installed image state exists");
-    }
-    let local_manifest = prepared.with_extension("manifest.json");
-    fs::write(&local_manifest, serde_json::to_vec_pretty(manifest)?)
-        .context("write image manifest")?;
-    sudo_install_owned(
+    let publication = stage_publication(
         runner,
-        prepared,
-        &image_temporary,
-        "libvirt-qemu",
-        "kvm",
-        0o644,
+        &paths.prepared,
+        &server.image.devcontainer_path,
+        manifest_path,
+        &manifest,
     )?;
-    sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
-    sudo_move(runner, &image_temporary, &server.image.installed_path)?;
-    sudo_move(runner, &manifest_temporary, manifest_path)?;
+    fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
+    publication.publish(runner)?;
     Ok(())
 }
 
@@ -560,7 +343,12 @@ pub(crate) fn verify_installed_image(
     manifest_path: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
-    require_named_file(&server.image.installed_path, "libvirt-qemu", "kvm", 0o644)?;
+    require_named_file(
+        &server.image.devcontainer_path,
+        "libvirt-qemu",
+        "kvm",
+        0o644,
+    )?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
         &fs::read(manifest_path)
@@ -571,7 +359,18 @@ pub(crate) fn verify_installed_image(
         || manifest.recipe_version != recipe::RECIPE_VERSION
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
+        || manifest.inputs
+            != staged_input_hashes(
+                &BuildSpec {
+                    name: BUILD_NAME,
+                    kind: "devcontainer",
+                    recipe_version: recipe::RECIPE_VERSION,
+                    recipe: DEVCONTAINER_IMAGE_BUILD,
+                },
+                &[],
+            )
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
+        || !is_sha256(&manifest.tmux_sha256)
     {
         bail!("installed image provenance differs from the current install input");
     }
@@ -579,22 +378,10 @@ pub(crate) fn verify_installed_image(
         .validate_package_versions(&manifest.packages)
         .context("installed image package provenance differs")?;
     require_sha(
-        &server.image.installed_path,
+        &server.image.devcontainer_path,
         &manifest.golden_sha256,
         "installed golden image",
     )
-}
-
-fn image_config_sha(server_bytes: &[u8], input: &InstallInput) -> String {
-    let mut bytes = server_bytes.to_vec();
-    bytes.extend_from_slice(
-        format!(
-            "\nimage_memory_mib={}\nimage_vcpus={}\nimage_disk_gib={}\n",
-            input.image.build_memory_mib, input.image.build_vcpus, input.image.build_disk_gib
-        )
-        .as_bytes(),
-    );
-    sha_bytes(&bytes)
 }
 
 pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
@@ -649,8 +436,8 @@ pub(crate) fn sha_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-fn sha_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+pub(super) fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

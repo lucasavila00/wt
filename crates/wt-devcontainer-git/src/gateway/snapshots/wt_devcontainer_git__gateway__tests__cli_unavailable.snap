@@ -1,0 +1,7 @@
+---
+source: crates/wt-devcontainer-git/src/gateway/tests.rs
+assertion_line: 41
+expression: cli_unavailable()
+---
+ag-git: provider API commands are not available for this project.
+Normal Git fetch, pull, and push are available.

@@ -7,6 +7,7 @@ pub(super) struct Paths {
     pub(super) directory: PathBuf,
     pub(super) seed: PathBuf,
     pub(super) user_data: PathBuf,
+    pub(super) vendor_data: PathBuf,
     pub(super) meta_data: PathBuf,
     pub(super) network_config: PathBuf,
 }
@@ -17,6 +18,7 @@ impl Paths {
         Self {
             seed: directory.join("seed.img"),
             user_data: directory.join("user-data"),
+            vendor_data: directory.join("vendor-data"),
             meta_data: directory.join("meta-data"),
             network_config: directory.join("network-config"),
             directory,
@@ -30,10 +32,6 @@ pub(super) fn disk_path(root: &Path, disk_id: uuid::Uuid) -> PathBuf {
 
 pub(super) fn network_config() -> &'static str {
     "version: 2\nethernets:\n  primary:\n    match:\n      name: \"en*\"\n    dhcp4: true\n    dhcp-identifier: mac\n"
-}
-
-pub(super) fn cloud_config() -> &'static str {
-    "#cloud-config\n"
 }
 
 pub(super) fn domain_xml(
@@ -137,11 +135,5 @@ mod tests {
             dhcp4: true
             dhcp-identifier: mac
         "###);
-    }
-
-    #[test]
-    fn machine_boot_does_not_repeat_golden_image_installation() {
-        insta::assert_snapshot!(cloud_config(), @"#cloud-config
-");
     }
 }

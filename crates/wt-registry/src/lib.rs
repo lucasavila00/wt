@@ -20,15 +20,17 @@ pub struct Registry {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GuestKind {
-    World,
-    Runner,
+    Devcontainer,
+    Host,
+    GithubCi,
 }
 
 impl GuestKind {
     fn as_str(self) -> &'static str {
         match self {
-            Self::World => "world",
-            Self::Runner => "runner",
+            Self::Devcontainer => "devcontainer",
+            Self::Host => "host",
+            Self::GithubCi => "github-ci",
         }
     }
 }
@@ -363,7 +365,7 @@ impl Registry {
                 .execute(connection)?;
             let guest = Guest {
                 id,
-                kind: GuestKind::Runner,
+                kind: GuestKind::GithubCi,
                 backend_id,
                 head_disk_id: disk_id,
                 resources,
@@ -429,7 +431,7 @@ impl Registry {
         self.transaction(|connection| {
             let head_disk_id = guests::table
                 .find(id.to_string())
-                .filter(guests::kind.eq(GuestKind::Runner.as_str()))
+                .filter(guests::kind.eq(GuestKind::GithubCi.as_str()))
                 .select(guests::head_disk_id)
                 .first::<String>(connection)
                 .optional()?
@@ -443,7 +445,7 @@ impl Registry {
 
 fn runner_from_rows((guest_row, row): (GuestRow, RunnerRow)) -> Result<Runner, RegistryError> {
     let guest: Guest = guest_row.try_into()?;
-    if guest.kind != GuestKind::Runner || guest.id.to_string() != row.id {
+    if guest.kind != GuestKind::GithubCi || guest.id.to_string() != row.id {
         return Err(RegistryError::InvalidData(
             "runner is linked to an invalid guest".into(),
         ));
@@ -465,8 +467,9 @@ impl TryFrom<GuestRow> for Guest {
 
     fn try_from(row: GuestRow) -> Result<Self, Self::Error> {
         let kind = match row.kind.as_str() {
-            "world" => GuestKind::World,
-            "runner" => GuestKind::Runner,
+            "devcontainer" => GuestKind::Devcontainer,
+            "host" => GuestKind::Host,
+            "github-ci" => GuestKind::GithubCi,
             value => {
                 return Err(RegistryError::InvalidData(format!(
                     "invalid guest kind: {value}"
@@ -503,7 +506,7 @@ mod tests {
     use crate::schema::disk_nodes;
 
     #[test]
-    fn world_and_runner_share_atomic_capacity() {
+    fn all_world_kinds_share_atomic_capacity() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("registry.db");
         let first = Registry::open(&path).unwrap();
@@ -520,7 +523,7 @@ mod tests {
             head_disk_id: Uuid::new_v4(),
             resources: limit,
         };
-        let world = guest(GuestKind::World);
+        let world = guest(GuestKind::Devcontainer);
         first
             .immediate_transaction::<_, RegistryError>(|connection| {
                 diesel::insert_into(disk_nodes::table)
@@ -533,21 +536,23 @@ mod tests {
                 insert_guest(connection, &world, limit)
             })
             .unwrap();
-        let runner = guest(GuestKind::Runner);
-        let error = second
-            .immediate_transaction::<_, RegistryError>(|connection| {
-                insert_guest(connection, &runner, limit)
-            })
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            RegistryError::Capacity {
-                resource: Resource::Memory,
-                total: 2048,
-                reserved: 2048,
-                requested: 2048,
-            }
-        ));
+        for kind in [GuestKind::Host, GuestKind::GithubCi] {
+            let candidate = guest(kind);
+            let error = second
+                .immediate_transaction::<_, RegistryError>(|connection| {
+                    insert_guest(connection, &candidate, limit)
+                })
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                RegistryError::Capacity {
+                    resource: Resource::Memory,
+                    total: 2048,
+                    reserved: 2048,
+                    requested: 2048,
+                }
+            ));
+        }
     }
 
     #[test]

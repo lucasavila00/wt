@@ -1,7 +1,8 @@
 version = 1
 
 [image]
-installed_path = "/var/lib/wt/images/wt-ubuntu-24.04-amd64.qcow2"
+devcontainer_path = "/var/lib/wt/images/wt-devcontainer-ubuntu-24.04-amd64.qcow2"
+host_path = "/var/lib/wt/images/wt-host-ubuntu-24.04-amd64.qcow2"
 
 [libvirt]
 network = "default"

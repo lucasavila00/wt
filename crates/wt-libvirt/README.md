@@ -4,13 +4,11 @@ Production libvirt/KVM backend.
 
 ## Owns
 
-- Domain, network, qcow2 overlay, and cloud-init lifecycle.
-- Guest-agent readiness and file injection.
-- SSH Git clone, revision checkout, and checkout-local credentials.
-- Stock devcontainer startup and app SSH injection.
-- Guest and app identity verification.
+- Domain, network, qcow2 overlay, and NoCloud seed lifecycle.
+- Guest-agent readiness and bounded guest transport.
+- Machine inspection, start, fork, and deletion.
 
-Create succeeds only after guest SSH, Git, and app SSH are ready. Failure removes
-the domain and world directory.
+World-kind crates own application provisioning and readiness after the machine
+is available.
 
-Lifecycle: [Libvirt/KVM backend](../../docs/how/bare-metal-agent.md).
+Lifecycle: [KVM and NoCloud](../../docs/internals/kvm.md).

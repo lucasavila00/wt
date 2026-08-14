@@ -8,15 +8,15 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_agent_git::{
+use wt_api::{
+    ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
+    Operation, Outcome, Response,
+};
+use wt_command::cmd;
+use wt_devcontainer_git::{
     read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
-use wt_api::{
-    ApiRequest, ApiResponse, CreateInstance, InstanceName, InstanceStatus, Operation, Outcome,
-    Response,
-};
-use wt_command::cmd;
 use wt_server::ServerConfig;
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -42,9 +42,9 @@ impl KvmHarness {
                 env!("CARGO"),
                 "build",
                 "-p",
-                "wt-guest",
+                "wt-devcontainer-guest",
                 "-p",
-                "wt-agent-git",
+                "wt-devcontainer-git",
             );
             command.current_dir(&workspace);
             run(command, "build guest helpers")
@@ -111,19 +111,50 @@ impl KvmHarness {
             &self.server_config_path,
             Operation::Create(CreateInstance {
                 name: name.clone(),
-                source: self.git.url(),
-                git_base: "main".into(),
-                git_user_name: "WT E2E".to_owned(),
-                git_user_email: "wt@example.invalid".to_owned(),
                 vcpus: 1,
                 memory_mib: 1024,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                application: CreateApplication::Devcontainer {
+                    source: self.git.url(),
+                    git_base: "main".into(),
+                    git_user_name: "WT E2E".to_owned(),
+                    git_user_email: "wt@example.invalid".to_owned(),
+                },
             }),
         ) else {
             panic!("expected instance response");
         };
         *instance
+    }
+
+    pub(crate) fn create_host(&self, name: &InstanceName, user_data: &str) -> wt_api::Instance {
+        let Response::Instance { instance } = self.create_host_result(name, user_data).unwrap()
+        else {
+            panic!("expected instance response");
+        };
+        *instance
+    }
+
+    pub(crate) fn create_host_result(
+        &self,
+        name: &InstanceName,
+        user_data: &str,
+    ) -> Result<Response, String> {
+        call_api_result(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::Create(CreateInstance {
+                name: name.clone(),
+                vcpus: 1,
+                memory_mib: 1024,
+                disk_gib: 32,
+                ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                application: CreateApplication::Host {
+                    user_data: user_data.to_owned(),
+                },
+            }),
+        )
     }
 
     pub(crate) fn sync_inventory(&self) -> Vec<wt_api::Instance> {

@@ -1,11 +1,12 @@
 use crate::operations::Operations;
 use crate::store::{Store, StoreError, StoredInstance};
+use crate::worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use wt_api::{
-    ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
-    Operation, Response,
+    ApiError, Capacity, CapacityResource, CreateApplication, CreateInstance, ErrorCode, Instance,
+    InstanceApplication, InstanceStatus, Operation, Response,
 };
-use wt_provider::{World, WorldInspection, WorldWorker};
 use wt_registry::Resources;
 
 pub trait AgentGitGateway {
@@ -14,19 +15,19 @@ pub trait AgentGitGateway {
         world_id: Uuid,
         source: &str,
         base: &str,
-    ) -> Result<wt_agent_git::Grant, String>;
+    ) -> Result<wt_devcontainer_git::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
 
-impl AgentGitGateway for wt_agent_git::ControlClient {
+impl AgentGitGateway for wt_devcontainer_git::ControlClient {
     fn reserve(
         &self,
         world_id: Uuid,
         source: &str,
         base: &str,
-    ) -> Result<wt_agent_git::Grant, String> {
+    ) -> Result<wt_devcontainer_git::Grant, String> {
         let response = self
-            .request(&wt_agent_git::ControlRequest::Reserve {
+            .request(&wt_devcontainer_git::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
                 source: source.to_owned(),
                 base: base.to_owned(),
@@ -45,7 +46,7 @@ impl AgentGitGateway for wt_agent_git::ControlClient {
 
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         let response = self
-            .request(&wt_agent_git::ControlRequest::Revoke {
+            .request(&wt_devcontainer_git::ControlRequest::Revoke {
                 grant_id: grant_id.to_owned(),
             })
             .map_err(|error| error.to_string())?;
@@ -121,36 +122,22 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
     }
 
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
-        if let Err(error) = wt_api::validate_ssh_git_source(&request.source) {
-            return Err(ApiError::new(ErrorCode::InvalidRequest, error.to_string()));
-        }
-        wt_api::validate_git_branch(&request.git_base)
-            .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
         wt_api::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
+        if let CreateApplication::Devcontainer {
+            source, git_base, ..
+        } = &request.application
+        {
+            wt_api::validate_ssh_git_source(source)
+                .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
+            wt_api::validate_git_branch(git_base)
+                .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
+        }
         let _operation = self.operations.lock(owner, &request.name);
-        let setup_fingerprint = serde_json::to_string(&(
-            &request.source,
-            &request.git_base,
-            &request.git_user_name,
-            &request.git_user_email,
-            request.vcpus,
-            request.memory_mib,
-            request.disk_gib,
-            &request.ssh_authorized_keys,
-        ))
-        .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
+        let setup_fingerprint = setup_fingerprint(&request)?;
         match self.store.get(owner, &request.name) {
             Ok(stored)
-                if stored.instance.status == InstanceStatus::Provisioning
-                    && stored.setup_fingerprint == setup_fingerprint =>
-            {
-                return Ok(Response::Instance {
-                    instance: Box::new(stored.instance),
-                });
-            }
-            Ok(stored)
-                if stored.instance.status == InstanceStatus::Setup
+                if retryable_create(&stored.instance)
                     && stored.setup_fingerprint == setup_fingerprint =>
             {
                 return Ok(Response::Instance {
@@ -196,77 +183,136 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             }
         }
         let id = Uuid::new_v4();
-        let git_prefix = wt_agent_git::BRANCH_PREFIX.to_owned();
-        let grant = self
-            .gateway
-            .reserve(id, &request.source, &request.git_base)
-            .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
+        let kind = request.kind();
+        let grant = match &request.application {
+            CreateApplication::Devcontainer {
+                source, git_base, ..
+            } => Some(
+                self.gateway
+                    .reserve(id, source, git_base)
+                    .map_err(|error| ApiError::new(ErrorCode::Backend, error))?,
+            ),
+            CreateApplication::Host { .. } => None,
+        };
         let disk_id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
+        let (application, stored_application) = match &request.application {
+            CreateApplication::Devcontainer {
+                source, git_base, ..
+            } => (
+                InstanceApplication::Devcontainer {
+                    source: source.clone(),
+                    git_base: git_base.clone(),
+                    git_prefix: wt_devcontainer_git::BRANCH_PREFIX.to_owned(),
+                    app_ssh: None,
+                },
+                crate::store::StoredApplication::Devcontainer {
+                    gateway_grant_id: grant.as_ref().expect("devcontainer grant").id.clone(),
+                },
+            ),
+            CreateApplication::Host { .. } => (
+                InstanceApplication::Host,
+                crate::store::StoredApplication::Host,
+            ),
+        };
         let stored = StoredInstance {
             instance: Instance {
                 id,
                 name: request.name.clone(),
                 owner: owner.to_owned(),
                 status: InstanceStatus::Provisioning,
-                source: request.source,
-                git_base: request.git_base,
-                git_prefix,
                 vcpus: request.vcpus,
                 memory_mib: request.memory_mib,
                 disk_gib: request.disk_gib,
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
-                app_ssh: None,
+                application,
             },
             backend_id,
             head_disk_id: disk_id,
             setup_fingerprint,
-            gateway_grant_id: grant.id.clone(),
+            application: stored_application,
         };
         if let Err(error) = self
             .store
             .insert_with_capacity_limit(&stored, self.capacity_limit)
         {
-            if let Err(cleanup) = self.gateway.revoke(&grant.id) {
-                eprintln!("wt-server: revoke unused Git grant: {cleanup}");
+            if let Some(grant) = &grant {
+                if let Err(cleanup) = self.gateway.revoke(&grant.id) {
+                    eprintln!("wt-server: revoke unused Git grant: {cleanup}");
+                }
             }
             return Err(map_store_error(error));
         }
 
-        let spec = wt_provider::ProvisionSpec {
-            id,
-            backend_id: &stored.backend_id,
-            disk_id,
-            owner,
-            name: &stored.instance.name,
-            source: &stored.instance.source,
-            git_base: &stored.instance.git_base,
-            git_prefix: &stored.instance.git_prefix,
-            git_grant: &grant.token,
-            git_user_name: &request.git_user_name,
-            git_user_email: &request.git_user_email,
-            memory_mib: request.memory_mib,
-            vcpus: request.vcpus,
-            disk_gib: request.disk_gib,
-            ssh_authorized_keys: &request.ssh_authorized_keys,
+        let spec = match (&request.application, &stored.instance.application) {
+            (
+                CreateApplication::Devcontainer {
+                    git_user_name,
+                    git_user_email,
+                    ..
+                },
+                InstanceApplication::Devcontainer {
+                    source,
+                    git_base,
+                    git_prefix,
+                    ..
+                },
+            ) => ProvisionSpec::Devcontainer(wt_devcontainer::ProvisionSpec {
+                id,
+                backend_id: &stored.backend_id,
+                disk_id,
+                owner,
+                name: &stored.instance.name,
+                source,
+                git_base,
+                git_prefix,
+                git_grant: &grant.as_ref().expect("devcontainer grant").token,
+                git_user_name,
+                git_user_email,
+                memory_mib: request.memory_mib,
+                vcpus: request.vcpus,
+                disk_gib: request.disk_gib,
+                ssh_authorized_keys: &request.ssh_authorized_keys,
+            }),
+            (CreateApplication::Host { user_data }, InstanceApplication::Host) => {
+                ProvisionSpec::Host(wt_host::ProvisionSpec {
+                    backend_id: &stored.backend_id,
+                    disk_id,
+                    memory_mib: request.memory_mib,
+                    vcpus: request.vcpus,
+                    disk_gib: request.disk_gib,
+                    ssh_authorized_keys: &request.ssh_authorized_keys,
+                    user_data,
+                })
+            }
+            _ => unreachable!("request and stored application kinds match"),
         };
-        let result = self.worker.provision(&spec, &mut std::io::stderr());
+        let result = self.worker.provision(spec, &mut std::io::stderr());
         match result {
-            Ok(world) => self
-                .store
-                .mark_setup(id, &world.guest_ip, &world.ssh)
-                .map_err(map_store_error)?,
+            Ok(world) => match world.application {
+                WorldApplication::Devcontainer { .. } => self
+                    .store
+                    .mark_setup(id, &world.guest_ip, &world.ssh)
+                    .map_err(map_store_error)?,
+                WorldApplication::Host => self
+                    .store
+                    .mark_host_running(id, &world.guest_ip, &world.ssh)
+                    .map_err(map_store_error)?,
+            },
             Err(error) => {
                 let provisioning_error = error.to_string();
-                let cleanup = self
-                    .gateway
-                    .revoke(&grant.id)
-                    .map_err(|error| format!("Git grant revocation failed: {error}"))
+                let cleanup = grant
+                    .as_ref()
+                    .map_or(Ok(()), |grant| {
+                        self.gateway
+                            .revoke(&grant.id)
+                            .map_err(|error| format!("Git grant revocation failed: {error}"))
+                    })
                     .and_then(|()| {
                         self.worker
-                            .destroy(&stored.backend_id, &[disk_id])
+                            .destroy(kind, &stored.backend_id, &[disk_id])
                             .map_err(|error| format!("world cleanup failed: {error}"))
                     })
                     .and_then(|()| {
@@ -322,7 +368,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         ) {
             return Ok(());
         }
-        match self.worker.inspect(&stored.backend_id) {
+        match self
+            .worker
+            .inspect(stored.instance.kind(), &stored.backend_id)
+        {
             Ok(WorldInspection::Running(world)) => self.apply_world(stored, &world)?,
             Ok(WorldInspection::Stopped { reason }) => self
                 .store
@@ -349,9 +398,18 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .ssh
             .as_ref()
             .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
-        let same_app_identity = match (&stored.instance.app_ssh, &world.app_ssh) {
-            (Some(previous), Some(current)) => previous.host_keys == current.host_keys,
-            (None, _) => true,
+        let same_app_identity = match (&stored.instance.application, &world.application) {
+            (
+                InstanceApplication::Devcontainer {
+                    app_ssh: previous, ..
+                },
+                WorldApplication::Devcontainer { app_ssh: current },
+            ) => match (previous, current) {
+                (Some(previous), Some(current)) => previous.host_keys == current.host_keys,
+                (None, _) => true,
+                _ => false,
+            },
+            (InstanceApplication::Host, WorldApplication::Host) => true,
             _ => false,
         };
         if !same_guest_identity || !same_app_identity {
@@ -360,14 +418,21 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 .mark_error(stored.instance.id, "SSH host identity changed")
                 .map_err(map_store_error);
         }
-        if let Some(app_ssh) = &world.app_ssh {
-            self.store
+        match &world.application {
+            WorldApplication::Devcontainer {
+                app_ssh: Some(app_ssh),
+            } => self
+                .store
                 .mark_running(stored.instance.id, &world.guest_ip, &world.ssh, app_ssh)
-                .map_err(map_store_error)
-        } else {
-            self.store
+                .map_err(map_store_error),
+            WorldApplication::Devcontainer { app_ssh: None } => self
+                .store
                 .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
-                .map_err(map_store_error)
+                .map_err(map_store_error),
+            WorldApplication::Host => self
+                .store
+                .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
+                .map_err(map_store_error),
         }
     }
 
@@ -435,7 +500,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         }
         let world = self
             .worker
-            .start(&stored.backend_id)
+            .start(stored.instance.kind(), &stored.backend_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("start world: {error}")))?;
         self.apply_world(&stored, &world)?;
         let instance = self
@@ -454,9 +519,13 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .try_lock(owner, name)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        self.gateway
-            .revoke(&stored.gateway_grant_id)
-            .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
+        if let crate::store::StoredApplication::Devcontainer { gateway_grant_id } =
+            &stored.application
+        {
+            self.gateway
+                .revoke(gateway_grant_id)
+                .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
+        }
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;
@@ -464,7 +533,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .store
             .garbage_for_delete(stored.instance.id)
             .map_err(map_store_error)?;
-        if let Err(error) = self.worker.destroy(&stored.backend_id, &garbage) {
+        if let Err(error) =
+            self.worker
+                .destroy(stored.instance.kind(), &stored.backend_id, &garbage)
+        {
             let message = error.to_string();
             self.store
                 .mark_error(stored.instance.id, &message)
@@ -476,6 +548,25 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
     }
+}
+
+fn retryable_create(instance: &Instance) -> bool {
+    matches!(
+        (&instance.application, instance.status),
+        (
+            InstanceApplication::Devcontainer { .. },
+            InstanceStatus::Provisioning | InstanceStatus::Setup
+        ) | (
+            InstanceApplication::Host,
+            InstanceStatus::Provisioning | InstanceStatus::Running
+        )
+    )
+}
+
+fn setup_fingerprint(request: &CreateInstance) -> Result<String, ApiError> {
+    let bytes = serde_json::to_vec(request)
+        .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 fn map_store_error(error: StoreError) -> ApiError {
@@ -506,4 +597,30 @@ fn stopped_message(reason: Option<&str>) -> String {
         || "guest stopped".to_owned(),
         |reason| format!("guest stopped ({reason})"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wt_api::{CreateApplication, InstanceName};
+
+    #[test]
+    fn setup_fingerprint_does_not_store_host_user_data() {
+        let secret = "token-that-must-not-be-stored";
+        let request = CreateInstance {
+            name: InstanceName::parse("host").unwrap(),
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAATEST".into()],
+            application: CreateApplication::Host {
+                user_data: format!("#cloud-config\nwrite_files:\n  - content: {secret}\n"),
+            },
+        };
+
+        let fingerprint = setup_fingerprint(&request).unwrap();
+        assert_eq!(fingerprint.len(), 64);
+        assert!(fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(!fingerprint.contains(secret));
+    }
 }

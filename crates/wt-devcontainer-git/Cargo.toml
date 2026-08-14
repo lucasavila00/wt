@@ -1,0 +1,38 @@
+[package]
+name = "wt-devcontainer-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Scoped Git transport for WT devcontainer worlds"
+
+[[bin]]
+name = "wt-agent-git-gateway"
+path = "src/bin/gateway.rs"
+
+[[bin]]
+name = "wt-agent-git-relay"
+path = "src/bin/relay.rs"
+
+[[bin]]
+name = "git-remote-ag"
+path = "src/bin/git-remote-ag.rs"
+
+[[bin]]
+name = "ag-git"
+path = "src/bin/ag-git.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+graphql_client = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+socket2 = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = "3.27.0"

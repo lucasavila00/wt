@@ -2,41 +2,37 @@
 
 - Status: Accepted
 - Date: 2026-07-31
+- Amended by: [ADR 0027](0027-build-images-in-kvm.md)
 
 ## Context
 
-WT installs shared packages in a golden image, then clones that image for each
-world. Some packages may need a version Ubuntu 24.04 does not provide.
+WT installs shared packages in kind-specific images, then creates each world
+from its image. Some packages need a version Ubuntu 24.04 does not provide.
 
 Downloading those packages again for every world would be slow and would make
 world creation depend on the external artifact still being available.
 
 ## Decision
 
-The golden-image recipe owns package installation. Normal packages come from
-Ubuntu's repositories. Exceptional packages are pinned by version, URL, and
-SHA-256, installed with `apt-get`, and verified before the image is published.
+The shared image recipe owns common machine and terminal packages. Kind recipes
+own their application packages. Normal packages come from Ubuntu; exceptional
+artifacts are pinned by version, URL, and SHA-256.
 
 Installed contract packages stay in the image manifest so world provisioning
 can require their exact versions.
 
-`install-guest.sh` does not download exceptional packages. It owns per-world
-state instead: the `wt` user, credentials, services, and user configuration.
+Kind provisioners own per-world users, services, credentials, and configuration.
+They do not download pinned image artifacts.
 
-When a pinned package changes, bump the image recipe version. Rebuild with
-`make clear`, `make prepare-image`, and `make install-server`; `clear` keeps the
-Ubuntu source image and registry cache. ADR 0018 makes `clear` the normal runtime
-reset. Use `make nuke` only when installed service, credential, download, or
-cache state must also be removed.
+The image compatibility field remains `1`. Staged-input hashes detect recipe
+changes. Installed images are not migrated: run `make nuke`, then install again.
 
 Installing the expected version is not enough to prove compatibility. Run the
-real KVM end-to-end test after the rebuild. Put runtime overrides in the final
-configuration layer owned by the package. For Byobu, that is
-`~/.byobu/.tmux.conf`, which its profile sources last.
+real KVM E2E after rebuilding.
 
 ## Consequences
 
-- Shared packages are downloaded once per image build, not once per world.
+- Shared packages are downloaded once per kind image, not once per world.
 - A bad or missing pinned artifact fails the image build early.
 - User configuration remains independent from package installation.
 - Package upgrades require a real-system behavior check, not only an image

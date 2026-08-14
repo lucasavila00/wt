@@ -1,6 +1,6 @@
 # wt-server-setup
 
-Ubuntu 24.04 amd64 server installer and golden-image builder.
+Ubuntu 24.04 amd64 server installer and world-image builder.
 
 ```text
 wt-server-setup validate --config PATH
@@ -13,9 +13,10 @@ wt-server-setup image rebuild --config PATH
 
 - Install-input validation.
 - Ubuntu, KVM, libvirt, directory, and permission setup.
-- Strict `/etc/wt/server.toml` materialization and drift checks.
+- Strict `/etc/wt/server.toml` and `/etc/wt/capacity.toml` materialization and
+  drift checks.
 - Registry-cache installation and verification.
-- Golden-image build, provenance, and verification.
+- Devcontainer and host image build, provenance, and verification.
 - `wt` and `wt-server` binary installation.
 - `wt-server.service` installation and startup under the installing user.
 

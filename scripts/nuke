@@ -57,4 +57,5 @@ if systemctl list-unit-files docker.service >/dev/null 2>&1; then
 fi
 sudo update-ca-certificates
 sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/wt/agent-git \
-    /var/lib/wt/registry-cache /var/lib/libvirt/images/wt
+    /var/lib/wt/registry-cache /var/lib/libvirt/images/wt \
+    /run/wt-image-build

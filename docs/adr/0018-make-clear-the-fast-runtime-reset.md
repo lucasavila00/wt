@@ -6,18 +6,17 @@
 ## Context
 
 `make clear` is the normal reset before reinstalling WT. It removes worlds and
-the golden image but keeps the downloads and registry cache that are slow to
-recreate.
+installed world images but keeps downloads and the registry cache.
 
-It currently keeps `/etc/wt/server.toml`. A changed runtime schema therefore
-requires `make nuke`, which also throws away the expensive caches.
+Before this decision, `make clear` kept `/etc/wt/server.toml`. A changed runtime
+schema therefore required `make nuke`, which also discarded the caches.
 
 ## Decision
 
 `make clear` removes all generated runtime state: worlds, disks, grants, the
-database, generated SSH inventory, the golden image, and `/etc/wt`. It preserves
-installed services and credentials, source credential files, downloaded image
-and package artifacts, and the registry cache.
+database, generated SSH inventory, installed world images, and `/etc/wt`. It
+preserves installed services and credentials, source credential files,
+downloaded image and package artifacts, and the registry cache.
 
 After `make clear`, reinstall WT from the chosen install input. The installer
 points configuration drift to this path and atomically replaces preserved

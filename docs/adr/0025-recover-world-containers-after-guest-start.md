@@ -1,4 +1,4 @@
-# ADR 0025: Recover world containers after guest start
+# ADR 0025: Recover containers when a devcontainer world starts
 
 - Status: Accepted
 - Date: 2026-08-14
@@ -8,10 +8,10 @@
 
 ## Context
 
-ADR 0020 added `wt start` for a stopped world. Starting its libvirt domain and
-then inspecting it is not sufficient. After an abrupt guest stop, systemd
-starts Docker but the world's existing devcontainer and any Compose sidecars
-remain stopped. Inspection then reports that the app is not running.
+ADR 0020 added `wt start` for a stopped world. For a devcontainer world,
+starting its libvirt domain and inspecting it is not enough. After an abrupt
+guest stop, systemd starts Docker but the devcontainer and Compose sidecars
+remain stopped.
 
 Starting the containers exposes a second recovery problem. The injected Dev
 Containers SSH feature can truncate its bind-mounted
@@ -26,8 +26,9 @@ credentials.
 
 ## Decision
 
-Give world start a distinct recovery path after the machine provider boots the
-existing guest. Normal inspection remains read-only.
+Give devcontainer start a distinct recovery path after the machine provider
+boots the guest. Host start does not run this path. Normal inspection remains
+read-only.
 
 The recovery path:
 
@@ -35,7 +36,7 @@ The recovery path:
    later readiness retries do not reset that deadline.
 2. Waits for the guest Docker daemon, reads every full container ID from the
    world's daemon, validates the IDs in Rust, and starts the containers. Each
-   world has a dedicated guest and Docker daemon, so this also restores
+   devcontainer world has a dedicated guest and Docker daemon, so this restores
    devcontainer Compose sidecars without interpreting repository-specific
    Compose configuration.
 3. Repeats strict world inspection until it succeeds or the shared deadline
@@ -62,9 +63,9 @@ runtime metadata and existing durable public-key sources are authoritative,
 and `/var/lib/wt-app-ssh` is owned by the guest `wt` user rather than being a
 new root-only integrity boundary.
 
-`wt start` returns only after the existing devcontainer is reachable with the
-expected per-world host key and session identity. WT still does not restart a
-stopped guest automatically.
+Starting a devcontainer world returns only after its existing container is
+reachable with the expected host key and session identity. WT still does not
+restart a stopped guest automatically.
 
 ## Verification
 
@@ -90,10 +91,11 @@ before a named test phase remain diagnosable.
 
 ## Consequences
 
-- `wt start` recovers the existing development environment, not only its VM.
+- Starting a devcontainer world recovers its environment, not only its VM.
 - Compose sidecars restart with the primary devcontainer.
-- Because the Docker daemon belongs to one world, recovery starts all retained
-  containers in it. A deliberately stopped or orphaned container also starts;
+- Because the Docker daemon belongs to one devcontainer world, recovery starts
+  all retained containers in it. A deliberately stopped or orphaned container
+  also starts;
   preserving exact pre-crash running state would require additional durable
   lifecycle state.
 - App SSH recovery preserves strict host-key checking and public-key

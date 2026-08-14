@@ -1,6 +1,6 @@
 # ADR 0002: Route new Byobu panes to the devcontainer
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-15
 
 ## Context
@@ -12,7 +12,8 @@ WT starts the first pane with `wt-app-pane`. That pane enters the devcontainer.
 Byobu starts new windows and splits without a command. tmux uses the guest
 shell. Those panes stay in the guest.
 
-All panes opened through `ssh NAME` must enter the devcontainer.
+For a devcontainer world, all panes opened through `ssh NAME` must enter the
+devcontainer. Host worlds use their own guest Byobu session.
 
 ## Decision
 
@@ -23,7 +24,7 @@ Keep the first pane's explicit command. During setup it runs
 `wt-setup-world`. After setup it runs `wt-app-pane`. Explicit commands override
 `default-command`.
 
-Use `ssh NAME-host` when a guest shell is needed.
+Use `ssh NAME-host` for the devcontainer world's guest shell.
 
 ## Verification
 

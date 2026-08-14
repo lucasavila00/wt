@@ -2,14 +2,16 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nix::unistd::{Uid, User};
 use std::path::Path;
+use std::time::Duration;
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
+use wt_devcontainer::{CompositeWorker, WorldProvisioner};
 use wt_libvirt::LibvirtProvider;
-use wt_provider::{CompositeWorker, WorldProvisioner};
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
 use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::Store;
+use wt_server::worlds::Workers;
 use wt_server::ServerConfig;
 
 #[derive(Debug, Parser)]
@@ -60,8 +62,10 @@ fn run_server() -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
-    let provider =
-        LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
+    let provider = LibvirtProvider::new(server_config.devcontainer_machine_config())
+        .map_err(anyhow::Error::msg)?;
+    let host_provider =
+        LibvirtProvider::new(server_config.host_machine_config()).map_err(anyhow::Error::msg)?;
     let registry_cache_url = format!(
         "http://{}:{}",
         provider
@@ -75,8 +79,12 @@ fn run_server() -> Result<()> {
             .map_err(anyhow::Error::msg)?,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = CompositeWorker::new(provider, provisioner);
-    let gateway = wt_agent_git::ControlClient::new(wt_agent_git::CONTROL_SOCKET);
+    let host_worker = wt_host::CompositeWorker::new(
+        host_provider,
+        Duration::from_secs(server_config.guest.recipe_timeout_seconds),
+    );
+    let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
+    let gateway = wt_devcontainer_git::ControlClient::new(wt_devcontainer_git::CONTROL_SOCKET);
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
@@ -95,8 +103,8 @@ fn run_server() -> Result<()> {
 fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
-    worker: &CompositeWorker<LibvirtProvider>,
-    gateway: &wt_agent_git::ControlClient,
+    worker: &Workers<CompositeWorker<LibvirtProvider>, wt_host::CompositeWorker<LibvirtProvider>>,
+    gateway: &wt_devcontainer_git::ControlClient,
     owner: &str,
     capacity_limit: wt_registry::Resources,
     request: ApiRequest,

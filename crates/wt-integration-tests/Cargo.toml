@@ -6,10 +6,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
-wt-agent-git = { path = "../wt-agent-git" }
+wt-devcontainer = { workspace = true }
+wt-devcontainer-git = { path = "../wt-devcontainer-git" }
 wt-api = { workspace = true }
 wt-command = { workspace = true }
 wt-libvirt = { workspace = true }
+wt-host = { workspace = true }
 wt-provider = { workspace = true }
 wt-registry = { workspace = true }
 wt-server = { workspace = true }

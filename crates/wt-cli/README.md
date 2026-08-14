@@ -6,9 +6,9 @@ The `wt` client.
 
 - Local and OpenSSH server contexts.
 - World naming and cross-context resolution.
-- `new`, `ls`, `code`, `rm`, and `sync`.
+- `new`, `ls`, `start`, `code`, `rm`, and `sync`.
 - Managed OpenSSH config and known hosts.
-- Managed SSH agent forwarding into worlds and devcontainers.
+- Kind-specific SSH aliases with pinned host identities.
 
 The client does not run libvirt, Docker, or provisioning.
 
@@ -29,5 +29,5 @@ It does not install or change the server.
 cargo run -p wt-cli -- --help
 ```
 
-User-visible behavior: [What WT does](../../docs/what/README.md). Transport and
-SSH generation: [How WT works](../../docs/how/cli.md).
+User-visible behavior: [Worlds](../../docs/worlds/README.md). Transport and SSH
+generation: [Client and SSH](../../docs/guides/client.md).

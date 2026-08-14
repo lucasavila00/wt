@@ -1,25 +1,26 @@
-# ADR 0017: Give every world scoped Git access
+# ADR 0017: Give devcontainer worlds scoped Git access
 
 - Status: Accepted
 - Date: 2026-08-09
 - Supersedes: [ADR 0001](0001-agent-forwarded-first-ssh-provisioning.md)'s
   Git authentication and
   [ADR 0003](0003-forward-the-workstation-ssh-agent-to-devcontainers.md)
+- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
 
 ## Context
 
-WT forwarded the developer's SSH agent into every world. That gave code in the
-world the developer's Git access and made safe automation harder.
+WT forwarded the developer's SSH agent into every devcontainer world. That gave
+world code the developer's Git access and made safe automation harder.
 
 Agents still need to push code, open a pull or merge request, respond to
 reviews, and work through CI failures.
 
 ## Decision
 
-Use the gateway for every world. Delete WT's SSH-agent forwarding code; there
-is no legacy mode or opt-out. Generated SSH config does not set `ForwardAgent`,
-world setup does not read `SSH_AUTH_SOCK`, and guests and devcontainers do not
-receive a forwarded socket.
+Use the gateway for every devcontainer world. Delete WT's SSH-agent forwarding
+code; there is no legacy mode or opt-out. Generated SSH config does not set
+`ForwardAgent`, devcontainer setup does not read `SSH_AUTH_SOCK`, and guests and
+devcontainers do not receive a forwarded socket.
 
 Build and release the gateway, guest relay, `git-remote-ag`, and `ag-git` in the
 WT monorepo. `wt-server-setup` installs and manages every component. The systemd
@@ -27,14 +28,14 @@ service layout is internal to WT.
 
 `ag-git` is a small transport client. The gateway owns commands, output, policy,
 and provider integrations. Updating the host services fixes every existing
-world without rebuilding it.
+devcontainer world without rebuilding it.
 
-The guest relay and `git-remote-ag` are stable transport shims. Ordinary
-gateway changes must not require changes inside a world. A transport protocol
-change may require `make clear` or `make nuke` and a rebuild.
+The guest relay and `git-remote-ag` are stable transport shims. Ordinary gateway
+changes must not require changes inside a devcontainer world. A transport
+protocol change may require `make clear` or `make nuke` and a rebuild.
 
-`wt new` requires a branch revision. That branch becomes the immutable base for
-the world's pull or merge requests.
+Creating a devcontainer world requires a branch revision. That branch becomes
+the immutable base for its pull or merge requests.
 
 ## Local transport
 
@@ -50,8 +51,8 @@ devcontainer ── Unix socket ──> guest relay ── KVM vsock ──> gat
 The gateway is the only component that connects to GitHub or GitLab. It needs
 outbound provider access.
 
-The guest relay avoids giving the devcontainer direct vsock access. World setup
-mounts the relay's Unix socket into the primary devcontainer, where
+The guest relay avoids giving the devcontainer direct vsock access.
+Devcontainer setup mounts the relay's Unix socket into the primary container.
 `git-remote-ag` and `ag-git` use it automatically.
 
 The workstation never talks to the gateway. A Mac continues to use WT by
@@ -71,15 +72,15 @@ During creation, `wt-server` asks the gateway for a token limited to the
 selected project, base branch, and shared `wt/` branch namespace. World setup
 stores it on the private disk, outside the checkout, and starts the relay.
 
-Worlds never receive the developer's SSH keys or provider credentials.
+Devcontainer worlds never receive developer private keys or provider
+credentials.
 
 The gateway is the central trust boundary. `wt-server-setup` configures provider
-credentials once on the Linux host. If the gateway is unavailable, worlds can
-keep working locally but cannot fetch, push, or use `ag-git` until it returns.
+credentials once on the Linux host. If it is unavailable, devcontainer worlds
+can work locally but cannot fetch, push, or use `ag-git`.
 
-GitHub and GitLab are configured independently, and an installation needs at
-least one. WT selects the provider from the repository host and rejects a world
-before creation when that host is not configured.
+GitHub and GitLab are configured independently; an installation needs at least
+one. WT rejects a devcontainer world when its repository host is not configured.
 
 Provider SSH endpoints use the standard `git@HOST` endpoint on port 22, and
 provider APIs use HTTPS on their standard host. Custom SSH ports and separate
@@ -90,9 +91,9 @@ validates them, and installs encrypted systemd credentials for the gateway.
 Their contents never enter WT configuration, command arguments, or environment
 variables.
 
-This is a clean-install change. Moving from the pre-gateway server or the
-per-world-prefix design requires `make nuke`; WT does not migrate old worlds,
-gateway state, or the earlier database schema.
+Moving from the pre-gateway server or per-world prefixes requires `make nuke`.
+WT does not migrate old devcontainer worlds, gateway state, or the earlier
+database schema.
 
 ## SSH agent forwarding
 
@@ -120,7 +121,7 @@ continues to work normally.
 
 ## Git workflow
 
-Every world for a project shares the `wt/` branch namespace:
+Every devcontainer world for a project shares the `wt/` branch namespace:
 
 ```text
 git switch -c wt/fix-login
@@ -160,6 +161,9 @@ WT: resources from the current checkout.
 WT: Run `ag-git --help` to discover every available command.
 WT:
 ```
+
+This message appears only in devcontainer worlds; "WT world" here means a
+devcontainer world.
 
 Git renders the same gateway header with `remote:` in place of `WT:`.
 
@@ -210,7 +214,7 @@ explicitly; `--draft` opens a draft.
 
 The gateway owns the provider workflow exposed through `ag-git`: opening or
 showing requests, addressing reviews, investigating or controlling CI, and
-waiting for explicitly identified resources. ADR 0022 replaces contextual
+waiting for explicitly identified resources. ADR 0032 replaces contextual
 commands and short handles with explicit provider resource types and IDs.
 
 Provider GraphQL operations compile against schemas committed to the WT
@@ -221,7 +225,7 @@ schema or contact GitHub or GitLab.
 The gateway enforces branch, request, review, and CI scope. The agent can prepare
 its request for human merge, but cannot merge or approve it, change its base,
 dismiss reviews, or act outside its namespace. CI discovery and control apply
-only to the current commit. [ADR 0021](0021-allow-project-wide-provider-reads.md)
+only to the current commit. [ADR 0031](0031-allow-project-wide-provider-reads.md)
 extends CI log reads across the granted project. GitHub or GitLab remains
 authoritative for repository permissions and protections.
 
@@ -229,8 +233,10 @@ Comments use the gateway's provider identity and include the world name.
 
 ## Lifecycle
 
-`wt rm` revokes the world's token but leaves external branches and requests
-intact. Other worlds for the project retain access to the shared namespace.
-Creating or recreating a world gets a new token without reserving a prefix.
+`wt rm` revokes the devcontainer world's token but leaves external branches and
+requests intact. Other devcontainer worlds retain access to the shared
+namespace. Creating or recreating one gets a new token without reserving a
+prefix.
 
-`wt fork` is unavailable because it would copy a world's token.
+`wt fork` is unavailable for a devcontainer world because it would copy the
+world's token.

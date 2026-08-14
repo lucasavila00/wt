@@ -2430,23 +2430,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
-name = "wt-agent-git"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "graphql_client",
- "insta",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "ureq",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "wt-api"
 version = "0.0.0"
 dependencies = [
@@ -2483,13 +2466,77 @@ name = "wt-command"
 version = "0.0.0"
 
 [[package]]
-name = "wt-guest"
+name = "wt-devcontainer"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tempfile",
+ "uuid",
+ "wt-api",
+ "wt-command",
+ "wt-provider",
+]
+
+[[package]]
+name = "wt-devcontainer-git"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "graphql_client",
+ "insta",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "ureq",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "wt-devcontainer-guest"
 version = "0.0.0"
 dependencies = [
  "insta",
  "serde",
  "serde_json",
  "wt-command",
+]
+
+[[package]]
+name = "wt-github-ci"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "jsonwebtoken",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 1.1.2+spec-1.1.0",
+ "ureq",
+ "url",
+ "uuid",
+ "wt-libvirt",
+ "wt-provider",
+ "wt-registry",
+ "zeroize",
+]
+
+[[package]]
+name = "wt-host"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "ssh-key",
+ "tempfile",
+ "uuid",
+ "wt-api",
+ "wt-provider",
 ]
 
 [[package]]
@@ -2503,10 +2550,12 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-agent-git",
  "wt-api",
  "wt-cli",
  "wt-command",
+ "wt-devcontainer",
+ "wt-devcontainer-git",
+ "wt-host",
  "wt-libvirt",
  "wt-provider",
  "wt-registry",
@@ -2532,16 +2581,8 @@ dependencies = [
 name = "wt-provider"
 version = "0.0.0"
 dependencies = [
- "insta",
- "nix",
- "serde",
- "serde_json",
- "ssh-key",
- "tempfile",
  "thiserror 2.0.18",
  "uuid",
- "wt-api",
- "wt-command",
 ]
 
 [[package]]
@@ -2558,26 +2599,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-runner"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "jsonwebtoken",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "toml 1.1.2+spec-1.1.0",
- "ureq",
- "url",
- "uuid",
- "wt-libvirt",
- "wt-provider",
- "wt-registry",
- "zeroize",
-]
-
-[[package]]
 name = "wt-server"
 version = "0.0.0"
 dependencies = [
@@ -2589,12 +2610,15 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-agent-git",
  "wt-api",
+ "wt-devcontainer",
+ "wt-devcontainer-git",
+ "wt-host",
  "wt-libvirt",
  "wt-provider",
  "wt-registry",
@@ -2616,8 +2640,9 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "wt-command",
+ "wt-devcontainer",
  "wt-libvirt",
- "wt-provider",
+ "wt-registry",
  "wt-server",
  "zeroize",
 ]

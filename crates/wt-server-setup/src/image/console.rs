@@ -1,4 +1,9 @@
 use super::*;
+use std::io::Read;
+use std::thread;
+use std::time::{Duration, Instant};
+
+const IMAGE_BUILD_TIMEOUT: Duration = Duration::from_secs(1800);
 
 pub(super) struct ConsoleLog {
     file: fs::File,
@@ -59,7 +64,11 @@ fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<Option<St
     Ok(last_phase)
 }
 
-pub(super) fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) -> Result<()> {
+pub(super) fn wait_for_shutdown(
+    runner: &impl Runner,
+    console: &mut ConsoleLog,
+    domain_name: &str,
+) -> Result<()> {
     let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
     let mut next_state_check = Instant::now();
@@ -74,7 +83,7 @@ pub(super) fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) 
         let now = Instant::now();
         if now >= next_state_check {
             let state = runner.text(
-                cmd!("virsh", "-c", LIBVIRT_URI, "domstate", BUILD_NAME),
+                cmd!("virsh", "-c", LIBVIRT_URI, "domstate", domain_name),
                 "read image build domain state",
             )?;
             if state.trim() == "shut off" {
@@ -90,7 +99,7 @@ pub(super) fn wait_for_shutdown(runner: &impl Runner, console: &mut ConsoleLog) 
             next_heartbeat = now + Duration::from_secs(60);
         }
         if now >= deadline {
-            bail!("timed out waiting for KVM image build guest");
+            bail!("timed out waiting for KVM image build guest; last phase: {phase}");
         }
         thread::sleep(Duration::from_millis(250));
     }

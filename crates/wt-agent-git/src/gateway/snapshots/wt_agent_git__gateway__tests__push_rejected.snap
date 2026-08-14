@@ -1,6 +1,0 @@
----
-source: crates/wt-agent-git/src/gateway/tests.rs
-assertion_line: 87
-expression: "validate_push(&command(&\"a\".repeat(40), \"refs/heads/fix-login\"),\n\"wt/\").unwrap_err().to_string()"
----
-branch `fix-login` must use the shared `wt/` prefix; rename it with `git branch -m wt/NAME`

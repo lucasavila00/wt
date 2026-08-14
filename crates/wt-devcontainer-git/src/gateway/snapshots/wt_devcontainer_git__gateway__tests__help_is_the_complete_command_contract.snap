@@ -1,0 +1,29 @@
+---
+source: crates/wt-devcontainer-git/src/gateway/tests.rs
+assertion_line: 30
+expression: HELP
+---
+ag-git reads and changes explicitly identified Git provider resources.
+
+USAGE:
+ag-git COMMAND RESOURCE [ID] [OPTIONS]
+
+COMMANDS:
+show mr|run|job ID
+list threads mr ID
+list ci commit SHA
+list jobs run ID
+log job ID
+wait mr|run|job ID
+open mr --head BRANCH --base BRANCH [--draft]
+set mr ID ready|draft|open|closed
+edit mr ID [--title TEXT] [--body TEXT]
+comment mr ID TEXT
+reply thread ID --mr MR_ID TEXT
+set thread ID --mr MR_ID resolved|open
+retry job ID
+cancel job|run ID
+help                              Show this help
+
+The provider and project come from this world's gateway grant. Every other
+resource is explicit. Use normal Git for commits, fetches, pulls, and pushes.

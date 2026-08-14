@@ -11,9 +11,11 @@ name = "wt-server"
 path = "src/main.rs"
 
 [dependencies]
-wt-agent-git = { path = "../wt-agent-git" }
+wt-devcontainer = { workspace = true }
+wt-devcontainer-git = { path = "../wt-devcontainer-git" }
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
+wt-host = { workspace = true }
 wt-provider = { workspace = true }
 wt-registry = { workspace = true }
 anyhow = { workspace = true }
@@ -23,6 +25,7 @@ diesel = { workspace = true }
 libsqlite3-sys = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
+sha2 = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }

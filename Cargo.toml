@@ -1,16 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/wt-agent-git",
+    "crates/wt-devcontainer-git",
+    "crates/wt-devcontainer",
     "crates/wt-api",
     "crates/wt-cli",
     "crates/wt-command",
-    "crates/wt-guest",
+    "crates/wt-devcontainer-guest",
     "crates/wt-integration-tests",
     "crates/wt-libvirt",
     "crates/wt-provider",
     "crates/wt-registry",
-    "crates/wt-runner",
+    "crates/wt-github-ci",
+    "crates/wt-host",
     "crates/wt-server",
     "crates/wt-server-setup",
 ]
@@ -24,10 +26,12 @@ publish = false
 [workspace.dependencies]
 wt-api = { path = "crates/wt-api" }
 wt-command = { path = "crates/wt-command" }
+wt-devcontainer = { path = "crates/wt-devcontainer" }
 wt-libvirt = { path = "crates/wt-libvirt" }
 wt-provider = { path = "crates/wt-provider" }
 wt-registry = { path = "crates/wt-registry" }
-wt-runner = { path = "crates/wt-runner" }
+wt-github-ci = { path = "crates/wt-github-ci" }
+wt-host = { path = "crates/wt-host" }
 wt-server = { path = "crates/wt-server" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }

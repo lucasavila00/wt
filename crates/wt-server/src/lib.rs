@@ -5,6 +5,7 @@ pub mod runtime_config;
 mod schema;
 pub mod service;
 pub mod store;
+pub mod worlds;
 
 pub use runtime_config::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
@@ -13,7 +14,7 @@ pub use runtime_config::{
 
 use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION, WT_GIT_COMMIT};
 
-pub fn handle_request<W: wt_provider::WorldWorker, G: service::AgentGitGateway>(
+pub fn handle_request<W: worlds::WorldWorker, G: service::AgentGitGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

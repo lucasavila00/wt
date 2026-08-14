@@ -43,6 +43,7 @@ impl MachineProvider for LibvirtProvider {
                 if [
                     &paths.seed,
                     &paths.user_data,
+                    &paths.vendor_data,
                     &paths.meta_data,
                     &paths.network_config,
                 ]

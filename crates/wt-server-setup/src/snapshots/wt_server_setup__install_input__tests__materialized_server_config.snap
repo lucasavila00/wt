@@ -1,11 +1,13 @@
 ---
 source: crates/wt-server-setup/src/install_input.rs
+assertion_line: 249
 expression: text
 ---
 version = 1
 
 [image]
-installed_path = "/var/lib/wt/images/wt.qcow2"
+devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
+host_path = "/var/lib/wt/images/host.qcow2"
 
 [libvirt]
 network = "default"

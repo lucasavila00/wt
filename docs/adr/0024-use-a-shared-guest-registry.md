@@ -3,11 +3,13 @@
 - Status: Accepted
 - Date: 2026-08-14
 - Amends: [ADR 0020](0020-reserve-world-memory-before-starting-guests.md)
+- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
 
 ## Context
 
-The current registry stores development worlds directly in `instances`. Its
-memory sum is enough while `wt-server` is the only guest creator.
+Before this decision, the registry stored development worlds directly in
+`instances`. Its memory sum was enough while `wt-server` was the only guest
+creator.
 
 `wt-runner` will create guests in another process. Separate world and runner
 capacity tables could both admit the last host capacity. A standalone capacity
@@ -16,26 +18,28 @@ whose lifetime it represents.
 
 ## Decision
 
-Store every retained KVM guest in one `guests` table. A guest row owns:
+Store every managed application guest in one `guests` table. Temporary image
+build guests are not application state. A guest row owns:
 
-- its kind: `world` or `runner`;
+- its kind: `devcontainer`, `host`, or `github-ci`;
 - its libvirt and head-disk identities; and
 - its CPU, memory, and disk reservation.
 
 Keep lifecycle-specific data in one-to-one subtype tables:
 
-- `worlds` stores development status, Git, and SSH data;
+- `worlds` stores retained ownership, name, status, fingerprint, and guest SSH;
+- `devcontainers` stores repository, Git grant, and app SSH data;
+- host worlds need no subtype beyond `worlds`;
 - `runners` stores CI status and GitHub runner identity; and
 - `disk_nodes` remains the shared copy-on-write disk graph.
 
-Creating a world or runner inserts its disk node, guest, and subtype in one
+Creation inserts the disk node, guest, and required subtype rows in one
 immediate SQLite transaction. Admission sums `guests` in that transaction, so
-`wt-server` and `wt-runner` cannot over-admit each other.
+separate owners cannot over-admit each other.
 
-`wt-server-setup` installs one strict host-capacity configuration containing the
-CPU, memory, and disk limits. Both services read that file and pass the same
-limits to the registry. Do not derive admission from currently free resources;
-they change while a request is running.
+`wt-server-setup` installs one strict CPU, memory, and disk capacity file.
+`wt-server` reads it; the future runner must read the same file. Do not derive
+admission from currently free resources because they change during a request.
 
 Capacity errors identify whether CPU, memory, or disk is full and report its
 limit, reserved amount, and request. This replaces the memory-only wire shape.
@@ -47,8 +51,9 @@ state. Delete the guest row only after its libvirt machine and disposable disks
 have been removed. Failed cleanup keeps the row and its reservation for later
 reconciliation.
 
-Put the schema and common admission code in `wt-registry`. World behavior stays
-in `wt-server`; runner behavior stays in `wt-runner`.
+Put the schema and common admission code in `wt-registry`. Retained behavior
+stays in `wt-server`; CI lifecycle stays in `wt-github-ci`, operated by the
+future `wt-runner` executable.
 
 Do not migrate the old `instances` table. Before installing this schema, the
 operator must run `make nuke` as the server user and accept that it destroys all

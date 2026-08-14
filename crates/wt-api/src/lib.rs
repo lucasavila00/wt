@@ -1,5 +1,12 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
+mod validation;
+
+pub use validation::{
+    validate_git_branch, validate_ssh_git_source, InstanceName, InvalidGitBranch, InvalidGitSource,
+    InvalidInstanceName,
+};
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -65,17 +72,45 @@ pub struct ForkInstance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateInstance {
     pub name: InstanceName,
-    pub source: String,
-    #[serde(deserialize_with = "deserialize_git_branch")]
-    pub git_base: String,
-    #[serde(deserialize_with = "deserialize_nonempty_string")]
-    pub git_user_name: String,
-    #[serde(deserialize_with = "deserialize_nonempty_string")]
-    pub git_user_email: String,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
     pub ssh_authorized_keys: Vec<String>,
+    #[serde(flatten)]
+    pub application: CreateApplication,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CreateApplication {
+    Devcontainer {
+        source: String,
+        #[serde(deserialize_with = "deserialize_git_branch")]
+        git_base: String,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        git_user_name: String,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        git_user_email: String,
+    },
+    Host {
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        user_data: String,
+    },
+}
+
+impl CreateInstance {
+    pub fn kind(&self) -> WorldKind {
+        self.application.kind()
+    }
+}
+
+impl CreateApplication {
+    pub fn kind(&self) -> WorldKind {
+        match self {
+            Self::Devcontainer { .. } => WorldKind::Devcontainer,
+            Self::Host { .. } => WorldKind::Host,
+        }
+    }
 }
 
 pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
@@ -166,9 +201,6 @@ pub struct Instance {
     pub name: InstanceName,
     pub owner: String,
     pub status: InstanceStatus,
-    pub source: String,
-    pub git_base: String,
-    pub git_prefix: String,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
@@ -178,8 +210,61 @@ pub struct Instance {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshAccess>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_ssh: Option<AppSshAccess>,
+    #[serde(flatten)]
+    pub application: InstanceApplication,
+}
+
+impl Instance {
+    pub fn kind(&self) -> WorldKind {
+        self.application.kind()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InstanceApplication {
+    Devcontainer {
+        source: String,
+        git_base: String,
+        git_prefix: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_ssh: Option<AppSshAccess>,
+    },
+    Host,
+}
+
+impl InstanceApplication {
+    pub fn kind(&self) -> WorldKind {
+        match self {
+            Self::Devcontainer { .. } => WorldKind::Devcontainer,
+            Self::Host => WorldKind::Host,
+        }
+    }
+
+    pub fn app_ssh(&self) -> Option<&AppSshAccess> {
+        match self {
+            Self::Devcontainer { app_ssh, .. } => app_ssh.as_ref(),
+            Self::Host => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldKind {
+    Devcontainer,
+    Host,
+    GithubCi,
+}
+
+impl fmt::Display for WorldKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Devcontainer => "devcontainer",
+            Self::Host => "host",
+            Self::GithubCi => "github-ci",
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -306,139 +391,6 @@ pub enum ErrorCode {
     Internal,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct InstanceName(String);
-
-impl InstanceName {
-    pub fn parse(value: impl Into<String>) -> Result<Self, InvalidInstanceName> {
-        let value = value.into();
-        validate_instance_name(&value)?;
-        Ok(Self(value))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for InstanceName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl FromStr for InstanceName {
-    type Err = InvalidInstanceName;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::parse(value)
-    }
-}
-
-impl<'de> Deserialize<'de> for InstanceName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Self::parse(value).map_err(serde::de::Error::custom)
-    }
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("invalid instance name: {reason}")]
-pub struct InvalidInstanceName {
-    reason: &'static str,
-}
-
-pub fn validate_ssh_git_source(value: &str) -> Result<(), InvalidGitSource> {
-    if value.is_empty()
-        || value
-            .bytes()
-            .any(|byte| byte.is_ascii_whitespace() || byte == 0)
-    {
-        return Err(InvalidGitSource);
-    }
-    if let Some(rest) = value.strip_prefix("ssh://") {
-        let Some((authority, path)) = rest.split_once('/') else {
-            return Err(InvalidGitSource);
-        };
-        if !authority.is_empty() && !path.is_empty() {
-            return Ok(());
-        }
-        return Err(InvalidGitSource);
-    }
-    let Some((authority, path)) = value.split_once(':') else {
-        return Err(InvalidGitSource);
-    };
-    let Some((user, host)) = authority.split_once('@') else {
-        return Err(InvalidGitSource);
-    };
-    if user.is_empty() || host.is_empty() || host.contains('@') || path.is_empty() {
-        return Err(InvalidGitSource);
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("source must be an ssh:// or user@host:path Git URL")]
-pub struct InvalidGitSource;
-
-pub fn validate_git_branch(value: &str) -> Result<(), InvalidGitBranch> {
-    if value.is_empty()
-        || value == "@"
-        || value.starts_with('.')
-        || value.starts_with('/')
-        || value.ends_with('.')
-        || value.ends_with('/')
-        || value.contains("..")
-        || value.contains("@{")
-        || value.contains("//")
-        || value.split('/').any(|part| part.ends_with(".lock"))
-        || value.bytes().any(|byte| {
-            byte.is_ascii_control()
-                || matches!(byte, b' ' | b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
-        })
-    {
-        return Err(InvalidGitBranch);
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("invalid Git branch name")]
-pub struct InvalidGitBranch;
-
-fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
-    if value.is_empty() || value.len() > 63 {
-        return Err(InvalidInstanceName {
-            reason: "must contain 1 to 63 characters",
-        });
-    }
-    if !value.as_bytes()[0].is_ascii_lowercase() && !value.as_bytes()[0].is_ascii_digit() {
-        return Err(InvalidInstanceName {
-            reason: "must start with a lowercase letter or digit",
-        });
-    }
-    if !value.as_bytes()[value.len() - 1].is_ascii_lowercase()
-        && !value.as_bytes()[value.len() - 1].is_ascii_digit()
-    {
-        return Err(InvalidInstanceName {
-            reason: "must end with a lowercase letter or digit",
-        });
-    }
-    if !value
-        .bytes()
-        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return Err(InvalidInstanceName {
-            reason: "only lowercase letters, digits, and hyphens are allowed",
-        });
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,9 +400,26 @@ mod tests {
         for valid in ["repo-feature", "a", "app-123"] {
             assert!(InstanceName::parse(valid).is_ok(), "{valid}");
         }
-        for invalid in ["", "UPPER", "-leading", "trailing-", "has.dot", "has_space"] {
+        for invalid in [
+            "",
+            "UPPER",
+            "-leading",
+            "trailing-",
+            "has.dot",
+            "has_space",
+            "repo-host",
+            "repo-vs",
+        ] {
             assert!(InstanceName::parse(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn explains_reserved_ssh_alias_suffixes() {
+        insta::assert_snapshot!(
+            InstanceName::parse("repo-vs").unwrap_err().to_string(),
+            @"invalid instance name: must not end with the reserved SSH alias suffix -host or -vs"
+        );
     }
 
     #[test]
@@ -537,14 +506,16 @@ mod tests {
     fn create_request_has_setup_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("repo-feature").unwrap(),
-            source: "git@github.com:example/repo.git".to_owned(),
-            git_base: "devcontainer".to_owned(),
-            git_user_name: "Lucas Ávila".to_owned(),
-            git_user_email: "lucaxx@gmail.com".to_owned(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            application: CreateApplication::Devcontainer {
+                source: "git@github.com:example/repo.git".to_owned(),
+                git_base: "devcontainer".to_owned(),
+                git_user_name: "Lucas Ávila".to_owned(),
+                git_user_email: "lucaxx@gmail.com".to_owned(),
+            },
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
@@ -552,6 +523,7 @@ mod tests {
                 "protocol_version": 1,
                 "client_commit": WT_GIT_COMMIT,
                 "operation": "create",
+                "kind": "devcontainer",
                 "name": "repo-feature",
                 "source": "git@github.com:example/repo.git",
                 "git_base": "devcontainer",
@@ -566,11 +538,44 @@ mod tests {
     }
 
     #[test]
+    fn host_create_request_has_tagged_shape() {
+        let request = ApiRequest::new(Operation::Create(CreateInstance {
+            name: InstanceName::parse("build-world").unwrap(),
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            application: CreateApplication::Host {
+                user_data: "#cloud-config\nruncmd:\n  - touch /ready\n".to_owned(),
+            },
+        }));
+        let mut value = serde_json::to_value(request).unwrap();
+        value["client_commit"] = "<commit>".into();
+        insta::assert_snapshot!(serde_json::to_string_pretty(&value).unwrap(), @r###"
+        {
+          "client_commit": "<commit>",
+          "disk_gib": 32,
+          "kind": "host",
+          "memory_mib": 4096,
+          "name": "build-world",
+          "operation": "create",
+          "protocol_version": 1,
+          "ssh_authorized_keys": [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
+          ],
+          "user_data": "#cloud-config\nruncmd:\n  - touch /ready\n",
+          "vcpus": 2
+        }
+        "###);
+    }
+
+    #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
+            "kind": "devcontainer",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
             "git_base": "main",
@@ -581,6 +586,7 @@ mod tests {
             "protocol_version": 1,
             "client_commit": WT_GIT_COMMIT,
             "operation": "create",
+            "kind": "devcontainer",
             "name": "repo-feature",
             "source": "git@github.com:example/repo.git",
             "git_base": "main",
@@ -595,14 +601,16 @@ mod tests {
         let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example";
         let mut request = CreateInstance {
             name: InstanceName::parse("sample").unwrap(),
-            source: "git@example.test:repo.git".to_owned(),
-            git_base: "main".to_owned(),
-            git_user_name: "Test User".to_owned(),
-            git_user_email: "test@example.invalid".to_owned(),
             vcpus: 1,
             memory_mib: 1024,
             disk_gib: 8,
             ssh_authorized_keys: vec![key.to_owned()],
+            application: CreateApplication::Devcontainer {
+                source: "git@example.test:repo.git".to_owned(),
+                git_base: "main".to_owned(),
+                git_user_name: "Test User".to_owned(),
+                git_user_email: "test@example.invalid".to_owned(),
+            },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));
         request.vcpus = 0;

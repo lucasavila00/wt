@@ -13,6 +13,8 @@ configuration.
 Each `agent_git` provider names an API-token file, SSH key pair, and trusted
 host-key file. Paths may be absolute or start with `~/`. The installer validates
 them and stores encrypted copies for the gateway; worlds never receive them.
+The `image` section names separate devcontainer and host images in one
+directory. They cannot use the same file.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated

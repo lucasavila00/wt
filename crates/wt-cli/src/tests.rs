@@ -3,7 +3,10 @@ use std::sync::Mutex;
 
 static PROMPT_LOCK: Mutex<()> = Mutex::new(());
 use uuid::Uuid;
-use wt_api::{Capacity, CapacityResource, Instance, InstanceName, InstanceStatus, SshAccess};
+use wt_api::{
+    Capacity, CapacityResource, Instance, InstanceApplication, InstanceName, InstanceStatus,
+    SshAccess,
+};
 
 fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
     ContextInstance {
@@ -13,16 +16,18 @@ fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
             name: InstanceName::parse(name).unwrap(),
             owner: "tester".to_owned(),
             status,
-            source: "git@example.test:repo.git".to_owned(),
-            git_base: "main".to_owned(),
-            git_prefix: format!("{name}/"),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
             guest_ip: None,
             last_error: None,
             ssh: None,
-            app_ssh: None,
+            application: InstanceApplication::Devcontainer {
+                source: "git@example.test:repo.git".to_owned(),
+                git_base: "main".to_owned(),
+                git_prefix: format!("{name}/"),
+                app_ssh: None,
+            },
         },
     }
 }
@@ -43,16 +48,16 @@ fn formats_aligned_instance_columns_without_tabs() {
     let output = format_instances(&[provisioning, running]);
 
     insta::assert_snapshot!(output, @r###"
-    CONTEXT     NAME          STATUS        REPO  RESOURCES              DETAIL
-    local       jsdev-manual  provisioning  repo  2 CPU · 4G · 32G       -
-    remote-lab  a             running       repo  2 CPU · 1536MiB · 32G  -
+    CONTEXT     NAME          KIND          STATUS        REPO  RESOURCES              DETAIL
+    local       jsdev-manual  devcontainer  provisioning  repo  2 CPU · 4G · 32G       -
+    remote-lab  a             devcontainer  running       repo  2 CPU · 1536MiB · 32G  -
     "###);
     assert!(!output.contains('\t'));
 }
 
 #[test]
 fn formats_header_for_empty_inventory() {
-    insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  REPO  RESOURCES  DETAIL");
+    insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  KIND  STATUS  REPO  RESOURCES  DETAIL");
 }
 
 #[test]
@@ -61,8 +66,8 @@ fn formats_reconciliation_error_details() {
     failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
     insta::assert_snapshot!(format_instances(&[failed]), @r###"
-    CONTEXT  NAME   STATUS  REPO  RESOURCES         DETAIL
-    local    jsdev  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch
+    CONTEXT  NAME   KIND          STATUS  REPO  RESOURCES         DETAIL
+    local    jsdev  devcontainer  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch
     "###);
 }
 
@@ -72,8 +77,8 @@ fn formats_stopped_world_with_recovery_commands() {
     stopped.instance.last_error = Some("guest stopped (crashed)".to_owned());
 
     insta::assert_snapshot!(format_instances(&[stopped]), @r###"
-    CONTEXT  NAME  STATUS   REPO  RESOURCES         DETAIL
-    ars      mt3   stopped  repo  2 CPU · 4G · 32G  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
+    CONTEXT  NAME  KIND          STATUS   REPO  RESOURCES         DETAIL
+    ars      mt3   devcontainer  stopped  repo  2 CPU · 4G · 32G  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
     "###);
 }
 
@@ -124,9 +129,21 @@ fn parses_start_target() {
 fn new_is_interactive_only() {
     assert!(matches!(
         Cli::try_parse_from(["wt", "new"]).unwrap().command,
-        Command::New
+        Command::New { kind: None }
     ));
     assert!(Cli::try_parse_from(["wt", "new", "git@example.test:repo.git"]).is_err());
+}
+
+#[test]
+fn parses_host_recipe_path() {
+    let cli = Cli::try_parse_from(["wt", "new", "host", "recipe.yaml"]).unwrap();
+    let Command::New {
+        kind: Some(NewKind::Host { user_data }),
+    } = cli.command
+    else {
+        panic!("expected host new command")
+    };
+    assert_eq!(user_data, PathBuf::from("recipe.yaml"));
 }
 
 #[test]

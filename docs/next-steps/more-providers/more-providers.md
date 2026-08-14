@@ -24,11 +24,12 @@ wt-server
 One backend per server.
 
 The existing machine-provider and world-provisioner boundaries are described in
-[Provider architecture](../../how/provider-api.md).
+[Provider architecture](../../internals/provider.md).
 
 | Crate | Role |
 |-------|------|
-| `wt-provider` | Neutral contracts, bootstrap, provisioning, composite lifecycle |
+| `wt-provider` | Neutral machine and guest transport contracts |
+| `wt-devcontainer` | Bootstrap, provisioning, and devcontainer lifecycle |
 | `wt-libvirt` | KVM lifecycle and QEMU guest-agent transport |
 | `wt-static-ssh` | Existing-machine claim and pinned OpenSSH transport |
 
@@ -47,6 +48,6 @@ A provider returns a supported Ubuntu 24.04 amd64 machine with:
 The provider owns machine allocation, transport bootstrap, identity pinning,
 network discovery, and machine deletion or claim release.
 
-WT shared provisioning owns packages, users, workspace, Git, registry trust,
+WT devcontainer provisioning owns packages, users, workspace, Git, registry trust,
 devcontainer, helpers, and final SSH verification. The golden image only speeds
 up bootstrap.

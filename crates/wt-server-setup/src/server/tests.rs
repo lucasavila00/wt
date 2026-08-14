@@ -191,10 +191,14 @@ fn service_runs_as_the_installing_user() {
     let input = toml::from_str::<InstallInput>(
         r#"
 version = 1
+[capacity]
+version = 1
+limits = { vcpus = 4, memory_mib = 8192, disk_gib = 128 }
 [image]
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-installed_path = "/var/lib/wt/image.qcow2"
+devcontainer_path = "/var/lib/wt/devcontainer.qcow2"
+host_path = "/var/lib/wt/host.qcow2"
 build_memory_mib = 1024
 build_vcpus = 1
 build_disk_gib = 8

@@ -6,7 +6,7 @@ CREATE TABLE disk_nodes (
 
 CREATE TABLE guests (
     id           TEXT PRIMARY KEY NOT NULL,
-    kind         TEXT NOT NULL CHECK (kind IN ('world', 'runner')),
+    kind         TEXT NOT NULL CHECK (kind IN ('devcontainer', 'host', 'github-ci')),
     backend_id   TEXT NOT NULL UNIQUE,
     head_disk_id TEXT NOT NULL UNIQUE REFERENCES disk_nodes(id),
     vcpus        BIGINT NOT NULL CHECK (vcpus > 0),
@@ -21,19 +21,23 @@ CREATE TABLE worlds (
     status            TEXT NOT NULL,
     guest_ip          TEXT,
     last_error        TEXT,
-    source            TEXT NOT NULL,
-    git_base          TEXT NOT NULL,
-    git_prefix        TEXT NOT NULL,
-    gateway_grant_id  TEXT NOT NULL UNIQUE,
     setup_fingerprint TEXT NOT NULL,
     ssh_user          TEXT,
     ssh_host          TEXT,
     ssh_port          INTEGER,
     ssh_host_keys     TEXT NOT NULL,
+    UNIQUE (owner, name)
+);
+
+CREATE TABLE devcontainers (
+    id                TEXT PRIMARY KEY NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    source            TEXT NOT NULL,
+    git_base          TEXT NOT NULL,
+    git_prefix        TEXT NOT NULL,
+    gateway_grant_id  TEXT NOT NULL UNIQUE,
     app_ssh_user      TEXT,
     app_ssh_port      INTEGER,
-    app_ssh_host_keys TEXT NOT NULL,
-    UNIQUE (owner, name)
+    app_ssh_host_keys TEXT NOT NULL
 );
 
 CREATE TABLE runners (

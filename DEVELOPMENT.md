@@ -7,10 +7,8 @@ enabled.
 ## Install the local server
 
 The development config enables GitHub. Follow the
-[GitHub credential instructions](GETTING-STARTED.md#github-credential) to create
-`~/.config/wt/credentials/github.token`. WT requires a personal access token
-(classic) with the `repo` scope; a fine-grained token cannot provide the CI
-check data used by `ag-git`.
+[server installation instructions](GETTING-STARTED.md#install-the-server) to
+create `~/.config/wt/credentials/github.token`.
 
 Make sure the SSH key configured in the example can read and write the
 repositories you will use. Its public key and `~/.ssh/known_hosts` must also
@@ -76,6 +74,8 @@ wt rm jsdev-manual
 ```
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
+To exercise host worlds, create a small cloud-init file and run `wt new host
+FILE`; `NAME` attaches to Byobu and `NAME-vs` is direct guest SSH.
 
 ## Reset
 
@@ -83,8 +83,8 @@ Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 make clear
 ```
 
-This destroys `wt-*` domains and removes worlds, gateway grants, the golden
-image, the server database, generated runtime configuration, and generated SSH
+This destroys `wt-*` domains and removes worlds, gateway grants, installed
+images, the server database, generated runtime configuration, and generated SSH
 inventory. It keeps installed services and provider credentials, source
 credential files, downloaded image and package artifacts, and the registry
 cache. Rerun `scripts/install-server --config PATH` afterward.

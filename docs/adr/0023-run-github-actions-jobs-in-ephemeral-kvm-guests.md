@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-08-14
+- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
 
 ## Context
 
@@ -21,47 +22,42 @@ providers.
 
 ## Decision
 
-Add an optional `wt-runner` service. Keep development worlds and `wt-server`
-unchanged.
+Add an optional `wt-runner` service, separate from retained-world lifecycle and
+the `wt` client. The shared `guests`, `worlds`, and `runners` registry foundation
+is already present. Installing that schema over an older server requires
+`make nuke`; it has no migration.
 
-This change replaces the server registry with shared `guests`, `worlds`, and
-`runners` tables. There is no in-place migration for existing installations.
-Before reinstalling this version, the operator must run `make nuke` as the
-server user. That command destroys all WT guests and removes WT state and
-configuration, so it must not be run while any world needs to be retained.
-
-`wt-runner` owns one configured GitHub Actions runner scale set, GitHub App
+`wt-runner` will own one configured GitHub Actions runner scale set, GitHub App
 authentication, just-in-time runner configuration, and the one-job lifecycle.
 It uses `wt-libvirt` for machines and a capacity registry shared with
 `wt-server`. WT implements the GitHub scale-set protocol directly; it does not
 embed Actions Runner Controller, Kubernetes, or another runner manager.
 
-For each requested runner, `wt-runner`:
+For each requested runner, `wt-runner` will:
 
-1. Reserves CPU, memory, and disk capacity.
-2. Creates a copy-on-write disk from a dedicated runner image.
-3. Starts a guest with a unique identity on a dedicated runner network.
-4. Starts one official GitHub Actions runner with a short-lived JIT config.
-5. Waits for the runner process to finish.
-6. Preserves diagnostics, destroys the guest and disk, and releases capacity.
+1. Reserve CPU, memory, and disk capacity.
+2. Create a copy-on-write disk from a dedicated runner image.
+3. Start a guest with a unique identity on a dedicated runner network.
+4. Start one official GitHub Actions runner with a short-lived JIT config.
+5. Wait for the runner process to finish.
+6. Preserve diagnostics, destroy the guest and disk, and release capacity.
 
-Cleanup runs after success, failure, cancellation, timeout, or loss of the
-runner process. On startup, `wt-runner` destroys recorded runner guests and
-overlays before accepting work. It never resumes a job or reuses a runner disk.
-Failed cleanup keeps its capacity reservation until reconciliation succeeds.
+Cleanup will run after success, failure, cancellation, timeout, or loss of the
+runner process. On startup, `wt-runner` will destroy recorded runner guests and
+overlays before accepting work. It will never resume a job or reuse a runner
+disk. Failed cleanup will keep its reservation until reconciliation succeeds.
 
-The runner image contains Ubuntu 24.04, the official GitHub Actions runner,
-Docker Engine, and QEMU guest support. It contains no checkout, devcontainer,
-Byobu session, SSH access, or agent Git gateway grant.
+The runner image will contain Ubuntu 24.04, the official GitHub Actions runner,
+Docker Engine, and QEMU guest support. It will contain no checkout,
+devcontainer, Byobu session, SSH access, or agent Git gateway grant.
 
-`wt-server-setup` owns the runner image, strict runtime configuration, systemd
-service, dedicated libvirt network and firewall policy, log retention, and an
-encrypted systemd credential for the GitHub App private key.
+`wt-server-setup` will own the runner image, strict runtime configuration,
+systemd service, dedicated libvirt network and firewall policy, log retention,
+and encrypted GitHub App credential.
 
-The App credential never enters a guest. Each guest receives only its JIT
-configuration and credentials supplied by GitHub for its job. Runner guests
-share no writable disk, Docker daemon, checkout, or secret with worlds or other
-runners.
+The App credential will never enter a guest. Each guest will receive only its
+JIT configuration and job credentials. Runner guests will share no writable
+disk, Docker daemon, checkout, or secret with another guest.
 
 GitHub remains authoritative for workflow status, logs, artifacts, and
 cancellation. WT keeps service and runner diagnostic logs, but adds no CI UI or
