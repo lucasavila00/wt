@@ -32,13 +32,12 @@ if ! "$tmux" has-session -t wt-app 2>/dev/null; then
         sleep 1
     done
 fi
+"$tmux" set-option -g remain-on-exit failed
 if test -e "$state/complete"; then
     if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then
         "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-app-pane
     fi
-    "$tmux" set-option -g remain-on-exit off
 else
-    "$tmux" set-option -g remain-on-exit failed
     if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then
         "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-setup-world
     fi

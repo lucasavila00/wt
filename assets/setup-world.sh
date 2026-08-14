@@ -119,7 +119,7 @@ ssh -p 2222 -i /var/lib/wt-app-ssh/session_identity -o BatchMode=yes \
     "$app_user@$app_address" true
 
 sudo /usr/local/libexec/wt-setup-root cleanup
-/usr/bin/tmux set-option -g remain-on-exit off
+/usr/bin/tmux set-option -g remain-on-exit failed
 echo "World setup complete. Entering the devcontainer."
 "$inner" && exit 0
 finish_log 0

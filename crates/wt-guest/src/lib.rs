@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use wt_command::cmd;
 
 pub const APP_SSH_PORT: u16 = 2222;
@@ -263,6 +263,20 @@ pub fn pane_command(target: &AppTarget) -> Command {
     )
 }
 
+pub fn pane_failure_diagnostic(status: &ExitStatus) -> Option<String> {
+    if status.success() {
+        return None;
+    }
+    let status = status
+        .code()
+        .map(|code| format!("exit {code}"))
+        .unwrap_or_else(|| status.to_string());
+    Some(format!(
+        "wt: could not open the devcontainer shell ({status})\n\
+         wt: fix the error above, close this pane, and create a new one"
+    ))
+}
+
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
@@ -356,5 +370,20 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "-A"));
         assert!(args.iter().any(|arg| arg == "vscode@172.18.0.3"));
         assert!(!args.iter().any(|arg| arg.contains("docker")));
+    }
+
+    #[test]
+    fn pane_failure_diagnostic_explains_recovery() {
+        let failure = Command::new("/bin/sh")
+            .args(["-c", "exit 127"])
+            .status()
+            .unwrap();
+        insta::assert_snapshot!(pane_failure_diagnostic(&failure).unwrap(), @r###"
+        wt: could not open the devcontainer shell (exit 127)
+        wt: fix the error above, close this pane, and create a new one
+        "###);
+
+        let success = Command::new("/bin/true").status().unwrap();
+        assert_eq!(pane_failure_diagnostic(&success), None);
     }
 }
