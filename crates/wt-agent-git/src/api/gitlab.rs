@@ -388,7 +388,10 @@ impl GitlabApi {
             .into_iter()
             .map(|job| CiJob {
                 handle: CiJobHandle::new(job.id.to_string()),
-                run: job.pipeline.as_ref().map(|pipeline| pipeline.id.to_string()),
+                run: job
+                    .pipeline
+                    .as_ref()
+                    .map(|pipeline| pipeline.id.to_string()),
                 name: job.name,
                 state: normalized_ci_state(job.status),
                 url: job.web_url,
@@ -402,6 +405,7 @@ impl GitlabApi {
                 0,
                 CiJob {
                     handle: CiJobHandle::new(format!("pipeline-{}", pipeline.id)),
+                    run: Some(pipeline.id.to_string()),
                     name: pipeline
                         .yaml_errors
                         .map(|error| format!("pipeline configuration: {error}"))

@@ -171,6 +171,7 @@ struct WorkflowJob {
 #[derive(Clone, Deserialize, Eq, PartialEq)]
 struct PullRequest {
     number: u64,
+    node_id: String,
     html_url: String,
     title: String,
     state: String,
@@ -951,7 +952,13 @@ impl GitProviderApi for GithubApi {
             CliCommand::ListThreads { mr } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 let current = Self::project_scope_for_pull_request(scope, &request);
-                self.execute_command(&current, &ProviderCommand::ReadReviewThreads)
+                let ProviderCommandOutput::ReviewThreads(mut threads) =
+                    self.execute_command(&current, &ProviderCommand::ReadReviewThreads)?
+                else {
+                    unreachable!("review command returned another output type")
+                };
+                threads.retain(|thread| thread.resolvable);
+                Ok(ProviderCommandOutput::ReviewThreads(threads))
             }
             CliCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
@@ -1039,47 +1046,87 @@ impl GitProviderApi for GithubApi {
             CliCommand::SetMr { mr, state } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                let provider_command = match state {
-                    ChangeRequestState::Ready => ProviderCommand::MarkChangeRequestReady,
-                    ChangeRequestState::Draft => ProviderCommand::MarkChangeRequestDraft,
-                    ChangeRequestState::Open => ProviderCommand::ReopenChangeRequest,
-                    ChangeRequestState::Closed => ProviderCommand::CloseChangeRequest,
-                };
-                self.execute_command(&current, &provider_command)
+                match state {
+                    ChangeRequestState::Ready => {
+                        self.graphql.execute_graphql::<GithubMarkPullRequestReady>(
+                            self.graphql_path,
+                            github_mark_pull_request_ready::Variables {
+                                id: request.node_id,
+                            },
+                        )?;
+                    }
+                    ChangeRequestState::Draft => {
+                        self.graphql.execute_graphql::<GithubMarkPullRequestDraft>(
+                            self.graphql_path,
+                            github_mark_pull_request_draft::Variables {
+                                id: request.node_id,
+                            },
+                        )?;
+                    }
+                    ChangeRequestState::Open | ChangeRequestState::Closed => {
+                        self.graphql.execute_graphql::<GithubUpdatePullRequest>(
+                            self.graphql_path,
+                            github_update_pull_request::Variables {
+                                id: request.node_id,
+                                title: None,
+                                body: None,
+                                state: Some(if matches!(state, ChangeRequestState::Open) {
+                                    github_update_pull_request::PullRequestUpdateState::OPEN
+                                } else {
+                                    github_update_pull_request::PullRequestUpdateState::CLOSED
+                                }),
+                            },
+                        )?;
+                    }
+                }
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_pull_request(scope.project, *mr)?,
+                )))
             }
             CliCommand::EditMr { mr, title, body } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::EditChangeRequest {
+                self.graphql.execute_graphql::<GithubUpdatePullRequest>(
+                    self.graphql_path,
+                    github_update_pull_request::Variables {
+                        id: request.node_id,
                         title: title.clone(),
                         body: body.clone(),
+                        state: None,
                     },
-                )
+                )?;
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_pull_request(scope.project, *mr)?,
+                )))
             }
             CliCommand::CommentMr { mr, body } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::AddChangeRequestComment { body: body.clone() },
-                )
+                self.graphql
+                    .execute_graphql::<GithubAddPullRequestComment>(
+                        self.graphql_path,
+                        github_add_pull_request_comment::Variables {
+                            id: request.node_id,
+                            body: super::attributed_project_comment(scope, body),
+                        },
+                    )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Comment added.".to_owned(),
+                ))
             }
             CliCommand::ReplyThread { mr, thread, body } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::ReplyToReviewThread {
-                        thread: thread.clone(),
-                        body: body.clone(),
+                self.graphql.execute_graphql::<GithubReplyToReviewThread>(
+                    self.graphql_path,
+                    github_reply_to_review_thread::Variables {
+                        thread: thread.as_str().to_owned(),
+                        body: super::attributed_project_comment(scope, body),
                     },
-                )
+                )?;
+                Ok(ProviderCommandOutput::Confirmation(
+                    "Reply added.".to_owned(),
+                ))
             }
             CliCommand::SetThread {
                 mr,
@@ -1088,14 +1135,26 @@ impl GitProviderApi for GithubApi {
             } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                let current = Self::project_scope_for_pull_request(scope, &request);
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::SetReviewThreadResolved {
-                        thread: thread.clone(),
-                        resolved: *resolved,
-                    },
-                )
+                if *resolved {
+                    self.graphql.execute_graphql::<GithubResolveReviewThread>(
+                        self.graphql_path,
+                        github_resolve_review_thread::Variables {
+                            thread: thread.as_str().to_owned(),
+                        },
+                    )?;
+                } else {
+                    self.graphql.execute_graphql::<GithubReopenReviewThread>(
+                        self.graphql_path,
+                        github_reopen_review_thread::Variables {
+                            thread: thread.as_str().to_owned(),
+                        },
+                    )?;
+                }
+                Ok(ProviderCommandOutput::Confirmation(if *resolved {
+                    "Thread resolved.".to_owned()
+                } else {
+                    "Thread reopened.".to_owned()
+                }))
             }
             CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
                 let current = self.read_workflow_job(scope.project, *job)?;
@@ -1665,6 +1724,7 @@ mod tests {
     fn write_scope_comes_from_provider_resource_metadata() {
         let mut request = PullRequest {
             number: 7,
+            node_id: "pull-request-7".to_owned(),
             html_url: String::new(),
             title: String::new(),
             state: "open".to_owned(),

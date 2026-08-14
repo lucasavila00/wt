@@ -629,6 +629,13 @@ fn attributed_comment(scope: &ProviderCommandScope<'_>, body: &str) -> String {
     )
 }
 
+pub(crate) fn attributed_project_comment(scope: &ProviderProjectScope<'_>, body: &str) -> String {
+    format!(
+        "{body}\n\n— WT world `{}`",
+        scope.prefix.trim_end_matches('/')
+    )
+}
+
 pub(crate) fn render_cli_command_output(output: ProviderCommandOutput) -> String {
     match output {
         ProviderCommandOutput::ChangeRequest(request) => render_change_request(&request),
