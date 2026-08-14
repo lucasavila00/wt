@@ -1,12 +1,12 @@
 use super::*;
+use std::collections::BTreeMap;
 
+const BUILD_NAME: &str = "wt-host-image-build";
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
-const HOST_IMAGE_PREREQUISITES: &[u8] =
-    include_bytes!("../../../../assets/world/host/install-image-prerequisites.sh");
-const HOST_RESOLVER_PATH: &str = "/run/systemd/resolve/resolv.conf";
-const RECIPE_VERSION: u32 = 3;
+const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/host/build-image.sh");
+pub(super) const RECIPE_VERSION: u32 = 4;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +16,7 @@ struct Manifest {
     source_sha256: String,
     config_sha256: String,
     image_sha256: String,
+    packages: BTreeMap<String, String>,
     byobu: String,
     tmux: String,
     ghostty_terminfo_sha256: String,
@@ -45,118 +46,100 @@ pub(super) fn build(
     source: &Path,
     byobu: &Path,
 ) -> Result<()> {
-    let build = server.libvirt.worlds_dir.join("wt-host-image-build.qcow2");
-    let terminal = server.libvirt.worlds_dir.join("wt-host-terminal-assets");
-    if build.exists() {
-        bail!("stale host image build exists: {}", build.display());
+    let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
+    if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
+        bail!("stale image build state exists for {BUILD_NAME}");
     }
-    if terminal.exists() {
-        bail!("stale host terminal assets exist: {}", terminal.display());
-    }
-    fs::create_dir(&terminal).context("create host terminal asset directory")?;
+    fs::create_dir(&build_dir).context("create host image build directory")?;
     let result = (|| {
-        println!("Preparing dedicated host image and shared terminal assets...");
-        extract_terminal_files(runner, server, &terminal)?;
-        fs::write(terminal.join("wt-tmux.conf"), TMUX_CONFIG)?;
-        fs::write(terminal.join("byobu-color"), BYOBU_COLOR)?;
-        fs::write(terminal.join("wt-host-shell"), HOST_SHELL)?;
-        fs::write(
-            terminal.join("install-image-prerequisites.sh"),
-            HOST_IMAGE_PREREQUISITES,
-        )?;
-        runner.run(
-            cmd!("qemu-img", "convert", "-p", "-O", "qcow2", source, &build),
-            "copy host source image",
-        )?;
-        runner.run(
-            cmd!(
-                "qemu-img",
-                "resize",
-                &build,
-                format!("{}G", input.image.build_disk_gib)
-            ),
-            "resize host image",
-        )?;
-        println!("Installing host image packages and terminal assets...");
-        customize(runner, &build, byobu, &terminal)?;
-        println!("Host image packages and terminal assets installed.");
-        runner.run(
-            cmd!(
-                "sudo",
-                "virt-sysprep",
-                "-a",
-                &build,
-                "--operations",
-                "machine-id,ssh-hostkeys"
-            ),
-            "clear host image identity",
-        )?;
-        runner.run(
-            cmd!("sudo", "chown", "wt:wt", &build),
-            "own prepared host image",
-        )?;
-        runner.run(
-            cmd!("sudo", "chmod", "0640", &build),
-            "permit prepared host image reading",
-        )?;
-        runner.run(cmd!("qemu-img", "check", &build), "check host image")?;
-        let manifest = Manifest {
-            version: IMAGE_MANIFEST_VERSION,
-            recipe_version: RECIPE_VERSION,
-            source_sha256: input.source_sha256().to_ascii_lowercase(),
-            config_sha256: image_config_sha(server_bytes, input),
-            image_sha256: sha_file(&build)?,
-            byobu: recipe::BYOBU_VERSION.to_owned(),
-            tmux: recipe::TMUX_VERSION.to_owned(),
-            ghostty_terminfo_sha256: recipe::GHOSTTY_TERMINFO_SHA256.to_owned(),
-        };
-        publish(runner, server, &build, &manifest)
+        fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
+            .context("set host image build directory permissions")?;
+        host::ensure_qemu_search_acl(runner, &build_dir)?;
+        build_inner(
+            runner,
+            input,
+            server,
+            server_bytes,
+            source,
+            byobu,
+            &build_dir,
+        )
     })();
-    if result.is_err() {
-        let _ = fs::remove_file(&build);
+    if let Err(primary) = result {
+        return match cleanup_failed_build(runner, &build_dir, BUILD_NAME) {
+            Ok(()) => Err(primary),
+            Err(cleanup) => {
+                Err(primary.context(format!("host image build cleanup also failed: {cleanup}")))
+            }
+        };
     }
-    let cleanup = runner.run(
-        cmd!("sudo", "rm", "-rf", "--", &terminal),
-        "remove staged host terminal assets",
-    );
-    match (result, cleanup) {
-        (Err(primary), Err(cleanup)) => {
-            Err(primary.context(format!("host terminal cleanup also failed: {cleanup}")))
-        }
-        (Err(primary), Ok(())) => Err(primary),
-        (Ok(()), Err(cleanup)) => Err(cleanup),
-        (Ok(()), Ok(())) => Ok(()),
-    }
+    Ok(())
 }
 
-fn extract_terminal_files(
+fn build_inner(
     runner: &impl Runner,
+    input: &InstallInput,
     server: &ServerConfig,
-    terminal: &Path,
+    server_bytes: &[u8],
+    source: &Path,
+    byobu: &Path,
+    build_dir: &Path,
 ) -> Result<()> {
-    for (source, action) in [
-        ("/usr/bin/tmux", "extract pinned tmux for host image"),
-        (
-            "/usr/share/terminfo/g/ghostty",
-            "extract Ghostty terminfo for host image",
-        ),
-        (
-            "/usr/share/terminfo/x/xterm-ghostty",
-            "extract xterm-Ghostty terminfo for host image",
-        ),
-    ] {
-        runner.run(
-            cmd!(
-                "sudo",
-                "virt-copy-out",
-                "-a",
-                &server.image.devcontainer_path,
-                source,
-                terminal
-            ),
-            action,
-        )?;
-    }
+    let tmux_config = build_dir.join("tmux.conf");
+    let byobu_color = build_dir.join("byobu-color");
+    let host_shell = build_dir.join("host-shell.sh");
+    fs::write(&tmux_config, TMUX_CONFIG).context("stage host tmux configuration")?;
+    fs::write(&byobu_color, BYOBU_COLOR).context("stage host Byobu color setting")?;
+    fs::write(&host_shell, HOST_SHELL).context("stage host shell launcher")?;
+
+    let spec = BuildSpec {
+        name: BUILD_NAME,
+        kind: "host",
+        recipe_version: RECIPE_VERSION,
+        recipe: HOST_IMAGE_BUILD,
+    };
+    let extra_inputs = [
+        StagedInput {
+            source: &tmux_config,
+            guest_path: "/var/tmp/wt-tmux.conf",
+        },
+        StagedInput {
+            source: &byobu_color,
+            guest_path: "/var/tmp/byobu-color",
+        },
+        StagedInput {
+            source: &host_shell,
+            guest_path: "/var/tmp/wt-host-shell",
+        },
+    ];
+    let paths = run_kvm_build(
+        runner,
+        input,
+        server,
+        source,
+        byobu,
+        build_dir,
+        &spec,
+        &extra_inputs,
+    )?;
+
+    let package_output = read_build_file(
+        runner,
+        &paths.disk,
+        &paths.console,
+        "/var/lib/wt-image-packages",
+        "read installed host package versions",
+    )?;
+    let packages = parse_packages(&package_output)?;
+    validate_packages(&packages)?;
+
+    println!("Sysprepping host image...");
+    runner.run(
+        cmd!("sudo", "virt-sysprep", "-a", &paths.disk),
+        "sysprep host image",
+    )?;
+    sanitize_reusable_image(runner, &paths.disk)?;
+
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
@@ -164,101 +147,80 @@ fn extract_terminal_files(
         cmd!(
             "sudo",
             "chown",
-            "-R",
             format!("{}:{}", user.uid.as_raw(), user.gid.as_raw()),
-            terminal
+            &paths.disk,
         ),
-        "own extracted host terminal assets",
-    )
-}
-
-fn customize(runner: &impl Runner, build: &Path, byobu: &Path, terminal: &Path) -> Result<()> {
-    let resolver = Path::new(HOST_RESOLVER_PATH);
-    if !resolver.is_file() {
-        bail!(
-            "host image build resolver is unavailable at {HOST_RESOLVER_PATH}; systemd-resolved must be active"
-        );
-    }
+        "restore host image build disk ownership",
+    )?;
+    println!("Compacting host image...");
     runner.run(
         cmd!(
-            "sudo",
-            "virt-customize",
-            "-a",
-            build,
-            "--network",
-            "--run-command",
-            "rm -f /etc/resolv.conf",
-            "--copy-in",
-            format!("{}:/etc", resolver.display()),
-            "--run",
-            terminal.join("install-image-prerequisites.sh"),
-            "--upload",
-            format!("{}:/var/tmp/wt-byobu.deb", byobu.display()),
-            "--upload",
-            format!("{}:/var/tmp/wt-tmux", terminal.join("tmux").display()),
-            "--upload",
-            format!("{}:/var/tmp/ghostty", terminal.join("ghostty").display()),
-            "--upload",
-            format!(
-                "{}:/var/tmp/xterm-ghostty",
-                terminal.join("xterm-ghostty").display()
-            ),
-            "--upload",
-            format!(
-                "{}:/var/tmp/wt-tmux.conf",
-                terminal.join("wt-tmux.conf").display()
-            ),
-            "--upload",
-            format!(
-                "{}:/var/tmp/byobu-color",
-                terminal.join("byobu-color").display()
-            ),
-            "--upload",
-            format!(
-                "{}:/var/tmp/wt-host-shell",
-                terminal.join("wt-host-shell").display()
-            ),
-            "--run-command",
-            install_command()
+            "qemu-img",
+            "convert",
+            "-p",
+            "-O",
+            "qcow2",
+            &paths.disk,
+            &paths.prepared
         ),
-        "install host image prerequisites",
-    )
-}
-
-fn install_command() -> String {
-    format!(
-        "printf '%s  %s\\n' {} /var/tmp/wt-byobu.deb | sha256sum --check --strict && apt-get install -y --no-install-recommends /var/tmp/wt-byobu.deb && test \"$(dpkg-query -W -f='${{Version}}' byobu)\" = '{}' && install -m 0755 /var/tmp/wt-tmux /usr/bin/tmux && test \"$(/usr/bin/tmux -V)\" = 'tmux {}' && install -d -m 0755 /usr/share/terminfo/g /usr/share/terminfo/x /usr/local/share /etc/skel/.byobu && install -m 0644 /var/tmp/ghostty /usr/share/terminfo/g/ghostty && install -m 0644 /var/tmp/xterm-ghostty /usr/share/terminfo/x/xterm-ghostty && printf '%s  %s\\n' {} /usr/share/terminfo/g/ghostty | sha256sum --check --strict && cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty && TERM=ghostty tput colors > /dev/null && TERM=xterm-ghostty tput colors > /dev/null && install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf && install -m 0644 /var/tmp/wt-tmux.conf /etc/skel/.byobu/.tmux.conf && install -m 0644 /var/tmp/byobu-color /etc/skel/.byobu/color && install -m 0755 /var/tmp/wt-host-shell /usr/local/bin/wt-host-shell && rm -f /var/tmp/wt-byobu.deb /var/tmp/wt-tmux /var/tmp/ghostty /var/tmp/xterm-ghostty /var/tmp/wt-tmux.conf /var/tmp/byobu-color /var/tmp/wt-host-shell && systemctl enable qemu-guest-agent.service ssh.service",
-        recipe::BYOBU_SHA256,
-        recipe::BYOBU_VERSION,
-        recipe::TMUX_VERSION,
-        recipe::GHOSTTY_TERMINFO_SHA256,
-    )
-}
-
-fn publish(
-    runner: &impl Runner,
-    server: &ServerConfig,
-    prepared: &Path,
-    manifest: &Manifest,
-) -> Result<()> {
-    let manifest_path = manifest_path(&server.image.host_path);
-    let image_temporary = sibling_temporary(&server.image.host_path)?;
-    let manifest_temporary = sibling_temporary(&manifest_path)?;
-    let local_manifest = prepared.with_extension("manifest.json");
-    fs::write(&local_manifest, serde_json::to_vec_pretty(manifest)?)?;
-    sudo_install_owned(
-        runner,
-        prepared,
-        &image_temporary,
-        "libvirt-qemu",
-        "kvm",
-        0o644,
+        "compact host image",
     )?;
-    sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
-    sudo_move(runner, &image_temporary, &server.image.host_path)?;
-    sudo_move(runner, &manifest_temporary, &manifest_path)?;
-    fs::remove_file(local_manifest)?;
-    fs::remove_file(prepared)?;
+    runner.run(
+        cmd!("qemu-img", "check", &paths.prepared),
+        "check host image",
+    )?;
+
+    let manifest = Manifest {
+        version: IMAGE_MANIFEST_VERSION,
+        recipe_version: RECIPE_VERSION,
+        source_sha256: input.source_sha256().to_ascii_lowercase(),
+        config_sha256: image_config_sha(server_bytes, input),
+        image_sha256: sha_file(&paths.prepared)?,
+        packages,
+        byobu: recipe::BYOBU_VERSION.to_owned(),
+        tmux: recipe::TMUX_VERSION.to_owned(),
+        ghostty_terminfo_sha256: recipe::GHOSTTY_TERMINFO_SHA256.to_owned(),
+    };
+    let manifest_path = manifest_path(&server.image.host_path);
+    let publication = stage_publication(
+        runner,
+        &paths.prepared,
+        &server.image.host_path,
+        &manifest_path,
+        &manifest,
+    )?;
+    fs::remove_dir_all(&paths.dir).context("remove host image build directory")?;
+    publication.publish(runner)
+}
+
+fn parse_packages(text: &str) -> Result<BTreeMap<String, String>> {
+    let mut packages = BTreeMap::new();
+    for line in text.lines() {
+        let (name, version) = line
+            .split_once('\t')
+            .with_context(|| format!("malformed host package version line: {line:?}"))?;
+        if name.is_empty()
+            || version.is_empty()
+            || packages.insert(name.into(), version.into()).is_some()
+        {
+            bail!("invalid host package version line: {line:?}");
+        }
+    }
+    Ok(packages)
+}
+
+fn validate_packages(packages: &BTreeMap<String, String>) -> Result<()> {
+    let expected = ["byobu", "openssh-server", "qemu-guest-agent", "tmux"];
+    if packages.keys().map(String::as_str).ne(expected) {
+        bail!("installed host package manifest differs from policy");
+    }
+    if packages["byobu"] != recipe::BYOBU_VERSION {
+        bail!(
+            "installed host Byobu version is {}; expected {}",
+            packages["byobu"],
+            recipe::BYOBU_VERSION
+        );
+    }
     Ok(())
 }
 
@@ -281,6 +243,8 @@ fn verify(
     {
         bail!("installed host image provenance differs from the current install input");
     }
+    validate_packages(&manifest.packages)
+        .context("installed host image package provenance differs")?;
     require_sha(
         &server.image.host_path,
         &manifest.image_sha256,
