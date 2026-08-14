@@ -9,7 +9,7 @@ remote: WT gives you scoped access to project group/project.
 remote: Use normal Git for commits, fetches, pulls, and pushes.
 remote: Every WT world for this project can write branches under wt/.
 remote: Pull or merge requests target main.
-remote: ag-git is the installed CLI for pull or merge requests, reviews, and CI.
-remote: Run ag-git for the current branch's status and suggested next actions.
+remote: ag-git uses explicit provider resource types and IDs; it does not infer
+remote: resources from the current checkout.
 remote: Run ag-git --help to discover every available command.
 remote:

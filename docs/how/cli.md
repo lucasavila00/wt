@@ -67,9 +67,9 @@ git push
 ```
 
 Worlds may update, force-push, or delete each other's `wt/` branches. The
-gateway rejects other branch namespaces and tags. Run `ag-git` for the current
-branch's pull or merge request, reviews, and CI, or `ag-git --help` for the
-complete command list.
+gateway rejects other branch namespaces and tags. `ag-git` addresses pull or
+merge requests, reviews, runs, and jobs by explicit provider type and ID. Run
+`ag-git --help` for the complete command list.
 
 ## VS Code launch
 

@@ -155,8 +155,8 @@ WT: WT gives you scoped access to project `group/project`.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
 WT: this project can write branches under `wt/`. Pull or merge requests target
 WT: `main`.
-WT: `ag-git` is the installed CLI for pull or merge requests, reviews, and CI.
-WT: Run `ag-git` for the current branch's status and suggested next actions.
+WT: `ag-git` uses explicit provider resource types and IDs; it does not infer
+WT: resources from the current checkout.
 WT: Run `ag-git --help` to discover every available command.
 WT:
 ```
@@ -177,7 +177,7 @@ After a commit, WT explains the whole next step:
 WT: Commit created on `wt/fix-login`.
 WT: Publish it with:
 WT:   git push
-WT: After pushing, run `ag-git` to open or manage its pull or merge request.
+WT: After pushing, use the explicit `ag-git` commands printed by the gateway.
 ```
 
 The gateway repeats the branch-name guidance if a bad branch reaches it. After
@@ -186,18 +186,18 @@ a successful push without a request, it prints:
 ```text
 remote: Published branch `wt/fix-login`.
 remote: This branch does not have a pull or merge request.
-remote: Open one for review:
-remote:   ag-git open-mr
-remote: Or open it as a draft:
-remote:   ag-git open-mr --draft
+remote: Open one with:
+remote:   ag-git open mr --head wt/fix-login --base main
 ```
 
 If a request already exists, the push output says what changed:
 
 ```text
 remote: Published branch `wt/fix-login`.
-remote: Updated request !123: https://gitlab.example/project/-/merge_requests/123
-remote: Run `ag-git` to see review comments and CI.
+remote: Updated MR 123: https://gitlab.example/project/-/merge_requests/123
+remote: Inspect it with:
+remote:   ag-git show mr 123
+remote:   ag-git list threads mr 123
 ```
 
 If the provider lookup fails after Git accepts the push, the push still
@@ -205,14 +205,13 @@ succeeds and points the agent to `ag-git` for the current state.
 
 ## Pull and merge requests
 
-Pushing only publishes the branch. `ag-git open-mr` opens a ready request
-against the world's base; `--draft` opens a draft. If a request already exists,
-the command shows it.
+Pushing only publishes the branch. Opening a request names its head and base
+explicitly; `--draft` opens a draft.
 
 The gateway owns the provider workflow exposed through `ag-git`: opening or
-showing the request, addressing reviews, investigating or controlling CI, and
-waiting for review or CI changes. Its output uses short handles and shows the
-relevant next commands.
+showing requests, addressing reviews, investigating or controlling CI, and
+waiting for explicitly identified resources. ADR 0022 replaces contextual
+commands and short handles with explicit provider resource types and IDs.
 
 Provider GraphQL operations compile against schemas committed to the WT
 repository. The gateway uses small typed REST calls only for operations GraphQL

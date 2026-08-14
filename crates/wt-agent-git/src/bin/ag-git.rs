@@ -17,7 +17,6 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = std::env::args().skip(1).collect();
-    let (branch, head) = current_checkout();
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(
@@ -28,7 +27,11 @@ fn run() -> Result<()> {
         &mut relay,
         &ClientRequest {
             protocol_version: PROTOCOL_VERSION,
-            operation: ClientOperation::Cli { args, branch, head },
+            operation: ClientOperation::Cli {
+                args,
+                branch: None,
+                head: None,
+            },
         },
     )
     .context("send command to the WT Git relay")?;
@@ -49,20 +52,6 @@ fn run() -> Result<()> {
             .context("write gateway output")?;
     }
     Ok(())
-}
-
-fn current_checkout() -> (Option<String>, Option<String>) {
-    let branch = git_output(&["symbolic-ref", "--quiet", "--short", "HEAD"]);
-    let head = git_output(&["rev-parse", "--verify", "HEAD"]);
-    (branch, head)
-}
-
-fn git_output(args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new("git").args(args).output().ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn test_socket() -> String {
