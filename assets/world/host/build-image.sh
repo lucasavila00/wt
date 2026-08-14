@@ -4,6 +4,7 @@ set -eu
 install -m 0755 /var/tmp/wt-host-shell /usr/local/bin/wt-host-shell
 cmp /var/tmp/wt-host-shell /usr/local/bin/wt-host-shell
 
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y git
 ! command -v docker
 ! command -v devcontainer
 ! command -v git
