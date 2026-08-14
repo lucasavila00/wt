@@ -151,11 +151,15 @@ impl<J: JitProvider, B: RunnerBackend> RunnerManager<J, B> {
     }
 
     pub fn run_one(&self) -> Result<(), LifecycleError> {
+        let runner = self.reserve_one()?;
+        self.run(runner)
+    }
+
+    pub fn reserve_one(&self) -> Result<Runner, LifecycleError> {
         let id = Uuid::new_v4();
         let disk_id = Uuid::new_v4();
         let name = format!("wt-runner-{}", &id.simple().to_string()[..12]);
-        let runner = self
-            .registry
+        self.registry
             .reserve_runner(
                 id,
                 &name,
@@ -164,8 +168,11 @@ impl<J: JitProvider, B: RunnerBackend> RunnerManager<J, B> {
                 self.config.runner_resources,
                 self.config.capacity_limit,
             )
-            .map_err(|error| LifecycleError::Registry(error.to_string()))?;
+            .map_err(|error| LifecycleError::Registry(error.to_string()))
+    }
 
+    pub fn run(&self, runner: Runner) -> Result<(), LifecycleError> {
+        let id = runner.guest.id;
         let primary = self.run_reserved(&runner);
         let primary_message = primary.as_ref().err().map(ToString::to_string);
         self.registry
@@ -465,3 +472,4 @@ mod tests {
         assert_eq!(backend.state.lock().unwrap().destroys, 1);
     }
 }
+pub mod config;

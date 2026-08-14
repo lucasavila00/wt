@@ -36,6 +36,7 @@ nix = { version = "0.31.2", features = ["signal", "user"] }
 quick-xml = "0.39.2"
 base64 = "0.22.1"
 insta = "1.47.0"
+jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 diesel = { version = "2.3.11", features = ["sqlite"] }
 diesel_migrations = "2.3.2"
 graphql_client = "0.16.0"
