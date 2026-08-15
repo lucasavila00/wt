@@ -24,18 +24,22 @@ The `devcontainer` contract remains unchanged.
 A `host` world boots Ubuntu with OpenSSH, QEMU guest support, and Byobu. WT
 creates the `wt` login, stages the submitted cloud-init YAML, verifies SSH, and
 returns the world in `setup`. The boot seed contains only the data needed to
-bring up the machine and network.
+bring up the machine and network. The image defers cloud-init's normal init
+modules until setup; WT does not delete cloud-init state to run them again.
 
 `wt new host` opens the regular SSH alias. It forwards the workstation SSH
 agent and attaches to a persistent Byobu session. The first session runs
-cloud-init's config and final stages with the submitted YAML. Cloud-init uses a
-stable agent socket so reconnecting does not leave existing panes pointing at a
-deleted socket. The latest Byobu connection supplies the agent.
+cloud-init's standard init, config, and final modules with the submitted YAML.
+Cloud-init uses a stable agent socket so reconnecting does not leave existing
+panes pointing at a deleted socket. The latest Byobu connection supplies the
+agent.
 
-Cloud-init output stays in the pane and `/var/log/cloud-init-output.log`. A
-completion marker promotes the world to `running`. A failure marker moves it to
-`error`. WT keeps failed hosts and both SSH aliases for inspection and removal.
-It does not rerun failed cloud-init commands.
+The setup pane follows `/var/log/cloud-init-output.log` while the system service
+runs. A completion marker promotes the world to `running`. A failure marker
+moves it to `error`. A persistent started marker prevents retries. While the
+setup service is active, the world remains in `setup`; a started world with no
+active service or final marker becomes `error`. WT keeps failed hosts and both
+SSH aliases for inspection and removal.
 
 The `-vs` alias is direct guest SSH with agent forwarding and no forced command.
 It does not start setup.
