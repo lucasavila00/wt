@@ -53,12 +53,13 @@ Include ~/.ssh/wt/config
 ```
 
 `wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It pins host
-keys and does not enable agent forwarding. Remote contexts use their configured
-server as a jump host to the guest's private address.
+keys. Remote contexts use their configured server as a jump host to the guest's
+private address.
 
 Devcontainer aliases are documented in
 [Devcontainer worlds](../worlds/devcontainer.md#access). For hosts,
-`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH.
+`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH. Both
+host aliases forward the workstation's SSH agent. Devcontainer aliases do not.
 
 `wt new`, `wt ls`, `wt start`, and `wt rm` synchronize automatically. Run
 `wt sync` on another workstation after changing worlds elsewhere.

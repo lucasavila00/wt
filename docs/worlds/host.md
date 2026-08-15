@@ -21,7 +21,8 @@ stored in SQLite. Plaintext user-data remains in the machine's NoCloud files
 and inside the guest, so it is not a secret store.
 
 The regular alias attaches to a persistent Byobu session. The `-vs` alias is
-the same guest SSH endpoint with no forced command:
+the same guest SSH endpoint with no forced command. Both forward the
+workstation's SSH agent:
 
 ```text
 ssh CONTEXT.NAME
@@ -30,6 +31,10 @@ ssh CONTEXT.NAME-vs
 
 There is no `-host` alias. `wt code` rejects host worlds; use `-vs` directly for
 plain SSH, SFTP, or an editor.
+
+Byobu uses a stable agent socket that is refreshed on every connection, so Git
+keeps working after reconnects. Keys are not copied into the world, but any
+process controlling this trusted host can use the agent while connected.
 
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and

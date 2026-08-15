@@ -5,6 +5,7 @@
 - Amends: [ADR 0016](0016-keep-qemu-and-remove-redundant-world-boot-work.md),
   [ADR 0023](0023-run-github-actions-jobs-in-ephemeral-kvm-guests.md), and
   [ADR 0024](0024-use-a-shared-guest-registry.md)
+- Amended by: [ADR 0033](0033-forward-ssh-agents-to-host-worlds.md)
 
 ## Decision
 
