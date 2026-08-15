@@ -20,7 +20,7 @@ if test -n "${BYOBU_ALT_TITLE:-}" && test -e "$state/complete"; then
 fi
 if ! "$tmux" has-session -t wt-app 2>/dev/null; then
     attempt=1
-    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-app \
+    while ! "$byobu" -f /usr/local/share/wt-devcontainer-tmux.conf new-session -d -s wt-app \
         "$(test -e "$state/complete" && echo /usr/local/bin/wt-app-pane || echo /usr/local/bin/wt-setup-world)"; do
         "$tmux" has-session -t wt-app 2>/dev/null && break
         if test "$attempt" -ge 3; then

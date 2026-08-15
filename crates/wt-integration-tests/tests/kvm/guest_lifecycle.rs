@@ -137,6 +137,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let _ = host_setup.wait();
     start_host_byobu(&harness, &host_name, forwarded_agent.socket());
     start_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    assert_shared_terminal_stack(&harness, &name, &host_name);
     run_host(
         &harness,
         &host_name,
@@ -158,10 +159,6 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test ! -e /usr/local/bin/wt-app-shell; ",
             "test ! -e /usr/local/bin/wt-agent-git-relay; ",
             "test -x /usr/local/bin/wt-host-shell; ",
-            "test \"$(tmux -V)\" = 'tmux 3.6b'; ",
-            "test \"$(dpkg-query -W -f='${Version}' byobu)\" = '7.15-0ubuntu1'; ",
-            "TERM=ghostty tput colors >/dev/null; ",
-            "TERM=xterm-ghostty tput colors >/dev/null; ",
             "tmux has-session -t wt-host",
         ),
         "verify raw host world",

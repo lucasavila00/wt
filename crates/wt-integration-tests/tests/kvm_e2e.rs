@@ -11,6 +11,9 @@ pub(crate) use support::*;
 #[path = "kvm/host.rs"]
 mod host;
 pub(crate) use host::*;
+#[path = "kvm/terminal.rs"]
+mod terminal;
+pub(crate) use terminal::*;
 
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;

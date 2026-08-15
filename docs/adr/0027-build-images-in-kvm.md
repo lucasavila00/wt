@@ -33,6 +33,9 @@ one shared recipe installs and validates Byobu, tmux, terminfo, and terminal
 settings for both kinds. Kind recipes contain only their application contract:
 the devcontainer stack or the host additions from
 [ADR 0026](0026-make-world-kinds-first-class.md).
+Devcontainer-specific tmux settings source the shared configuration instead of
+copying it. The real KVM test compares the active terminal settings in both
+world kinds.
 
 Whole image installation flows are readable `.sh` assets under
 `assets/world/KIND`; shared provisioning assets live under

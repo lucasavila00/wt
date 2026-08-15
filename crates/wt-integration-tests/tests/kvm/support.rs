@@ -476,7 +476,16 @@ pub(crate) fn unique_name(label: &str) -> InstanceName {
 }
 
 pub(crate) fn run_guest(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
-    let output = cmd!(
+    let output = guest_command(harness, name, command).output().unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
+pub(crate) fn guest_command(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    command: &str,
+) -> std::process::Command {
+    cmd!(
         "ssh",
         "-F",
         harness.temp.path().join(".ssh/config"),
@@ -485,9 +494,6 @@ pub(crate) fn run_guest(harness: &KvmHarness, name: &InstanceName, command: &str
         format!("local.{name}-host"),
         command,
     )
-    .output()
-    .unwrap();
-    ensure_success(action, &output).unwrap();
 }
 
 pub(crate) fn wait_for_running(
