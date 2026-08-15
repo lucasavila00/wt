@@ -5,7 +5,6 @@
 - Amends: [ADR 0016](0016-keep-qemu-and-remove-redundant-world-boot-work.md),
   [ADR 0023](0023-run-github-actions-jobs-in-ephemeral-kvm-guests.md), and
   [ADR 0024](0024-use-a-shared-guest-registry.md)
-- Amended by: [ADR 0033](0033-forward-ssh-agents-to-host-worlds.md)
 
 ## Decision
 
@@ -22,20 +21,32 @@ Creation requests are tagged by kind.
 
 The `devcontainer` contract remains unchanged.
 
-A `host` world exposes the Ubuntu guest over SSH. Its regular alias attaches to
-a persistent Byobu session. Its `-vs` alias is direct guest SSH with no forced
-command. Creation requires cloud-init user-data. WT passes it through unchanged
-and keeps machine identity, network, login, and SSH configuration in separate
-NoCloud data. Readiness requires successful cloud-init completion. The exact
-user-data is part of the hashed create fingerprint and is not stored in SQLite.
+A `host` world boots Ubuntu with OpenSSH, QEMU guest support, and Byobu. WT
+creates the `wt` login, stages the submitted cloud-init YAML, verifies SSH, and
+returns the world in `setup`. The boot seed contains only the data needed to
+bring up the machine and network.
 
-A `host` world boots from a dedicated Ubuntu image with OpenSSH, QEMU guest
-support, and Byobu. User-data runs as root and may break WT SSH access. Creation
-proves direct login with a one-use WT key, removes that key, and fails unless
-SSH is ready.
+`wt new host` opens the regular SSH alias. It forwards the workstation SSH
+agent and attaches to a persistent Byobu session. The first session runs
+cloud-init's config and final stages with the submitted YAML. Cloud-init uses a
+stable agent socket so reconnecting does not leave existing panes pointing at a
+deleted socket. The latest Byobu connection supplies the agent.
+
+Cloud-init output stays in the pane and `/var/log/cloud-init-output.log`. A
+completion marker promotes the world to `running`. A failure marker moves it to
+`error`. WT keeps failed hosts and both SSH aliases for inspection and removal.
+It does not rerun failed cloud-init commands.
+
+The `-vs` alias is direct guest SSH with agent forwarding and no forced command.
+It does not start setup.
+
+The submitted YAML runs as root, is stored root-only in the guest, and is part
+of the hashed create fingerprint. It is not stored in SQLite. If the Byobu
+connection closes, cloud-init keeps running, but commands using the forwarded
+agent may fail. Reconnecting refreshes the socket; it does not retry commands.
 
 WT adds no checkout, agent Git grant, devcontainer, or app SSH to a host world.
-Ubuntu's Git remains available; the recipe receives no implicit WT credentials.
+Ubuntu's Git remains available. WT never copies private keys into the guest.
 
 World names cannot end in `-host` or `-vs`; those suffixes are reserved for SSH
 aliases.
@@ -84,5 +95,5 @@ destroys all WT guests and disks and deletes the SQLite registry and installed
 configuration. Source credentials and installed binaries remain. There is no
 migration or preserved runtime state.
 
-The protocol remains version 1. Request, response, and registry definitions are
-replaced in place.
+The protocol and schema remain version 1. Request, response, and registry
+definitions are replaced in place. No compatibility code or migration is kept.
