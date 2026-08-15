@@ -66,11 +66,8 @@ fn run_api(config_path: &Path) -> Result<()> {
     let gateway = wt_devcontainer_git::ControlClient::new(gateway_socket);
     let service =
         Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
-    let mut progress = TestProgress::new()?;
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
-        Ok(request) => {
-            wt_server::handle_request_with_progress(&service, "lucas", request, &mut progress)
-        }
+        Ok(request) => wt_server::handle_request(&service, "lucas", request),
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,
             format!("invalid JSON request: {error}"),
@@ -79,41 +76,4 @@ fn run_api(config_path: &Path) -> Result<()> {
     serde_json::to_writer(std::io::stdout().lock(), &response)?;
     std::io::stdout().write_all(b"\n")?;
     Ok(())
-}
-
-struct TestProgress {
-    log: Option<std::fs::File>,
-}
-
-impl TestProgress {
-    fn new() -> Result<Self> {
-        let log = std::env::var_os("WT_TEST_PROGRESS_LOG")
-            .map(|path| {
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-            })
-            .transpose()
-            .context("open test progress log")?;
-        Ok(Self { log })
-    }
-}
-
-impl Write for TestProgress {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        std::io::stderr().write_all(bytes)?;
-        if let Some(log) = &mut self.log {
-            log.write_all(bytes)?;
-        }
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        std::io::stderr().flush()?;
-        if let Some(log) = &mut self.log {
-            log.flush()?;
-        }
-        Ok(())
-    }
 }

@@ -19,7 +19,9 @@ SSH_AUTH_SOCK=$agent
 export SSH_AUTH_SOCK
 if ! "$tmux" has-session -t wt-host 2>/dev/null; then
     attempt=1
-    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-host; do
+    command=/bin/bash
+    test -e /var/lib/wt-host/complete || command=/usr/local/bin/wt-host-setup
+    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-host "$command"; do
         "$tmux" has-session -t wt-host 2>/dev/null && break
         if test "$attempt" -ge 3; then
             echo "wt: failed to start the Byobu session after $attempt attempts" >&2
@@ -30,5 +32,6 @@ if ! "$tmux" has-session -t wt-host 2>/dev/null; then
         sleep 1
     done
 fi
+"$tmux" set-option -g remain-on-exit failed
 flock -u 9
 exec "$tmux" attach-session -t wt-host

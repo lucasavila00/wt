@@ -48,7 +48,6 @@ fn run_api() -> Result<()> {
         Path::new(CONTROL_SOCKET_PATH),
         std::io::stdin().lock(),
         std::io::stdout().lock(),
-        std::io::stderr().lock(),
     )
 }
 
@@ -88,91 +87,45 @@ fn run_server() -> Result<()> {
     let gateway = wt_devcontainer_git::ControlClient::new(wt_devcontainer_git::CONTROL_SOCKET);
     let owner = process_user()?;
 
-    let server = Daemon {
-        state,
-        operations,
-        worker,
-        gateway,
-        owner,
-        capacity_limit,
-    };
-    daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
-        server.handle(request, progress)
+    daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
+        handle_daemon_request(
+            &state,
+            &operations,
+            &worker,
+            &gateway,
+            &owner,
+            capacity_limit,
+            request,
+        )
     })
 }
 
-type ServerWorkers =
-    Workers<CompositeWorker<LibvirtProvider>, wt_host::CompositeWorker<LibvirtProvider>>;
-
-struct Daemon {
-    state: StateConfig,
-    operations: Operations,
-    worker: ServerWorkers,
-    gateway: wt_devcontainer_git::ControlClient,
-    owner: String,
+fn handle_daemon_request(
+    state: &StateConfig,
+    operations: &Operations,
+    worker: &Workers<CompositeWorker<LibvirtProvider>, wt_host::CompositeWorker<LibvirtProvider>>,
+    gateway: &wt_devcontainer_git::ControlClient,
+    owner: &str,
     capacity_limit: wt_registry::Resources,
-}
-
-impl Daemon {
-    fn handle(&self, request: ApiRequest, progress: &mut dyn std::io::Write) -> ApiResponse {
-        let result = self.handle_result(request, progress);
-        result.unwrap_or_else(|error| {
-            ApiResponse::error(ApiError::new(
-                ErrorCode::Internal,
-                format!("initialize request: {error:#}"),
-            ))
-        })
-    }
-
-    fn handle_result(
-        &self,
-        request: ApiRequest,
-        progress: &mut dyn std::io::Write,
-    ) -> Result<ApiResponse> {
-        let store = Store::open(&self.state.database_path()).context("open instance registry")?;
+    request: ApiRequest,
+) -> ApiResponse {
+    let result = (|| {
+        let store = Store::open(&state.database_path()).context("open instance registry")?;
         let service = Service::with_capacity_limit(
             store,
-            self.worker.clone(),
-            self.gateway.clone(),
-            self.operations.clone(),
-            self.capacity_limit,
+            worker.clone(),
+            gateway.clone(),
+            operations.clone(),
+            capacity_limit,
         );
-        let mut request_log = RequestLog::new(progress);
-        Ok(wt_server::handle_request_with_progress(
-            &service,
-            &self.owner,
-            request,
-            &mut request_log,
+        Ok::<_, anyhow::Error>(wt_server::handle_request(&service, owner, request))
+    })();
+    result.unwrap_or_else(|error| {
+        ApiResponse::error(ApiError::new(
+            ErrorCode::Internal,
+            format!("initialize request: {error:#}"),
         ))
-    }
-}
-
-struct RequestLog<'a> {
-    client: &'a mut dyn std::io::Write,
-    journal: std::io::Stderr,
-}
-
-impl<'a> RequestLog<'a> {
-    fn new(client: &'a mut dyn std::io::Write) -> Self {
-        Self {
-            client,
-            journal: std::io::stderr(),
-        }
-    }
-}
-
-impl std::io::Write for RequestLog<'_> {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let _ = self.client.write_all(bytes);
-        let _ = self.journal.write_all(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        let _ = self.client.flush();
-        let _ = self.journal.flush();
-        Ok(())
-    }
+    })
 }
 
 fn process_user() -> Result<String> {

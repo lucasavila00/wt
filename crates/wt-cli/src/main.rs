@@ -181,27 +181,16 @@ fn run() -> Result<()> {
 
 fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Result<Response> {
     loop {
-        let host = matches!(request.application, CreateApplication::Host { .. });
-        let spinner = if host {
-            eprintln!("Creating host world...");
-            None
-        } else {
-            let spinner = cliclack::spinner();
-            spinner.start("Creating world");
-            Some(spinner)
-        };
-        let api_request = ApiRequest::new(Operation::Create(request.clone()));
-        let outcome = if host {
-            wt_cli::transport::call_outcome_streaming(context, &api_request)
-        } else {
-            wt_cli::transport::call_outcome(context, &api_request)
-        };
+        let spinner = cliclack::spinner();
+        spinner.start("Creating world");
+        let outcome = wt_cli::transport::call_outcome(
+            context,
+            &ApiRequest::new(Operation::Create(request.clone())),
+        );
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(error) => {
-                if let Some(spinner) = spinner {
-                    spinner.error("World creation did not complete");
-                }
+                spinner.error("World creation did not complete");
                 return Err(anyhow::anyhow!(
                     "create did not complete; run `wt ls` to check the world: {error:#}"
                 ));
@@ -209,19 +198,11 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
         };
         match outcome {
             Outcome::Ok { response } => {
-                if let Some(spinner) = spinner {
-                    spinner.stop("World created");
-                } else {
-                    eprintln!("Host world created.");
-                }
+                spinner.stop("World created");
                 return Ok(*response);
             }
             Outcome::Error { error } if error.code == wt_api::ErrorCode::Capacity => {
-                if let Some(spinner) = spinner {
-                    spinner.error("World capacity is full");
-                } else {
-                    eprintln!("World capacity is full.");
-                }
+                spinner.error("World capacity is full");
                 let capacity = error
                     .capacity
                     .as_ref()
@@ -231,11 +212,11 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
                 }
             }
             Outcome::Error { error } => {
-                if let Some(spinner) = spinner {
-                    spinner.error("World creation did not complete");
-                }
+                spinner.error("World creation did not complete");
                 let error = wt_cli::transport::rejection(context, &error);
-                return Err(anyhow::anyhow!("create did not complete: {error:#}"));
+                return Err(anyhow::anyhow!(
+                    "create did not complete; run `wt ls` to check the world: {error:#}"
+                ));
             }
         }
     }

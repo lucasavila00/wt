@@ -19,15 +19,6 @@ pub fn handle_request<W: worlds::WorldWorker, G: service::AgentGitGateway>(
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
-    handle_request_with_progress(service, owner, request, &mut std::io::sink())
-}
-
-pub fn handle_request_with_progress<W: worlds::WorldWorker, G: service::AgentGitGateway>(
-    service: &service::Service<W, G>,
-    owner: &str,
-    request: ApiRequest,
-    progress: &mut dyn std::io::Write,
-) -> ApiResponse {
     if let Err(error) = validate_client_commit(&request.client_commit) {
         return ApiResponse::error(error);
     }
@@ -41,7 +32,7 @@ pub fn handle_request_with_progress<W: worlds::WorldWorker, G: service::AgentGit
         ));
     }
 
-    match service.execute_with_progress(owner, request.operation, progress) {
+    match service.execute(owner, request.operation) {
         Ok(response) => ApiResponse::ok(response),
         Err(error) => ApiResponse::error(error),
     }

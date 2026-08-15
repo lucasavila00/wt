@@ -1,0 +1,13 @@
+[Unit]
+Description=WT host cloud-init setup
+After=cloud-init.service ssh.service
+ConditionPathExists=!/var/lib/wt-host/complete
+ConditionPathExists=!/var/lib/wt-host/error
+ConditionPathExists=!/var/lib/wt-host/started
+
+[Service]
+Type=oneshot
+Environment=SSH_AUTH_SOCK=/home/wt/.local/state/wt/ssh-agent
+ExecStart=/usr/local/libexec/wt-host-cloud-init
+RemainAfterExit=yes
+TimeoutStartSec=0
