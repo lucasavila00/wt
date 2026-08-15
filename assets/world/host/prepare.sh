@@ -22,6 +22,7 @@ case "${1:-}" in
         printf 'wt ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/wt
         chmod 0440 /etc/sudoers.d/wt
         visudo --check --file=/etc/sudoers.d/wt >/dev/null
+        ssh-keygen -A
         systemctl enable --now ssh.service
         ;;
     user-data)

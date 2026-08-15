@@ -25,7 +25,9 @@ A `host` world boots Ubuntu with OpenSSH, QEMU guest support, and Byobu. WT
 creates the `wt` login, stages the submitted cloud-init YAML, verifies SSH, and
 returns the world in `setup`. The boot seed contains only the data needed to
 bring up the machine and network. The image defers cloud-init's normal init
-modules until setup; WT does not delete cloud-init state to run them again.
+modules until setup; WT does not delete cloud-init state to run them again. WT
+generates and pins the guest SSH host keys before setup, so cloud-init preserves
+them.
 
 `wt new host` opens the regular SSH alias. It forwards the workstation SSH
 agent and attaches to a persistent Byobu session. The first session runs
