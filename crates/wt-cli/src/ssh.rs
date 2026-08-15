@@ -121,7 +121,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
     }
     ssh_config::ensure_managed_include(&main_config_path).with_context(|| {
         format!(
-            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` before any `Host` or `Match` block, then run `wt sync`",
+            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` before other active directives, then run `wt sync`",
             main_config_path.display()
         )
     })?;
@@ -267,7 +267,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
         fs::create_dir(temp.path().join(".ssh")).unwrap();
-        let main_config = "Host personal\n  HostName example.test\n";
+        let main_config = "Include ~/.ssh/wt/config\nHost personal\n  HostName example.test\n";
         fs::write(temp.path().join(".ssh/config"), main_config).unwrap();
         let instance = Instance {
             id: Uuid::new_v4(),
@@ -330,10 +330,7 @@ mod tests {
         "###);
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
-        assert_eq!(
-            main,
-            "Include ~/.ssh/wt/config\nHost personal\n  HostName example.test\n"
-        );
+        assert_eq!(main, main_config);
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(!managed.contains("repo-feature"));
     }
@@ -650,5 +647,24 @@ mod tests {
             "remote_worlds_ssh_config",
             normalize_home(&managed, temp.path())
         );
+        let evaluated = std::process::Command::new("/usr/bin/ssh")
+            .arg("-G")
+            .arg("-F")
+            .arg(temp.path().join(".ssh/config"))
+            .arg("lab.world-one")
+            .env("HOME", temp.path())
+            .output()
+            .unwrap();
+        assert!(evaluated.status.success());
+        let evaluated = String::from_utf8_lossy(&evaluated.stdout);
+        for expected in [
+            "hostname 192.0.2.10",
+            "user wt",
+            "port 22",
+            "hostkeyalias lab.world-one-host",
+            "proxyjump wt-server",
+        ] {
+            assert!(evaluated.lines().any(|line| line == expected), "{expected}");
+        }
     }
 }

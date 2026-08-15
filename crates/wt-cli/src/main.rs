@@ -85,7 +85,12 @@ fn run() -> Result<()> {
                 bail!("helper returned the wrong response to create");
             };
             let instance = *instance;
-            warn_if_sync_skipped(&config)?;
+            sync_complete_inventory(&config).with_context(|| {
+                format!(
+                    "world {}.{} was created, but setup was not entered\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
+                    context.name, instance.name, context.name, instance.name
+                )
+            })?;
             println!(
                 "{}.{}\t{}\t{}",
                 context.name,
@@ -163,15 +168,7 @@ fn run() -> Result<()> {
         }
         Command::Code { name } => code::open(&config, &name)?,
         Command::Sync => {
-            let report = inventory::list_all(&config);
-            if !report.failures.is_empty() {
-                return Err(context_failures(
-                    "SSH inventory was not updated because the complete world list is unavailable",
-                    &report.failures,
-                    None,
-                ));
-            }
-            let path = wt_cli::ssh::sync(&config, &report.instances)?;
+            let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());
         }
     }
@@ -640,6 +637,18 @@ fn warn_if_sync_skipped(config: &ClientConfig) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn sync_complete_inventory(config: &ClientConfig) -> Result<PathBuf> {
+    let report = inventory::list_all(config);
+    if !report.failures.is_empty() {
+        return Err(context_failures(
+            "SSH inventory was not updated because the complete world list is unavailable",
+            &report.failures,
+            None,
+        ));
+    }
+    wt_cli::ssh::sync(config, &report.instances)
 }
 
 fn print_context_warnings(failures: &[ContextError]) {

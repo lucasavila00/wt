@@ -1,6 +1,6 @@
 # ADR 0033: Bootstrap managed SSH configuration
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-15
 - Amends: [ADR 0011](0011-exec-ssh-after-world-creation.md)
 
@@ -12,23 +12,24 @@ when `~/.ssh/config` includes that file. Without the include, `wt new` execs
 
 ## Decision
 
-`wt sync` ensures `~/.ssh/config` contains this global include before its
-`Host` and `Match` blocks:
+When `~/.ssh/config` is absent, `wt sync` creates it with:
 
 ```sshconfig
 Include ~/.ssh/wt/config
 ```
 
-Create `~/.ssh/config` when absent. Otherwise preserve its other includes,
-contents, ordering, and permissions; add no duplicate; and update it atomically.
+Publish the new file atomically with mode `0600` and without replacing a file
+created concurrently. Never modify an existing `~/.ssh/config`; require it to
+contain the WT include before other active directives.
 
-If WT cannot safely ensure the include, synchronization fails with the cause,
-the directive, and its required placement. `wt new` reports that the world was
-created, does not exec SSH, and instructs the user to add the directive, run
+If the existing configuration does not load WT first, synchronization fails
+with the directive and its required placement. `wt new` reports that the world
+was created, does not exec SSH, and instructs the user to update the file, run
 `wt sync`, and reconnect with the qualified alias.
 
 ## Verification
 
 - Resolve local and remote aliases with real OpenSSH configuration evaluation.
-- Verify creation, preservation, permissions, atomicity, and idempotence.
+- Verify no-clobber creation, mode `0600`, existing-file preservation, and
+  idempotence.
 - Snapshot the update-failure diagnostic and verify `wt new` does not exec SSH.

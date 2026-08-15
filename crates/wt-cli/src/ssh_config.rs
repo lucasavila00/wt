@@ -1,116 +1,68 @@
 use anyhow::{bail, Context, Result};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const MANAGED_INCLUDE: &str = "Include ~/.ssh/wt/config";
-const MANAGED_PATH: &str = "~/.ssh/wt/config";
 
 pub(crate) fn ensure_managed_include(path: &Path) -> Result<()> {
-    let target = write_target(path)?;
-    let (contents, mode) = match fs::read_to_string(&target) {
-        Ok(contents) => {
-            let mode = fs::metadata(&target)
-                .with_context(|| format!("inspect {}", target.display()))?
-                .permissions()
-                .mode();
-            (contents, mode)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && target == path => {
-            (String::new(), 0o600)
-        }
-        Err(error) => return Err(error).with_context(|| format!("read {}", target.display())),
+    match read_config(path)? {
+        Some(contents) if has_leading_include(&contents) => Ok(()),
+        Some(_) => bail!(
+            "{} does not load WT SSH aliases before other active directives",
+            path.display()
+        ),
+        None => create_config(path),
+    }
+}
+
+fn read_config(path: &Path) -> Result<Option<String>> {
+    let mut file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("open {}", path.display())),
     };
-    let Some(updated) = add_managed_include(&contents) else {
-        return Ok(());
-    };
-    atomic_write(&target, updated.as_bytes(), mode)
-}
-
-fn write_target(path: &Path) -> Result<PathBuf> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            let target = fs::canonicalize(path)
-                .with_context(|| format!("resolve symlink {}", path.display()))?;
-            if !fs::metadata(&target)?.is_file() {
-                bail!("{} does not point to a regular file", path.display());
-            }
-            Ok(target)
-        }
-        Ok(metadata) if metadata.is_file() => Ok(path.to_owned()),
-        Ok(_) => bail!("{} is not a regular file", path.display()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_owned()),
-        Err(error) => Err(error).with_context(|| format!("inspect {}", path.display())),
+    if !file.metadata()?.is_file() {
+        bail!("{} is not a regular file", path.display());
     }
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .with_context(|| format!("read {}", path.display()))?;
+    Ok(Some(contents))
 }
 
-fn add_managed_include(contents: &str) -> Option<String> {
-    if contents.lines().any(has_managed_include) {
-        return None;
-    }
-    let offset = contents
-        .split_inclusive('\n')
-        .scan(0, |offset, line| {
-            let start = *offset;
-            *offset += line.len();
-            Some((start, line))
-        })
-        .find_map(|(offset, line)| is_host_block(line).then_some(offset))
-        .unwrap_or(contents.len());
-    let mut updated = String::with_capacity(contents.len() + MANAGED_INCLUDE.len() + 2);
-    updated.push_str(&contents[..offset]);
-    if offset == contents.len() && !contents.is_empty() && !contents.ends_with('\n') {
-        updated.push('\n');
-    }
-    updated.push_str(MANAGED_INCLUDE);
-    updated.push('\n');
-    updated.push_str(&contents[offset..]);
-    Some(updated)
+fn has_leading_include(contents: &str) -> bool {
+    contents
+        .lines()
+        .map(|line| line.trim_matches([' ', '\t']))
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        == Some(MANAGED_INCLUDE)
 }
 
-fn has_managed_include(line: &str) -> bool {
-    let mut fields = line
-        .split('#')
-        .next()
-        .unwrap_or_default()
-        .split_whitespace();
-    fields
-        .next()
-        .is_some_and(|field| field.eq_ignore_ascii_case("include"))
-        && fields.any(|field| field.trim_matches(['\'', '"']) == MANAGED_PATH)
-}
-
-fn is_host_block(line: &str) -> bool {
-    line.split('#')
-        .next()
-        .unwrap_or_default()
-        .split_whitespace()
-        .next()
-        .is_some_and(|field| {
-            field.eq_ignore_ascii_case("host") || field.eq_ignore_ascii_case("match")
-        })
-}
-
-fn atomic_write(path: &Path, contents: &[u8], mode: u32) -> Result<()> {
-    let temporary = path.with_extension("wt-new");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temporary)
-        .with_context(|| format!("create {}", temporary.display()))?;
-    let result = (|| {
-        file.set_permissions(fs::Permissions::from_mode(mode))?;
-        file.write_all(contents)?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        Ok::<_, std::io::Error>(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.with_context(|| format!("atomically update {}", path.display()))
+fn create_config(path: &Path) -> Result<()> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("create temporary file in {}", parent.display()))?;
+    temporary
+        .as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    temporary.write_all(format!("{MANAGED_INCLUDE}\n").as_bytes())?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist_noclobber(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("create {} without replacing it", path.display()))?;
+    File::open(parent)
+        .with_context(|| format!("open {}", parent.display()))?
+        .sync_all()
+        .with_context(|| format!("sync {}", parent.display()))
 }
 
 #[cfg(test)]
@@ -118,64 +70,126 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inserts_after_global_configuration_and_before_host_blocks() {
-        let existing = "# workstation\nInclude ~/.ssh/company/config\nCanonicalizeHostname yes\n\nHost server\n  HostName server.test\n";
-        let updated = add_managed_include(existing).unwrap();
-        insta::assert_snapshot!(updated, @r###"
-        # workstation
-        Include ~/.ssh/company/config
-        CanonicalizeHostname yes
+    fn creates_a_missing_config_once_with_private_permissions() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
 
-        Include ~/.ssh/wt/config
-        Host server
-          HostName server.test
-        "###);
+        ensure_managed_include(&path).unwrap();
+        ensure_managed_include(&path).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "Include ~/.ssh/wt/config\n"
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::read_dir(temp.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            vec![std::ffi::OsString::from("config")]
+        );
     }
 
     #[test]
-    fn recognizes_an_existing_include_among_other_paths() {
-        let existing = "Include ~/.ssh/company/config \"~/.ssh/wt/config\"\nHost server\n";
-        assert!(add_managed_include(existing).is_none());
+    fn creation_never_replaces_a_concurrently_created_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
+        fs::write(&path, "Host user-config\n").unwrap();
+
+        assert!(create_config(&path).is_err());
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Host user-config\n");
     }
 
     #[test]
-    fn preserves_permissions_and_symlinks() {
+    fn accepts_a_leading_include_among_other_includes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
+        let contents = "# workstation\n\nInclude ~/.ssh/wt/config\nInclude ~/.ssh/company/config\nHost server\n";
+        fs::write(&path, contents).unwrap();
+
+        ensure_managed_include(&path).unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), contents);
+    }
+
+    #[test]
+    fn rejects_scoped_or_late_includes_without_modifying_the_file() {
+        for contents in [
+            "Include ~/.ssh/company/config\nInclude ~/.ssh/wt/config\n",
+            "Host unrelated\n  Include ~/.ssh/wt/config\n",
+            "Match host unrelated\n  Include ~/.ssh/wt/config\n",
+            "\u{a0}Include ~/.ssh/wt/config\n",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("config");
+            fs::write(&path, contents).unwrap();
+
+            assert!(ensure_managed_include(&path).is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), contents);
+        }
+    }
+
+    #[test]
+    fn accepts_a_symlink_without_replacing_it() {
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join("dotfiles-ssh-config");
         let link = temp.path().join("config");
-        fs::write(&target, "Host server\n").unwrap();
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        fs::write(&target, "Include ~/.ssh/wt/config\nHost server\n").unwrap();
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        ensure_managed_include(&link).unwrap();
         ensure_managed_include(&link).unwrap();
 
         assert!(fs::symlink_metadata(&link)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(
-            fs::read_to_string(&target).unwrap(),
-            "Include ~/.ssh/wt/config\nHost server\n"
-        );
-        assert_eq!(
-            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
-            0o640
-        );
     }
 
     #[test]
-    fn rejects_a_non_file_without_changing_it() {
+    fn rejects_unreadable_config_types_without_modifying_them() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("config");
         fs::create_dir(&path).unwrap();
 
-        let error = ensure_managed_include(&path).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!("{} is not a regular file", path.display())
-        );
+        assert!(ensure_managed_include(&path).is_err());
         assert!(path.is_dir());
+    }
+
+    #[test]
+    fn rejects_special_files_without_blocking_or_reading_them() {
+        let temp = tempfile::tempdir().unwrap();
+        let fifo = temp.path().join("fifo-config");
+        assert!(std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success());
+        let device = temp.path().join("device-config");
+        std::os::unix::fs::symlink("/dev/zero", &device).unwrap();
+
+        assert!(ensure_managed_include(&fifo).is_err());
+        assert!(ensure_managed_include(&device).is_err());
+        assert!(fifo.exists());
+        assert!(fs::symlink_metadata(device)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn rejects_non_utf8_content_without_modifying_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
+        let contents = b"Include ~/.ssh/wt/config\n\xff";
+        fs::write(&path, contents).unwrap();
+
+        assert!(ensure_managed_include(&path).is_err());
+
+        assert_eq!(fs::read(&path).unwrap(), contents);
     }
 }
