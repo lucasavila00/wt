@@ -1,6 +1,6 @@
 use super::*;
-use std::path::Path;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
 
 const HOST_PROJECT_USER_DATA: &str =
     include_str!("../../../../examples/host-world/cloud-init.yaml");
@@ -45,7 +45,16 @@ fn agent_git_transport_works_without_provider_credentials() {
     assert!(!vendor_data.contains("wt-project-development"));
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
-    start_host_byobu(&harness, &host_name);
+    let forwarded_agent = TestSshAgent::start(harness.temp.path(), &harness.git.guest_key);
+    run_host_with_agent(
+        &harness,
+        &host_name,
+        forwarded_agent.socket(),
+        "test -S \"$SSH_AUTH_SOCK\" && ssh-add -l",
+        "verify direct host agent forwarding",
+    );
+    start_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    start_host_byobu(&harness, &host_name, forwarded_agent.socket());
     run_host(
         &harness,
         &host_name,
@@ -285,7 +294,28 @@ fn agent_git_transport_works_without_provider_credentials() {
 }
 
 fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
-    let output = cmd!(
+    let mut command_process = host_command(harness, name, command);
+    command_process.env_remove("SSH_AUTH_SOCK");
+    let output = command_process.output().unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
+fn run_host_with_agent(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    agent_socket: &Path,
+    command: &str,
+    action: &str,
+) {
+    let output = host_command(harness, name, command)
+        .env("SSH_AUTH_SOCK", agent_socket)
+        .output()
+        .unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
+fn host_command(harness: &KvmHarness, name: &InstanceName, command: &str) -> std::process::Command {
+    cmd!(
         "ssh",
         "-F",
         harness.temp.path().join(".ssh/config"),
@@ -294,12 +324,9 @@ fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &s
         format!("local.{name}-vs"),
         command,
     )
-    .output()
-    .unwrap();
-    ensure_success(action, &output).unwrap();
 }
 
-fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
+fn start_host_byobu(harness: &KvmHarness, name: &InstanceName, agent_socket: &Path) {
     let mut command = cmd!(
         "ssh",
         "-F",
@@ -309,7 +336,7 @@ fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
         format!("local.{name}"),
     );
     command
-        .env_remove("SSH_AUTH_SOCK")
+        .env("SSH_AUTH_SOCK", agent_socket)
         .env("TERM", "xterm-ghostty")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -317,17 +344,21 @@ fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
     let mut child = command.spawn().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        let output = cmd!(
+        let mut probe = cmd!(
             "ssh",
             "-F",
             harness.temp.path().join(".ssh/config"),
             "-i",
             &harness.git.guest_key,
             format!("local.{name}-vs"),
-            "tmux has-session -t wt-host",
-        )
-        .output()
-        .unwrap();
+            concat!(
+                "test \"$(tmux show-environment -t wt-host SSH_AUTH_SOCK)\" = ",
+                "'SSH_AUTH_SOCK=/home/wt/.local/state/wt/ssh-agent' && ",
+                "SSH_AUTH_SOCK=/home/wt/.local/state/wt/ssh-agent ssh-add -l",
+            ),
+        );
+        probe.env_remove("SSH_AUTH_SOCK");
+        let output = probe.output().unwrap();
         if output.status.success() {
             break;
         }
@@ -340,6 +371,50 @@ fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+struct TestSshAgent {
+    child: Child,
+    socket: PathBuf,
+}
+
+impl TestSshAgent {
+    fn start(root: &Path, key: &Path) -> Self {
+        let socket = root.join("forwarded-agent.sock");
+        let mut child = cmd!("ssh-agent", "-D", "-a", &socket)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !socket.exists() {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "disposable SSH agent exited before creating its socket"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "disposable SSH agent socket did not appear"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = cmd!("ssh-add", key)
+            .env("SSH_AUTH_SOCK", &socket)
+            .output()
+            .unwrap();
+        ensure_success("add the disposable forwarded identity", &output).unwrap();
+        Self { child, socket }
+    }
+
+    fn socket(&self) -> &Path {
+        &self.socket
+    }
+}
+
+impl Drop for TestSshAgent {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {

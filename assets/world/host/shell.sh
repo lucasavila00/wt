@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+umask 077
 
 tmux=/usr/bin/tmux
 byobu=/usr/bin/byobu-tmux
@@ -7,7 +8,15 @@ state=${XDG_STATE_HOME:-"$HOME/.local/state"}/wt
 mkdir -p "$state"
 exec 9>"$state/host-shell.lock"
 flock 9
-unset SSH_AUTH_SOCK
+agent="$state/ssh-agent"
+if test -n "${SSH_AUTH_SOCK:-}" && test -S "$SSH_AUTH_SOCK"; then
+    temporary="$state/.ssh-agent.$$"
+    trap 'rm -f "$temporary"' EXIT HUP INT TERM
+    ln -s "$SSH_AUTH_SOCK" "$temporary"
+    mv -f "$temporary" "$agent"
+fi
+SSH_AUTH_SOCK=$agent
+export SSH_AUTH_SOCK
 if ! "$tmux" has-session -t wt-host 2>/dev/null; then
     attempt=1
     while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-host; do
@@ -21,5 +30,6 @@ if ! "$tmux" has-session -t wt-host 2>/dev/null; then
         sleep 1
     done
 fi
+"$tmux" set-environment -t wt-host SSH_AUTH_SOCK "$SSH_AUTH_SOCK"
 flock -u 9
 exec "$tmux" attach-session -t wt-host
