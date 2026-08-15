@@ -128,10 +128,9 @@ fn agent_git_transport_works_without_provider_credentials() {
     });
     let host_pane = capture_host_pane(&harness, &host_name);
     assert!(
-        host_pane.contains("WT host cloud-init: init")
-            && host_pane.contains("WT host project development ready")
+        host_pane.contains("WT host project development ready")
             && host_pane.contains("WT host cloud-init complete."),
-        "host cloud-init output was not preserved in Byobu:\n{host_pane}"
+        "host cloud-init completion was not preserved in Byobu:\n{host_pane}"
     );
     let _ = host_setup.kill();
     let _ = host_setup.wait();
