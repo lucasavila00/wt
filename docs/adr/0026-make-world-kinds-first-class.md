@@ -77,6 +77,10 @@ credentials in worlds.
 WT rejects inputs that conflict with kind-owned state. It does not add fallback
 or compatibility behavior for unsupported recipes.
 
+Host creation fails before provisioning when user-data sets top-level
+`ssh_keys`, `ssh_deletekeys`, `cloud_init_modules`, `cloud_config_modules`,
+`cloud_final_modules`, `merge_how`, `merge_type`, or `output`.
+
 ## Code layout
 
 Generic names are reserved for code used by more than one world kind.
