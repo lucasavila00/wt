@@ -121,7 +121,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
     }
     ssh_config::ensure_managed_include(&main_config_path).with_context(|| {
         format!(
-            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` before other active directives, then run `wt sync`",
+            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` outside any `Host` or `Match` block, then run `wt sync`",
             main_config_path.display()
         )
     })?;

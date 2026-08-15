@@ -8,9 +8,9 @@ const MANAGED_INCLUDE: &str = "Include ~/.ssh/wt/config";
 
 pub(crate) fn ensure_managed_include(path: &Path) -> Result<()> {
     match read_config(path)? {
-        Some(contents) if has_leading_include(&contents) => Ok(()),
+        Some(contents) if has_global_include(&contents) => Ok(()),
         Some(_) => bail!(
-            "{} does not load WT SSH aliases before other active directives",
+            "{} does not load WT SSH aliases in its global configuration",
             path.display()
         ),
         None => create_config(path),
@@ -36,12 +36,21 @@ fn read_config(path: &Path) -> Result<Option<String>> {
     Ok(Some(contents))
 }
 
-fn has_leading_include(contents: &str) -> bool {
-    contents
-        .lines()
-        .map(|line| line.trim_matches([' ', '\t']))
-        .find(|line| !line.is_empty() && !line.starts_with('#'))
-        == Some(MANAGED_INCLUDE)
+fn has_global_include(contents: &str) -> bool {
+    for line in contents.lines() {
+        let line = line.trim_matches([' ', '\t']);
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == MANAGED_INCLUDE {
+            return true;
+        }
+        let keyword = line.split([' ', '\t', '=']).next().unwrap_or_default();
+        if keyword.eq_ignore_ascii_case("host") || keyword.eq_ignore_ascii_case("match") {
+            return false;
+        }
+    }
+    false
 }
 
 fn create_config(path: &Path) -> Result<()> {
@@ -106,10 +115,10 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_leading_include_among_other_includes() {
+    fn accepts_global_include_after_other_includes() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("config");
-        let contents = "# workstation\n\nInclude ~/.ssh/wt/config\nInclude ~/.ssh/company/config\nHost server\n";
+        let contents = "Include ~/.ssh/company/config\n\nInclude ~/.ssh/personal/config\n\nInclude ~/.ssh/wt/config\nHost server\n";
         fs::write(&path, contents).unwrap();
 
         ensure_managed_include(&path).unwrap();
@@ -120,7 +129,6 @@ mod tests {
     #[test]
     fn rejects_scoped_or_late_includes_without_modifying_the_file() {
         for contents in [
-            "Include ~/.ssh/company/config\nInclude ~/.ssh/wt/config\n",
             "Host unrelated\n  Include ~/.ssh/wt/config\n",
             "Match host unrelated\n  Include ~/.ssh/wt/config\n",
             "\u{a0}Include ~/.ssh/wt/config\n",
