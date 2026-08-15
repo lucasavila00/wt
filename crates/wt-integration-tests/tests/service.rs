@@ -312,16 +312,15 @@ fn concurrent_creates_cannot_claim_the_same_memory() {
     let barrier = Arc::new(std::sync::Barrier::new(3));
     let mut creates = Vec::new();
     for name in ["first", "second"] {
-        let root = root.clone();
+        let service = Service::new(
+            Store::open(&root.join("instances.db")).unwrap(),
+            Worker::default(),
+            Gateway,
+            Operations::default(),
+            1024,
+        );
         let barrier = barrier.clone();
         creates.push(std::thread::spawn(move || {
-            let service = Service::new(
-                Store::open(&root.join("instances.db")).unwrap(),
-                Worker::default(),
-                Gateway,
-                Operations::default(),
-                1024,
-            );
             barrier.wait();
             service.execute("tester", Operation::Create(create(name)))
         }));
