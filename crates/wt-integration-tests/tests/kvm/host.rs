@@ -10,13 +10,9 @@ pub(crate) fn wait_for_live_host_output(
 ) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
-        let output = host_command(
-            harness,
-            name,
-            "tmux capture-pane -p -S -1000 -t wt-host:0.0",
-        )
-        .output()
-        .unwrap();
+        let output = host_command(harness, name, "tmux capture-pane -p -S - -t wt-host:0.0")
+            .output()
+            .unwrap();
         if output.status.success() && String::from_utf8_lossy(&output.stdout).contains(marker) {
             let instance = harness
                 .sync_inventory()
@@ -99,13 +95,9 @@ pub(crate) fn wait_for_host_status(
 }
 
 pub(crate) fn capture_host_pane(harness: &KvmHarness, name: &InstanceName) -> String {
-    let output = host_command(
-        harness,
-        name,
-        "tmux capture-pane -p -S -1000 -t wt-host:0.0",
-    )
-    .output()
-    .unwrap();
+    let output = host_command(harness, name, "tmux capture-pane -p -S - -t wt-host:0.0")
+        .output()
+        .unwrap();
     ensure_success("capture host Byobu output", &output).unwrap();
     String::from_utf8(output.stdout).unwrap()
 }

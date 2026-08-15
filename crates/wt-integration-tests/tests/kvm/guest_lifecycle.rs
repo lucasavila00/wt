@@ -128,9 +128,10 @@ fn agent_git_transport_works_without_provider_credentials() {
     });
     let host_pane = capture_host_pane(&harness, &host_name);
     assert!(
-        host_pane.contains("WT host project development ready")
+        host_pane.contains("WT host cloud-init: init")
+            && host_pane.contains("WT host project development ready")
             && host_pane.contains("WT host cloud-init complete."),
-        "host cloud-init completion was not preserved in Byobu:\n{host_pane}"
+        "host cloud-init output was not preserved in Byobu:\n{host_pane}"
     );
     let _ = host_setup.kill();
     let _ = host_setup.wait();
@@ -400,7 +401,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &broken_name,
-        "test \"$(wc -l < /var/lib/wt-host-attempts)\" = 1",
+        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
         "verify failed host setup ran once",
     );
     let _ = broken_setup.kill();
@@ -455,7 +456,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &interrupted_name,
-        "test \"$(wc -l < /var/lib/wt-host-attempts)\" = 1",
+        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
         "verify interrupted host setup ran once",
     );
     let _ = interrupted_setup.kill();
