@@ -286,7 +286,7 @@ esac
     insta::assert_snapshot!(error, @r###"
     wt: world local.broken-config was created, but setup was not entered
     resolve the synchronization error, run `wt sync`, and reconnect with `ssh local.broken-config`: configure WT SSH aliases in [HOME]/.ssh/config
-    add `Include ~/.ssh/wt/config` before other active directives, then run `wt sync`: [HOME]/.ssh/config is not a regular file
+    add `Include ~/.ssh/wt/config` outside any `Host` or `Match` block, then run `wt sync`: [HOME]/.ssh/config is not a regular file
     "###);
 }
 

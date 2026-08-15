@@ -56,8 +56,9 @@ When `~/.ssh/config` does not exist, `wt sync` creates it with:
 Include ~/.ssh/wt/config
 ```
 
-WT never modifies an existing main configuration. If the include is not its
-first active directive, WT reports the manual change required. `wt sync` owns
+WT never modifies an existing main configuration. Other global includes may
+precede the WT include; it must only be outside any `Host` or `Match` block. WT
+reports the manual change required when it is missing or scoped. `wt sync` owns
 `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It pins host keys. Remote
 contexts use their configured server as a jump host to the guest's private
 address.
