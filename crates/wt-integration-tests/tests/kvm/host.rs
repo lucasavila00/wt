@@ -10,11 +10,6 @@ pub(crate) fn wait_for_live_host_output(
 ) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
-        let instance = harness
-            .sync_inventory()
-            .into_iter()
-            .find(|instance| instance.name == *name)
-            .unwrap();
         let output = host_command(
             harness,
             name,
@@ -23,6 +18,11 @@ pub(crate) fn wait_for_live_host_output(
         .output()
         .unwrap();
         if output.status.success() && String::from_utf8_lossy(&output.stdout).contains(marker) {
+            let instance = harness
+                .sync_inventory()
+                .into_iter()
+                .find(|instance| instance.name == *name)
+                .unwrap();
             assert_eq!(
                 instance.status,
                 InstanceStatus::Setup,
@@ -35,7 +35,11 @@ pub(crate) fn wait_for_live_host_output(
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "timed out waiting for live host cloud-init output"
+            "timed out waiting for live host cloud-init output\n\
+             capture status: {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
         );
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
