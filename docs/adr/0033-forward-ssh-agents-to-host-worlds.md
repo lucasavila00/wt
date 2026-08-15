@@ -19,8 +19,8 @@ regular Byobu alias and the direct `-vs` alias. Devcontainer aliases remain
 unchanged and use the agent Git gateway.
 
 The host shell exposes a stable per-user socket path to Byobu and refreshes its
-target on every connection. Existing panes use the next forwarded agent without
-being recreated.
+target on every Byobu connection. Existing panes use the next forwarded agent
+without being recreated. Concurrent sessions are last-connection-wins.
 
 There is no setting or opt-out. A host world is a trusted personal machine.
 Anyone controlling it can use the forwarded agent while a connection is live.

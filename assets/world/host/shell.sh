@@ -10,8 +10,8 @@ exec 9>"$state/host-shell.lock"
 flock 9
 agent="$state/ssh-agent"
 if test -n "${SSH_AUTH_SOCK:-}" && test -S "$SSH_AUTH_SOCK"; then
-    temporary="$state/.ssh-agent.$$"
-    trap 'rm -f "$temporary"' EXIT HUP INT TERM
+    temporary="$state/.ssh-agent.new"
+    rm -f "$temporary"
     ln -s "$SSH_AUTH_SOCK" "$temporary"
     mv -f "$temporary" "$agent"
 fi
@@ -30,6 +30,5 @@ if ! "$tmux" has-session -t wt-host 2>/dev/null; then
         sleep 1
     done
 fi
-"$tmux" set-environment -t wt-host SSH_AUTH_SOCK "$SSH_AUTH_SOCK"
 flock -u 9
 exec "$tmux" attach-session -t wt-host
