@@ -50,15 +50,17 @@ Code Remote-SSH extension.
 
 ## Managed SSH
 
-Add this before other `Host` blocks in `~/.ssh/config`:
+When `~/.ssh/config` does not exist, `wt sync` creates it with:
 
 ```sshconfig
 Include ~/.ssh/wt/config
 ```
 
-`wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It pins host
-keys. Remote contexts use their configured server as a jump host to the guest's
-private address.
+WT never modifies an existing main configuration. If the include is not its
+first active directive, WT reports the manual change required. `wt sync` owns
+`~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It pins host keys. Remote
+contexts use their configured server as a jump host to the guest's private
+address.
 
 Devcontainer aliases are documented in
 [Devcontainer worlds](../worlds/devcontainer.md#access). For hosts,

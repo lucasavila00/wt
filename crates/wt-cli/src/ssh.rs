@@ -1,5 +1,6 @@
 use crate::config::{validate_ssh_host, ClientConfig, ContextKind};
 use crate::inventory::{name_counts, ContextInstance};
+use crate::ssh_config;
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -118,6 +119,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             append_known_host(&mut known_hosts, &format!("{qualified}-vs"), key, instance)?;
         }
     }
+    ssh_config::ensure_managed_include(&main_config_path).with_context(|| {
+        format!(
+            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` before other active directives, then run `wt sync`",
+            main_config_path.display()
+        )
+    })?;
     atomic_write(&config_path, config.as_bytes())?;
     atomic_write(&known_hosts_path, known_hosts.as_bytes())?;
     Ok(config_path)
@@ -255,12 +262,12 @@ mod tests {
     }
 
     #[test]
-    fn sync_does_not_touch_main_config_and_removes_stale_worlds() {
+    fn sync_bootstraps_main_config_and_removes_stale_worlds() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
         fs::create_dir(temp.path().join(".ssh")).unwrap();
-        let main_config = "Host personal\n  HostName example.test\n";
+        let main_config = "Include ~/.ssh/wt/config\nHost personal\n  HostName example.test\n";
         fs::write(temp.path().join(".ssh/config"), main_config).unwrap();
         let instance = Instance {
             id: Uuid::new_v4(),
@@ -576,7 +583,10 @@ mod tests {
             "duplicate_world_names_ssh_config",
             normalize_home(&managed, temp.path())
         );
-        assert!(!temp.path().join(".ssh/config").exists());
+        assert_eq!(
+            fs::read_to_string(temp.path().join(".ssh/config")).unwrap(),
+            "Include ~/.ssh/wt/config\n"
+        );
     }
 
     #[test]
@@ -637,5 +647,24 @@ mod tests {
             "remote_worlds_ssh_config",
             normalize_home(&managed, temp.path())
         );
+        let evaluated = std::process::Command::new("/usr/bin/ssh")
+            .arg("-G")
+            .arg("-F")
+            .arg(temp.path().join(".ssh/config"))
+            .arg("lab.world-one")
+            .env("HOME", temp.path())
+            .output()
+            .unwrap();
+        assert!(evaluated.status.success());
+        let evaluated = String::from_utf8_lossy(&evaluated.stdout);
+        for expected in [
+            "hostname 192.0.2.10",
+            "user wt",
+            "port 22",
+            "hostkeyalias lab.world-one-host",
+            "proxyjump wt-server",
+        ] {
+            assert!(evaluated.lines().any(|line| line == expected), "{expected}");
+        }
     }
 }

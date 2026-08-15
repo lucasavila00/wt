@@ -48,12 +48,10 @@ mkdir -p ~/.wt
 cp examples/client-config/wt.development.toml ~/.wt/config.toml
 ```
 
-The client needs at least one regular public key in `~/.ssh/*.pub`. Put this
-before every `Host` block in `~/.ssh/config`:
-
-```sshconfig
-Include ~/.ssh/wt/config
-```
+The client needs at least one regular public key in `~/.ssh/*.pub`. When the
+main SSH configuration is absent, `wt sync` creates it with the managed
+inventory include. It reports the required manual change instead of modifying
+an existing file.
 
 The example client config includes a local context and a remote `lab` context.
 For the remote context, add its server alias to `~/.ssh/config`:
