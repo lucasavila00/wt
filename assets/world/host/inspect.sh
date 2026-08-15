@@ -8,12 +8,13 @@ elif test -e "$state/error"; then
     echo error
     cat "$state/error"
 elif test -e "$state/started"; then
-    if systemctl is-active --quiet wt-host-setup.service; then
-        echo setup
-    else
-        echo error
-        echo "host cloud-init was interrupted"
-    fi
+    case "$(systemctl show --property=ActiveState --value wt-host-setup.service)" in
+        active|activating) echo setup ;;
+        *)
+            echo error
+            echo "host cloud-init was interrupted"
+            ;;
+    esac
 else
     echo setup
 fi

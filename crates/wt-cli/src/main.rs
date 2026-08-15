@@ -98,13 +98,12 @@ fn run() -> Result<()> {
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
             if instance.kind() == WorldKind::Host {
-                println!("\nByobu: ssh {}.{}", context.name, instance.name);
+                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
                 println!("Direct: ssh {}.{}-vs", context.name, instance.name);
-                println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
-                return Ok(());
+            } else {
+                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
+                println!("Guest host: ssh {}.{}-host", context.name, instance.name);
             }
-            println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
-            println!("Guest host: ssh {}.{}-host", context.name, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
             let target = format!("{}.{}", context.name, instance.name);

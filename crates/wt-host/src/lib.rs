@@ -13,7 +13,8 @@ use wt_provider::{
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
-const WAIT_CLOUD_INIT: &str = include_str!("../../../assets/world/host/wait-cloud-init.sh");
+const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
+const INSPECT: &str = "/usr/local/libexec/wt-host-inspect";
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -29,6 +30,7 @@ pub struct ProvisionSpec<'a> {
 pub struct World {
     pub guest_ip: String,
     pub ssh: SshAccess,
+    pub setup_complete: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +75,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         let readiness_key = ReadinessKey::generate()?;
         let mut authorized_keys = spec.ssh_authorized_keys.to_vec();
         authorized_keys.push(readiness_key.public_key.clone());
+        let authorized_keys = authorized_keys_file(&authorized_keys)?;
         let machine = self.provider.create(
             &MachineSpec {
                 provider_id: ProviderId::parse(spec.backend_id)?,
@@ -80,11 +83,24 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
                 memory_mib: spec.memory_mib,
                 vcpus: spec.vcpus,
                 disk_gib: spec.disk_gib,
-                cloud_init: NoCloudConfig {
-                    user_data: spec.user_data.to_owned(),
-                    vendor_data: vendor_data(&authorized_keys)?,
-                },
+                cloud_init: NoCloudConfig::default(),
             },
+            log,
+        )?;
+        let deadline = Instant::now() + self.readiness_timeout;
+        run_prepare(&machine, "wait", None, deadline, log)?;
+        run_prepare(
+            &machine,
+            "access",
+            Some(authorized_keys.as_bytes()),
+            deadline,
+            log,
+        )?;
+        run_prepare(
+            &machine,
+            "user-data",
+            Some(spec.user_data.as_bytes()),
+            deadline,
             log,
         )?;
         let world = inspect_machine(&machine, self.readiness_timeout, log)?;
@@ -93,9 +109,10 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             readiness_key.private_key(),
             readiness_key.path(),
         )?;
-        remove_readiness_key(
-            machine.transport.as_ref(),
-            &readiness_key.public_key,
+        run_prepare(
+            &machine,
+            "remove-key",
+            Some(readiness_key.public_key.as_bytes()),
             Instant::now() + self.readiness_timeout,
             log,
         )?;
@@ -124,7 +141,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
     }
 }
 
-pub fn vendor_data(authorized_keys: &[String]) -> Result<String, WorkerError> {
+pub fn authorized_keys_file(authorized_keys: &[String]) -> Result<String, WorkerError> {
     let keys = authorized_keys
         .iter()
         .map(|key| {
@@ -134,13 +151,11 @@ pub fn vendor_data(authorized_keys: &[String]) -> Result<String, WorkerError> {
             let key = key
                 .to_openssh()
                 .map_err(|error| WorkerError::new(format!("encode SSH authorized key: {error}")))?;
-            Ok(format!("      - '{key}'"))
+            Ok(key)
         })
         .collect::<Result<Vec<_>, WorkerError>>()?
         .join("\n");
-    Ok(format!(
-        "#cloud-config\nusers:\n  - name: wt\n    gecos: WT\n    groups: [sudo]\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{keys}\ndisable_root: true\nssh_pwauth: false\n"
-    ))
+    Ok(format!("{keys}\n"))
 }
 
 struct ReadinessKey {
@@ -193,25 +208,43 @@ impl ReadinessKey {
 fn inspect_machine(
     machine: &Machine,
     timeout: Duration,
-    log: &mut dyn Write,
+    _log: &mut dyn Write,
 ) -> Result<World, WorkerError> {
     let deadline = Instant::now() + timeout;
-    let status = machine.transport.run(
-        &RunRequest {
-            executable: "/bin/sh",
-            args: &["-c", WAIT_CLOUD_INIT],
-            stdin: None,
-            deadline,
-        },
-        log,
-    )?;
-    if status.exit_code != 0 {
+    let setup = machine.transport.capture(&CaptureRequest {
+        executable: INSPECT,
+        args: &[],
+        stdin: None,
+        deadline,
+        stdout_limit: CAPTURE_LIMIT,
+        stderr_limit: CAPTURE_LIMIT,
+    })?;
+    if setup.exit_code != 0 {
         return Err(WorkerError::new(format!(
-            "cloud-init failed: exit code {}: {}",
-            status.exit_code,
-            String::from_utf8_lossy(&status.diagnostic_tail).trim()
+            "inspect host setup: exit code {}: {}",
+            setup.exit_code,
+            String::from_utf8_lossy(&setup.stderr).trim()
         )));
     }
+    let setup = String::from_utf8(setup.stdout).map_err(|error| {
+        WorkerError::new(format!("inspect host setup returned non-UTF-8: {error}"))
+    })?;
+    let (state, detail) = setup.split_once('\n').unwrap_or((&setup, ""));
+    let setup_complete = match state.trim() {
+        "setup" => false,
+        "complete" => true,
+        "error" => {
+            return Err(WorkerError::new(format!(
+                "host cloud-init failed: {}",
+                detail.trim()
+            )))
+        }
+        other => {
+            return Err(WorkerError::new(format!(
+                "inspect host setup returned unknown state {other:?}"
+            )))
+        }
+    };
     let host_keys = read_host_keys(machine.transport.as_ref(), deadline)?;
     verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
     Ok(World {
@@ -222,7 +255,34 @@ fn inspect_machine(
             port: 22,
             host_keys,
         },
+        setup_complete,
     })
+}
+
+fn run_prepare(
+    machine: &Machine,
+    action: &str,
+    stdin: Option<&[u8]>,
+    deadline: Instant,
+    log: &mut dyn Write,
+) -> Result<(), WorkerError> {
+    let output = machine.transport.run(
+        &RunRequest {
+            executable: PREPARE,
+            args: &[action],
+            stdin,
+            deadline,
+        },
+        log,
+    )?;
+    if output.exit_code != 0 {
+        return Err(WorkerError::new(format!(
+            "prepare host {action}: exit code {}: {}",
+            output.exit_code,
+            String::from_utf8_lossy(&output.diagnostic_tail).trim()
+        )));
+    }
+    Ok(())
 }
 
 fn read_host_keys(
@@ -339,32 +399,6 @@ fn verify_login(
     Ok(())
 }
 
-fn remove_readiness_key(
-    transport: &dyn GuestTransport,
-    public_key: &str,
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    let script = "set -eu; file=/home/wt/.ssh/authorized_keys; temporary=$file.wt-readiness; grep -Fvx -- \"$1\" \"$file\" > \"$temporary\"; chown wt:wt \"$temporary\"; chmod 0600 \"$temporary\"; mv -- \"$temporary\" \"$file\"";
-    let output = transport.run(
-        &RunRequest {
-            executable: "/bin/sh",
-            args: &["-c", script, "sh", public_key],
-            stdin: None,
-            deadline,
-        },
-        log,
-    )?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "remove SSH readiness key: exit code {}: {}",
-            output.exit_code,
-            String::from_utf8_lossy(&output.diagnostic_tail).trim()
-        )));
-    }
-    Ok(())
-}
-
 fn normalized_keys(lines: &str) -> BTreeSet<String> {
     lines
         .lines()
@@ -386,22 +420,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vendor_data_owns_only_wt_access() {
-        insta::assert_snapshot!(vendor_data(&[
+    fn authorized_keys_are_canonical() {
+        insta::assert_snapshot!(authorized_keys_file(&[
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo person's-key".to_owned(),
         ]).unwrap(), @r###"
-        #cloud-config
-        users:
-          - name: wt
-            gecos: WT
-            groups: [sudo]
-            shell: /bin/bash
-            sudo: ALL=(ALL) NOPASSWD:ALL
-            lock_passwd: true
-            ssh_authorized_keys:
-              - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo'
-        disable_root: true
-        ssh_pwauth: false
+        ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo
         "###);
     }
 }

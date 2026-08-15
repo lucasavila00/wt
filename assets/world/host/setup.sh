@@ -13,10 +13,15 @@ if test -e "$state/error"; then
     echo "Inspect the guest with the -vs SSH alias, then remove and recreate it." >&2
     exit 1
 fi
-if test -e "$state/started" && ! systemctl is-active --quiet "$service"; then
-    echo "Host cloud-init was interrupted and will not be run again." >&2
-    echo "Inspect the guest with the -vs SSH alias, then remove and recreate it." >&2
-    exit 1
+if test -e "$state/started"; then
+    case "$(systemctl show --property=ActiveState --value "$service")" in
+        active|activating) ;;
+        *)
+            echo "Host cloud-init was interrupted and will not be run again." >&2
+            echo "Inspect the guest with the -vs SSH alias, then remove and recreate it." >&2
+            exit 1
+            ;;
+    esac
 fi
 
 sudo systemctl start "$service" &

@@ -18,7 +18,7 @@ use support::{
 };
 
 #[test]
-fn host_create_is_running_without_git_or_devcontainer_state() {
+fn host_create_returns_setup_then_reconciles_running() {
     let temp = TempDir::new().unwrap();
     let worker = Worker::default();
     let user_data = "#cloud-config\nruncmd:\n  - touch /host-ready\n";
@@ -39,7 +39,7 @@ fn host_create_is_running_without_git_or_devcontainer_state() {
     else {
         panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Running);
+    assert_eq!(instance.status, InstanceStatus::Setup);
     assert_eq!(instance.kind(), wt_api::WorldKind::Host);
     assert!(instance.ssh.is_some());
     assert!(instance.application.app_ssh().is_none());
@@ -59,6 +59,22 @@ fn host_create_is_running_without_git_or_devcontainer_state() {
     };
     assert_eq!(retry.id, instance.id);
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
+
+    let Response::Instances { instances } = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Worker {
+            complete: true,
+            ..Worker::default()
+        },
+        RejectingGateway,
+        Operations::default(),
+        u64::MAX,
+    )
+    .execute("tester", Operation::List)
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Running);
 
     let error = service
         .execute(

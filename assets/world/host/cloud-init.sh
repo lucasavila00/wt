@@ -23,7 +23,6 @@ trap fail EXIT
 
 test ! -e "$state/started"
 install -m 0644 /dev/null "$state/started"
-touch /run/wt-host-cloud-init
 exec >> "$log" 2>&1
 
 echo "WT host cloud-init: init"
@@ -32,11 +31,11 @@ cloud-init modules --mode=init --file /etc/cloud/cloud.cfg \
 
 phase=config
 echo "WT host cloud-init: config"
-systemctl start cloud-config.service
+cloud-init modules --mode=config --file "$state/user-data"
 
 phase=final
 echo "WT host cloud-init: final"
-systemctl start cloud-final.service
+cloud-init modules --mode=final --file "$state/user-data"
 
 phase=complete
 install -m 0644 /dev/null "$state/complete"

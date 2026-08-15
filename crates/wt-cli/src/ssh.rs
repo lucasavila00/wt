@@ -24,8 +24,10 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
         .filter(|item| {
             matches!(
                 item.instance.status,
-                InstanceStatus::Setup | InstanceStatus::Running
+                InstanceStatus::Setup | InstanceStatus::Running | InstanceStatus::Error
             ) && item.instance.ssh.is_some()
+                && (item.instance.status != InstanceStatus::Error
+                    || matches!(item.instance.application, InstanceApplication::Host))
         })
         .collect::<Vec<_>>();
     let counts = name_counts(instances);
@@ -472,6 +474,44 @@ mod tests {
         local.ubuntu ssh-ed25519 AAAAHOST
         "###);
         assert!(!config.contains("ubuntu-host"));
+    }
+
+    #[test]
+    fn failed_host_keeps_recovery_aliases() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", temp.path());
+        let instance = Instance {
+            id: Uuid::new_v4(),
+            name: InstanceName::parse("broken").unwrap(),
+            owner: "lucas".into(),
+            status: InstanceStatus::Error,
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+            guest_ip: Some("192.0.2.4".into()),
+            last_error: Some("host cloud-init failed".into()),
+            ssh: Some(SshAccess {
+                user: "wt".into(),
+                host: "192.0.2.4".into(),
+                port: 22,
+                host_keys: vec!["ssh-ed25519 AAAAHOST host".into()],
+            }),
+            application: InstanceApplication::Host,
+        };
+
+        sync(
+            &local_config(),
+            &[ContextInstance {
+                context: "local".into(),
+                instance,
+            }],
+        )
+        .unwrap();
+
+        let config = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
+        assert!(config.contains("Host local.broken\n"));
+        assert!(config.contains("Host local.broken-vs\n"));
     }
 
     #[test]

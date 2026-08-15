@@ -105,20 +105,11 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
     }
 
     pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
-        self.execute_with_progress(owner, operation, &mut std::io::sink())
-    }
-
-    pub fn execute_with_progress(
-        &self,
-        owner: &str,
-        operation: Operation,
-        progress: &mut dyn std::io::Write,
-    ) -> Result<Response, ApiError> {
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
         match operation {
-            Operation::Create(request) => self.create(owner, request, progress),
+            Operation::Create(request) => self.create(owner, request),
             Operation::Fork(_) => Err(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "worlds cannot be forked",
@@ -130,12 +121,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         }
     }
 
-    fn create(
-        &self,
-        owner: &str,
-        request: CreateInstance,
-        progress: &mut dyn std::io::Write,
-    ) -> Result<Response, ApiError> {
+    fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
         wt_api::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         if let CreateApplication::Devcontainer {
@@ -303,17 +289,24 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             }
             _ => unreachable!("request and stored application kinds match"),
         };
-        let result = self.worker.provision(spec, progress);
+        let result = self.worker.provision(spec, &mut std::io::stderr());
         match result {
             Ok(world) => match world.application {
                 WorldApplication::Devcontainer { .. } => self
                     .store
                     .mark_setup(id, &world.guest_ip, &world.ssh)
                     .map_err(map_store_error)?,
-                WorldApplication::Host => self
-                    .store
-                    .mark_host_running(id, &world.guest_ip, &world.ssh)
-                    .map_err(map_store_error)?,
+                WorldApplication::Host { setup_complete } => {
+                    if setup_complete {
+                        self.store
+                            .mark_host_running(id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?
+                    } else {
+                        self.store
+                            .mark_setup(id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?
+                    }
+                }
             },
             Err(error) => {
                 let provisioning_error = error.to_string();
@@ -450,7 +443,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 (None, _) => true,
                 _ => false,
             },
-            (InstanceApplication::Host, WorldApplication::Host) => true,
+            (InstanceApplication::Host, WorldApplication::Host { .. }) => true,
             _ => false,
         };
         if !same_guest_identity || !same_app_identity {
@@ -470,10 +463,17 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 .store
                 .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
                 .map_err(map_store_error),
-            WorldApplication::Host => self
-                .store
-                .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
-                .map_err(map_store_error),
+            WorldApplication::Host { setup_complete } => {
+                if *setup_complete {
+                    self.store
+                        .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .map_err(map_store_error)
+                } else {
+                    self.store
+                        .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .map_err(map_store_error)
+                }
+            }
         }
     }
 
@@ -599,7 +599,7 @@ fn retryable_create(instance: &Instance) -> bool {
             InstanceStatus::Provisioning | InstanceStatus::Setup
         ) | (
             InstanceApplication::Host,
-            InstanceStatus::Provisioning | InstanceStatus::Running
+            InstanceStatus::Provisioning | InstanceStatus::Setup | InstanceStatus::Running
         )
     )
 }
