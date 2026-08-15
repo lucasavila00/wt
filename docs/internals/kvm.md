@@ -39,8 +39,8 @@ polls are silent; a timeout names the domain and reports the last libvirt error.
 The kind lifecycle then defines readiness:
 
 - devcontainer verifies guest setup and app SSH;
-- host waits for the boot cloud-init service to finish before creating SSH host
-  keys, prepares and proves `wt` login, then reports setup, completion, or
+- host starts with SSH disabled, waits for boot cloud-init, creates SSH host
+  keys, enables and proves `wt` login, then reports setup, completion, or
   failure markers;
 - GitHub CI waits for its runner process and job lifecycle.
 
