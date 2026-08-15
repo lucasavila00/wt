@@ -59,8 +59,8 @@ make e2e-tests
 The serialized KVM flow creates devcontainer and host worlds together. It
 checks exact host user-data, Byobu and direct host SSH, restart persistence,
 app-container recovery, fake-provider Git traffic, and cleanup. A second host
-recipe removes WT SSH access and must fail creation without leaving a disk or
-registry row.
+recipe removes WT SSH access. It must remain visible in `error` until the test
+deletes it.
 
 To discard an existing installation first, run `make nuke`. This is destructive:
 it removes every `wt-*` libvirt domain, the world disks and SQLite registry,
