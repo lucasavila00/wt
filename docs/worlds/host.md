@@ -20,6 +20,11 @@ returning. The recipe is included in a hashed create fingerprint but is not
 stored in SQLite. Plaintext user-data remains in the machine's NoCloud files
 and inside the guest, so it is not a secret store.
 
+WT prints cloud-init output while `wt new host` runs. If cloud-init or SSH
+readiness fails, the host remains in `error`; `wt ls` shows the failure and
+`wt rm NAME` removes it. Recipe output may remain in the guest and server
+journal, so recipes must not print secrets.
+
 The regular alias attaches to a persistent Byobu session. The `-vs` alias is
 the same guest SSH endpoint with no forced command. Both forward the
 workstation's SSH agent:

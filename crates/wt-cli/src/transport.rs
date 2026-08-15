@@ -1,6 +1,6 @@
 use crate::config::{Context, ContextKind};
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use wt_api::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 use wt_command::cmd;
@@ -75,6 +75,21 @@ pub fn call_outcome(
     context: &Context,
     request: &ApiRequest,
 ) -> std::result::Result<Outcome, ContextError> {
+    call_outcome_inner(context, request, false)
+}
+
+pub fn call_outcome_streaming(
+    context: &Context,
+    request: &ApiRequest,
+) -> std::result::Result<Outcome, ContextError> {
+    call_outcome_inner(context, request, true)
+}
+
+fn call_outcome_inner(
+    context: &Context,
+    request: &ApiRequest,
+    stream_progress: bool,
+) -> std::result::Result<Outcome, ContextError> {
     let mut command = helper_command(context);
     let mut child = command
         .stdin(Stdio::piped())
@@ -118,6 +133,13 @@ pub fn call_outcome(
                 retry_hint(context),
             )
         })?;
+    let progress = stream_progress.then(|| {
+        let stderr = child
+            .stderr
+            .take()
+            .expect("helper stderr was configured as piped");
+        std::thread::spawn(move || relay_helper_stderr(stderr, std::io::stderr()))
+    });
     let output = child.wait_with_output().map_err(|error| {
         context_error(
             context,
@@ -126,6 +148,22 @@ pub fn call_outcome(
             retry_hint(context),
         )
     })?;
+    progress
+        .map(|thread| {
+            thread
+                .join()
+                .map_err(|_| "context helper stderr relay panicked".to_owned())?
+                .map_err(|error| format!("stream context helper progress: {error}"))
+        })
+        .transpose()
+        .map_err(|error| {
+            context_error(
+                context,
+                "could not read context helper progress",
+                Some(error),
+                retry_hint(context),
+            )
+        })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         return Err(context_error(
@@ -158,6 +196,18 @@ pub fn call_outcome(
         ));
     }
     Ok(response.outcome)
+}
+
+fn relay_helper_stderr(mut input: impl Read, mut destination: impl Write) -> std::io::Result<()> {
+    let mut buffer = [0; 8192];
+    loop {
+        let read = input.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(());
+        }
+        destination.write_all(&buffer[..read])?;
+        destination.flush()?;
+    }
 }
 
 fn context_error(
@@ -282,5 +332,14 @@ mod tests {
                 OsStr::new("api")
             ]
         );
+    }
+
+    #[test]
+    fn relays_helper_stderr() {
+        let input = vec![b'x'; 70 * 1024];
+        let mut output = Vec::new();
+        relay_helper_stderr(input.as_slice(), &mut output).unwrap();
+
+        assert_eq!(output, input);
     }
 }

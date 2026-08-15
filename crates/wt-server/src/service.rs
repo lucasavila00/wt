@@ -105,11 +105,20 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
     }
 
     pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
+        self.execute_with_progress(owner, operation, &mut std::io::sink())
+    }
+
+    pub fn execute_with_progress(
+        &self,
+        owner: &str,
+        operation: Operation,
+        progress: &mut dyn std::io::Write,
+    ) -> Result<Response, ApiError> {
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
         match operation {
-            Operation::Create(request) => self.create(owner, request),
+            Operation::Create(request) => self.create(owner, request, progress),
             Operation::Fork(_) => Err(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "worlds cannot be forked",
@@ -121,7 +130,12 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         }
     }
 
-    fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
+    fn create(
+        &self,
+        owner: &str,
+        request: CreateInstance,
+        progress: &mut dyn std::io::Write,
+    ) -> Result<Response, ApiError> {
         wt_api::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         if let CreateApplication::Devcontainer {
@@ -289,7 +303,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             }
             _ => unreachable!("request and stored application kinds match"),
         };
-        let result = self.worker.provision(spec, &mut std::io::stderr());
+        let result = self.worker.provision(spec, progress);
         match result {
             Ok(world) => match world.application {
                 WorldApplication::Devcontainer { .. } => self
@@ -303,6 +317,33 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             },
             Err(error) => {
                 let provisioning_error = error.to_string();
+                if kind == wt_api::WorldKind::Host {
+                    if let Err(store_error) = self.store.mark_error(id, &provisioning_error) {
+                        eprintln!(
+                            "wt-server: record failed host create {}: {store_error}",
+                            stored.instance.name
+                        );
+                        return Err(ApiError::new(
+                            ErrorCode::Backend,
+                            format!(
+                                "{provisioning_error}; failed to record the retained host world: \
+                                 {store_error}"
+                            ),
+                        ));
+                    }
+                    eprintln!(
+                        "wt-server: retained failed host world {}: {provisioning_error}",
+                        stored.instance.name
+                    );
+                    return Err(ApiError::new(
+                        ErrorCode::Backend,
+                        format!(
+                            "{provisioning_error}; host world '{}' was retained in error state; \
+                             run `wt rm {}` to delete it",
+                            stored.instance.name, stored.instance.name
+                        ),
+                    ));
+                }
                 let cleanup = grant
                     .as_ref()
                     .map_or(Ok(()), |grant| {

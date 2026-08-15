@@ -614,6 +614,7 @@ pub(crate) fn call_api_result(
         "WT_AGENT_GIT_TEST_CONTROL_SOCKET",
         home.join("gateway-control.sock"),
     )
+    .env("WT_TEST_PROGRESS_LOG", home.join("api-progress.log"))
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::inherit())

@@ -181,16 +181,27 @@ fn run() -> Result<()> {
 
 fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Result<Response> {
     loop {
-        let spinner = cliclack::spinner();
-        spinner.start("Creating world");
-        let outcome = wt_cli::transport::call_outcome(
-            context,
-            &ApiRequest::new(Operation::Create(request.clone())),
-        );
+        let host = matches!(request.application, CreateApplication::Host { .. });
+        let spinner = if host {
+            eprintln!("Creating host world...");
+            None
+        } else {
+            let spinner = cliclack::spinner();
+            spinner.start("Creating world");
+            Some(spinner)
+        };
+        let api_request = ApiRequest::new(Operation::Create(request.clone()));
+        let outcome = if host {
+            wt_cli::transport::call_outcome_streaming(context, &api_request)
+        } else {
+            wt_cli::transport::call_outcome(context, &api_request)
+        };
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(error) => {
-                spinner.error("World creation did not complete");
+                if let Some(spinner) = spinner {
+                    spinner.error("World creation did not complete");
+                }
                 return Err(anyhow::anyhow!(
                     "create did not complete; run `wt ls` to check the world: {error:#}"
                 ));
@@ -198,11 +209,19 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
         };
         match outcome {
             Outcome::Ok { response } => {
-                spinner.stop("World created");
+                if let Some(spinner) = spinner {
+                    spinner.stop("World created");
+                } else {
+                    eprintln!("Host world created.");
+                }
                 return Ok(*response);
             }
             Outcome::Error { error } if error.code == wt_api::ErrorCode::Capacity => {
-                spinner.error("World capacity is full");
+                if let Some(spinner) = spinner {
+                    spinner.error("World capacity is full");
+                } else {
+                    eprintln!("World capacity is full.");
+                }
                 let capacity = error
                     .capacity
                     .as_ref()
@@ -212,11 +231,11 @@ fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Re
                 }
             }
             Outcome::Error { error } => {
-                spinner.error("World creation did not complete");
+                if let Some(spinner) = spinner {
+                    spinner.error("World creation did not complete");
+                }
                 let error = wt_cli::transport::rejection(context, &error);
-                return Err(anyhow::anyhow!(
-                    "create did not complete; run `wt ls` to check the world: {error:#}"
-                ));
+                return Err(anyhow::anyhow!("create did not complete: {error:#}"));
             }
         }
     }
@@ -576,14 +595,18 @@ fn format_instances(instances: &[ContextInstance]) -> String {
 
 fn instance_detail(item: &ContextInstance) -> String {
     let instance = &item.instance;
-    if instance.status != wt_api::InstanceStatus::Stopped {
-        return instance.last_error.as_deref().unwrap_or("-").to_owned();
-    }
     let target = format!("{}.{}", item.context, instance.name);
-    format!(
-        "{}; run `wt start {target}` or `wt rm {target}`",
-        instance.last_error.as_deref().unwrap_or("guest stopped")
-    )
+    match instance.status {
+        wt_api::InstanceStatus::Stopped => format!(
+            "{}; run `wt start {target}` or `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("guest stopped")
+        ),
+        wt_api::InstanceStatus::Error => format!(
+            "{}; run `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("world failed")
+        ),
+        _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
+    }
 }
 
 fn format_resources(vcpus: u32, memory_mib: u64, disk_gib: u64) -> String {

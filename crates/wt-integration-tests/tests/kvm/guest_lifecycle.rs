@@ -26,11 +26,18 @@ fn agent_git_transport_works_without_provider_credentials() {
     });
     assert_eq!(running.status, InstanceStatus::Running);
     let host_name = unique_name("host");
+    let progress_log = harness.temp.path().join("api-progress.log");
+    let _ = fs::remove_file(&progress_log);
     let host = timings.run("create host world", || {
         harness.create_host(&host_name, HOST_PROJECT_USER_DATA)
     });
     assert_eq!(host.status, InstanceStatus::Running);
     assert_eq!(host.kind(), wt_api::WorldKind::Host);
+    let progress = fs::read_to_string(&progress_log).unwrap();
+    assert!(
+        progress.contains("WT host project development ready"),
+        "host cloud-init output was not streamed:\n{progress}"
+    );
     let host_machine = harness
         .config
         .libvirt
@@ -271,26 +278,52 @@ fn agent_git_transport_works_without_provider_credentials() {
 
     let broken_name = unique_name("host-no-ssh");
     let disks_before = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    let _ = fs::remove_file(&progress_log);
     let error = timings.run("reject host without WT SSH", || {
         harness
             .create_host_result(
                 &broken_name,
-                "#cloud-config\nruncmd:\n  - rm -f /home/wt/.ssh/authorized_keys\n",
+                concat!(
+                    "#cloud-config\n",
+                    "runcmd:\n",
+                    "  - |\n",
+                    "    echo 'broken host stdout'\n",
+                    "    echo 'broken host stderr' >&2\n",
+                    "    rm -f /home/wt/.ssh/authorized_keys\n",
+                ),
             )
             .unwrap_err()
     });
     assert!(error.contains("SSH login readiness failed"), "{error}");
+    let progress = fs::read_to_string(&progress_log).unwrap();
+    let stdout = progress.find("broken host stdout").unwrap();
+    let stderr = progress.find("broken host stderr").unwrap();
+    assert!(
+        stdout < stderr,
+        "cloud-init output was reordered:\n{progress}"
+    );
+    assert_eq!(
+        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        disks_before + 1
+    );
+    let failed = harness
+        .sync_inventory()
+        .into_iter()
+        .find(|instance| instance.name == broken_name)
+        .expect("failed host is missing from inventory");
+    assert_eq!(failed.status, InstanceStatus::Error);
+    assert!(
+        failed
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("SSH login readiness failed")),
+        "failed host has no useful error: {failed:?}"
+    );
+    harness.delete(&broken_name);
     assert_eq!(
         count_disk_nodes(&harness.config.libvirt.worlds_dir),
         disks_before
     );
-    let missing = call_api_result(
-        harness.temp.path(),
-        &harness.server_config_path,
-        wt_api::Operation::Get { name: broken_name },
-    )
-    .unwrap_err();
-    assert!(missing.contains("instance not found"), "{missing}");
 }
 
 fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {

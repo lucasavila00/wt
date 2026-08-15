@@ -67,7 +67,7 @@ fn formats_reconciliation_error_details() {
 
     insta::assert_snapshot!(format_instances(&[failed]), @r###"
     CONTEXT  NAME   KIND          STATUS  REPO  RESOURCES         DETAIL
-    local    jsdev  devcontainer  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch
+    local    jsdev  devcontainer  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.jsdev`
     "###);
 }
 

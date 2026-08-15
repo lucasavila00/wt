@@ -9,6 +9,8 @@ use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredApplication, StoredInstance};
 
+#[path = "service/host_failure.rs"]
+mod host_failure;
 #[path = "service/support.rs"]
 mod support;
 use support::{

@@ -16,9 +16,9 @@ failed recipes hard to understand.
 ## Decision
 
 `wt new host` streams cloud-init stdout and stderr while the recipe runs. The
-CLI writes this progress to stderr. Its stdout remains the protocol v1 JSON
-response. The server also writes the progress to its journal. Closing the CLI
-does not cancel provisioning.
+CLI writes this progress to stderr. `wt-server api` keeps the protocol v1 JSON
+response on stdout. The server also writes the progress to its journal. Closing
+the CLI does not cancel provisioning.
 
 A failed host remains in `error`. WT keeps its domain, disk, NoCloud files,
 failure text, and capacity reservation. The create command says the host was

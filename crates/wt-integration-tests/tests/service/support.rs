@@ -95,7 +95,7 @@ impl WorldWorker for Worker {
     fn provision(
         &self,
         spec: ProvisionSpec<'_>,
-        _log: &mut dyn std::io::Write,
+        log: &mut dyn std::io::Write,
     ) -> Result<World, WorkerError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
         if let Some(gate) = &self.provision_gate {
@@ -106,6 +106,8 @@ impl WorldWorker for Worker {
             }
         }
         if self.provision_error {
+            log.write_all(b"cloud-init stdout\ncloud-init stderr\n")
+                .map_err(|error| WorkerError::new(format!("write progress: {error}")))?;
             return Err(WorkerError::new("provision failed"));
         }
         let kind = match spec {

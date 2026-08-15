@@ -36,5 +36,6 @@ write_files:
       run_as_wt sh -c \
         'cd /home/wt/wt && cargo clippy --workspace --all-targets -- -D warnings'
       touch /var/lib/wt-host-example-ready
+      echo "WT host project development ready"
 runcmd:
   - [/usr/local/sbin/wt-project-development]

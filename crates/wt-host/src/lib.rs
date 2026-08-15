@@ -13,6 +13,7 @@ use wt_provider::{
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
+const WAIT_CLOUD_INIT: &str = include_str!("../../../assets/world/host/wait-cloud-init.sh");
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -197,8 +198,8 @@ fn inspect_machine(
     let deadline = Instant::now() + timeout;
     let status = machine.transport.run(
         &RunRequest {
-            executable: "/usr/bin/cloud-init",
-            args: &["status", "--wait"],
+            executable: "/bin/sh",
+            args: &["-c", WAIT_CLOUD_INIT],
             stdin: None,
             deadline,
         },
