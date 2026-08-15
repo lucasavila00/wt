@@ -9,8 +9,6 @@ install -m 0755 /var/tmp/wt-host-inspect /usr/local/libexec/wt-host-inspect
 install -m 0755 /var/tmp/wt-host-cloud-init /usr/local/libexec/wt-host-cloud-init
 install -m 0755 /var/tmp/wt-host-setup /usr/local/bin/wt-host-setup
 install -m 0644 /var/tmp/wt-host-defer-init /etc/cloud/cloud.cfg.d/99-wt-host-defer-init.cfg
-install -m 0644 /var/tmp/wt-host-preserve-ssh \
-    /usr/local/share/wt-host-cloud-init.yaml
 install -d -m 0755 /etc/systemd/system/cloud-config.service.d \
     /etc/systemd/system/cloud-final.service.d
 install -m 0644 /var/tmp/wt-host-cloud-config \

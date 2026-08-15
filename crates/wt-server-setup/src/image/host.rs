@@ -9,7 +9,6 @@ const HOST_INSPECT: &[u8] = include_bytes!("../../../../assets/world/host/inspec
 const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../assets/world/host/cloud-init.sh");
 const HOST_SETUP: &[u8] = include_bytes!("../../../../assets/world/host/setup.sh");
 const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../assets/world/host/defer-init.yaml");
-const HOST_PRESERVE_SSH: &[u8] = include_bytes!("../../../../assets/world/host/preserve-ssh.yaml");
 const HOST_CLOUD_CONFIG: &[u8] = include_bytes!("../../../../assets/world/host/cloud-config.conf");
 const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../assets/world/host/cloud-final.conf");
 const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../assets/world/host/setup.service");
@@ -27,11 +26,6 @@ const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
         "host-defer-init",
         "/var/tmp/wt-host-defer-init",
         HOST_DEFER_INIT,
-    ),
-    (
-        "host-preserve-ssh",
-        "/var/tmp/wt-host-preserve-ssh",
-        HOST_PRESERVE_SSH,
     ),
     (
         "host-cloud-config",

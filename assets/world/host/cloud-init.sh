@@ -27,8 +27,7 @@ exec >> "$log" 2>&1
 
 echo "WT host cloud-init: init"
 cloud-init modules --mode=init --file /etc/cloud/cloud.cfg \
-    --file "$state/user-data" \
-    --file /usr/local/share/wt-host-cloud-init.yaml
+    --file "$state/user-data"
 
 phase=config
 echo "WT host cloud-init: config"

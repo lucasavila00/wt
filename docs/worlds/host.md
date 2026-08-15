@@ -17,8 +17,8 @@ Output stays in the pane and `/var/log/cloud-init-output.log`.
 
 The recipe is included in a hashed create fingerprint but is not stored in
 SQLite. It and its output remain on the guest disk, so neither is a secret
-store. WT rejects the top-level `ssh_keys` field because it owns and pins the
-guest SSH identity.
+store. WT rejects top-level host-key, cloud-init stage, merge, and output fields
+because it owns those parts of setup.
 
 Success changes the world from `setup` to `running`. Failure changes it to
 `error` and keeps both SSH aliases. Inspect it with `NAME-vs`, then run

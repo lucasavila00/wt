@@ -4,18 +4,31 @@ use super::*;
 fn host_create_rejects_ssh_identity_overrides_before_provisioning() {
     let temp = TempDir::new().unwrap();
     let worker = Worker::default();
-    let error = service(&temp, worker.clone())
-        .execute(
-            "tester",
-            Operation::Create(create_host(
-                "ubuntu",
-                "#cloud-config\nssh_keys:\n  ed25519_private: forbidden\n",
-            )),
-        )
-        .unwrap_err();
-
-    assert_eq!(error.code, wt_api::ErrorCode::InvalidRequest);
-    insta::assert_snapshot!(error.message, @"cloud-init user-data cannot set top-level ssh_keys because WT owns the guest SSH identity");
+    for (index, field) in [
+        "cloud_config_modules",
+        "cloud_final_modules",
+        "cloud_init_modules",
+        "merge_how",
+        "merge_type",
+        "output",
+        "ssh_deletekeys",
+        "ssh_keys",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let error = service(&temp, worker.clone())
+            .execute(
+                "tester",
+                Operation::Create(create_host(
+                    &format!("reserved-{index}"),
+                    &format!("#cloud-config\n{field}: forbidden\n"),
+                )),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, wt_api::ErrorCode::InvalidRequest);
+        assert!(error.message.contains(field), "{error:?}");
+    }
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 0);
 }
 

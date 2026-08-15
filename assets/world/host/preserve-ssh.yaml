@@ -1,2 +1,0 @@
-# WT pins these keys before first-SSH setup. Cloud-init must not replace them.
-ssh_deletekeys: false

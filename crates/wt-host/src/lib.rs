@@ -52,19 +52,32 @@ pub trait WorldWorker {
 }
 
 pub fn validate_user_data(user_data: &str) -> Result<(), String> {
-    let document: serde_yaml_ng::Value = serde_yaml_ng::from_str(user_data)
+    let mut document: serde_yaml_ng::Value = serde_yaml_ng::from_str(user_data)
         .map_err(|error| format!("cloud-init user-data is invalid YAML: {error}"))?;
     if document.is_null() {
         return Ok(());
     }
+    document
+        .apply_merge()
+        .map_err(|error| format!("cloud-init user-data has an invalid YAML merge: {error}"))?;
     let Some(mapping) = document.as_mapping() else {
         return Err("cloud-init user-data must be a YAML mapping".to_owned());
     };
-    if mapping.contains_key(serde_yaml_ng::Value::String("ssh_keys".to_owned())) {
-        return Err(
-            "cloud-init user-data cannot set top-level ssh_keys because WT owns the guest SSH identity"
-                .to_owned(),
-        );
+    for field in [
+        "cloud_config_modules",
+        "cloud_final_modules",
+        "cloud_init_modules",
+        "merge_how",
+        "merge_type",
+        "output",
+        "ssh_deletekeys",
+        "ssh_keys",
+    ] {
+        if mapping.contains_key(serde_yaml_ng::Value::String(field.to_owned())) {
+            return Err(format!(
+                "cloud-init user-data cannot set top-level {field}; WT owns host identity, setup stages, and output"
+            ));
+        }
     }
     Ok(())
 }
@@ -447,15 +460,34 @@ mod tests {
     }
 
     #[test]
-    fn user_data_cannot_replace_the_guest_ssh_identity() {
+    fn user_data_cannot_override_host_setup() {
         assert!(validate_user_data(
             "#cloud-config\nwrite_files:\n  - content: 'ssh_keys: allowed as text'\n"
         )
         .is_ok());
+        for field in [
+            "cloud_config_modules",
+            "cloud_final_modules",
+            "cloud_init_modules",
+            "merge_how",
+            "merge_type",
+            "output",
+            "ssh_deletekeys",
+            "ssh_keys",
+        ] {
+            let error =
+                validate_user_data(&format!("#cloud-config\n{field}: value\n")).unwrap_err();
+            assert_eq!(
+                error,
+                format!(
+                    "cloud-init user-data cannot set top-level {field}; WT owns host identity, setup stages, and output"
+                )
+            );
+        }
         insta::assert_snapshot!(
-            validate_user_data("#cloud-config\nssh_keys:\n  ed25519_private: key\n")
+            validate_user_data("#cloud-config\nsettings: &settings\n  ssh_keys: value\n<<: *settings\n")
                 .unwrap_err(),
-            @"cloud-init user-data cannot set top-level ssh_keys because WT owns the guest SSH identity"
+            @"cloud-init user-data cannot set top-level ssh_keys; WT owns host identity, setup stages, and output"
         );
         insta::assert_snapshot!(
             validate_user_data("#cloud-config\ninvalid: [\n").unwrap_err(),
