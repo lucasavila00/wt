@@ -6,22 +6,21 @@
 
 ## Context
 
-Host worlds have Git but no agent Git gateway. Requiring `ssh -A` on every
-connection makes normal private Git access unnecessarily awkward.
+Host worlds use normal Git and do not have the agent Git gateway. Their SSH
+aliases should forward the local SSH agent.
 
-Byobu outlives an SSH connection. It cannot keep using OpenSSH's temporary agent
-socket after that connection closes.
+Byobu panes survive SSH reconnects. The forwarded agent socket does not.
+OpenSSH creates a new socket for each connection and deletes it on disconnect.
+A surviving shell still points to the deleted socket.
 
 ## Decision
 
-Generated host aliases enable native SSH agent forwarding. This applies to the
-regular Byobu alias and the direct `-vs` alias. Devcontainer aliases remain
-unchanged and use the agent Git gateway.
+Generated host aliases enable SSH agent forwarding. This applies to the Byobu
+alias and the direct `-vs` alias. Devcontainer aliases remain unchanged.
 
-The host shell exposes a stable per-user socket path to Byobu and refreshes its
-target on every Byobu connection. Existing panes use the next forwarded agent
-without being recreated. Concurrent sessions are last-connection-wins.
+The Byobu shell uses one stable socket path. Each Byobu login points that path
+to the new forwarded socket. Existing panes then use the new agent. If two
+connections overlap, the latest login wins.
 
-There is no setting or opt-out. A host world is a trusted personal machine.
-Anyone controlling it can use the forwarded agent while a connection is live.
-WT never copies the private keys.
+There is no setting for this. Anyone controlling a host world can use the agent
+while the SSH connection is open. WT does not copy private keys.
