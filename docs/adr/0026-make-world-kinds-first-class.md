@@ -27,7 +27,8 @@ returns the world in `setup`. The boot seed contains only the data needed to
 bring up the machine and network. The image defers cloud-init's normal init
 modules until setup; WT does not delete cloud-init state to run them again. WT
 generates and pins the guest SSH host keys before setup, so cloud-init preserves
-them.
+them. Host recipes cannot set the top-level `ssh_keys` field because WT owns
+that identity.
 
 `wt new host` opens the regular SSH alias. It forwards the workstation SSH
 agent and attaches to a persistent Byobu session. The first session runs
@@ -72,6 +73,9 @@ of Git and devcontainer inputs.
 
 WT does not place developer private keys, provider tokens, or GitHub App
 credentials in worlds.
+
+WT rejects inputs that conflict with kind-owned state. It does not add fallback
+or compatibility behavior for unsupported recipes.
 
 ## Code layout
 

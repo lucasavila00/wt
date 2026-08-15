@@ -133,6 +133,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             wt_api::validate_git_branch(git_base)
                 .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
         }
+        if let CreateApplication::Host { user_data } = &request.application {
+            wt_host::validate_user_data(user_data)
+                .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
+        }
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
         match self.store.get(owner, &request.name) {

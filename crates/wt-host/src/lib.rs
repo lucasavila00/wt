@@ -51,6 +51,24 @@ pub trait WorldWorker {
     fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
 }
 
+pub fn validate_user_data(user_data: &str) -> Result<(), String> {
+    let document: serde_yaml_ng::Value = serde_yaml_ng::from_str(user_data)
+        .map_err(|error| format!("cloud-init user-data is invalid YAML: {error}"))?;
+    if document.is_null() {
+        return Ok(());
+    }
+    let Some(mapping) = document.as_mapping() else {
+        return Err("cloud-init user-data must be a YAML mapping".to_owned());
+    };
+    if mapping.contains_key(serde_yaml_ng::Value::String("ssh_keys".to_owned())) {
+        return Err(
+            "cloud-init user-data cannot set top-level ssh_keys because WT owns the guest SSH identity"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct CompositeWorker<P> {
     provider: P,
@@ -426,5 +444,22 @@ mod tests {
         ]).unwrap(), @r###"
         ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo
         "###);
+    }
+
+    #[test]
+    fn user_data_cannot_replace_the_guest_ssh_identity() {
+        assert!(validate_user_data(
+            "#cloud-config\nwrite_files:\n  - content: 'ssh_keys: allowed as text'\n"
+        )
+        .is_ok());
+        insta::assert_snapshot!(
+            validate_user_data("#cloud-config\nssh_keys:\n  ed25519_private: key\n")
+                .unwrap_err(),
+            @"cloud-init user-data cannot set top-level ssh_keys because WT owns the guest SSH identity"
+        );
+        insta::assert_snapshot!(
+            validate_user_data("#cloud-config\ninvalid: [\n").unwrap_err(),
+            @"cloud-init user-data is invalid YAML: did not find expected node content at line 3 column 1, while parsing a flow node"
+        );
     }
 }

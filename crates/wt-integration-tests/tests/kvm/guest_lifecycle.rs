@@ -15,6 +15,23 @@ fn agent_git_transport_works_without_provider_credentials() {
     let mut harness = KvmHarness::new(&mut timings);
     let name = unique_name("git");
 
+    let rejected_name = unique_name("host-ssh-keys");
+    let disks_before_rejection = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    let error = harness
+        .create_host_result(
+            &rejected_name,
+            "#cloud-config\nssh_keys:\n  ed25519_private: forbidden\n",
+        )
+        .unwrap_err();
+    assert!(
+        error.contains("cannot set top-level ssh_keys"),
+        "unexpected ssh_keys rejection: {error}"
+    );
+    assert_eq!(
+        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        disks_before_rejection
+    );
+
     let created = timings.run("create world", || harness.create(&name));
     assert_eq!(created.status, InstanceStatus::Setup);
     harness.sync_inventory();
@@ -67,6 +84,12 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify direct host agent forwarding",
     );
     let mut host_setup = spawn_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    wait_for_live_host_output(
+        &harness,
+        &host_name,
+        &mut host_setup,
+        "WT host cloud-init: init",
+    );
     let host = timings.run("run host cloud-init in Byobu", || {
         wait_for_host_status(
             &harness,
@@ -360,6 +383,45 @@ fn agent_git_transport_works_without_provider_credentials() {
         count_disk_nodes(&harness.config.libvirt.worlds_dir),
         disks_before
     );
+}
+
+fn wait_for_live_host_output(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    setup: &mut Child,
+    marker: &str,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let instance = harness
+            .sync_inventory()
+            .into_iter()
+            .find(|instance| instance.name == *name)
+            .unwrap();
+        let output = host_command(
+            harness,
+            name,
+            "tmux capture-pane -p -S -1000 -t wt-host:0.0",
+        )
+        .output()
+        .unwrap();
+        if output.status.success() && String::from_utf8_lossy(&output.stdout).contains(marker) {
+            assert_eq!(
+                instance.status,
+                InstanceStatus::Setup,
+                "host output was only visible after setup completed"
+            );
+            return;
+        }
+        if let Some(status) = setup.try_wait().unwrap() {
+            panic!("host setup SSH exited before live output: {status}");
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for live host cloud-init output"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }
 
 fn spawn_host_byobu(harness: &KvmHarness, name: &InstanceName, agent_socket: &Path) -> Child {
