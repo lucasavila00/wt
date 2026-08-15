@@ -3,10 +3,36 @@ set -eu
 
 state=/var/lib/wt-host
 
+service_diagnostics() {
+    systemctl status --no-pager --full "$1" >&2 || true
+    journalctl --no-pager -u "$1" -n 100 >&2 || true
+}
+
 case "${1:-}" in
     wait)
-        systemctl start cloud-init.service
-        systemctl is-active --quiet cloud-init.service
+        if ! systemctl start cloud-init.service; then
+            service_diagnostics cloud-init.service
+            exit 1
+        fi
+        attempts=0
+        while [ "$(systemctl show --property=SubState --value cloud-init.service)" != exited ]; do
+            active=$(systemctl show --property=ActiveState --value cloud-init.service)
+            case "$active" in
+                active | activating) ;;
+                *)
+                    echo "cloud-init.service entered unexpected state: $active" >&2
+                    service_diagnostics cloud-init.service
+                    exit 1
+                    ;;
+            esac
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 300 ]; then
+                echo "cloud-init.service did not finish its boot stage within 300 seconds" >&2
+                service_diagnostics cloud-init.service
+                exit 1
+            fi
+            sleep 1
+        done
         ;;
     access)
         if ! id wt >/dev/null 2>&1; then
@@ -23,7 +49,10 @@ case "${1:-}" in
         chmod 0440 /etc/sudoers.d/wt
         visudo --check --file=/etc/sudoers.d/wt >/dev/null
         ssh-keygen -A
-        systemctl enable --now ssh.service
+        if ! systemctl enable --now ssh.service; then
+            service_diagnostics ssh.service
+            exit 1
+        fi
         ;;
     user-data)
         install -d -m 0700 -o root -g root "$state"

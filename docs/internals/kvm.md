@@ -39,8 +39,9 @@ polls are silent; a timeout names the domain and reports the last libvirt error.
 The kind lifecycle then defines readiness:
 
 - devcontainer verifies guest setup and app SSH;
-- host waits for boot networking, prepares and proves `wt` login, then reports
-  cloud-init setup, completion, or failure markers;
+- host waits for the boot cloud-init service to finish before creating SSH host
+  keys, prepares and proves `wt` login, then reports setup, completion, or
+  failure markers;
 - GitHub CI waits for its runner process and job lifecycle.
 
 Stopped retained guests keep their disk and identity. Missing files, mismatched

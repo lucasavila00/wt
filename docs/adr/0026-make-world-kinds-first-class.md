@@ -27,8 +27,9 @@ returns the world in `setup`. The boot seed contains only the data needed to
 bring up the machine and network. The image defers cloud-init's normal init
 modules until setup; WT does not delete cloud-init state to run them again. WT
 generates and pins the guest SSH host keys before setup, so cloud-init preserves
-them. Host recipes cannot override WT-owned host identity, cloud-init stage
-lists, merge behavior, or output.
+them. WT waits for the boot-time cloud-init service to finish before generating
+those keys. Host recipes cannot override WT-owned host identity, cloud-init
+stage lists, merge behavior, or output.
 
 `wt new host` opens the regular SSH alias. It forwards the workstation SSH
 agent and attaches to a persistent Byobu session. The first session runs
