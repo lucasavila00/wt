@@ -31,9 +31,18 @@ case "${1:-}" in
         chown wt:wt "$temporary"
         chmod 0600 "$temporary"
         mv -f "$temporary" /home/wt/.ssh/authorized_keys
-        printf 'wt ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/wt
-        chmod 0440 /etc/sudoers.d/wt
-        visudo --check --file=/etc/sudoers.d/wt >/dev/null
+        sudoers=/run/wt-host-sudoers.wt-new
+        rm -f "$sudoers"
+        printf 'wt ALL=(ALL:ALL) NOPASSWD: ALL\n' > "$sudoers"
+        chown root:root "$sudoers"
+        chmod 0440 "$sudoers"
+        visudo --check --file="$sudoers" >/dev/null
+        mv -f "$sudoers" /etc/sudoers.d/wt
+        if ! test -s /etc/sudoers.d/wt; then
+            echo "WT sudoers rule is empty after installation" >&2
+            exit 1
+        fi
+        runuser --user wt -- sudo --non-interactive true
         ssh-keygen -A
         if ! systemctl enable --now ssh.service; then
             service_diagnostics ssh.service
