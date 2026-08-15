@@ -4,10 +4,10 @@ A host world is a retained Ubuntu guest configured by cloud-init. It has no
 implicit checkout, Git grant, Docker setup, devcontainer, or app SSH server. A
 recipe may create its own checkout, as the project example does.
 
-Create one with a non-empty cloud-init user-data file:
+Create one and supply non-empty cloud-init user-data at the final input prompt:
 
 ```text
-wt new host ./host.yaml
+wt new host
 ```
 
 WT first boots the guest, creates `wt`, stages the exact file root-only, and

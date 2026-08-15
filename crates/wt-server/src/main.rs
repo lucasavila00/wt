@@ -44,10 +44,10 @@ fn run() -> Result<()> {
 }
 
 fn run_api() -> Result<()> {
-    daemon::proxy(
-        Path::new(CONTROL_SOCKET_PATH),
+    wt_server::client::run(
         std::io::stdin().lock(),
         std::io::stdout().lock(),
+        |request| daemon::call(Path::new(CONTROL_SOCKET_PATH), &request),
     )
 }
 

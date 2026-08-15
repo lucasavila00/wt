@@ -4,7 +4,8 @@ Versioned control-plane types shared by `wt` and `wt-server`.
 
 ## Owns
 
-- Protocol version 1 requests and responses.
+- Client schema 1 messages and workstation effects.
+- Internal daemon protocol version 1 requests and responses.
 - World state, SSH inventory, and error payloads.
 - Instance name and SSH Git source validation.
 

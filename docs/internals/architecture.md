@@ -2,12 +2,13 @@
 
 ```text
 wt client
-  └─ local process or OpenSSH ── wt-server API bridge
-                                  └─ Unix socket (0600)
-                                      └─ wt-server
-                                          ├─ shared registry and capacity
-                                          ├─ devcontainer lifecycle
-                                          └─ host lifecycle
+  └─ schema-versioned JSON session over local process or OpenSSH
+      └─ wt-server API bridge: commands, terminal messages, client effects
+          └─ typed requests over Unix socket (0600)
+              └─ wt-server
+                  ├─ shared registry and capacity
+                  ├─ devcontainer lifecycle
+                  └─ host lifecycle
 
 wt-github-ci library foundation
   └─ GitHub CI lifecycle ─────── shared registry and capacity
@@ -19,9 +20,11 @@ devcontainer / host / github-ci
 `wt-server` owns retained worlds. The CI library uses the same registry
 admission model; its operator process is not shipped yet.
 
-The control plane has no TCP listener. Local and remote API bridges send one
-versioned JSON request over stdio to the protected server socket. Protocol
-version 1 carries tagged world kinds.
+The control plane has no TCP listener. The thin client selects one context and
+runs a schema-versioned JSON session with `wt-server api`. The bridge owns the
+command grammar and talks to the protected daemon socket through the internal
+typed API. Client schema 1 carries ordered terminal messages and a closed enum
+of workstation effects.
 
 ## Crates
 
@@ -38,7 +41,7 @@ Executable names used inside existing guests remain stable.
 ## State
 
 - Client contexts: `~/.wt/config.toml`
-- Managed SSH: `~/.ssh/wt/`
+- Managed SSH: `~/.ssh/wt/`, partitioned by context
 - Server configuration: `/etc/wt/server.toml`
 - Capacity configuration: `/etc/wt/capacity.toml`
 - Shared registry: `~/.local/state/wt/instances.db`

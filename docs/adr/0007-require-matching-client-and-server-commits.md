@@ -1,6 +1,6 @@
 # ADR 0007: Require matching client and server commits
 
-- Status: Accepted
+- Status: Superseded by [ADR 0034](0034-use-a-thin-schema-versioned-client.md)
 - Date: 2026-07-17
 
 ## Context

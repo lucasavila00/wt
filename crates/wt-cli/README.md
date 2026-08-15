@@ -4,13 +4,14 @@ The `wt` client.
 
 ## Owns
 
-- Local and OpenSSH server contexts.
-- World naming and cross-context resolution.
-- `new`, `ls`, `start`, `code`, `rm`, and `sync`.
-- Managed OpenSSH config and known hosts.
-- Kind-specific SSH aliases with pinned host identities.
+- Client configuration and selection of one local or OpenSSH context.
+- The schema-versioned terminal message loop.
+- Narrow workstation effects for Git identity, public keys, managed SSH,
+  OpenSSH process replacement, and VS Code launch.
 
-The client does not run libvirt, Docker, or provisioning.
+The client forwards server command arguments without parsing them. It does not
+own command behavior, query multiple servers, run libvirt, Docker, or
+provisioning.
 
 ## Install
 

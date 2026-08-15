@@ -564,19 +564,9 @@ pub(crate) fn sync_inventory(instances: &[wt_api::Instance]) -> Result<(), Strin
             kind: wt_cli::config::ContextKind::BareMetalLocal,
         }],
     };
-    wt_cli::ssh::sync(
-        &client_config,
-        &instances
-            .iter()
-            .cloned()
-            .map(|instance| wt_cli::inventory::ContextInstance {
-                context: "local".into(),
-                instance,
-            })
-            .collect::<Vec<_>>(),
-    )
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+    wt_cli::ssh::sync_context(&client_config, &client_config.contexts[0], instances)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn start_world_setup(home: &Path, name: &InstanceName) -> Child {

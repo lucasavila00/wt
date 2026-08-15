@@ -3,8 +3,9 @@
 A devcontainer world is a retained development environment for one repository
 and base branch.
 
-`wt new` asks for the context, name, Git source, base branch, resources, and
-confirmation. It creates an Ubuntu guest, checks out the repository at
+`wt new` asks for the name, Git source, base branch, resources, and confirmation.
+The client selects the only configured context or requires `--ctx`. WT creates
+an Ubuntu guest, checks out the repository at
 `/workspace`, and starts its devcontainer recipe. The repository remains the
 environment contract.
 
@@ -20,9 +21,9 @@ supported; the primary devcontainer is the container an editor would open.
 | `CONTEXT.NAME-vs` | Direct app SSH through the guest; used by editors and SFTP |
 | `CONTEXT.NAME-host` | Direct guest SSH for recovery |
 
-Short aliases exist only when the name is unique across contexts. WT pins both
-guest and app host keys. `wt code NAME` resolves the live workspace mount and
-opens the `-vs` alias with VS Code Remote-SSH.
+WT generates only context-qualified aliases and pins both guest and app host
+keys. `wt code NAME` resolves the live workspace mount and opens the `-vs`
+alias with VS Code Remote-SSH.
 
 The first `ssh CONTEXT.NAME` completes setup. It clones the repository, starts
 the recipe, and leaves its output in Byobu and the guest setup log. Later

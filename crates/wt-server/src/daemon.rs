@@ -10,19 +10,14 @@ use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 
 pub const CONTROL_SOCKET_PATH: &str = "/run/wt/server.sock";
 
-pub fn proxy(socket_path: &Path, mut input: impl Read, mut output: impl Write) -> Result<()> {
-    let mut request = Vec::new();
-    input
-        .read_to_end(&mut request)
-        .context("read API request")?;
+pub fn call(socket_path: &Path, request: &ApiRequest) -> Result<ApiResponse> {
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|error| daemon_connection_error(socket_path, error))?;
-    stream.write_all(&request).context("send API request")?;
+    serde_json::to_writer(&mut stream, request).context("send API request")?;
     stream
         .shutdown(std::net::Shutdown::Write)
         .context("finish API request")?;
-    std::io::copy(&mut stream, &mut output).context("receive API response")?;
-    Ok(())
+    serde_json::from_reader(&mut stream).context("receive API response")
 }
 
 fn daemon_connection_error(socket_path: &Path, error: std::io::Error) -> anyhow::Error {
@@ -171,10 +166,9 @@ mod tests {
     #[test]
     fn missing_daemon_socket_has_actionable_diagnostics() {
         let temp = tempfile::tempdir().unwrap();
-        let error = proxy(
+        let error = call(
             &temp.path().join("missing.sock"),
-            std::io::empty(),
-            std::io::sink(),
+            &ApiRequest::new(Operation::List),
         )
         .unwrap_err()
         .to_string();
