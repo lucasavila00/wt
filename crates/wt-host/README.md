@@ -2,9 +2,9 @@
 
 Raw Ubuntu host world lifecycle.
 
-It renders WT-owned NoCloud vendor-data, passes operator user-data through,
-waits for cloud-init, pins the guest SSH identity, proves `wt` login with a
-one-use key, and removes that key.
+It prepares the `wt` login through QGA, stages the operator YAML, pins the guest
+SSH identity, proves login with a one-use key, and reports first-SSH cloud-init
+setup state.
 
 Machine lifecycle stays behind `wt-provider`; SSH aliases stay in `wt-cli`.
 

@@ -10,20 +10,18 @@ Create one with a non-empty cloud-init user-data file:
 wt new host ./host.yaml
 ```
 
-WT passes the file through unchanged. A separate NoCloud vendor document owns
-the fixed `wt` login, sudo access, and the public keys selected by the client.
-User-data runs as root and can override that state.
+WT first boots the guest, creates `wt`, stages the exact file root-only, and
+verifies SSH. `wt new host` then opens Byobu. Cloud-init starts there with the
+workstation SSH agent and runs the standard init, config, and final stages.
+Output stays in the pane and `/var/log/cloud-init-output.log`.
 
-Creation succeeds only after cloud-init completes, the guest SSH host identity
-matches, and a one-use key can log in as `wt`. WT removes that key before
-returning. The recipe is included in a hashed create fingerprint but is not
-stored in SQLite. Plaintext user-data remains in the machine's NoCloud files
-and inside the guest, so it is not a secret store.
+The recipe is included in a hashed create fingerprint but is not stored in
+SQLite. It and its output remain on the guest disk, so neither is a secret
+store.
 
-WT prints cloud-init output while `wt new host` runs. If cloud-init or SSH
-readiness fails, the host remains in `error`; `wt ls` shows the failure and
-`wt rm NAME` removes it. Recipe output may remain in the guest and server
-journal, so recipes must not print secrets.
+Success changes the world from `setup` to `running`. Failure changes it to
+`error` and keeps both SSH aliases. Inspect it with `NAME-vs`, then run
+`wt rm NAME` and recreate it. WT never reruns a failed recipe.
 
 The regular alias attaches to a persistent Byobu session. The `-vs` alias is
 the same guest SSH endpoint with no forced command. Both forward the
@@ -37,9 +35,10 @@ ssh CONTEXT.NAME-vs
 There is no `-host` alias. `wt code` rejects host worlds; use `-vs` directly for
 plain SSH, SFTP, or an editor.
 
-Byobu uses a stable agent socket that is refreshed on every connection, so Git
-keeps working after reconnects. Keys are not copied into the world, but any
-process controlling this trusted host can use the agent while connected.
+Byobu uses a stable agent socket that is refreshed on every connection. Keys
+are not copied into the world, but any process controlling this trusted host
+can use the agent while connected. Keep the setup connection open while the
+recipe needs it.
 
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
@@ -48,5 +47,6 @@ checkout, Git grant, agent socket, or provider credentials.
 
 Use the checked-in
 [host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete
-WT development environment with Rust, Codex, and a public checkout. It contains
-no credentials and cannot run the real KVM E2E from inside the world.
+WT development environment with Rust, Codex, and a public checkout. It verifies
+agent forwarding without using real credentials and cannot run the real KVM E2E
+from inside the world.
