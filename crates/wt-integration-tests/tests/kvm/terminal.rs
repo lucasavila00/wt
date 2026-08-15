@@ -50,7 +50,7 @@ tmux show-options -gvw history-limit
 tmux show-options -gv -t {session} default-terminal
 tmux show-options -gv -t {session} mouse
 tmux show-options -sv set-clipboard
-tmux show-options -gvp allow-passthrough
+tmux show-options -gvw allow-passthrough
 tmux show-options -gv -t {session} focus-events
 TERM=ghostty tput colors
 TERM=xterm-ghostty tput colors"#
