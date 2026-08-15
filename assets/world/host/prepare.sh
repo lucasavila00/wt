@@ -14,25 +14,11 @@ case "${1:-}" in
             service_diagnostics cloud-init.service
             exit 1
         fi
-        attempts=0
-        while [ "$(systemctl show --property=SubState --value cloud-init.service)" != exited ]; do
-            active=$(systemctl show --property=ActiveState --value cloud-init.service)
-            case "$active" in
-                active | activating) ;;
-                *)
-                    echo "cloud-init.service entered unexpected state: $active" >&2
-                    service_diagnostics cloud-init.service
-                    exit 1
-                    ;;
-            esac
-            attempts=$((attempts + 1))
-            if [ "$attempts" -ge 300 ]; then
-                echo "cloud-init.service did not finish its boot stage within 300 seconds" >&2
-                service_diagnostics cloud-init.service
-                exit 1
-            fi
-            sleep 1
-        done
+        if [ "$(systemctl show --property=SubState --value cloud-init.service)" != exited ]; then
+            echo "cloud-init.service did not finish its boot stage" >&2
+            service_diagnostics cloud-init.service
+            exit 1
+        fi
         ;;
     access)
         if ! id wt >/dev/null 2>&1; then

@@ -38,5 +38,5 @@ echo "WT host cloud-init: final"
 cloud-init modules --mode=final --file "$state/user-data"
 
 phase=complete
-install -m 0644 /dev/null "$state/complete"
 echo "WT host cloud-init complete."
+install -m 0644 /dev/null "$state/complete"

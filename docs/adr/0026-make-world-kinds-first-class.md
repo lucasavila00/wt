@@ -42,8 +42,10 @@ The setup pane follows `/var/log/cloud-init-output.log` while the system service
 runs. A completion marker promotes the world to `running`. A failure marker
 moves it to `error`. A persistent started marker prevents retries. While the
 setup service is active, the world remains in `setup`; a started world with no
-active service or final marker becomes `error`. WT keeps failed hosts and both
-SSH aliases for inspection and removal.
+active service or final marker becomes `error`. WT keeps every failed host for
+inspection and removal. A failed host keeps both
+SSH aliases during deferred setup; failures before the world reaches `setup`
+have no aliases.
 
 The `-vs` alias is direct guest SSH with agent forwarding and no forced command.
 It does not start setup.

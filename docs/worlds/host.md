@@ -20,9 +20,10 @@ SQLite. It and its output remain on the guest disk, so neither is a secret
 store. WT rejects top-level host-key, cloud-init stage, merge, and output fields
 because it owns those parts of setup.
 
-Success changes the world from `setup` to `running`. Failure changes it to
-`error` and keeps both SSH aliases. Inspect it with `NAME-vs`, then run
-`wt rm NAME` and recreate it. WT never reruns a failed recipe.
+Success changes the world from `setup` to `running`. A setup failure changes it
+to `error` and keeps both SSH aliases. Earlier provisioning failures have no SSH
+alias. Every failed host remains visible in `wt ls` and removable with `wt rm`.
+WT never reruns a failed recipe.
 
 The regular alias attaches to a persistent Byobu session. The `-vs` alias is
 the same guest SSH endpoint with no forced command. Both forward the
