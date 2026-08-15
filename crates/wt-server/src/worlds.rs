@@ -18,14 +18,14 @@ pub struct World {
 #[derive(Clone, Debug)]
 pub enum WorldApplication {
     Devcontainer { app_ssh: Option<AppSshAccess> },
-    Host,
+    Host { setup_complete: bool },
 }
 
 impl WorldApplication {
     pub fn app_ssh(&self) -> Option<&AppSshAccess> {
         match self {
             Self::Devcontainer { app_ssh } => app_ssh.as_ref(),
-            Self::Host => None,
+            Self::Host { .. } => None,
         }
     }
 }
@@ -136,7 +136,9 @@ impl From<wt_host::World> for World {
         Self {
             guest_ip: world.guest_ip,
             ssh: world.ssh,
-            application: WorldApplication::Host,
+            application: WorldApplication::Host {
+                setup_complete: world.setup_complete,
+            },
         }
     }
 }

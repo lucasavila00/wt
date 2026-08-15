@@ -21,20 +21,44 @@ Creation requests are tagged by kind.
 
 The `devcontainer` contract remains unchanged.
 
-A `host` world exposes the Ubuntu guest over SSH. Its regular alias attaches to
-a persistent Byobu session. Its `-vs` alias is direct guest SSH with no forced
-command. Creation requires cloud-init user-data. WT passes it through unchanged
-and keeps machine identity, network, login, and SSH configuration in separate
-NoCloud data. Readiness requires successful cloud-init completion. The exact
-user-data is part of the hashed create fingerprint and is not stored in SQLite.
+A `host` world boots Ubuntu with OpenSSH, QEMU guest support, and Byobu. WT
+creates the `wt` login, stages the submitted cloud-init YAML, verifies SSH, and
+returns the world in `setup`. The boot seed contains only the data needed to
+bring up the machine and network. The image defers cloud-init's normal init
+modules until setup; WT does not delete cloud-init state to run them again. WT
+leaves SSH disabled in the reusable image. After the boot-time cloud-init
+service finishes, WT generates the world's SSH host keys and enables SSH. Those
+keys remain pinned through setup. WT flushes the staged setup state before
+returning the world, so an immediate hard stop does not lose it. Host recipes
+cannot override WT-owned host identity, cloud-init stage lists, merge behavior,
+or output.
 
-A `host` world boots from a dedicated Ubuntu image with OpenSSH, QEMU guest
-support, and Byobu. User-data runs as root and may break WT SSH access. Creation
-proves direct login with a one-use WT key, removes that key, and fails unless
-SSH is ready.
+`wt new host` opens the regular SSH alias. It forwards the workstation SSH
+agent and attaches to a persistent Byobu session. The first session runs
+cloud-init's standard init, config, and final modules with the submitted YAML.
+Cloud-init uses a stable agent socket so reconnecting does not leave existing
+panes pointing at a deleted socket. The latest Byobu connection supplies the
+agent.
+
+The setup pane follows `/var/log/cloud-init-output.log` while the system service
+runs. A completion marker promotes the world to `running`. A failure marker
+moves it to `error`. A persistent started marker prevents retries. While the
+setup service is active, the world remains in `setup`; a started world with no
+active service or final marker becomes `error`. WT keeps every failed host for
+inspection and removal. A failed host keeps both
+SSH aliases during deferred setup; failures before the world reaches `setup`
+have no aliases.
+
+The `-vs` alias is direct guest SSH with agent forwarding and no forced command.
+It does not start setup.
+
+The submitted YAML runs as root, is stored root-only in the guest, and is part
+of the hashed create fingerprint. It is not stored in SQLite. If the Byobu
+connection closes, cloud-init keeps running, but commands using the forwarded
+agent may fail. Reconnecting refreshes the socket; it does not retry commands.
 
 WT adds no checkout, agent Git grant, devcontainer, or app SSH to a host world.
-Ubuntu's Git remains available; the recipe receives no implicit WT credentials.
+Ubuntu's Git remains available. WT never copies private keys into the guest.
 
 World names cannot end in `-host` or `-vs`; those suffixes are reserved for SSH
 aliases.
@@ -54,6 +78,13 @@ of Git and devcontainer inputs.
 
 WT does not place developer private keys, provider tokens, or GitHub App
 credentials in worlds.
+
+WT rejects inputs that conflict with kind-owned state. It does not add fallback
+or compatibility behavior for unsupported recipes.
+
+Host creation fails before provisioning when user-data sets top-level
+`ssh_keys`, `ssh_deletekeys`, `cloud_init_modules`, `cloud_config_modules`,
+`cloud_final_modules`, `merge_how`, `merge_type`, or `output`.
 
 ## Code layout
 
@@ -83,5 +114,5 @@ destroys all WT guests and disks and deletes the SQLite registry and installed
 configuration. Source credentials and installed binaries remain. There is no
 migration or preserved runtime state.
 
-The protocol remains version 1. Request, response, and registry definitions are
-replaced in place.
+The protocol and schema remain version 1. Request, response, and registry
+definitions are replaced in place. No compatibility code or migration is kept.

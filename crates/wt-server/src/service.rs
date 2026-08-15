@@ -133,6 +133,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             wt_api::validate_git_branch(git_base)
                 .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error.to_string()))?;
         }
+        if let CreateApplication::Host { user_data } = &request.application {
+            wt_host::validate_user_data(user_data)
+                .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
+        }
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
         match self.store.get(owner, &request.name) {
@@ -296,13 +300,47 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                     .store
                     .mark_setup(id, &world.guest_ip, &world.ssh)
                     .map_err(map_store_error)?,
-                WorldApplication::Host => self
-                    .store
-                    .mark_host_running(id, &world.guest_ip, &world.ssh)
-                    .map_err(map_store_error)?,
+                WorldApplication::Host { setup_complete } => {
+                    if setup_complete {
+                        self.store
+                            .mark_host_running(id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?
+                    } else {
+                        self.store
+                            .mark_setup(id, &world.guest_ip, &world.ssh)
+                            .map_err(map_store_error)?
+                    }
+                }
             },
             Err(error) => {
                 let provisioning_error = error.to_string();
+                if kind == wt_api::WorldKind::Host {
+                    if let Err(store_error) = self.store.mark_error(id, &provisioning_error) {
+                        eprintln!(
+                            "wt-server: record failed host create {}: {store_error}",
+                            stored.instance.name
+                        );
+                        return Err(ApiError::new(
+                            ErrorCode::Backend,
+                            format!(
+                                "{provisioning_error}; failed to record the retained host world: \
+                                 {store_error}"
+                            ),
+                        ));
+                    }
+                    eprintln!(
+                        "wt-server: retained failed host world {}: {provisioning_error}",
+                        stored.instance.name
+                    );
+                    return Err(ApiError::new(
+                        ErrorCode::Backend,
+                        format!(
+                            "{provisioning_error}; host world '{}' was retained in error state; \
+                             run `wt rm {}` to delete it",
+                            stored.instance.name, stored.instance.name
+                        ),
+                    ));
+                }
                 let cleanup = grant
                     .as_ref()
                     .map_or(Ok(()), |grant| {
@@ -409,7 +447,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 (None, _) => true,
                 _ => false,
             },
-            (InstanceApplication::Host, WorldApplication::Host) => true,
+            (InstanceApplication::Host, WorldApplication::Host { .. }) => true,
             _ => false,
         };
         if !same_guest_identity || !same_app_identity {
@@ -429,10 +467,17 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 .store
                 .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
                 .map_err(map_store_error),
-            WorldApplication::Host => self
-                .store
-                .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
-                .map_err(map_store_error),
+            WorldApplication::Host { setup_complete } => {
+                if *setup_complete {
+                    self.store
+                        .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .map_err(map_store_error)
+                } else {
+                    self.store
+                        .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .map_err(map_store_error)
+                }
+            }
         }
     }
 
@@ -558,7 +603,7 @@ fn retryable_create(instance: &Instance) -> bool {
             InstanceStatus::Provisioning | InstanceStatus::Setup
         ) | (
             InstanceApplication::Host,
-            InstanceStatus::Provisioning | InstanceStatus::Running
+            InstanceStatus::Provisioning | InstanceStatus::Setup | InstanceStatus::Running
         )
     )
 }

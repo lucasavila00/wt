@@ -26,7 +26,7 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | Command | Kinds | Result |
 |---------|-------|--------|
 | `wt new` | devcontainer | Interactively create and enter setup |
-| `wt new host FILE` | host | Create from exact cloud-init user-data |
+| `wt new host FILE` | host | Prepare the guest, then run the file in Byobu |
 | `wt ls` | retained | List kind, status, resources, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
@@ -38,6 +38,10 @@ resume it.
 
 New retained worlds require at least one valid regular `~/.ssh/*.pub` file.
 Private keys are never sent to the server.
+
+Host setup uses the workstation SSH agent. Start one and load the key needed by
+the recipe before `wt new host`; keep that first Byobu connection open while
+the recipe uses it.
 
 Devcontainer creation also requires an SSH-form Git source and global Git
 `user.name` and `user.email`. The client stops before contacting the server when
@@ -53,12 +57,13 @@ Include ~/.ssh/wt/config
 ```
 
 `wt sync` owns `~/.ssh/wt/config` and `~/.ssh/wt/known_hosts`. It pins host
-keys and does not enable agent forwarding. Remote contexts use their configured
-server as a jump host to the guest's private address.
+keys. Remote contexts use their configured server as a jump host to the guest's
+private address.
 
 Devcontainer aliases are documented in
 [Devcontainer worlds](../worlds/devcontainer.md#access). For hosts,
-`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH.
+`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH. Both
+host aliases forward the workstation's SSH agent. Devcontainer aliases do not.
 
 `wt new`, `wt ls`, `wt start`, and `wt rm` synchronize automatically. Run
 `wt sync` on another workstation after changing worlds elsewhere.

@@ -6,14 +6,13 @@ guest-agent transport.
 
 Every machine seed contains separate files:
 
-- `user-data`: application input;
-- `vendor-data`: WT-owned bootstrap data;
+- `user-data`: boot-time cloud config;
+- `vendor-data`: boot-time vendor config;
 - `meta-data`: unique instance and host name;
 - `network-config`: DHCP keyed by the unique MAC address.
 
-Devcontainer and GitHub CI machine code uses empty application user/vendor data
-and performs bootstrap through its own lifecycle. Host machines put the
-operator recipe in user-data and the `wt` login in vendor-data.
+All three kinds use empty user/vendor cloud config. Host setup creates `wt` and
+stages the operator recipe through the QEMU guest agent after the network stage.
 
 ## Images
 
@@ -40,8 +39,9 @@ polls are silent; a timeout names the domain and reports the last libvirt error.
 The kind lifecycle then defines readiness:
 
 - devcontainer verifies guest setup and app SSH;
-- host waits for cloud-init, pins host SSH, proves `wt` login, and removes its
-  one-use probe key;
+- host starts with SSH disabled, waits for boot cloud-init, creates SSH host
+  keys, enables and proves `wt` login, then reports setup, completion, or
+  failure markers;
 - GitHub CI waits for its runner process and job lifecycle.
 
 Stopped retained guests keep their disk and identity. Missing files, mismatched

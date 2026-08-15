@@ -4,6 +4,45 @@ use std::collections::BTreeMap;
 pub(super) const BUILD_NAME: &str = "wt-host-image-build";
 const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
 const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/host/build-image.sh");
+const HOST_PREPARE: &[u8] = include_bytes!("../../../../assets/world/host/prepare.sh");
+const HOST_INSPECT: &[u8] = include_bytes!("../../../../assets/world/host/inspect.sh");
+const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../assets/world/host/cloud-init.sh");
+const HOST_SETUP: &[u8] = include_bytes!("../../../../assets/world/host/setup.sh");
+const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../assets/world/host/defer-init.yaml");
+const HOST_CLOUD_CONFIG: &[u8] = include_bytes!("../../../../assets/world/host/cloud-config.conf");
+const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../assets/world/host/cloud-final.conf");
+const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../assets/world/host/setup.service");
+const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
+    ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
+    ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
+    ("host-inspect", "/var/tmp/wt-host-inspect", HOST_INSPECT),
+    (
+        "host-cloud-init",
+        "/var/tmp/wt-host-cloud-init",
+        HOST_CLOUD_INIT,
+    ),
+    ("host-setup", "/var/tmp/wt-host-setup", HOST_SETUP),
+    (
+        "host-defer-init",
+        "/var/tmp/wt-host-defer-init",
+        HOST_DEFER_INIT,
+    ),
+    (
+        "host-cloud-config",
+        "/var/tmp/wt-host-cloud-config",
+        HOST_CLOUD_CONFIG,
+    ),
+    (
+        "host-cloud-final",
+        "/var/tmp/wt-host-cloud-final",
+        HOST_CLOUD_FINAL,
+    ),
+    (
+        "host-setup-service",
+        "/var/tmp/wt-host-setup-service",
+        HOST_SETUP_SERVICE,
+    ),
+];
 pub(super) const RECIPE_VERSION: u32 = 1;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -84,8 +123,14 @@ fn build_inner<R: Runner>(
     let runner = context.runner;
     let input = context.input;
     let server = context.server;
-    let host_shell = build_dir.join("host-shell.sh");
-    fs::write(&host_shell, HOST_SHELL).context("stage host shell launcher")?;
+    let staged_paths = HOST_INPUTS
+        .iter()
+        .map(|(name, _, bytes)| {
+            let path = build_dir.join(name);
+            fs::write(&path, bytes).context("stage host image input")?;
+            Ok(path)
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     let spec = BuildSpec {
         name: BUILD_NAME,
@@ -93,10 +138,11 @@ fn build_inner<R: Runner>(
         recipe_version: RECIPE_VERSION,
         recipe: HOST_IMAGE_BUILD,
     };
-    let extra_inputs = [StagedInput {
-        source: &host_shell,
-        guest_path: "/var/tmp/wt-host-shell",
-    }];
+    let extra_inputs = staged_paths
+        .iter()
+        .zip(HOST_INPUTS)
+        .map(|(source, (_, guest_path, _))| StagedInput { source, guest_path })
+        .collect::<Vec<_>>();
     let paths = run_kvm_build(context, build_dir, &spec, &extra_inputs)?;
 
     let package_output = read_build_file(
@@ -161,7 +207,7 @@ fn build_inner<R: Runner>(
         recipe_version: RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
-        inputs: staged_input_hashes(&spec, &[("/var/tmp/wt-host-shell", HOST_SHELL)]),
+        inputs: host_input_hashes(&spec),
         image_sha256: sha_file(&paths.prepared)?,
         packages,
         byobu: recipe::BYOBU_VERSION.to_owned(),
@@ -226,15 +272,12 @@ fn verify(
         || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
         || manifest.inputs
-            != staged_input_hashes(
-                &BuildSpec {
-                    name: BUILD_NAME,
-                    kind: "host",
-                    recipe_version: RECIPE_VERSION,
-                    recipe: HOST_IMAGE_BUILD,
-                },
-                &[("/var/tmp/wt-host-shell", HOST_SHELL)],
-            )
+            != host_input_hashes(&BuildSpec {
+                name: BUILD_NAME,
+                kind: "host",
+                recipe_version: RECIPE_VERSION,
+                recipe: HOST_IMAGE_BUILD,
+            })
         || manifest.byobu != recipe::BYOBU_VERSION
         || manifest.tmux != recipe::TMUX_VERSION
         || !is_sha256(&manifest.tmux_sha256)
@@ -249,6 +292,14 @@ fn verify(
         &manifest.image_sha256,
         "installed host image",
     )
+}
+
+fn host_input_hashes(spec: &BuildSpec<'_>) -> BTreeMap<String, String> {
+    let inputs = HOST_INPUTS
+        .iter()
+        .map(|(_, guest_path, bytes)| (*guest_path, *bytes))
+        .collect::<Vec<_>>();
+    staged_input_hashes(spec, &inputs)
 }
 
 #[cfg(test)]

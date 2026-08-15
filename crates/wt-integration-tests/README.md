@@ -56,11 +56,11 @@ sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service
 make e2e-tests
 ```
 
-The serialized KVM flow creates devcontainer and host worlds together. It
-checks exact host user-data, Byobu and direct host SSH, restart persistence,
-app-container recovery, fake-provider Git traffic, and cleanup. A second host
-recipe removes WT SSH access and must fail creation without leaving a disk or
-registry row.
+The serialized KVM flow creates devcontainer and host worlds together. It runs
+the checked-in host recipe in Byobu with a disposable forwarded agent, checks
+the staged bytes, restart persistence, app-container recovery, fake-provider
+Git traffic, and cleanup. A second recipe fails cloud-init and must remain
+accessible in `error` until the test deletes it.
 
 To discard an existing installation first, run `make nuke`. This is destructive:
 it removes every `wt-*` libvirt domain, the world disks and SQLite registry,

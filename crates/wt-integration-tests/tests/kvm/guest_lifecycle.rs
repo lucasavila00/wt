@@ -1,6 +1,5 @@
 use super::*;
 use std::path::Path;
-use std::process::Stdio;
 
 const HOST_PROJECT_USER_DATA: &str =
     include_str!("../../../../examples/host-world/cloud-init.yaml");
@@ -15,6 +14,29 @@ fn agent_git_transport_works_without_provider_credentials() {
     let mut harness = KvmHarness::new(&mut timings);
     let name = unique_name("git");
 
+    let disks_before_rejection = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    for (index, field) in ["ssh_keys", "ssh_deletekeys", "output"]
+        .into_iter()
+        .enumerate()
+    {
+        let rejected_name = unique_name(&format!("host-reject-{index}"));
+        let error = harness
+            .create_host_result(
+                &rejected_name,
+                &format!("#cloud-config\n{field}: forbidden\n"),
+            )
+            .unwrap_err();
+        assert!(
+            error.contains(&format!("cannot set top-level {field}")),
+            "unexpected reserved-field rejection: {error}"
+        );
+    }
+    assert_eq!(
+        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        disks_before_rejection
+    );
+    assert!(harness.sync_inventory().is_empty());
+
     let created = timings.run("create world", || harness.create(&name));
     assert_eq!(created.status, InstanceStatus::Setup);
     harness.sync_inventory();
@@ -26,26 +48,96 @@ fn agent_git_transport_works_without_provider_credentials() {
     });
     assert_eq!(running.status, InstanceStatus::Running);
     let host_name = unique_name("host");
-    let host = timings.run("create host world", || {
+    let created_host = timings.run("prepare host world", || {
         harness.create_host(&host_name, HOST_PROJECT_USER_DATA)
     });
-    assert_eq!(host.status, InstanceStatus::Running);
-    assert_eq!(host.kind(), wt_api::WorldKind::Host);
+    assert_eq!(created_host.status, InstanceStatus::Setup);
+    assert_eq!(created_host.kind(), wt_api::WorldKind::Host);
     let host_machine = harness
         .config
         .libvirt
         .worlds_dir
-        .join(format!("wt-{}", host.id.simple()));
+        .join(format!("wt-{}", created_host.id.simple()));
     assert_eq!(
         fs::read_to_string(host_machine.join("user-data")).unwrap(),
-        HOST_PROJECT_USER_DATA
+        "#cloud-config\n"
     );
-    let vendor_data = fs::read_to_string(host_machine.join("vendor-data")).unwrap();
-    assert!(vendor_data.contains("name: wt"));
-    assert!(!vendor_data.contains("wt-project-development"));
+    assert_eq!(
+        fs::read_to_string(host_machine.join("vendor-data")).unwrap(),
+        "#cloud-config\n"
+    );
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
-    start_host_byobu(&harness, &host_name);
+    run_host(
+        &harness,
+        &host_name,
+        "test \"$(sudo stat -c '%U:%G %a' /var/lib/wt-host/user-data)\" = 'root:root 600'",
+        "verify staged host user-data permissions",
+    );
+    let staged_user_data =
+        host_command(&harness, &host_name, "sudo cat /var/lib/wt-host/user-data")
+            .output()
+            .unwrap();
+    ensure_success("read staged host user-data", &staged_user_data).unwrap();
+    assert_eq!(staged_user_data.stdout, HOST_PROJECT_USER_DATA.as_bytes());
+    run_host(
+        &harness,
+        &host_name,
+        "test ! -e /var/lib/wt-host/started",
+        "verify direct host SSH does not start setup",
+    );
+    let still_setup = harness
+        .sync_inventory()
+        .into_iter()
+        .find(|instance| instance.name == host_name)
+        .unwrap();
+    assert_eq!(still_setup.status, InstanceStatus::Setup);
+
+    harness.stop(&created_host);
+    let stopped_setup = harness
+        .sync_inventory()
+        .into_iter()
+        .find(|instance| instance.name == host_name)
+        .unwrap();
+    assert_eq!(stopped_setup.status, InstanceStatus::Stopped);
+    let restarted_setup = harness.start(&host_name);
+    assert_eq!(restarted_setup.status, InstanceStatus::Setup);
+    harness.sync_inventory();
+    let forwarded_agent = TestSshAgent::start(harness.temp.path(), &harness.git.guest_key);
+    run_host_with_agent(
+        &harness,
+        &host_name,
+        forwarded_agent.socket(),
+        "test -S \"$SSH_AUTH_SOCK\" && ssh-add -l",
+        "verify direct host agent forwarding",
+    );
+    let mut host_setup = spawn_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    wait_for_live_host_output(
+        &harness,
+        &host_name,
+        &mut host_setup,
+        "WT host cloud-init: init",
+    );
+    let host = timings.run("run host cloud-init in Byobu", || {
+        wait_for_host_status(
+            &harness,
+            &host_name,
+            &mut host_setup,
+            InstanceStatus::Running,
+        )
+    });
+    let host_pane = capture_host_pane(&harness, &host_name);
+    assert!(
+        host_pane.contains("WT host cloud-init: init")
+            && host_pane.contains("WT host project development ready")
+            && host_pane.contains("WT host cloud-init complete."),
+        "host cloud-init output was not preserved in Byobu:\n{host_pane}"
+    );
+    let _ = host_setup.kill();
+    let _ = host_setup.wait();
+    start_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    start_host_byobu(&harness, &host_name, forwarded_agent.socket());
+    assert_shared_terminal_stack(&harness, &name, &host_name);
     run_host(
         &harness,
         &host_name,
@@ -67,10 +159,6 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test ! -e /usr/local/bin/wt-app-shell; ",
             "test ! -e /usr/local/bin/wt-agent-git-relay; ",
             "test -x /usr/local/bin/wt-host-shell; ",
-            "test \"$(tmux -V)\" = 'tmux 3.6b'; ",
-            "test \"$(dpkg-query -W -f='${Version}' byobu)\" = '7.15-0ubuntu1'; ",
-            "TERM=ghostty tput colors >/dev/null; ",
-            "TERM=xterm-ghostty tput colors >/dev/null; ",
             "tmux has-session -t wt-host",
         ),
         "verify raw host world",
@@ -260,86 +348,117 @@ fn agent_git_transport_works_without_provider_credentials() {
     harness.assert_grant_is_revoked(token);
     harness.delete(&host_name);
 
-    let broken_name = unique_name("host-no-ssh");
+    let broken_name = unique_name("host-cloud-init-failure");
     let disks_before = count_disk_nodes(&harness.config.libvirt.worlds_dir);
-    let error = timings.run("reject host without WT SSH", || {
-        harness
-            .create_host_result(
-                &broken_name,
-                "#cloud-config\nruncmd:\n  - rm -f /home/wt/.ssh/authorized_keys\n",
-            )
-            .unwrap_err()
+    let broken = timings.run("prepare failing host world", || {
+        harness.create_host(
+            &broken_name,
+            concat!(
+                "#cloud-config\n",
+                "runcmd:\n",
+                "  - |\n",
+                "    echo attempt >> /var/lib/wt-host-attempts\n",
+                "    echo 'broken host stdout'\n",
+                "    echo 'broken host stderr' >&2\n",
+                "    exit 42\n",
+            ),
+        )
     });
-    assert!(error.contains("SSH login readiness failed"), "{error}");
+    assert_eq!(broken.status, InstanceStatus::Setup);
+    harness.sync_inventory();
+    let mut broken_setup = spawn_host_byobu(&harness, &broken_name, forwarded_agent.socket());
+    let failed = timings.run("retain failed host cloud-init", || {
+        wait_for_host_status(
+            &harness,
+            &broken_name,
+            &mut broken_setup,
+            InstanceStatus::Error,
+        )
+    });
+    let progress = capture_host_pane(&harness, &broken_name);
+    let stdout = progress.find("broken host stdout").unwrap();
+    let stderr = progress.find("broken host stderr").unwrap();
+    assert!(
+        stdout < stderr,
+        "cloud-init output was not preserved in order:\n{progress}"
+    );
+    assert_eq!(
+        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        disks_before + 1
+    );
+    assert_eq!(failed.status, InstanceStatus::Error);
+    assert!(
+        failed
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("cloud-init final stage failed")),
+        "failed host has no useful error: {failed:?}"
+    );
+    harness.sync_inventory();
+    run_host(
+        &harness,
+        &broken_name,
+        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
+        "verify failed host setup ran once",
+    );
+    let _ = broken_setup.kill();
+    let _ = broken_setup.wait();
+    harness.delete(&broken_name);
     assert_eq!(
         count_disk_nodes(&harness.config.libvirt.worlds_dir),
         disks_before
     );
-    let missing = call_api_result(
-        harness.temp.path(),
-        &harness.server_config_path,
-        wt_api::Operation::Get { name: broken_name },
-    )
-    .unwrap_err();
-    assert!(missing.contains("instance not found"), "{missing}");
-}
 
-fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
-    let output = cmd!(
-        "ssh",
-        "-F",
-        harness.temp.path().join(".ssh/config"),
-        "-i",
-        &harness.git.guest_key,
-        format!("local.{name}-vs"),
-        command,
-    )
-    .output()
-    .unwrap();
-    ensure_success(action, &output).unwrap();
-}
-
-fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
-    let mut command = cmd!(
-        "ssh",
-        "-F",
-        harness.temp.path().join(".ssh/config"),
-        "-i",
-        &harness.git.guest_key,
-        format!("local.{name}"),
+    let interrupted_name = unique_name("host-interrupted");
+    let interrupted = harness.create_host(
+        &interrupted_name,
+        concat!(
+            "#cloud-config\n",
+            "runcmd:\n",
+            "  - |\n",
+            "    echo attempt >> /var/lib/wt-host-attempts\n",
+            "    echo 'interrupt host setup now'\n",
+            "    sleep 300\n",
+        ),
     );
-    command
-        .env_remove("SSH_AUTH_SOCK")
-        .env("TERM", "xterm-ghostty")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = command.spawn().unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        let output = cmd!(
-            "ssh",
-            "-F",
-            harness.temp.path().join(".ssh/config"),
-            "-i",
-            &harness.git.guest_key,
-            format!("local.{name}-vs"),
-            "tmux has-session -t wt-host",
-        )
-        .output()
-        .unwrap();
-        if output.status.success() {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "host Byobu session did not start: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+    assert_eq!(interrupted.status, InstanceStatus::Setup);
+    harness.sync_inventory();
+    let mut interrupted_setup =
+        spawn_host_byobu(&harness, &interrupted_name, forwarded_agent.socket());
+    wait_for_live_host_output(
+        &harness,
+        &interrupted_name,
+        &mut interrupted_setup,
+        "interrupt host setup now",
+    );
+    run_host(
+        &harness,
+        &interrupted_name,
+        "sudo systemctl kill --kill-whom=main --signal=KILL wt-host-setup.service",
+        "interrupt host setup service",
+    );
+    let interrupted_error = wait_for_host_status(
+        &harness,
+        &interrupted_name,
+        &mut interrupted_setup,
+        InstanceStatus::Error,
+    );
+    assert!(
+        interrupted_error
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("host cloud-init was interrupted")),
+        "interrupted host has no useful error: {interrupted_error:?}"
+    );
+    run_host(
+        &harness,
+        &interrupted_name,
+        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
+        "verify interrupted host setup ran once",
+    );
+    let _ = interrupted_setup.kill();
+    let _ = interrupted_setup.wait();
+    harness.delete(&interrupted_name);
 }
 
 fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {

@@ -1,0 +1,4 @@
+# The network stage still reads NoCloud and configures the network.
+# The normal init modules run later with the user's YAML in Byobu.
+cloud_init_modules: []
+ssh_deletekeys: false

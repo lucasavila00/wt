@@ -13,7 +13,8 @@ phase "installing shared machine packages"
     bison build-essential curl libevent-dev libncurses-dev pkg-config
 
 phase "configuring shared machine services"
-systemctl enable --now qemu-guest-agent.service ssh.service
+systemctl enable --now qemu-guest-agent.service
+systemctl disable --now ssh.service ssh.socket
 
 phase "installing shared terminal stack"
 /bin/sh /var/tmp/wt-install-terminal.sh

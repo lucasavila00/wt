@@ -8,6 +8,7 @@ description = "Raw Ubuntu host world lifecycle for wt"
 
 [dependencies]
 ssh-key = { workspace = true }
+serde_yaml_ng = { workspace = true }
 tempfile = "3.27.0"
 wt-api = { workspace = true }
 wt-provider = { workspace = true }

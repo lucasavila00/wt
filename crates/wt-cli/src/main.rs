@@ -98,13 +98,12 @@ fn run() -> Result<()> {
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
             if instance.kind() == WorldKind::Host {
-                println!("\nByobu: ssh {}.{}", context.name, instance.name);
+                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
                 println!("Direct: ssh {}.{}-vs", context.name, instance.name);
-                println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
-                return Ok(());
+            } else {
+                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
+                println!("Guest host: ssh {}.{}-host", context.name, instance.name);
             }
-            println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
-            println!("Guest host: ssh {}.{}-host", context.name, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
             let target = format!("{}.{}", context.name, instance.name);
@@ -576,14 +575,18 @@ fn format_instances(instances: &[ContextInstance]) -> String {
 
 fn instance_detail(item: &ContextInstance) -> String {
     let instance = &item.instance;
-    if instance.status != wt_api::InstanceStatus::Stopped {
-        return instance.last_error.as_deref().unwrap_or("-").to_owned();
-    }
     let target = format!("{}.{}", item.context, instance.name);
-    format!(
-        "{}; run `wt start {target}` or `wt rm {target}`",
-        instance.last_error.as_deref().unwrap_or("guest stopped")
-    )
+    match instance.status {
+        wt_api::InstanceStatus::Stopped => format!(
+            "{}; run `wt start {target}` or `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("guest stopped")
+        ),
+        wt_api::InstanceStatus::Error => format!(
+            "{}; run `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("world failed")
+        ),
+        _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
+    }
 }
 
 fn format_resources(vcpus: u32, memory_mib: u64, disk_gib: u64) -> String {
