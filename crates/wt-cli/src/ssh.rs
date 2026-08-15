@@ -1,5 +1,6 @@
 use crate::config::{validate_ssh_host, ClientConfig, ContextKind};
 use crate::inventory::{name_counts, ContextInstance};
+use crate::ssh_config;
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -118,6 +119,12 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             append_known_host(&mut known_hosts, &format!("{qualified}-vs"), key, instance)?;
         }
     }
+    ssh_config::ensure_managed_include(&main_config_path).with_context(|| {
+        format!(
+            "configure WT SSH aliases in {}\nadd `Include ~/.ssh/wt/config` before any `Host` or `Match` block, then run `wt sync`",
+            main_config_path.display()
+        )
+    })?;
     atomic_write(&config_path, config.as_bytes())?;
     atomic_write(&known_hosts_path, known_hosts.as_bytes())?;
     Ok(config_path)
@@ -255,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_does_not_touch_main_config_and_removes_stale_worlds() {
+    fn sync_bootstraps_main_config_and_removes_stale_worlds() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
@@ -323,7 +330,10 @@ mod tests {
         "###);
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
-        assert_eq!(main, main_config);
+        assert_eq!(
+            main,
+            "Include ~/.ssh/wt/config\nHost personal\n  HostName example.test\n"
+        );
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(!managed.contains("repo-feature"));
     }
@@ -576,7 +586,10 @@ mod tests {
             "duplicate_world_names_ssh_config",
             normalize_home(&managed, temp.path())
         );
-        assert!(!temp.path().join(".ssh/config").exists());
+        assert_eq!(
+            fs::read_to_string(temp.path().join(".ssh/config")).unwrap(),
+            "Include ~/.ssh/wt/config\n"
+        );
     }
 
     #[test]
