@@ -24,7 +24,7 @@ if test -e "$state/started"; then
     esac
 fi
 
-sudo systemctl start "$service" &
+sudo --non-interactive systemctl start "$service" &
 setup_pid=$!
 tail --pid="$setup_pid" -n +1 -F "$log" &
 tail_pid=$!

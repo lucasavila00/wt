@@ -68,6 +68,7 @@ case "${1:-}" in
         chown wt:wt "$temporary"
         chmod 0600 "$temporary"
         mv -f "$temporary" "$file"
+        sync
         ;;
     *)
         echo "usage: wt-host-prepare wait|access|user-data|remove-key" >&2

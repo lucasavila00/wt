@@ -28,8 +28,10 @@ bring up the machine and network. The image defers cloud-init's normal init
 modules until setup; WT does not delete cloud-init state to run them again. WT
 leaves SSH disabled in the reusable image. After the boot-time cloud-init
 service finishes, WT generates the world's SSH host keys and enables SSH. Those
-keys remain pinned through setup. Host recipes cannot override WT-owned host
-identity, cloud-init stage lists, merge behavior, or output.
+keys remain pinned through setup. WT flushes the staged setup state before
+returning the world, so an immediate hard stop does not lose it. Host recipes
+cannot override WT-owned host identity, cloud-init stage lists, merge behavior,
+or output.
 
 `wt new host` opens the regular SSH alias. It forwards the workstation SSH
 agent and attaches to a persistent Byobu session. The first session runs
