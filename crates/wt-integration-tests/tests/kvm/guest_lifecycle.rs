@@ -103,6 +103,22 @@ fn agent_git_transport_works_without_provider_credentials() {
     let restarted_setup = harness.start(&host_name);
     assert_eq!(restarted_setup.status, InstanceStatus::Setup);
     harness.sync_inventory();
+    run_host(
+        &harness,
+        &host_name,
+        "test -z \"${SSH_AUTH_SOCK:-}\"",
+        "verify host agent forwarding is not automatic",
+    );
+    {
+        let forwarded_agent = TestSshAgent::start(harness.temp.path(), &harness.git.guest_key);
+        run_host_with_forwarded_agent(
+            &harness,
+            &host_name,
+            forwarded_agent.socket(),
+            "test -S \"$SSH_AUTH_SOCK\" && ssh-add -l",
+            "verify explicit direct host agent forwarding",
+        );
+    }
     let mut host_setup = spawn_host_byobu(&harness, &host_name);
     wait_for_live_host_output(
         &harness,

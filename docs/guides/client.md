@@ -40,9 +40,8 @@ resume it.
 New retained worlds require at least one valid regular `~/.ssh/*.pub` file.
 Private keys are never sent to the server.
 
-Host setup uses the workstation SSH agent. Start one and load the key needed by
-the recipe before `wt new host`; keep that first Byobu connection open while
-the recipe uses it.
+Host setup does not receive the workstation SSH agent. Configured provider Git
+operations use the gateway.
 
 Devcontainer creation also requires an SSH-form Git source and global Git
 `user.name` and `user.email`. The client stops before contacting the server when
@@ -66,8 +65,10 @@ address.
 
 Devcontainer aliases are documented in
 [Devcontainer worlds](../worlds/devcontainer.md#access). For hosts,
-`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH. Both
-host aliases forward the workstation's SSH agent. Devcontainer aliases do not.
+`CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH. WT
+aliases do not enable SSH-agent forwarding. A developer can opt into native
+OpenSSH forwarding for one direct connection with `ssh -A CONTEXT.NAME-vs`;
+that unrestricted credential path bypasses gateway policy.
 
 `wt new`, `wt ls`, `wt start`, `wt rm`, and `wt ssh` synchronize automatically.
 Run `wt sync` on another workstation after changing worlds elsewhere.

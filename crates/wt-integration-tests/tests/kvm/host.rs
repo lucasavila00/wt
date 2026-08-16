@@ -1,4 +1,5 @@
 use super::*;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 
 pub(crate) fn wait_for_live_host_output(
@@ -104,6 +105,29 @@ pub(crate) fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str,
     ensure_success(action, &output).unwrap();
 }
 
+pub(crate) fn run_host_with_forwarded_agent(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    agent_socket: &Path,
+    command: &str,
+    action: &str,
+) {
+    let output = cmd!(
+        "ssh",
+        "-A",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}-vs"),
+        command,
+    )
+    .env("SSH_AUTH_SOCK", agent_socket)
+    .output()
+    .unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
 pub(crate) fn host_command(
     harness: &KvmHarness,
     name: &InstanceName,
@@ -153,4 +177,48 @@ pub(crate) fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+pub(crate) struct TestSshAgent {
+    child: Child,
+    socket: PathBuf,
+}
+
+impl TestSshAgent {
+    pub(crate) fn start(root: &Path, key: &Path) -> Self {
+        let socket = root.join("forwarded-agent.sock");
+        let mut child = cmd!("ssh-agent", "-D", "-a", &socket)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !socket.exists() {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "disposable SSH agent exited before creating its socket"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "disposable SSH agent socket did not appear"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = cmd!("ssh-add", key)
+            .env("SSH_AUTH_SOCK", &socket)
+            .output()
+            .unwrap();
+        ensure_success("add the disposable forwarded identity", &output).unwrap();
+        Self { child, socket }
+    }
+
+    pub(crate) fn socket(&self) -> &Path {
+        &self.socket
+    }
+}
+
+impl Drop for TestSshAgent {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
