@@ -118,7 +118,7 @@ impl ProviderHttpClient {
     fn authorize<T>(&self, request: ureq::RequestBuilder<T>) -> ureq::RequestBuilder<T> {
         let request = request
             .header("Accept", "application/json")
-            .header("User-Agent", "wt-devcontainer-git");
+            .header("User-Agent", "wt-agent-git");
         match self.authentication {
             ProviderAuthentication::Github => request
                 .header("Authorization", &format!("Bearer {}", self.token))

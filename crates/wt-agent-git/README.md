@@ -1,4 +1,4 @@
-# wt-devcontainer-git
+# wt-agent-git
 
 Scoped Git transport for retained worlds.
 

@@ -2455,6 +2455,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
+name = "wt-agent-git"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "diesel",
+ "graphql_client",
+ "insta",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "ureq",
+ "url",
+ "uuid",
+ "wt-registry",
+]
+
+[[package]]
 name = "wt-api"
 version = "0.0.0"
 dependencies = [
@@ -2503,25 +2522,6 @@ dependencies = [
  "wt-api",
  "wt-command",
  "wt-provider",
-]
-
-[[package]]
-name = "wt-devcontainer-git"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "diesel",
- "graphql_client",
- "insta",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "ureq",
- "url",
- "uuid",
- "wt-registry",
 ]
 
 [[package]]
@@ -2578,11 +2578,11 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
+ "wt-agent-git",
  "wt-api",
  "wt-cli",
  "wt-command",
  "wt-devcontainer",
- "wt-devcontainer-git",
  "wt-host",
  "wt-libvirt",
  "wt-provider",
@@ -2644,9 +2644,9 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
+ "wt-agent-git",
  "wt-api",
  "wt-devcontainer",
- "wt-devcontainer-git",
  "wt-host",
  "wt-libvirt",
  "wt-provider",

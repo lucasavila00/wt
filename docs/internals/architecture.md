@@ -27,8 +27,8 @@ version 1 carries tagged world kinds.
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-server`, `wt-server-setup`, `wt-integration-tests` |
-| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest`, `wt-devcontainer-git` |
+| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-server`, `wt-server-setup`, `wt-agent-git`, `wt-integration-tests` |
+| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest` |
 | Host | `wt-host` |
 | GitHub CI | `wt-github-ci` |
 

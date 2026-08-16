@@ -3,7 +3,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
-use wt_devcontainer_git::{read_json_line, write_json_line, ControlRequest, ControlResponse};
+use wt_agent_git::{read_json_line, write_json_line, ControlRequest, ControlResponse};
 
 struct Process(Option<Child>);
 

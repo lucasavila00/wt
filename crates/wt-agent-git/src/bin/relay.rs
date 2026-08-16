@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use wt_devcontainer_git::{
+use wt_agent_git::{
     copy_bidirectional, read_json_line, write_json_line, ClientRequest, TransportRequest,
     TransportResponse, VsockStream, VSOCK_PORT,
 };
@@ -78,7 +78,7 @@ fn handle(
     let request: ClientRequest = read_json_line(&mut client)?;
     let streams_git = matches!(
         &request.operation,
-        wt_devcontainer_git::ClientOperation::Git { .. }
+        wt_agent_git::ClientOperation::Git { .. }
     );
     let request = TransportRequest {
         protocol_version: request.protocol_version,

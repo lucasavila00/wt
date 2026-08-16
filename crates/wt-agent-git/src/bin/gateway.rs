@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use wt_devcontainer_git::{
+use wt_agent_git::{
     FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, VsockListener, CONTROL_SOCKET,
     VSOCK_PORT,
 };

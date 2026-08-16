@@ -17,19 +17,19 @@ pub trait AgentGitGateway {
         world_id: Uuid,
         source: Option<&str>,
         base: Option<&str>,
-    ) -> Result<wt_devcontainer_git::Grant, String>;
+    ) -> Result<wt_agent_git::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
 
-impl AgentGitGateway for wt_devcontainer_git::ControlClient {
+impl AgentGitGateway for wt_agent_git::ControlClient {
     fn reserve(
         &self,
         world_id: Uuid,
         source: Option<&str>,
         base: Option<&str>,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
+    ) -> Result<wt_agent_git::Grant, String> {
         let response = self
-            .request(&wt_devcontainer_git::ControlRequest::Reserve {
+            .request(&wt_agent_git::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
                 source: source.map(str::to_owned),
                 base: base.map(str::to_owned),
@@ -48,7 +48,7 @@ impl AgentGitGateway for wt_devcontainer_git::ControlClient {
 
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         let response = self
-            .request(&wt_devcontainer_git::ControlRequest::Revoke {
+            .request(&wt_agent_git::ControlRequest::Revoke {
                 grant_id: grant_id.to_owned(),
             })
             .map_err(|error| error.to_string())?;
@@ -208,7 +208,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 InstanceApplication::Devcontainer {
                     source: source.clone(),
                     git_base: git_base.clone(),
-                    git_prefix: wt_devcontainer_git::BRANCH_PREFIX.to_owned(),
+                    git_prefix: wt_agent_git::BRANCH_PREFIX.to_owned(),
                     app_ssh: None,
                 },
                 crate::store::StoredApplication::Devcontainer {

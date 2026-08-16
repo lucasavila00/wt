@@ -86,7 +86,7 @@ fn run_server() -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
-    let gateway = wt_devcontainer_git::ControlClient::new(wt_devcontainer_git::CONTROL_SOCKET);
+    let gateway = wt_agent_git::ControlClient::new(wt_agent_git::CONTROL_SOCKET);
     let owner = process_user()?;
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
@@ -106,7 +106,7 @@ fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
     worker: &Workers<CompositeWorker<LibvirtProvider>, wt_host::CompositeWorker<LibvirtProvider>>,
-    gateway: &wt_devcontainer_git::ControlClient,
+    gateway: &wt_agent_git::ControlClient,
     owner: &str,
     capacity_limit: wt_registry::Resources,
     request: ApiRequest,

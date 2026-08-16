@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::io::{BufRead, Write};
 use std::os::unix::net::UnixStream;
-use wt_devcontainer_git::{
+use wt_agent_git::{
     read_json_line, write_json_line, ClientOperation, ClientRequest, GitService, TransportResponse,
     PROTOCOL_VERSION,
 };
