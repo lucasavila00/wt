@@ -77,40 +77,6 @@ fn command_parser_accepts_only_valid_json_objects() {
 }
 
 #[test]
-fn command_errors_include_complete_agent_context() {
-    let scope = ProviderCommandScope {
-        host: "github.example",
-        project: "acme/widget",
-        base: "main",
-        prefix: "df1/",
-        branch: "df1/fix-login",
-        head: "abc123",
-    };
-    let error = with_provider_command_context(
-        Err(anyhow::anyhow!(
-            "review thread `T9` was not found; run a `list_threads` JSON action for the MR and use its provider ID"
-        )),
-        ProviderKind::GitHub,
-        &scope,
-        &ProviderCommand::SetReviewThreadResolved {
-            thread: ReviewThreadHandle::new("T9"),
-            resolved: true,
-        },
-    )
-    .unwrap_err();
-
-    insta::assert_snapshot!(format!("{error:#}"), @r###"
-    ag-git could not resolve the review thread
-    Provider: GitHub (github.example)
-    Project: acme/widget
-    Branch: df1/fix-login
-    Base: main
-    Current commit: abc123
-    Cause: review thread `T9` was not found; run a `list_threads` JSON action for the MR and use its provider ID
-    "###);
-}
-
-#[test]
 fn review_output_includes_actionable_commands() {
     let threads = vec![ReviewThread {
         handle: ReviewThreadHandle::new("T:thread-1"),

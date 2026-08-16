@@ -41,11 +41,6 @@ impl GitProviderApi for GithubApi {
             ProviderCommand::ReadCurrentStatus => Ok(ProviderCommandOutput::CurrentStatus(
                 self.read_change_request_snapshot(scope, true)?.request,
             )),
-            ProviderCommand::ReadChangeRequestAfterPush => {
-                Ok(ProviderCommandOutput::CurrentStatus(
-                    self.read_change_request_snapshot(scope, false)?.request,
-                ))
-            }
             ProviderCommand::OpenChangeRequest { draft } => {
                 let snapshot = self.read_change_request_snapshot(scope, false)?;
                 if let Some(request) = snapshot.request {
@@ -276,7 +271,6 @@ impl GitProviderApi for GithubApi {
             )),
             CliCommand::LogJob { job } => {
                 let project_scope = ProviderCommandScope {
-                    host: scope.host,
                     project: scope.project,
                     base: scope.base,
                     prefix: scope.prefix,
@@ -338,7 +332,6 @@ impl GitProviderApi for GithubApi {
                     self.rest_prefix, scope.project
                 ))?;
                 let current = ProviderCommandScope {
-                    host: scope.host,
                     project: scope.project,
                     base,
                     prefix: scope.prefix,

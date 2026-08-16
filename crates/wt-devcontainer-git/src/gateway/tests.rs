@@ -124,6 +124,25 @@ fn push_messages_cover_publish_delete_and_rejection() {
         .unwrap(),
         vec![("a".repeat(40), "wt/fix-login".to_owned())]
     );
+    insta::assert_snapshot!(
+        service::push_result_message(
+            true,
+            "main",
+            &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
+            &response("ok refs/heads/wt/fix-login"),
+            true,
+        )
+        .unwrap(),
+        @r###"
+    Published branch `wt/fix-login`.
+    Inspect its open MR with:
+      ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+    If that reports no open MR, open one with:
+      ag-git '{"action":"open_mr","base":"main","head":"wt/fix-login"}'
+    Inspect CI with:
+      ag-git '{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    "###
+    );
     assert_eq!(
         successful_push_updates(
             &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
