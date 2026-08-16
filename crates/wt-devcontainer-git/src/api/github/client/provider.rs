@@ -193,13 +193,12 @@ impl GitProviderApi for GithubApi {
                             current.handle, current.name, current.state
                         )))
                     }
-                    None => bail!(
-                        "GitHub Actions job `{}` ({}) is {}, but its log is not available\nNext step: retry `ag-git log {job}`; if it remains unavailable, open {}",
-                        current.handle,
-                        current.name,
-                        current.state,
-                        current.url.as_deref().unwrap_or("the job in GitHub Actions")
-                    ),
+                    None => Ok(ProviderCommandOutput::CiJobLog(
+                        unavailable_job_log(
+                            &current,
+                            &self.read_check_run_annotations(scope.project, &current.handle)?,
+                        ),
+                    )),
                 }
             }
             ProviderCommand::RetryCiJob { job } => {
@@ -490,4 +489,47 @@ impl GitProviderApi for GithubApi {
             }
         }
     }
+}
+
+fn unavailable_job_log(job: &CiJob, annotations: &[CheckRunAnnotation]) -> String {
+    let mut output = format!(
+        "Job: {} ({})\nState: {}\nLog: GitHub did not publish log bytes for this job.\n",
+        job.handle, job.name, job.state
+    );
+    if annotations.is_empty() {
+        output.push_str("Diagnostics: GitHub reported no check annotations.\n");
+        output.push_str("Next step: ask the user to resolve this provider-side failure.\n");
+        return output;
+    }
+
+    output.push_str("Diagnostics:\n");
+    for annotation in annotations {
+        let location = if annotation.start_line == annotation.end_line {
+            format!("{}:{}", annotation.path, annotation.start_line)
+        } else {
+            format!(
+                "{}:{}-{}",
+                annotation.path, annotation.start_line, annotation.end_line
+            )
+        };
+        let title = annotation
+            .title
+            .as_deref()
+            .filter(|title| !title.is_empty())
+            .map(|title| format!(" {title}"))
+            .unwrap_or_default();
+        output.push_str(&format!(
+            "- [{}] {location}{title}\n  {}\n",
+            annotation.annotation_level, annotation.message
+        ));
+        if let Some(details) = annotation
+            .raw_details
+            .as_deref()
+            .filter(|details| !details.is_empty())
+        {
+            output.push_str(&format!("  {details}\n"));
+        }
+    }
+    output.push_str("Next step: ask the user to resolve this provider-side failure.\n");
+    output
 }

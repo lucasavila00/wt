@@ -178,6 +178,17 @@ struct WorkflowJob {
     run_id: u64,
 }
 
+#[derive(Deserialize)]
+struct CheckRunAnnotation {
+    path: String,
+    start_line: u64,
+    end_line: u64,
+    annotation_level: String,
+    title: Option<String>,
+    message: String,
+    raw_details: Option<String>,
+}
+
 #[derive(Clone, Deserialize, Eq, PartialEq)]
 struct PullRequest {
     number: u64,
