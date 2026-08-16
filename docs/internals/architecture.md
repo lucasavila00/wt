@@ -27,8 +27,8 @@ version 1 carries tagged world kinds.
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-server`, `wt-server-setup`, `wt-integration-tests` |
-| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest`, `wt-devcontainer-git` |
+| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-server`, `wt-server-setup`, `wt-agent-git`, `wt-integration-tests` |
+| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest` |
 | Host | `wt-host` |
 | GitHub CI | `wt-github-ci` |
 
@@ -45,4 +45,5 @@ Executable names used inside existing guests remain stable.
 - KVM machine files: the configured libvirt worlds directories
 
 Application data is typed by kind. A host record cannot acquire devcontainer
-Git or app-SSH state, and a CI record cannot appear in retained-world inventory.
+checkout or app-SSH state, and a CI record cannot appear in retained-world
+inventory.

@@ -14,6 +14,9 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io"]
 
+[agent_git]
+vsock_port = 18017
+
 [agent_git.github]
 host = "github.com"
 

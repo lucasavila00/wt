@@ -15,24 +15,24 @@ pub trait AgentGitGateway {
     fn reserve(
         &self,
         world_id: Uuid,
-        source: &str,
-        base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String>;
+        source: Option<&str>,
+        base: Option<&str>,
+    ) -> Result<wt_agent_git::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
 
-impl AgentGitGateway for wt_devcontainer_git::ControlClient {
+impl AgentGitGateway for wt_agent_git::ControlClient {
     fn reserve(
         &self,
         world_id: Uuid,
-        source: &str,
-        base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
+        source: Option<&str>,
+        base: Option<&str>,
+    ) -> Result<wt_agent_git::Grant, String> {
         let response = self
-            .request(&wt_devcontainer_git::ControlRequest::Reserve {
+            .request(&wt_agent_git::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
-                source: source.to_owned(),
-                base: base.to_owned(),
+                source: source.map(str::to_owned),
+                base: base.map(str::to_owned),
             })
             .map_err(|error| error.to_string())?;
         if response.ok {
@@ -48,7 +48,7 @@ impl AgentGitGateway for wt_devcontainer_git::ControlClient {
 
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         let response = self
-            .request(&wt_devcontainer_git::ControlRequest::Revoke {
+            .request(&wt_agent_git::ControlRequest::Revoke {
                 grant_id: grant_id.to_owned(),
             })
             .map_err(|error| error.to_string())?;
@@ -195,13 +195,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         let grant = match &request.application {
             CreateApplication::Devcontainer {
                 source, git_base, ..
-            } => Some(
-                self.gateway
-                    .reserve(id, source, git_base)
-                    .map_err(|error| ApiError::new(ErrorCode::Backend, error))?,
-            ),
-            CreateApplication::Host { .. } => None,
+            } => self.gateway.reserve(id, Some(source), Some(git_base)),
+            CreateApplication::Host { .. } => self.gateway.reserve(id, None, None),
         };
+        let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
         let disk_id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
         let (application, stored_application) = match &request.application {
@@ -211,7 +208,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 InstanceApplication::Devcontainer {
                     source: source.clone(),
                     git_base: git_base.clone(),
-                    git_prefix: wt_devcontainer_git::BRANCH_PREFIX.to_owned(),
+                    git_prefix: wt_agent_git::BRANCH_PREFIX.to_owned(),
                     app_ssh: None,
                 },
                 crate::store::StoredApplication::Devcontainer {
@@ -220,7 +217,9 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             ),
             CreateApplication::Host { .. } => (
                 InstanceApplication::Host,
-                crate::store::StoredApplication::Host,
+                crate::store::StoredApplication::Host {
+                    gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
+                },
             ),
         };
         let stored = StoredInstance {
@@ -293,6 +292,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                     disk_gib: request.disk_gib,
                     ssh_authorized_keys: &request.ssh_authorized_keys,
                     user_data,
+                    git_grant: &grant.as_ref().expect("host grant").token,
                 })
             }
             _ => unreachable!("request and stored application kinds match"),
@@ -575,9 +575,13 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .try_lock(owner, name)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        if let crate::store::StoredApplication::Devcontainer { gateway_grant_id } =
-            &stored.application
-        {
+        let gateway_grant_id = match &stored.application {
+            crate::store::StoredApplication::Devcontainer { gateway_grant_id } => {
+                Some(gateway_grant_id)
+            }
+            crate::store::StoredApplication::Host { gateway_grant_id } => gateway_grant_id.as_ref(),
+        };
+        if let Some(gateway_grant_id) = gateway_grant_id {
             self.gateway
                 .revoke(gateway_grant_id)
                 .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;

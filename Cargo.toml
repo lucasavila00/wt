@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/wt-devcontainer-git",
+    "crates/wt-agent-git",
     "crates/wt-devcontainer",
     "crates/wt-api",
     "crates/wt-cli",

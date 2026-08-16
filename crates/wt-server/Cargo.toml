@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 wt-devcontainer = { workspace = true }
-wt-devcontainer-git = { path = "../wt-devcontainer-git" }
+wt-agent-git = { path = "../wt-agent-git" }
 wt-api = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-host = { workspace = true }

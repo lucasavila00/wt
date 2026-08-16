@@ -1,6 +1,5 @@
 ---
 source: crates/wt-server-setup/src/server/tests.rs
-assertion_line: 251
 expression: gateway
 ---
 [Unit]
@@ -12,6 +11,7 @@ After=network-online.target
 Type=simple
 User=[USER]
 Environment="HOME=[HOME]"
+Environment="WT_AGENT_GIT_VSOCK_PORT=18017"
 LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wt-agent-git-github-api-token
 LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent-git-github-ssh-private-key
 LoadCredentialEncrypted=github-ssh-known-hosts:/etc/credstore.encrypted/wt-agent-git-github-ssh-known-hosts

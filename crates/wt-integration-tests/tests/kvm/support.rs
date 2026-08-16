@@ -1,22 +1,23 @@
+use super::binaries::prepare_test_binaries;
 use super::fixture::*;
+use super::gateway::{spawn_gateway, spawn_provider_api_fixture};
+use super::images::{isolated_test_images, unique_vsock_port};
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
+use wt_agent_git::{
+    read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
+    TransportRequest, TransportResponse, PROTOCOL_VERSION, VSOCK_PORT_ENV,
+};
 use wt_api::{
     ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
     Operation, Outcome, Response,
 };
 use wt_command::cmd;
-use wt_devcontainer_git::{
-    read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION,
-};
 use wt_server::ServerConfig;
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -29,25 +30,20 @@ pub(crate) struct KvmHarness {
     pub(crate) server_config_path: PathBuf,
     pub(crate) guest_public_key: String,
     pub(crate) initial_disk_nodes: usize,
+    _images: TempDir,
     api_fixture: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl KvmHarness {
     pub(crate) fn new(timings: &mut Timings) -> Self {
         let temp = TempDir::new().unwrap();
+        let vsock_port = unique_vsock_port();
+        std::env::set_var(VSOCK_PORT_ENV, vsock_port.to_string());
         let workspace =
             fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
-        timings.run("build guest helpers", || {
-            let mut command = cmd!(
-                env!("CARGO"),
-                "build",
-                "-p",
-                "wt-devcontainer-guest",
-                "-p",
-                "wt-devcontainer-git",
-            );
-            command.current_dir(&workspace);
-            run(command, "build guest helpers")
+        let binary_dir = temp.path().join("bin");
+        timings.run("build isolated test binaries", || {
+            prepare_test_binaries(&workspace, &binary_dir)
         });
         let mut config = match std::env::var_os("WT_KVM_SERVER_CONFIG") {
             Some(path) => ServerConfig::load_from(Path::new(&path)).unwrap(),
@@ -56,7 +52,20 @@ impl KvmHarness {
             )
             .unwrap(),
         };
-        config.install.binary_dir = workspace.join("target/debug");
+        assert_eq!(config.agent_git.vsock_port, vsock_port);
+        config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
+        let installed_devcontainer_image = config.image.devcontainer_path.clone();
+        let installed_host_image = config.image.host_path.clone();
+        let images = timings.run("prepare isolated golden images", || {
+            isolated_test_images(
+                &workspace,
+                &installed_devcontainer_image,
+                &installed_host_image,
+            )
+        });
+        config.image.devcontainer_path = images.path().join("devcontainer.qcow2");
+        config.image.host_path = images.path().join("host.qcow2");
+        config.install.binary_dir = binary_dir;
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
@@ -75,8 +84,7 @@ impl KvmHarness {
         fs::write(
             temp.path().join(".ssh/config"),
             format!(
-                "Include {}\nHost *\n  IdentityFile {}\n  IdentitiesOnly yes\n",
-                temp.path().join(".ssh/wt/config").display(),
+                "Include ~/.ssh/wt/config\nHost *\n  IdentityFile {}\n  IdentitiesOnly yes\n",
                 git.guest_key.display(),
             ),
         )
@@ -101,6 +109,7 @@ impl KvmHarness {
             server_config_path,
             guest_public_key,
             initial_disk_nodes,
+            _images: images,
             api_fixture: None,
         }
     }
@@ -240,8 +249,8 @@ impl KvmHarness {
             &mut stream,
             &ControlRequest::Reserve {
                 world_id: "different-world".to_owned(),
-                source: self.git.url(),
-                base: "main".to_owned(),
+                source: Some(self.git.url()),
+                base: Some("main".to_owned()),
             },
         )
         .unwrap();
@@ -256,6 +265,20 @@ impl KvmHarness {
         state["grants"][0]["token"].as_str().unwrap().to_owned()
     }
 
+    pub(crate) fn grant_token_for(&self, world_id: uuid::Uuid) -> String {
+        let state: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
+                .unwrap();
+        state["grants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|grant| grant["world_id"] == world_id.to_string())
+            .and_then(|grant| grant["token"].as_str())
+            .unwrap()
+            .to_owned()
+    }
+
     pub(crate) fn assert_grant_is_revoked(&self, token: String) {
         let mut stream = std::os::unix::net::UnixStream::connect(
             self.temp.path().join("gateway-transport.sock"),
@@ -268,6 +291,7 @@ impl KvmHarness {
                 token,
                 operation: ClientOperation::Cli {
                     args: Vec::new(),
+                    repository: None,
                     branch: None,
                     head: None,
                 },
@@ -277,154 +301,6 @@ impl KvmHarness {
         let response: TransportResponse = read_json_line(&mut stream).unwrap();
         assert!(!response.ok, "deleted world grant still works");
     }
-}
-
-fn spawn_gateway(temp: &Path, binary_dir: &Path, api: Option<(&str, &str, &Path)>) -> Child {
-    let control_socket = temp.join("gateway-control.sock");
-    let transport_socket = temp.join("gateway-transport.sock");
-    let log_path = temp.join("gateway.log");
-    for socket in [&control_socket, &transport_socket] {
-        match fs::remove_file(socket) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => panic!("remove stale gateway socket: {error}"),
-        }
-    }
-    let mut gateway = cmd!(
-        binary_dir.join("wt-agent-git-gateway"),
-        "serve",
-        "--control-socket",
-        &control_socket,
-        "--transport-socket",
-        &transport_socket,
-        "--state-file",
-        temp.join("gateway-state.json"),
-        "--local-provider",
-        format!("local.test={}", temp.display()),
-    );
-    gateway.stdout(Stdio::null());
-    if let Some((kind, base_url, token_file)) = api {
-        gateway
-            .env("WT_AGENT_GIT_TEST_PROVIDER_KIND", kind)
-            .env("WT_AGENT_GIT_TEST_API_BASE", base_url)
-            .env("WT_AGENT_GIT_TEST_TOKEN_FILE", token_file);
-    }
-    let log = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .unwrap();
-    let mut gateway = gateway
-        .stdout(log.try_clone().unwrap())
-        .stderr(log)
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    for socket in [&control_socket, &transport_socket] {
-        while !socket.exists() {
-            assert_gateway_running(&mut gateway, &log_path);
-            assert!(Instant::now() < deadline, "gateway socket did not appear");
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    assert_gateway_running(&mut gateway, &log_path);
-    gateway
-}
-
-fn assert_gateway_running(gateway: &mut Child, log_path: &Path) {
-    let Some(status) = gateway.try_wait().unwrap() else {
-        return;
-    };
-    let log = fs::read_to_string(log_path).unwrap_or_else(|error| error.to_string());
-    panic!(
-        "test gateway exited during startup ({status}); stop any installed \
-         wt-agent-git-gateway service before running the KVM E2E\n\
-         gateway log ({}):\n{log}",
-        log_path.display()
-    );
-}
-
-fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Result<(), String>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let kind = kind.to_owned();
-    let head = head.to_owned();
-    let fixture = std::thread::spawn(move || {
-        let (stream, _) = listener
-            .accept()
-            .map_err(|error| format!("accept provider fixture request: {error}"))?;
-        serve_provider_api_request(stream, &kind, &head)?;
-        Ok(())
-    });
-    (base_url, fixture)
-}
-
-fn serve_provider_api_request(mut stream: TcpStream, kind: &str, head: &str) -> Result<(), String> {
-    let mut reader = BufReader::new(
-        stream
-            .try_clone()
-            .map_err(|error| format!("clone provider fixture stream: {error}"))?,
-    );
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .map_err(|error| format!("read provider fixture request: {error}"))?;
-    let path = request_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or("provider fixture request has no path")?
-        .to_owned();
-    let mut content_length = 0;
-    let mut authenticated = false;
-    loop {
-        let mut header = String::new();
-        reader
-            .read_line(&mut header)
-            .map_err(|error| format!("read provider fixture header: {error}"))?;
-        if header == "\r\n" || header.is_empty() {
-            break;
-        }
-        let lowercase = header.to_ascii_lowercase();
-        if let Some(value) = lowercase.strip_prefix("content-length:") {
-            content_length = value
-                .trim()
-                .parse::<usize>()
-                .map_err(|error| format!("parse provider fixture content length: {error}"))?;
-        }
-        authenticated |= if kind == "github" {
-            lowercase.trim() == "authorization: bearer fixture-token"
-        } else {
-            lowercase.trim() == "private-token: fixture-token"
-        };
-    }
-    if !authenticated {
-        return Err("provider fixture request was not authenticated".to_owned());
-    }
-    let mut body = vec![0; content_length];
-    reader
-        .read_exact(&mut body)
-        .map_err(|error| format!("read provider fixture body: {error}"))?;
-    let response = match (kind, path.as_str()) {
-        ("github", "/graphql") => r#"{"data":{"viewer":{"login":"agent"},"repository":{"id":"repository-1","nameWithOwner":"acme/widget","viewerPermission":"WRITE","pullRequests":{"pageInfo":{"hasNextPage":false},"totalCount":0,"nodes":[]}}}}"#.to_owned(),
-        ("github", path) if path.starts_with("/repos/acme/widget/actions/runs?") => {
-            r#"{"total_count":0,"workflow_runs":[]}"#.to_owned()
-        }
-        ("gitlab", "/api/graphql") => format!(
-            r#"{{"data":{{"currentUser":{{"username":"agent"}},"project":{{"id":"project-1","fullPath":"acme/widget","userPermissions":{{"createMergeRequestIn":true}},"repository":{{"commit":{{"sha":"{head}"}}}},"mergeRequests":{{"pageInfo":{{"hasNextPage":false}},"nodes":[]}}}}}}}}"#
-        ),
-        ("gitlab", path) if path.starts_with("/api/v4/projects/acme%2Fwidget/pipelines?") => {
-            "[]".to_owned()
-        }
-        _ => return Err(format!("unexpected {kind} fixture request path: {path}")),
-    };
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
-        response.len()
-    );
-    stream
-        .write_all(response.as_bytes())
-        .map_err(|error| format!("write provider fixture response: {error}"))
 }
 
 impl Drop for KvmHarness {

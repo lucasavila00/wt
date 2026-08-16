@@ -30,6 +30,11 @@ SSH private key, and trusted host keys stay in encrypted systemd credentials.
 Host recipes never receive them. Tests use local fake provider services and
 keys, not developer credentials.
 
+All installed WT executables are static musl binaries except `wt-server`.
+The server is native to Ubuntu 24.04 because it links `libvirt.so`; setup
+installs and validates that host dependency. Installation rejects a designated
+static artifact if it contains a dynamic interpreter or GLIBC requirement.
+
 ## Reset
 
 This world-kind schema has no migration and keeps protocol version 1. Before

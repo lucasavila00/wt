@@ -103,6 +103,15 @@ devcontainer up --log-level debug --log-format text --workspace-folder "$workspa
     --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
     'workspace=$(pwd -P) && git config --global --add safe.directory "$workspace"'
+while IFS= read -r host; do
+    test -n "$host" || continue
+    devcontainer exec --workspace-folder "$workspace" /bin/sh -c '
+        host=$1
+        git config --global --replace-all "url.ag::git@$host:.insteadOf" "git@$host:"
+        git config --global --add "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
+        git config --global --add "url.ag::git@$host:.insteadOf" "https://$host/"
+    ' sh "$host"
+done < "$state/agent-git-providers"
 /usr/local/bin/wt-app-info verify-user "$app_user"
 /usr/local/bin/wt-app-info > "$state/app.json"
 app_address=$(/usr/local/bin/wt-app-info address)

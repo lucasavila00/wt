@@ -58,12 +58,14 @@ fn run_api(config_path: &Path) -> Result<()> {
     let host_worker = wt_host::CompositeWorker::new(
         host_provider,
         Duration::from_secs(server.guest.recipe_timeout_seconds),
-    );
+        server.host_agent_git_config(),
+    )
+    .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
     let gateway_socket = std::env::var_os("WT_AGENT_GIT_TEST_CONTROL_SOCKET")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(wt_devcontainer_git::CONTROL_SOCKET));
-    let gateway = wt_devcontainer_git::ControlClient::new(gateway_socket);
+        .unwrap_or_else(|| PathBuf::from(wt_agent_git::CONTROL_SOCKET));
+    let gateway = wt_agent_git::ControlClient::new(gateway_socket);
     let service =
         Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {

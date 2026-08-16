@@ -19,6 +19,7 @@ pub(crate) struct Worker {
     pub(crate) starts: Arc<AtomicUsize>,
     pub(crate) destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     pub(crate) host_user_data: Arc<Mutex<Vec<String>>>,
+    pub(crate) host_git_grants: Arc<Mutex<Vec<String>>>,
     pub(crate) complete: bool,
     pub(crate) provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     pub(crate) missing: bool,
@@ -37,17 +38,14 @@ pub(crate) struct UnavailableGateway {
     pub(crate) revocations: Arc<AtomicUsize>,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct RejectingGateway;
-
 impl AgentGitGateway for Gateway {
     fn reserve(
         &self,
         world_id: Uuid,
-        _source: &str,
-        _base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
-        Ok(wt_devcontainer_git::Grant {
+        _source: Option<&str>,
+        _base: Option<&str>,
+    ) -> Result<wt_agent_git::Grant, String> {
+        Ok(wt_agent_git::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })
@@ -62,10 +60,10 @@ impl AgentGitGateway for UnavailableGateway {
     fn reserve(
         &self,
         world_id: Uuid,
-        _source: &str,
-        _base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
-        Ok(wt_devcontainer_git::Grant {
+        _source: Option<&str>,
+        _base: Option<&str>,
+    ) -> Result<wt_agent_git::Grant, String> {
+        Ok(wt_agent_git::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })
@@ -74,21 +72,6 @@ impl AgentGitGateway for UnavailableGateway {
     fn revoke(&self, _grant_id: &str) -> Result<(), String> {
         self.revocations.fetch_add(1, Ordering::SeqCst);
         Err("gateway unavailable".to_owned())
-    }
-}
-
-impl AgentGitGateway for RejectingGateway {
-    fn reserve(
-        &self,
-        _world_id: Uuid,
-        _source: &str,
-        _base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
-        Err("Git gateway must not be used".into())
-    }
-
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
-        Err("Git gateway must not be used".into())
     }
 }
 
@@ -116,6 +99,10 @@ impl WorldWorker for Worker {
                     .lock()
                     .unwrap()
                     .push(spec.user_data.to_owned());
+                self.host_git_grants
+                    .lock()
+                    .unwrap()
+                    .push(spec.git_grant.to_owned());
                 WorldKind::Host
             }
         };

@@ -13,6 +13,7 @@ ssh CONTEXT.NAME-vs codex --version
 
 The generated aliases log in as `wt`. The regular alias attaches to Byobu; use
 `-vs` for direct SSH and remote commands. Run `codex` interactively once to
-sign in. The recipe does not contain Codex or Git credentials.
+sign in. Git and `ag-git` use the WT gateway without placing provider
+credentials in the world.
 
 The environment can run normal workspace checks, but not the real KVM E2E.

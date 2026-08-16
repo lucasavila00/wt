@@ -49,6 +49,52 @@ case "${1:-}" in
             exit 1
         fi
         ;;
+    agent-git)
+        vsock_port=$(cat /tmp/wt-host-agent-git-vsock-port)
+        case "$vsock_port" in
+            ''|*[!0-9]*) echo "invalid agent Git vsock port" >&2; exit 1 ;;
+        esac
+        install -m 0755 /tmp/wt-host-agent-git-relay /usr/local/bin/wt-agent-git-relay
+        install -m 0755 /tmp/wt-host-agent-git-remote /usr/local/bin/git-remote-ag
+        install -m 0755 /tmp/wt-host-ag-git /usr/local/bin/ag-git
+        install -d -m 0700 -o wt -g wt /var/lib/wt-agent-git
+        install -m 0600 -o wt -g wt /tmp/wt-host-agent-git-grant \
+            /var/lib/wt-agent-git/grant
+        while IFS= read -r host; do
+            test -n "$host" || continue
+            runuser --user wt -- git config --global --replace-all \
+                "url.ag::git@$host:.insteadOf" "git@$host:"
+            runuser --user wt -- git config --global --add \
+                "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
+            runuser --user wt -- git config --global --add \
+                "url.ag::git@$host:.insteadOf" "https://$host/"
+        done < /tmp/wt-host-agent-git-providers
+        cat > /etc/systemd/system/wt-agent-git-relay.service <<EOF
+[Unit]
+Description=WT agent Git relay
+
+[Service]
+Type=simple
+User=wt
+ExecStart=/usr/local/bin/wt-agent-git-relay --vsock-port $vsock_port
+Restart=on-failure
+RuntimeDirectory=wt-agent-git
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        rm -f /tmp/wt-host-agent-git-grant /tmp/wt-host-agent-git-relay \
+            /tmp/wt-host-agent-git-remote /tmp/wt-host-ag-git \
+            /tmp/wt-host-agent-git-providers /tmp/wt-host-agent-git-vsock-port
+        systemctl daemon-reload
+        if ! systemctl enable --now wt-agent-git-relay.service; then
+            service_diagnostics wt-agent-git-relay.service
+            exit 1
+        fi
+        ;;
     user-data)
         install -d -m 0700 -o root -g root "$state"
         temporary=$state/user-data.wt-new
@@ -71,7 +117,7 @@ case "${1:-}" in
         sync
         ;;
     *)
-        echo "usage: wt-host-prepare wait|access|user-data|remove-key" >&2
+        echo "usage: wt-host-prepare wait|access|agent-git|user-data|remove-key" >&2
         exit 2
         ;;
 esac

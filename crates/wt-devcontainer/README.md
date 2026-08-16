@@ -7,6 +7,6 @@ repository, starts the devcontainer, installs app SSH helpers, and verifies
 readiness. Start restores the existing containers and SSH access.
 
 Machine backends stay in provider crates. Git transport stays in
-`wt-devcontainer-git`.
+`wt-agent-git`.
 
 Contract: [Devcontainer worlds](../../docs/worlds/devcontainer.md).
