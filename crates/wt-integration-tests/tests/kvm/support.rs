@@ -2,6 +2,7 @@ use super::fixture::*;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
@@ -29,6 +30,7 @@ pub(crate) struct KvmHarness {
     pub(crate) server_config_path: PathBuf,
     pub(crate) guest_public_key: String,
     pub(crate) initial_disk_nodes: usize,
+    _images: TempDir,
     api_fixture: Option<JoinHandle<Result<(), String>>>,
 }
 
@@ -60,6 +62,17 @@ impl KvmHarness {
         };
         assert_eq!(config.agent_git.vsock_port, vsock_port);
         config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
+        let installed_devcontainer_image = config.image.devcontainer_path.clone();
+        let installed_host_image = config.image.host_path.clone();
+        let images = timings.run("prepare isolated golden images", || {
+            isolated_test_images(
+                &workspace,
+                &installed_devcontainer_image,
+                &installed_host_image,
+            )
+        });
+        config.image.devcontainer_path = images.path().join("devcontainer.qcow2");
+        config.image.host_path = images.path().join("host.qcow2");
         config.install.binary_dir = workspace.join("target/debug");
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
@@ -104,6 +117,7 @@ impl KvmHarness {
             server_config_path,
             guest_public_key,
             initial_disk_nodes,
+            _images: images,
             api_fixture: None,
         }
     }
@@ -369,6 +383,55 @@ fn unique_vsock_port() -> u32 {
             return port;
         }
     }
+}
+
+fn isolated_test_images(
+    workspace: &Path,
+    installed_devcontainer: &Path,
+    installed_host: &Path,
+) -> TempDir {
+    let images = tempfile::Builder::new()
+        .prefix("wt-kvm-images-")
+        .tempdir_in("/var/tmp")
+        .unwrap();
+    fs::set_permissions(images.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    let devcontainer = images.path().join("devcontainer.qcow2");
+    let host = images.path().join("host.qcow2");
+    for (installed, isolated) in [
+        (installed_devcontainer, devcontainer.as_path()),
+        (installed_host, host.as_path()),
+    ] {
+        run(
+            cmd!(
+                "qemu-img",
+                "create",
+                "-q",
+                "-f",
+                "qcow2",
+                "-F",
+                "qcow2",
+                "-b",
+                installed,
+                isolated,
+            ),
+            "create isolated KVM test image",
+        );
+    }
+    let prepare = workspace.join("assets/world/host/prepare.sh");
+    run(
+        cmd!(
+            "virt-customize",
+            "--no-network",
+            "-a",
+            &host,
+            "--upload",
+            format!("{}:/usr/local/libexec/wt-host-prepare", prepare.display()),
+            "--chmod",
+            "0755:/usr/local/libexec/wt-host-prepare",
+        ),
+        "install current host prepare asset in isolated test image",
+    );
+    images
 }
 
 fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Result<(), String>>) {
