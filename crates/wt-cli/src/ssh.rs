@@ -305,6 +305,7 @@ mod tests {
             &client_config,
             &[ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance,
             }],
         )
@@ -318,6 +319,7 @@ mod tests {
             &client_config,
             &[ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance: replacement_instance,
             }],
         )
@@ -367,6 +369,7 @@ mod tests {
             &local_config(),
             &[ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance,
             }],
         )
@@ -407,6 +410,7 @@ mod tests {
             &local_config(),
             &[ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance,
             }],
         )
@@ -511,6 +515,7 @@ mod tests {
             &local_config(),
             &[ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance,
             }],
         )
@@ -528,6 +533,7 @@ mod tests {
         std::env::set_var("HOME", temp.path());
         let instance = |id, context: &str| ContextInstance {
             context: context.into(),
+            agent_git_report_count: 0,
             instance: Instance {
                 id,
                 name: InstanceName::parse("same").unwrap(),
@@ -596,6 +602,7 @@ mod tests {
         std::env::set_var("HOME", temp.path());
         let instance = |name: &str, host: &str| ContextInstance {
             context: "lab".into(),
+            agent_git_report_count: 0,
             instance: Instance {
                 id: Uuid::new_v4(),
                 name: InstanceName::parse(name).unwrap(),

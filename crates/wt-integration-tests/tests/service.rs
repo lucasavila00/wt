@@ -9,6 +9,8 @@ use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_server::store::{Store, StoredApplication, StoredInstance};
 
+#[path = "service/agent_git_reports.rs"]
+mod agent_git_reports;
 #[path = "service/host_failure.rs"]
 mod host_failure;
 #[path = "service/support.rs"]
@@ -60,7 +62,7 @@ fn host_create_returns_setup_then_reconciles_running() {
     assert_eq!(retry.id, instance.id);
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
 
-    let Response::Instances { instances } = Service::new(
+    let Response::Instances { instances, .. } = Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
         Worker {
             complete: true,
@@ -156,7 +158,7 @@ fn list_reconciles_completed_setup_to_running() {
     service(&temp, Worker::default())
         .execute("tester", Operation::Create(create("sample")))
         .unwrap();
-    let Response::Instances { instances } = service(
+    let Response::Instances { instances, .. } = service(
         &temp,
         Worker {
             complete: true,
@@ -184,7 +186,7 @@ fn stopped_world_can_be_started() {
         stopped: true,
         ..Worker::default()
     };
-    let Response::Instances { instances } = service(&temp, stopped_worker)
+    let Response::Instances { instances, .. } = service(&temp, stopped_worker)
         .execute("tester", Operation::List)
         .unwrap()
     else {
@@ -593,7 +595,7 @@ fn reconciliation_marks_missing_or_changed_worlds_as_error() {
         service(&temp, Worker::default())
             .execute("tester", Operation::Create(create("sample")))
             .unwrap();
-        let Response::Instances { instances } = service(&temp, worker)
+        let Response::Instances { instances, .. } = service(&temp, worker)
             .execute("tester", Operation::List)
             .unwrap()
         else {
@@ -618,7 +620,7 @@ fn reconciliation_rejects_changed_app_identity() {
     )
     .execute("tester", Operation::List)
     .unwrap();
-    let Response::Instances { instances } = service(
+    let Response::Instances { instances, .. } = service(
         &temp,
         Worker {
             complete: true,

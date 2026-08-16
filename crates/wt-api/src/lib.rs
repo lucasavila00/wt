@@ -1,6 +1,9 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
+mod reports;
 mod validation;
+
+pub use reports::{AgentGitReport, AgentGitReportKind};
 
 pub use validation::{
     validate_git_branch, validate_ssh_git_source, InstanceName, InvalidGitBranch, InvalidGitSource,
@@ -61,6 +64,8 @@ pub enum Operation {
     Get { name: InstanceName },
     Start { name: InstanceName },
     Delete { name: InstanceName },
+    ListAgentGitReports,
+    ClearAgentGitReports,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -190,9 +195,23 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
-    Instance { instance: Box<Instance> },
-    Instances { instances: Vec<Instance> },
-    Deleted { name: InstanceName },
+    Instance {
+        instance: Box<Instance>,
+    },
+    Instances {
+        instances: Vec<Instance>,
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        agent_git_report_counts: std::collections::BTreeMap<Uuid, u64>,
+    },
+    AgentGitReports {
+        reports: Vec<AgentGitReport>,
+    },
+    AgentGitReportsCleared {
+        count: u64,
+    },
+    Deleted {
+        name: InstanceName,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -23,6 +23,7 @@ name = "ag-git"
 path = "src/bin/ag-git.rs"
 
 [dependencies]
+wt-registry = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 graphql_client = { workspace = true }
@@ -34,5 +35,6 @@ url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+diesel = { workspace = true }
 insta = { workspace = true }
 tempfile = "3.27.0"

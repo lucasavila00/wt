@@ -1,4 +1,7 @@
+mod reports;
 pub mod schema;
+
+pub use reports::{AgentGitReport, AgentGitReportKind};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;

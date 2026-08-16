@@ -18,6 +18,7 @@ use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
 
 mod code;
+mod reports;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt")]
@@ -43,6 +44,10 @@ enum Command {
     Code { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
+    /// Show reports submitted about ag-git.
+    Reports,
+    /// Clear reports submitted about ag-git.
+    ClearReports,
 }
 
 #[derive(Debug, Subcommand)]
@@ -171,6 +176,8 @@ fn run() -> Result<()> {
             let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());
         }
+        Command::Reports => reports::show(&config)?,
+        Command::ClearReports => reports::clear(&config)?,
     }
     Ok(())
 }
@@ -573,7 +580,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
 fn instance_detail(item: &ContextInstance) -> String {
     let instance = &item.instance;
     let target = format!("{}.{}", item.context, instance.name);
-    match instance.status {
+    let detail = match instance.status {
         wt_api::InstanceStatus::Stopped => format!(
             "{}; run `wt start {target}` or `wt rm {target}`",
             instance.last_error.as_deref().unwrap_or("guest stopped")
@@ -583,6 +590,23 @@ fn instance_detail(item: &ContextInstance) -> String {
             instance.last_error.as_deref().unwrap_or("world failed")
         ),
         _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
+    };
+    if item.agent_git_report_count == 0 {
+        return detail;
+    }
+    let reports = format!(
+        "{} ag-git report{}; run `wt reports`",
+        item.agent_git_report_count,
+        if item.agent_git_report_count == 1 {
+            ""
+        } else {
+            "s"
+        }
+    );
+    if detail == "-" {
+        reports
+    } else {
+        format!("{detail}; {reports}")
     }
 }
 

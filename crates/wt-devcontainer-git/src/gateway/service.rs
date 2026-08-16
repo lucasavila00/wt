@@ -250,7 +250,7 @@ impl Gateway {
         bridge_child(stream, child, None)
     }
 
-    fn serve_cli(
+    pub(super) fn serve_cli(
         &self,
         args: &[String],
         _branch: Option<&str>,
@@ -260,9 +260,17 @@ impl Gateway {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(HELP.to_owned());
         }
+        let command = api::CliCommand::parse(args)?;
+        if let Some((kind, description)) = command.agent_git_report() {
+            let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+            wt_registry::Registry::open(&self.config.database_path)
+                .context("open WT registry")?
+                .insert_agent_git_report(world_id, kind, description)
+                .context("store agent Git report")?;
+            return Ok("Recorded ag-git report for this world.\n".to_owned());
+        }
         let source = parse_source(&grant.source)?;
         let provider = self.provider(&source.host)?;
-        let command = api::CliCommand::parse(args)?;
         let api = match provider {
             Provider::Ssh {
                 kind,

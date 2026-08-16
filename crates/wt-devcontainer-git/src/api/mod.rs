@@ -127,6 +127,18 @@ pub(crate) enum CliCommand {
     CancelRun {
         run: u64,
     },
+    ReportAgGitBug {
+        description: String,
+    },
+    ReportAgGitIssue {
+        description: String,
+    },
+    SuggestAgGitImprovement {
+        description: String,
+    },
+    RequestAgGitFeature {
+        description: String,
+    },
 }
 
 #[allow(

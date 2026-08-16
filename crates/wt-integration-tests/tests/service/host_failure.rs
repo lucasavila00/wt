@@ -97,7 +97,7 @@ fn failed_host_setup_is_reconciled_and_retained() {
         host_setup_error: true,
         ..Worker::default()
     };
-    let Response::Instances { instances } = service(&temp, worker.clone())
+    let Response::Instances { instances, .. } = service(&temp, worker.clone())
         .execute("tester", Operation::List)
         .unwrap()
     else {

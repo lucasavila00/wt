@@ -37,6 +37,12 @@ impl CliCommand {
                 nonempty(head, "head")?;
                 nonempty(base, "base")?;
             }
+            Self::ReportAgGitBug { description }
+            | Self::ReportAgGitIssue { description }
+            | Self::SuggestAgGitImprovement { description }
+            | Self::RequestAgGitFeature { description } => {
+                nonempty(description.trim(), "description")?
+            }
         }
         if let Self::EditMr { title, body, .. } = self {
             if title.is_none() && body.is_none() {
@@ -67,6 +73,10 @@ impl CliCommand {
             Self::RetryJob { .. } => "retry the CI job",
             Self::CancelJob { .. } => "cancel the CI job",
             Self::CancelRun { .. } => "cancel the CI run",
+            Self::ReportAgGitBug { .. } => "report an ag-git bug",
+            Self::ReportAgGitIssue { .. } => "report an ag-git issue",
+            Self::SuggestAgGitImprovement { .. } => "suggest an ag-git improvement",
+            Self::RequestAgGitFeature { .. } => "request an ag-git feature",
         }
     }
 
@@ -93,6 +103,28 @@ impl CliCommand {
             | Self::CancelJob { job } => format!("job {job}"),
             Self::ListCi { commit } => format!("commit {commit}"),
             Self::OpenMr { head, base, .. } => format!("mr {head} -> {base}"),
+            Self::ReportAgGitBug { .. }
+            | Self::ReportAgGitIssue { .. }
+            | Self::SuggestAgGitImprovement { .. }
+            | Self::RequestAgGitFeature { .. } => "ag-git".to_owned(),
+        }
+    }
+
+    pub(crate) fn agent_git_report(&self) -> Option<(wt_registry::AgentGitReportKind, &str)> {
+        match self {
+            Self::ReportAgGitBug { description } => {
+                Some((wt_registry::AgentGitReportKind::Bug, description))
+            }
+            Self::ReportAgGitIssue { description } => {
+                Some((wt_registry::AgentGitReportKind::Issue, description))
+            }
+            Self::SuggestAgGitImprovement { description } => {
+                Some((wt_registry::AgentGitReportKind::Improvement, description))
+            }
+            Self::RequestAgGitFeature { description } => {
+                Some((wt_registry::AgentGitReportKind::FeatureRequest, description))
+            }
+            _ => None,
         }
     }
 }
