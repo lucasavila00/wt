@@ -1,4 +1,6 @@
 use super::*;
+use diesel::prelude::*;
+use wt_registry::schema::{disk_nodes, guests, worlds};
 
 #[test]
 fn parses_supported_sources_without_shell_syntax() {
@@ -39,6 +41,60 @@ fn git_header_explains_the_environment_without_prior_context() {
 #[test]
 fn cli_status_and_unavailable_command_are_actionable() {
     insta::assert_snapshot!("cli_unavailable", cli_unavailable());
+}
+
+#[test]
+fn agent_git_reports_are_stored_for_the_authenticated_world_without_a_provider_api() {
+    let temp = tempfile::tempdir().unwrap();
+    let database_path = temp.path().join("instances.db");
+    let registry = wt_registry::Registry::open(&database_path).unwrap();
+    let world_id = insert_world(&registry);
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path,
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+    let mut grant = test_grant();
+    grant.world_id = world_id.to_string();
+
+    let commands = [
+        r#"{"action":"report_ag_git_bug","description":"job logs disappear"}"#,
+        r#"{"action":"report_ag_git_issue","description":"the hint is unclear"}"#,
+        r#"{"action":"suggest_ag_git_improvement","description":"show the check name"}"#,
+        r#"{"action":"request_ag_git_feature","description":"support CI search"}"#,
+    ];
+    let outputs = commands
+        .map(|command| {
+            gateway
+                .serve_cli(&[command.into()], None, None, &grant)
+                .unwrap()
+        })
+        .concat();
+
+    insta::assert_snapshot!(outputs, @r###"
+    Recorded ag-git report for this world.
+    Recorded ag-git report for this world.
+    Recorded ag-git report for this world.
+    Recorded ag-git report for this world.
+    "###);
+    let reports = registry.list_agent_git_reports("alice").unwrap();
+    assert_eq!(reports.len(), 4);
+    assert!(reports.iter().all(|report| report.world_id == world_id));
+    assert_eq!(
+        reports.iter().map(|report| report.kind).collect::<Vec<_>>(),
+        vec![
+            wt_registry::AgentGitReportKind::Bug,
+            wt_registry::AgentGitReportKind::Issue,
+            wt_registry::AgentGitReportKind::Improvement,
+            wt_registry::AgentGitReportKind::FeatureRequest,
+        ]
+    );
+    assert_eq!(reports[0].description, "job logs disappear");
 }
 
 #[test]
@@ -102,4 +158,43 @@ fn test_grant() -> GrantRecord {
         prefix: BRANCH_PREFIX.to_owned(),
         revoked: false,
     }
+}
+
+fn insert_world(registry: &wt_registry::Registry) -> Uuid {
+    let id = Uuid::new_v4();
+    let disk_id = Uuid::new_v4();
+    registry
+        .transaction::<_, wt_registry::RegistryError>(|connection| {
+            diesel::insert_into(disk_nodes::table)
+                .values((
+                    disk_nodes::id.eq(disk_id.to_string()),
+                    disk_nodes::parent_id.eq(None::<String>),
+                    disk_nodes::immutable.eq(false),
+                ))
+                .execute(connection)?;
+            diesel::insert_into(guests::table)
+                .values((
+                    guests::id.eq(id.to_string()),
+                    guests::kind.eq("devcontainer"),
+                    guests::backend_id.eq(format!("wt-{}", id.simple())),
+                    guests::head_disk_id.eq(disk_id.to_string()),
+                    guests::vcpus.eq(1_i64),
+                    guests::memory_mib.eq(1024_i64),
+                    guests::disk_gib.eq(10_i64),
+                ))
+                .execute(connection)?;
+            diesel::insert_into(worlds::table)
+                .values((
+                    worlds::id.eq(id.to_string()),
+                    worlds::owner.eq("alice"),
+                    worlds::name.eq("checkout"),
+                    worlds::status.eq("running"),
+                    worlds::setup_fingerprint.eq("fingerprint"),
+                    worlds::ssh_host_keys.eq("[]"),
+                ))
+                .execute(connection)?;
+            Ok(())
+        })
+        .unwrap();
+    id
 }

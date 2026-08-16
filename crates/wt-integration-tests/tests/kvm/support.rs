@@ -158,7 +158,7 @@ impl KvmHarness {
     }
 
     pub(crate) fn sync_inventory(&self) -> Vec<wt_api::Instance> {
-        let Response::Instances { instances } =
+        let Response::Instances { instances, .. } =
             call_api(self.temp.path(), &self.server_config_path, Operation::List)
         else {
             panic!("expected list response");
@@ -431,7 +431,7 @@ impl Drop for KvmHarness {
     fn drop(&mut self) {
         let worlds =
             match call_api_result(self.temp.path(), &self.server_config_path, Operation::List) {
-                Ok(Response::Instances { instances }) => instances,
+                Ok(Response::Instances { instances, .. }) => instances,
                 Ok(response) => {
                     eprintln!("KVM cleanup: unexpected list response: {response:?}");
                     return;
@@ -571,6 +571,7 @@ pub(crate) fn sync_inventory(instances: &[wt_api::Instance]) -> Result<(), Strin
             .cloned()
             .map(|instance| wt_cli::inventory::ContextInstance {
                 context: "local".into(),
+                agent_git_report_count: 0,
                 instance,
             })
             .collect::<Vec<_>>(),

@@ -1,10 +1,11 @@
 ---
 source: crates/wt-devcontainer-git/src/gateway/tests.rs
-assertion_line: 30
+assertion_line: 32
 expression: HELP
 ---
-ag-git reads and changes explicitly identified Git provider resources. It accepts
-exactly one JSON command object and rejects unknown fields.
+ag-git reads and changes explicitly identified Git provider resources and records
+feedback about ag-git itself. It accepts exactly one JSON command object and
+rejects unknown fields.
 
 USAGE:
 ag-git '<JSON>'
@@ -30,13 +31,20 @@ type AgGitCommand =
 | { action: "set_thread"; mr: number; thread: string; resolved: boolean }
 | { action: "retry_job"; job: number }
 | { action: "cancel_job"; job: number }
-| { action: "cancel_run"; run: number };
+| { action: "cancel_run"; run: number }
+| { action: "report_ag_git_bug"; description: string }
+| { action: "report_ag_git_issue"; description: string }
+| { action: "suggest_ag_git_improvement"; description: string }
+| { action: "request_ag_git_feature"; description: string };
 
 EXAMPLE:
 ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
 
 `show_mr_for_branch` returns the single open MR from the named branch to the
 gateway grant's base branch. It fails when there is no match or multiple matches.
+
+The four ag-git reporting actions store feedback against this authenticated world
+without contacting the Git provider.
 
 The provider and project come from this world's gateway grant. Every other
 resource is explicit. IDs must be positive integers. Commit values must be 7 to

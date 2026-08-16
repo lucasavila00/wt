@@ -9,6 +9,8 @@ use wt_api::{
 };
 use wt_registry::Resources;
 
+mod reports;
+
 pub trait AgentGitGateway {
     fn reserve(
         &self,
@@ -118,6 +120,8 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Operation::Get { name } => self.get(owner, &name),
             Operation::Start { name } => self.start(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
+            Operation::ListAgentGitReports => self.list_agent_git_reports(owner),
+            Operation::ClearAgentGitReports => self.clear_agent_git_reports(owner),
         }
     }
 
@@ -396,7 +400,14 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .into_iter()
             .map(|stored| stored.instance)
             .collect();
-        Ok(Response::Instances { instances })
+        let agent_git_report_counts = self
+            .store
+            .agent_git_report_counts(owner)
+            .map_err(map_store_error)?;
+        Ok(Response::Instances {
+            instances,
+            agent_git_report_counts,
+        })
     }
 
     fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {

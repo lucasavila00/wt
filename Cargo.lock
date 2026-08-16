@@ -2511,6 +2511,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "diesel",
  "graphql_client",
  "insta",
  "serde",
@@ -2520,6 +2521,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "wt-registry",
 ]
 
 [[package]]
@@ -2617,6 +2619,7 @@ version = "0.0.0"
 dependencies = [
  "diesel",
  "diesel_migrations",
+ "libsqlite3-sys",
  "serde",
  "tempfile",
  "thiserror 2.0.18",

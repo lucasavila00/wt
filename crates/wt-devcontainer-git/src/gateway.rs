@@ -18,6 +18,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
     pub state_file: PathBuf,
+    pub database_path: PathBuf,
     pub providers: Vec<Provider>,
 }
 
@@ -610,8 +611,9 @@ fn write_packet(to: &mut impl Write, payload: &[u8]) -> Result<()> {
 }
 
 const HELP: &str = "\
-ag-git reads and changes explicitly identified Git provider resources. It accepts\n\
-exactly one JSON command object and rejects unknown fields.\n\
+ag-git reads and changes explicitly identified Git provider resources and records\n\
+feedback about ag-git itself. It accepts exactly one JSON command object and\n\
+rejects unknown fields.\n\
 \n\
 USAGE:\n\
     ag-git '<JSON>'\n\
@@ -637,13 +639,20 @@ TYPESCRIPT COMMAND TYPE:\n\
       | { action: \"set_thread\"; mr: number; thread: string; resolved: boolean }\n\
       | { action: \"retry_job\"; job: number }\n\
       | { action: \"cancel_job\"; job: number }\n\
-      | { action: \"cancel_run\"; run: number };\n\
+      | { action: \"cancel_run\"; run: number }\n\
+      | { action: \"report_ag_git_bug\"; description: string }\n\
+      | { action: \"report_ag_git_issue\"; description: string }\n\
+      | { action: \"suggest_ag_git_improvement\"; description: string }\n\
+      | { action: \"request_ag_git_feature\"; description: string };\n\
 \n\
 EXAMPLE:\n\
     ag-git '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch to the\n\
 gateway grant's base branch. It fails when there is no match or multiple matches.\n\
+\n\
+The four ag-git reporting actions store feedback against this authenticated world\n\
+without contacting the Git provider.\n\
 \n\
 The provider and project come from this world's gateway grant. Every other\n\
 resource is explicit. IDs must be positive integers. Commit values must be 7 to\n\

@@ -9,6 +9,7 @@ description = "Shared guest registry and host capacity admission for WT"
 [dependencies]
 diesel = { workspace = true }
 diesel_migrations = { workspace = true }
+libsqlite3-sys = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }

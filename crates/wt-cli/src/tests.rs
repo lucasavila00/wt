@@ -11,6 +11,7 @@ use wt_api::{
 fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
     ContextInstance {
         context: context.to_owned(),
+        agent_git_report_count: 0,
         instance: Instance {
             id: Uuid::new_v4(),
             name: InstanceName::parse(name).unwrap(),
@@ -83,6 +84,17 @@ fn formats_stopped_world_with_recovery_commands() {
 }
 
 #[test]
+fn ls_points_to_ag_git_reports_without_changing_world_status() {
+    let mut running = item("local", "jsdev", InstanceStatus::Running);
+    running.agent_git_report_count = 2;
+
+    insta::assert_snapshot!(format_instances(&[running]), @r###"
+    CONTEXT  NAME   KIND          STATUS   REPO  RESOURCES         DETAIL
+    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 ag-git reports; run `wt reports`
+    "###);
+}
+
+#[test]
 fn explains_memory_capacity() {
     insta::assert_snapshot!(
         capacity_message(
@@ -123,6 +135,20 @@ fn parses_start_target() {
         panic!("expected start command");
     };
     assert_eq!(name, "ars.mt3");
+}
+
+#[test]
+fn parses_agent_git_report_commands() {
+    assert!(matches!(
+        Cli::try_parse_from(["wt", "reports"]).unwrap().command,
+        Command::Reports
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["wt", "clear-reports"])
+            .unwrap()
+            .command,
+        Command::ClearReports
+    ));
 }
 
 #[test]

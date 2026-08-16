@@ -8,6 +8,7 @@ use wt_api::{ApiRequest, Instance, InstanceName, Operation, Response};
 pub struct ContextInstance {
     pub context: String,
     pub instance: Instance,
+    pub agent_git_report_count: u64,
 }
 
 #[derive(Debug)]
@@ -33,13 +34,24 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
                 continue;
             }
         };
-        let Response::Instances { instances } = response else {
+        let Response::Instances {
+            instances,
+            agent_git_report_counts,
+        } = response
+        else {
             failures.push(transport::wrong_response(context, "list"));
             continue;
         };
-        all.extend(instances.into_iter().map(|instance| ContextInstance {
-            context: context.name.clone(),
-            instance,
+        all.extend(instances.into_iter().map(|instance| {
+            let agent_git_report_count = agent_git_report_counts
+                .get(&instance.id)
+                .copied()
+                .unwrap_or_default();
+            ContextInstance {
+                context: context.name.clone(),
+                instance,
+                agent_git_report_count,
+            }
         }));
     }
     all.sort_by(|left, right| {
@@ -109,6 +121,7 @@ mod tests {
     fn item(context: &str, name: &str) -> ContextInstance {
         ContextInstance {
             context: context.into(),
+            agent_git_report_count: 0,
             instance: Instance {
                 id: Uuid::new_v4(),
                 name: InstanceName::parse(name).unwrap(),

@@ -135,7 +135,10 @@ mod tests {
         let thread = std::thread::spawn(move || {
             handle_stream(server, &|request| {
                 assert!(matches!(request.operation, Operation::List));
-                ApiResponse::ok(Response::Instances { instances: vec![] })
+                ApiResponse::ok(Response::Instances {
+                    instances: vec![],
+                    agent_git_report_counts: Default::default(),
+                })
             })
             .unwrap();
         });
@@ -145,7 +148,7 @@ mod tests {
         let wt_api::Outcome::Ok { response } = response.outcome else {
             panic!("expected successful response");
         };
-        let Response::Instances { instances } = *response else {
+        let Response::Instances { instances, .. } = *response else {
             panic!("expected instances response");
         };
         assert!(instances.is_empty());

@@ -1,4 +1,5 @@
 mod disk;
+mod reports;
 
 use crate::schema::{devcontainers, disk_nodes, guests, worlds};
 use diesel::prelude::*;

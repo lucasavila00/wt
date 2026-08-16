@@ -511,6 +511,12 @@ impl GitProviderApi for GitlabApi {
                     "Cancellation requested for run {run}."
                 )))
             }
+            CliCommand::ReportAgGitBug { .. }
+            | CliCommand::ReportAgGitIssue { .. }
+            | CliCommand::SuggestAgGitImprovement { .. }
+            | CliCommand::RequestAgGitFeature { .. } => {
+                unreachable!("agent Git reports are handled before provider commands")
+            }
         }
     }
 }

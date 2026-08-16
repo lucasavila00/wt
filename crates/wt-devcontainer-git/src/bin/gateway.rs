@@ -23,6 +23,8 @@ enum Command {
         control_socket: PathBuf,
         #[arg(long, default_value = "/var/lib/wt/agent-git/state.json")]
         state_file: PathBuf,
+        #[arg(long)]
+        database_path: Option<PathBuf>,
         #[arg(long, value_parser = parse_local_provider)]
         local_provider: Vec<(String, PathBuf)>,
         #[arg(long, value_parser = parse_ssh_provider)]
@@ -49,6 +51,7 @@ fn run() -> Result<()> {
     let Command::Serve {
         control_socket,
         state_file,
+        database_path,
         local_provider,
         github_provider,
         gitlab_provider,
@@ -56,6 +59,13 @@ fn run() -> Result<()> {
         vsock_port,
         no_vsock,
     } = Cli::parse().command;
+    let database_path = match database_path {
+        Some(path) => path,
+        None => std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .context("HOME is not set")?
+            .join(".local/state/wt/instances.db"),
+    };
     let fixture_api = fixture_api()?;
     let mut providers: Vec<_> = local_provider
         .into_iter()
@@ -86,6 +96,7 @@ fn run() -> Result<()> {
     );
     let gateway = Gateway::open(GatewayConfig {
         state_file,
+        database_path,
         providers,
     })?;
     let control = bind_unix(&control_socket, 0o600)?;
