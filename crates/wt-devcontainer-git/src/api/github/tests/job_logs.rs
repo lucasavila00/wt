@@ -48,7 +48,7 @@ fn running_job_log_can_be_read_outside_the_current_commit() {
 }
 
 #[test]
-fn completed_job_without_log_returns_check_run_diagnostics() {
+fn billing_blocked_job_without_log_returns_check_run_diagnostics() {
     let (base_url, server) = serve_with_statuses(vec![
         (
             ExpectedRequest {
@@ -57,7 +57,7 @@ fn completed_job_without_log_returns_check_run_diagnostics() {
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"{"id":95206818032,"name":"checks","status":"completed","conclusion":"failure","html_url":"https://github.test/jobs/95206818032","run_id":31964236640}"#,
+                response_body: include_str!("fixtures/billing_blocked_job.json"),
             },
             200,
         ),
@@ -79,7 +79,7 @@ fn completed_job_without_log_returns_check_run_diagnostics() {
                 required_header: Some(("authorization", "Bearer fixture-token")),
                 body_contains: None,
                 response_content_type: "application/json",
-                response_body: r#"[{"path":".github","start_line":1,"end_line":1,"annotation_level":"failure","title":"","message":"The job was not started because recent account payments have failed or your spending limit needs to be increased.","raw_details":""}]"#,
+                response_body: include_str!("fixtures/billing_blocked_annotations.json"),
             },
             200,
         ),
@@ -104,7 +104,7 @@ fn completed_job_without_log_returns_check_run_diagnostics() {
     Log: GitHub did not publish log bytes for this job.
     Diagnostics:
     - [failure] .github:1
-      The job was not started because recent account payments have failed or your spending limit needs to be increased.
+      The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
     Next step: ask the user to resolve this provider-side failure.
     "###);
     server.join().unwrap().unwrap();
