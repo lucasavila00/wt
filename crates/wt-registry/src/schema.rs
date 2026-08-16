@@ -1,13 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    hosts (id) {
-        id -> Text,
-        gateway_grant_id -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     agent_git_reports (id) {
         id -> Integer,
         world_id -> Text,
@@ -46,6 +39,13 @@ diesel::table! {
         vcpus -> BigInt,
         memory_mib -> BigInt,
         disk_gib -> BigInt,
+    }
+}
+
+diesel::table! {
+    hosts (id) {
+        id -> Text,
+        gateway_grant_id -> Nullable<Text>,
     }
 }
 

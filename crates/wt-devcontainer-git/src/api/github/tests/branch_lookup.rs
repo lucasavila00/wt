@@ -60,3 +60,35 @@ fn rejects_a_branch_without_an_open_pull_request() {
     );
     server.join().unwrap().unwrap();
 }
+
+#[test]
+fn refuses_to_choose_between_bases() {
+    let response = r#"[
+        {"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Main","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}},
+        {"number":8,"node_id":"pull-request-8","html_url":"https://github.test/acme/widget/pull/8","title":"Release","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"release","sha":"def456","repo":{"full_name":"acme/widget"}}}
+    ]"#;
+    let (base_url, server) = serve(vec![ExpectedRequest {
+        method: "GET",
+        path: "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Ffix-login&per_page=100",
+        required_header: Some(("authorization", "Bearer fixture-token")),
+        body_contains: None,
+        response_content_type: "application/json",
+        response_body: response,
+    }]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let error = provider
+        .execute_cli_command(
+            &project_scope(),
+            &CliCommand::ShowMrForBranch {
+                branch: "wt/fix-login".to_owned(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "GitHub returned 2 open pull requests from branch `wt/fix-login`; refusing to choose one"
+    );
+    server.join().unwrap().unwrap();
+}

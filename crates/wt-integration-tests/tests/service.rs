@@ -47,6 +47,8 @@ fn host_create_returns_setup_then_reconciles_running() {
         worker.host_user_data.lock().unwrap().as_slice(),
         &[user_data]
     );
+    assert_eq!(worker.host_git_grants.lock().unwrap().len(), 1);
+    assert!(worker.host_git_grants.lock().unwrap()[0].starts_with("token-"));
 
     let Response::Instance { instance: retry } = service
         .execute(

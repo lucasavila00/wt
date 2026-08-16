@@ -576,6 +576,8 @@ fn write_scope_comes_from_provider_resource_metadata() {
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
     request.source_branch = "wt/fix".to_owned();
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_ok());
+    request.source_project_id = Some(13);
+    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
 }
 
 #[test]

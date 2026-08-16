@@ -19,6 +19,7 @@ pub(crate) struct Worker {
     pub(crate) starts: Arc<AtomicUsize>,
     pub(crate) destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     pub(crate) host_user_data: Arc<Mutex<Vec<String>>>,
+    pub(crate) host_git_grants: Arc<Mutex<Vec<String>>>,
     pub(crate) complete: bool,
     pub(crate) provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     pub(crate) missing: bool,
@@ -98,6 +99,10 @@ impl WorldWorker for Worker {
                     .lock()
                     .unwrap()
                     .push(spec.user_data.to_owned());
+                self.host_git_grants
+                    .lock()
+                    .unwrap()
+                    .push(spec.git_grant.to_owned());
                 WorldKind::Host
             }
         };
