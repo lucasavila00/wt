@@ -277,20 +277,12 @@ impl LibvirtProvider {
             .map_err(|error| context("write machine progress", error))?;
         let disk = world::disk_path(&self.config.worlds_dir, spec.disk_id);
         run(
-            cmd!(
-                "qemu-img",
-                "create",
-                "-q",
-                "-f",
-                "qcow2",
-                "-F",
-                "qcow2",
-                "-b",
-                &self.config.image,
-                &disk,
-                format!("{}G", spec.disk_gib),
-            ),
-            "create qcow2 overlay",
+            copy_image_command(&self.config.image, &disk),
+            "copy golden image into world disk",
+        )?;
+        run(
+            resize_disk_command(&disk, spec.disk_gib),
+            "resize world disk",
         )?;
         self.start_domain(spec, &disk, true)?;
         writeln!(progress, "Waiting for the guest transport...")
@@ -434,6 +426,22 @@ fn create_overlay(
     )?;
     fs::set_permissions(destination, fs::Permissions::from_mode(0o660))
         .map_err(|error| context("set copy-on-write disk permissions", error))
+}
+
+fn copy_image_command(source: &std::path::Path, destination: &std::path::Path) -> Command {
+    cmd!(
+        "qemu-img",
+        "convert",
+        "-q",
+        "-O",
+        "qcow2",
+        source,
+        destination,
+    )
+}
+
+fn resize_disk_command(disk: &std::path::Path, disk_gib: u64) -> Command {
+    cmd!("qemu-img", "resize", "-q", disk, format!("{disk_gib}G"))
 }
 
 fn ensure_thawed(domain: &Domain) -> Result<(), WorkerError> {
@@ -630,7 +638,7 @@ fn prepare_qemu_file_access(
             0o2770,
             "set machine directory permissions",
         ),
-        (disk, 0o660, "set qcow2 overlay permissions"),
+        (disk, 0o660, "set world disk permissions"),
         (
             paths.seed.as_path(),
             0o640,

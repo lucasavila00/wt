@@ -1,8 +1,8 @@
 # KVM and NoCloud
 
 `wt-libvirt` owns machine creation, inspection, start, and deletion. It creates
-qcow2 overlays, libvirt domains, NoCloud seed images, network identity, and QEMU
-guest-agent transport.
+independent qcow2 world disks, libvirt domains, NoCloud seed images, network
+identity, and QEMU guest-agent transport.
 
 Every machine seed contains separate files:
 
@@ -28,9 +28,10 @@ Shared recipes live in `assets/world/shared`; kind recipes live beside their
 kind. [ADR 0027](../adr/0027-build-images-in-kvm.md) records the build contract.
 
 Each image has its own provenance manifest and checksum. Image paths cannot be
-the same file. A world disk cannot be smaller than its backing image; the
-provider rejects it before creating the overlay. Per-world writable disks and
-SSH host keys remain unique.
+the same file. A world disk cannot be smaller than its template image; the
+provider rejects it before copying and resizing the image. The resulting world
+disk has no golden-image backing dependency. Setup may replace stale golden
+images automatically without stopping existing worlds.
 
 ## Readiness
 
