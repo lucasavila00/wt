@@ -411,6 +411,7 @@ impl GitProviderApi for GithubApi {
             CliCommand::ReplyThread { mr, thread, body } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
+                self.require_review_thread(scope.project, *mr, thread)?;
                 self.graphql.execute_graphql::<GithubReplyToReviewThread>(
                     self.graphql_path,
                     github_reply_to_review_thread::Variables {
@@ -429,6 +430,7 @@ impl GitProviderApi for GithubApi {
             } => {
                 let request = self.read_pull_request(scope.project, *mr)?;
                 Self::require_writable_pull_request(scope, &request)?;
+                self.require_review_thread(scope.project, *mr, thread)?;
                 if *resolved {
                     self.graphql.execute_graphql::<GithubResolveReviewThread>(
                         self.graphql_path,

@@ -77,7 +77,19 @@ struct GrantRecord {
     id: String,
     token: String,
     world_id: String,
+    #[serde(default, rename = "source", skip_serializing_if = "Option::is_none")]
+    legacy_source: Option<String>,
+    #[serde(default, rename = "base", skip_serializing_if = "Option::is_none")]
+    legacy_base: Option<String>,
+    #[serde(default, rename = "prefix", skip_serializing_if = "Option::is_none")]
+    legacy_prefix: Option<String>,
     revoked: bool,
+}
+
+impl GrantRecord {
+    fn is_legacy_scoped(&self) -> bool {
+        self.legacy_source.is_some() || self.legacy_base.is_some() || self.legacy_prefix.is_some()
+    }
 }
 
 fn cli_unavailable() -> String {
@@ -98,7 +110,7 @@ fn git_context_header(source: &str) -> String {
         .unwrap_or_else(|_| source.to_owned());
     format!(
         "remote: This is a WT-managed development environment for a coding agent.\n\
-remote: The developer's SSH keys and GitHub or GitLab credentials are not available here.\n\
+remote: The gateway does not expose developer SSH keys or provider credentials.\n\
 remote: Do not look for credentials or use gh or glab.\n\
 remote: WT gives you read access to every repository available to this gateway.\n\
 remote: This Git operation is for project {project}.\n\

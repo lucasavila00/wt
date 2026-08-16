@@ -452,6 +452,22 @@ impl GithubApi {
             .collect()
     }
 
+    fn require_review_thread(
+        &self,
+        project: &str,
+        mr: u64,
+        thread: &ReviewThreadHandle,
+    ) -> Result<()> {
+        if !self
+            .read_review_threads(project, mr)?
+            .iter()
+            .any(|candidate| candidate.handle == *thread)
+        {
+            bail!("review thread `{thread}` does not belong to MR {mr}");
+        }
+        Ok(())
+    }
+
     pub(super) fn require_writable_pull_request(
         scope: &ProviderProjectScope<'_>,
         request: &PullRequest,
@@ -473,14 +489,22 @@ impl GithubApi {
         Ok(())
     }
 
-    fn require_writable_run(scope: &ProviderProjectScope<'_>, run: &WorkflowRun) -> Result<()> {
-        if !run
-            .head_branch
-            .as_deref()
-            .is_some_and(|branch| branch.starts_with(scope.prefix))
+    pub(super) fn require_writable_run(
+        scope: &ProviderProjectScope<'_>,
+        run: &WorkflowRun,
+    ) -> Result<()> {
+        if run
+            .head_repository
+            .as_ref()
+            .map(|repository| repository.full_name.as_str())
+            != Some(scope.project)
+            || !run
+                .head_branch
+                .as_deref()
+                .is_some_and(|branch| branch.starts_with(scope.prefix))
         {
             bail!(
-                "CI run {} is not for a writable {}* ref",
+                "CI run {} is outside the writable {}* scope",
                 run.id,
                 scope.prefix
             );

@@ -13,10 +13,10 @@ Gateway grants are tied to one repository. This prevents host worlds from using
 ## Decision
 
 Use the same grant rules for every world. A grant is bound to the world, not a
-repository. It can read every repository available to the gateway's configured
-provider credentials. It can write only branches under `wt/`; reject other
-branches and tags. Apply the same rule to `ag-git` mutations by resolving the
-named MR or CI resource before changing it.
+repository. Through the gateway it can read every repository available to the
+configured provider credentials and write only branches under `wt/`; reject
+other branches and tags. Apply the same rule to `ag-git` mutations by resolving
+the named MR, thread, or CI resource before changing it.
 
 A world may open an MR from an existing `wt/*` branch to any explicit base in
 the same repository. Looking up an MR by branch must find exactly one open MR.
@@ -33,10 +33,14 @@ Install the relay, `git-remote-ag`, and `ag-git` in every new host world. Persis
 each world's grant, start its relay during provisioning and on boot, and revoke
 it when the world is removed.
 
+Host SSH agent forwarding remains a separate, unrestricted credential path.
+The `wt/*` rule governs gateway traffic, not direct use of the forwarded agent.
+Revoke old repository-scoped grants when the gateway loads them; those worlds
+must be recreated.
+
 ## Consequences
 
-- Every world can use Git and `ag-git` across repositories without receiving
-  provider credentials.
-- World write access remains limited to `wt/*` branches.
-- Existing worlds must be recreated to use the repository-independent client
-  and grant.
+- Every world can use the gateway across repositories without receiving its
+  provider keys or tokens.
+- Gateway write access remains limited to `wt/*` branches.
+- Existing worlds must be recreated after their old grants are revoked.

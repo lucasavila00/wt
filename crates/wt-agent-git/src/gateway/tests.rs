@@ -43,6 +43,32 @@ fn cli_status_and_unavailable_command_are_actionable() {
 }
 
 #[test]
+fn opening_the_gateway_revokes_legacy_repository_scoped_grants() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_file = temp.path().join("gateway.json");
+    fs::write(
+        &state_file,
+        r#"{"grants":[{"id":"legacy","token":"secret","world_id":"world","source":"git@github.com:acme/widget.git","base":"main","prefix":"wt/","revoked":false}]}"#,
+    )
+    .unwrap();
+
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: state_file.clone(),
+        database_path: temp.path().join("instances.db"),
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+
+    assert!(gateway.state.lock().unwrap().grants[0].revoked);
+    let persisted: State = serde_json::from_slice(&fs::read(state_file).unwrap()).unwrap();
+    assert!(persisted.grants[0].revoked);
+}
+
+#[test]
 fn agent_git_reports_are_stored_for_the_authenticated_world_without_a_provider_api() {
     let temp = tempfile::tempdir().unwrap();
     let database_path = temp.path().join("instances.db");
@@ -169,6 +195,9 @@ fn test_grant() -> GrantRecord {
         id: "id".to_owned(),
         token: "token".to_owned(),
         world_id: "world".to_owned(),
+        legacy_source: None,
+        legacy_base: None,
+        legacy_prefix: None,
         revoked: false,
     }
 }

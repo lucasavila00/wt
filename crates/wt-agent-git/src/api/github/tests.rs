@@ -403,6 +403,46 @@ fn lists_threads_by_pull_request_number() {
 }
 
 #[test]
+fn refuses_a_thread_handle_from_another_pull_request() {
+    let (base_url, server) = serve(vec![
+        ExpectedRequest {
+            method: "GET",
+            path: "/repos/acme/widget/pulls/7",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: None,
+            response_content_type: "application/json",
+            response_body: r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
+        },
+        ExpectedRequest {
+            method: "POST",
+            path: "/graphql",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: Some("GithubReadPullRequestByNumber"),
+            response_content_type: "application/json",
+            response_body: r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":0,"nodes":[]}}]}}}}}"#,
+        },
+    ]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let error = provider
+        .execute_cli_command(
+            &project_scope(),
+            &CliCommand::ReplyThread {
+                mr: 7,
+                thread: ReviewThreadHandle::new("thread-from-another-mr"),
+                body: "No".to_owned(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "review thread `thread-from-another-mr` does not belong to MR 7"
+    );
+    server.join().unwrap().unwrap();
+}
+
+#[test]
 fn write_scope_comes_from_provider_resource_metadata() {
     let mut request = PullRequest {
         number: 7,
@@ -429,6 +469,28 @@ fn write_scope_comes_from_provider_resource_metadata() {
     assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_err());
     request.head.reference = "wt/fix".to_owned();
     assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_ok());
+}
+
+#[test]
+fn ci_write_scope_requires_the_selected_repository() {
+    let mut run = WorkflowRun {
+        id: 91,
+        name: String::new(),
+        status: String::new(),
+        conclusion: None,
+        html_url: None,
+        head_sha: "abc123".to_owned(),
+        head_branch: Some("wt/fix".to_owned()),
+        head_repository: Some(WorkflowRunRepository {
+            full_name: "acme/widget".to_owned(),
+        }),
+    };
+    assert!(GithubApi::require_writable_run(&project_scope(), &run).is_ok());
+
+    run.head_repository = Some(WorkflowRunRepository {
+        full_name: "fork/widget".to_owned(),
+    });
+    assert!(GithubApi::require_writable_run(&project_scope(), &run).is_err());
 }
 
 #[test]

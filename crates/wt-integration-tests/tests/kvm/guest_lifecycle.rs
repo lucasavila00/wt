@@ -148,7 +148,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test -d /home/wt/wt/.git; ",
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
-            "test ! -S /run/wt-agent-git/gateway.sock; ",
+            "test -S /run/wt-agent-git/gateway.sock; ",
             "test ! -e /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
@@ -157,11 +157,46 @@ fn agent_git_transport_works_without_provider_credentials() {
             "cd /home/wt/wt; cargo clippy --workspace --all-targets -- -D warnings; ",
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
-            "test ! -e /usr/local/bin/wt-agent-git-relay; ",
+            "test -x /usr/local/bin/wt-agent-git-relay; ",
+            "test -x /usr/local/bin/git-remote-ag; ",
+            "test -x /usr/local/bin/ag-git; ",
+            "systemctl is-active --quiet wt-agent-git-relay.service; ",
             "test -x /usr/local/bin/wt-host-shell; ",
             "tmux has-session -t wt-host",
         ),
         "verify raw host world",
+    );
+    run_host(
+        &harness,
+        &host_name,
+        concat!(
+            "set -eu; ",
+            "git clone https://local.test/acme/widget.git /home/wt/gateway-check; ",
+            "cd /home/wt/gateway-check; ",
+            "git config user.name 'WT Host E2E'; ",
+            "git config user.email wt-host@example.invalid; ",
+            "git switch -c wt/host-gateway; ",
+            "printf 'host gateway\n' >> README.md; ",
+            "git commit -am 'host gateway'; ",
+            "git push -u origin wt/host-gateway; ",
+            "ag-git --help >/dev/null; ",
+            "git switch -c outside-host; ",
+            "printf 'outside\n' >> README.md; ",
+            "git commit -am outside; ",
+            "! git push origin refs/heads/outside-host; ",
+            "git tag outside-host; ",
+            "! git push origin refs/tags/outside-host",
+        ),
+        "use the host Git gateway with normal URLs",
+    );
+    assert_ref(&harness.git.repository, "refs/heads/wt/host-gateway", true);
+    assert_ref(&harness.git.repository, "refs/heads/outside-host", false);
+    assert_ref(&harness.git.repository, "refs/tags/outside-host", false);
+    run_host(
+        &harness,
+        &host_name,
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-relay.service); sudo kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done; git -C /home/wt/gateway-check fetch origin",
+        "restart the host Git relay",
     );
 
     run_guest(
@@ -322,7 +357,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git",
+        "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git && test -S /run/wt-agent-git/gateway.sock && systemctl is-active --quiet wt-agent-git-relay.service && git -C /home/wt/gateway-check fetch origin",
         "verify host state after KVM restart",
     );
 
@@ -349,7 +384,9 @@ fn agent_git_transport_works_without_provider_credentials() {
     let token = harness.grant_token();
     harness.delete(&name);
     harness.assert_grant_is_revoked(token);
+    let host_token = harness.grant_token_for(host.id);
     harness.delete(&host_name);
+    harness.assert_grant_is_revoked(host_token);
 
     let broken_name = unique_name("host-cloud-init-failure");
     let disks_before = count_disk_nodes(&harness.config.libvirt.worlds_dir);

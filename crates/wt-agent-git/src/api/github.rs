@@ -159,6 +159,12 @@ struct WorkflowRun {
     #[serde(default)]
     head_sha: String,
     head_branch: Option<String>,
+    head_repository: Option<WorkflowRunRepository>,
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+struct WorkflowRunRepository {
+    full_name: String,
 }
 
 #[derive(Deserialize)]

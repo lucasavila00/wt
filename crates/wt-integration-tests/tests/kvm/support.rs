@@ -56,6 +56,7 @@ impl KvmHarness {
             )
             .unwrap(),
         };
+        config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
         config.install.binary_dir = workspace.join("target/debug");
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
@@ -254,6 +255,20 @@ impl KvmHarness {
             serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
                 .unwrap();
         state["grants"][0]["token"].as_str().unwrap().to_owned()
+    }
+
+    pub(crate) fn grant_token_for(&self, world_id: uuid::Uuid) -> String {
+        let state: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
+                .unwrap();
+        state["grants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|grant| grant["world_id"] == world_id.to_string())
+            .and_then(|grant| grant["token"].as_str())
+            .unwrap()
+            .to_owned()
     }
 
     pub(crate) fn assert_grant_is_revoked(&self, token: String) {

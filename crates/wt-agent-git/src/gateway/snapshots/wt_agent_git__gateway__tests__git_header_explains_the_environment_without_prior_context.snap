@@ -3,7 +3,7 @@ source: crates/wt-agent-git/src/gateway/tests.rs
 expression: "git_context_header(\"git@github.com:group/project.git\")"
 ---
 remote: This is a WT-managed development environment for a coding agent.
-remote: The developer's SSH keys and GitHub or GitLab credentials are not available here.
+remote: The gateway does not expose developer SSH keys or provider credentials.
 remote: Do not look for credentials or use gh or glab.
 remote: WT gives you read access to every repository available to this gateway.
 remote: This Git operation is for project group/project.

@@ -48,7 +48,9 @@ recipe needs it.
 Every host receives `ag-git` and a revocable gateway grant. Configured provider
 URLs use the gateway automatically. The grant can read every available
 repository and write only branches under `wt/`; provider credentials remain on
-the server.
+the server. This branch restriction applies to gateway traffic. The forwarded
+workstation agent is a separate access path and is not restricted by the
+gateway.
 
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
