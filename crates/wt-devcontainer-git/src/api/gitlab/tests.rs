@@ -632,7 +632,6 @@ fn retries_only_a_job_from_the_current_head_pipeline() {
 
 fn scope() -> ProviderCommandScope<'static> {
     ProviderCommandScope {
-        host: "gitlab.test",
         project: "acme/widget",
         base: "main",
         prefix: "df1/",

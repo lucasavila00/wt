@@ -29,7 +29,6 @@ const CI_JOB_LOG_TAIL_LIMIT: usize = 64 * 1024;
 const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
 
 pub(crate) struct ProviderCommandScope<'a> {
-    pub host: &'a str,
     pub project: &'a str,
     pub base: &'a str,
     pub prefix: &'a str,
@@ -143,12 +142,11 @@ pub(crate) enum CliCommand {
 
 #[allow(
     dead_code,
-    reason = "contextual variants remain private provider test coverage for the post-push implementation"
+    reason = "contextual variants remain for shared provider implementations and private tests"
 )]
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ProviderCommand {
     ReadCurrentStatus,
-    ReadChangeRequestAfterPush,
     OpenChangeRequest {
         draft: bool,
     },
@@ -331,26 +329,6 @@ pub(crate) fn verify_provider_access(
     })
 }
 
-fn with_provider_command_context(
-    result: Result<ProviderCommandOutput>,
-    kind: ProviderKind,
-    scope: &ProviderCommandScope<'_>,
-    command: &ProviderCommand,
-) -> Result<ProviderCommandOutput> {
-    result.with_context(|| {
-        format!(
-            "ag-git could not {}\nProvider: {} ({})\nProject: {}\nBranch: {}\nBase: {}\nCurrent commit: {}\nCause",
-            command.action(),
-            provider_name(kind),
-            scope.host,
-            scope.project,
-            scope.branch,
-            scope.base,
-            scope.head
-        )
-    })
-}
-
 fn wait_for_review_or_ci_change(
     provider: &impl GitProviderApi,
     scope: &ProviderCommandScope<'_>,
@@ -370,45 +348,6 @@ fn wait_for_review_or_ci_change(
             );
         }
     }
-}
-
-pub(crate) fn execute_provider_command(
-    kind: ProviderKind,
-    token_file: &Path,
-    scope: &ProviderCommandScope<'_>,
-    command: &ProviderCommand,
-) -> Result<ProviderCommandOutput> {
-    let result = (|| {
-        let token = read_provider_token(token_file)?;
-        match kind {
-            ProviderKind::GitHub => {
-                github::GithubApi::new(scope.host, &token)?.execute_command(scope, command)
-            }
-            ProviderKind::GitLab => {
-                gitlab::GitlabApi::new(scope.host, &token)?.execute_command(scope, command)
-            }
-        }
-    })();
-    with_provider_command_context(result, kind, scope, command)
-}
-
-pub(crate) fn execute_provider_command_at_base(
-    kind: ProviderKind,
-    token_file: &Path,
-    base_url: &str,
-    scope: &ProviderCommandScope<'_>,
-    command: &ProviderCommand,
-) -> Result<ProviderCommandOutput> {
-    let result = (|| {
-        let token = read_provider_token(token_file)?;
-        match kind {
-            ProviderKind::GitHub => github::GithubApi::with_base_url(base_url.to_owned(), &token)?
-                .execute_command(scope, command),
-            ProviderKind::GitLab => gitlab::GitlabApi::with_base_url(base_url.to_owned(), &token)?
-                .execute_command(scope, command),
-        }
-    })();
-    with_provider_command_context(result, kind, scope, command)
 }
 
 pub(crate) fn execute_cli_provider_command(
@@ -476,33 +415,6 @@ fn read_provider_token(token_file: &Path) -> Result<String> {
         bail!("provider API credential is empty");
     }
     Ok(token.to_owned())
-}
-
-impl ProviderCommand {
-    fn action(&self) -> &'static str {
-        match self {
-            Self::ReadCurrentStatus => "read the current request, reviews, and CI status",
-            Self::ReadChangeRequestAfterPush => "read the request updated by the Git push",
-            Self::OpenChangeRequest { .. } => "open the pull or merge request",
-            Self::MarkChangeRequestReady => "mark the pull or merge request ready",
-            Self::MarkChangeRequestDraft => "mark the pull or merge request as draft",
-            Self::AddChangeRequestComment { .. } => "add a pull or merge request comment",
-            Self::EditChangeRequest { .. } => "edit the pull or merge request",
-            Self::ReadReviewThreads => "read review threads",
-            Self::ReplyToReviewThread { .. } => "reply to the review thread",
-            Self::SetReviewThreadResolved { resolved: true, .. } => "resolve the review thread",
-            Self::SetReviewThreadResolved {
-                resolved: false, ..
-            } => "reopen the review thread",
-            Self::ReadCiJobs => "read CI jobs for the current commit",
-            Self::ReadCiJobLog { .. } => "read the CI job log",
-            Self::RetryCiJob { .. } => "retry the CI job",
-            Self::CancelCiJob { .. } => "cancel the CI job",
-            Self::WaitForReviewOrCiChange => "wait for review or CI to change",
-            Self::CloseChangeRequest => "close the pull or merge request",
-            Self::ReopenChangeRequest => "reopen the pull or merge request",
-        }
-    }
 }
 
 fn provider_name(kind: ProviderKind) -> &'static str {

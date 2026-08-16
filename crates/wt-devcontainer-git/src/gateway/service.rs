@@ -237,8 +237,18 @@ impl Gateway {
                 .write_all(&commands)
                 .context("forward push commands")?;
             let sideband = push_uses_sideband(&commands)?;
+            let provider_api_available = match provider {
+                Provider::Ssh { .. } => true,
+                Provider::Local { api, .. } => api.is_some(),
+            };
             let message = |response: &[u8]| {
-                self.push_result_message(provider, &source, grant, &commands, response, sideband)
+                push_result_message(
+                    provider_api_available,
+                    &grant.base,
+                    &commands,
+                    response,
+                    sideband,
+                )
             };
             return bridge_child(
                 stream,
@@ -303,81 +313,43 @@ impl Gateway {
         }?;
         Ok(api::render_cli_command_output(output))
     }
+}
 
-    fn push_result_message(
-        &self,
-        provider: &Provider,
-        source: &GitSource,
-        grant: &GrantRecord,
-        commands: &[u8],
-        response: &[u8],
-        sideband: bool,
-    ) -> Result<String> {
-        let updates = successful_push_updates(commands, response, sideband)?;
-        let mut message = String::new();
-        for (head, branch) in updates {
-            if head.bytes().all(|byte| byte == b'0') {
-                message.push_str(&format!("Deleted branch `{branch}`.\n"));
-                continue;
-            }
-            message.push_str(&format!("Published branch `{branch}`.\n"));
-            let api = match provider {
-                Provider::Ssh {
-                    kind,
-                    api_token_file,
-                    ..
-                } => Some((*kind, api_token_file, None)),
-                Provider::Local { api, .. } => api
-                    .as_ref()
-                    .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
-            };
-            let Some((kind, api_token_file, api_base)) = api else {
-                message.push_str("Run `ag-git --help` for explicit provider commands.\n");
-                continue;
-            };
-            let scope = api::ProviderCommandScope {
-                host: &source.host,
-                project: source.path.trim_end_matches(".git"),
-                base: &grant.base,
-                prefix: &grant.prefix,
-                branch: &branch,
-                head: &head,
-            };
-            let result = match api_base {
-                Some(base) => api::execute_provider_command_at_base(
-                    kind,
-                    api_token_file,
-                    base,
-                    &scope,
-                    &api::ProviderCommand::ReadChangeRequestAfterPush,
-                ),
-                None => api::execute_provider_command(
-                    kind,
-                    api_token_file,
-                    &scope,
-                    &api::ProviderCommand::ReadChangeRequestAfterPush,
-                ),
-            };
-            match result {
-                Ok(api::ProviderCommandOutput::CurrentStatus(Some(request))) => {
-                    let mr = request.handle.trim_start_matches(['#', '!']);
-                    message.push_str(&format!(
-                        "Updated MR {mr}: {}\nInspect it with:\n  ag-git '{{\"action\":\"show_mr\",\"mr\":{mr}}}'\n  ag-git '{{\"action\":\"list_threads\",\"mr\":{mr}}}'\n  ag-git '{{\"action\":\"list_ci\",\"commit\":\"{head}\"}}'\n",
-                        request.url
-                    ));
-                }
-                Ok(api::ProviderCommandOutput::CurrentStatus(None)) => {
-                    message.push_str("This branch does not have a pull or merge request.\n");
-                    message.push_str(&format!(
-                        "Open one with:\n  ag-git '{{\"action\":\"open_mr\",\"head\":\"{branch}\",\"base\":\"{}\"}}'\n",
-                        grant.base
-                    ));
-                }
-                Ok(_) | Err(_) => {
-                    message.push_str("Run `ag-git --help` for explicit provider commands.\n")
-                }
-            }
+pub(super) fn push_result_message(
+    provider_api_available: bool,
+    base: &str,
+    commands: &[u8],
+    response: &[u8],
+    sideband: bool,
+) -> Result<String> {
+    let updates = successful_push_updates(commands, response, sideband)?;
+    let mut message = String::new();
+    for (head, branch) in updates {
+        if head.bytes().all(|byte| byte == b'0') {
+            message.push_str(&format!("Deleted branch `{branch}`.\n"));
+            continue;
         }
-        Ok(message)
+        message.push_str(&format!("Published branch `{branch}`.\n"));
+        if !provider_api_available {
+            message.push_str("Run `ag-git --help` for explicit provider commands.\n");
+            continue;
+        }
+        let show_mr = serde_json::json!({
+            "action": "show_mr_for_branch",
+            "branch": branch,
+        });
+        let open_mr = serde_json::json!({
+            "action": "open_mr",
+            "head": branch,
+            "base": base,
+        });
+        let list_ci = serde_json::json!({
+            "action": "list_ci",
+            "commit": head,
+        });
+        message.push_str(&format!(
+            "Inspect its open MR with:\n  ag-git '{show_mr}'\nIf that reports no open MR, open one with:\n  ag-git '{open_mr}'\nInspect CI with:\n  ag-git '{list_ci}'\n"
+        ));
     }
+    Ok(message)
 }

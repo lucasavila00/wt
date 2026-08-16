@@ -477,7 +477,6 @@ fn opens_pull_request_through_typed_graphql_mutation() {
 
 fn scope() -> ProviderCommandScope<'static> {
     ProviderCommandScope {
-        host: "github.test",
         project: "acme/widget",
         base: "main",
         prefix: "df1/",

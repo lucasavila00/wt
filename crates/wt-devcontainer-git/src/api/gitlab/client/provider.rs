@@ -34,11 +34,6 @@ impl GitProviderApi for GitlabApi {
             ProviderCommand::ReadCurrentStatus => Ok(ProviderCommandOutput::CurrentStatus(
                 self.read_change_request_snapshot(scope, true)?.request,
             )),
-            ProviderCommand::ReadChangeRequestAfterPush => {
-                Ok(ProviderCommandOutput::CurrentStatus(
-                    self.read_change_request_snapshot(scope, false)?.request,
-                ))
-            }
             ProviderCommand::OpenChangeRequest { draft } => {
                 let snapshot = self.read_change_request_snapshot(scope, false)?;
                 if let Some(request) = snapshot.request {
@@ -335,7 +330,6 @@ impl GitProviderApi for GitlabApi {
                     encoded_project(scope.project)
                 ))?;
                 let current = ProviderCommandScope {
-                    host: scope.host,
                     project: scope.project,
                     base,
                     prefix: scope.prefix,

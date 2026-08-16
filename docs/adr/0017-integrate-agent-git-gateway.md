@@ -185,27 +185,20 @@ WT: After pushing, use the explicit `ag-git` commands printed by the gateway.
 ```
 
 The gateway repeats the branch-name guidance if a bad branch reaches it. After
-a successful push without a request, it prints:
+a successful push, it reports the published branch and points to explicit
+commands without inferring whether a request exists:
 
 ```text
 remote: Published branch `wt/fix-login`.
-remote: This branch does not have a pull or merge request.
-remote: Open one with:
-remote:   ag-git open mr --head wt/fix-login --base main
+remote: Inspect its open MR with:
+remote:   ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+remote: If that reports no open MR, open one with:
+remote:   ag-git '{"action":"open_mr","base":"main","head":"wt/fix-login"}'
+remote: Inspect CI with:
+remote:   ag-git '{"action":"list_ci","commit":"0123456789abcdef"}'
 ```
 
-If a request already exists, the push output says what changed:
-
-```text
-remote: Published branch `wt/fix-login`.
-remote: Updated MR 123: https://gitlab.example/project/-/merge_requests/123
-remote: Inspect it with:
-remote:   ag-git show mr 123
-remote:   ag-git list threads mr 123
-```
-
-If the provider lookup fails after Git accepts the push, the push still
-succeeds and points the agent to `ag-git` for the current state.
+Git adds the `remote:` prefix when it renders the gateway's sideband message.
 
 ## Pull and merge requests
 
