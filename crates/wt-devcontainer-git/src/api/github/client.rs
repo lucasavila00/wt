@@ -362,6 +362,39 @@ impl GithubApi {
             .read_json(&format!("{}repos/{project}/pulls/{mr}", self.rest_prefix))
     }
 
+    fn read_open_pull_request_for_branch(
+        &self,
+        project: &str,
+        base: &str,
+        branch: &str,
+    ) -> Result<PullRequest> {
+        let (owner, _) = split_project(project)?;
+        let head = url::form_urlencoded::byte_serialize(format!("{owner}:{branch}").as_bytes())
+            .collect::<String>();
+        let base_query = url::form_urlencoded::byte_serialize(base.as_bytes()).collect::<String>();
+        let mut requests: Vec<PullRequest> = self.rest.read_json(&format!(
+            "{}repos/{project}/pulls?state=open&head={head}&base={base_query}&per_page=100",
+            self.rest_prefix
+        ))?;
+        requests.retain(|request| {
+            request.state == "open"
+                && request.head.reference == branch
+                && request
+                    .head
+                    .repo
+                    .as_ref()
+                    .is_some_and(|repository| repository.full_name == project)
+                && request.base.reference == base
+        });
+        match requests.len() {
+            0 => bail!("no open pull request from branch `{branch}` to `{base}`"),
+            1 => Ok(requests.pop().expect("one pull request remains")),
+            count => bail!(
+                "GitHub returned {count} open pull requests from branch `{branch}` to `{base}`; refusing to choose one"
+            ),
+        }
+    }
+
     fn read_review_threads(&self, project: &str, mr: u64) -> Result<Vec<ReviewThread>> {
         let (owner, name) = split_project(project)?;
         let data = self
@@ -538,7 +571,7 @@ impl GithubApi {
             .find(|job| job.handle.as_str() == handle.as_str())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "CI check `{handle}` is not a controllable GitHub Actions job for the current commit; run `ag-git ci` and use a current numeric Actions job handle"
+                    "CI check `{handle}` is not a controllable GitHub Actions job for the current commit; run a `list_ci` JSON action and use a current numeric Actions job handle"
                 )
             })
     }
@@ -554,7 +587,7 @@ impl GithubApi {
             .map(|(_, target)| target.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "review thread `{handle}` was not found; run `ag-git list threads mr ID` and use its provider ID"
+                    "review thread `{handle}` was not found; run a `list_threads` JSON action for the MR and use its provider ID"
                 )
             })
     }

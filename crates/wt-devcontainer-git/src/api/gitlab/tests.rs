@@ -1,6 +1,8 @@
 use super::*;
 use crate::api::test_server::{serve, ExpectedRequest};
 
+mod branch_lookup;
+
 const MERGE_REQUEST_RESPONSE: &str = r#"{
     "data": {
         "currentUser": { "username": "agent" },

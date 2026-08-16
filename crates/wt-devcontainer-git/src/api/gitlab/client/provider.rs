@@ -262,6 +262,11 @@ impl GitProviderApi for GitlabApi {
             CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
                 merge_request_status(self.read_merge_request(scope.project, *mr)?),
             )),
+            CliCommand::ShowMrForBranch { branch } => {
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_open_merge_request_for_branch(scope.project, scope.base, branch)?,
+                )))
+            }
             CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
                 self.read_pipeline(scope.project, *run)?,
             ))),

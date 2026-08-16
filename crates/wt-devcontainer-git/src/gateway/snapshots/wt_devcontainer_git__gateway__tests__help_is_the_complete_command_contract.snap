@@ -3,27 +3,41 @@ source: crates/wt-devcontainer-git/src/gateway/tests.rs
 assertion_line: 30
 expression: HELP
 ---
-ag-git reads and changes explicitly identified Git provider resources.
+ag-git reads and changes explicitly identified Git provider resources. It accepts
+exactly one JSON command object and rejects unknown fields.
 
 USAGE:
-ag-git COMMAND RESOURCE [ID] [OPTIONS]
+ag-git '<JSON>'
 
-COMMANDS:
-show mr|run|job ID
-list threads mr ID
-list ci commit SHA
-list jobs run ID
-log job ID
-wait mr|run|job ID
-open mr --head BRANCH --base BRANCH [--draft]
-set mr ID ready|draft|open|closed
-edit mr ID [--title TEXT] [--body TEXT]
-comment mr ID TEXT
-reply thread ID --mr MR_ID TEXT
-set thread ID --mr MR_ID resolved|open
-retry job ID
-cancel job|run ID
-help                              Show this help
+TYPESCRIPT COMMAND TYPE:
+type AgGitCommand =
+| { action: "show_mr"; mr: number }
+| { action: "show_mr_for_branch"; branch: string }
+| { action: "show_run"; run: number }
+| { action: "show_job"; job: number }
+| { action: "list_threads"; mr: number }
+| { action: "list_ci"; commit: string }
+| { action: "list_jobs"; run: number }
+| { action: "log_job"; job: number }
+| { action: "wait_mr"; mr: number }
+| { action: "wait_run"; run: number }
+| { action: "wait_job"; job: number }
+| { action: "open_mr"; head: string; base: string; draft?: boolean }
+| { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
+| { action: "edit_mr"; mr: number; title?: string; body?: string }
+| { action: "comment_mr"; mr: number; body: string }
+| { action: "reply_thread"; mr: number; thread: string; body: string }
+| { action: "set_thread"; mr: number; thread: string; resolved: boolean }
+| { action: "retry_job"; job: number }
+| { action: "cancel_job"; job: number }
+| { action: "cancel_run"; run: number };
+
+EXAMPLE:
+ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+
+`show_mr_for_branch` returns the single open MR from the named branch to the
+gateway grant's base branch. It fails when there is no match or multiple matches.
 
 The provider and project come from this world's gateway grant. Every other
-resource is explicit. Use normal Git for commits, fetches, pulls, and pushes.
+resource is explicit. IDs must be positive integers. Commit values must be 7 to
+64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.

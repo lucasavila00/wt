@@ -354,14 +354,14 @@ impl Gateway {
                 Ok(api::ProviderCommandOutput::CurrentStatus(Some(request))) => {
                     let mr = request.handle.trim_start_matches(['#', '!']);
                     message.push_str(&format!(
-                        "Updated MR {mr}: {}\nInspect it with:\n  ag-git show mr {mr}\n  ag-git list threads mr {mr}\n  ag-git list ci commit {head}\n",
+                        "Updated MR {mr}: {}\nInspect it with:\n  ag-git '{{\"action\":\"show_mr\",\"mr\":{mr}}}'\n  ag-git '{{\"action\":\"list_threads\",\"mr\":{mr}}}'\n  ag-git '{{\"action\":\"list_ci\",\"commit\":\"{head}\"}}'\n",
                         request.url
                     ));
                 }
                 Ok(api::ProviderCommandOutput::CurrentStatus(None)) => {
                     message.push_str("This branch does not have a pull or merge request.\n");
                     message.push_str(&format!(
-                        "Open one with:\n  ag-git open mr --head {branch} --base {}\n",
+                        "Open one with:\n  ag-git '{{\"action\":\"open_mr\",\"head\":\"{branch}\",\"base\":\"{}\"}}'\n",
                         grant.base
                     ));
                 }

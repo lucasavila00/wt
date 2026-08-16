@@ -14,20 +14,45 @@ fn ci_job_logs_keep_only_a_bounded_tail() {
 }
 
 #[test]
-fn command_parser_rejects_ambiguous_inputs() {
+fn command_parser_accepts_only_valid_json_objects() {
+    for json in [
+        r#"{"action":"show_mr","mr":7}"#,
+        r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#,
+        r#"{"action":"show_run","run":91}"#,
+        r#"{"action":"show_job","job":44}"#,
+        r#"{"action":"list_threads","mr":7}"#,
+        r#"{"action":"list_ci","commit":"abc1234"}"#,
+        r#"{"action":"list_jobs","run":91}"#,
+        r#"{"action":"log_job","job":44}"#,
+        r#"{"action":"wait_mr","mr":7}"#,
+        r#"{"action":"wait_run","run":91}"#,
+        r#"{"action":"wait_job","job":44}"#,
+        r#"{"action":"open_mr","head":"wt/fix","base":"main"}"#,
+        r#"{"action":"set_mr","mr":7,"state":"ready"}"#,
+        r#"{"action":"edit_mr","mr":7,"title":"Fix login"}"#,
+        r#"{"action":"comment_mr","mr":7,"body":"Done"}"#,
+        r#"{"action":"reply_thread","mr":7,"thread":"T1","body":"Done"}"#,
+        r#"{"action":"set_thread","mr":7,"thread":"T1","resolved":true}"#,
+        r#"{"action":"retry_job","job":44}"#,
+        r#"{"action":"cancel_job","job":44}"#,
+        r#"{"action":"cancel_run","run":91}"#,
+    ] {
+        CliCommand::parse(&[json.to_owned()]).unwrap();
+    }
     assert_eq!(
-        CliCommand::parse(&["wait".into(), "job".into(), "42".into()]).unwrap(),
+        CliCommand::parse(&[r#"{"action":"wait_job","job":42}"#.into()]).unwrap(),
         CliCommand::WaitJob { job: 42 }
     );
     assert_eq!(
+        CliCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])
+            .unwrap(),
+        CliCommand::ShowMrForBranch {
+            branch: "wt/fix".to_owned(),
+        }
+    );
+    assert_eq!(
         CliCommand::parse(&[
-            "open".into(),
-            "mr".into(),
-            "--head".into(),
-            "wt/fix".into(),
-            "--base".into(),
-            "main".into(),
-            "--draft".into(),
+            r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":true}"#.into()
         ])
         .unwrap(),
         CliCommand::OpenMr {
@@ -37,9 +62,10 @@ fn command_parser_rejects_ambiguous_inputs() {
         }
     );
     assert!(CliCommand::parse(&[]).is_err());
-    assert!(CliCommand::parse(&["wait".into()]).is_err());
-    assert!(CliCommand::parse(&["log".into(), "42".into()]).is_err());
-    assert!(CliCommand::parse(&["open-mr".into()]).is_err());
+    assert!(CliCommand::parse(&["show".into(), "mr".into(), "7".into()]).is_err());
+    assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":0}"#.into()]).is_err());
+    assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":7,"extra":true}"#.into()]).is_err());
+    assert!(CliCommand::parse(&[r#"{"action":"edit_mr","mr":7}"#.into()]).is_err());
 }
 
 #[test]
@@ -54,7 +80,7 @@ fn command_errors_include_complete_agent_context() {
     };
     let error = with_provider_command_context(
         Err(anyhow::anyhow!(
-            "review thread `T9` was not found; run `ag-git list threads mr ID` and use its provider ID"
+            "review thread `T9` was not found; run a `list_threads` JSON action for the MR and use its provider ID"
         )),
         ProviderKind::GitHub,
         &scope,
@@ -72,7 +98,7 @@ fn command_errors_include_complete_agent_context() {
     Branch: df1/fix-login
     Base: main
     Current commit: abc123
-    Cause: review thread `T9` was not found; run `ag-git list threads mr ID` and use its provider ID
+    Cause: review thread `T9` was not found; run a `list_threads` JSON action for the MR and use its provider ID
     "###);
 }
 

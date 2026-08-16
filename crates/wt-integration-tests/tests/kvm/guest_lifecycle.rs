@@ -261,7 +261,10 @@ fn agent_git_transport_works_without_provider_credentials() {
         let status = app_output(
             &harness,
             &name,
-            &format!("ag-git list ci commit {}", local.trim()),
+            &format!(
+                "ag-git '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
+                local.trim()
+            ),
             "read explicit CI through provider API fixture",
         );
         assert!(status.contains("No CI resources for the commit"));

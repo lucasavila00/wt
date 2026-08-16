@@ -253,6 +253,11 @@ impl GitProviderApi for GithubApi {
             CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
                 pull_request_status(self.read_pull_request(scope.project, *mr)?),
             )),
+            CliCommand::ShowMrForBranch { branch } => {
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_open_pull_request_for_branch(scope.project, scope.base, branch)?,
+                )))
+            }
             CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
                 self.read_workflow_run(scope.project, *run)?,
             ))),
@@ -464,7 +469,7 @@ impl GitProviderApi for GithubApi {
                 Self::require_writable_run(scope, &run)?;
                 if matches!(command, CliCommand::CancelJob { .. }) {
                     bail!(
-                        "GitHub cannot cancel one job; use `ag-git cancel run {}`",
+                        "GitHub cannot cancel one job; use a `cancel_run` JSON action for run {}",
                         run.id
                     );
                 }
