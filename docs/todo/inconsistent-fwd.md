@@ -1,0 +1,2 @@
+ - Devcontainers do not receive the workstation SSH agent.
+  - Host SSH sessions still forward the workstation agent. Direct Git through that forwarded agent bypasses gateway policy; only gateway traffic is restricted to wt/*.
