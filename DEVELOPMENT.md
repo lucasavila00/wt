@@ -108,7 +108,6 @@ host-world test. Choose the `local` context and the name `host-manual` when
 prompted:
 
 ```bash
-ssh-add -l
 wt new host examples/host-world/cloud-init.yaml
 wt ls
 ssh host-manual-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
@@ -117,11 +116,10 @@ ssh host-manual
 wt rm host-manual
 ```
 
-`wt new host` enters `host-manual` Byobu and runs cloud-init there. Keep that
-connection open while setup needs the forwarded agent. `host-manual-vs` is
-direct guest SSH. The example uses a public checkout; replace its URL with the
-SSH URL of a private project to use your agent for cloning. Run `codex` once
-inside the session to sign in.
+`wt new host` enters `host-manual` Byobu and runs cloud-init there.
+`host-manual-vs` is direct guest SSH. The example checkout uses the agent Git
+gateway and does not need the workstation SSH agent. Run `codex` once inside
+the session to sign in.
 
 Both environments run the normal Rust checks for this workspace. They cannot
 run the real KVM E2E from inside a world.

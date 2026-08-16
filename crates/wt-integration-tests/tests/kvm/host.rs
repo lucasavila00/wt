@@ -41,11 +41,7 @@ pub(crate) fn wait_for_live_host_output(
     }
 }
 
-pub(crate) fn spawn_host_byobu(
-    harness: &KvmHarness,
-    name: &InstanceName,
-    agent_socket: &Path,
-) -> Child {
+pub(crate) fn spawn_host_byobu(harness: &KvmHarness, name: &InstanceName) -> Child {
     let mut command = cmd!(
         "ssh",
         "-F",
@@ -55,7 +51,7 @@ pub(crate) fn spawn_host_byobu(
         format!("local.{name}"),
     );
     command
-        .env("SSH_AUTH_SOCK", agent_socket)
+        .env_remove("SSH_AUTH_SOCK")
         .env("TERM", "xterm-ghostty")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -109,17 +105,26 @@ pub(crate) fn run_host(harness: &KvmHarness, name: &InstanceName, command: &str,
     ensure_success(action, &output).unwrap();
 }
 
-pub(crate) fn run_host_with_agent(
+pub(crate) fn run_host_with_forwarded_agent(
     harness: &KvmHarness,
     name: &InstanceName,
     agent_socket: &Path,
     command: &str,
     action: &str,
 ) {
-    let output = host_command(harness, name, command)
-        .env("SSH_AUTH_SOCK", agent_socket)
-        .output()
-        .unwrap();
+    let output = cmd!(
+        "ssh",
+        "-A",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}-vs"),
+        command,
+    )
+    .env("SSH_AUTH_SOCK", agent_socket)
+    .output()
+    .unwrap();
     ensure_success(action, &output).unwrap();
 }
 
@@ -139,7 +144,7 @@ pub(crate) fn host_command(
     )
 }
 
-pub(crate) fn start_host_byobu(harness: &KvmHarness, name: &InstanceName, agent_socket: &Path) {
+pub(crate) fn start_host_byobu(harness: &KvmHarness, name: &InstanceName) {
     let mut command = cmd!(
         "ssh",
         "-F",
@@ -149,7 +154,7 @@ pub(crate) fn start_host_byobu(harness: &KvmHarness, name: &InstanceName, agent_
         format!("local.{name}"),
     );
     command
-        .env("SSH_AUTH_SOCK", agent_socket)
+        .env_remove("SSH_AUTH_SOCK")
         .env("TERM", "xterm-ghostty")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -157,19 +162,7 @@ pub(crate) fn start_host_byobu(harness: &KvmHarness, name: &InstanceName, agent_
     let mut child = command.spawn().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        let mut probe = cmd!(
-            "ssh",
-            "-F",
-            harness.temp.path().join(".ssh/config"),
-            "-i",
-            &harness.git.guest_key,
-            format!("local.{name}-vs"),
-            concat!(
-                "test \"$(tmux show-environment -t wt-host SSH_AUTH_SOCK)\" = ",
-                "'SSH_AUTH_SOCK=/home/wt/.local/state/wt/ssh-agent' && ",
-                "SSH_AUTH_SOCK=/home/wt/.local/state/wt/ssh-agent ssh-add -l",
-            ),
-        );
+        let mut probe = host_command(harness, name, "tmux has-session -t wt-host");
         probe.env_remove("SSH_AUTH_SOCK");
         let output = probe.output().unwrap();
         if output.status.success() {

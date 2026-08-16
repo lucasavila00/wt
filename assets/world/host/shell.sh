@@ -8,15 +8,6 @@ state=${XDG_STATE_HOME:-"$HOME/.local/state"}/wt
 mkdir -p "$state"
 exec 9>"$state/host-shell.lock"
 flock 9
-agent="$state/ssh-agent"
-if test -n "${SSH_AUTH_SOCK:-}" && test -S "$SSH_AUTH_SOCK"; then
-    temporary="$state/.ssh-agent.new"
-    rm -f "$temporary"
-    ln -s "$SSH_AUTH_SOCK" "$temporary"
-    mv -f "$temporary" "$agent"
-fi
-SSH_AUTH_SOCK=$agent
-export SSH_AUTH_SOCK
 if ! "$tmux" has-session -t wt-host 2>/dev/null; then
     attempt=1
     command=/bin/bash

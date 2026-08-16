@@ -5,7 +5,8 @@
 - Supersedes: [ADR 0001](0001-agent-forwarded-first-ssh-provisioning.md)'s
   Git authentication and
   [ADR 0003](0003-forward-the-workstation-ssh-agent-to-devcontainers.md)
-- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
+- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md) and
+  [ADR 0040](0040-stop-automatic-ssh-agent-forwarding.md)
 
 ## Context
 

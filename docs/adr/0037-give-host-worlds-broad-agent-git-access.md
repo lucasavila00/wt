@@ -4,6 +4,7 @@
 - Date: 2026-08-16
 - Extends: [ADR 0017](0017-integrate-agent-git-gateway.md)
 - Amends: [ADR 0017](0017-integrate-agent-git-gateway.md)'s grant scope
+- Amended by: [ADR 0040](0040-stop-automatic-ssh-agent-forwarding.md)
 
 ## Context
 
