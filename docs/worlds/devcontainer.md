@@ -11,6 +11,8 @@ environment contract.
 Each world has its own KVM guest, disk, Docker daemon, checkout, containers,
 Byobu session, guest SSH identity, and app SSH identity. Compose recipes are
 supported; the primary devcontainer is the container an editor would open.
+Docker does not apply a seccomp profile because the KVM guest, rather than the
+containers inside it, is the profiling boundary.
 
 ## Access
 
