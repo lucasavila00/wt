@@ -30,6 +30,7 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | `wt ls` | retained | List kind, status, resources, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
+| `wt ssh NAME` | retained | Sync managed aliases and connect to Byobu |
 | `wt rm NAME` | retained | Destroy the world |
 | `wt sync` | retained | Rewrite managed SSH inventory |
 
@@ -68,5 +69,5 @@ Devcontainer aliases are documented in
 `CONTEXT.NAME` attaches to Byobu and `CONTEXT.NAME-vs` is direct guest SSH. Both
 host aliases forward the workstation's SSH agent. Devcontainer aliases do not.
 
-`wt new`, `wt ls`, `wt start`, and `wt rm` synchronize automatically. Run
-`wt sync` on another workstation after changing worlds elsewhere.
+`wt new`, `wt ls`, `wt start`, `wt rm`, and `wt ssh` synchronize automatically.
+Run `wt sync` on another workstation after changing worlds elsewhere.

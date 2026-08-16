@@ -22,7 +22,8 @@ supported; the primary devcontainer is the container an editor would open.
 
 Short aliases exist only when the name is unique across contexts. WT pins both
 guest and app host keys. `wt code NAME` resolves the live workspace mount and
-opens the `-vs` alias with VS Code Remote-SSH.
+opens the `-vs` alias with VS Code Remote-SSH. `wt ssh NAME` refreshes the
+managed aliases and connects to the qualified persistent Byobu alias.
 
 The first `ssh CONTEXT.NAME` completes setup. It clones the repository, starts
 the recipe, and leaves its output in Byobu and the guest setup log. Later

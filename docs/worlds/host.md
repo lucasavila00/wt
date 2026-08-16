@@ -34,6 +34,9 @@ ssh CONTEXT.NAME
 ssh CONTEXT.NAME-vs
 ```
 
+`wt ssh NAME` refreshes the managed aliases and connects to the qualified
+persistent Byobu alias.
+
 There is no `-host` alias. `wt code` rejects host worlds; use `-vs` directly for
 plain SSH, SFTP, or an editor.
 
