@@ -55,6 +55,7 @@ pub(crate) fn ensure(
     input: &InstallInput,
     server: &ServerConfig,
     server_bytes: &[u8],
+    input_path: &Path,
 ) -> Result<()> {
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
@@ -66,7 +67,7 @@ pub(crate) fn ensure(
     ) {
         (true, true) => {
             println!("Verifying installed golden image and provenance...");
-            verify_installed_image(input, server, server_bytes, &manifest_path)?;
+            verify_installed_image(input, server, server_bytes, &manifest_path, input_path)?;
             println!("Reusing verified golden image.");
         }
         (false, false) => {
@@ -86,7 +87,15 @@ pub(crate) fn ensure(
     }
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    host_image::ensure(runner, input, server, server_bytes, &source, &byobu)
+    host_image::ensure(
+        runner,
+        input,
+        server,
+        server_bytes,
+        &source,
+        &byobu,
+        input_path,
+    )
 }
 
 pub(crate) fn rebuild(
@@ -341,6 +350,7 @@ pub(crate) fn verify_installed_image(
     server: &ServerConfig,
     server_bytes: &[u8],
     manifest_path: &Path,
+    input_path: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
     require_named_file(
@@ -372,7 +382,7 @@ pub(crate) fn verify_installed_image(
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
         || !is_sha256(&manifest.tmux_sha256)
     {
-        bail!("installed image provenance differs from the current install input");
+        bail!(provenance_drift_message("devcontainer", input_path));
     }
     recipe
         .validate_package_versions(&manifest.packages)
@@ -382,6 +392,17 @@ pub(crate) fn verify_installed_image(
         &manifest.golden_sha256,
         "installed golden image",
     )
+}
+
+pub(super) fn provenance_drift_message(kind: &str, input_path: &Path) -> String {
+    let input_path = shell_quote(input_path);
+    format!(
+        "installed {kind} golden image provenance does not match the current source or install input. Provenance covers the pinned source image, image-build configuration, and checked-in recipe assets.\nThe installed images were left unchanged. Rebuild both golden images explicitly, then retry installation:\n  scripts/prepare-image --config {input_path}\n  scripts/install-server --config {input_path}\nIf rebuilding reports active WT domains, stop those worlds and rerun the command."
+    )
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
 }
 
 pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
