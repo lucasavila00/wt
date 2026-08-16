@@ -12,7 +12,7 @@ common dependencies from the root `Cargo.toml`.
 | [`wt-cli`](./crates/wt-cli/) | Binary `wt` | Client CLI |
 | [`wt-command`](./crates/wt-command/) | Library | Process command builder |
 | [`wt-devcontainer`](./crates/wt-devcontainer/) | Library | Devcontainer world lifecycle and provisioning |
-| [`wt-devcontainer-git`](./crates/wt-devcontainer-git/) | Library and binaries | Scoped Git transport for devcontainer worlds |
+| [`wt-devcontainer-git`](./crates/wt-devcontainer-git/) | Library and binaries | Scoped Git transport for retained worlds |
 | [`wt-devcontainer-guest`](./crates/wt-devcontainer-guest/) | Binaries | Devcontainer session and SSH helpers |
 | [`wt-github-ci`](./crates/wt-github-ci/) | Library | Ephemeral GitHub Actions world lifecycle |
 | [`wt-host`](./crates/wt-host/) | Library | Raw Ubuntu host world lifecycle |
