@@ -1,13 +1,13 @@
-# ADR 0038: Make the agent Git endpoint configurable
+# ADR 0038: Isolate KVM test runtime resources
 
 - Status: Accepted
 - Date: 2026-08-16
 
 ## Context
 
-The installed gateway and KVM tests used the same fixed vsock port. A test could
-not run beside production, and a single test-only port would still prevent
-concurrent test runs.
+KVM tests shared the installed gateway's fixed vsock port and golden images.
+Tests could not run beside production safely, and one test namespace would
+still prevent concurrent runs.
 
 ## Decision
 
@@ -17,10 +17,15 @@ unmanaged server or gateway process. Provision every world relay with the
 server's resolved port.
 
 Each KVM harness chooses a unique port through that environment variable. Its
-Unix sockets and state remain under its existing temporary directory.
+Unix sockets and state remain under its temporary directory.
+
+Each harness also creates disposable qcow overlays on the installed golden
+images. Tests update only their overlays with current branch assets. Production
+images are read-only backing files and are never replaced by a test.
 
 ## Consequences
 
 - Production and KVM gateways can run together.
-- Independent KVM runs do not share a gateway endpoint.
+- Independent KVM runs do not share gateway endpoints or writable images.
 - A server and its gateway must resolve the same override.
+- Test worlds must be deleted before their image overlays are removed.

@@ -17,8 +17,10 @@ Run from the workspace root:
 cargo test --workspace
 ```
 
-The workspace command skips the ignored full-lifecycle test. Run that test on a
-configured Ubuntu/KVM host with:
+The workspace command skips the ignored full-lifecycle test. Each full-lifecycle
+run uses a unique gateway port and disposable overlays on the installed golden
+images, so it can run beside installed WT services and other test runs. Run it
+on a configured Ubuntu/KVM host with:
 
 ```text
 make e2e-tests
@@ -45,14 +47,13 @@ awk '{ print "github.com " $1 " " $2 }' \
 chmod 0600 "$fixture_dir/github.token" "$fixture_dir/known_hosts"
 ```
 
-Prepare the host with the test-only install input, then stop the installed
-services. The test starts its own server and agent Git gateway, while retaining
-the installed images and registry cache:
+Prepare the host with the test-only install input. The test starts its own
+server and agent Git gateway while leaving installed services, images, and
+worlds alone:
 
 ```bash
 scripts/install-server \
     --config examples/server-config/wt-server.kvm-e2e-install.toml
-sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service
 make e2e-tests
 ```
 
