@@ -94,6 +94,11 @@ cd "$root"
 show_phase "Building the setup tool"
 setup_binary=target/x86_64-unknown-linux-musl/release/wt-server-setup
 cargo build --quiet --release --target x86_64-unknown-linux-musl -p wt-server-setup
+if readelf --program-headers --wide "$setup_binary" | grep -q INTERP ||
+    readelf --version-info --wide "$setup_binary" | grep -q GLIBC_; then
+    echo "wt-server-setup is not a static musl executable" >&2
+    exit 1
+fi
 
 show_phase "Validating the install input"
 "$setup_binary" validate --config "$config"
