@@ -6,6 +6,8 @@ set -eu
 /bin/sh /var/tmp/wt-install-packages.sh \
     ca-certificates docker.io docker-buildx docker-compose-v2 git nodejs npm
 
+install -d -m 0755 /etc/docker
+printf '{"seccomp-profile":"unconfined"}\n' > /etc/docker/daemon.json
 systemctl enable --now docker.service
 docker info
 docker buildx version

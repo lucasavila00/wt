@@ -15,6 +15,9 @@ phase "installing shared machine packages"
 phase "configuring shared machine services"
 systemctl enable --now qemu-guest-agent.service
 systemctl disable --now ssh.service ssh.socket
+printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
+sysctl --system
+test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
 phase "installing shared terminal stack"
 /bin/sh /var/tmp/wt-install-terminal.sh
