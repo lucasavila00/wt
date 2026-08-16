@@ -35,10 +35,11 @@ developer may explicitly use `ssh -A NAME-vs` for an individual direct
 connection. That agent is an unrestricted credential path which bypasses
 gateway policy and remains the developer's responsibility.
 
-Using `ssh -A NAME` with the persistent Byobu session is unsupported. Existing
-panes may retain a stale socket after the SSH connection closes or a later
-connection attaches. WT does not preserve or refresh that socket, expose it to
-host setup, or carry it across another SSH hop.
+With `ssh -A NAME`, the forwarded socket belongs to that SSH connection while
+the Byobu session and its processes persist across connections. Existing panes
+may therefore retain a stale socket after disconnect or reattach. WT does not
+add a socket-retargeting workaround, expose the socket to host setup, or carry
+it across another SSH hop.
 
 SSH TCP forwarding with `-L`, `-R`, or `-D` is separate from authentication-agent
 forwarding and remains available.
@@ -55,6 +56,5 @@ machinery.
   closes.
 - Host recipes cannot rely on a workstation agent. Public resources and
   provider Git operations through the gateway remain available.
-- Developers retain an explicit, unsupported OpenSSH escape hatch for
-  exceptional interactive use without making it part of the WT lifecycle
-  contract.
+- Developers retain an explicit OpenSSH escape hatch for exceptional
+  interactive use without making it part of the WT lifecycle contract.
