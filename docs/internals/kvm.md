@@ -46,3 +46,16 @@ The kind lifecycle then defines readiness:
 
 Stopped retained guests keep their disk and identity. Missing files, mismatched
 identity, or partial libvirt state fail closed.
+
+## Real-system test isolation
+
+The KVM lifecycle test does not mutate installed golden images. Each harness
+creates temporary qcow2 overlays backed by those images, applies branch assets
+only to the overlays, and keeps them alive until its worlds are deleted.
+
+The production agent Git gateway uses vsock port `18017`. Each harness selects
+a different high port and gives the same value to its server, gateway, and
+world relays. Test sockets, grants, provider fixtures, and server state stay in
+that harness's temporary directory. This lets a KVM run coexist with installed
+WT services and with independent test runs without sharing writable runtime
+resources.

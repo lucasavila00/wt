@@ -6,28 +6,21 @@ use wt_command::cmd;
 use wt_server::ServerConfig;
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
-const AGENT_GIT_BINARIES: [&str; 4] = [
+const STATIC_BINARIES: [&str; 8] = [
     "wt-agent-git-gateway",
     "wt-agent-git-relay",
     "git-remote-ag",
     "ag-git",
+    "wt",
+    "wt-app-pane",
+    "wt-app-info",
+    "wt-app-proxy",
 ];
 
 pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     runner.run(
-        cmd!(
-            "cargo",
-            "build",
-            "--quiet",
-            "--release",
-            "-p",
-            "wt-cli",
-            "-p",
-            "wt-devcontainer-guest",
-            "-p",
-            "wt-server",
-        ),
-        "build wt binaries",
+        cmd!("cargo", "build", "--quiet", "--release", "-p", "wt-server",),
+        "build native wt-server",
     )?;
     runner.run(
         cmd!(
@@ -39,8 +32,12 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
             MUSL_TARGET,
             "-p",
             "wt-agent-git",
+            "-p",
+            "wt-cli",
+            "-p",
+            "wt-devcontainer-guest",
         ),
-        "build static agent Git binaries",
+        "build static WT binaries",
     )?;
     for name in [
         "wt-agent-git-gateway",
@@ -54,7 +51,7 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         "wt-server",
     ] {
         let source = release_binary(name);
-        if AGENT_GIT_BINARIES.contains(&name) {
+        if STATIC_BINARIES.contains(&name) {
             validate_static_binary(runner, &source, name)?;
         }
         let destination = config.install.binary_dir.join(name);
@@ -69,7 +66,7 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
 }
 
 fn release_binary(name: &str) -> PathBuf {
-    if AGENT_GIT_BINARIES.contains(&name) {
+    if STATIC_BINARIES.contains(&name) {
         Path::new("target")
             .join(MUSL_TARGET)
             .join("release")
@@ -106,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn agent_git_binaries_use_the_musl_release_directory() {
+    fn all_installed_binaries_except_wt_server_use_the_musl_release_directory() {
         assert_eq!(
             release_binary("ag-git"),
             Path::new("target/x86_64-unknown-linux-musl/release/ag-git")
@@ -124,13 +121,21 @@ mod tests {
             Path::new("target/x86_64-unknown-linux-musl/release/wt-agent-git-gateway")
         );
         assert_eq!(
+            release_binary("wt"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt")
+        );
+        assert_eq!(
+            release_binary("wt-app-pane"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt-app-pane")
+        );
+        assert_eq!(
             release_binary("wt-server"),
             Path::new("target/release/wt-server")
         );
     }
 
     #[test]
-    fn devcontainer_binaries_must_be_static_and_free_of_glibc_versions() {
+    fn static_binaries_must_be_free_of_dynamic_glibc_requirements() {
         validate_static_elf(
             "ag-git",
             "ELF program headers\n",

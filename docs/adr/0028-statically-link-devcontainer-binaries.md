@@ -1,4 +1,4 @@
-# ADR 0028: Statically link WT binaries that run in devcontainers
+# ADR 0028: Statically link installed WT binaries
 
 - Status: Accepted
 - Date: 2026-08-14
@@ -20,21 +20,22 @@ WT must not make the server's libc version part of the devcontainer contract.
 
 ## Decision
 
-Build the Rust executables that WT runs inside the devcontainer—`ag-git` and
-`git-remote-ag`—for `x86_64-unknown-linux-musl` and statically link them. Use
-those artifacts both for the guest-side Git flow and for the devcontainer bind
-mounts.
+Build every installed WT executable for `x86_64-unknown-linux-musl` except
+`wt-server`. This includes the CLI, gateway, relay, Git helpers, and guest app
+helpers. Keep `wt-agent-git-hint` as a POSIX shell asset.
 
-Continue to build the gateway, relay, client, server, and guest helpers for the
-native GNU target. They run only on WT-controlled systems and do not cross the
-devcontainer boundary. Keep `wt-agent-git-hint` as a POSIX shell asset.
+`wt-server` remains a native GNU binary because it uses libvirt's supported C
+ABI. The server runs only on the controlled Ubuntu 24.04 host where setup
+installs that ABI. This is the only installed-executable exception to the musl
+rule.
 
 The installed musl artifacts must have no dynamic program interpreter or GLIBC
 symbol-version requirement. Installation fails rather than falling back to a
 dynamically linked devcontainer binary.
 
 `scripts/install-server` installs the musl linker toolchain and the Rust musl
-target. `wt-server-setup` inspects both artifacts before installing them.
+target. `wt-server-setup` rejects any designated static artifact with a dynamic
+program interpreter or GLIBC symbol requirement before installing it.
 
 This changes only executable packaging. The relay socket, transport protocol,
 commands, and authorization model remain unchanged.
@@ -43,10 +44,8 @@ commands, and authorization model remain unchanged.
 
 - `ag-git` and normal Git operations through `git-remote-ag` do not depend on
   the devcontainer's libc implementation or glibc version.
-- Server installation needs the Rust musl target and its linker toolchain and
-  produces native and musl release artifacts.
-- WT does not take responsibility for statically linking binaries that remain
-  within its controlled server and guest environments.
+- Server installation produces one native server artifact and static musl
+  artifacts for every other installed WT executable.
 - The musl target matches WT's current amd64 platform requirement; this decision
   does not add another architecture.
 - Existing worlds retain their copied client binaries and must be recreated to
@@ -58,5 +57,5 @@ Build on an older glibc baseline. Rejected because it still makes an implicit
 glibc floor part of the devcontainer contract and does not support musl-only
 images.
 
-Statically link every WT executable. Rejected because only the two executables
-that cross into an uncontrolled userland need this compatibility boundary.
+Statically link `wt-server`. Rejected because that would replace or privately
+rebuild libvirt's supported host ABI solely for packaging uniformity.

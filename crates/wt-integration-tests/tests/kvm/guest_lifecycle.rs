@@ -226,7 +226,7 @@ fn agent_git_transport_works_without_provider_credentials() {
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
     assert!(help.contains("explicitly identified Git provider resources"));
-    assert!(help.contains("wait mr|run|job ID"));
+    assert!(help.contains("| { action: \"wait_mr\"; mr: number }"));
 
     run_guest(
         &harness,
