@@ -40,6 +40,20 @@ fn image_manifest_records_structured_package_versions() {
 }
 
 #[test]
+fn provenance_drift_has_copyable_recovery_commands() {
+    let message =
+        provenance_drift_message("devcontainer", Path::new("/srv/wt/config's/server.toml"));
+
+    insta::assert_snapshot!(message, @r###"
+    installed devcontainer golden image provenance does not match the current source or install input. Provenance covers the pinned source image, image-build configuration, and checked-in recipe assets.
+    The installed images were left unchanged. Rebuild both golden images explicitly, then retry installation:
+      scripts/prepare-image --config '/srv/wt/config'"'"'s/server.toml'
+      scripts/install-server --config '/srv/wt/config'"'"'s/server.toml'
+    If rebuilding reports active WT domains, stop those worlds and rerun the command.
+    "###);
+}
+
+#[test]
 fn result_marker_requires_root_0644_metadata() {
     validate_result_metadata("- 0644 46 0 0 /var/lib/wt-image-result").unwrap();
     assert!(validate_result_metadata("- 0600 46 0 0 /var/lib/wt-image-result").is_err());
