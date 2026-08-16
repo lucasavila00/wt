@@ -44,7 +44,8 @@ pub(crate) struct ProviderProjectScope<'a> {
     pub prefix: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ChangeRequestState {
     Ready,
     Draft,
@@ -52,10 +53,14 @@ pub(crate) enum ChangeRequestState {
     Closed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum CliCommand {
     ShowMr {
         mr: u64,
+    },
+    ShowMrForBranch {
+        branch: String,
     },
     ShowRun {
         run: u64,
@@ -87,6 +92,7 @@ pub(crate) enum CliCommand {
     OpenMr {
         head: String,
         base: String,
+        #[serde(default)]
         draft: bool,
     },
     SetMr {
@@ -348,7 +354,7 @@ fn wait_for_review_or_ci_change(
         }
         if std::time::Instant::now() >= deadline {
             bail!(
-                "review and CI did not change within five minutes; run `ag-git` for the current status or `ag-git wait` to wait again"
+                "review and CI did not change within five minutes; run an appropriate show or list JSON action for the current status, or repeat the wait action"
             );
         }
     }

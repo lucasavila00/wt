@@ -186,7 +186,7 @@ impl GitlabApi {
         match matches.as_slice() {
             [id] => Ok((*id).clone()),
             [] => bail!(
-                "review thread `{handle}` was not found; run `ag-git list threads mr ID` and use its provider ID"
+                "review thread `{handle}` was not found; run a `list_threads` JSON action for the MR and use its provider ID"
             ),
             _ => bail!(
                 "review thread ID `{handle}` is ambiguous; no thread was changed"
@@ -257,7 +257,7 @@ impl GitlabApi {
     fn require_ci_job(&self, scope: &ProviderCommandScope<'_>, handle: &CiJobHandle) -> Result<()> {
         if handle.as_str().starts_with("pipeline-") {
             bail!(
-                "`{handle}` is the overall pipeline status, not a job; run `ag-git ci` and choose a job handle"
+                "`{handle}` is the overall pipeline status, not a job; run a `list_ci` JSON action and choose a job handle"
             );
         }
         let merge_request_number = self
@@ -272,7 +272,7 @@ impl GitlabApi {
             Ok(())
         } else {
             bail!(
-                "CI job `{handle}` does not belong to the current commit; run `ag-git ci` and use a current job handle"
+                "CI job `{handle}` does not belong to the current commit; run a `list_ci` JSON action and use a current job handle"
             )
         }
     }
@@ -282,6 +282,32 @@ impl GitlabApi {
             "api/v4/projects/{}/merge_requests/{mr}",
             encoded_project(project)
         ))
+    }
+
+    fn read_open_merge_request_for_branch(
+        &self,
+        project: &str,
+        base: &str,
+        branch: &str,
+    ) -> Result<MergeRequest> {
+        let source = url::form_urlencoded::byte_serialize(branch.as_bytes()).collect::<String>();
+        let target = url::form_urlencoded::byte_serialize(base.as_bytes()).collect::<String>();
+        let mut requests: Vec<MergeRequest> = self.http.read_json(&format!(
+            "api/v4/projects/{}/merge_requests?state=opened&source_branch={source}&target_branch={target}&per_page=100",
+            encoded_project(project)
+        ))?;
+        requests.retain(|request| {
+            request.state == "opened"
+                && request.source_branch == branch
+                && request.target_branch == base
+        });
+        match requests.len() {
+            0 => bail!("no open merge request from branch `{branch}` to `{base}`"),
+            1 => Ok(requests.pop().expect("one merge request remains")),
+            count => bail!(
+                "GitLab returned {count} open merge requests from branch `{branch}` to `{base}`; refusing to choose one"
+            ),
+        }
     }
 
     fn read_merge_request_by_iid(

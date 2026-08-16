@@ -610,30 +610,44 @@ fn write_packet(to: &mut impl Write, payload: &[u8]) -> Result<()> {
 }
 
 const HELP: &str = "\
-ag-git reads and changes explicitly identified Git provider resources.\n\
+ag-git reads and changes explicitly identified Git provider resources. It accepts\n\
+exactly one JSON command object and rejects unknown fields.\n\
 \n\
 USAGE:\n\
-    ag-git COMMAND RESOURCE [ID] [OPTIONS]\n\
+    ag-git '<JSON>'\n\
 \n\
-COMMANDS:\n\
-    show mr|run|job ID\n\
-    list threads mr ID\n\
-    list ci commit SHA\n\
-    list jobs run ID\n\
-    log job ID\n\
-    wait mr|run|job ID\n\
-    open mr --head BRANCH --base BRANCH [--draft]\n\
-    set mr ID ready|draft|open|closed\n\
-    edit mr ID [--title TEXT] [--body TEXT]\n\
-    comment mr ID TEXT\n\
-    reply thread ID --mr MR_ID TEXT\n\
-    set thread ID --mr MR_ID resolved|open\n\
-    retry job ID\n\
-    cancel job|run ID\n\
-    help                              Show this help\n\
+TYPESCRIPT COMMAND TYPE:\n\
+    type AgGitCommand =\n\
+      | { action: \"show_mr\"; mr: number }\n\
+      | { action: \"show_mr_for_branch\"; branch: string }\n\
+      | { action: \"show_run\"; run: number }\n\
+      | { action: \"show_job\"; job: number }\n\
+      | { action: \"list_threads\"; mr: number }\n\
+      | { action: \"list_ci\"; commit: string }\n\
+      | { action: \"list_jobs\"; run: number }\n\
+      | { action: \"log_job\"; job: number }\n\
+      | { action: \"wait_mr\"; mr: number }\n\
+      | { action: \"wait_run\"; run: number }\n\
+      | { action: \"wait_job\"; job: number }\n\
+      | { action: \"open_mr\"; head: string; base: string; draft?: boolean }\n\
+      | { action: \"set_mr\"; mr: number; state: \"ready\" | \"draft\" | \"open\" | \"closed\" }\n\
+      | { action: \"edit_mr\"; mr: number; title?: string; body?: string }\n\
+      | { action: \"comment_mr\"; mr: number; body: string }\n\
+      | { action: \"reply_thread\"; mr: number; thread: string; body: string }\n\
+      | { action: \"set_thread\"; mr: number; thread: string; resolved: boolean }\n\
+      | { action: \"retry_job\"; job: number }\n\
+      | { action: \"cancel_job\"; job: number }\n\
+      | { action: \"cancel_run\"; run: number };\n\
+\n\
+EXAMPLE:\n\
+    ag-git '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
+\n\
+`show_mr_for_branch` returns the single open MR from the named branch to the\n\
+gateway grant's base branch. It fails when there is no match or multiple matches.\n\
 \n\
 The provider and project come from this world's gateway grant. Every other\n\
-resource is explicit. Use normal Git for commits, fetches, pulls, and pushes.\n";
+resource is explicit. IDs must be positive integers. Commit values must be 7 to\n\
+64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.\n";
 
 #[cfg(test)]
 mod tests;

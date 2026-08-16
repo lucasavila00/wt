@@ -2,90 +2,53 @@ use super::*;
 
 impl CliCommand {
     pub(crate) fn parse(args: &[String]) -> Result<Self> {
-        let Some((name, rest)) = args.split_first() else {
-            bail!("usage: ag-git COMMAND RESOURCE [ID]");
+        let [json] = args else {
+            bail!("ag-git expects exactly one JSON command object; run `ag-git help` for the TypeScript command type");
         };
-        match name.as_str() {
-            "show" => match rest {
-                [kind, id] if kind == "mr" => Ok(Self::ShowMr {
-                    mr: numeric(id, "MR")?,
-                }),
-                [kind, id] if kind == "run" => Ok(Self::ShowRun {
-                    run: numeric(id, "run")?,
-                }),
-                [kind, id] if kind == "job" => Ok(Self::ShowJob {
-                    job: numeric(id, "job")?,
-                }),
-                _ => bail!("usage: ag-git show mr|run|job ID"),
-            },
-            "list" => match rest {
-                [items, parent, id] if items == "threads" && parent == "mr" => {
-                    Ok(Self::ListThreads {
-                        mr: numeric(id, "MR")?,
-                    })
-                }
-                [items, parent, commit] if items == "ci" && parent == "commit" => {
-                    validate_commit(commit)?;
-                    Ok(Self::ListCi {
-                        commit: commit.clone(),
-                    })
-                }
-                [items, parent, id] if items == "jobs" && parent == "run" => Ok(Self::ListJobs {
-                    run: numeric(id, "run")?,
-                }),
-                _ => bail!("usage: ag-git list threads mr ID | ci commit SHA | jobs run ID"),
-            },
-            "log" => match rest {
-                [kind, id] if kind == "job" => Ok(Self::LogJob {
-                    job: numeric(id, "job")?,
-                }),
-                _ => bail!("usage: ag-git log job ID"),
-            },
-            "wait" => match rest {
-                [kind, id] if kind == "mr" => Ok(Self::WaitMr {
-                    mr: numeric(id, "MR")?,
-                }),
-                [kind, id] if kind == "run" => Ok(Self::WaitRun {
-                    run: numeric(id, "run")?,
-                }),
-                [kind, id] if kind == "job" => Ok(Self::WaitJob {
-                    job: numeric(id, "job")?,
-                }),
-                _ => bail!("usage: ag-git wait mr|run|job ID"),
-            },
-            "open" => parse_open_mr(rest),
-            "set" => parse_set(rest),
-            "edit" => parse_explicit_edit(rest),
-            "comment" => match rest {
-                [kind, id, body @ ..] if kind == "mr" => Ok(Self::CommentMr {
-                    mr: numeric(id, "MR")?,
-                    body: required_text(body, "ag-git comment mr ID TEXT")?,
-                }),
-                _ => bail!("usage: ag-git comment mr ID TEXT"),
-            },
-            "reply" => parse_reply(rest),
-            "retry" => match rest {
-                [kind, id] if kind == "job" => Ok(Self::RetryJob {
-                    job: numeric(id, "job")?,
-                }),
-                _ => bail!("usage: ag-git retry job ID"),
-            },
-            "cancel" => match rest {
-                [kind, id] if kind == "job" => Ok(Self::CancelJob {
-                    job: numeric(id, "job")?,
-                }),
-                [kind, id] if kind == "run" => Ok(Self::CancelRun {
-                    run: numeric(id, "run")?,
-                }),
-                _ => bail!("usage: ag-git cancel job|run ID"),
-            },
-            _ => bail!("unknown command `{name}`; run `ag-git --help`"),
+        let command: Self = serde_json::from_str(json).context(
+            "invalid ag-git command JSON; run `ag-git help` for the TypeScript command type",
+        )?;
+        command.validate()?;
+        Ok(command)
+    }
+
+    fn validate(&self) -> Result<()> {
+        match self {
+            Self::ShowMr { mr }
+            | Self::ListThreads { mr }
+            | Self::WaitMr { mr }
+            | Self::SetMr { mr, .. }
+            | Self::EditMr { mr, .. }
+            | Self::CommentMr { mr, .. }
+            | Self::ReplyThread { mr, .. }
+            | Self::SetThread { mr, .. } => positive_id(*mr, "MR")?,
+            Self::ShowRun { run }
+            | Self::ListJobs { run }
+            | Self::WaitRun { run }
+            | Self::CancelRun { run } => positive_id(*run, "run")?,
+            Self::ShowJob { job }
+            | Self::LogJob { job }
+            | Self::WaitJob { job }
+            | Self::RetryJob { job }
+            | Self::CancelJob { job } => positive_id(*job, "job")?,
+            Self::ShowMrForBranch { branch } => nonempty(branch, "branch")?,
+            Self::ListCi { commit } => validate_commit(commit)?,
+            Self::OpenMr { head, base, .. } => {
+                nonempty(head, "head")?;
+                nonempty(base, "base")?;
+            }
         }
+        if let Self::EditMr { title, body, .. } = self {
+            if title.is_none() && body.is_none() {
+                bail!("edit_mr requires `title` or `body`");
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn action(&self) -> &'static str {
         match self {
-            Self::ShowMr { .. } => "show the merge request",
+            Self::ShowMr { .. } | Self::ShowMrForBranch { .. } => "show the merge request",
             Self::ShowRun { .. } => "show the CI run",
             Self::ShowJob { .. } => "show the CI job",
             Self::ListThreads { .. } => "list merge request threads",
@@ -109,6 +72,7 @@ impl CliCommand {
 
     pub(super) fn resource(&self) -> String {
         match self {
+            Self::ShowMrForBranch { branch } => format!("mr for branch {branch}"),
             Self::ShowMr { mr }
             | Self::ListThreads { mr }
             | Self::WaitMr { mr }
@@ -275,28 +239,24 @@ fn render_jobs(jobs: &[CiJob]) -> String {
             format!("{} [{}] {}{url}\n", job.handle, job.state, job.name)
         })
         .collect::<String>();
-    output.push_str("\nUse `ag-git show job ID`, `ag-git log job ID`, or `ag-git wait job ID`.\n");
+    output.push_str(
+        "\nUse a listed job ID with the `show_job`, `log_job`, or `wait_job` JSON action.\n",
+    );
     output
 }
 
-fn required_text(args: &[String], usage: &str) -> Result<String> {
-    if args.is_empty() {
-        bail!("usage: {usage}");
+fn positive_id(id: u64, kind: &str) -> Result<()> {
+    if id == 0 {
+        bail!("{kind} ID must be a positive integer");
     }
-    Ok(args.join(" "))
+    Ok(())
 }
 
-fn numeric(value: &str, kind: &str) -> Result<u64> {
-    value
-        .parse()
-        .map_err(|_| anyhow::anyhow!("{kind} ID must be a positive integer"))
-        .and_then(|id| {
-            if id == 0 {
-                bail!("{kind} ID must be a positive integer")
-            } else {
-                Ok(id)
-            }
-        })
+fn nonempty(value: &str, name: &str) -> Result<()> {
+    if value.is_empty() {
+        bail!("{name} must not be empty");
+    }
+    Ok(())
 }
 
 fn validate_commit(commit: &str) -> Result<()> {
@@ -305,128 +265,4 @@ fn validate_commit(commit: &str) -> Result<()> {
         bail!("commit must be a 7 to 64 character hexadecimal object ID");
     }
     Ok(())
-}
-
-fn parse_open_mr(args: &[String]) -> Result<CliCommand> {
-    let [kind, options @ ..] = args else {
-        bail!("usage: ag-git open mr --head BRANCH --base BRANCH [--draft]");
-    };
-    if kind != "mr" {
-        bail!("usage: ag-git open mr --head BRANCH --base BRANCH [--draft]");
-    }
-    let mut head = None;
-    let mut base = None;
-    let mut draft = false;
-    let mut index = 0;
-    while index < options.len() {
-        match options[index].as_str() {
-            "--head" | "--base" => {
-                let target = if options[index] == "--head" {
-                    &mut head
-                } else {
-                    &mut base
-                };
-                index += 1;
-                let value = options
-                    .get(index)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "usage: ag-git open mr --head BRANCH --base BRANCH [--draft]"
-                        )
-                    })?;
-                if target.replace(value.clone()).is_some() {
-                    bail!("open mr option specified more than once");
-                }
-            }
-            "--draft" if !draft => draft = true,
-            _ => bail!("usage: ag-git open mr --head BRANCH --base BRANCH [--draft]"),
-        }
-        index += 1;
-    }
-    Ok(CliCommand::OpenMr {
-        head: head.context("open mr requires --head BRANCH")?,
-        base: base.context("open mr requires --base BRANCH")?,
-        draft,
-    })
-}
-
-fn parse_set(args: &[String]) -> Result<CliCommand> {
-    match args {
-        [kind, id, state] if kind == "mr" => {
-            let state = match state.as_str() {
-                "ready" => ChangeRequestState::Ready,
-                "draft" => ChangeRequestState::Draft,
-                "open" => ChangeRequestState::Open,
-                "closed" => ChangeRequestState::Closed,
-                _ => bail!("MR state must be ready, draft, open, or closed"),
-            };
-            Ok(CliCommand::SetMr { mr: numeric(id, "MR")?, state })
-        }
-        [kind, thread, flag, mr, state] if kind == "thread" && flag == "--mr" => {
-            let resolved = match state.as_str() {
-                "resolved" => true,
-                "open" => false,
-                _ => bail!("thread state must be resolved or open"),
-            };
-            Ok(CliCommand::SetThread {
-                mr: numeric(mr, "MR")?,
-                thread: ReviewThreadHandle::new(thread),
-                resolved,
-            })
-        }
-        _ => bail!("usage: ag-git set mr ID ready|draft|open|closed | set thread ID --mr MR_ID resolved|open"),
-    }
-}
-
-fn parse_explicit_edit(args: &[String]) -> Result<CliCommand> {
-    let [kind, id, options @ ..] = args else {
-        bail!("usage: ag-git edit mr ID [--title TEXT] [--body TEXT]");
-    };
-    if kind != "mr" {
-        bail!("usage: ag-git edit mr ID [--title TEXT] [--body TEXT]");
-    }
-    let mut title = None;
-    let mut body = None;
-    let mut index = 0;
-    while index < options.len() {
-        let target = match options[index].as_str() {
-            "--title" => &mut title,
-            "--body" => &mut body,
-            _ => bail!("usage: ag-git edit mr ID [--title TEXT] [--body TEXT]"),
-        };
-        index += 1;
-        let value = options
-            .get(index)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                anyhow::anyhow!("usage: ag-git edit mr ID [--title TEXT] [--body TEXT]")
-            })?;
-        if target.replace(value.clone()).is_some() {
-            bail!("edit option specified more than once");
-        }
-        index += 1;
-    }
-    if title.is_none() && body.is_none() {
-        bail!("edit requires --title or --body");
-    }
-    Ok(CliCommand::EditMr {
-        mr: numeric(id, "MR")?,
-        title,
-        body,
-    })
-}
-
-fn parse_reply(args: &[String]) -> Result<CliCommand> {
-    let [kind, thread, flag, mr, body @ ..] = args else {
-        bail!("usage: ag-git reply thread ID --mr MR_ID TEXT");
-    };
-    if kind != "thread" || flag != "--mr" {
-        bail!("usage: ag-git reply thread ID --mr MR_ID TEXT");
-    }
-    Ok(CliCommand::ReplyThread {
-        mr: numeric(mr, "MR")?,
-        thread: ReviewThreadHandle::new(thread),
-        body: required_text(body, "ag-git reply thread ID --mr MR_ID TEXT")?,
-    })
 }
