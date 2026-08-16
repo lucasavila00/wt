@@ -320,6 +320,12 @@ fn agent_git_transport_works_without_provider_credentials() {
         "printf 'persistent app state\n' > /workspaces/workspace/.wt-kvm-e2e-restart && sync",
         "write app state before KVM restart",
     );
+    run_host(
+        &harness,
+        &host_name,
+        "sync",
+        "flush host state before KVM restart",
+    );
     let stopped = timings.run("stop and reconcile world", || {
         harness.stop(&running);
         harness
