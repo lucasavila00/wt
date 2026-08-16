@@ -92,10 +92,11 @@ rustup target add x86_64-unknown-linux-musl
 
 cd "$root"
 show_phase "Building the setup tool"
-cargo build --quiet --release -p wt-server-setup
+setup_binary=target/x86_64-unknown-linux-musl/release/wt-server-setup
+cargo build --quiet --release --target x86_64-unknown-linux-musl -p wt-server-setup
 
 show_phase "Validating the install input"
-target/release/wt-server-setup validate --config "$config"
+"$setup_binary" validate --config "$config"
 
 show_phase "Activating server permissions"
 sudo usermod -aG docker,libvirt,kvm "$USER"
@@ -109,4 +110,4 @@ if [[ $groups != *" docker "* || $groups != *" libvirt "* || $groups != *" kvm "
 fi
 
 show_phase "Installing WT"
-target/release/wt-server-setup install --config "$config"
+"$setup_binary" install --config "$config"
