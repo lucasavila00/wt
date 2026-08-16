@@ -287,25 +287,19 @@ impl GitlabApi {
     fn read_open_merge_request_for_branch(
         &self,
         project: &str,
-        base: &str,
         branch: &str,
     ) -> Result<MergeRequest> {
         let source = url::form_urlencoded::byte_serialize(branch.as_bytes()).collect::<String>();
-        let target = url::form_urlencoded::byte_serialize(base.as_bytes()).collect::<String>();
         let mut requests: Vec<MergeRequest> = self.http.read_json(&format!(
-            "api/v4/projects/{}/merge_requests?state=opened&source_branch={source}&target_branch={target}&per_page=100",
+            "api/v4/projects/{}/merge_requests?state=opened&source_branch={source}&per_page=100",
             encoded_project(project)
         ))?;
-        requests.retain(|request| {
-            request.state == "opened"
-                && request.source_branch == branch
-                && request.target_branch == base
-        });
+        requests.retain(|request| request.state == "opened" && request.source_branch == branch);
         match requests.len() {
-            0 => bail!("no open merge request from branch `{branch}` to `{base}`"),
+            0 => bail!("no open merge request from branch `{branch}`"),
             1 => Ok(requests.pop().expect("one merge request remains")),
             count => bail!(
-                "GitLab returned {count} open merge requests from branch `{branch}` to `{base}`; refusing to choose one"
+                "GitLab returned {count} open merge requests from branch `{branch}`; refusing to choose one"
             ),
         }
     }
@@ -405,12 +399,14 @@ impl GitlabApi {
         scope: &ProviderProjectScope<'_>,
         request: &MergeRequest,
     ) -> Result<()> {
-        if !request.source_branch.starts_with(scope.prefix) || request.target_branch != scope.base {
+        if !request.source_branch.starts_with(scope.prefix)
+            || request.source_project_id.is_none()
+            || request.source_project_id != request.target_project_id
+        {
             bail!(
-                "MR {} is outside the writable {}* -> {} scope",
+                "MR {} is outside the writable {}* scope",
                 request.iid,
-                scope.prefix,
-                scope.base
+                scope.prefix
             );
         }
         Ok(())

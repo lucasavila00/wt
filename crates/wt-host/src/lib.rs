@@ -9,7 +9,7 @@ use uuid::Uuid;
 use wt_api::SshAccess;
 use wt_provider::{
     CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
-    NoCloudConfig, ProviderId, RunRequest, WorkerError,
+    NoCloudConfig, ProviderId, RunRequest, WorkerError, WriteFileRequest,
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -24,6 +24,15 @@ pub struct ProvisionSpec<'a> {
     pub disk_gib: u64,
     pub ssh_authorized_keys: &'a [String],
     pub user_data: &'a str,
+    pub git_grant: &'a str,
+}
+
+#[derive(Clone, Debug)]
+pub struct AgentGitConfig {
+    pub relay_binary: PathBuf,
+    pub remote_binary: PathBuf,
+    pub cli_binary: PathBuf,
+    pub provider_hosts: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,14 +95,31 @@ pub fn validate_user_data(user_data: &str) -> Result<(), String> {
 pub struct CompositeWorker<P> {
     provider: P,
     readiness_timeout: Duration,
+    agent_git_relay: Vec<u8>,
+    agent_git_remote: Vec<u8>,
+    agent_git_cli: Vec<u8>,
+    provider_hosts: Vec<u8>,
 }
 
 impl<P> CompositeWorker<P> {
-    pub fn new(provider: P, readiness_timeout: Duration) -> Self {
-        Self {
+    pub fn new(
+        provider: P,
+        readiness_timeout: Duration,
+        agent_git: AgentGitConfig,
+    ) -> Result<Self, WorkerError> {
+        let read = |path: &Path, name: &str| {
+            fs::read(path).map_err(|error| {
+                WorkerError::new(format!("read host {name} {}: {error}", path.display()))
+            })
+        };
+        Ok(Self {
             provider,
             readiness_timeout,
-        }
+            agent_git_relay: read(&agent_git.relay_binary, "agent Git relay")?,
+            agent_git_remote: read(&agent_git.remote_binary, "agent Git remote helper")?,
+            agent_git_cli: read(&agent_git.cli_binary, "agent Git CLI")?,
+            provider_hosts: format!("{}\n", agent_git.provider_hosts.join("\n")).into_bytes(),
+        })
     }
 }
 
@@ -119,16 +145,26 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             log,
         )?;
         let deadline = Instant::now() + self.readiness_timeout;
-        run_prepare(&machine, "wait", None, deadline, log)?;
+        run_prepare(machine.transport.as_ref(), "wait", None, deadline, log)?;
         run_prepare(
-            &machine,
+            machine.transport.as_ref(),
             "access",
             Some(authorized_keys.as_bytes()),
             deadline,
             log,
         )?;
+        install_agent_git(
+            machine.transport.as_ref(),
+            spec.git_grant,
+            &self.agent_git_relay,
+            &self.agent_git_remote,
+            &self.agent_git_cli,
+            &self.provider_hosts,
+            deadline,
+            log,
+        )?;
         run_prepare(
-            &machine,
+            machine.transport.as_ref(),
             "user-data",
             Some(spec.user_data.as_bytes()),
             deadline,
@@ -141,7 +177,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             readiness_key.path(),
         )?;
         run_prepare(
-            &machine,
+            machine.transport.as_ref(),
             "remove-key",
             Some(readiness_key.public_key.as_bytes()),
             Instant::now() + self.readiness_timeout,
@@ -170,6 +206,38 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
         inspect_machine(&machine, self.readiness_timeout, &mut std::io::sink())
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_agent_git(
+    transport: &dyn GuestTransport,
+    grant: &str,
+    relay: &[u8],
+    remote: &[u8],
+    cli: &[u8],
+    provider_hosts: &[u8],
+    deadline: Instant,
+    log: &mut dyn Write,
+) -> Result<(), WorkerError> {
+    for (path, contents) in [
+        ("/tmp/wt-host-agent-git-grant", grant.as_bytes()),
+        ("/tmp/wt-host-agent-git-relay", relay),
+        ("/tmp/wt-host-agent-git-remote", remote),
+        ("/tmp/wt-host-ag-git", cli),
+        ("/tmp/wt-host-agent-git-providers", provider_hosts),
+    ] {
+        transport
+            .write_file(&WriteFileRequest {
+                path,
+                contents,
+                owner: "root",
+                group: "root",
+                mode: 0o600,
+                deadline,
+            })
+            .map_err(WorkerError::from)?;
+    }
+    run_prepare(transport, "agent-git", None, deadline, log)
 }
 
 pub fn authorized_keys_file(authorized_keys: &[String]) -> Result<String, WorkerError> {
@@ -291,13 +359,13 @@ fn inspect_machine(
 }
 
 fn run_prepare(
-    machine: &Machine,
+    transport: &dyn GuestTransport,
     action: &str,
     stdin: Option<&[u8]>,
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
-    let output = machine.transport.run(
+    let output = transport.run(
         &RunRequest {
             executable: PREPARE,
             args: &[action],

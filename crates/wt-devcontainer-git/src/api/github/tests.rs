@@ -504,7 +504,6 @@ fn project_scope() -> ProviderProjectScope<'static> {
     ProviderProjectScope {
         host: "github.test",
         project: "acme/widget",
-        base: "main",
         prefix: "wt/",
     }
 }

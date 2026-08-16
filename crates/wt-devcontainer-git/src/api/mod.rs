@@ -39,7 +39,6 @@ pub(crate) struct ProviderCommandScope<'a> {
 pub(crate) struct ProviderProjectScope<'a> {
     pub host: &'a str,
     pub project: &'a str,
-    pub base: &'a str,
     pub prefix: &'a str,
 }
 

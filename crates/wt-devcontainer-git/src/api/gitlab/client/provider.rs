@@ -259,7 +259,7 @@ impl GitProviderApi for GitlabApi {
             )),
             CliCommand::ShowMrForBranch { branch } => {
                 Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
-                    self.read_open_merge_request_for_branch(scope.project, scope.base, branch)?,
+                    self.read_open_merge_request_for_branch(scope.project, branch)?,
                 )))
             }
             CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
@@ -316,12 +316,8 @@ impl GitProviderApi for GitlabApi {
                 std::thread::sleep(std::time::Duration::from_secs(10));
             },
             CliCommand::OpenMr { head, base, draft } => {
-                if !head.starts_with(scope.prefix) || base != scope.base {
-                    bail!(
-                        "open mr must use a {}* head and the granted {} base",
-                        scope.prefix,
-                        scope.base
-                    );
+                if !head.starts_with(scope.prefix) {
+                    bail!("open mr must use a {}* head", scope.prefix);
                 }
                 let encoded: String =
                     url::form_urlencoded::byte_serialize(head.as_bytes()).collect();

@@ -1,8 +1,8 @@
 # Host worlds
 
 A host world is a retained Ubuntu guest configured by cloud-init. It has no
-implicit checkout, Git grant, Docker setup, devcontainer, or app SSH server. A
-recipe may create its own checkout, as the project example does.
+implicit checkout, Docker setup, devcontainer, or app SSH server. A recipe may
+create its own checkout, as the project example does.
 
 Create one with a non-empty cloud-init user-data file:
 
@@ -45,10 +45,15 @@ are not copied into the world, but any process controlling this trusted host
 can use the agent while connected. Keep the setup connection open while the
 recipe needs it.
 
+Every host receives `ag-git` and a revocable gateway grant. Configured provider
+URLs use the gateway automatically. The grant can read every available
+repository and write only branches under `wt/`; provider credentials remain on
+the server.
+
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
-the shared WT terminal profile. Ubuntu's Git remains available, but WT adds no
-checkout, Git grant, agent socket, or provider credentials.
+the shared WT terminal profile. Ubuntu's Git remains available, and WT adds no
+implicit checkout or provider credentials.
 
 Use the checked-in
 [host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete

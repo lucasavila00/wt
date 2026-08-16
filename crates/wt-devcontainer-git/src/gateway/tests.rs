@@ -34,8 +34,7 @@ fn help_is_the_complete_command_contract() {
 
 #[test]
 fn git_header_explains_the_environment_without_prior_context() {
-    let grant = test_grant();
-    insta::assert_snapshot!(git_context_header(&grant));
+    insta::assert_snapshot!(git_context_header("git@github.com:group/project.git"));
 }
 
 #[test]
@@ -71,7 +70,7 @@ fn agent_git_reports_are_stored_for_the_authenticated_world_without_a_provider_a
     let outputs = commands
         .map(|command| {
             gateway
-                .serve_cli(&[command.into()], None, None, &grant)
+                .serve_cli(&[command.into()], None, None, None, &grant)
                 .unwrap()
         })
         .concat();
@@ -127,7 +126,6 @@ fn push_messages_cover_publish_delete_and_rejection() {
     insta::assert_snapshot!(
         service::push_result_message(
             true,
-            "main",
             &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
             &response("ok refs/heads/wt/fix-login"),
             true,
@@ -137,8 +135,7 @@ fn push_messages_cover_publish_delete_and_rejection() {
     Published branch `wt/fix-login`.
     Inspect its open MR with:
       ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
-    If that reports no open MR, open one with:
-      ag-git '{"action":"open_mr","base":"main","head":"wt/fix-login"}'
+    If that reports no open MR, run `ag-git --help` and open one with an explicit base.
     Inspect CI with:
       ag-git '{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
     "###
@@ -172,9 +169,6 @@ fn test_grant() -> GrantRecord {
         id: "id".to_owned(),
         token: "token".to_owned(),
         world_id: "world".to_owned(),
-        source: "git@github.com:group/project.git".to_owned(),
-        base: "main".to_owned(),
-        prefix: BRANCH_PREFIX.to_owned(),
         revoked: false,
     }
 }

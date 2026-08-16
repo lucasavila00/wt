@@ -5,8 +5,7 @@ use crate::api::render_cli_command_output;
 fn shows_the_open_pull_request_for_an_explicit_branch() {
     let (base_url, server) = serve(vec![ExpectedRequest {
         method: "GET",
-        path:
-            "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Ffix-login&base=main&per_page=100",
+        path: "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Ffix-login&per_page=100",
         required_header: Some(("authorization", "Bearer fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
@@ -38,7 +37,7 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
 fn rejects_a_branch_without_an_open_pull_request() {
     let (base_url, server) = serve(vec![ExpectedRequest {
         method: "GET",
-        path: "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Fmissing&base=main&per_page=100",
+        path: "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Fmissing&per_page=100",
         required_header: Some(("authorization", "Bearer fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
@@ -57,7 +56,7 @@ fn rejects_a_branch_without_an_open_pull_request() {
 
     assert_eq!(
         error.to_string(),
-        "no open pull request from branch `wt/missing` to `main`"
+        "no open pull request from branch `wt/missing`"
     );
     server.join().unwrap().unwrap();
 }

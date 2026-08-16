@@ -82,7 +82,9 @@ fn run_server() -> Result<()> {
     let host_worker = wt_host::CompositeWorker::new(
         host_provider,
         Duration::from_secs(server_config.guest.recipe_timeout_seconds),
-    );
+        server_config.host_agent_git_config(),
+    )
+    .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
     let gateway = wt_devcontainer_git::ControlClient::new(wt_devcontainer_git::CONTROL_SOCKET);
     let owner = process_user()?;

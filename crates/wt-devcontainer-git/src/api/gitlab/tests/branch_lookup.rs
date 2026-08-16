@@ -5,7 +5,7 @@ use crate::api::render_cli_command_output;
 fn shows_the_open_merge_request_for_an_explicit_branch() {
     let (base_url, server) = serve(vec![ExpectedRequest {
         method: "GET",
-        path: "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Ffix-login&target_branch=main&per_page=100",
+        path: "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Ffix-login&per_page=100",
         required_header: Some(("private-token", "fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
@@ -37,7 +37,7 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
 fn rejects_a_branch_without_an_open_merge_request() {
     let (base_url, server) = serve(vec![ExpectedRequest {
         method: "GET",
-        path: "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Fmissing&target_branch=main&per_page=100",
+        path: "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Fmissing&per_page=100",
         required_header: Some(("private-token", "fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
@@ -56,7 +56,7 @@ fn rejects_a_branch_without_an_open_merge_request() {
 
     assert_eq!(
         error.to_string(),
-        "no open merge request from branch `wt/missing` to `main`"
+        "no open merge request from branch `wt/missing`"
     );
     server.join().unwrap().unwrap();
 }

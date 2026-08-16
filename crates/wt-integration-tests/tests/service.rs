@@ -15,9 +15,7 @@ mod agent_git_reports;
 mod host_failure;
 #[path = "service/support.rs"]
 mod support;
-use support::{
-    create, create_host, service, Gateway, RejectingGateway, UnavailableGateway, Worker,
-};
+use support::{create, create_host, service, Gateway, UnavailableGateway, Worker};
 
 #[test]
 fn host_create_returns_setup_then_reconciles_running() {
@@ -27,7 +25,7 @@ fn host_create_returns_setup_then_reconciles_running() {
     let service = Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
         worker.clone(),
-        RejectingGateway,
+        Gateway,
         Operations::default(),
         u64::MAX,
     );
@@ -68,7 +66,7 @@ fn host_create_returns_setup_then_reconciles_running() {
             complete: true,
             ..Worker::default()
         },
-        RejectingGateway,
+        Gateway,
         Operations::default(),
         u64::MAX,
     )

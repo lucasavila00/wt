@@ -37,15 +37,12 @@ pub(crate) struct UnavailableGateway {
     pub(crate) revocations: Arc<AtomicUsize>,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct RejectingGateway;
-
 impl AgentGitGateway for Gateway {
     fn reserve(
         &self,
         world_id: Uuid,
-        _source: &str,
-        _base: &str,
+        _source: Option<&str>,
+        _base: Option<&str>,
     ) -> Result<wt_devcontainer_git::Grant, String> {
         Ok(wt_devcontainer_git::Grant {
             id: format!("grant-{world_id}"),
@@ -62,8 +59,8 @@ impl AgentGitGateway for UnavailableGateway {
     fn reserve(
         &self,
         world_id: Uuid,
-        _source: &str,
-        _base: &str,
+        _source: Option<&str>,
+        _base: Option<&str>,
     ) -> Result<wt_devcontainer_git::Grant, String> {
         Ok(wt_devcontainer_git::Grant {
             id: format!("grant-{world_id}"),
@@ -74,21 +71,6 @@ impl AgentGitGateway for UnavailableGateway {
     fn revoke(&self, _grant_id: &str) -> Result<(), String> {
         self.revocations.fetch_add(1, Ordering::SeqCst);
         Err("gateway unavailable".to_owned())
-    }
-}
-
-impl AgentGitGateway for RejectingGateway {
-    fn reserve(
-        &self,
-        _world_id: Uuid,
-        _source: &str,
-        _base: &str,
-    ) -> Result<wt_devcontainer_git::Grant, String> {
-        Err("Git gateway must not be used".into())
-    }
-
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
-        Err("Git gateway must not be used".into())
     }
 }
 

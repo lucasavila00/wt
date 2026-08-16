@@ -58,7 +58,9 @@ fn run_api(config_path: &Path) -> Result<()> {
     let host_worker = wt_host::CompositeWorker::new(
         host_provider,
         Duration::from_secs(server.guest.recipe_timeout_seconds),
-    );
+        server.host_agent_git_config(),
+    )
+    .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
     let gateway_socket = std::env::var_os("WT_AGENT_GIT_TEST_CONTROL_SOCKET")
         .map(PathBuf::from)

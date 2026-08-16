@@ -248,11 +248,9 @@ impl GitProviderApi for GithubApi {
             CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
                 pull_request_status(self.read_pull_request(scope.project, *mr)?),
             )),
-            CliCommand::ShowMrForBranch { branch } => {
-                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
-                    self.read_open_pull_request_for_branch(scope.project, scope.base, branch)?,
-                )))
-            }
+            CliCommand::ShowMrForBranch { branch } => Ok(ProviderCommandOutput::ChangeRequest(
+                pull_request_status(self.read_open_pull_request_for_branch(scope.project, branch)?),
+            )),
             CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
                 self.read_workflow_run(scope.project, *run)?,
             ))),
@@ -272,7 +270,7 @@ impl GitProviderApi for GithubApi {
             CliCommand::LogJob { job } => {
                 let project_scope = ProviderCommandScope {
                     project: scope.project,
-                    base: scope.base,
+                    base: "",
                     prefix: scope.prefix,
                     branch: "",
                     head: "",
@@ -318,12 +316,8 @@ impl GitProviderApi for GithubApi {
                 std::thread::sleep(std::time::Duration::from_secs(10));
             },
             CliCommand::OpenMr { head, base, draft } => {
-                if !head.starts_with(scope.prefix) || base != scope.base {
-                    bail!(
-                        "open mr must use a {}* head and the granted {} base",
-                        scope.prefix,
-                        scope.base
-                    );
+                if !head.starts_with(scope.prefix) {
+                    bail!("open mr must use a {}* head", scope.prefix);
                 }
                 let encoded: String =
                     url::form_urlencoded::byte_serialize(head.as_bytes()).collect();

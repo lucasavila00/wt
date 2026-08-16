@@ -45,4 +45,5 @@ Executable names used inside existing guests remain stable.
 - KVM machine files: the configured libvirt worlds directories
 
 Application data is typed by kind. A host record cannot acquire devcontainer
-Git or app-SSH state, and a CI record cannot appear in retained-world inventory.
+checkout or app-SSH state, and a CI record cannot appear in retained-world
+inventory.

@@ -1,15 +1,14 @@
 ---
 source: crates/wt-devcontainer-git/src/gateway/tests.rs
-assertion_line: 36
-expression: git_context_header(&grant)
+expression: "git_context_header(\"git@github.com:group/project.git\")"
 ---
 remote: This is a WT-managed development environment for a coding agent.
 remote: The developer's SSH keys and GitHub or GitLab credentials are not available here.
 remote: Do not look for credentials or use gh or glab.
-remote: WT gives you scoped access to project group/project.
+remote: WT gives you read access to every repository available to this gateway.
+remote: This Git operation is for project group/project.
 remote: Use normal Git for commits, fetches, pulls, and pushes.
-remote: Every WT world for this project can write branches under wt/.
-remote: Pull or merge requests target main.
+remote: Every WT world can write branches under wt/.
 remote: ag-git uses explicit provider resource types and IDs; it does not infer
 remote: resources from the current checkout.
 remote: Run ag-git --help to discover every available command.

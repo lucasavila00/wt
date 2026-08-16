@@ -365,15 +365,13 @@ impl GithubApi {
     fn read_open_pull_request_for_branch(
         &self,
         project: &str,
-        base: &str,
         branch: &str,
     ) -> Result<PullRequest> {
         let (owner, _) = split_project(project)?;
         let head = url::form_urlencoded::byte_serialize(format!("{owner}:{branch}").as_bytes())
             .collect::<String>();
-        let base_query = url::form_urlencoded::byte_serialize(base.as_bytes()).collect::<String>();
         let mut requests: Vec<PullRequest> = self.rest.read_json(&format!(
-            "{}repos/{project}/pulls?state=open&head={head}&base={base_query}&per_page=100",
+            "{}repos/{project}/pulls?state=open&head={head}&per_page=100",
             self.rest_prefix
         ))?;
         requests.retain(|request| {
@@ -384,13 +382,12 @@ impl GithubApi {
                     .repo
                     .as_ref()
                     .is_some_and(|repository| repository.full_name == project)
-                && request.base.reference == base
         });
         match requests.len() {
-            0 => bail!("no open pull request from branch `{branch}` to `{base}`"),
+            0 => bail!("no open pull request from branch `{branch}`"),
             1 => Ok(requests.pop().expect("one pull request remains")),
             count => bail!(
-                "GitHub returned {count} open pull requests from branch `{branch}` to `{base}`; refusing to choose one"
+                "GitHub returned {count} open pull requests from branch `{branch}`; refusing to choose one"
             ),
         }
     }
@@ -466,13 +463,11 @@ impl GithubApi {
             .map(|repo| repo.full_name.as_str())
             != Some(scope.project)
             || !request.head.reference.starts_with(scope.prefix)
-            || request.base.reference != scope.base
         {
             bail!(
-                "MR {} is outside the writable {}* -> {} scope",
+                "MR {} is outside the writable {}* scope",
                 request.number,
-                scope.prefix,
-                scope.base
+                scope.prefix
             );
         }
         Ok(())

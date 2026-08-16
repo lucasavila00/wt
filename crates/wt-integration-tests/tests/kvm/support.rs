@@ -240,8 +240,8 @@ impl KvmHarness {
             &mut stream,
             &ControlRequest::Reserve {
                 world_id: "different-world".to_owned(),
-                source: self.git.url(),
-                base: "main".to_owned(),
+                source: Some(self.git.url()),
+                base: Some("main".to_owned()),
             },
         )
         .unwrap();
@@ -268,6 +268,7 @@ impl KvmHarness {
                 token,
                 operation: ClientOperation::Cli {
                     args: Vec::new(),
+                    repository: None,
                     branch: None,
                     head: None,
                 },

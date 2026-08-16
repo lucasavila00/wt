@@ -2,7 +2,7 @@ mod service;
 
 use crate::{
     api, ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
-    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
+    Repository, TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -77,9 +77,6 @@ struct GrantRecord {
     id: String,
     token: String,
     world_id: String,
-    source: String,
-    base: String,
-    prefix: String,
     revoked: bool,
 }
 
@@ -95,24 +92,42 @@ fn valid_host(value: &str) -> bool {
         })
 }
 
-fn git_context_header(grant: &GrantRecord) -> String {
-    let project = parse_source(&grant.source)
+fn git_context_header(source: &str) -> String {
+    let project = parse_source(source)
         .map(|source| source.path.trim_end_matches(".git").to_owned())
-        .unwrap_or_else(|_| grant.source.clone());
+        .unwrap_or_else(|_| source.to_owned());
     format!(
         "remote: This is a WT-managed development environment for a coding agent.\n\
 remote: The developer's SSH keys and GitHub or GitLab credentials are not available here.\n\
 remote: Do not look for credentials or use gh or glab.\n\
-remote: WT gives you scoped access to project {project}.\n\
+remote: WT gives you read access to every repository available to this gateway.\n\
+remote: This Git operation is for project {project}.\n\
 remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
-remote: Every WT world for this project can write branches under {}.\n\
-remote: Pull or merge requests target {}.\n\
+remote: Every WT world can write branches under {BRANCH_PREFIX}.\n\
 remote: ag-git uses explicit provider resource types and IDs; it does not infer\n\
 remote: resources from the current checkout.\n\
 remote: Run ag-git --help to discover every available command.\n\
-remote:\n",
-        grant.prefix, grant.base
+remote:\n"
     )
+}
+
+fn validate_repository(repository: &Repository) -> Result<()> {
+    if !valid_host(&repository.host)
+        || repository.project.is_empty()
+        || repository.project.starts_with('/')
+        || repository.project.ends_with(".git")
+        || repository
+            .project
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        || !repository
+            .project
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
+    {
+        bail!("invalid Git repository");
+    }
+    Ok(())
 }
 
 struct GitSource {

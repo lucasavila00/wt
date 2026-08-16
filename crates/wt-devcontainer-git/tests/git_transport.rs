@@ -26,12 +26,17 @@ impl Drop for Process {
 }
 
 #[test]
-fn normal_git_uses_the_scoped_gateway_transport() {
+fn one_world_grant_reads_and_writes_multiple_repositories() {
     let temp = tempfile::tempdir().unwrap();
     let repositories = temp.path().join("repositories");
     let upstream = repositories.join("project.git");
+    let other_upstream = repositories.join("other.git");
     fs::create_dir(&repositories).unwrap();
     git(temp.path(), &["init", "--bare", upstream.to_str().unwrap()]);
+    git(
+        temp.path(),
+        &["init", "--bare", other_upstream.to_str().unwrap()],
+    );
 
     let seed = temp.path().join("seed");
     fs::create_dir(&seed).unwrap();
@@ -45,6 +50,10 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     git(&seed, &["push", upstream.to_str().unwrap(), "main:main"]);
     git(
         &seed,
+        &["push", other_upstream.to_str().unwrap(), "main:main"],
+    );
+    git(
+        &seed,
         &[
             "push",
             upstream.to_str().unwrap(),
@@ -52,6 +61,10 @@ fn normal_git_uses_the_scoped_gateway_transport() {
         ],
     );
     git(&upstream, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    git(
+        &other_upstream,
+        &["symbolic-ref", "HEAD", "refs/heads/main"],
+    );
 
     let control = temp.path().join("control.sock");
     let transport = temp.path().join("transport.sock");
@@ -111,6 +124,32 @@ fn normal_git_uses_the_scoped_gateway_transport() {
     assert_success(&output);
     git(&checkout, &["config", "user.name", "Test User"]);
     git(&checkout, &["config", "user.email", "test@example.invalid"]);
+
+    let other_checkout = temp.path().join("other-checkout");
+    assert_success(&git_output(
+        temp.path(),
+        &[
+            "clone",
+            "ag::git@local.test:other.git",
+            other_checkout.to_str().unwrap(),
+        ],
+        &relay_socket,
+    ));
+    git(&other_checkout, &["config", "user.name", "Test User"]);
+    git(
+        &other_checkout,
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(&other_checkout, &["switch", "-c", "wt/other"]);
+    fs::write(other_checkout.join("OTHER.md"), "other\n").unwrap();
+    git(&other_checkout, &["add", "OTHER.md"]);
+    git(&other_checkout, &["commit", "-m", "other"]);
+    assert_success(&git_output(
+        &other_checkout,
+        &["push", "origin", "wt/other"],
+        &relay_socket,
+    ));
+    assert_ref(&other_upstream, "refs/heads/wt/other", true);
 
     fs::write(seed.join("README.md"), "upstream\n").unwrap();
     git(&seed, &["commit", "-am", "upstream"]);
@@ -240,8 +279,8 @@ fn reserve(control: &Path, world_id: &str, source: &str, base: &str) -> ControlR
         &mut stream,
         &ControlRequest::Reserve {
             world_id: world_id.to_owned(),
-            source: source.to_owned(),
-            base: base.to_owned(),
+            source: Some(source.to_owned()),
+            base: Some(base.to_owned()),
         },
     )
     .unwrap();

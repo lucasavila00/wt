@@ -471,7 +471,7 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
             required_header: Some(("private-token", "fixture-token")),
             body_contains: None,
             response_content_type: "application/json",
-            response_body: r#"{"iid":8,"title":"Fix login","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main"}"#,
+            response_body: r#"{"iid":8,"title":"Fix login","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main","source_project_id":12,"target_project_id":12}"#,
         },
         ExpectedRequest {
             method: "GET",
@@ -570,6 +570,8 @@ fn write_scope_comes_from_provider_resource_metadata() {
         sha: "abc123".to_owned(),
         source_branch: "main".to_owned(),
         target_branch: "main".to_owned(),
+        source_project_id: Some(12),
+        target_project_id: Some(12),
     };
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
     request.source_branch = "wt/fix".to_owned();
@@ -644,7 +646,6 @@ fn project_scope() -> ProviderProjectScope<'static> {
     ProviderProjectScope {
         host: "gitlab.test",
         project: "acme/widget",
-        base: "main",
         prefix: "wt/",
     }
 }

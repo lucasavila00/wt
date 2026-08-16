@@ -216,11 +216,32 @@ impl ServerConfig {
             agent_git_relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
             agent_git_remote_binary: self.install.binary_dir.join("git-remote-ag"),
             agent_git_cli_binary: self.install.binary_dir.join("ag-git"),
+            agent_git_provider_hosts: self.agent_git_provider_hosts(),
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             bootstrap,
         })
+    }
+
+    pub fn host_agent_git_config(&self) -> wt_host::AgentGitConfig {
+        wt_host::AgentGitConfig {
+            relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
+            remote_binary: self.install.binary_dir.join("git-remote-ag"),
+            cli_binary: self.install.binary_dir.join("ag-git"),
+            provider_hosts: self.agent_git_provider_hosts(),
+        }
+    }
+
+    fn agent_git_provider_hosts(&self) -> Vec<String> {
+        [
+            self.agent_git.github.as_ref(),
+            self.agent_git.gitlab.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|provider| provider.host.clone())
+        .collect()
     }
 
     fn bootstrap_policy(&self) -> Result<BootstrapPolicy, String> {

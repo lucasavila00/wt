@@ -6,7 +6,7 @@ mod vsock;
 
 pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind};
 pub use protocol::{
-    ClientOperation, ClientRequest, ControlRequest, ControlResponse, GitService, Grant,
+    ClientOperation, ClientRequest, ControlRequest, ControlResponse, GitService, Grant, Repository,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line, DuplexStream};

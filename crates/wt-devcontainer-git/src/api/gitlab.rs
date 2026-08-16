@@ -175,6 +175,8 @@ struct MergeRequest {
     sha: String,
     source_branch: String,
     target_branch: String,
+    source_project_id: Option<u64>,
+    target_project_id: Option<u64>,
 }
 
 #[derive(Deserialize)]

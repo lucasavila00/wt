@@ -53,9 +53,20 @@ install -m 0755 "$stage-agent-git-relay" /usr/local/bin/wt-agent-git-relay
 install -m 0755 "$stage-agent-git-remote" /usr/local/bin/git-remote-ag
 install -m 0755 "$stage-ag-git" /usr/local/bin/ag-git
 install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-hint
+install -d -m 0755 -o wt -g wt /var/lib/wt-setup
+install -m 0600 -o wt -g wt "$stage-agent-git-providers" \
+    /var/lib/wt-setup/agent-git-providers
+while IFS= read -r host; do
+    test -n "$host" || continue
+    runuser --user wt -- git config --global --replace-all \
+        "url.ag::git@$host:.insteadOf" "git@$host:"
+    runuser --user wt -- git config --global --add \
+        "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
+    runuser --user wt -- git config --global --add \
+        "url.ag::git@$host:.insteadOf" "https://$host/"
+done < /var/lib/wt-setup/agent-git-providers
 install -m 0644 /home/wt/.byobu/.tmux.conf \
     /usr/local/share/wt-devcontainer-tmux.conf
-install -d -m 0755 -o wt -g wt /var/lib/wt-setup
 install -d -m 0700 -o wt -g wt /var/lib/wt-agent-git
 install -m 0600 -o wt -g wt /tmp/wt-setup-git-grant /var/lib/wt-agent-git/grant
 rm -f /tmp/wt-setup-git-grant

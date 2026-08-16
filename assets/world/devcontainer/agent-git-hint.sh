@@ -16,9 +16,10 @@ cat >&2 <<EOF
 WT: This is a WT-managed development environment for a coding agent.
 WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
 WT: not available here. Do not look for credentials or use gh or glab.
-WT: WT gives you scoped access to project $project.
-WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world for
-WT: this project can write branches under $prefix. Pull or merge requests target $base.
+WT: WT gives you read access to every repository available to the Git gateway.
+WT: This checkout is project $project and its configured base is $base.
+WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
+WT: write branches under $prefix in any available repository.
 WT: ag-git uses explicit provider resource types and IDs; it does not infer
 WT: resources from the current checkout.
 WT: Run ag-git --help to discover every available command.

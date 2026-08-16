@@ -40,7 +40,7 @@ impl Gateway {
                 world_id,
                 source,
                 base,
-            } => self.reserve(&world_id, &source, &base),
+            } => self.reserve(&world_id, source.as_deref(), base.as_deref()),
             ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
         }
     }
@@ -62,32 +62,45 @@ impl Gateway {
             ClientOperation::Git { service, source } => {
                 crate::write_json_line(
                     &mut stream,
-                    &TransportResponse::with_message(git_context_header(&grant)),
+                    &TransportResponse::with_message(git_context_header(&source)),
                 )?;
-                if let Err(error) = self.serve_git(&mut stream, service, &source, &grant) {
+                if let Err(error) = self.serve_git(&mut stream, service, &source) {
                     let message = format!("ERR WT Git gateway failed: {error:#}\n");
                     let _ = write_packet(&mut stream, message.as_bytes());
                     let _ = stream.flush();
                 }
                 Ok(())
             }
-            ClientOperation::Cli { args, branch, head } => {
-                let response =
-                    match self.serve_cli(&args, branch.as_deref(), head.as_deref(), &grant) {
-                        Ok(output) => TransportResponse::with_message(output),
-                        Err(error) => TransportResponse::error(format!("{error:#}")),
-                    };
+            ClientOperation::Cli {
+                args,
+                repository,
+                branch,
+                head,
+            } => {
+                let response = match self.serve_cli(
+                    &args,
+                    repository.as_ref(),
+                    branch.as_deref(),
+                    head.as_deref(),
+                    &grant,
+                ) {
+                    Ok(output) => TransportResponse::with_message(output),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
+                };
                 crate::write_json_line(&mut stream, &response)
             }
         }
     }
 
-    fn reserve(&self, world_id: &str, source: &str, base: &str) -> Result<ControlResponse> {
-        if world_id.is_empty() || base.is_empty() {
+    fn reserve(
+        &self,
+        world_id: &str,
+        source: Option<&str>,
+        base: Option<&str>,
+    ) -> Result<ControlResponse> {
+        if world_id.is_empty() || source.is_some() != base.is_some() {
             bail!("invalid gateway grant scope");
         }
-        let parsed = parse_source(source)?;
-        let provider = self.provider(&parsed.host)?;
         {
             let state = self
                 .state
@@ -98,16 +111,19 @@ impl Gateway {
                 .iter()
                 .find(|grant| grant.world_id == world_id && !grant.revoked)
             {
-                if existing.source != source || existing.base != base {
-                    bail!("world already reserved with a different Git scope");
-                }
                 return Ok(ControlResponse::ok(Some(Grant {
                     id: existing.id.clone(),
                     token: existing.token.clone(),
                 })));
             }
         }
-        verify_repository(provider, &parsed, base)?;
+        if let (Some(source), Some(base)) = (source, base) {
+            if base.is_empty() {
+                bail!("invalid gateway repository check");
+            }
+            let parsed = parse_source(source)?;
+            verify_repository(self.provider(&parsed.host)?, &parsed, base)?;
+        }
         let mut state = self
             .state
             .lock()
@@ -117,9 +133,6 @@ impl Gateway {
             .iter()
             .find(|grant| grant.world_id == world_id && !grant.revoked)
         {
-            if existing.source != source || existing.base != base {
-                bail!("world already reserved with a different Git scope");
-            }
             return Ok(ControlResponse::ok(Some(Grant {
                 id: existing.id.clone(),
                 token: existing.token.clone(),
@@ -129,9 +142,6 @@ impl Gateway {
             id: Uuid::new_v4().to_string(),
             token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
             world_id: world_id.to_owned(),
-            source: source.to_owned(),
-            base: base.to_owned(),
-            prefix: BRANCH_PREFIX.to_owned(),
             revoked: false,
         };
         let response = ControlResponse::ok(Some(Grant {
@@ -178,11 +188,6 @@ impl Gateway {
             .find(|grant| grant.token == request.token && !grant.revoked)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("gateway grant is invalid or revoked"))?;
-        if let ClientOperation::Git { source, .. } = &request.operation {
-            if source != &grant.source {
-                bail!("gateway grant does not allow project {source}");
-            }
-        }
         Ok(grant)
     }
 
@@ -216,7 +221,6 @@ impl Gateway {
         stream: &mut S,
         service: GitService,
         source: &str,
-        grant: &GrantRecord,
     ) -> Result<()> {
         let source = parse_source(source)?;
         let provider = self.provider(&source.host)?;
@@ -224,7 +228,7 @@ impl Gateway {
         if service == GitService::ReceivePack {
             forward_advertisement(&mut child, stream)?;
             let commands = read_packet_section(&mut *stream)?;
-            if let Err(error) = validate_push(&commands, &grant.prefix) {
+            if let Err(error) = validate_push(&commands, BRANCH_PREFIX) {
                 reject_push(stream, &commands, &error.to_string())?;
                 let _ = child.kill();
                 let _ = child.wait();
@@ -242,13 +246,7 @@ impl Gateway {
                 Provider::Local { api, .. } => api.is_some(),
             };
             let message = |response: &[u8]| {
-                push_result_message(
-                    provider_api_available,
-                    &grant.base,
-                    &commands,
-                    response,
-                    sideband,
-                )
+                push_result_message(provider_api_available, &commands, response, sideband)
             };
             return bridge_child(
                 stream,
@@ -263,6 +261,7 @@ impl Gateway {
     pub(super) fn serve_cli(
         &self,
         args: &[String],
+        repository: Option<&Repository>,
         _branch: Option<&str>,
         _head: Option<&str>,
         grant: &GrantRecord,
@@ -279,8 +278,11 @@ impl Gateway {
                 .context("store agent Git report")?;
             return Ok("Recorded ag-git report for this world.\n".to_owned());
         }
-        let source = parse_source(&grant.source)?;
-        let provider = self.provider(&source.host)?;
+        let repository = repository.context(
+            "ag-git needs a Git checkout with an origin to select a repository for this command",
+        )?;
+        validate_repository(repository)?;
+        let provider = self.provider(&repository.host)?;
         let api = match provider {
             Provider::Ssh {
                 kind,
@@ -294,12 +296,10 @@ impl Gateway {
         let Some((kind, api_token_file, api_base)) = api else {
             return Ok(cli_unavailable());
         };
-        let project = source.path.trim_end_matches(".git");
         let scope = api::ProviderProjectScope {
-            host: &source.host,
-            project,
-            base: &grant.base,
-            prefix: &grant.prefix,
+            host: &repository.host,
+            project: &repository.project,
+            prefix: BRANCH_PREFIX,
         };
         let output = match api_base {
             Some(base) => api::execute_cli_provider_command_at_base(
@@ -317,7 +317,6 @@ impl Gateway {
 
 pub(super) fn push_result_message(
     provider_api_available: bool,
-    base: &str,
     commands: &[u8],
     response: &[u8],
     sideband: bool,
@@ -338,17 +337,12 @@ pub(super) fn push_result_message(
             "action": "show_mr_for_branch",
             "branch": branch,
         });
-        let open_mr = serde_json::json!({
-            "action": "open_mr",
-            "head": branch,
-            "base": base,
-        });
         let list_ci = serde_json::json!({
             "action": "list_ci",
             "commit": head,
         });
         message.push_str(&format!(
-            "Inspect its open MR with:\n  ag-git '{show_mr}'\nIf that reports no open MR, open one with:\n  ag-git '{open_mr}'\nInspect CI with:\n  ag-git '{list_ci}'\n"
+            "Inspect its open MR with:\n  ag-git '{show_mr}'\nIf that reports no open MR, run `ag-git --help` and open one with an explicit base.\nInspect CI with:\n  ag-git '{list_ci}'\n"
         ));
     }
     Ok(message)

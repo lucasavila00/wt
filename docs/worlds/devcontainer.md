@@ -31,12 +31,13 @@ connections attach to the same session.
 
 ## Git
 
-The server holds provider credentials. A world receives a revocable grant for
-its project, base branch, and the shared `wt/` branch namespace. Provider keys
-and tokens do not enter the guest or container.
+The server holds provider credentials. A world receives a revocable grant that
+can read every available repository and write only branches under `wt/`.
+Provider keys and tokens do not enter the guest or container.
 
-The checkout uses an `ag::` remote. Normal Git and `ag-git` use the guest relay.
-The grant is revoked before the world disk is deleted.
+Configured provider URLs route through the guest relay. Normal Git uses the
+gateway automatically, and `ag-git` selects the repository from the current
+checkout. The grant is revoked before the world disk is deleted.
 
 ## Requirements
 

@@ -7,8 +7,10 @@ pub const PROTOCOL_VERSION: u32 = 2;
 pub enum ControlRequest {
     Reserve {
         world_id: String,
-        source: String,
-        base: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
     },
     Revoke {
         grant_id: String,
@@ -64,9 +66,17 @@ pub enum ClientOperation {
     },
     Cli {
         args: Vec<String>,
+        #[serde(default)]
+        repository: Option<Repository>,
         branch: Option<String>,
         head: Option<String>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Repository {
+    pub host: String,
+    pub project: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
