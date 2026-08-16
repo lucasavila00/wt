@@ -1,3 +1,4 @@
+use super::binaries::prepare_test_binaries;
 use super::fixture::*;
 use super::gateway::{spawn_gateway, spawn_provider_api_fixture};
 use super::images::{isolated_test_images, unique_vsock_port};
@@ -40,17 +41,9 @@ impl KvmHarness {
         std::env::set_var(VSOCK_PORT_ENV, vsock_port.to_string());
         let workspace =
             fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
-        timings.run("build guest helpers", || {
-            let mut command = cmd!(
-                env!("CARGO"),
-                "build",
-                "-p",
-                "wt-devcontainer-guest",
-                "-p",
-                "wt-agent-git",
-            );
-            command.current_dir(&workspace);
-            run(command, "build guest helpers")
+        let binary_dir = temp.path().join("bin");
+        timings.run("build isolated test binaries", || {
+            prepare_test_binaries(&workspace, &binary_dir)
         });
         let mut config = match std::env::var_os("WT_KVM_SERVER_CONFIG") {
             Some(path) => ServerConfig::load_from(Path::new(&path)).unwrap(),
@@ -72,7 +65,7 @@ impl KvmHarness {
         });
         config.image.devcontainer_path = images.path().join("devcontainer.qcow2");
         config.image.host_path = images.path().join("host.qcow2");
-        config.install.binary_dir = workspace.join("target/debug");
+        config.install.binary_dir = binary_dir;
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())

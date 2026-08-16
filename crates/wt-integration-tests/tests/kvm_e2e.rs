@@ -5,6 +5,8 @@ use wt_command::cmd;
 #[path = "kvm/fixture.rs"]
 mod fixture;
 pub(crate) use fixture::*;
+#[path = "kvm/binaries.rs"]
+mod binaries;
 #[path = "kvm/gateway.rs"]
 mod gateway;
 #[path = "kvm/images.rs"]
