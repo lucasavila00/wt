@@ -42,6 +42,8 @@ enum Command {
     Start { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },
+    /// Synchronize SSH aliases and connect to a world.
+    Ssh { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
     /// Show reports submitted about ag-git.
@@ -172,6 +174,7 @@ fn run() -> Result<()> {
             );
         }
         Command::Code { name } => code::open(&config, &name)?,
+        Command::Ssh { name } => wt_cli::connection::ssh(&config, &name)?,
         Command::Sync => {
             let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());

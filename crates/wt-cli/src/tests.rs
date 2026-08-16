@@ -115,15 +115,19 @@ fn explains_memory_capacity() {
 }
 
 #[test]
-fn rejects_removed_ssh_subcommand() {
-    assert!(Cli::try_parse_from(["wt", "ssh", "world"]).is_err());
-}
-
-#[test]
 fn parses_code_target() {
     let cli = Cli::try_parse_from(["wt", "code", "ars.jsdev"]).unwrap();
     let Command::Code { name } = cli.command else {
         panic!("expected code command");
+    };
+    assert_eq!(name, "ars.jsdev");
+}
+
+#[test]
+fn parses_ssh_target() {
+    let cli = Cli::try_parse_from(["wt", "ssh", "ars.jsdev"]).unwrap();
+    let Command::Ssh { name } = cli.command else {
+        panic!("expected ssh command");
     };
     assert_eq!(name, "ars.jsdev");
 }
