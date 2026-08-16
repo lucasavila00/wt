@@ -630,6 +630,7 @@ After=network-online.target\n\
 Type=simple\n\
 User={}\n\
 Environment={}\n\
+Environment={}\n\
 {}\n\
 ExecStart={}\n\
 Restart=on-failure\n\
@@ -643,6 +644,11 @@ UMask=0077\n\
 WantedBy=multi-user.target\n",
         user.name,
         systemd_quote(&format!("HOME={}", user.dir.display())),
+        systemd_quote(&format!(
+            "{}={}",
+            wt_server::AGENT_GIT_VSOCK_PORT_ENV,
+            server.agent_git.vsock_port
+        )),
         credentials.trim_end(),
         command,
     )
@@ -661,6 +667,7 @@ After=network-online.target docker.service libvirtd.service wt-agent-git-gateway
 Type=simple\n\
 User={}\n\
 Environment={}\n\
+Environment={}\n\
 ExecStart={} serve\n\
 Restart=on-failure\n\
 RuntimeDirectory=wt\n\
@@ -671,6 +678,11 @@ UMask=0077\n\
 WantedBy=multi-user.target\n",
         user.name,
         systemd_quote(&format!("HOME={}", user.dir.display())),
+        systemd_quote(&format!(
+            "{}={}",
+            wt_server::AGENT_GIT_VSOCK_PORT_ENV,
+            server.agent_git.vsock_port
+        )),
         systemd_quote(&executable.display().to_string()),
     )
     .into_bytes()

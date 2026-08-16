@@ -13,6 +13,9 @@ configuration.
 Each `agent_git` provider names an API-token file, SSH key pair, and trusted
 host-key file. Paths may be absolute or start with `~/`. The installer validates
 them and stores encrypted copies for the gateway; worlds never receive them.
+`agent_git.vsock_port` is the private gateway endpoint shared by the server and
+world relays. Installed services use the configured value. Development and E2E
+processes may override it with `WT_AGENT_GIT_VSOCK_PORT`.
 The `image` section names separate devcontainer and host images in one
 directory. They cannot use the same file.
 Changing strict server settings requires `make nuke` followed by reinstalling.

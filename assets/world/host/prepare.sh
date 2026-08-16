@@ -50,6 +50,10 @@ case "${1:-}" in
         fi
         ;;
     agent-git)
+        vsock_port=$(cat /tmp/wt-host-agent-git-vsock-port)
+        case "$vsock_port" in
+            ''|*[!0-9]*) echo "invalid agent Git vsock port" >&2; exit 1 ;;
+        esac
         install -m 0755 /tmp/wt-host-agent-git-relay /usr/local/bin/wt-agent-git-relay
         install -m 0755 /tmp/wt-host-agent-git-remote /usr/local/bin/git-remote-ag
         install -m 0755 /tmp/wt-host-ag-git /usr/local/bin/ag-git
@@ -65,14 +69,14 @@ case "${1:-}" in
             runuser --user wt -- git config --global --add \
                 "url.ag::git@$host:.insteadOf" "https://$host/"
         done < /tmp/wt-host-agent-git-providers
-        cat > /etc/systemd/system/wt-agent-git-relay.service <<'EOF'
+        cat > /etc/systemd/system/wt-agent-git-relay.service <<EOF
 [Unit]
 Description=WT agent Git relay
 
 [Service]
 Type=simple
 User=wt
-ExecStart=/usr/local/bin/wt-agent-git-relay
+ExecStart=/usr/local/bin/wt-agent-git-relay --vsock-port $vsock_port
 Restart=on-failure
 RuntimeDirectory=wt-agent-git
 RuntimeDirectoryMode=0755
@@ -84,7 +88,7 @@ WantedBy=multi-user.target
 EOF
         rm -f /tmp/wt-host-agent-git-grant /tmp/wt-host-agent-git-relay \
             /tmp/wt-host-agent-git-remote /tmp/wt-host-ag-git \
-            /tmp/wt-host-agent-git-providers
+            /tmp/wt-host-agent-git-providers /tmp/wt-host-agent-git-vsock-port
         systemctl daemon-reload
         if ! systemctl enable --now wt-agent-git-relay.service; then
             service_diagnostics wt-agent-git-relay.service

@@ -239,6 +239,7 @@ binary_dir = "/opt/wt bin"
     Type=simple
     User=[USER]
     Environment="HOME=[HOME]"
+    Environment="WT_AGENT_GIT_VSOCK_PORT=18017"
     ExecStart="/opt/wt bin/wt-server" serve
     Restart=on-failure
     RuntimeDirectory=wt

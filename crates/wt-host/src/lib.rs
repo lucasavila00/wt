@@ -33,6 +33,7 @@ pub struct AgentGitConfig {
     pub remote_binary: PathBuf,
     pub cli_binary: PathBuf,
     pub provider_hosts: Vec<String>,
+    pub vsock_port: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,6 +100,7 @@ pub struct CompositeWorker<P> {
     agent_git_remote: Vec<u8>,
     agent_git_cli: Vec<u8>,
     provider_hosts: Vec<u8>,
+    vsock_port: Vec<u8>,
 }
 
 impl<P> CompositeWorker<P> {
@@ -119,6 +121,7 @@ impl<P> CompositeWorker<P> {
             agent_git_remote: read(&agent_git.remote_binary, "agent Git remote helper")?,
             agent_git_cli: read(&agent_git.cli_binary, "agent Git CLI")?,
             provider_hosts: format!("{}\n", agent_git.provider_hosts.join("\n")).into_bytes(),
+            vsock_port: format!("{}\n", agent_git.vsock_port).into_bytes(),
         })
     }
 }
@@ -160,6 +163,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             &self.agent_git_remote,
             &self.agent_git_cli,
             &self.provider_hosts,
+            &self.vsock_port,
             deadline,
             log,
         )?;
@@ -216,6 +220,7 @@ fn install_agent_git(
     remote: &[u8],
     cli: &[u8],
     provider_hosts: &[u8],
+    vsock_port: &[u8],
     deadline: Instant,
     log: &mut dyn Write,
 ) -> Result<(), WorkerError> {
@@ -225,6 +230,7 @@ fn install_agent_git(
         ("/tmp/wt-host-agent-git-remote", remote),
         ("/tmp/wt-host-ag-git", cli),
         ("/tmp/wt-host-agent-git-providers", provider_hosts),
+        ("/tmp/wt-host-agent-git-vsock-port", vsock_port),
     ] {
         transport
             .write_file(&WriteFileRequest {

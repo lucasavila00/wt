@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use wt_agent_git::{
-    copy_bidirectional, read_json_line, write_json_line, ClientRequest, TransportRequest,
-    TransportResponse, VsockStream, VSOCK_PORT,
+    copy_bidirectional, read_json_line, resolve_vsock_port, write_json_line, ClientRequest,
+    TransportRequest, TransportResponse, VsockStream,
 };
 
 #[derive(Debug, Parser)]
@@ -18,8 +18,8 @@ struct Cli {
     grant_file: PathBuf,
     #[arg(long)]
     gateway_unix: Option<PathBuf>,
-    #[arg(long, default_value_t = VSOCK_PORT)]
-    vsock_port: u32,
+    #[arg(long)]
+    vsock_port: Option<u32>,
 }
 
 fn main() {
@@ -31,6 +31,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    let vsock_port = resolve_vsock_port(cli.vsock_port)?;
     let token = fs::read_to_string(&cli.grant_file)
         .with_context(|| format!("read {}", cli.grant_file.display()))?;
     let token = token.trim();
@@ -56,7 +57,6 @@ fn run() -> Result<()> {
             Ok(stream) => {
                 let token = token.to_owned();
                 let gateway_unix = cli.gateway_unix.clone();
-                let vsock_port = cli.vsock_port;
                 std::thread::spawn(move || {
                     if let Err(error) = handle(stream, &token, gateway_unix, vsock_port) {
                         eprintln!("wt-agent-git-relay: request: {error:#}");

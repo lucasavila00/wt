@@ -70,14 +70,18 @@ install -m 0644 /home/wt/.byobu/.tmux.conf \
 install -d -m 0700 -o wt -g wt /var/lib/wt-agent-git
 install -m 0600 -o wt -g wt /tmp/wt-setup-git-grant /var/lib/wt-agent-git/grant
 rm -f /tmp/wt-setup-git-grant
-cat > /etc/systemd/system/wt-agent-git-relay.service <<'EOF'
+vsock_port=$(cat "$stage-agent-git-vsock-port")
+case "$vsock_port" in
+    ''|*[!0-9]*) echo "invalid agent Git vsock port" >&2; exit 1 ;;
+esac
+cat > /etc/systemd/system/wt-agent-git-relay.service <<EOF
 [Unit]
 Description=WT agent Git relay
 
 [Service]
 Type=simple
 User=wt
-ExecStart=/usr/local/bin/wt-agent-git-relay
+ExecStart=/usr/local/bin/wt-agent-git-relay --vsock-port $vsock_port
 Restart=on-failure
 RuntimeDirectory=wt-agent-git
 RuntimeDirectoryMode=0755

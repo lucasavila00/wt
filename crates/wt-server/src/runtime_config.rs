@@ -4,6 +4,9 @@ use std::time::Duration;
 use wt_devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 use wt_libvirt::MachineConfig;
 
+pub const DEFAULT_AGENT_GIT_VSOCK_PORT: u32 = wt_agent_git::VSOCK_PORT;
+pub const AGENT_GIT_VSOCK_PORT_ENV: &str = wt_agent_git::VSOCK_PORT_ENV;
+
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -30,8 +33,14 @@ pub struct RegistryCacheConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentGitConfig {
+    #[serde(default = "default_agent_git_vsock_port")]
+    pub vsock_port: u32,
     pub github: Option<AgentGitProviderConfig>,
     pub gitlab: Option<AgentGitProviderConfig>,
+}
+
+fn default_agent_git_vsock_port() -> u32 {
+    DEFAULT_AGENT_GIT_VSOCK_PORT
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -76,8 +85,13 @@ impl ServerConfig {
     pub fn load_from(path: &Path) -> Result<Self, String> {
         let contents = std::fs::read_to_string(path)
             .map_err(|error| format!("read config {}: {error}", path.display()))?;
-        let config: Self = toml::from_str(&contents)
+        let mut config: Self = toml::from_str(&contents)
             .map_err(|error| format!("parse config {}: {error}", path.display()))?;
+        if let Some(port) =
+            wt_agent_git::vsock_port_from_env().map_err(|error| error.to_string())?
+        {
+            config.agent_git.vsock_port = port;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -217,6 +231,7 @@ impl ServerConfig {
             agent_git_remote_binary: self.install.binary_dir.join("git-remote-ag"),
             agent_git_cli_binary: self.install.binary_dir.join("ag-git"),
             agent_git_provider_hosts: self.agent_git_provider_hosts(),
+            agent_git_vsock_port: self.agent_git.vsock_port,
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
@@ -230,6 +245,7 @@ impl ServerConfig {
             remote_binary: self.install.binary_dir.join("git-remote-ag"),
             cli_binary: self.install.binary_dir.join("ag-git"),
             provider_hosts: self.agent_git_provider_hosts(),
+            vsock_port: self.agent_git.vsock_port,
         }
     }
 
@@ -285,6 +301,9 @@ impl ServerConfig {
     }
 
     fn validate_agent_git(&self) -> Result<(), String> {
+        if self.agent_git.vsock_port == 0 || self.agent_git.vsock_port == u32::MAX {
+            return Err("agent_git.vsock_port must be a concrete nonzero port".to_owned());
+        }
         let providers = [
             ("agent_git.github.host", self.agent_git.github.as_ref()),
             ("agent_git.gitlab.host", self.agent_git.gitlab.as_ref()),
@@ -364,7 +383,8 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn complete_config_is_valid() {
-        let (_config, machine) = parse(VALID).unwrap();
+        let (config, machine) = parse(VALID).unwrap();
+        assert_eq!(config.agent_git.vsock_port, DEFAULT_AGENT_GIT_VSOCK_PORT);
         assert_eq!(
             machine.image,
             Path::new("/var/lib/wt/images/devcontainer.qcow2")
@@ -398,6 +418,11 @@ binary_dir = "/usr/local/bin"
         )
         .is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
+        assert!(parse(&VALID.replace(
+            "[agent_git.github]",
+            "[agent_git]\nvsock_port = 0\n\n[agent_git.github]"
+        ))
+        .is_err());
         assert!(parse(&VALID.replace(
             "host_path = \"/var/lib/wt/images/host.qcow2\"",
             "host_path = \"/var/lib/wt/images/host.qcow2\"\nsource_url = \"https://example.com/img\""

@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use wt_agent_git::{
-    FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, VsockListener, CONTROL_SOCKET,
-    VSOCK_PORT,
+    resolve_vsock_port, FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, VsockListener,
+    CONTROL_SOCKET,
 };
 
 #[derive(Debug, Parser)]
@@ -33,8 +33,8 @@ enum Command {
         gitlab_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
         #[arg(long)]
         transport_socket: Option<PathBuf>,
-        #[arg(long, default_value_t = VSOCK_PORT)]
-        vsock_port: u32,
+        #[arg(long)]
+        vsock_port: Option<u32>,
         #[arg(long)]
         no_vsock: bool,
     },
@@ -59,6 +59,7 @@ fn run() -> Result<()> {
         vsock_port,
         no_vsock,
     } = Cli::parse().command;
+    let vsock_port = resolve_vsock_port(vsock_port)?;
     let database_path = match database_path {
         Some(path) => path,
         None => std::env::var_os("HOME")

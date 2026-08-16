@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_agent_git::{
     read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION,
+    TransportRequest, TransportResponse, PROTOCOL_VERSION, VSOCK_PORT, VSOCK_PORT_ENV,
 };
 use wt_api::{
     ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
@@ -35,6 +35,8 @@ pub(crate) struct KvmHarness {
 impl KvmHarness {
     pub(crate) fn new(timings: &mut Timings) -> Self {
         let temp = TempDir::new().unwrap();
+        let vsock_port = unique_vsock_port();
+        std::env::set_var(VSOCK_PORT_ENV, vsock_port.to_string());
         let workspace =
             fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
         timings.run("build guest helpers", || {
@@ -56,6 +58,7 @@ impl KvmHarness {
             )
             .unwrap(),
         };
+        assert_eq!(config.agent_git.vsock_port, vsock_port);
         config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
         config.install.binary_dir = workspace.join("target/debug");
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
@@ -76,8 +79,7 @@ impl KvmHarness {
         fs::write(
             temp.path().join(".ssh/config"),
             format!(
-                "Include {}\nHost *\n  IdentityFile {}\n  IdentitiesOnly yes\n",
-                temp.path().join(".ssh/wt/config").display(),
+                "Include ~/.ssh/wt/config\nHost *\n  IdentityFile {}\n  IdentitiesOnly yes\n",
                 git.guest_key.display(),
             ),
         )
@@ -354,11 +356,19 @@ fn assert_gateway_running(gateway: &mut Child, log_path: &Path) {
     };
     let log = fs::read_to_string(log_path).unwrap_or_else(|error| error.to_string());
     panic!(
-        "test gateway exited during startup ({status}); stop any installed \
-         wt-agent-git-gateway service before running the KVM E2E\n\
+        "test gateway exited during startup ({status})\n\
          gateway log ({}):\n{log}",
         log_path.display()
     );
+}
+
+fn unique_vsock_port() -> u32 {
+    loop {
+        let port = uuid::Uuid::new_v4().as_u128() as u32;
+        if port > 1024 && port != VSOCK_PORT && port != u32::MAX {
+            return port;
+        }
+    }
 }
 
 fn spawn_provider_api_fixture(kind: &str, head: &str) -> (String, JoinHandle<Result<(), String>>) {

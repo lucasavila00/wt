@@ -270,6 +270,7 @@ mod tests {
             agent_git_remote_binary: temp.path().join("agent-git-remote"),
             agent_git_cli_binary: temp.path().join("agent-git-cli"),
             agent_git_provider_hosts: vec!["example.test".to_owned()],
+            agent_git_vsock_port: 18017,
             registry_cache_url: format!("http://{registry_address}"),
             registry_cache_ca_file: temp.path().join("ca.crt"),
             recipe_timeout: Duration::from_secs(10),

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use wt_server::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_GIT_VSOCK_PORT,
 };
 
 /// Install input for `wt-server-setup --config`.
@@ -35,8 +35,14 @@ pub(crate) struct InstallImageConfig {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentGitInstallConfig {
+    #[serde(default = "default_agent_git_vsock_port")]
+    pub vsock_port: u32,
     pub github: Option<AgentGitProviderInstallConfig>,
     pub gitlab: Option<AgentGitProviderInstallConfig>,
+}
+
+fn default_agent_git_vsock_port() -> u32 {
+    DEFAULT_AGENT_GIT_VSOCK_PORT
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -113,6 +119,7 @@ impl InstallInput {
             libvirt: self.libvirt.clone(),
             registry_cache: self.registry_cache.clone(),
             agent_git: AgentGitConfig {
+                vsock_port: self.agent_git.vsock_port,
                 github: self
                     .agent_git
                     .github

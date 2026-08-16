@@ -38,6 +38,7 @@ pub struct ProvisionerConfig {
     pub agent_git_remote_binary: PathBuf,
     pub agent_git_cli_binary: PathBuf,
     pub agent_git_provider_hosts: Vec<String>,
+    pub agent_git_vsock_port: u32,
     pub registry_cache_url: String,
     pub registry_cache_ca_file: PathBuf,
     pub recipe_timeout: Duration,
@@ -251,6 +252,7 @@ impl WorldProvisioner {
         authorized_keys.push(b'\n');
         let agent_git_providers =
             format!("{}\n", self.config.agent_git_provider_hosts.join("\n")).into_bytes();
+        let agent_git_vsock_port = format!("{}\n", self.config.agent_git_vsock_port).into_bytes();
         for (suffix, contents) in [
             ("-authorized-keys", authorized_keys.as_slice()),
             ("-registry-ca", self.registry_cache_ca.as_slice()),
@@ -263,6 +265,7 @@ impl WorldProvisioner {
             ("-ag-git", self.agent_git_cli.as_slice()),
             ("-agent-git-hint", AGENT_GIT_HINT),
             ("-agent-git-providers", agent_git_providers.as_slice()),
+            ("-agent-git-vsock-port", agent_git_vsock_port.as_slice()),
             ("-setup-world", SETUP_WORLD),
             ("-setup-world-root", SETUP_WORLD_ROOT),
         ] {
@@ -316,6 +319,7 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-ag-git",
                 "/tmp/wt-install-guest-agent-git-hint",
                 "/tmp/wt-install-guest-agent-git-providers",
+                "/tmp/wt-install-guest-agent-git-vsock-port",
                 "/tmp/wt-install-guest-setup-world",
                 "/tmp/wt-install-guest-setup-world-root",
             ],
