@@ -55,24 +55,23 @@ pub(crate) fn ensure(
     input: &InstallInput,
     server: &ServerConfig,
     server_bytes: &[u8],
-    input_path: &Path,
 ) -> Result<()> {
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
     require_clean_publication_state(server)?;
+    let source = source_image(input, runner)?;
+    let byobu = byobu_package(runner)?;
     let manifest_path = manifest_path(&server.image.devcontainer_path);
-    match (
+    match installed_image_state(
         server.image.devcontainer_path.exists(),
         manifest_path.exists(),
+        || verify_installed_image(input, server, server_bytes, &manifest_path),
     ) {
-        (true, true) => {
+        InstalledImageState::Reusable => {
             println!("Verifying installed golden image and provenance...");
-            verify_installed_image(input, server, server_bytes, &manifest_path, input_path)?;
             println!("Reusing verified golden image.");
         }
-        (false, false) => {
-            let source = source_image(input, runner)?;
-            let byobu = byobu_package(runner)?;
+        InstalledImageState::Missing => {
             build_image(
                 runner,
                 input,
@@ -83,19 +82,21 @@ pub(crate) fn ensure(
                 &manifest_path,
             )?;
         }
-        _ => bail!("image drift: image and manifest must either both exist or both be absent"),
+        InstalledImageState::Replace(reason) => {
+            println!("Replacing the installed devcontainer golden image: {reason}");
+            println!("Existing worlds use independent disks and are unaffected.");
+            build_image(
+                runner,
+                input,
+                server,
+                server_bytes,
+                &source,
+                &byobu,
+                &manifest_path,
+            )?;
+        }
     }
-    let source = source_image(input, runner)?;
-    let byobu = byobu_package(runner)?;
-    host_image::ensure(
-        runner,
-        input,
-        server,
-        server_bytes,
-        &source,
-        &byobu,
-        input_path,
-    )
+    host_image::ensure(runner, input, server, server_bytes, &source, &byobu)
 }
 
 pub(crate) fn rebuild(
@@ -107,7 +108,6 @@ pub(crate) fn rebuild(
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
     require_clean_publication_state(server)?;
-    refuse_active_worlds(runner)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
     let manifest = manifest_path(&server.image.devcontainer_path);
@@ -350,7 +350,6 @@ pub(crate) fn verify_installed_image(
     server: &ServerConfig,
     server_bytes: &[u8],
     manifest_path: &Path,
-    input_path: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
     require_named_file(
@@ -382,7 +381,7 @@ pub(crate) fn verify_installed_image(
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
         || !is_sha256(&manifest.tmux_sha256)
     {
-        bail!(provenance_drift_message("devcontainer", input_path));
+        bail!("provenance does not match the current source or install input");
     }
     recipe
         .validate_package_versions(&manifest.packages)
@@ -394,40 +393,28 @@ pub(crate) fn verify_installed_image(
     )
 }
 
-pub(super) fn provenance_drift_message(kind: &str, input_path: &Path) -> String {
-    let input_path = shell_quote(input_path);
-    format!(
-        "installed {kind} golden image provenance does not match the current source or install input. Provenance covers the pinned source image, image-build configuration, and checked-in recipe assets.\nThe installed images were left unchanged. Rebuild both golden images explicitly, then retry installation:\n  scripts/prepare-image --config {input_path}\n  scripts/install-server --config {input_path}\nIf rebuilding reports active WT domains, stop those worlds and rerun the command."
-    )
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum InstalledImageState {
+    Missing,
+    Reusable,
+    Replace(String),
 }
 
-fn shell_quote(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
-}
-
-pub(crate) fn refuse_active_worlds(runner: &impl Runner) -> Result<()> {
-    let names = runner.text(
-        cmd!(
-            "virsh",
-            "-c",
-            LIBVIRT_URI,
-            "list",
-            "--state-running",
-            "--name",
+pub(super) fn installed_image_state(
+    image_exists: bool,
+    manifest_exists: bool,
+    verify: impl FnOnce() -> Result<()>,
+) -> InstalledImageState {
+    match (image_exists, manifest_exists) {
+        (false, false) => InstalledImageState::Missing,
+        (true, true) => match verify() {
+            Ok(()) => InstalledImageState::Reusable,
+            Err(error) => InstalledImageState::Replace(format!("{error:#}")),
+        },
+        _ => InstalledImageState::Replace(
+            "the image and provenance manifest are not a complete pair".to_owned(),
         ),
-        "list active libvirt domains",
-    )?;
-    let active = names
-        .lines()
-        .filter(|name| name.starts_with("wt-"))
-        .collect::<Vec<_>>();
-    if !active.is_empty() {
-        bail!(
-            "refusing image rebuild while wt domains are active: {}",
-            active.join(", ")
-        );
     }
-    Ok(())
 }
 
 pub(crate) fn manifest_path(image: &Path) -> PathBuf {

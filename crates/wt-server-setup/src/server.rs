@@ -39,7 +39,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     registry_cache::ensure(runner, &server)?;
 
     phase("Preparing the golden image");
-    image::ensure(runner, &input, &server, &server_bytes, input_path)?;
+    image::ensure(runner, &input, &server, &server_bytes)?;
 
     phase("Building and installing WT binaries");
     binaries::build_and_install(runner, &server)?;
@@ -69,7 +69,7 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     if rebuild {
         image::rebuild(runner, &input, &server, &server_bytes)?;
     } else {
-        image::ensure(runner, &input, &server, &server_bytes, input_path)?;
+        image::ensure(runner, &input, &server, &server_bytes)?;
     }
     println!(
         "images ready: {}, {}",

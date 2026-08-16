@@ -68,13 +68,20 @@ pub(super) fn ensure(
     server_bytes: &[u8],
     source: &Path,
     byobu: &Path,
-    input_path: &Path,
 ) -> Result<()> {
     let manifest_path = manifest_path(&server.image.host_path);
-    match (server.image.host_path.exists(), manifest_path.exists()) {
-        (true, true) => verify(input, server, server_bytes, &manifest_path, input_path),
-        (false, false) => build(runner, input, server, server_bytes, source, byobu),
-        _ => bail!("host image drift: image and manifest must both exist or both be absent"),
+    match installed_image_state(
+        server.image.host_path.exists(),
+        manifest_path.exists(),
+        || verify(input, server, server_bytes, &manifest_path),
+    ) {
+        InstalledImageState::Reusable => Ok(()),
+        InstalledImageState::Missing => build(runner, input, server, server_bytes, source, byobu),
+        InstalledImageState::Replace(reason) => {
+            println!("Replacing the installed host golden image: {reason}");
+            println!("Existing worlds use independent disks and are unaffected.");
+            build(runner, input, server, server_bytes, source, byobu)
+        }
     }
 }
 
@@ -264,7 +271,6 @@ fn verify(
     server: &ServerConfig,
     server_bytes: &[u8],
     manifest_path: &Path,
-    input_path: &Path,
 ) -> Result<()> {
     require_named_file(&server.image.host_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
@@ -285,7 +291,7 @@ fn verify(
         || !is_sha256(&manifest.tmux_sha256)
         || manifest.ghostty_terminfo_sha256 != recipe::GHOSTTY_TERMINFO_SHA256
     {
-        bail!(provenance_drift_message("host", input_path));
+        bail!("provenance does not match the current source or install input");
     }
     validate_packages(&manifest.packages)
         .context("installed host image package provenance differs")?;

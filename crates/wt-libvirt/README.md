@@ -4,7 +4,7 @@ Production libvirt/KVM backend.
 
 ## Owns
 
-- Domain, network, qcow2 overlay, and NoCloud seed lifecycle.
+- Domain, network, independent qcow2 disk, and NoCloud seed lifecycle.
 - Guest-agent readiness and bounded guest transport.
 - Machine inspection, start, fork, and deletion.
 
