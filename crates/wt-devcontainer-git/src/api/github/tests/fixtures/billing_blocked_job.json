@@ -1,0 +1,17 @@
+{
+  "id": 95206818032,
+  "run_id": 31964236640,
+  "status": "completed",
+  "conclusion": "failure",
+  "name": "checks",
+  "html_url": "https://github.com/lucasavila00/cbr/actions/runs/31964236640/job/95206818032",
+  "steps": [],
+  "check_run_url": "https://api.github.com/repos/lucasavila00/cbr/check-runs/95206818032",
+  "labels": ["ubuntu-24.04"],
+  "runner_id": 0,
+  "runner_name": "",
+  "runner_group_id": 0,
+  "runner_group_name": "",
+  "workflow_name": "CI",
+  "head_branch": "wt/prepare-training-benchmarks"
+}

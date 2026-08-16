@@ -339,7 +339,7 @@ esac
     fs::set_permissions(bin.join("wt-server"), fs::Permissions::from_mode(0o755)).unwrap();
     fs::write(
         bin.join("ssh"),
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-calls\"\nexit 2\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-calls\"\ncat >/dev/null\nexit 2\n",
     )
     .unwrap();
     fs::set_permissions(bin.join("ssh"), fs::Permissions::from_mode(0o755)).unwrap();

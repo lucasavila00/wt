@@ -1,6 +1,8 @@
 use super::*;
 use crate::api::test_server::{serve, serve_with_statuses, ExpectedRequest};
 
+mod job_logs;
+
 const PULL_REQUEST_RESPONSE: &str = r#"{
     "data": {
         "viewer": { "login": "agent" },
@@ -306,91 +308,6 @@ fn refuses_to_turn_job_cancellation_into_whole_run_cancellation() {
     assert!(error
         .to_string()
         .contains("only cancel the entire workflow run"));
-    server.join().unwrap().unwrap();
-}
-
-#[test]
-fn running_job_log_can_be_read_outside_the_current_commit() {
-    let (base_url, server) = serve_with_statuses(vec![
-        (
-            ExpectedRequest {
-                method: "GET",
-                path: "/repos/acme/widget/actions/jobs/94318091035",
-                required_header: Some(("authorization", "Bearer fixture-token")),
-                body_contains: None,
-                response_content_type: "application/json",
-                response_body: r#"{"id":94318091035,"name":"Linux","status":"in_progress","conclusion":null,"html_url":"https://github.test/jobs/94318091035","run_id":91}"#,
-            },
-            200,
-        ),
-        (
-            ExpectedRequest {
-                method: "GET",
-                path: "/repos/acme/widget/actions/jobs/94318091035/logs",
-                required_header: Some(("authorization", "Bearer fixture-token")),
-                body_contains: None,
-                response_content_type: "application/xml",
-                response_body: "<Error><Code>BlobNotFound</Code></Error>",
-            },
-            404,
-        ),
-    ]);
-    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
-    let output = provider
-        .execute_command(
-            &scope(),
-            &ProviderCommand::ReadCiJobLog {
-                job: CiJobHandle::new("94318091035"),
-            },
-        )
-        .unwrap();
-
-    let ProviderCommandOutput::CiJobLog(output) = output else {
-        panic!("expected a CI job log")
-    };
-    insta::assert_snapshot!(output, @r###"
-    Job: 94318091035 (Linux)
-    State: in_progress
-    Log: GitHub has not published live log bytes for this running job.
-    "###);
-    server.join().unwrap().unwrap();
-}
-
-#[test]
-fn completed_job_log_is_downloaded() {
-    let (base_url, server) = serve(vec![
-        ExpectedRequest {
-            method: "GET",
-            path: "/repos/acme/widget/actions/jobs/44",
-            required_header: Some(("authorization", "Bearer fixture-token")),
-            body_contains: None,
-            response_content_type: "application/json",
-            response_body: r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#,
-        },
-        ExpectedRequest {
-            method: "GET",
-            path: "/repos/acme/widget/actions/jobs/44/logs",
-            required_header: Some(("authorization", "Bearer fixture-token")),
-            body_contains: None,
-            response_content_type: "text/plain",
-            response_body: "build complete\n",
-        },
-    ]);
-    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
-
-    let output = provider
-        .execute_command(
-            &scope(),
-            &ProviderCommand::ReadCiJobLog {
-                job: CiJobHandle::new("44"),
-            },
-        )
-        .unwrap();
-
-    assert_eq!(
-        output,
-        ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
-    );
     server.join().unwrap().unwrap();
 }
 

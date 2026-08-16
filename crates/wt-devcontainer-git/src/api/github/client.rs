@@ -329,6 +329,27 @@ impl GithubApi {
         ))
     }
 
+    fn read_check_run_annotations(
+        &self,
+        project: &str,
+        check_run: &CiJobHandle,
+    ) -> Result<Vec<CheckRunAnnotation>> {
+        let mut page = 1;
+        let mut annotations = Vec::new();
+        loop {
+            let current: Vec<CheckRunAnnotation> = self.rest.read_json(&format!(
+                "{}repos/{project}/check-runs/{check_run}/annotations?per_page=100&page={page}",
+                self.rest_prefix
+            ))?;
+            let received = current.len();
+            annotations.extend(current);
+            if received < 100 {
+                return Ok(annotations);
+            }
+            page += 1;
+        }
+    }
+
     fn read_workflow_run(&self, project: &str, run: u64) -> Result<WorkflowRun> {
         self.rest.read_json(&format!(
             "{}repos/{project}/actions/runs/{run}",
