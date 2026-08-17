@@ -13,24 +13,15 @@ pub use runtime_config::{
     DEFAULT_AGENT_GIT_VSOCK_PORT, SERVER_CONFIG_PATH,
 };
 
-use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION, WT_GIT_COMMIT};
+use wt_api::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
 pub fn handle_request<W: worlds::WorldWorker, G: service::AgentGitGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
-    if let Err(error) = validate_client_commit(&request.client_commit) {
+    if let Err(error) = validate_protocol_version(request.protocol_version) {
         return ApiResponse::error(error);
-    }
-    if request.protocol_version != PROTOCOL_VERSION {
-        return ApiResponse::error(ApiError::new(
-            ErrorCode::UnsupportedProtocol,
-            format!(
-                "unsupported protocol version {}; expected {}",
-                request.protocol_version, PROTOCOL_VERSION
-            ),
-        ));
     }
 
     match service.execute(owner, request.operation) {
@@ -39,15 +30,13 @@ pub fn handle_request<W: worlds::WorldWorker, G: service::AgentGitGateway>(
     }
 }
 
-fn validate_client_commit(client_commit: &str) -> Result<(), ApiError> {
-    if client_commit == WT_GIT_COMMIT {
+fn validate_protocol_version(protocol_version: u32) -> Result<(), ApiError> {
+    if protocol_version == PROTOCOL_VERSION {
         return Ok(());
     }
     Err(ApiError::new(
         ErrorCode::UnsupportedProtocol,
-        format!(
-            "client commit {client_commit} does not match server commit {WT_GIT_COMMIT}; install `wt` and `wt-server` built from the same commit"
-        ),
+        format!("unsupported protocol version {protocol_version}; expected {PROTOCOL_VERSION}"),
     ))
 }
 
@@ -56,16 +45,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_the_server_commit() {
-        assert_eq!(validate_client_commit(WT_GIT_COMMIT), Ok(()));
+    fn accepts_the_supported_protocol_version() {
+        assert_eq!(validate_protocol_version(PROTOCOL_VERSION), Ok(()));
     }
 
     #[test]
-    fn mismatch_reports_both_commits() {
-        let error = validate_client_commit("0000000000000000000000000000000000000000").unwrap_err();
+    fn rejects_an_unsupported_protocol_version() {
+        let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
-            error.message.replace(WT_GIT_COMMIT, "[SERVER_COMMIT]"),
-            @"client commit 0000000000000000000000000000000000000000 does not match server commit [SERVER_COMMIT]; install `wt` and `wt-server` built from the same commit"
+            error.message,
+            @"unsupported protocol version 2; expected 1"
         );
     }
 }
