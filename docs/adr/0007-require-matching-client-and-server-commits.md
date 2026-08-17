@@ -1,6 +1,6 @@
 # ADR 0007: Require matching client and server commits
 
-- Status: Accepted
+- Status: Superseded by ADR 0041
 - Date: 2026-07-17
 
 ## Context
