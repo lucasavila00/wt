@@ -21,20 +21,27 @@ it as another `wt-agent-git` binary target so it can share the gateway's Git
 policy, transport code, and tests.
 
 OpenSSH runs the binary as the forced command for a dedicated account with no
-shell or forwarding. The proxy uses a separate SSH identity and pinned host
-keys to reach configured upstream repositories.
+shell or forwarding. A background service uses a separate SSH identity and
+pinned host keys to reach configured upstream repositories.
 
-The server config maps public repository paths to upstream repositories. It
-also has a required, fully qualified branch prefix and a list of exact allowed
-branches, which may be empty. Reads can access every ref in the configured
-repositories. A write is allowed when its branch exactly matches the list or is
-under the prefix. The rule applies equally to creates, updates, force pushes,
-and deletes. Tags and other refs are denied, and one denied ref rejects the
-whole push before it reaches upstream.
+An operator TUI configures public-to-upstream repository mappings and
+credentials, then creates and revokes client grants. Each grant has an expiry,
+a required fully qualified branch prefix, and a list of exact allowed branches,
+which may be empty. Reads can access every ref in the configured repositories.
+A write is allowed when its branch exactly matches the list or is under the
+prefix. The rule applies equally to creates, updates, force pushes, and deletes.
+Tags and other refs are denied, and one denied ref rejects the whole push before
+it reaches upstream.
 
-Clients use signed, expiring bearer capabilities. A capability cannot select an
-unconfigured repository or widen the server's write policy. The binary does not
-expose WT world or provider-API features.
+The TUI accepts a client public key or generates a dedicated Ed25519 key pair.
+It installs the public key as a restricted forced-command entry tied to the
+grant. For a generated key, it returns the private key once with ready-to-copy
+SSH config and pinned host keys; the server keeps only the public key and grant.
+The client needs only Git and OpenSSH. The TUI may exit while the proxy service
+keeps running.
+
+A grant cannot select an unconfigured repository or widen its write policy.
+The binary does not expose WT world or provider-API features.
 
 `wt-git-proxy` is released by WT but operated separately. `wt-server-setup`
 does not install or manage it, and WT does not depend on it.
