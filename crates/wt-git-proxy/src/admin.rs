@@ -146,7 +146,7 @@ fn client_install_command(
     ))
 }
 
-fn proxy_hostname() -> Result<String> {
+pub(crate) fn proxy_hostname() -> Result<String> {
     let output = std::process::Command::new("hostname")
         .arg("--fqdn")
         .output()

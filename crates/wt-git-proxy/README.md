@@ -46,6 +46,10 @@ R      Revoke a client
 Q      Quit
 ```
 
+The dashboard shows the proxy address embedded in generated commands. It is
+the result of `hostname --fqdn`, on SSH port 22—not a discovered public IP. The
+agent must be able to resolve and reach it.
+
 Configuration is changed in the TOML file, not in the dashboard. Rerun the same
 install command after changing it.
 
