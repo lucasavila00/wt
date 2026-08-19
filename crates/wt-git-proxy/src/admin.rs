@@ -194,7 +194,7 @@ fn render_install_command<'a>(
         ));
     }
     format!(
-        "umask 077; d=\"$HOME/.ssh/wt-git-proxy/{alias}\"; install -d \"$d\"; printf '%s' '{}' | base64 -d > \"$d/id_ed25519\"; printf '%s' '{}' | base64 -d > \"$d/known_hosts\"; printf '%s' '{}' | base64 -d > \"$d/config\"; printf '%s' '{}' | base64 -d > \"$d/gitconfig\"; touch \"$HOME/.ssh/config\"; chmod 600 \"$HOME/.ssh/config\"; grep -qxF 'Include ~/.ssh/wt-git-proxy/*/config' \"$HOME/.ssh/config\" || printf '\\nInclude ~/.ssh/wt-git-proxy/*/config\\n' >> \"$HOME/.ssh/config\"; git config --global --get-all include.path 2>/dev/null | grep -qxF \"$d/gitconfig\" || git config --global --add include.path \"$d/gitconfig\"",
+        "umask 077; d=\"$HOME/.ssh/wt-git-proxy/{alias}\"; g=\"$HOME/.ssh/wt-git-proxy/gitconfig\"; install -d \"$d\"; printf '%s' '{}' | base64 -d > \"$d/id_ed25519\"; printf '%s' '{}' | base64 -d > \"$d/known_hosts\"; printf '%s' '{}' | base64 -d > \"$d/config\"; printf '%s' '{}' | base64 -d > \"$g\"; touch \"$HOME/.ssh/config\"; chmod 600 \"$HOME/.ssh/config\"; grep -qxF 'Include ~/.ssh/wt-git-proxy/*/config' \"$HOME/.ssh/config\" || printf '\\nInclude ~/.ssh/wt-git-proxy/*/config\\n' >> \"$HOME/.ssh/config\"; git config --global --get-all include.path 2>/dev/null | grep -qxF \"$g\" || git config --global --add include.path \"$g\"",
         BASE64_STANDARD.encode(private_key),
         BASE64_STANDARD.encode(known_hosts),
         BASE64_STANDARD.encode(ssh_config),
@@ -261,6 +261,20 @@ mod tests {
                 .unwrap();
             assert!(status.success());
         }
+        let replacement = render_install_command(
+            "wt-git-def456",
+            "proxy.example.com",
+            b"REPLACEMENT KEY\n",
+            b"proxy.example.com ssh-ed25519 HOSTKEY\n",
+            ["github.com"].into_iter(),
+        );
+        assert!(Command::new("/bin/sh")
+            .arg("-c")
+            .arg(replacement)
+            .env("HOME", home.path())
+            .status()
+            .unwrap()
+            .success());
         let directory = home.path().join(".ssh/wt-git-proxy/wt-git-abc123");
         assert_eq!(
             fs::read(directory.join("id_ed25519")).unwrap(),
@@ -273,7 +287,8 @@ mod tests {
                 .count(),
             1
         );
-        let git_config = fs::read_to_string(directory.join("gitconfig")).unwrap();
+        let git_config =
+            fs::read_to_string(home.path().join(".ssh/wt-git-proxy/gitconfig")).unwrap();
         assert!(git_config.contains("insteadOf = https://github.com/"));
         let checkout = home.path().join("checkout");
         assert!(Command::new("git")
@@ -305,7 +320,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             String::from_utf8(rewritten.stdout).unwrap().trim(),
-            "wt-git-abc123:github.com/team/project.git"
+            "wt-git-def456:github.com/team/project.git"
         );
         let includes = Command::new("git")
             .args(["config", "--global", "--get-all", "include.path"])

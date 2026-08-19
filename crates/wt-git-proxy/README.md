@@ -64,6 +64,8 @@ The command:
 Repositories may already be cloned. An existing origin such as
 `https://github.com/team/project.git` or `git@github.com:team/project.git`
 will use the proxy on its next fetch or push. The stored origin is not changed.
+Pasting a later generated command replaces the managed rewrite, so rotating a
+revoked client does not require editing repositories.
 
 With the example policy, agents may push `agents/fix-login` and `main`.
 They may not push `feature/fix-login` or tags. Clone, fetch, and pull are not
