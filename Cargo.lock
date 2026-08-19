@@ -2567,6 +2567,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "cliclack",
  "insta",
  "serde",
  "tempfile",

@@ -12,6 +12,10 @@ Setup shares its file checks, key parsing, passphrase handling, and secure
 installation code with `wt-server-setup` through `wt-setup-core`. Changes
 there affect both installers and need tests for both.
 
+First-time setup asks `api.ipify.org` for a public IPv4 suggestion. Treat it as
+a convenience, not proof that the address accepts inbound SSH through NAT or a
+firewall. The operator-confirmed address is stored in the runtime config.
+
 Keep strict host-key checking, `BatchMode=yes`, and `IdentitiesOnly=yes` on
 the provider connection. Client commands must keep pinning the proxy host key.
 

@@ -9,3 +9,7 @@ scripts/install-git-server --config examples/git-proxy-config/wt-git-proxy.devel
 The provider key must already have the intended GitHub repository access.
 Setup installs a protected runtime copy; it does not generate or change the
 source key. Keep this install input for later upgrades or policy changes.
+
+Setup suggests the server's current public IPv4 address for the agent SSH
+destination. Confirm it or enter a reachable address. `client_port` is only
+configured in this file and defaults to 22.

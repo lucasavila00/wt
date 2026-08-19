@@ -83,6 +83,8 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
     let proxy_authorized_keys = root.join("authorized_keys");
     let proxy_binary = PathBuf::from(env!("CARGO_BIN_EXE_wt-test-git-proxy"));
     let config = ProxyConfig {
+        client_host: "127.0.0.1".to_owned(),
+        client_port: proxy_port,
         write_prefix: "tasks/".to_owned(),
         allowed_branches: vec!["main".to_owned()],
         providers: vec![ProviderConfig {

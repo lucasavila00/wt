@@ -33,6 +33,8 @@ wt-git-abc123:github.com/team/project.git
 
 OpenSSH uses the generated client key. The proxy account's `authorized_keys`
 entry forces `wt-git-proxy serve`, so that key cannot open a shell.
+The SSH host is the address confirmed during setup, and the port comes from
+the install file. Space does not discover or guess a different address.
 
 ## What the proxy checks
 

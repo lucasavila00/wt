@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyConfig {
+    pub client_host: String,
+    #[serde(default = "default_client_port")]
+    pub client_port: u16,
     pub write_prefix: String,
     #[serde(default)]
     pub allowed_branches: Vec<String>,
@@ -43,6 +46,9 @@ impl ProxyConfig {
 
     pub fn validate(&self) -> Result<()> {
         self.policy()?;
+        if !valid_ssh_name(&self.client_host) || self.client_port == 0 {
+            bail!("invalid client SSH endpoint");
+        }
         let mut hosts = BTreeSet::new();
         if self.providers.is_empty()
             || self.providers.iter().any(|provider| {
@@ -96,6 +102,10 @@ impl ProxyConfig {
         }
         bail!("only safe Git repository paths and services are allowed")
     }
+}
+
+fn default_client_port() -> u16 {
+    22
 }
 
 pub(crate) fn authorized_keys_path(config_path: &Path) -> PathBuf {
@@ -153,6 +163,8 @@ mod tests {
     #[test]
     fn config_resolves_provider_paths() {
         let config = ProxyConfig {
+            client_host: "proxy.example.com".to_owned(),
+            client_port: 22,
             write_prefix: "tasks/".to_owned(),
             allowed_branches: vec!["main".to_owned()],
             providers: vec![ProviderConfig {

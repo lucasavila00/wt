@@ -13,6 +13,7 @@ The checked-in example is:
 
 ```toml
 version = 1
+client_port = 22
 write_prefix = "agents/"
 allowed_branches = ["main"]
 
@@ -41,14 +42,20 @@ The installer finishes at a small client dashboard:
 ```text
 WT Git proxy
 
-SPACE  Generate client command
-R      Revoke a client
+SPACE  Generate and authorize an agent key
+R      Revoke an agent key
 Q      Quit
 ```
 
-The dashboard shows the proxy address embedded in generated commands. It is
-the result of `hostname --fqdn`, on SSH port 22—not a discovered public IP. The
-agent must be able to resolve and reach it.
+During setup, the installer looks up the server's current public IPv4 address
+and suggests `git-proxy@<address>`. Confirm it or enter a reachable IP or DNS
+name. The lookup is only a suggestion because NAT may use a different inbound
+address. If the lookup fails, enter the address manually. The suggestion comes
+from `https://api.ipify.org`; setup does not send credentials to it.
+
+The client SSH port is file-only: `client_port` defaults to 22 and is never
+prompted for. The dashboard shows the confirmed destination and configured
+port embedded in generated commands.
 
 Configuration is changed in the TOML file, not in the dashboard. Rerun the same
 install command after changing it.

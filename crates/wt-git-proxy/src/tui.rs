@@ -1,4 +1,3 @@
-use crate::admin::proxy_hostname;
 use crate::{add_generated_client, list_keys, remove_key, ProxyConfig};
 use anyhow::{bail, Context, Result};
 use console::{Key, Term};
@@ -18,11 +17,10 @@ pub fn run_tui(config_path: &Path) -> Result<()> {
     }
     let config = ProxyConfig::load(config_path)?;
     let executable = std::env::current_exe().context("find proxy executable")?;
-    let proxy_host = proxy_hostname()?;
     let term = Term::stdout();
 
     loop {
-        show_dashboard(&term, config_path, &proxy_host)?;
+        show_dashboard(&term, config_path, &config)?;
         match dashboard_action(term.read_key().context("read dashboard key")?) {
             Some(DashboardAction::Generate) => {
                 let client = add_generated_client(config_path, &executable, &config)?;
@@ -47,29 +45,32 @@ pub fn run_tui(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn show_dashboard(term: &Term, config_path: &Path, proxy_host: &str) -> Result<()> {
+fn show_dashboard(term: &Term, config_path: &Path, config: &ProxyConfig) -> Result<()> {
     let count = list_keys(config_path)?.len();
     term.write_line("")?;
-    term.write_str(&dashboard(count, proxy_host))?;
+    term.write_str(&dashboard(count, &config.client_host, config.client_port))?;
     Ok(())
 }
 
-fn dashboard(count: usize, proxy_host: &str) -> String {
+fn dashboard(count: usize, proxy_host: &str, proxy_port: u16) -> String {
     format!(
         "WT Git proxy\n\
-Proxy address: {proxy_host}:22 (from `hostname --fqdn`)\n\
+Proxy address: git-proxy@{proxy_host}:{proxy_port} (confirmed during setup)\n\
 The agent must be able to resolve and reach this address.\n\
 \n\
-Space authorizes one client and prints one secret command. On the agent it:\n\
+Space generates a new agent key, authorizes its public half on this proxy,\n\
+and prints one secret command. It never creates or changes the provider key.\n\
+On the agent, the command:\n\
   - creates ~/.ssh/wt-git-proxy/<client>/ with its key and SSH config;\n\
-  - writes ~/.ssh/wt-git-proxy/gitconfig with provider URL rewrites;\n\
+  - writes ~/.ssh/wt-git-proxy/gitconfig with global provider URL rewrites;\n\
   - adds includes to ~/.ssh/config and ~/.gitconfig.\n\
 Existing repository remotes are not changed.\n\
+R removes a selected agent key from the proxy. It does not delete files in the agent.\n\
 \n\
 Authorized clients: {count}\n\
 \n\
-SPACE  Generate client command\n\
-R      Revoke a client\n\
+SPACE  Generate and authorize an agent key\n\
+R      Revoke an agent key\n\
 Q      Quit\n"
     )
 }
@@ -109,21 +110,24 @@ mod tests {
 
     #[test]
     fn dashboard_is_not_a_form() {
-        insta::assert_snapshot!(dashboard(2, "proxy.example.com"), @"
+        insta::assert_snapshot!(dashboard(2, "proxy.example.com", 2222), @"
         WT Git proxy
-        Proxy address: proxy.example.com:22 (from `hostname --fqdn`)
+        Proxy address: git-proxy@proxy.example.com:2222 (confirmed during setup)
         The agent must be able to resolve and reach this address.
 
-        Space authorizes one client and prints one secret command. On the agent it:
+        Space generates a new agent key, authorizes its public half on this proxy,
+        and prints one secret command. It never creates or changes the provider key.
+        On the agent, the command:
         - creates ~/.ssh/wt-git-proxy/<client>/ with its key and SSH config;
-        - writes ~/.ssh/wt-git-proxy/gitconfig with provider URL rewrites;
+        - writes ~/.ssh/wt-git-proxy/gitconfig with global provider URL rewrites;
         - adds includes to ~/.ssh/config and ~/.gitconfig.
         Existing repository remotes are not changed.
+        R removes a selected agent key from the proxy. It does not delete files in the agent.
 
         Authorized clients: 2
 
-        SPACE  Generate client command
-        R      Revoke a client
+        SPACE  Generate and authorize an agent key
+        R      Revoke an agent key
         Q      Quit
         ");
     }

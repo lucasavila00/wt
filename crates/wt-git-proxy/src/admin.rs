@@ -124,7 +124,6 @@ fn client_install_command(
     private: &PrivateKey,
     config: &ProxyConfig,
 ) -> Result<String> {
-    let hostname = proxy_hostname()?;
     let host_key = PublicKey::read_openssh_file(Path::new("/etc/ssh/ssh_host_ed25519_key.pub"))?;
     let encoded = host_key.to_openssh()?;
     let mut fields = encoded.split_whitespace();
@@ -132,11 +131,13 @@ fn client_install_command(
         .next()
         .context("proxy host public key has no algorithm")?;
     let key = fields.next().context("proxy host public key has no key")?;
-    let known_hosts = format!("{hostname} {algorithm} {key}\n");
+    let known_hosts_host = known_hosts_host(&config.client_host, config.client_port);
+    let known_hosts = format!("{known_hosts_host} {algorithm} {key}\n");
     let private = private.to_openssh(LineEnding::LF)?;
     Ok(render_install_command(
         alias,
-        &hostname,
+        &config.client_host,
+        config.client_port,
         private.as_bytes(),
         known_hosts.as_bytes(),
         config
@@ -146,22 +147,12 @@ fn client_install_command(
     ))
 }
 
-pub(crate) fn proxy_hostname() -> Result<String> {
-    let output = std::process::Command::new("hostname")
-        .arg("--fqdn")
-        .output()
-        .context("find proxy hostname")?;
-    if !output.status.success() {
-        bail!("hostname --fqdn failed");
+fn known_hosts_host(host: &str, port: u16) -> String {
+    if port == 22 {
+        host.to_owned()
+    } else {
+        format!("[{host}]:{port}")
     }
-    let hostname = String::from_utf8(output.stdout)
-        .context("proxy hostname is not UTF-8")?
-        .trim()
-        .to_owned();
-    if hostname.is_empty() || hostname.chars().any(char::is_whitespace) {
-        bail!("hostname --fqdn returned an invalid hostname");
-    }
-    Ok(hostname)
 }
 
 fn client_alias(fingerprint: &str) -> String {
@@ -179,13 +170,14 @@ fn client_alias(fingerprint: &str) -> String {
 fn render_install_command<'a>(
     alias: &str,
     hostname: &str,
+    port: u16,
     private_key: &[u8],
     known_hosts: &[u8],
     providers: impl Iterator<Item = &'a str>,
 ) -> String {
     let install_directory = format!("~/.ssh/wt-git-proxy/{alias}");
     let ssh_config = format!(
-        "Host {alias}\n  HostName {hostname}\n  User git-proxy\n  IdentityFile {install_directory}/id_ed25519\n  IdentitiesOnly yes\n  UserKnownHostsFile {install_directory}/known_hosts\n  StrictHostKeyChecking yes\n  PasswordAuthentication no\n"
+        "Host {alias}\n  HostName {hostname}\n  Port {port}\n  User git-proxy\n  IdentityFile {install_directory}/id_ed25519\n  IdentitiesOnly yes\n  UserKnownHostsFile {install_directory}/known_hosts\n  StrictHostKeyChecking yes\n  PasswordAuthentication no\n"
     );
     let mut git_config = String::new();
     for provider in providers {
@@ -235,6 +227,7 @@ mod tests {
         let command = render_install_command(
             "wt-git-abc123",
             "proxy.example.com",
+            22,
             b"PRIVATE KEY\n",
             b"proxy.example.com ssh-ed25519 HOSTKEY\n",
             ["github.com"].into_iter(),
@@ -248,6 +241,7 @@ mod tests {
         let command = render_install_command(
             "wt-git-abc123",
             "proxy.example.com",
+            22,
             b"PRIVATE KEY\n",
             b"proxy.example.com ssh-ed25519 HOSTKEY\n",
             ["github.com"].into_iter(),
@@ -264,6 +258,7 @@ mod tests {
         let replacement = render_install_command(
             "wt-git-def456",
             "proxy.example.com",
+            22,
             b"REPLACEMENT KEY\n",
             b"proxy.example.com ssh-ed25519 HOSTKEY\n",
             ["github.com"].into_iter(),
@@ -336,5 +331,14 @@ mod tests {
     #[test]
     fn aliases_use_fingerprint_entropy() {
         assert_eq!(client_alias("SHA256:AbC+/123xyz987"), "wt-git-abc123xyz987");
+    }
+
+    #[test]
+    fn nonstandard_ports_use_openssh_known_hosts_syntax() {
+        assert_eq!(known_hosts_host("203.0.113.10", 22), "203.0.113.10");
+        assert_eq!(
+            known_hosts_host("203.0.113.10", 2222),
+            "[203.0.113.10]:2222"
+        );
     }
 }
