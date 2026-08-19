@@ -75,13 +75,12 @@ fn configure_upstream(config_path: &Path) -> Result<()> {
 }
 
 fn set_policy(path: &Path, config: &mut ProxyConfig) -> Result<()> {
-    let old = config.clone();
-    config.write_prefix = input("Required write prefix", &config.write_prefix)?;
-    config.allowed_branches = branch_list()?;
-    if let Err(error) = config.save(path) {
-        *config = old;
-        return Err(error);
-    }
+    let candidate = ProxyConfig {
+        write_prefix: input("Required write prefix", &config.write_prefix)?,
+        allowed_branches: branch_list()?,
+    };
+    candidate.save(path)?;
+    *config = candidate;
     Ok(())
 }
 
@@ -97,18 +96,13 @@ fn add_client(config_path: &Path) -> Result<()> {
             port: input("Client-facing SSH port", "22")?
                 .parse()
                 .context("parse SSH port")?,
-            user: "git-proxy".to_owned(),
             host_key_file: input_path("Public SSH host key", "/etc/ssh/ssh_host_ed25519_key.pub")?,
         };
         let output = input_path("Write client bundle to", "./wt-git-client")?;
-        let (key, bundle) = add_generated_key(config_path, &executable, &client, &label, &output)?;
+        let key = add_generated_key(config_path, &executable, &client, &label, &output)?;
         cliclack::note(
             "Client authorized",
-            format!(
-                "{}\nBundle: {}",
-                key.fingerprint,
-                bundle.directory.display()
-            ),
+            format!("{}\nBundle: {}", key.fingerprint, output.display()),
         )?;
     } else {
         let key = add_public_key(

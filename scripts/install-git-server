@@ -40,14 +40,13 @@ fi
 
 printf '\n==> Installing host packages\n'
 sudo apt-get update -qq
-sudo apt-get install -y -qq build-essential git musl-tools openssh-client openssh-server
-rustup target add x86_64-unknown-linux-musl
+sudo apt-get install -y -qq build-essential openssh-client openssh-server
 
 printf '\n==> Building wt-git-proxy\n'
 cd "$root"
-cargo build --quiet --locked --release --target x86_64-unknown-linux-musl -p wt-git-proxy
+cargo build --quiet --locked --release -p wt-git-proxy
 sudo install -o root -g root -m 0755 \
-    target/x86_64-unknown-linux-musl/release/wt-git-proxy "$binary_path"
+    target/release/wt-git-proxy "$binary_path"
 
 printf '\n==> Configuring the proxy account\n'
 if ! getent group "$proxy_group" >/dev/null; then
@@ -76,10 +75,6 @@ Match User git-proxy
     PubkeyAuthentication yes
     PasswordAuthentication no
     KbdInteractiveAuthentication no
-    AllowAgentForwarding no
-    AllowTcpForwarding no
-    X11Forwarding no
-    PermitTTY no
 EOF
 sudo install -o root -g root -m 0644 "$temporary" "$sshd_config"
 sudo sshd -t

@@ -19,7 +19,6 @@ pub struct ProxyConfig {
 pub struct ClientConfig {
     pub host: String,
     pub port: u16,
-    pub user: String,
     pub host_key_file: PathBuf,
 }
 

@@ -12,7 +12,7 @@ From a WT checkout on Ubuntu 24.04 amd64:
 make install-git-server
 ```
 
-The installer adds the required packages, builds and installs the static
+The installer adds the required packages, builds and installs the
 binary, creates the `git-proxy` account, configures sshd, and opens the TUI.
 Rerun the same command to upgrade or change configuration.
 
@@ -37,14 +37,28 @@ which repositories are accessible; repository paths pass through unchanged.
 
 ## Use
 
-Install a generated bundle at the path in its README, then use its SSH alias:
+When you generate a client key, the TUI prints the bundle location and an SSH
+name for that client. Copy the bundle to the client's
+`~/.ssh/wt-git-proxy/NAME` directory and add this to `~/.ssh/config`:
 
-```console
-git clone wt-git-CLIENT:OWNER/REPOSITORY.git
-git -C REPOSITORY switch -c agents/task-123
-git -C REPOSITORY push -u origin agents/task-123
+```sshconfig
+Include ~/.ssh/wt-git-proxy/*/config
 ```
 
-Reads can see every upstream ref. Writes may target the configured prefix or
-exact branches. Tags and other refs are rejected, and one denied ref rejects
-the whole push. Revoking a key needs no restart or sshd reload.
+For example, suppose the SSH name is `wt-git-build-vm` and the upstream
+repository is `acme/api.git`. On the client:
+
+```console
+git clone wt-git-build-vm:acme/api.git
+cd api
+git switch -c agents/fix-login
+git push -u origin agents/fix-login
+```
+
+Cloning, fetching, and pulling work normally. With the example policy above,
+the client may push any branch beginning with `agents/`, plus `main`. A push to
+`feature/foo` or a tag is rejected. If one push contains both allowed and
+rejected branches, nothing is pushed.
+
+To remove a client's access, rerun `make install-git-server`, choose **Revoke
+client**, and select its key. Revocation takes effect on the next connection.
