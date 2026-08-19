@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
+use wt_git_core::DuplexStream;
 
 const MAX_HEADER: usize = 64 * 1024;
 
@@ -26,23 +26,6 @@ pub fn write_json_line<T: Serialize>(stream: &mut impl Write, value: &T) -> Resu
     serde_json::to_writer(&mut *stream, value).context("encode response header")?;
     stream.write_all(b"\n").context("write response header")?;
     stream.flush().context("flush response header")
-}
-
-pub trait DuplexStream: Read + Write + Send + 'static {
-    fn try_clone_stream(&self) -> std::io::Result<Self>
-    where
-        Self: Sized;
-    fn shutdown_stream(&self, how: Shutdown) -> std::io::Result<()>;
-}
-
-impl DuplexStream for UnixStream {
-    fn try_clone_stream(&self) -> std::io::Result<Self> {
-        self.try_clone()
-    }
-
-    fn shutdown_stream(&self, how: Shutdown) -> std::io::Result<()> {
-        self.shutdown(how)
-    }
 }
 
 pub fn copy_bidirectional<A: DuplexStream, B: DuplexStream>(mut a: A, mut b: B) -> Result<()> {

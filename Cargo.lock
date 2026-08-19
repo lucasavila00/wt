@@ -2470,6 +2470,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "wt-git-core",
  "wt-registry",
 ]
 
@@ -2532,6 +2533,14 @@ dependencies = [
  "serde",
  "serde_json",
  "wt-command",
+]
+
+[[package]]
+name = "wt-git-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
 ]
 
 [[package]]

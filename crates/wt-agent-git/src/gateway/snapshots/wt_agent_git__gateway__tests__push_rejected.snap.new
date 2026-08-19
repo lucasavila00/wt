@@ -1,0 +1,6 @@
+---
+source: crates/wt-agent-git/src/gateway/tests.rs
+assertion_line: 187
+expression: "validate_push(&command(&\"a\".repeat(40), \"refs/heads/fix-login\"),\n&WritePolicy::new(\"refs/heads/wt/\", []).unwrap()).unwrap_err().to_string()"
+---
+branch ref `refs/heads/fix-login` is outside the write policy

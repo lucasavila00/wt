@@ -240,38 +240,33 @@ impl Gateway {
     ) -> Result<()> {
         let source = parse_source(source)?;
         let provider = self.provider(&source.host)?;
-        let mut child = spawn_git(provider, &source, service)?;
-        if service == GitService::ReceivePack {
-            forward_advertisement(&mut child, stream)?;
-            let commands = read_packet_section(&mut *stream)?;
-            if let Err(error) = validate_push(&commands, BRANCH_PREFIX) {
-                reject_push(stream, &commands, &error.to_string())?;
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(());
+        let policy = WritePolicy::new(format!("refs/heads/{BRANCH_PREFIX}"), [])?;
+        let provider_api_available = match provider {
+            Provider::Ssh { .. } => true,
+            Provider::Local { api, .. } => api.is_some(),
+        };
+        let message = |commands: &[u8], response: &[u8], sideband: bool| {
+            push_result_message(provider_api_available, commands, response, sideband)
+        };
+        let rejection = |violation: &PushViolation| match violation {
+            PushViolation::NonBranch { .. } => {
+                "tags and non-branch refs cannot be pushed from this environment".to_owned()
             }
-            child
-                .stdin
-                .as_mut()
-                .context("Git service has no stdin")?
-                .write_all(&commands)
-                .context("forward push commands")?;
-            let sideband = push_uses_sideband(&commands)?;
-            let provider_api_available = match provider {
-                Provider::Ssh { .. } => true,
-                Provider::Local { api, .. } => api.is_some(),
-            };
-            let message = |response: &[u8]| {
-                push_result_message(provider_api_available, &commands, response, sideband)
-            };
-            return bridge_child(
-                stream,
-                child,
-                sideband.then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
-            );
-        }
-        forward_advertisement(&mut child, stream)?;
-        bridge_child(stream, child, None)
+            PushViolation::Unauthorized { reference } => {
+                let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
+                format!(
+                    "branch `{branch}` must use the shared `{BRANCH_PREFIX}` prefix; rename it with `git branch -m {BRANCH_PREFIX}NAME`"
+                )
+            }
+        };
+        serve_git(
+            stream,
+            git_target(provider, &source)?,
+            service,
+            Some(&policy),
+            Some(&rejection),
+            Some(&message),
+        )
     }
 
     pub(super) fn serve_cli(

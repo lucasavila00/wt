@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/wt-agent-git",
+    "crates/wt-git-core",
     "crates/wt-devcontainer",
     "crates/wt-api",
     "crates/wt-cli",
@@ -24,6 +25,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+wt-git-core = { path = "crates/wt-git-core" }
 wt-api = { path = "crates/wt-api" }
 wt-command = { path = "crates/wt-command" }
 wt-devcontainer = { path = "crates/wt-devcontainer" }

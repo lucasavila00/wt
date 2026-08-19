@@ -23,6 +23,7 @@ name = "ag-git"
 path = "src/bin/ag-git.rs"
 
 [dependencies]
+wt-git-core = { workspace = true }
 wt-registry = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }

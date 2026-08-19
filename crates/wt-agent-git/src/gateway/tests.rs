@@ -1,5 +1,6 @@
 use super::*;
 use diesel::prelude::*;
+use wt_git_core::validate_push;
 use wt_registry::schema::{disk_nodes, guests, worlds};
 
 #[test]
@@ -22,9 +23,10 @@ fn push_scope_allows_only_prefixed_heads() {
         );
         format!("{:04x}{payload}0000", payload.len() + 4).into_bytes()
     };
-    assert!(validate_push(&command("refs/heads/wt/fix"), "wt/").is_ok());
-    assert!(validate_push(&command("refs/heads/fix"), "wt/").is_err());
-    assert!(validate_push(&command("refs/tags/v1"), "wt/").is_err());
+    let policy = WritePolicy::new("refs/heads/wt/", []).unwrap();
+    assert!(validate_push(&command("refs/heads/wt/fix"), &policy).is_ok());
+    assert!(validate_push(&command("refs/heads/fix"), &policy).is_err());
+    assert!(validate_push(&command("refs/tags/v1"), &policy).is_err());
 }
 
 #[test]
@@ -184,7 +186,10 @@ fn push_messages_cover_publish_delete_and_rejection() {
     .is_empty());
     insta::assert_snapshot!(
         "push_rejected",
-        validate_push(&command(&"a".repeat(40), "refs/heads/fix-login"), "wt/")
+        validate_push(
+            &command(&"a".repeat(40), "refs/heads/fix-login"),
+            &WritePolicy::new("refs/heads/wt/", []).unwrap()
+        )
             .unwrap_err()
             .to_string()
     );
