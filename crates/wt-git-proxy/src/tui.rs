@@ -1,6 +1,5 @@
 use crate::{
-    add_generated_key, add_public_key, list_keys, remove_key, ClientConfig, ProviderConfig,
-    ProxyConfig,
+    add_generated_key, add_public_key, list_keys, remove_key, ProviderConfig, ProxyConfig,
 };
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -61,36 +60,28 @@ fn provider_config() -> Result<ProviderConfig> {
         "Pinned known_hosts",
         "/etc/wt-git-proxy/provider_known_hosts",
     )?;
-    Ok(ProviderConfig { host, user, port, private_key_file: identity, known_hosts_file: known_hosts })
-}
-
-fn client_config() -> Result<ClientConfig> {
-    Ok(ClientConfig {
-        host: input("Client-facing SSH host", "git-proxy.example.com")?,
-        port: input("Client-facing SSH port", "22")?.parse().context("parse SSH port")?,
-        host_key_file: input_path("Public SSH host key", "/etc/ssh/ssh_host_ed25519_key.pub")?,
+    Ok(ProviderConfig {
+        host,
+        user,
+        port,
+        private_key_file: identity,
+        known_hosts_file: known_hosts,
     })
 }
 
 fn configure_provider(path: &Path, config: &mut ProxyConfig) -> Result<()> {
     let provider = provider_config()?;
-    let mut candidate = config.clone();
-    candidate.providers.retain(|existing| existing.host != provider.host);
-    candidate.providers.push(provider);
-    candidate.save(path)?;
-    *config = candidate;
-    Ok(())
+    config
+        .providers
+        .retain(|existing| existing.host != provider.host);
+    config.providers.push(provider);
+    config.save(path)
 }
 
 fn set_policy(path: &Path, config: &mut ProxyConfig) -> Result<()> {
-    let candidate = ProxyConfig {
-        write_prefix: input("Required write prefix", &config.write_prefix)?,
-        allowed_branches: branch_list()?,
-        providers: config.providers.clone(),
-    };
-    candidate.save(path)?;
-    *config = candidate;
-    Ok(())
+    config.write_prefix = input("Required write prefix", &config.write_prefix)?;
+    config.allowed_branches = branch_list()?;
+    config.save(path)
 }
 
 fn add_client(config_path: &Path) -> Result<()> {
@@ -100,9 +91,8 @@ fn add_client(config_path: &Path) -> Result<()> {
         .initial_value(true)
         .interact()?
     {
-        let client = client_config()?;
         let output = input_path("Write client bundle to", "./wt-git-client")?;
-        let key = add_generated_key(config_path, &executable, &client, &label, &output)?;
+        let key = add_generated_key(config_path, &executable, &label, &output)?;
         cliclack::note(
             "Client authorized",
             format!("{}\nBundle: {}", key.fingerprint, output.display()),

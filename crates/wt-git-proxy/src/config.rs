@@ -6,7 +6,7 @@ use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyConfig {
     pub write_prefix: String,
@@ -15,15 +15,7 @@ pub struct ProxyConfig {
     pub providers: Vec<ProviderConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ClientConfig {
-    pub host: String,
-    pub port: u16,
-    pub host_key_file: PathBuf,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     pub host: String,
@@ -159,7 +151,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_is_only_the_write_policy() {
+    fn config_resolves_provider_paths() {
         let config = ProxyConfig {
             write_prefix: "tasks/".to_owned(),
             allowed_branches: vec!["main".to_owned()],

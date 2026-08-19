@@ -25,9 +25,9 @@ The server has one write policy: a required branch prefix and an optional list
 of exact branches. The list may be empty.
 Tags and other refs are denied, and one denied ref rejects the whole push.
 
-One TUI-managed OpenSSH upstream uses a separate credential and pinned host
-key. Repository paths pass through unchanged, so that credential decides which
-repositories are accessible. The proxy has no WT world, provider, or registry
+Each configured Git host uses its own SSH credential and pinned host key. The
+client puts that host in the repository path, such as
+`github.com/lucasavila00/wt.git`. The proxy has no WT world or registry
 features. A real Git and two-hop OpenSSH test lives in `wt-integration-tests`.
 
 ## Consequences

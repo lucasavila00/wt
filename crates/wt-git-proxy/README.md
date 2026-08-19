@@ -47,9 +47,9 @@ The exact branch list may be empty. The TUI edits this same file.
 
 ## Use
 
-When you generate a client key, the TUI prints the bundle location and an SSH
-name for that client. Copy the bundle to the client's
-`~/.ssh/wt-git-proxy/NAME` directory and add this to `~/.ssh/config`:
+When you generate a client key, the TUI prints the bundle location. Its README
+tells you where to copy it and gives you the generated SSH name. Then add this
+to the client's `~/.ssh/config`:
 
 ```sshconfig
 Include ~/.ssh/wt-git-proxy/*/config

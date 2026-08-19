@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_git_proxy::{add_public_key, remove_key, ProviderConfig, ProxyConfig};
+use wt_git_proxy::{add_public_key, list_keys, remove_key, ProviderConfig, ProxyConfig};
 
 struct Process(Child);
 
@@ -101,6 +101,7 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
         &fs::read_to_string(with_extension(&client_key, "pub")).unwrap(),
     )
     .unwrap();
+    assert_eq!(list_keys(&config_path).unwrap(), vec![authorized.clone()]);
 
     let proxy_config = root.join("proxy-sshd.conf");
     write_sshd_config(
