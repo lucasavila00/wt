@@ -58,14 +58,12 @@ fn dashboard(count: usize, proxy_host: &str, proxy_port: u16) -> String {
 Proxy address: git-proxy@{proxy_host}:{proxy_port} (confirmed during setup)\n\
 The agent must be able to resolve and reach this address.\n\
 \n\
-Space generates a new agent key, authorizes its public half on this proxy,\n\
-and prints one secret command. It never creates or changes the provider key.\n\
-On the agent, the command:\n\
-  - creates ~/.ssh/wt-git-proxy/<client>/ with its key and SSH config;\n\
-  - writes ~/.ssh/wt-git-proxy/gitconfig with global provider URL rewrites;\n\
-  - adds includes to ~/.ssh/config and ~/.gitconfig.\n\
-Existing repository remotes are not changed.\n\
-R removes a selected agent key from the proxy. It does not delete files in the agent.\n\
+Press Space to give one agent access. You will get one command to paste into\n\
+that agent. The command saves its new SSH key under ~/.ssh/wt-git-proxy and\n\
+updates Git and SSH for that user. Existing GitHub checkouts will use this\n\
+proxy without changing their saved remotes. The GitHub key stays on this server.\n\
+\n\
+Press R to stop an agent from connecting again.\n\
 \n\
 Authorized clients: {count}\n\
 \n\
@@ -115,14 +113,12 @@ mod tests {
         Proxy address: git-proxy@proxy.example.com:2222 (confirmed during setup)
         The agent must be able to resolve and reach this address.
 
-        Space generates a new agent key, authorizes its public half on this proxy,
-        and prints one secret command. It never creates or changes the provider key.
-        On the agent, the command:
-        - creates ~/.ssh/wt-git-proxy/<client>/ with its key and SSH config;
-        - writes ~/.ssh/wt-git-proxy/gitconfig with global provider URL rewrites;
-        - adds includes to ~/.ssh/config and ~/.gitconfig.
-        Existing repository remotes are not changed.
-        R removes a selected agent key from the proxy. It does not delete files in the agent.
+        Press Space to give one agent access. You will get one command to paste into
+        that agent. The command saves its new SSH key under ~/.ssh/wt-git-proxy and
+        updates Git and SSH for that user. Existing GitHub checkouts will use this
+        proxy without changing their saved remotes. The GitHub key stays on this server.
+
+        Press R to stop an agent from connecting again.
 
         Authorized clients: 2
 
