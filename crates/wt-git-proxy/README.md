@@ -31,9 +31,19 @@ allowed_branches = ["main"]
 
 The exact branch list may be empty. The prefix is required and ends in `/`.
 
-The installer opens the TUI to configure the upstream and client keys. Rerun
-`make install-git-server` to change them. The upstream credential determines
-which repositories are accessible; repository paths pass through unchanged.
+The installer opens the TUI to choose one upstream host and its SSH key. It
+writes those details to `/etc/wt-git-proxy/upstream.ssh_config`; they are not
+part of the policy TOML. Rerun `make install-git-server` to change them.
+
+The TUI's upstream host supplies the missing part of the SSH URL. For example:
+
+- upstream `git@github.com` + path `lucasavila00/wt.git` means
+  `git@github.com:lucasavila00/wt.git`;
+- upstream `git@gitlab.com` + path `gitlab-org/gitlab.git` means
+  `git@gitlab.com:gitlab-org/gitlab.git`.
+
+GitHub, GitLab, and self-hosted SSH Git servers work the same way. One proxy
+installation points to one upstream host.
 
 ## Use
 
@@ -46,13 +56,19 @@ Include ~/.ssh/wt-git-proxy/*/config
 ```
 
 For example, suppose the SSH name is `wt-git-build-vm` and the upstream
-repository is `acme/api.git`. On the client:
+repository is WT itself on GitHub. On the client:
 
 ```console
-git clone wt-git-build-vm:acme/api.git
-cd api
-git switch -c agents/fix-login
-git push -u origin agents/fix-login
+git clone wt-git-build-vm:lucasavila00/wt.git
+cd wt
+git switch -c agents/improve-readme
+git push -u origin agents/improve-readme
+```
+
+For a proxy configured for GitLab, a real read-only example is:
+
+```console
+git clone wt-git-build-vm:gitlab-org/gitlab.git
 ```
 
 Cloning, fetching, and pulling work normally. With the example policy above,
