@@ -1,10 +1,10 @@
-use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_command::cmd;
 use wt_server::ServerConfig;
+use wt_setup_core::Runner;
 
 pub(crate) const CONTAINER_NAME: &str = "wt-registry-cache";
 pub(crate) const PROXY_IMAGE: &str = "rpardini/docker-registry-proxy@sha256:b70b2ef2371171a630e3fcbf2217e04057c1dbe114fa46d332ebde67349869e9";

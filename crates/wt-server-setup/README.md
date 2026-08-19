@@ -2,6 +2,9 @@
 
 Ubuntu 24.04 amd64 server installer and world-image builder.
 
+Its runner, secure file installation, path handling, and SSH credential logic
+come from `wt-setup-core`, which is also used by the standalone Git proxy setup.
+
 ```text
 wt-server-setup validate --config PATH
 wt-server-setup install --config PATH

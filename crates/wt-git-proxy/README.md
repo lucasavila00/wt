@@ -1,102 +1,87 @@
 # wt-git-proxy
 
-`wt-git-proxy` gives a devcontainer, VM, or CI worker scoped Git access without
-copying the upstream credential into it. It uses one OpenSSH `authorized_keys`
-file and runs as a forced command, not a daemon.
+`wt-git-proxy` lets agents use Git without giving them the GitHub private key.
+Agents get their own proxy key instead. The proxy keeps the GitHub key and only
+allows pushes to the branches you choose.
 
-## How it works
-
-The client connects to the proxy with its own SSH key. OpenSSH checks that key
-and forces `wt-git-proxy serve`; the client cannot ask the account to run a
-shell command.
-
-The proxy reads the Git command, validates the provider and repository path,
-then opens a second SSH connection with the configured upstream key and pinned
-host key. Fetches pass through. Pushes must match the configured branch policy.
-One denied ref rejects the whole push before it reaches the upstream.
-
-```text
-Git client -> OpenSSH -> wt-git-proxy -> OpenSSH -> Git provider
- client key              policy          upstream key
-```
-
-The proxy has no listener or background process of its own. Each SSH connection
-runs one short-lived proxy process.
+There is no proxy daemon. OpenSSH starts one short-lived process for each Git
+connection.
 
 ## Install
 
-From a WT checkout on Ubuntu 24.04 amd64:
-
-```console
-make install-git-server
-```
-
-The installer adds the required packages, builds and installs the
-binary, creates the `git-proxy` account, configures sshd, and opens the TUI.
-Rerun the same command to upgrade or change configuration.
-
-Before configuring the upstream, place its SSH private key and verified
-`known_hosts` file somewhere readable only by `git-proxy`, normally under
-`/etc/wt-git-proxy`.
-
-## Configuration
-
-Everything is in `/etc/wt-git-proxy/config.toml`:
+The checked-in example is:
 
 ```toml
+version = 1
 write_prefix = "agents/"
 allowed_branches = ["main"]
 
 [[providers]]
 host = "github.com"
-user = "git"
-port = 22
-private_key_file = "/etc/wt-git-proxy/github_ed25519"
-known_hosts_file = "/etc/wt-git-proxy/github_known_hosts"
-
-[[providers]]
-host = "gitlab.com"
-user = "git"
-port = 22
-private_key_file = "/etc/wt-git-proxy/gitlab_ed25519"
-known_hosts_file = "/etc/wt-git-proxy/gitlab_known_hosts"
+private_key_file = "~/.ssh/id_ed25519"
+known_hosts_file = "~/.ssh/known_hosts"
 ```
 
-The exact branch list may be empty. The TUI edits this same file.
+The provider key must already exist. Setup never generates or changes it. The
+private key must be owned by the installing user with mode `0600`. The pinned
+`known_hosts` file may use `0600` or `0644`.
 
-## Use
-
-When you generate a client key, the TUI prints the bundle location. Its README
-tells you where to copy it and gives you the generated SSH name. Then add this
-to the client's `~/.ssh/config`:
-
-```sshconfig
-Include ~/.ssh/wt-git-proxy/*/config
-```
-
-For example, suppose the SSH name is `wt-git-build-vm` and the upstream
-repository is WT itself on GitHub. On the client:
+Install from a WT checkout on Ubuntu 24.04 amd64:
 
 ```console
-git clone wt-git-build-vm:github.com/lucasavila00/wt.git
-cd wt
-git switch -c agents/improve-readme
-git push -u origin agents/improve-readme
+scripts/install-git-server --config examples/git-proxy-config/wt-git-proxy.development.toml
 ```
 
-The provider is part of the path. A real GitLab example is:
+Setup uses the same credential code as regular WT setup. If the provider key is
+encrypted, it asks for its passphrase and installs an unlocked `0600` copy for
+the `git-proxy` account. The original key is not changed.
 
-```console
-git clone wt-git-build-vm:gitlab.com/gitlab-org/gitlab.git
+The installer finishes at a small client dashboard:
+
+```text
+WT Git proxy
+
+SPACE  Generate client command
+R      Revoke a client
+Q      Quit
 ```
 
-Cloning, fetching, and pulling work normally. With the example policy above,
-the client may push any branch beginning with `agents/`, plus `main`. A push to
-`feature/foo` or a tag is rejected. If one push contains both allowed and
-rejected branches, nothing is pushed.
+Configuration is changed in the TOML file, not in the dashboard. Rerun the same
+install command after changing it.
 
-To remove a client's access, rerun `make install-git-server`, choose **Revoke
-client**, and select its key. Revocation takes effect on the next connection.
+## Give an agent access
+
+Press Space. The dashboard authorizes a new key and prints one secret shell
+command. Paste that command into the agent VM as the user that runs Git.
+
+The command:
+
+- installs the client key and pinned proxy host key under
+  `~/.ssh/wt-git-proxy/<client>/`;
+- adds one include to `~/.ssh/config`;
+- adds global Git URL rewrites for every configured provider.
+
+Repositories may already be cloned. An existing origin such as
+`https://github.com/team/project.git` or `git@github.com:team/project.git`
+will use the proxy on its next fetch or push. The stored origin is not changed.
+
+With the example policy, agents may push `agents/fix-login` and `main`.
+They may not push `feature/fix-login` or tags. Clone, fetch, and pull are not
+restricted by the branch policy.
+
+Press R to revoke a client. Revocation blocks its next SSH connection but does
+not stop a connection already in progress.
+
+## Important risks
+
+- The printed command contains a private key. Do not put it in logs, tickets,
+  images, or shared shell history.
+- Every client can read every repository readable by the provider key. The
+  proxy does not have a repository allowlist.
+- The provider still decides whether a push is allowed. Its permissions and
+  branch rules apply after the proxy policy.
+- A repository with an explicit noncanonical `remote.*.pushurl` may bypass the
+  global URL rewrite. Remove it or point it at a canonical provider URL.
 
 ## More detail
 

@@ -26,7 +26,8 @@ install-client:
 	scripts/install-client
 
 install-git-server:
-	scripts/install-git-server
+	@test -n "$(CONFIG)" || { echo "usage: make install-git-server CONFIG=PATH" >&2; exit 2; }
+	scripts/install-git-server --config "$(CONFIG)"
 
 install-server:
 	@test -n "$(CONFIG)" || { echo "usage: make install-server CONFIG=PATH" >&2; exit 2; }

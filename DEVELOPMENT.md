@@ -36,6 +36,7 @@ Review the config, then install from an interactive terminal:
 
 ```bash
 scripts/install-server --config examples/server-config/wt-server.development.toml
+scripts/install-git-server --config examples/git-proxy-config/wt-git-proxy.development.toml
 ```
 
 If the key is encrypted, the installer asks for its existing passphrase. If

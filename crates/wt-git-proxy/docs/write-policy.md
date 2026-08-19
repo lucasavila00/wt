@@ -42,4 +42,4 @@ Provider permissions and branch protection still apply after this check. The
 policy can allow a push that the provider later rejects.
 
 Keep the trailing slash in `write_prefix`. Exact branches do not use a trailing
-slash. The TUI and config loader reject malformed policy values.
+slash. The installer and runtime config loaders reject malformed policy values.

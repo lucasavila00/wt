@@ -1,94 +1,70 @@
-# How a connection moves through the proxy
+# How it works
 
-There are two SSH connections and two different keys.
+There are two SSH connections and two different keys:
 
 ```text
-client -- client key --> proxy -- upstream key --> Git provider
+agent -- client key --> proxy -- provider key --> GitHub
 ```
 
-1. The client connects as `git-proxy`.
-2. OpenSSH finds the client key in the managed `authorized_keys` file.
-3. That key forces `wt-git-proxy serve`. It cannot open a normal shell.
-4. Git asks for `git-upload-pack` or `git-receive-pack` and includes a path such
-   as `github.com/team/project.git`.
-5. The proxy checks the command and path, finds the provider named by the first
-   path component, and opens the upstream SSH connection.
-6. `wt-git-core` carries the Git traffic. For a push, it checks the write
-   policy before it sends the client's changes upstream.
+The agent never receives the provider key. GitHub never receives the agent key.
 
-The client never receives the upstream private key. The upstream never sees the
-client key.
+## An existing clone
 
-## What is accepted
+Suppose an agent already has this origin:
 
-Suppose the proxy SSH name is `wt-git-build` and `github.com` is configured as:
-
-```toml
-[[providers]]
-host = "github.com"
-user = "git"
-port = 22
-private_key_file = "/etc/wt-git-proxy/github_ed25519"
-known_hosts_file = "/etc/wt-git-proxy/github_known_hosts"
+```text
+https://github.com/team/project.git
 ```
 
-The client runs:
+The command printed by the dashboard installs this Git rewrite:
 
-```console
-git clone wt-git-build:github.com/team/project.git
+```gitconfig
+[url "wt-git-abc123:github.com/"]
+    insteadOf = https://github.com/
+    insteadOf = git@github.com:
+    insteadOf = ssh://git@github.com/
 ```
 
-Git asks OpenSSH to run:
+Git keeps the stored origin unchanged, but connects to:
+
+```text
+wt-git-abc123:github.com/team/project.git
+```
+
+OpenSSH uses the generated client key. The proxy account's `authorized_keys`
+entry forces `wt-git-proxy serve`, so that key cannot open a shell.
+
+## What the proxy checks
+
+Git asks the proxy to run:
 
 ```text
 git-upload-pack 'github.com/team/project.git'
 ```
 
-The proxy accepts that command and resolves it as:
+The proxy checks this immediately, before opening the provider connection:
 
-- service: `git-upload-pack`;
-- provider: the configured `github.com` entry;
-- upstream repository: `team/project.git`.
+- the service is exactly `git-upload-pack` or `git-receive-pack`;
+- `github.com` is configured;
+- `team/project.git` is a safe repository path.
 
-It then connects to `git@github.com` on port 22 with the configured private key
-and pinned `known_hosts` file, and asks the provider for:
+It then connects to `git@github.com` on port 22 with the installed provider
+key and pinned provider host key. Provider user and port are fixed setup
+defaults, not dashboard questions.
 
-```text
-git-upload-pack team/project.git
-```
+## When the core checks a push
 
-A later push follows the same path, but Git requests:
+The repository path is known when the connection opens, but the refs are not.
+The core therefore checks branches later:
 
-```text
-git-receive-pack 'github.com/team/project.git'
-```
+1. The proxy validates the service, provider, and repository path.
+2. The core starts the provider's `git-receive-pack`.
+3. The core forwards the provider's ref advertisement to the agent.
+4. The agent sends the complete list of refs it wants to update.
+5. The core pauses the push and checks every ref.
+6. If every ref is allowed, it forwards the commands and packfile.
+7. If one ref is denied, it forwards neither and rejects the whole push.
 
-Only upload-pack and receive-pack are accepted. Repository paths must end in
-`.git` and may contain letters, digits, `/`, `.`, `_`, and `-`. Empty
-components, `.`, `..`, shell syntax, and unconfigured providers are rejected.
-
-## When the core validates a push
-
-The core starts the upstream Git service and forwards its branch advertisement
-to the client. The client then sends the complete list of refs it wants to
-update.
-
-The core pauses there. It reads every ref in that list and checks it against the
-write policy:
-
-- If every ref is allowed, the core forwards the list and packfile upstream.
-- If one ref is denied, the core forwards neither. It rejects the whole push
-  locally and stops the upstream process.
-
-The core does not apply the write policy to fetch, clone, or pull. The proxy has
-already validated the service, provider, and repository path before the core
-starts handling Git traffic.
-
-## Client administration
-
-The TUI adds, lists, and removes client keys. It can also generate an Ed25519
-key bundle with a pinned proxy host key and ready-to-include SSH config.
-
-Updating a client rewrites the managed `authorized_keys` file. Removing a key
-blocks the next connection made with that key; it does not stop a connection
-that is already running.
+The core does not apply branch policy to clone, fetch, or pull. The provider
+still applies its own repository permissions and branch protection after the
+core permits a push.

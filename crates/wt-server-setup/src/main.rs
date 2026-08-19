@@ -1,15 +1,13 @@
-mod files;
 mod host;
 mod image;
 mod install_input;
 mod registry_cache;
-mod runner;
 mod server;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use runner::SystemRunner;
 use std::path::PathBuf;
+use wt_setup_core::SystemRunner;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-server-setup")]

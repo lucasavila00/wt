@@ -1,7 +1,7 @@
-use crate::runner::Runner;
 use anyhow::{Context, Result};
 use std::path::Path;
 use wt_server::ServerConfig;
+use wt_setup_core::Runner;
 
 const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../assets/server/install-host.sh");
 

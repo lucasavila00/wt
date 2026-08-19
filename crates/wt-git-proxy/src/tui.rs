@@ -1,119 +1,77 @@
-use crate::{
-    add_generated_key, add_public_key, list_keys, remove_key, ProviderConfig, ProxyConfig,
-};
+use crate::{add_generated_client, list_keys, remove_key, ProxyConfig};
 use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
+use console::{Key, Term};
+use std::io::IsTerminal;
+use std::path::Path;
 
-#[derive(Clone, Eq, PartialEq)]
-enum Action {
-    Provider,
-    Policy,
-    AddClient,
-    RemoveClient,
-    Exit,
+#[derive(Debug, Eq, PartialEq)]
+enum DashboardAction {
+    Generate,
+    Revoke,
+    Quit,
 }
 
 pub fn run_tui(config_path: &Path) -> Result<()> {
-    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+    if !std::io::stdin().is_terminal() {
         bail!("wt-git-proxy tui requires an interactive terminal");
     }
-    cliclack::intro("Configure WT Git proxy")?;
-    let mut config = if config_path.exists() {
-        ProxyConfig::load(config_path)?
-    } else {
-        let config = ProxyConfig {
-            write_prefix: input("Required write prefix", "agents/")?,
-            allowed_branches: branch_list()?,
-            providers: vec![provider_config()?],
-        };
-        config.save(config_path)?;
-        config
-    };
+    let config = ProxyConfig::load(config_path)?;
+    let executable = std::env::current_exe().context("find proxy executable")?;
+    let term = Term::stdout();
+
     loop {
-        match cliclack::select("What do you want to do?")
-            .item(Action::Provider, "Add or update provider", "")
-            .item(Action::Policy, "Set write policy", "")
-            .item(Action::AddClient, "Authorize client", "")
-            .item(Action::RemoveClient, "Revoke client", "")
-            .item(Action::Exit, "Exit", "")
-            .interact()?
-        {
-            Action::Provider => configure_provider(config_path, &mut config)?,
-            Action::Policy => set_policy(config_path, &mut config)?,
-            Action::AddClient => add_client(config_path)?,
-            Action::RemoveClient => remove_client(config_path)?,
-            Action::Exit => break,
+        show_dashboard(&term, config_path)?;
+        match dashboard_action(term.read_key().context("read dashboard key")?) {
+            Some(DashboardAction::Generate) => {
+                let client = add_generated_client(config_path, &executable, &config)?;
+                term.write_line("")?;
+                term.write_line("Client authorized. Paste this secret command into the agent VM:")?;
+                term.write_line("")?;
+                term.write_line(&client.install_command)?;
+                term.write_line("")?;
+                term.write_line(&format!(
+                    "Client: {} ({})",
+                    client.alias, client.fingerprint
+                ))?;
+                term.write_line(
+                    "The command contains a private key. Do not save it in logs or shell history.",
+                )?;
+            }
+            Some(DashboardAction::Revoke) => revoke_client(config_path, &executable)?,
+            Some(DashboardAction::Quit) => break,
+            None => {}
         }
     }
-    cliclack::outro("Configuration saved")?;
     Ok(())
 }
 
-fn provider_config() -> Result<ProviderConfig> {
-    let host = input("Provider SSH host", "github.com")?;
-    let user = input("Provider SSH user", "git")?;
-    let port = input("Provider SSH port", "22")?
-        .parse::<u16>()
-        .context("parse SSH port")?;
-    let identity = input_path("Provider private key", "/etc/wt-git-proxy/provider_ed25519")?;
-    let known_hosts = input_path(
-        "Pinned known_hosts",
-        "/etc/wt-git-proxy/provider_known_hosts",
-    )?;
-    Ok(ProviderConfig {
-        host,
-        user,
-        port,
-        private_key_file: identity,
-        known_hosts_file: known_hosts,
-    })
+fn show_dashboard(term: &Term, config_path: &Path) -> Result<()> {
+    let count = list_keys(config_path)?.len();
+    term.write_line("")?;
+    term.write_str(&dashboard(count))?;
+    Ok(())
 }
 
-fn configure_provider(path: &Path, config: &mut ProxyConfig) -> Result<()> {
-    let provider = provider_config()?;
-    config
-        .providers
-        .retain(|existing| existing.host != provider.host);
-    config.providers.push(provider);
-    config.save(path)
+fn dashboard(count: usize) -> String {
+    format!(
+        "WT Git proxy\nAuthorized clients: {count}\n\nSPACE  Generate client command\nR      Revoke a client\nQ      Quit\n"
+    )
 }
 
-fn set_policy(path: &Path, config: &mut ProxyConfig) -> Result<()> {
-    config.write_prefix = input("Required write prefix", &config.write_prefix)?;
-    config.allowed_branches = branch_list()?;
-    config.save(path)
-}
-
-fn add_client(config_path: &Path) -> Result<()> {
-    let executable = std::env::current_exe().context("find executable")?;
-    let label = input("Client label", "agent")?;
-    if cliclack::confirm("Generate a new Ed25519 client key?")
-        .initial_value(true)
-        .interact()?
-    {
-        let output = input_path("Write client bundle to", "./wt-git-client")?;
-        let key = add_generated_key(config_path, &executable, &label, &output)?;
-        cliclack::note(
-            "Client authorized",
-            format!("{}\nBundle: {}", key.fingerprint, output.display()),
-        )?;
-    } else {
-        let key = add_public_key(
-            config_path,
-            &executable,
-            &label,
-            &input("Client public key", "")?,
-        )?;
-        cliclack::note("Client authorized", key.fingerprint)?;
+fn dashboard_action(key: Key) -> Option<DashboardAction> {
+    match key {
+        Key::Char(' ') => Some(DashboardAction::Generate),
+        Key::Char('r' | 'R') => Some(DashboardAction::Revoke),
+        Key::Char('q' | 'Q') | Key::Escape | Key::CtrlC => Some(DashboardAction::Quit),
+        _ => None,
     }
-    Ok(())
 }
 
-fn remove_client(config_path: &Path) -> Result<()> {
-    let executable = std::env::current_exe()?;
+fn revoke_client(config_path: &Path, executable: &Path) -> Result<()> {
     let keys = list_keys(config_path)?;
     if keys.is_empty() {
-        bail!("no client keys are authorized");
+        cliclack::note("Nothing to revoke", "No clients are authorized")?;
+        return Ok(());
     }
     let mut selected = cliclack::select("Client to revoke");
     for key in keys {
@@ -123,26 +81,41 @@ fn remove_client(config_path: &Path) -> Result<()> {
             "",
         );
     }
-    remove_key(config_path, &executable, &selected.interact()?)
+    let fingerprint = selected.interact()?;
+    remove_key(config_path, executable, &fingerprint)?;
+    cliclack::note("Client revoked", fingerprint)?;
+    Ok(())
 }
 
-fn branch_list() -> Result<Vec<String>> {
-    Ok(
-        input("Exact allowed branches, comma-separated (optional)", "")?
-            .split(',')
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    )
-}
-fn input(prompt: &str, default: &str) -> Result<String> {
-    let mut value = cliclack::input(prompt);
-    if !default.is_empty() {
-        value = value.default_input(default);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_is_not_a_form() {
+        insta::assert_snapshot!(dashboard(2), @"
+        WT Git proxy
+        Authorized clients: 2
+
+        SPACE  Generate client command
+        R      Revoke a client
+        Q      Quit
+        ");
     }
-    Ok(value.interact()?)
-}
-fn input_path(prompt: &str, default: &str) -> Result<PathBuf> {
-    Ok(input(prompt, default)?.into())
+
+    #[test]
+    fn space_generates_without_enter() {
+        assert_eq!(
+            dashboard_action(Key::Char(' ')),
+            Some(DashboardAction::Generate)
+        );
+        assert_eq!(
+            dashboard_action(Key::Char('R')),
+            Some(DashboardAction::Revoke)
+        );
+        assert_eq!(
+            dashboard_action(Key::Char('q')),
+            Some(DashboardAction::Quit)
+        );
+    }
 }

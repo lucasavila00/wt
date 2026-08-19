@@ -1,0 +1,9 @@
+# Install input for scripts/install-git-server --config PATH.
+version = 1
+write_prefix = "agents/"
+allowed_branches = ["main"]
+
+[[providers]]
+host = "github.com"
+private_key_file = "~/.ssh/id_ed25519"
+known_hosts_file = "~/.ssh/known_hosts"
