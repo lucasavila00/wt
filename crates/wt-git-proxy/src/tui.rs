@@ -1,10 +1,13 @@
-use crate::{add_generated_key, add_public_key, list_keys, remove_key, ClientConfig, ProxyConfig};
+use crate::{
+    add_generated_key, add_public_key, list_keys, remove_key, ClientConfig, ProviderConfig,
+    ProxyConfig,
+};
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Eq, PartialEq)]
 enum Action {
-    Upstream,
+    Provider,
     Policy,
     AddClient,
     RemoveClient,
@@ -22,20 +25,21 @@ pub fn run_tui(config_path: &Path) -> Result<()> {
         let config = ProxyConfig {
             write_prefix: input("Required write prefix", "agents/")?,
             allowed_branches: branch_list()?,
+            providers: vec![provider_config()?],
         };
         config.save(config_path)?;
         config
     };
     loop {
         match cliclack::select("What do you want to do?")
-            .item(Action::Upstream, "Configure upstream", "")
+            .item(Action::Provider, "Add or update provider", "")
             .item(Action::Policy, "Set write policy", "")
             .item(Action::AddClient, "Authorize client", "")
             .item(Action::RemoveClient, "Revoke client", "")
             .item(Action::Exit, "Exit", "")
             .interact()?
         {
-            Action::Upstream => configure_upstream(config_path)?,
+            Action::Provider => configure_provider(config_path, &mut config)?,
             Action::Policy => set_policy(config_path, &mut config)?,
             Action::AddClient => add_client(config_path)?,
             Action::RemoveClient => remove_client(config_path)?,
@@ -46,38 +50,43 @@ pub fn run_tui(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn configure_upstream(config_path: &Path) -> Result<()> {
-    let host = input("Upstream SSH host", "github.com")?;
-    let user = input("Upstream SSH user", "git")?;
-    let port = input("Upstream SSH port", "22")?
+fn provider_config() -> Result<ProviderConfig> {
+    let host = input("Provider SSH host", "github.com")?;
+    let user = input("Provider SSH user", "git")?;
+    let port = input("Provider SSH port", "22")?
         .parse::<u16>()
         .context("parse SSH port")?;
-    let identity = input_path("Upstream private key", "/etc/wt-git-proxy/upstream_ed25519")?;
+    let identity = input_path("Provider private key", "/etc/wt-git-proxy/provider_ed25519")?;
     let known_hosts = input_path(
         "Pinned known_hosts",
-        "/etc/wt-git-proxy/upstream_known_hosts",
+        "/etc/wt-git-proxy/provider_known_hosts",
     )?;
-    for path in [&identity, &known_hosts] {
-        if !path.is_absolute()
-            || path
-                .to_string_lossy()
-                .contains(|c: char| c.is_whitespace() || c == '"')
-        {
-            bail!("upstream credential paths must be absolute and contain no whitespace");
-        }
-    }
-    let text = format!("Host {}\n  HostName {host}\n  User {user}\n  Port {port}\n  IdentityFile {}\n  IdentitiesOnly yes\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  BatchMode yes\n  PasswordAuthentication no\n", crate::config::UPSTREAM_ALIAS, identity.display(), known_hosts.display());
-    crate::config::atomic_write(
-        &crate::config::upstream_config_path(config_path),
-        text.as_bytes(),
-        0o600,
-    )
+    Ok(ProviderConfig { host, user, port, private_key_file: identity, known_hosts_file: known_hosts })
+}
+
+fn client_config() -> Result<ClientConfig> {
+    Ok(ClientConfig {
+        host: input("Client-facing SSH host", "git-proxy.example.com")?,
+        port: input("Client-facing SSH port", "22")?.parse().context("parse SSH port")?,
+        host_key_file: input_path("Public SSH host key", "/etc/ssh/ssh_host_ed25519_key.pub")?,
+    })
+}
+
+fn configure_provider(path: &Path, config: &mut ProxyConfig) -> Result<()> {
+    let provider = provider_config()?;
+    let mut candidate = config.clone();
+    candidate.providers.retain(|existing| existing.host != provider.host);
+    candidate.providers.push(provider);
+    candidate.save(path)?;
+    *config = candidate;
+    Ok(())
 }
 
 fn set_policy(path: &Path, config: &mut ProxyConfig) -> Result<()> {
     let candidate = ProxyConfig {
         write_prefix: input("Required write prefix", &config.write_prefix)?,
         allowed_branches: branch_list()?,
+        providers: config.providers.clone(),
     };
     candidate.save(path)?;
     *config = candidate;
@@ -91,13 +100,7 @@ fn add_client(config_path: &Path) -> Result<()> {
         .initial_value(true)
         .interact()?
     {
-        let client = ClientConfig {
-            host: input("Client-facing SSH host", "git-proxy.example.com")?,
-            port: input("Client-facing SSH port", "22")?
-                .parse()
-                .context("parse SSH port")?,
-            host_key_file: input_path("Public SSH host key", "/etc/ssh/ssh_host_ed25519_key.pub")?,
-        };
+        let client = client_config()?;
         let output = input_path("Write client bundle to", "./wt-git-client")?;
         let key = add_generated_key(config_path, &executable, &client, &label, &output)?;
         cliclack::note(

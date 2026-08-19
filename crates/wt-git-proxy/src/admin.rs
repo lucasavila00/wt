@@ -169,7 +169,7 @@ fn write_client_bundle(
         .as_bytes(),
     )?;
     write_file(&directory.join("config"), format!("Host {alias}\n  HostName {}\n  Port {}\n  User git-proxy\n  IdentityFile {install_directory}/id_ed25519\n  IdentitiesOnly yes\n  UserKnownHostsFile {install_directory}/known_hosts\n  StrictHostKeyChecking yes\n  PasswordAuthentication no\n", client.host, client.port).as_bytes())?;
-    write_file(&directory.join("README"), format!("Copy this directory to {install_directory}.\nAdd `Include ~/.ssh/wt-git-proxy/*/config` to ~/.ssh/config.\nGitHub: git clone {alias}:lucasavila00/wt.git\nGitLab: git clone {alias}:gitlab-org/gitlab.git\n").as_bytes())?;
+    write_file(&directory.join("README"), format!("Copy this directory to {install_directory}.\nAdd `Include ~/.ssh/wt-git-proxy/*/config` to ~/.ssh/config.\nGitHub: git clone {alias}:github.com/lucasavila00/wt.git\nGitLab: git clone {alias}:gitlab.com/gitlab-org/gitlab.git\n").as_bytes())?;
     Ok(())
 }
 

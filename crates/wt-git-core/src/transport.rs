@@ -44,11 +44,6 @@ pub enum GitTarget<'a> {
         known_hosts_file: &'a Path,
         path: &'a str,
     },
-    SshConfig {
-        config_file: &'a Path,
-        destination: &'a str,
-        path: &'a str,
-    },
 }
 
 fn spawn_git(target: GitTarget<'_>, service: GitService) -> Result<Child> {
@@ -79,20 +74,6 @@ fn spawn_git(target: GitTarget<'_>, service: GitService) -> Result<Child> {
             }
             command
                 .arg(format!("{user}@{host}"))
-                .arg(service.command())
-                .arg(path);
-            command
-        }
-        GitTarget::SshConfig {
-            config_file,
-            destination,
-            path,
-        } => {
-            let mut command = Command::new("ssh");
-            command
-                .arg("-F")
-                .arg(config_file)
-                .arg(destination)
                 .arg(service.command())
                 .arg(path);
             command

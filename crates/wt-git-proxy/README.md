@@ -22,28 +22,28 @@ Before configuring the upstream, place its SSH private key and verified
 
 ## Configuration
 
-The entire `/etc/wt-git-proxy/config.toml` is the write policy:
+Everything is in `/etc/wt-git-proxy/config.toml`:
 
 ```toml
 write_prefix = "agents/"
 allowed_branches = ["main"]
+
+[[providers]]
+host = "github.com"
+user = "git"
+port = 22
+private_key_file = "/etc/wt-git-proxy/github_ed25519"
+known_hosts_file = "/etc/wt-git-proxy/github_known_hosts"
+
+[[providers]]
+host = "gitlab.com"
+user = "git"
+port = 22
+private_key_file = "/etc/wt-git-proxy/gitlab_ed25519"
+known_hosts_file = "/etc/wt-git-proxy/gitlab_known_hosts"
 ```
 
-The exact branch list may be empty. The prefix is required and ends in `/`.
-
-The installer opens the TUI to choose one upstream host and its SSH key. It
-writes those details to `/etc/wt-git-proxy/upstream.ssh_config`; they are not
-part of the policy TOML. Rerun `make install-git-server` to change them.
-
-The TUI's upstream host supplies the missing part of the SSH URL. For example:
-
-- upstream `git@github.com` + path `lucasavila00/wt.git` means
-  `git@github.com:lucasavila00/wt.git`;
-- upstream `git@gitlab.com` + path `gitlab-org/gitlab.git` means
-  `git@gitlab.com:gitlab-org/gitlab.git`.
-
-GitHub, GitLab, and self-hosted SSH Git servers work the same way. One proxy
-installation points to one upstream host.
+The exact branch list may be empty. The TUI edits this same file.
 
 ## Use
 
@@ -59,16 +59,16 @@ For example, suppose the SSH name is `wt-git-build-vm` and the upstream
 repository is WT itself on GitHub. On the client:
 
 ```console
-git clone wt-git-build-vm:lucasavila00/wt.git
+git clone wt-git-build-vm:github.com/lucasavila00/wt.git
 cd wt
 git switch -c agents/improve-readme
 git push -u origin agents/improve-readme
 ```
 
-For a proxy configured for GitLab, a real read-only example is:
+The provider is part of the path. A real GitLab example is:
 
 ```console
-git clone wt-git-build-vm:gitlab-org/gitlab.git
+git clone wt-git-build-vm:gitlab.com/gitlab-org/gitlab.git
 ```
 
 Cloning, fetching, and pulling work normally. With the example policy above,

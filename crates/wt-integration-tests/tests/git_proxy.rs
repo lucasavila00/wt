@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_git_proxy::{add_public_key, remove_key, ProxyConfig};
+use wt_git_proxy::{add_public_key, remove_key, ProviderConfig, ProxyConfig};
 
 struct Process(Child);
 
@@ -85,12 +85,15 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
     let config = ProxyConfig {
         write_prefix: "tasks/".to_owned(),
         allowed_branches: vec!["main".to_owned()],
+        providers: vec![ProviderConfig {
+            host: "127.0.0.1".to_owned(),
+            user: user.clone(),
+            port: upstream_port,
+            private_key_file: upstream_key,
+            known_hosts_file: upstream_known_hosts,
+        }],
     };
     config.save(&config_path).unwrap();
-    fs::write(
-        root.join("upstream.ssh_config"),
-        format!("Host wt-git-upstream\n  HostName 127.0.0.1\n  User {user}\n  Port {upstream_port}\n  IdentityFile {}\n  IdentitiesOnly yes\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  BatchMode yes\n", upstream_key.display(), upstream_known_hosts.display()),
-    ).unwrap();
     let authorized = add_public_key(
         &config_path,
         &proxy_binary,
@@ -117,7 +120,7 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
 
     let checkout = root.join("checkout");
     let url = format!(
-        "ssh://{user}@127.0.0.1:{proxy_port}{}",
+        "ssh://{user}@127.0.0.1:{proxy_port}/127.0.0.1/{}",
         upstream_repository.display()
     );
     assert_success(&git_proxy(
