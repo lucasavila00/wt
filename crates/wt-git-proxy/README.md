@@ -4,6 +4,25 @@
 copying the upstream credential into it. It uses one OpenSSH `authorized_keys`
 file and runs as a forced command, not a daemon.
 
+## How it works
+
+The client connects to the proxy with its own SSH key. OpenSSH checks that key
+and forces `wt-git-proxy serve`; the client cannot ask the account to run a
+shell command.
+
+The proxy reads the Git command, validates the provider and repository path,
+then opens a second SSH connection with the configured upstream key and pinned
+host key. Fetches pass through. Pushes must match the configured branch policy.
+One denied ref rejects the whole push before it reaches the upstream.
+
+```text
+Git client -> OpenSSH -> wt-git-proxy -> OpenSSH -> Git provider
+ client key              policy          upstream key
+```
+
+The proxy has no listener or background process of its own. Each SSH connection
+runs one short-lived proxy process.
+
 ## Install
 
 From a WT checkout on Ubuntu 24.04 amd64:
@@ -78,3 +97,9 @@ rejected branches, nothing is pushed.
 
 To remove a client's access, rerun `make install-git-server`, choose **Revoke
 client**, and select its key. Revocation takes effect on the next connection.
+
+## More detail
+
+- [How a connection moves through the proxy](docs/how-it-works.md)
+- [How the write policy works](docs/write-policy.md)
+- [Where to pay attention when changing it](docs/maintenance.md)
