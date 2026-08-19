@@ -32,7 +32,7 @@ cargo check --workspace
 cargo run -p wt-cli -- --help
 cargo run -p wt-server -- --help
 cargo run -p wt-server-setup -- --help
-cargo run -p wt-git-proxy -- --help
+make install-git-server
 ```
 
 Development setup and required checks: [Development](./DEVELOPMENT.md).

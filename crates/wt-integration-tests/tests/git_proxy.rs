@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_git_proxy::{
-    add_public_key, remove_key, ClientConfig, ProxyConfig, RepositoryConfig, UpstreamConfig,
-};
+use wt_git_proxy::{add_public_key, remove_key, ProxyConfig};
 
 struct Process(Child);
 
@@ -82,38 +80,20 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
     );
 
     let config_path = root.join("proxy.toml");
-    let proxy_authorized_keys = root.join("proxy-authorized-keys");
+    let proxy_authorized_keys = root.join("authorized_keys");
     let proxy_binary = PathBuf::from(env!("CARGO_BIN_EXE_wt-test-git-proxy"));
     let config = ProxyConfig {
-        version: 1,
-        authorized_keys_file: proxy_authorized_keys.clone(),
-        executable: proxy_binary,
-        client: ClientConfig {
-            host: "127.0.0.1".to_owned(),
-            port: proxy_port,
-            user: user.clone(),
-            host_key_file: with_extension(&proxy_host_key, "pub"),
-        },
-        write_prefix: "refs/heads/tasks/".to_owned(),
-        allowed_branches: vec!["refs/heads/main".to_owned()],
-        upstreams: vec![UpstreamConfig {
-            name: "origin".to_owned(),
-            host: "127.0.0.1".to_owned(),
-            user: user.clone(),
-            port: Some(upstream_port),
-            private_key_file: upstream_key,
-            known_hosts_file: upstream_known_hosts,
-        }],
-        repositories: vec![RepositoryConfig {
-            path: "/repo.git".to_owned(),
-            upstream: "origin".to_owned(),
-            upstream_path: upstream_repository.to_str().unwrap().to_owned(),
-        }],
+        write_prefix: "tasks/".to_owned(),
+        allowed_branches: vec!["main".to_owned()],
     };
     config.save(&config_path).unwrap();
+    fs::write(
+        root.join("upstream.ssh_config"),
+        format!("Host wt-git-upstream\n  HostName 127.0.0.1\n  User {user}\n  Port {upstream_port}\n  IdentityFile {}\n  IdentitiesOnly yes\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  BatchMode yes\n", upstream_key.display(), upstream_known_hosts.display()),
+    ).unwrap();
     let authorized = add_public_key(
         &config_path,
-        &config,
+        &proxy_binary,
         "integration client",
         &fs::read_to_string(with_extension(&client_key, "pub")).unwrap(),
     )
@@ -136,7 +116,10 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
     );
 
     let checkout = root.join("checkout");
-    let url = format!("ssh://{user}@127.0.0.1:{proxy_port}/repo.git");
+    let url = format!(
+        "ssh://{user}@127.0.0.1:{proxy_port}{}",
+        upstream_repository.display()
+    );
     assert_success(&git_proxy(
         root,
         &["clone", &url, checkout.to_str().unwrap()],
@@ -192,7 +175,7 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
     assert!(!rejected.status.success());
     assert_ref(&upstream_repository, "refs/tags/v1", false);
 
-    remove_key(&config_path, &config, &authorized.fingerprint).unwrap();
+    remove_key(&config_path, &proxy_binary, &authorized.fingerprint).unwrap();
     let rejected = git_proxy(
         &checkout,
         &["fetch", "origin"],

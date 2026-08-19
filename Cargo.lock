@@ -2551,10 +2551,8 @@ dependencies = [
  "anyhow",
  "clap",
  "cliclack",
- "insta",
  "serde",
  "ssh-key",
- "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "wt-git-core",
 ]

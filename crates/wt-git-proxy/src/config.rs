@@ -40,20 +40,32 @@ impl ProxyConfig {
     }
 
     pub fn validate(&self) -> Result<()> {
-        wt_git_core::WritePolicy::new(
-            self.write_prefix.clone(),
-            self.allowed_branches.clone(),
-        )?;
+        self.policy()?;
         Ok(())
     }
 
-    pub(crate) fn resolve_command(&self, command: &str) -> Result<(wt_git_core::GitService, String)> {
+    pub(crate) fn policy(&self) -> Result<wt_git_core::WritePolicy> {
+        wt_git_core::WritePolicy::new(
+            format!("refs/heads/{}", self.write_prefix),
+            self.allowed_branches
+                .iter()
+                .map(|branch| format!("refs/heads/{branch}")),
+        )
+    }
+
+    pub(crate) fn resolve_command(
+        &self,
+        command: &str,
+    ) -> Result<(wt_git_core::GitService, String)> {
         for service in [
             wt_git_core::GitService::UploadPack,
             wt_git_core::GitService::ReceivePack,
         ] {
             let prefix = format!("{} '", service.command());
-            if let Some(path) = command.strip_prefix(&prefix).and_then(|value| value.strip_suffix('\'')) {
+            if let Some(path) = command
+                .strip_prefix(&prefix)
+                .and_then(|value| value.strip_suffix('\''))
+            {
                 if valid_repository_path(path) {
                     return Ok((service, path.to_owned()));
                 }
@@ -115,15 +127,22 @@ mod tests {
     #[test]
     fn config_is_only_the_write_policy() {
         let config = ProxyConfig {
-            write_prefix: "refs/heads/tasks/".to_owned(),
-            allowed_branches: vec!["refs/heads/main".to_owned()],
+            write_prefix: "tasks/".to_owned(),
+            allowed_branches: vec!["main".to_owned()],
         };
         config.validate().unwrap();
         assert_eq!(
-            config.resolve_command("git-upload-pack 'team/project.git'").unwrap(),
-            (wt_git_core::GitService::UploadPack, "team/project.git".to_owned())
+            config
+                .resolve_command("git-upload-pack 'team/project.git'")
+                .unwrap(),
+            (
+                wt_git_core::GitService::UploadPack,
+                "team/project.git".to_owned()
+            )
         );
-        assert!(config.resolve_command("git-upload-pack '../secret.git'").is_err());
-        assert!(toml::from_str::<ProxyConfig>("write_prefix='refs/heads/x/'\nextra=1").is_err());
+        assert!(config
+            .resolve_command("git-upload-pack '../secret.git'")
+            .is_err());
+        assert!(toml::from_str::<ProxyConfig>("write_prefix='x/'\nextra=1").is_err());
     }
 }

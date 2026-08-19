@@ -35,12 +35,21 @@ pub fn add_public_key(
     let key = PublicKey::from_openssh(public_key).context("parse client public key")?;
     let key_fingerprint = fingerprint(&key);
     let mut entries = read_entries(config_path)?;
-    if entries.iter().any(|entry| fingerprint(&entry.key) == key_fingerprint) {
+    if entries
+        .iter()
+        .any(|entry| fingerprint(&entry.key) == key_fingerprint)
+    {
         bail!("client key {key_fingerprint} is already authorized");
     }
-    entries.push(KeyEntry { key, label: label.to_owned() });
+    entries.push(KeyEntry {
+        key,
+        label: label.to_owned(),
+    });
     write_entries(config_path, executable, &entries)?;
-    Ok(AuthorizedKey { fingerprint: key_fingerprint, label: label.to_owned() })
+    Ok(AuthorizedKey {
+        fingerprint: key_fingerprint,
+        label: label.to_owned(),
+    })
 }
 
 pub fn add_generated_key(
@@ -53,9 +62,15 @@ pub fn add_generated_key(
     let mut private = PrivateKey::random(&mut ssh_key::rand_core::OsRng, Algorithm::Ed25519)
         .context("generate client Ed25519 key")?;
     private.set_comment(format!("wt-git-proxy {label}"));
-    let public = private.public_key().to_openssh().context("encode client public key")?;
+    let public = private
+        .public_key()
+        .to_openssh()
+        .context("encode client public key")?;
     let key = PublicKey::from_openssh(&public).context("parse generated public key")?;
-    let authorized = AuthorizedKey { fingerprint: fingerprint(&key), label: label.to_owned() };
+    let authorized = AuthorizedKey {
+        fingerprint: fingerprint(&key),
+        label: label.to_owned(),
+    };
     let bundle = write_client_bundle(client, &authorized, &private, output_directory)?;
     let installed = add_public_key(config_path, executable, label, &public)?;
     debug_assert_eq!(installed, authorized);
@@ -75,7 +90,10 @@ pub fn remove_key(config_path: &Path, executable: &Path, wanted: &str) -> Result
 pub fn list_keys(config_path: &Path) -> Result<Vec<AuthorizedKey>> {
     Ok(read_entries(config_path)?
         .into_iter()
-        .map(|entry| AuthorizedKey { fingerprint: fingerprint(&entry.key), label: entry.label })
+        .map(|entry| AuthorizedKey {
+            fingerprint: fingerprint(&entry.key),
+            label: entry.label,
+        })
         .collect())
 }
 
@@ -89,9 +107,14 @@ fn read_entries(config_path: &Path) -> Result<Vec<KeyEntry>> {
     text.lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .map(|line| {
-            let (_, key) = line.split_once("\" ").context("invalid managed authorized_keys entry")?;
+            let (_, key) = line
+                .split_once("\" ")
+                .context("invalid managed authorized_keys entry")?;
             let key = PublicKey::from_openssh(key).context("parse managed authorized key")?;
-            Ok(KeyEntry { label: key.comment().to_owned(), key })
+            Ok(KeyEntry {
+                label: key.comment().to_owned(),
+                key,
+            })
         })
         .collect()
 }
@@ -120,20 +143,49 @@ fn write_client_bundle(
     private: &PrivateKey,
     directory: &Path,
 ) -> Result<ClientBundle> {
-    if directory.exists() { bail!("client bundle path already exists: {}", directory.display()); }
+    if directory.exists() {
+        bail!("client bundle path already exists: {}", directory.display());
+    }
     fs::create_dir(directory).with_context(|| format!("create {}", directory.display()))?;
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
-    let alias = format!("wt-git-{}", authorized.fingerprint.chars().filter(|c| c.is_ascii_alphanumeric()).take(12).collect::<String>().to_ascii_lowercase());
+    let alias = format!(
+        "wt-git-{}",
+        authorized
+            .fingerprint
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .take(12)
+            .collect::<String>()
+            .to_ascii_lowercase()
+    );
     let install_directory = format!("~/.ssh/wt-git-proxy/{alias}");
-    write_file(&directory.join("id_ed25519"), private.to_openssh(LineEnding::LF)?.as_bytes())?;
+    write_file(
+        &directory.join("id_ed25519"),
+        private.to_openssh(LineEnding::LF)?.as_bytes(),
+    )?;
     let host_key = PublicKey::read_openssh_file(&client.host_key_file)?;
     let encoded = host_key.to_openssh()?;
     let mut fields = encoded.split_whitespace();
-    let host = if client.port == 22 { client.host.clone() } else { format!("[{}]:{}", client.host, client.port) };
-    write_file(&directory.join("known_hosts"), format!("{host} {} {}\n", fields.next().unwrap(), fields.next().unwrap()).as_bytes())?;
+    let host = if client.port == 22 {
+        client.host.clone()
+    } else {
+        format!("[{}]:{}", client.host, client.port)
+    };
+    write_file(
+        &directory.join("known_hosts"),
+        format!(
+            "{host} {} {}\n",
+            fields.next().unwrap(),
+            fields.next().unwrap()
+        )
+        .as_bytes(),
+    )?;
     write_file(&directory.join("config"), format!("Host {alias}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {install_directory}/id_ed25519\n  IdentitiesOnly yes\n  UserKnownHostsFile {install_directory}/known_hosts\n  StrictHostKeyChecking yes\n  PasswordAuthentication no\n", client.host, client.port, client.user).as_bytes())?;
     write_file(&directory.join("README"), format!("Copy this directory to {install_directory}.\nAdd `Include ~/.ssh/wt-git-proxy/*/config` to ~/.ssh/config.\nClone with: git clone {alias}:OWNER/REPOSITORY.git\n").as_bytes())?;
-    Ok(ClientBundle { alias, directory: directory.to_owned() })
+    Ok(ClientBundle {
+        alias,
+        directory: directory.to_owned(),
+    })
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -144,7 +196,11 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 
 fn safe_command_path<'a>(name: &str, path: &'a Path) -> Result<&'a str> {
     let value = path.to_str().context("path must be UTF-8")?;
-    if !path.is_absolute() || !value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-')) {
+    if !path.is_absolute()
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-'))
+    {
         bail!("{name} contains characters unsafe for a forced command");
     }
     Ok(value)
@@ -157,4 +213,6 @@ fn validate_label(label: &str) -> Result<()> {
     Ok(())
 }
 
-fn fingerprint(key: &PublicKey) -> String { key.fingerprint(HashAlg::Sha256).to_string() }
+fn fingerprint(key: &PublicKey) -> String {
+    key.fingerprint(HashAlg::Sha256).to_string()
+}

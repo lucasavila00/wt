@@ -21,12 +21,13 @@ is just one managed `authorized_keys` file: the TUI can add an existing public
 key, generate a ready-to-copy client key bundle, list keys, and remove keys.
 There are no grants, tokens, expiries, control socket, or background service.
 
-The server has one write policy: a required fully qualified branch prefix and
-an optional list of exact fully qualified branches. The list may be empty.
+The server has one write policy: a required branch prefix and an optional list
+of exact branches. The list may be empty.
 Tags and other refs are denied, and one denied ref rejects the whole push.
 
-Repository mappings select configured SSH upstreams with separate credentials
-and pinned host keys. The proxy has no WT world, provider, registry, or setup
+One TUI-managed OpenSSH upstream uses a separate credential and pinned host
+key. Repository paths pass through unchanged, so that credential decides which
+repositories are accessible. The proxy has no WT world, provider, or registry
 features. A real Git and two-hop OpenSSH test lives in `wt-integration-tests`.
 
 ## Consequences

@@ -4,14 +4,14 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::path::Path;
-use wt_git_core::{serve_git, DuplexStream, GitTarget, WritePolicy};
+use wt_git_core::{serve_git, DuplexStream, GitTarget};
 
 pub fn serve(config_path: &Path) -> Result<()> {
     let config = ProxyConfig::load(config_path)?;
     let command = std::env::var("SSH_ORIGINAL_COMMAND")
         .context("SSH_ORIGINAL_COMMAND is missing; this command must run through OpenSSH")?;
     let (service, repository) = config.resolve_command(&command)?;
-    let policy = WritePolicy::new(config.write_prefix.clone(), config.allowed_branches.clone())?;
+    let policy = config.policy()?;
     let mut stream = StdioStream::open()?;
     serve_git(
         &mut stream,

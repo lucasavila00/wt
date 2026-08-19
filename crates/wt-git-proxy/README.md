@@ -1,99 +1,50 @@
 # wt-git-proxy
 
-`wt-git-proxy` gives a devcontainer, cloud VM, or CI worker scoped SSH Git access
-without its upstream credential. It is a forced command using one `authorized_keys` file.
+`wt-git-proxy` gives a devcontainer, VM, or CI worker scoped Git access without
+copying the upstream credential into it. It uses one OpenSSH `authorized_keys`
+file and runs as a forced command, not a daemon.
 
 ## Install
 
-Build from this workspace and create a dedicated account:
+From a WT checkout on Ubuntu 24.04 amd64:
 
 ```console
-cargo build --release --locked -p wt-git-proxy
-sudo install -m 0755 target/release/wt-git-proxy /usr/local/bin/wt-git-proxy
-sudo adduser --system --group --home /var/lib/wt-git-proxy --shell /bin/sh git-proxy
-sudo usermod --password '*NP*' git-proxy
-sudo install -d -o git-proxy -g git-proxy -m 0700 /etc/wt-git-proxy /var/lib/wt-git-proxy
+make install-git-server
 ```
 
-`*NP*` keeps password login impossible without making OpenSSH reject the account
-as locked. Install an upstream SSH private key and verified `known_hosts` file
-under `/etc/wt-git-proxy`, owned by `git-proxy` and mode `0600`.
+The installer adds the required packages, builds and installs the static
+binary, creates the `git-proxy` account, configures sshd, and opens the TUI.
+Rerun the same command to upgrade or change configuration.
+
+Before configuring the upstream, place its SSH private key and verified
+`known_hosts` file somewhere readable only by `git-proxy`, normally under
+`/etc/wt-git-proxy`.
 
 ## Configuration
 
-`/etc/wt-git-proxy/config.toml`:
+The entire `/etc/wt-git-proxy/config.toml` is the write policy:
 
 ```toml
-version = 1
-authorized_keys_file = "/var/lib/wt-git-proxy/authorized_keys"
-executable = "/usr/local/bin/wt-git-proxy"
-write_prefix = "refs/heads/agents/"
-allowed_branches = ["refs/heads/main"]
-
-[client]
-host = "git-proxy.example.com"
-port = 22
-user = "git-proxy"
-host_key_file = "/etc/ssh/ssh_host_ed25519_key.pub"
-
-[[upstreams]]
-name = "github"
-host = "github.com"
-user = "git"
-private_key_file = "/etc/wt-git-proxy/upstream_ed25519"
-known_hosts_file = "/etc/wt-git-proxy/upstream_known_hosts"
-
-[[repositories]]
-path = "/acme/api.git"
-upstream = "github"
-upstream_path = "acme/api.git"
+write_prefix = "agents/"
+allowed_branches = ["main"]
 ```
 
 The exact branch list may be empty. The prefix is required and ends in `/`.
-Add more upstreams or repositories as needed; either may use a custom SSH port.
 
-The TUI edits mappings, policy, and client keys:
+The installer opens the TUI to configure the upstream and client keys. Rerun
+`make install-git-server` to change them. The upstream credential determines
+which repositories are accessible; repository paths pass through unchanged.
 
-```console
-sudo -u git-proxy /usr/local/bin/wt-git-proxy \
-  --config /etc/wt-git-proxy/config.toml tui
-```
+## Use
 
-## OpenSSH
-
-Add `/etc/ssh/sshd_config.d/wt-git-proxy.conf`:
-
-```sshconfig
-Match User git-proxy
-    AuthorizedKeysFile /var/lib/wt-git-proxy/authorized_keys
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    AllowAgentForwarding no
-    AllowTcpForwarding no
-    X11Forwarding no
-    PermitTTY no
-```
-
-Then validate and reload:
+Install a generated bundle at the path in its README, then use its SSH alias:
 
 ```console
-sudo sshd -t
-sudo systemctl reload ssh
+git clone wt-git-CLIENT:OWNER/REPOSITORY.git
+git -C REPOSITORY switch -c agents/task-123
+git -C REPOSITORY push -u origin agents/task-123
 ```
 
-## Clients
-
-Authorize an existing public key or generate a bundle with a private key,
-pinned host key, SSH config, and clone command. Transfer it, follow its README,
-then delete the server copy; the server retains only the public key.
-
-```console
-git clone wt-git-CLIENT:/acme/api.git
-git -C api switch -c agents/task-123
-git -C api push -u origin agents/task-123
-```
-
-Reads can see every ref. Writes may target the configured prefix or exact
-branches; tags and other refs are rejected, and one denied ref rejects the
-whole push. Revoke a client in the TUI; no process restart or sshd reload is
-needed.
+Reads can see every upstream ref. Writes may target the configured prefix or
+exact branches. Tags and other refs are rejected, and one denied ref rejects
+the whole push. Revoking a key needs no restart or sshd reload.

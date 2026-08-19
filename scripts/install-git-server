@@ -72,7 +72,7 @@ temporary=$(mktemp)
 trap 'rm -f "$temporary"' EXIT
 cat >"$temporary" <<'EOF'
 Match User git-proxy
-    AuthorizedKeysFile /var/lib/wt-git-proxy/authorized_keys
+    AuthorizedKeysFile /etc/wt-git-proxy/authorized_keys
     PubkeyAuthentication yes
     PasswordAuthentication no
     KbdInteractiveAuthentication no
