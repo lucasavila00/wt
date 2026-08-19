@@ -52,9 +52,9 @@ fn valid_branch_name(value: &str) -> bool {
                 && part != "."
                 && part != ".."
                 && !part.ends_with(".lock")
-                && part.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
-                })
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
         })
 }
 
@@ -71,7 +71,10 @@ impl std::fmt::Display for PushViolation {
                 formatter.write_str("tags and non-branch refs cannot be pushed")
             }
             Self::Unauthorized { reference } => {
-                write!(formatter, "branch ref `{reference}` is outside the write policy")
+                write!(
+                    formatter,
+                    "branch ref `{reference}` is outside the write policy"
+                )
             }
         }
     }
@@ -121,11 +124,8 @@ mod tests {
 
     #[test]
     fn permits_the_prefix_and_exact_branches() {
-        let policy = WritePolicy::new(
-            "refs/heads/agents/task-42/",
-            ["refs/heads/main".to_owned()],
-        )
-        .unwrap();
+        let policy =
+            WritePolicy::new("refs/heads/agents/task-42/", ["refs/heads/main".to_owned()]).unwrap();
         assert!(policy.permits("refs/heads/agents/task-42/fix"));
         assert!(policy.permits("refs/heads/main"));
         assert!(!policy.permits("refs/heads/agents/task-420/fix"));

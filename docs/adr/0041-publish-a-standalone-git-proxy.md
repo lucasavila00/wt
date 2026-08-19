@@ -1,57 +1,35 @@
 # ADR 0041: Publish a standalone Git proxy from WT
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-18
 - Related: [ADR 0017](0017-integrate-agent-git-gateway.md)
 
 ## Context
 
-An SSH Git proxy is useful for disposable or constrained environments outside
-WT. It solves many of the same Git transport and authorization problems as
-WT's agent Git gateway. A separate implementation would duplicate
-security-sensitive code and tests.
-
-The proxy is still useful on its own. It should not require WT worlds,
-`wt-server`, libvirt, or the WT registry.
+WT's Git gateway is also useful for devcontainer hosts and cloud VMs that do
+not run WT. Maintaining a second implementation would duplicate the risky Git
+protocol and write-policy code.
 
 ## Decision
 
-Publish `wt-git-proxy` as a separate binary from the WT repository. Start with
-it as another `wt-agent-git` binary target so it can share the gateway's Git
-policy, transport code, and tests.
+Publish `wt-git-proxy` as a separate binary from this repository. Put the
+shared Git transport and policy in `wt-git-core`; keep WT world behavior in
+`wt-agent-git` and standalone OpenSSH configuration in `wt-git-proxy`.
 
-OpenSSH runs the binary as the forced command for a dedicated account with no
-shell or forwarding. A background service uses a separate SSH identity and
-pinned host keys to reach configured upstream repositories.
+OpenSSH runs the proxy as a forced command for each connection. Client access
+is just one managed `authorized_keys` file: the TUI can add an existing public
+key, generate a ready-to-copy client key bundle, list keys, and remove keys.
+There are no grants, tokens, expiries, control socket, or background service.
 
-An operator TUI configures public-to-upstream repository mappings and
-credentials, then creates and revokes client grants. Each grant has an expiry,
-a required fully qualified branch prefix, and a list of exact allowed branches,
-which may be empty. Reads can access every ref in the configured repositories.
-A write is allowed when its branch exactly matches the list or is under the
-prefix. The rule applies equally to creates, updates, force pushes, and deletes.
-Tags and other refs are denied, and one denied ref rejects the whole push before
-it reaches upstream.
+The server has one write policy: a required fully qualified branch prefix and
+an optional list of exact fully qualified branches. The list may be empty.
+Tags and other refs are denied, and one denied ref rejects the whole push.
 
-The TUI accepts a client public key or generates a dedicated Ed25519 key pair.
-It installs the public key as a restricted forced-command entry tied to the
-grant. For a generated key, it returns the private key once with ready-to-copy
-SSH config and pinned host keys; the server keeps only the public key and grant.
-The client needs only Git and OpenSSH. The TUI may exit while the proxy service
-keeps running.
-
-A grant cannot select an unconfigured repository or widen its write policy.
-The binary does not expose WT world or provider-API features.
-
-`wt-git-proxy` is released by WT but operated separately. `wt-server-setup`
-does not install or manage it, and WT does not depend on it.
-
-Test shared behavior once. Keep the standalone two-hop, real-Git and OpenSSH
-tests in `wt-integration-tests`, including malformed pushes and secret
-redaction.
+Repository mappings select configured SSH upstreams with separate credentials
+and pinned host keys. The proxy has no WT world, provider, registry, or setup
+features. A real Git and two-hop OpenSSH test lives in `wt-integration-tests`.
 
 ## Consequences
 
-- WT and the standalone proxy use the same Git security boundary and tests.
-- The proxy remains usable without installing or running WT.
-- WT releases include one more independently operated binary.
+The standalone tool stays small and uses ordinary OpenSSH administration, while
+both products exercise the same Git security boundary.

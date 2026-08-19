@@ -248,23 +248,12 @@ impl Gateway {
         let message = |commands: &[u8], response: &[u8], sideband: bool| {
             push_result_message(provider_api_available, commands, response, sideband)
         };
-        let rejection = |violation: &PushViolation| match violation {
-            PushViolation::NonBranch { .. } => {
-                "tags and non-branch refs cannot be pushed from this environment".to_owned()
-            }
-            PushViolation::Unauthorized { reference } => {
-                let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
-                format!(
-                    "branch `{branch}` must use the shared `{BRANCH_PREFIX}` prefix; rename it with `git branch -m {BRANCH_PREFIX}NAME`"
-                )
-            }
-        };
         serve_git(
             stream,
             git_target(provider, &source)?,
             service,
             Some(&policy),
-            Some(&rejection),
+            Some(&push_rejection_message),
             Some(&message),
         )
     }
@@ -323,6 +312,20 @@ impl Gateway {
             None => api::execute_cli_provider_command(kind, api_token_file, &scope, &command),
         }?;
         Ok(api::render_cli_command_output(output))
+    }
+}
+
+pub(super) fn push_rejection_message(violation: &PushViolation) -> String {
+    match violation {
+        PushViolation::NonBranch { .. } => {
+            "tags and non-branch refs cannot be pushed from this environment".to_owned()
+        }
+        PushViolation::Unauthorized { reference } => {
+            let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
+            format!(
+                "branch `{branch}` must use the shared `{BRANCH_PREFIX}` prefix; rename it with `git branch -m {BRANCH_PREFIX}NAME`"
+            )
+        }
     }
 }
 

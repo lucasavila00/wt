@@ -1,7 +1,8 @@
 # Development
 
-WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust
-through rustup. Run setup as a normal user, never as root.
+WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, OpenSSH client
+and server, and stable Rust through rustup. Run setup as a normal user, never
+as root.
 
 ## Prepare a fresh server
 

@@ -1,6 +1,6 @@
 use super::*;
 use diesel::prelude::*;
-use wt_git_core::validate_push;
+use wt_git_core::{validate_push, PushViolation};
 use wt_registry::schema::{disk_nodes, guests, worlds};
 
 #[test]
@@ -186,12 +186,9 @@ fn push_messages_cover_publish_delete_and_rejection() {
     .is_empty());
     insta::assert_snapshot!(
         "push_rejected",
-        validate_push(
-            &command(&"a".repeat(40), "refs/heads/fix-login"),
-            &WritePolicy::new("refs/heads/wt/", []).unwrap()
-        )
-            .unwrap_err()
-            .to_string()
+        service::push_rejection_message(&PushViolation::Unauthorized {
+            reference: "refs/heads/fix-login".to_owned()
+        })
     );
 }
 

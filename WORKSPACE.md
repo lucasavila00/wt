@@ -12,7 +12,9 @@ common dependencies from the root `Cargo.toml`.
 | [`wt-cli`](./crates/wt-cli/) | Binary `wt` | Client CLI |
 | [`wt-command`](./crates/wt-command/) | Library | Process command builder |
 | [`wt-devcontainer`](./crates/wt-devcontainer/) | Library | Devcontainer world lifecycle and provisioning |
-| [`wt-agent-git`](./crates/wt-agent-git/) | Library and binaries | Git transport and provider CLI for retained worlds |
+| [`wt-git-core`](./crates/wt-git-core/) | Library | Shared Git transport and write policy |
+| [`wt-agent-git`](./crates/wt-agent-git/) | Library and binaries | WT world Git access and provider CLI |
+| [`wt-git-proxy`](./crates/wt-git-proxy/) | Binary | Standalone OpenSSH Git proxy |
 | [`wt-devcontainer-guest`](./crates/wt-devcontainer-guest/) | Binaries | Devcontainer session and SSH helpers |
 | [`wt-github-ci`](./crates/wt-github-ci/) | Library | Ephemeral GitHub Actions world lifecycle |
 | [`wt-host`](./crates/wt-host/) | Library | Raw Ubuntu host world lifecycle |
@@ -30,6 +32,7 @@ cargo check --workspace
 cargo run -p wt-cli -- --help
 cargo run -p wt-server -- --help
 cargo run -p wt-server-setup -- --help
+cargo run -p wt-git-proxy -- --help
 ```
 
 Development setup and required checks: [Development](./DEVELOPMENT.md).

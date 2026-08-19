@@ -11,6 +11,9 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
+type PushResultMessage<'a> = &'a dyn Fn(&[u8], &[u8], bool) -> Result<String>;
+type ResponseMessage<'a> = &'a dyn Fn(&[u8]) -> Result<String>;
+
 pub trait DuplexStream: Read + Write + Send + 'static {
     fn try_clone_stream(&self) -> std::io::Result<Self>
     where
@@ -124,7 +127,7 @@ pub fn serve_git<S: DuplexStream>(
     service: GitService,
     policy: Option<&WritePolicy>,
     rejection_message: Option<&dyn Fn(&PushViolation) -> String>,
-    push_message: Option<&dyn Fn(&[u8], &[u8], bool) -> Result<String>>,
+    push_message: Option<PushResultMessage<'_>>,
 ) -> Result<()> {
     let mut child = spawn_git(target, service)?;
     forward_advertisement(&mut child, stream)?;
@@ -151,9 +154,7 @@ pub fn serve_git<S: DuplexStream>(
         .context("forward push commands")?;
     let sideband = push_uses_sideband(&commands)?;
     let message = |response: &[u8]| {
-        push_message.context("push message callback is unavailable")?(
-            &commands, response, sideband,
-        )
+        push_message.context("push message callback is unavailable")?(&commands, response, sideband)
     };
     bridge_child(
         stream,
@@ -179,10 +180,23 @@ fn capture_stderr(mut stderr: impl Read) -> Vec<u8> {
     }
 }
 
+fn copy_unbuffered(mut from: impl Read, mut to: impl Write) -> std::io::Result<u64> {
+    let mut total = 0;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = from.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(total);
+        }
+        to.write_all(&buffer[..count])?;
+        total += count as u64;
+    }
+}
+
 fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
-    push_message: Option<&dyn Fn(&[u8]) -> Result<String>>,
+    push_message: Option<ResponseMessage<'_>>,
 ) -> Result<()> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
@@ -190,7 +204,7 @@ fn bridge_child<S: DuplexStream>(
     let shutdown = stream.try_clone_stream().context("clone gateway stream")?;
     let mut child_stdin = child.stdin.take().context("Git service has no stdin")?;
     let request = std::thread::spawn(move || {
-        let result = std::io::copy(&mut request_stream, &mut child_stdin);
+        let result = copy_unbuffered(&mut request_stream, &mut child_stdin);
         drop(child_stdin);
         result
     });

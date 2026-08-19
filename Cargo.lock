@@ -1889,6 +1889,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
  "bcrypt-pbkdf",
+ "ed25519-dalek",
  "p256",
  "p384",
  "p521",
@@ -2544,6 +2545,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-git-proxy"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cliclack",
+ "insta",
+ "serde",
+ "ssh-key",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+ "wt-git-core",
+]
+
+[[package]]
 name = "wt-github-ci"
 version = "0.0.0"
 dependencies = [
@@ -2592,6 +2608,7 @@ dependencies = [
  "wt-cli",
  "wt-command",
  "wt-devcontainer",
+ "wt-git-proxy",
  "wt-host",
  "wt-libvirt",
  "wt-provider",

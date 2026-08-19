@@ -151,11 +151,7 @@ pub fn successful_push_updates(
         .collect()
 }
 
-pub(crate) fn reject_push(
-    stream: &mut impl Write,
-    section: &[u8],
-    reason: &str,
-) -> Result<()> {
+pub(crate) fn reject_push(stream: &mut impl Write, section: &[u8], reason: &str) -> Result<()> {
     let mut report = Vec::new();
     write_packet(&mut report, b"unpack ok\n")?;
     for (_, reference) in push_commands(section)? {
