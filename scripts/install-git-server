@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+proxy_user=git-proxy
+proxy_group=git-proxy
+proxy_home=/var/lib/wt-git-proxy
+config_dir=/etc/wt-git-proxy
+config_path=$config_dir/config.toml
+binary_path=/usr/local/bin/wt-git-proxy
+sshd_config=/etc/ssh/sshd_config.d/wt-git-proxy.conf
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if [[ $# -ne 0 ]]; then
+    echo "usage: scripts/install-git-server" >&2
+    exit 2
+fi
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as your normal WT user, not as root" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal" >&2
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]]; then
+    echo "Ubuntu 24.04 is required" >&2
+    exit 1
+fi
+if [[ $(dpkg --print-architecture) != amd64 ]]; then
+    echo "amd64 is required" >&2
+    exit 1
+fi
+if ! command -v cargo >/dev/null || ! command -v rustup >/dev/null; then
+    echo "Rust stable via rustup is required" >&2
+    exit 1
+fi
+
+printf '\n==> Installing host packages\n'
+sudo apt-get update -qq
+sudo apt-get install -y -qq build-essential git musl-tools openssh-client openssh-server
+rustup target add x86_64-unknown-linux-musl
+
+printf '\n==> Building wt-git-proxy\n'
+cd "$root"
+cargo build --quiet --locked --release --target x86_64-unknown-linux-musl -p wt-git-proxy
+sudo install -o root -g root -m 0755 \
+    target/x86_64-unknown-linux-musl/release/wt-git-proxy "$binary_path"
+
+printf '\n==> Configuring the proxy account\n'
+if ! getent group "$proxy_group" >/dev/null; then
+    sudo groupadd --system "$proxy_group"
+fi
+group_gid=$(getent group "$proxy_group" | cut -d: -f3)
+if getent passwd "$proxy_user" >/dev/null; then
+    IFS=: read -r _ _ _ user_gid _ user_home user_shell < <(getent passwd "$proxy_user")
+    if [[ $user_gid != "$group_gid" || $user_home != "$proxy_home" || $user_shell != /bin/sh ]]; then
+        echo "existing $proxy_user account has unexpected group, home, or shell" >&2
+        exit 1
+    fi
+else
+    sudo useradd --system --create-home --gid "$proxy_group" \
+        --home-dir "$proxy_home" --shell /bin/sh --password '*NP*' "$proxy_user"
+fi
+sudo usermod --password '*NP*' "$proxy_user"
+sudo install -d -o "$proxy_user" -g "$proxy_group" -m 0700 "$proxy_home" "$config_dir"
+
+printf '\n==> Configuring OpenSSH\n'
+temporary=$(mktemp)
+trap 'rm -f "$temporary"' EXIT
+cat >"$temporary" <<'EOF'
+Match User git-proxy
+    AuthorizedKeysFile /var/lib/wt-git-proxy/authorized_keys
+    PubkeyAuthentication yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    AllowAgentForwarding no
+    AllowTcpForwarding no
+    X11Forwarding no
+    PermitTTY no
+EOF
+sudo install -o root -g root -m 0644 "$temporary" "$sshd_config"
+sudo sshd -t
+sudo systemctl reload ssh
+
+printf '\n==> Configuring repositories and clients\n'
+sudo -u "$proxy_user" /bin/sh -c \
+    'cd /var/lib/wt-git-proxy && exec /usr/local/bin/wt-git-proxy --config /etc/wt-git-proxy/config.toml tui'
+
+printf '\nWT Git proxy installed. Config: %s\n' "$config_path"

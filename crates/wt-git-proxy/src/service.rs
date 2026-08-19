@@ -10,18 +10,15 @@ pub fn serve(config_path: &Path) -> Result<()> {
     let config = ProxyConfig::load(config_path)?;
     let command = std::env::var("SSH_ORIGINAL_COMMAND")
         .context("SSH_ORIGINAL_COMMAND is missing; this command must run through OpenSSH")?;
-    let (service, repository, upstream) = config.resolve_command(&command)?;
+    let (service, repository) = config.resolve_command(&command)?;
     let policy = WritePolicy::new(config.write_prefix.clone(), config.allowed_branches.clone())?;
     let mut stream = StdioStream::open()?;
     serve_git(
         &mut stream,
-        GitTarget::Ssh {
-            host: &upstream.host,
-            user: &upstream.user,
-            port: upstream.port,
-            private_key_file: &upstream.private_key_file,
-            known_hosts_file: &upstream.known_hosts_file,
-            path: &repository.upstream_path,
+        GitTarget::SshConfig {
+            config_file: &crate::config::upstream_config_path(config_path),
+            destination: crate::config::UPSTREAM_ALIAS,
+            path: &repository,
         },
         service,
         Some(&policy),

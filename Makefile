@@ -1,4 +1,4 @@
-.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-server nuke prepare-image
+.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image
 
 bootstrap-server-user:
 	scripts/bootstrap-server-user
@@ -24,6 +24,9 @@ e2e-tests:
 
 install-client:
 	scripts/install-client
+
+install-git-server:
+	scripts/install-git-server
 
 install-server:
 	@test -n "$(CONFIG)" || { echo "usage: make install-server CONFIG=PATH" >&2; exit 2; }
