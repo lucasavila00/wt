@@ -58,10 +58,12 @@ pub fn call(
 }
 
 pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
-    let hint = if error.code == wt_api::ErrorCode::Capacity {
-        "free guest capacity with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
-    } else {
-        server_hint(context)
+    let hint = match error.code {
+        wt_api::ErrorCode::Capacity => {
+            "free guest capacity with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
+        }
+        wt_api::ErrorCode::UnsupportedProtocol => version_hint(context),
+        _ => server_hint(context),
     };
     context_error(
         context,
@@ -220,9 +222,11 @@ fn server_hint(context: &Context) -> String {
 
 fn version_hint(context: &Context) -> String {
     match &context.kind {
-        ContextKind::BareMetalLocal => "install matching `wt` and `wt-server` versions".to_owned(),
+        ContextKind::BareMetalLocal => {
+            "install protocol-compatible `wt` and `wt-server` versions".to_owned()
+        }
         ContextKind::BareMetalSsh { host } => {
-            format!("install matching `wt` and `wt-server` versions on {host}")
+            format!("install protocol-compatible `wt` and `wt-server` versions on {host}")
         }
     }
 }
@@ -282,5 +286,24 @@ mod tests {
                 OsStr::new("api")
             ]
         );
+    }
+
+    #[test]
+    fn unsupported_protocol_rejection_has_a_version_hint() {
+        let context = Context {
+            name: "lab".into(),
+            kind: ContextKind::BareMetalSsh {
+                host: "wt-lab".into(),
+            },
+        };
+        let error = ApiError::new(
+            wt_api::ErrorCode::UnsupportedProtocol,
+            "unsupported protocol version 2; expected 1",
+        );
+        insta::assert_snapshot!(rejection(&context, &error).diagnostic("error"), @r###"
+        error: context lab could not be queried: server rejected the request
+          unsupported protocol: unsupported protocol version 2; expected 1
+          hint: install protocol-compatible `wt` and `wt-server` versions on wt-lab
+        "###);
     }
 }
