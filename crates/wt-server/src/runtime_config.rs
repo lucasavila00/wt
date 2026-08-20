@@ -530,7 +530,7 @@ binary_dir = "/usr/local/bin"
     fn shared_folders_are_valid_and_receive_stable_tags() {
         let shared = r#"
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
 
 [[shared_folders]]
@@ -544,7 +544,7 @@ target = "notes"
             machine.shared_folders,
             vec![
                 LibvirtSharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/codex-sessions"),
+                    source: PathBuf::from("/home/wt/.codex/sessions"),
                     tag: "wt-shared-0".to_owned(),
                 },
                 LibvirtSharedFolder {

@@ -48,6 +48,33 @@ ensure_directory() {
     fi
 }
 
+ensure_shared_directory() {
+    path=$1
+    host_uid=$(id -u)
+    host_gid=$(id -g)
+    if test -L "$path"; then
+        echo "shared folder source must not be a symbolic link: $path" >&2
+        exit 1
+    fi
+    if test -e "$path"; then
+        if ! test -d "$path"; then
+            echo "shared folder source is not a directory: $path" >&2
+            exit 1
+        fi
+        owner=$(stat -Lc %u "$path")
+        if test "$owner" != "$host_uid" && test "$owner" != 1001; then
+            echo "shared folder source owner must be uid=$host_uid or uid=1001: $path" >&2
+            exit 1
+        fi
+        sudo chmod 0700 "$path"
+    else
+        sudo install -d -o "$host_uid" -g "$host_gid" -m 0700 "$path"
+    fi
+    sudo setfacl -R -P -m "u:$host_uid:rwX,u:1001:rwX,m:rwX" -- "$path"
+    sudo find -P "$path" -type d -exec \
+        setfacl -m "d:u:$host_uid:rwx,d:u:1001:rwx,d:m:rwx" -- {} +
+}
+
 case ${1-} in
     prepare)
         test "$#" -ge 6 || exit 2
@@ -95,7 +122,7 @@ case ${1-} in
         ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
         ensure_directory 0 0 755 "$registry_dir"
         for shared_dir in "$@"; do
-            ensure_directory 1001 1001 700 "$shared_dir"
+            ensure_shared_directory "$shared_dir"
         done
         ensure_qemu_acl "$worlds_dir"
         ;;

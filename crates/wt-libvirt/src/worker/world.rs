@@ -198,7 +198,7 @@ mod tests {
         insta::assert_snapshot!(
             "domain_xml_with_one_shared_folder",
             test_domain_xml(vec![SharedFolder {
-                source: PathBuf::from("/var/lib/wt/shared/codex-sessions"),
+                source: PathBuf::from("/home/wt/.codex/sessions"),
                 tag: "wt-shared-0".to_owned(),
             }])
         );

@@ -16,6 +16,7 @@ pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
 pub const AGENT_GIT_HELPER: &str = "/usr/local/libexec/wt-retained-agent-git";
 pub const MOUNT_FOLDERS_HELPER: &str = "/usr/local/libexec/wt-retained-mount-folders";
 
+const MOUNT_FOLDERS: &[u8] = include_bytes!("../../../assets/world/shared/mount-folders.sh");
 const AGENT_GIT_STAGE: &str = "/tmp/wt-retained-agent-git-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -286,6 +287,16 @@ impl RetainedConfig {
         if self.shared_folders.is_empty() {
             return Ok(());
         }
+        transport
+            .write_file(&wt_provider::WriteFileRequest {
+                path: MOUNT_FOLDERS_HELPER,
+                contents: MOUNT_FOLDERS,
+                owner: "root",
+                group: "root",
+                mode: 0o755,
+                deadline,
+            })
+            .map_err(WorkerError::from)?;
         let args = shared_folder_args(&self.shared_folders)?;
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
         run_helper(transport, MOUNT_FOLDERS_HELPER, &args, None, deadline, log)

@@ -15,9 +15,8 @@ Add an optional top-level list to the server configuration:
 
 ```toml
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
-
 ```
 
 `source` is an absolute directory on the WT server. `target` is relative to

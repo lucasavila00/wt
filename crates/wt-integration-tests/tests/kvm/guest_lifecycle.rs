@@ -88,12 +88,17 @@ fn agent_git_transport_works_without_provider_credentials() {
         ),
         "write a shared marker through the devcontainer VM",
     );
+    assert_eq!(
+        fs::read_to_string(&codex_source).unwrap(),
+        "from-devcontainer-vm\n"
+    );
+    fs::write(&codex_source, "from-server\n").unwrap();
     run_host(
         &harness,
         &host_name,
         &format!(
             "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
-             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm; \
+             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-server; \
              printf 'from-host-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
         "read and write shared markers through the host VM",

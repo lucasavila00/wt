@@ -37,7 +37,12 @@ while test "$#" -gt 0; do
             echo "shared folder path must not contain a symbolic link: $mountpoint" >&2
             exit 1
         fi
-        install -d -m 0700 -o wt -g wt -- "$mountpoint"
+        if ! test -e "$mountpoint"; then
+            install -d -m 0700 -o wt -g wt -- "$mountpoint"
+        elif ! test -d "$mountpoint"; then
+            echo "shared folder path is not a directory: $mountpoint" >&2
+            exit 1
+        fi
         case "$remaining" in
             */*) remaining=${remaining#*/} ;;
             *) break ;;
@@ -66,6 +71,4 @@ while test "$#" -gt 0; do
         echo "expected virtiofs tag $tag at $mountpoint; found ${mounted:-nothing}" >&2
         exit 1
     fi
-    chown wt:wt -- "$mountpoint"
-    chmod 0700 -- "$mountpoint"
 done

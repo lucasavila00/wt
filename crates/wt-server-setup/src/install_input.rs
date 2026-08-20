@@ -201,7 +201,7 @@ mod tests {
 version = 1
 
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
 
 [capacity]
