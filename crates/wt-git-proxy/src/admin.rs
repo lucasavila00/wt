@@ -19,6 +19,16 @@ pub struct GeneratedClient {
     pub fingerprint: String,
     pub alias: String,
     pub install_command: String,
+    pub rollback_command: String,
+    pub report: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClientFiles {
+    private_key: String,
+    known_hosts: String,
+    ssh_config: String,
+    git_config: String,
 }
 
 pub fn add_public_key(
@@ -56,16 +66,33 @@ pub fn add_generated_client(
     let key_fingerprint = fingerprint(private.public_key());
     let alias = client_alias(&key_fingerprint);
     private.set_comment(format!("wt-git-proxy {alias}"));
-    let command = client_install_command(&alias, &private, config)?;
+    let files = client_files(&alias, &private, config)?;
+    let install_command = render_install_command(&alias, &files);
+    let rollback_command = render_rollback_command();
     let public = private
         .public_key()
         .to_openssh()
         .context("encode client public key")?;
     let authorized = add_public_key(config_path, executable, &alias, &public)?;
+    let mut normalized_public =
+        PublicKey::from_openssh(&public).context("parse generated client public key")?;
+    normalized_public.set_comment(alias.clone());
+    let authorized_entry = authorized_key_entry(config_path, executable, &normalized_public)?;
+    let report = render_client_report(
+        &authorized,
+        config_path,
+        &authorized_entry,
+        config,
+        &files,
+        &install_command,
+        &rollback_command,
+    );
     Ok(GeneratedClient {
         fingerprint: authorized.fingerprint,
         alias,
-        install_command: command,
+        install_command,
+        rollback_command,
+        report,
     })
 }
 
@@ -108,22 +135,23 @@ fn read_entries(config_path: &Path) -> Result<Vec<PublicKey>> {
 }
 
 fn write_entries(config_path: &Path, executable: &Path, entries: &[PublicKey]) -> Result<()> {
-    let executable = safe_command_path("executable", executable)?;
-    let config_path_text = safe_command_path("config path", config_path)?;
-    let command = format!("{executable} serve --config {config_path_text}");
     let mut output = HEADER.to_owned();
     for key in entries {
-        let key = key.to_openssh().context("encode client public key")?;
-        output.push_str(&format!("restrict,command=\"{command}\" {key}\n"));
+        output.push_str(&authorized_key_entry(config_path, executable, key)?);
+        output.push('\n');
     }
     atomic_write(&authorized_keys_path(config_path), output.as_bytes(), 0o600)
 }
 
-fn client_install_command(
-    alias: &str,
-    private: &PrivateKey,
-    config: &ProxyConfig,
-) -> Result<String> {
+fn authorized_key_entry(config_path: &Path, executable: &Path, key: &PublicKey) -> Result<String> {
+    let executable = safe_command_path("executable", executable)?;
+    let config_path = safe_command_path("config path", config_path)?;
+    let command = format!("{executable} serve --config {config_path}");
+    let key = key.to_openssh().context("encode client public key")?;
+    Ok(format!("restrict,command=\"{command}\" {key}"))
+}
+
+fn client_files(alias: &str, private: &PrivateKey, config: &ProxyConfig) -> Result<ClientFiles> {
     let host_key = PublicKey::read_openssh_file(Path::new("/etc/ssh/ssh_host_ed25519_key.pub"))?;
     let encoded = host_key.to_openssh()?;
     let mut fields = encoded.split_whitespace();
@@ -133,13 +161,13 @@ fn client_install_command(
     let key = fields.next().context("proxy host public key has no key")?;
     let known_hosts_host = known_hosts_host(&config.client_host, config.client_port);
     let known_hosts = format!("{known_hosts_host} {algorithm} {key}\n");
-    let private = private.to_openssh(LineEnding::LF)?;
-    Ok(render_install_command(
+    let private_key = private.to_openssh(LineEnding::LF)?.to_string();
+    Ok(render_client_files(
         alias,
         &config.client_host,
         config.client_port,
-        private.as_bytes(),
-        known_hosts.as_bytes(),
+        private_key,
+        known_hosts,
         config
             .providers
             .iter()
@@ -167,14 +195,14 @@ fn client_alias(fingerprint: &str) -> String {
     format!("wt-git-{suffix}")
 }
 
-fn render_install_command<'a>(
+fn render_client_files<'a>(
     alias: &str,
     hostname: &str,
     port: u16,
-    private_key: &[u8],
-    known_hosts: &[u8],
+    private_key: String,
+    known_hosts: String,
     providers: impl Iterator<Item = &'a str>,
-) -> String {
+) -> ClientFiles {
     let install_directory = format!("~/.ssh/wt-git-proxy/{alias}");
     let ssh_config = format!(
         "Host {alias}\n  HostName {hostname}\n  Port {port}\n  User git-proxy\n  IdentityFile {install_directory}/id_ed25519\n  IdentitiesOnly yes\n  UserKnownHostsFile {install_directory}/known_hosts\n  StrictHostKeyChecking yes\n  PasswordAuthentication no\n"
@@ -185,12 +213,124 @@ fn render_install_command<'a>(
             "[url \"{alias}:{provider}/\"]\n  insteadOf = https://{provider}/\n  insteadOf = git@{provider}:\n  insteadOf = ssh://git@{provider}/\n"
         ));
     }
+    ClientFiles {
+        private_key,
+        known_hosts,
+        ssh_config,
+        git_config,
+    }
+}
+
+fn render_install_command(alias: &str, files: &ClientFiles) -> String {
     format!(
         "umask 077; d=\"$HOME/.ssh/wt-git-proxy/{alias}\"; g=\"$HOME/.ssh/wt-git-proxy/gitconfig\"; install -d \"$d\"; printf '%s' '{}' | base64 -d > \"$d/id_ed25519\"; printf '%s' '{}' | base64 -d > \"$d/known_hosts\"; printf '%s' '{}' | base64 -d > \"$d/config\"; printf '%s' '{}' | base64 -d > \"$g\"; touch \"$HOME/.ssh/config\"; chmod 600 \"$HOME/.ssh/config\"; grep -qxF 'Include ~/.ssh/wt-git-proxy/*/config' \"$HOME/.ssh/config\" || printf '\\nInclude ~/.ssh/wt-git-proxy/*/config\\n' >> \"$HOME/.ssh/config\"; git config --global --get-all include.path 2>/dev/null | grep -qxF \"$g\" || git config --global --add include.path \"$g\"",
-        BASE64_STANDARD.encode(private_key),
-        BASE64_STANDARD.encode(known_hosts),
-        BASE64_STANDARD.encode(ssh_config),
-        BASE64_STANDARD.encode(git_config),
+        BASE64_STANDARD.encode(files.private_key.as_bytes()),
+        BASE64_STANDARD.encode(files.known_hosts.as_bytes()),
+        BASE64_STANDARD.encode(files.ssh_config.as_bytes()),
+        BASE64_STANDARD.encode(files.git_config.as_bytes()),
+    )
+}
+
+fn render_rollback_command() -> String {
+    "g=\"$HOME/.ssh/wt-git-proxy/gitconfig\"; git config --global --fixed-value --unset-all include.path \"$g\" 2>/dev/null || :; if [ -f \"$HOME/.ssh/config\" ]; then sed -i '\\|^Include ~/.ssh/wt-git-proxy/\\*/config$|d' \"$HOME/.ssh/config\"; fi; rm -rf -- \"$HOME/.ssh/wt-git-proxy\"".to_owned()
+}
+
+fn render_client_report(
+    client: &AuthorizedKey,
+    config_path: &Path,
+    authorized_entry: &str,
+    config: &ProxyConfig,
+    files: &ClientFiles,
+    install_command: &str,
+    rollback_command: &str,
+) -> String {
+    let providers = config
+        .providers
+        .iter()
+        .map(|provider| format!("  - {}", provider.host))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let directory = format!("~/.ssh/wt-git-proxy/{}", client.label);
+    format!(
+        "\n\
+======================================================================\n\
+SECRET: this report contains the agent private key\n\
+======================================================================\n\
+\n\
+CLIENT\n\
+\n\
+Name:        {}\n\
+Fingerprint: {}\n\
+Proxy:       git-proxy@{}:{}\n\
+Providers:\n\
+{providers}\n\
+\n\
+SERVER CHANGE\n\
+\n\
+Updated {} (mode 0600). The new entry is:\n\
+\n\
+{authorized_entry}\n\
+\n\
+FILES THE COMMAND WRITES ON THE AGENT\n\
+\n\
+{directory}/id_ed25519 (mode 0600)\n\
+----------------------------------------------------------------------\n\
+{}\
+----------------------------------------------------------------------\n\
+\n\
+{directory}/known_hosts (mode 0600)\n\
+----------------------------------------------------------------------\n\
+{}\
+----------------------------------------------------------------------\n\
+\n\
+{directory}/config (mode 0600)\n\
+----------------------------------------------------------------------\n\
+{}\
+----------------------------------------------------------------------\n\
+\n\
+~/.ssh/wt-git-proxy/gitconfig (mode 0600)\n\
+----------------------------------------------------------------------\n\
+{}\
+----------------------------------------------------------------------\n\
+\n\
+CHANGES TO EXISTING AGENT FILES\n\
+\n\
+~/.ssh/config gets this line if it is not already present:\n\
+\n\
+Include ~/.ssh/wt-git-proxy/*/config\n\
+\n\
+~/.gitconfig gets an include.path pointing to:\n\
+\n\
+$HOME/.ssh/wt-git-proxy/gitconfig\n\
+\n\
+INSTALL ON THE AGENT\n\
+\n\
+Paste this entire command into the agent VM as the user that runs Git:\n\
+\n\
+{install_command}\n\
+\n\
+ROLL BACK THE AGENT\n\
+\n\
+This removes all wt-git-proxy configuration for this agent user:\n\
+\n\
+{rollback_command}\n\
+\n\
+ROLL BACK THE SERVER\n\
+\n\
+Press R and revoke {} ({}). Client cleanup alone does not\n\
+revoke the key on this proxy.\n\
+======================================================================\n",
+        client.label,
+        client.fingerprint,
+        config.client_host,
+        config.client_port,
+        authorized_keys_path(config_path).display(),
+        files.private_key,
+        files.known_hosts,
+        files.ssh_config,
+        files.git_config,
+        client.label,
+        client.fingerprint,
     )
 }
 
@@ -220,32 +360,51 @@ fn fingerprint(key: &PublicKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ProviderConfig;
+    use std::path::PathBuf;
     use std::process::Command;
+
+    fn fixture_files(
+        alias: &str,
+        hostname: &str,
+        port: u16,
+        private_key: &str,
+        providers: &[&str],
+    ) -> ClientFiles {
+        render_client_files(
+            alias,
+            hostname,
+            port,
+            private_key.to_owned(),
+            format!("{} ssh-ed25519 HOSTKEY\n", known_hosts_host(hostname, port)),
+            providers.iter().copied(),
+        )
+    }
 
     #[test]
     fn generated_command_is_complete_and_copyable() {
-        let command = render_install_command(
+        let files = fixture_files(
             "wt-git-abc123",
             "proxy.example.com",
             22,
-            b"PRIVATE KEY\n",
-            b"proxy.example.com ssh-ed25519 HOSTKEY\n",
-            ["github.com"].into_iter(),
+            "PRIVATE KEY\n",
+            &["github.com"],
         );
+        let command = render_install_command("wt-git-abc123", &files);
         insta::assert_snapshot!(command);
     }
 
     #[test]
-    fn generated_command_configures_an_existing_checkout_globally() {
+    fn generated_command_configures_and_rolls_back_an_existing_checkout() {
         let home = tempfile::tempdir().unwrap();
-        let command = render_install_command(
+        let files = fixture_files(
             "wt-git-abc123",
             "proxy.example.com",
             22,
-            b"PRIVATE KEY\n",
-            b"proxy.example.com ssh-ed25519 HOSTKEY\n",
-            ["github.com"].into_iter(),
+            "PRIVATE KEY\n",
+            &["github.com"],
         );
+        let command = render_install_command("wt-git-abc123", &files);
         for _ in 0..2 {
             let status = Command::new("/bin/sh")
                 .arg("-c")
@@ -255,14 +414,14 @@ mod tests {
                 .unwrap();
             assert!(status.success());
         }
-        let replacement = render_install_command(
+        let replacement_files = fixture_files(
             "wt-git-def456",
             "proxy.example.com",
             22,
-            b"REPLACEMENT KEY\n",
-            b"proxy.example.com ssh-ed25519 HOSTKEY\n",
-            ["github.com"].into_iter(),
+            "REPLACEMENT KEY\n",
+            &["github.com"],
         );
+        let replacement = render_install_command("wt-git-def456", &replacement_files);
         assert!(Command::new("/bin/sh")
             .arg("-c")
             .arg(replacement)
@@ -326,6 +485,76 @@ mod tests {
             String::from_utf8(includes.stdout).unwrap().lines().count(),
             1
         );
+
+        assert!(Command::new("/bin/sh")
+            .arg("-c")
+            .arg(render_rollback_command())
+            .env("HOME", home.path())
+            .status()
+            .unwrap()
+            .success());
+        assert!(!home.path().join(".ssh/wt-git-proxy").exists());
+        let ssh_config = fs::read_to_string(home.path().join(".ssh/config")).unwrap();
+        assert!(!ssh_config.contains("Include ~/.ssh/wt-git-proxy/*/config"));
+        let restored = Command::new("git")
+            .args(["-C"])
+            .arg(&checkout)
+            .args(["remote", "get-url", "origin"])
+            .env("HOME", home.path())
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(restored.stdout).unwrap().trim(),
+            "https://github.com/team/project.git"
+        );
+    }
+
+    #[test]
+    fn generated_report_shows_every_change_in_plain_text() {
+        let files = fixture_files(
+            "wt-git-abc123",
+            "proxy.example.com",
+            2222,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nPRIVATE KEY\n-----END OPENSSH PRIVATE KEY-----\n",
+            &["github.com", "gitlab.com"],
+        );
+        let install_command = render_install_command("wt-git-abc123", &files);
+        let rollback_command = render_rollback_command();
+        let config = ProxyConfig {
+            client_host: "proxy.example.com".to_owned(),
+            client_port: 2222,
+            write_prefix: "agents/".to_owned(),
+            allowed_branches: vec!["main".to_owned()],
+            providers: vec![
+                ProviderConfig {
+                    host: "github.com".to_owned(),
+                    user: "git".to_owned(),
+                    port: 22,
+                    private_key_file: PathBuf::from("/etc/wt-git-proxy/providers/0/id_ed25519"),
+                    known_hosts_file: PathBuf::from("/etc/wt-git-proxy/providers/0/known_hosts"),
+                },
+                ProviderConfig {
+                    host: "gitlab.com".to_owned(),
+                    user: "git".to_owned(),
+                    port: 22,
+                    private_key_file: PathBuf::from("/etc/wt-git-proxy/providers/1/id_ed25519"),
+                    known_hosts_file: PathBuf::from("/etc/wt-git-proxy/providers/1/known_hosts"),
+                },
+            ],
+        };
+        let report = render_client_report(
+            &AuthorizedKey {
+                fingerprint: "SHA256:abc123".to_owned(),
+                label: "wt-git-abc123".to_owned(),
+            },
+            Path::new("/etc/wt-git-proxy/config.toml"),
+            "restrict,command=\"/usr/local/bin/wt-git-proxy serve --config /etc/wt-git-proxy/config.toml\" ssh-ed25519 PUBLICKEY wt-git-abc123",
+            &config,
+            &files,
+            &install_command,
+            &rollback_command,
+        );
+        insta::assert_snapshot!(report);
     }
 
     #[test]

@@ -1,8 +1,8 @@
 # wt-git-proxy
 
-`wt-git-proxy` lets agents use Git without giving them the GitHub private key.
-Agents get their own proxy key instead. The proxy keeps the GitHub key and only
-allows pushes to the branches you choose.
+`wt-git-proxy` lets agents use Git without giving them a Git provider's private
+key. Agents get their own proxy key instead. The proxy keeps provider keys and
+only allows pushes to the branches you choose.
 
 There is no proxy daemon. OpenSSH starts one short-lived process for each Git
 connection.
@@ -62,8 +62,13 @@ install command after changing it.
 
 ## Give an agent access
 
-Press Space. The dashboard authorizes a new key and prints one secret shell
-command. Paste that command into the agent VM as the user that runs Git.
+Press Space. The dashboard prints a readable report showing the server change,
+every file that will be written on the agent, and changes to the agent's Git and
+SSH configuration. The report includes the private key in plain text, so treat
+the whole report as secret.
+
+The report also prints one shell command. Paste that command into the agent VM
+as the user that runs Git.
 
 The command:
 
@@ -85,10 +90,20 @@ restricted by the branch policy.
 Press R to revoke a client. Revocation blocks its next SSH connection but does
 not stop a connection already in progress.
 
+## Roll back an agent
+
+Each client report includes a rollback command. It removes the Git and SSH
+includes and deletes `~/.ssh/wt-git-proxy` for that agent user. Repository
+remotes were never changed, so they immediately use their original provider
+URLs again.
+
+Client cleanup does not revoke the key on the server. Press R in the dashboard
+and select the same client to remove its server access.
+
 ## Important risks
 
-- The printed command contains a private key. Do not put it in logs, tickets,
-  images, or shared shell history.
+- The printed report and command contain a private key. Do not put them in logs,
+  tickets, images, or shared shell history.
 - Every client can read every repository readable by the provider key. The
   proxy does not have a repository allowlist.
 - The provider still decides whether a push is allowed. Its permissions and

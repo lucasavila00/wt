@@ -25,9 +25,10 @@ The branch policy is global. So is repository access: every client can try
 every repository readable by the provider key. Use a dedicated provider key
 whose repository permissions match the agents that receive client commands.
 
-Global Git `insteadOf` rules cover normal GitHub HTTPS and SSH origins. They
-do not guarantee interception of a custom `remote.*.pushurl` or an unusual
-provider URL. Pay attention to those when auditing an existing VM.
+Global Git `insteadOf` rules cover normal HTTPS and SSH origins for every
+configured provider. They do not guarantee interception of a custom
+`remote.*.pushurl` or an unusual provider URL. Pay attention to those when
+auditing an existing VM.
 
 ## Command parsing
 

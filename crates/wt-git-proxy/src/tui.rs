@@ -24,18 +24,7 @@ pub fn run_tui(config_path: &Path) -> Result<()> {
         match dashboard_action(term.read_key().context("read dashboard key")?) {
             Some(DashboardAction::Generate) => {
                 let client = add_generated_client(config_path, &executable, &config)?;
-                term.write_line("")?;
-                term.write_line("Client authorized. Paste this secret command into the agent VM:")?;
-                term.write_line("")?;
-                term.write_line(&client.install_command)?;
-                term.write_line("")?;
-                term.write_line(&format!(
-                    "Client: {} ({})",
-                    client.alias, client.fingerprint
-                ))?;
-                term.write_line(
-                    "The command contains a private key. Do not save it in logs or shell history.",
-                )?;
+                term.write_str(&client.report)?;
             }
             Some(DashboardAction::Revoke) => revoke_client(config_path, &executable)?,
             Some(DashboardAction::Quit) => break,
@@ -60,8 +49,9 @@ The agent must be able to resolve and reach this address.\n\
 \n\
 Press Space to give one agent access. You will get one command to paste into\n\
 that agent. The command saves its new SSH key under ~/.ssh/wt-git-proxy and\n\
-updates Git and SSH for that user. Existing GitHub checkouts will use this\n\
-proxy without changing their saved remotes. The GitHub key stays on this server.\n\
+updates Git and SSH for that user. Existing checkouts for configured Git\n\
+providers will use this proxy without changing their saved remotes. Provider\n\
+keys stay on this server.\n\
 \n\
 Press R to stop an agent from connecting again.\n\
 \n\
@@ -115,8 +105,9 @@ mod tests {
 
         Press Space to give one agent access. You will get one command to paste into
         that agent. The command saves its new SSH key under ~/.ssh/wt-git-proxy and
-        updates Git and SSH for that user. Existing GitHub checkouts will use this
-        proxy without changing their saved remotes. The GitHub key stays on this server.
+        updates Git and SSH for that user. Existing checkouts for configured Git
+        providers will use this proxy without changing their saved remotes. Provider
+        keys stay on this server.
 
         Press R to stop an agent from connecting again.
 
