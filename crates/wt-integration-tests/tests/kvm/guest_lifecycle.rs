@@ -1,8 +1,7 @@
 use super::*;
 use std::path::Path;
 
-const HOST_PROJECT_USER_DATA: &str =
-    include_str!("../../../../examples/host-world/cloud-init.yaml");
+const HOST_DEFAULT_USER_DATA: &str = include_str!("../../../../assets/client/cloud-init.yaml");
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
@@ -49,7 +48,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     assert_eq!(running.status, InstanceStatus::Running);
     let host_name = unique_name("host");
     let created_host = timings.run("prepare host world", || {
-        harness.create_host(&host_name, HOST_PROJECT_USER_DATA)
+        harness.create_host(&host_name, HOST_DEFAULT_USER_DATA)
     });
     assert_eq!(created_host.status, InstanceStatus::Setup);
     assert_eq!(created_host.kind(), wt_api::WorldKind::Host);
@@ -115,7 +114,13 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "test \"$(sudo stat -c '%U:%G %a' /var/lib/wt-host/user-data)\" = 'root:root 600'",
+        concat!(
+            "test \"$(sudo stat -c '%U:%G %a' /var/lib/wt-host)\" = 'root:root 711'; ",
+            "test \"$(sudo stat -c '%U:%G %a' /var/lib/wt-host/user-data)\" = ",
+            "'root:root 600'; ",
+            "test -x /var/lib/wt-host; ",
+            "test ! -r /var/lib/wt-host/user-data",
+        ),
         "verify staged host user-data permissions",
     );
     let staged_user_data =
@@ -123,7 +128,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             .output()
             .unwrap();
     ensure_success("read staged host user-data", &staged_user_data).unwrap();
-    assert_eq!(staged_user_data.stdout, HOST_PROJECT_USER_DATA.as_bytes());
+    assert_eq!(staged_user_data.stdout, HOST_DEFAULT_USER_DATA.as_bytes());
     run_host(
         &harness,
         &host_name,
@@ -178,10 +183,23 @@ fn agent_git_transport_works_without_provider_credentials() {
             InstanceStatus::Running,
         )
     });
+    run_host(
+        &harness,
+        &host_name,
+        concat!(
+            "for attempt in $(seq 1 50); do ",
+            "test \"$(tmux display-message -p -t wt-host:0.0 ",
+            "'#{pane_dead} #{pane_current_command}')\" = '0 bash' && exit 0; ",
+            "sleep 0.2; ",
+            "done; ",
+            "tmux list-panes -t wt-host -F '#{pane_dead} #{pane_current_command}'; ",
+            "exit 1",
+        ),
+        "wait for host setup pane to become a login shell",
+    );
     let host_pane = capture_host_pane(&harness, &host_name);
     assert!(
         host_pane.contains("WT host cloud-init: init")
-            && host_pane.contains("WT host project development ready")
             && host_pane.contains("WT host cloud-init complete."),
         "host cloud-init output was not preserved in Byobu:\n{host_pane}"
     );
@@ -196,8 +214,6 @@ fn agent_git_transport_works_without_provider_credentials() {
         concat!(
             "set -eu; ",
             "test \"$(id -un)\" = wt; ",
-            "test -f /var/lib/wt-host-example-ready; ",
-            "test -d /home/wt/wt/.git; ",
             "test \"$(git config --global --get user.name)\" = 'WT E2E'; ",
             "test \"$(git config --global --get user.email)\" = wt@example.invalid; ",
             "sudo -n true; ",
@@ -206,9 +222,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test ! -e /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
-            "git --version; rustc --version; cargo clippy --version; rustfmt --version; ",
-            "codex --version; pkg-config --exists libvirt; ",
-            "cd /home/wt/wt; cargo clippy --workspace --all-targets -- -D warnings; ",
+            "git --version; curl --version; codex --version; command -v diffo; ",
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
             "test -x /usr/local/bin/wt-agent-git-relay; ",
@@ -446,8 +460,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &host_name,
         &format!(
-            "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git && \
-             test -S /run/wt-agent-git/gateway.sock && \
+            "command -v codex diffo && test -S /run/wt-agent-git/gateway.sock && \
              systemctl is-active --quiet wt-agent-git-relay.service && \
              git -C /home/wt/gateway-check fetch origin && \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \

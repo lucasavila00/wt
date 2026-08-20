@@ -105,25 +105,23 @@ The project devcontainer includes Codex and logs in as its configured
 
 ## Manual host test
 
-The checked-in [host recipe](examples/host-world/cloud-init.yaml) is the manual
-host-world test; choose the `local` context when prompted:
+The client installer's default cloud-init recipe is the manual host-world test;
+choose the `local` context when prompted:
 
 ```bash
-wt new host host-manual --user-data examples/host-world/cloud-init.yaml
+wt new host host-manual
 wt ls
-ssh host-manual-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
-ssh host-manual-vs codex --version
+ssh host-manual-vs 'command -v diffo && codex --version'
 ssh host-manual
 wt rm host-manual
 ```
 
 `wt new host` enters `host-manual` Byobu and runs cloud-init there.
-`host-manual-vs` is direct guest SSH. The example checkout uses the agent Git
-gateway and does not need the workstation SSH agent. Run `codex` once inside
-the session to sign in.
+`host-manual-vs` is direct guest SSH. Run `codex` once inside the session to
+sign in.
 
-Both environments run the normal Rust checks for this workspace. They cannot
-run the real KVM E2E from inside a world.
+The devcontainer can run the normal Rust checks for this workspace. Neither
+environment can run the real KVM E2E from inside a world.
 
 ## Reset
 

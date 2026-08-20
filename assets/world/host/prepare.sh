@@ -42,7 +42,7 @@ case "${1:-}" in
         runuser --user "$WT_USER" -- sudo --non-interactive true
         ;;
     user-data)
-        install -d -m 0700 -o root -g root "$state"
+        install -d -m 0711 -o root -g root "$state"
         temporary=$state/user-data.wt-new
         cat > "$temporary"
         chown root:root "$temporary"

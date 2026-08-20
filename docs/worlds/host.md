@@ -75,8 +75,3 @@ implicit checkout or provider credentials.
 Golden-image replacement does not migrate existing host worlds. Existing disks
 retain their current guest user and terminal state; recreate a host world to
 use a newly built image foundation.
-
-Use the checked-in
-[host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete
-WT development environment with Rust, Codex, and a public checkout. It cannot
-run the real KVM E2E from inside the world.
