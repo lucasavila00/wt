@@ -20,9 +20,10 @@ The `image` section names separate devcontainer and host images in one
 directory. They cannot use the same file.
 Each `[[shared_folders]]` entry maps an absolute server directory to a path
 relative to `/home/wt` in every retained VM. The sample shares only Codex
-sessions and Claude Code projects. Repository-owned Docker Compose services may
-bind those VM paths into their own container user home; WT does not add
-container mounts.
+sessions and Claude Code projects from the server's `wt` user home, so the host
+and retained environments share conversation history. Repository-owned Docker
+Compose services may bind those VM paths into their own container user home; WT
+does not add container mounts.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated
