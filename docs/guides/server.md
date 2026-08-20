@@ -22,11 +22,12 @@ configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and disk
 limits come from `[capacity]` in the install input and are materialized at
 `/etc/wt/capacity.toml`.
 
-The example `[[shared_folders]]` entries keep Codex sessions and Claude Code
-projects outside world disks. Each `source` is an absolute normalized server
-directory; each `target` is a normalized path relative to `/home/wt` in every
-retained VM. The installer creates missing sources. Existing servers opt in by
-adding the entries and recreating their retained worlds.
+The example `[[shared_folders]]` entries share the server `wt` user's Codex
+sessions and Claude Code projects with every retained world. Each `source` is
+an absolute normalized server directory; each `target` is a normalized path
+relative to `/home/wt` in every retained VM. The installer creates missing
+sources. Existing servers opt in by adding the entries and recreating their
+retained worlds.
 
 Every retained host and devcontainer world can read and change these folders.
 They survive world deletion and server restart, but they are outside world disk
