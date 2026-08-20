@@ -24,8 +24,9 @@ impl GitFixture {
   "name": "wt-kvm-e2e",
   "dockerComposeFile": "compose.yaml",
   "service": "app",
-  "workspaceFolder": "/workspaces/workspace",
-  "remoteUser": "root"
+  "workspaceFolder": "/workspaces/wt",
+  "remoteUser": "wt",
+  "onCreateCommand": "sudo chown -R wt:wt /workspaces"
 }
 "#,
         )
@@ -44,9 +45,9 @@ impl GitFixture {
       dockerfile: Dockerfile
     command: sleep infinity
     volumes:
-      - /workspace:/workspaces/workspace
-      - /home/wt/.codex/sessions:/root/.codex/sessions
-      - /home/wt/.claude/projects:/root/.claude/projects
+      - /workspace:/workspaces/wt
+      - /home/wt/.codex/sessions:/home/wt/.codex/sessions
+      - /home/wt/.claude/projects:/home/wt/.claude/projects
 "#,
         )
         .unwrap();

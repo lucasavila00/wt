@@ -268,10 +268,10 @@ fn agent_git_transport_works_without_provider_credentials() {
         &name,
         concat!(
             "set -eu; ",
-            "test \"$(id -un)\" = root; ",
+            "test \"$(id -un)\" = wt; ",
             "rustc --version; cargo clippy --version; rustfmt --version; ",
             "codex --version; pkg-config --exists libvirt; ",
-            "test ! -e /root/.codex/auth.json",
+            "test ! -e /home/wt/.codex/auth.json",
         ),
         "verify devcontainer project tools",
     );
@@ -279,8 +279,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &name,
         &format!(
-            "test \"$(cat /root/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \
-             test \"$(cat /root/.claude/projects/{shared_marker})\" = from-host-vm"
+            "test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \
+             test \"$(cat /home/wt/.claude/projects/{shared_marker})\" = from-host-vm"
         ),
         "verify repository-owned Docker Compose shared-folder binds",
     );
@@ -370,7 +370,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "printf 'persistent app state\n' > /workspaces/workspace/.wt-kvm-e2e-restart && sync",
+        "printf 'persistent app state\n' > /workspaces/wt/.wt-kvm-e2e-restart && sync",
         "write app state before KVM restart",
     );
     run_host(
@@ -410,7 +410,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test \"$(cat /workspaces/workspace/.wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
+        "test \"$(cat /workspaces/wt/.wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
         "verify app state and Git after KVM restart",
     );
 
@@ -621,7 +621,7 @@ fn app_command(harness: &KvmHarness, name: &InstanceName, command: &str) -> std:
         "-i",
         &harness.git.guest_key,
         format!("local.{name}-vs"),
-        format!("cd /workspaces/workspace && {command}"),
+        format!("cd /workspaces/wt && {command}"),
     );
     command_process.env_remove("SSH_AUTH_SOCK");
     command_process
