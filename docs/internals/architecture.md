@@ -30,7 +30,7 @@ version 2 carries tagged world kinds and a common retained-world Git author.
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-retained`, `wt-server`, `wt-server-setup`, `wt-setup-core`, `wt-git-core`, `wt-integration-tests` |
+| Shared | `wt-api`, `wt-cli`, `wt-codex`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-retained`, `wt-server`, `wt-server-setup`, `wt-setup-core`, `wt-git-core`, `wt-integration-tests` |
 | Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest` |
 | Host | `wt-host` |
 | GitHub CI | `wt-github-ci` |

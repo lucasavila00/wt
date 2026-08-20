@@ -60,12 +60,11 @@ authorized keys, generate per-world host keys, and enable guest SSH. App SSH
 and its container-specific keys remain devcontainer-owned behavior.
 
 The image build result is root-owned mode `0644` and contains exactly these
-five newline-terminated fields, in this order:
+four newline-terminated fields, in this order:
 
 ```text
 kind=KIND
 status=ready
-recipe_version=1
 wt_uid=1001
 wt_gid=1001
 ```

@@ -5,7 +5,7 @@ use wt_server::ServerConfig;
 use wt_setup_core::{sudo_install, sudo_move, Runner};
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
-const STATIC_BINARIES: [&str; 8] = [
+const STATIC_BINARIES: [&str; 9] = [
     "wt-agent-git-gateway",
     "wt-agent-git-relay",
     "git-remote-ag",
@@ -14,6 +14,7 @@ const STATIC_BINARIES: [&str; 8] = [
     "wt-app-pane",
     "wt-app-info",
     "wt-app-proxy",
+    "wt-codex",
 ];
 
 pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
@@ -35,6 +36,8 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
             "wt-cli",
             "-p",
             "wt-devcontainer-guest",
+            "-p",
+            "wt-codex",
         ),
         "build static WT binaries",
     )?;
@@ -47,6 +50,7 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         "wt-app-pane",
         "wt-app-info",
         "wt-app-proxy",
+        "wt-codex",
         "wt-server",
     ] {
         let source = release_binary(name);
@@ -126,6 +130,10 @@ mod tests {
         assert_eq!(
             release_binary("wt-app-pane"),
             Path::new("target/x86_64-unknown-linux-musl/release/wt-app-pane")
+        );
+        assert_eq!(
+            release_binary("wt-codex"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt-codex")
         );
         assert_eq!(
             release_binary("wt-server"),

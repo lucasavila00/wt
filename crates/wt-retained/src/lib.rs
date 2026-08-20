@@ -118,6 +118,7 @@ impl AgentGitConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetainedConfig {
     pub agent_git: AgentGitConfig,
+    pub wt_codex_binary: PathBuf,
     pub shared_folders: Vec<SharedFolderMount>,
 }
 
@@ -132,6 +133,12 @@ pub struct ProvisionSpec<'a> {
 impl RetainedConfig {
     pub fn validate(&self) -> Result<(), WorkerError> {
         self.agent_git.validate()?;
+        if !self.wt_codex_binary.is_file() {
+            return Err(WorkerError::new(format!(
+                "wt-codex not found: {}",
+                self.wt_codex_binary.display()
+            )));
+        }
         shared_folder_args(&self.shared_folders).map(|_| ())
     }
 
@@ -151,6 +158,7 @@ impl RetainedConfig {
             log,
         )?;
         self.install_agent_git(transport, spec.git_grant, deadline, log)?;
+        self.install_wt_codex(transport, deadline)?;
         self.mount_shared_folders(transport, deadline, log)
     }
 
@@ -248,6 +256,25 @@ impl RetainedConfig {
                 .map_err(WorkerError::from)?;
         }
         run_helper(transport, GIT_AUTHOR_HELPER, &[], None, deadline, log)
+    }
+
+    fn install_wt_codex(
+        &self,
+        transport: &dyn GuestTransport,
+        deadline: Instant,
+    ) -> Result<(), WorkerError> {
+        let contents = std::fs::read(&self.wt_codex_binary)
+            .map_err(|error| WorkerError::new(format!("read wt-codex: {error}")))?;
+        transport
+            .write_file(&wt_provider::WriteFileRequest {
+                path: "/usr/local/bin/wt-codex",
+                contents: &contents,
+                owner: "root",
+                group: "root",
+                mode: 0o755,
+                deadline,
+            })
+            .map_err(WorkerError::from)
     }
 
     pub fn mount_shared_folders(
@@ -491,16 +518,11 @@ mod tests {
                 },
                 SharedFolderMount {
                     tag: "wt-shared-1".to_owned(),
-                    target: PathBuf::from(".claude/projects"),
+                    target: PathBuf::from("notes"),
                 },
             ])
             .unwrap(),
-            [
-                "wt-shared-0",
-                ".codex/sessions",
-                "wt-shared-1",
-                ".claude/projects",
-            ]
+            ["wt-shared-0", ".codex/sessions", "wt-shared-1", "notes",]
         );
     }
 }

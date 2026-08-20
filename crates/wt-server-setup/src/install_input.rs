@@ -204,10 +204,6 @@ version = 1
 source = "/var/lib/wt/shared/codex-sessions"
 target = ".codex/sessions"
 
-[[shared_folders]]
-source = "/var/lib/wt/shared/claude-projects"
-target = ".claude/projects"
-
 [capacity]
 version = 1
 limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }

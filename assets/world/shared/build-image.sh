@@ -78,8 +78,8 @@ TERM=xterm-ghostty tput colors >/dev/null
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
     /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-shell
-printf 'kind=%s\nstatus=ready\nrecipe_version=%s\nwt_uid=%s\nwt_gid=%s\n' \
-    "$WT_IMAGE_KIND" "$WT_IMAGE_RECIPE_VERSION" "$WT_UID" "$WT_GID" \
+printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
+    "$WT_IMAGE_KIND" "$WT_UID" "$WT_GID" \
     > /var/lib/wt-image-result
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result

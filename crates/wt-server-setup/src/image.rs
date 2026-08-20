@@ -31,15 +31,12 @@ use wt_setup_core::{require_named_file, require_root_file, Runner};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
-const IMAGE_MANIFEST_VERSION: u32 = 2;
 const DEVCONTAINER_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../assets/world/devcontainer/build-image.sh");
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
-    version: u32,
-    recipe_version: u32,
     source_sha256: String,
     config_sha256: String,
     inputs: BTreeMap<String, String>,
@@ -258,7 +255,6 @@ fn build_image_inner<R: Runner>(
     let spec = BuildSpec {
         name: BUILD_NAME,
         kind: ImageKind::Devcontainer,
-        recipe_version: recipe::RECIPE_VERSION,
         recipe: DEVCONTAINER_IMAGE_BUILD,
     };
     let paths = run_kvm_build(context, build_dir, &spec, &[])?;
@@ -343,8 +339,6 @@ fn build_image_inner<R: Runner>(
 
     println!("Hashing and publishing golden image...");
     let manifest = ImageManifest {
-        version: IMAGE_MANIFEST_VERSION,
-        recipe_version: recipe::RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
         inputs: staged_input_hashes(&spec, &[]),
@@ -384,16 +378,13 @@ pub(crate) fn verify_installed_image(
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    if manifest.version != IMAGE_MANIFEST_VERSION
-        || manifest.recipe_version != recipe::RECIPE_VERSION
-        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
+    if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
         || manifest.inputs
             != staged_input_hashes(
                 &BuildSpec {
                     name: BUILD_NAME,
                     kind: ImageKind::Devcontainer,
-                    recipe_version: recipe::RECIPE_VERSION,
                     recipe: DEVCONTAINER_IMAGE_BUILD,
                 },
                 &[],

@@ -214,7 +214,7 @@ mod tests {
                     tag: "wt-shared-0".to_owned(),
                 },
                 SharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/claude-projects"),
+                    source: PathBuf::from("/var/lib/wt/shared/notes"),
                     tag: "wt-shared-1".to_owned(),
                 },
             ])

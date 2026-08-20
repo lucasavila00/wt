@@ -56,9 +56,9 @@ current SSH connection while Byobu and its processes persist; existing panes
 may retain a stale socket after disconnect or reattach. WT does not retarget
 that socket, and host setup never receives it.
 
-When configured by the server, shared agent conversations are available at
-`/home/wt/.codex/sessions` and `/home/wt/.claude/projects`. These mounts are
-restored and verified whenever a stopped host world starts.
+When configured by the server, shared Codex sessions are available at
+`/home/wt/.codex/sessions`. This mount is restored and verified whenever a
+stopped host world starts.
 
 Every host receives `ag-git` and a revocable gateway grant. Configured provider
 URLs use the gateway automatically. The grant can read every available
