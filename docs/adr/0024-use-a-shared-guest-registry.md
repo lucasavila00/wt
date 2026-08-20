@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-08-14
 - Amends: [ADR 0020](0020-reserve-world-memory-before-starting-guests.md)
-- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
+- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md),
+  [ADR 0045](0045-stop-retained-worlds.md)
 
 ## Context
 
