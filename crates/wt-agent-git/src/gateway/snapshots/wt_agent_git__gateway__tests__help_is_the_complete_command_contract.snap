@@ -3,13 +3,12 @@ source: crates/wt-agent-git/src/gateway/tests.rs
 assertion_line: 34
 expression: HELP
 ---
-ag-git reads and changes explicitly identified Git provider resources, records
-feedback about ag-git itself, and describes the current WT environment. Provider
-operations accept exactly one JSON command object and reject unknown fields.
+ag-git reads and changes explicitly identified Git provider resources and records
+feedback about ag-git itself. It accepts exactly one JSON command object and
+rejects unknown fields.
 
 USAGE:
 ag-git '<JSON>'
-ag-git world-prompt
 
 TYPESCRIPT COMMAND TYPE:
 type AgGitCommand =
@@ -43,9 +42,6 @@ ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
 
 `show_mr_for_branch` returns the single open MR from the named branch to the
 gateway grant's base branch. It fails when there is no match or multiple matches.
-
-`world-prompt` prints current instructions for coding agents without requiring a
-Git checkout or provider API.
 
 The four ag-git reporting actions store feedback against this authenticated world
 without contacting the Git provider.

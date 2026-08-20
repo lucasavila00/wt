@@ -3,11 +3,10 @@ use clap::{Parser, Subcommand};
 use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
 use std::os::unix::process::CommandExt as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wt_api::{
@@ -19,6 +18,7 @@ use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
 
 mod code;
+mod host;
 mod reports;
 
 #[derive(Debug, Parser)]
@@ -33,7 +33,7 @@ enum Command {
     /// Create a world.
     New {
         #[command(subcommand)]
-        kind: Option<NewKind>,
+        kind: Option<host::NewKind>,
     },
     /// List worlds across every configured context.
     Ls,
@@ -53,18 +53,6 @@ enum Command {
     ClearReports,
 }
 
-#[derive(Debug, Subcommand)]
-enum NewKind {
-    /// Create a raw Ubuntu world from cloud-init user-data.
-    Host {
-        /// Name of the world to create.
-        name: wt_api::InstanceName,
-        /// Override the default cloud-init user-data file.
-        #[arg(long, value_name = "FILE")]
-        user_data: Option<PathBuf>,
-    },
-}
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("wt: {error:#}");
@@ -78,15 +66,10 @@ fn run() -> Result<()> {
         Command::New { kind } => {
             let (application, name) = match kind {
                 None => (CreateKind::Devcontainer, None),
-                Some(NewKind::Host { name, user_data }) => {
-                    let (user_data_path, user_data) = read_host_user_data(user_data)?;
-                    (
-                        CreateKind::Host {
-                            user_data,
-                            user_data_path,
-                        },
-                        Some(name),
-                    )
+                Some(host::NewKind::Host(input)) => {
+                    let input = input.load()?;
+                    let name = input.name.clone();
+                    (CreateKind::Host(input), Some(name))
                 }
             };
             let input = prompt_create(&config, application, name)?;
@@ -286,10 +269,7 @@ struct CreateInput {
 
 enum CreateKind {
     Devcontainer,
-    Host {
-        user_data: String,
-        user_data_path: PathBuf,
-    },
+    Host(host::Input),
 }
 
 extern "C" fn cancel_prompt(_: i32) {
@@ -399,12 +379,11 @@ fn prompt_create(
                 summary,
             )
         }
-        CreateKind::Host {
-            user_data,
-            user_data_path,
-        } => (
-            CreateApplication::Host { user_data },
-            host_application_summary(&user_data_path),
+        CreateKind::Host(input) => (
+            CreateApplication::Host {
+                user_data: input.user_data,
+            },
+            host::application_summary(&input.user_data_path),
         ),
     };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
@@ -436,48 +415,6 @@ fn prompt_create(
         ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
         application,
     })
-}
-
-fn read_user_data(path: &Path) -> Result<String> {
-    let user_data = std::fs::read_to_string(path)
-        .with_context(|| format!("read cloud-init user-data {}", path.display()))?;
-    if user_data.is_empty() {
-        bail!("cloud-init user-data {} is empty", path.display());
-    }
-    Ok(user_data)
-}
-
-fn read_host_user_data(path: Option<PathBuf>) -> Result<(PathBuf, String)> {
-    let Some(path) = path else {
-        let path = default_host_user_data_path(
-            std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-            std::env::var_os("HOME").as_deref(),
-        )?;
-        let user_data = read_user_data(&path).with_context(|| {
-            format!(
-                "default cloud-init user-data is unavailable; create {} or pass `--user-data FILE`",
-                path.display()
-            )
-        })?;
-        return Ok((path, user_data));
-    };
-    let user_data = read_user_data(&path)?;
-    Ok((path, user_data))
-}
-
-fn host_application_summary(path: &Path) -> String {
-    format!("Kind        host\nCloud-init  {}\n", path.display())
-}
-
-fn default_host_user_data_path(
-    xdg_config_home: Option<&OsStr>,
-    home: Option<&OsStr>,
-) -> Result<PathBuf> {
-    let config_home = match xdg_config_home.filter(|path| !path.is_empty()) {
-        Some(path) => PathBuf::from(path),
-        None => PathBuf::from(home.context("HOME is not set")?).join(".config"),
-    };
-    Ok(config_home.join("wt/cloud-init.yaml"))
 }
 
 fn prompt_error(error: std::io::Error) -> anyhow::Error {
