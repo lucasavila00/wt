@@ -101,7 +101,7 @@ EOF
         fi
         ;;
     user-data)
-        install -d -m 0700 -o root -g root "$state"
+        install -d -m 0711 -o root -g root "$state"
         temporary=$state/user-data.wt-new
         cat > "$temporary"
         chown root:root "$temporary"
