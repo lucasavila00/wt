@@ -4,6 +4,14 @@
 - Date: 2026-08-20
 - Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
+> [!WARNING]
+> The Codex discovery claim in this ADR is incomplete. Sharing
+> `~/.codex/sessions` preserves rollout files, but an already-running Codex
+> process does not add them to its local session index or show them in its
+> picker. [ADR 0044](0044-reconcile-shared-codex-sessions.md) proposes the
+> required Codex-owned reconciliation step. Do not share or edit Codex's
+> SQLite state to work around this limitation.
+
 ## Context
 
 Deleting a world currently deletes its Codex and Claude Code conversations.
