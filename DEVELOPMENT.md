@@ -81,16 +81,12 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-`cargo test --workspace` skips the ignored real-system KVM tests. Use the fast
-profile for VM device, guest mount, and Compose bind changes on a configured
-Ubuntu/KVM host:
+`cargo test --workspace` skips the ignored real-system KVM test. Run it only on
+a configured Ubuntu/KVM host:
 
 ```bash
-make e2e-tests-fast
+make e2e-tests
 ```
-
-Use `make e2e-tests-full` for whole-flow changes and before release.
-`make e2e-tests` remains an alias for the full profile.
 
 ## Manual devcontainer test
 

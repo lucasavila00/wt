@@ -1,4 +1,4 @@
-.PHONY: bootstrap-server-user check-file-lines clear e2e-tests e2e-tests-fast e2e-tests-full install-client install-git-server install-server nuke prepare-image
+.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image
 
 bootstrap-server-user:
 	scripts/bootstrap-server-user
@@ -19,13 +19,8 @@ clear:
 nuke:
 	scripts/nuke
 
-e2e-tests: e2e-tests-full
-
-e2e-tests-fast:
-	cargo test -p wt-integration-tests --test kvm_e2e shared_folders::fast_shared_folder_lifecycle -- --ignored --exact --nocapture
-
-e2e-tests-full:
-	cargo test -p wt-integration-tests --test kvm_e2e guest_lifecycle::agent_git_transport_works_without_provider_credentials -- --ignored --exact --nocapture
+e2e-tests:
+	cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
 
 install-client:
 	scripts/install-client
