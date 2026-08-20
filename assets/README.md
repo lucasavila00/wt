@@ -3,6 +3,7 @@
 These shell and configuration files are installed or run on real machines.
 
 - `server`: physical WT server setup;
+- `client`: workstation defaults installed with the WT client;
 - `world/shared`: machine and terminal setup used by more than one world kind;
 - `world/devcontainer`: repository and devcontainer behavior;
 - `world/host`: raw Ubuntu host behavior.

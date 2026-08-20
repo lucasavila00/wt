@@ -125,6 +125,12 @@ remote:\n"
     )
 }
 
+fn world_prompt() -> String {
+    format!(
+        "This environment has ag-git installed for pull or merge request, review, and CI operations; run ag-git help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
+    )
+}
+
 fn validate_repository(repository: &Repository) -> Result<()> {
     if !valid_host(&repository.host)
         || repository.project.is_empty()

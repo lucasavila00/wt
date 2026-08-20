@@ -269,6 +269,11 @@ impl Gateway {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(HELP.to_owned());
         }
+        // Setup hook outside the agent-facing JSON API. World builders use this
+        // to inject gateway-owned instructions into coding-agent sessions.
+        if args == ["world-prompt"] {
+            return Ok(world_prompt());
+        }
         let command = api::CliCommand::parse(args)?;
         if let Some((kind, description)) = command.agent_git_report() {
             let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;

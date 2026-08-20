@@ -165,15 +165,30 @@ fn new_is_interactive_only() {
 }
 
 #[test]
-fn parses_host_recipe_path() {
-    let cli = Cli::try_parse_from(["wt", "new", "host", "recipe.yaml"]).unwrap();
+fn parses_host_name_with_default_recipe() {
+    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox"]).unwrap();
     let Command::New {
-        kind: Some(NewKind::Host { user_data }),
+        kind: Some(host::NewKind::Host(input)),
     } = cli.command
     else {
         panic!("expected host new command")
     };
-    assert_eq!(user_data, PathBuf::from("recipe.yaml"));
+    assert_eq!(input.name, InstanceName::parse("sandbox").unwrap());
+    assert_eq!(input.user_data, None);
+}
+
+#[test]
+fn parses_host_recipe_override() {
+    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox", "--user-data", "recipe.yaml"])
+        .unwrap();
+    let Command::New {
+        kind: Some(host::NewKind::Host(input)),
+    } = cli.command
+    else {
+        panic!("expected host new command")
+    };
+    assert_eq!(input.name, InstanceName::parse("sandbox").unwrap());
+    assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
 }
 
 #[test]

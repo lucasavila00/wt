@@ -1,6 +1,6 @@
 ---
 source: crates/wt-agent-git/src/gateway/tests.rs
-assertion_line: 32
+assertion_line: 34
 expression: HELP
 ---
 ag-git reads and changes explicitly identified Git provider resources and records

@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
 use std::os::unix::process::CommandExt as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wt_api::{
@@ -18,6 +18,7 @@ use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
 
 mod code;
+mod host;
 mod reports;
 
 #[derive(Debug, Parser)]
@@ -32,7 +33,7 @@ enum Command {
     /// Create a world.
     New {
         #[command(subcommand)]
-        kind: Option<NewKind>,
+        kind: Option<host::NewKind>,
     },
     /// List worlds across every configured context.
     Ls,
@@ -52,12 +53,6 @@ enum Command {
     ClearReports,
 }
 
-#[derive(Debug, Subcommand)]
-enum NewKind {
-    /// Create a raw Ubuntu world from cloud-init user-data.
-    Host { user_data: PathBuf },
-}
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("wt: {error:#}");
@@ -69,13 +64,15 @@ fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
         Command::New { kind } => {
-            let application = match kind {
-                None => CreateKind::Devcontainer,
-                Some(NewKind::Host { user_data }) => CreateKind::Host {
-                    user_data: read_user_data(&user_data)?,
-                },
+            let (application, name) = match kind {
+                None => (CreateKind::Devcontainer, None),
+                Some(host::NewKind::Host(input)) => {
+                    let input = input.load()?;
+                    let name = input.name.clone();
+                    (CreateKind::Host(input), Some(name))
+                }
             };
-            let input = prompt_create(&config, application)?;
+            let input = prompt_create(&config, application, name)?;
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;
@@ -272,7 +269,7 @@ struct CreateInput {
 
 enum CreateKind {
     Devcontainer,
-    Host { user_data: String },
+    Host(host::Input),
 }
 
 extern "C" fn cancel_prompt(_: i32) {
@@ -307,7 +304,11 @@ fn install_cancel_handlers() -> Result<SignalGuard> {
     Ok(SignalGuard(previous))
 }
 
-fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput> {
+fn prompt_create(
+    config: &ClientConfig,
+    kind: CreateKind,
+    name: Option<wt_api::InstanceName>,
+) -> Result<CreateInput> {
     if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
@@ -332,16 +333,21 @@ fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput>
             .interact()
             .map_err(prompt_error)?
     };
-    let name: String = cliclack::input("World name")
-        .placeholder("my-world")
-        .validate(|value: &String| {
-            wt_api::InstanceName::parse(value.clone())
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })
-        .interact()
-        .map_err(prompt_error)?;
-    let name = wt_api::InstanceName::parse(name)?;
+    let name = match name {
+        Some(name) => name,
+        None => {
+            let name: String = cliclack::input("World name")
+                .placeholder("my-world")
+                .validate(|value: &String| {
+                    wt_api::InstanceName::parse(value.clone())
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                })
+                .interact()
+                .map_err(prompt_error)?;
+            wt_api::InstanceName::parse(name)?
+        }
+    };
     let (application, application_summary) = match kind {
         CreateKind::Devcontainer => {
             let git_author = read_git_author()?;
@@ -373,9 +379,11 @@ fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput>
                 summary,
             )
         }
-        CreateKind::Host { user_data } => (
-            CreateApplication::Host { user_data },
-            "Kind        host\n".to_owned(),
+        CreateKind::Host(input) => (
+            CreateApplication::Host {
+                user_data: input.user_data,
+            },
+            host::application_summary(&input.user_data_path),
         ),
     };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
@@ -407,15 +415,6 @@ fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput>
         ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
         application,
     })
-}
-
-fn read_user_data(path: &Path) -> Result<String> {
-    let user_data = std::fs::read_to_string(path)
-        .with_context(|| format!("read cloud-init user-data {}", path.display()))?;
-    if user_data.is_empty() {
-        bail!("cloud-init user-data {} is empty", path.display());
-    }
-    Ok(user_data)
 }
 
 fn prompt_error(error: std::io::Error) -> anyhow::Error {
