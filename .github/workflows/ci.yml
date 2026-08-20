@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libvirt-dev ripgrep
+        run: sudo apt-get update && sudo apt-get install --yes libvirt-dev openssh-server ripgrep
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

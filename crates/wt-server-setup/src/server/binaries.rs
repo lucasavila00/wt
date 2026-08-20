@@ -1,9 +1,8 @@
-use crate::files::{sudo_install, sudo_move};
-use crate::runner::Runner;
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 use wt_command::cmd;
 use wt_server::ServerConfig;
+use wt_setup_core::{sudo_install, sudo_move, Runner};
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 const STATIC_BINARIES: [&str; 8] = [

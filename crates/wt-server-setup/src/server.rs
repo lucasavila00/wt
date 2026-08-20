@@ -1,22 +1,29 @@
 mod binaries;
 
-use crate::files::{require_root_file, sudo_install, sudo_move};
 use crate::host;
 use crate::image;
 use crate::install_input::{
     serialize_capacity_config, serialize_server_config, AgentGitProviderInstallConfig, InstallInput,
 };
 use crate::registry_cache;
-use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::fs;
+use std::os::unix::fs::MetadataExt;
+#[cfg(test)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use wt_command::cmd;
 use wt_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
+#[cfg(test)]
+use wt_setup_core::validate_passphrase;
+use wt_setup_core::{
+    prepare_ssh_credentials, read_owned_file, require_root_file, sudo_install, sudo_move,
+    temporary_credential, validate_ssh_files, PassphrasePrompt, Runner, SshCredentialInput,
+    TerminalPassphrasePrompt,
+};
+#[cfg(test)]
 use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
@@ -32,7 +39,8 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     let replace_runtime = !Path::new(SERVER_CONFIG_PATH).exists();
 
     phase("Preparing Git provider credentials");
-    let credentials = prepare_agent_git_credentials(runner, &TerminalPassphrasePrompt, &input)?;
+    let prompt = TerminalPassphrasePrompt::new(ssh_key_passphrase_context);
+    let credentials = prepare_agent_git_credentials(runner, &prompt, &input)?;
 
     phase("Preparing host state and caches");
     prepare_host(runner, &server)?;
@@ -107,21 +115,7 @@ fn validate_agent_git_files(input: &InstallInput) -> Result<()> {
         if token.iter().all(u8::is_ascii_whitespace) {
             bail!("agent_git.{kind}.api_token_file must not be empty");
         }
-        read_owned_file(
-            &provider.ssh_private_key_file,
-            true,
-            &format!("agent_git.{kind}.ssh_private_key_file"),
-        )?;
-        read_owned_file(
-            &provider.ssh_public_key_file,
-            false,
-            &format!("agent_git.{kind}.ssh_public_key_file"),
-        )?;
-        read_owned_file(
-            &provider.ssh_known_hosts_file,
-            false,
-            &format!("agent_git.{kind}.ssh_known_hosts_file"),
-        )?;
+        validate_ssh_files(&provider_ssh_input(kind, provider))?;
     }
     Ok(())
 }
@@ -150,111 +144,26 @@ fn prepare_provider_credentials(
         true,
         &format!("agent_git.{kind}.api_token_file"),
     )?)?;
-    let private_key_bytes = read_owned_file(
-        &provider.ssh_private_key_file,
-        true,
-        &format!("agent_git.{kind}.ssh_private_key_file"),
-    )?;
-    let private_key = ssh_key::PrivateKey::from_openssh(&private_key_bytes).with_context(|| {
-        format!(
-            "parse {kind} SSH private key {}",
-            provider.ssh_private_key_file.display()
-        )
-    })?;
-    let private_key = if private_key.is_encrypted() {
-        let passphrase = prompt.read(kind, &provider.ssh_private_key_file, &private_key)?;
-        private_key.decrypt(&passphrase).with_context(|| {
-            format!(
-                "unlock {kind} SSH private key {}",
-                provider.ssh_private_key_file.display()
-            )
-        })?
-    } else {
-        private_key
-    };
-    let unlocked = private_key
-        .to_openssh(ssh_key::LineEnding::LF)
-        .with_context(|| format!("encode unlocked {kind} SSH private key"))?;
-    let private_key_file = temporary_credential(unlocked.as_bytes())?;
-    let derived_public = private_key
-        .public_key()
-        .to_openssh()
-        .with_context(|| format!("encode {kind} SSH public key"))?;
-    let configured_public = String::from_utf8(read_owned_file(
-        &provider.ssh_public_key_file,
-        false,
-        &format!("agent_git.{kind}.ssh_public_key_file"),
-    )?)
-    .with_context(|| format!("decode agent_git.{kind}.ssh_public_key_file"))?;
-    let derived_public =
-        public_key_fields(&derived_public).context("ssh-keygen returned an invalid public key")?;
-    let configured_public = public_key_fields(&configured_public)
-        .with_context(|| format!("agent_git.{kind}.ssh_public_key_file is invalid"))?;
-    if derived_public != configured_public {
-        bail!("agent_git.{kind} SSH public key does not match its private key");
-    }
-    let known_hosts = temporary_credential(&read_owned_file(
-        &provider.ssh_known_hosts_file,
-        false,
-        &format!("agent_git.{kind}.ssh_known_hosts_file"),
-    )?)?;
-    let output = runner.output(cmd!(
-        "ssh-keygen",
-        "-F",
-        &provider.host,
-        "-f",
-        known_hosts.path(),
-    ))?;
-    if !output.status.success() || output.stdout.is_empty() {
-        bail!(
-            "agent_git.{kind}.ssh_known_hosts_file has no key for {}",
-            provider.host
-        );
-    }
+    let ssh = prepare_ssh_credentials(runner, prompt, &provider_ssh_input(kind, provider))?;
     Ok(PreparedProviderCredentials {
         kind,
         api_token,
-        private_key: private_key_file,
-        known_hosts,
+        private_key: ssh.private_key,
+        known_hosts: ssh.known_hosts,
     })
 }
 
-trait PassphrasePrompt {
-    fn read(
-        &self,
-        kind: &str,
-        path: &Path,
-        private_key: &ssh_key::PrivateKey,
-    ) -> Result<Zeroizing<String>>;
-}
-
-struct TerminalPassphrasePrompt;
-
-impl PassphrasePrompt for TerminalPassphrasePrompt {
-    fn read(
-        &self,
-        kind: &str,
-        path: &Path,
-        private_key: &ssh_key::PrivateKey,
-    ) -> Result<Zeroizing<String>> {
-        eprintln!("\n{}", ssh_key_passphrase_context(kind, path));
-        let key = private_key.clone();
-        let passphrase = cliclack::password(format!("Passphrase for {}", path.display()))
-            .validate(move |value: &String| validate_passphrase(&key, value))
-            .interact()
-            .with_context(|| format!("read {kind} SSH key passphrase"))?;
-        Ok(Zeroizing::new(passphrase))
+fn provider_ssh_input<'a>(
+    kind: &'a str,
+    provider: &'a AgentGitProviderInstallConfig,
+) -> SshCredentialInput<'a> {
+    SshCredentialInput {
+        name: kind,
+        host: &provider.host,
+        private_key_file: &provider.ssh_private_key_file,
+        public_key_file: Some(&provider.ssh_public_key_file),
+        known_hosts_file: &provider.ssh_known_hosts_file,
     }
-}
-
-fn validate_passphrase(
-    private_key: &ssh_key::PrivateKey,
-    passphrase: &str,
-) -> std::result::Result<(), &'static str> {
-    private_key
-        .decrypt(passphrase)
-        .map(|_| ())
-        .map_err(|_| "That passphrase did not unlock this SSH key. Try again.")
 }
 
 fn ssh_key_passphrase_context(kind: &str, path: &Path) -> String {
@@ -286,45 +195,6 @@ fn success_message(input_path: &Path) -> String {
         "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-git-gateway\nNext: configure a WT client, then run `wt new`.",
         input_path.display()
     )
-}
-
-fn read_owned_file(path: &Path, private: bool, name: &str) -> Result<Vec<u8>> {
-    let metadata =
-        fs::symlink_metadata(path).with_context(|| format!("inspect {name} {}", path.display()))?;
-    let mode = metadata.mode() & 0o7777;
-    let valid_mode = mode == 0o600 || (!private && mode == 0o644);
-    if !metadata.file_type().is_file() || metadata.uid() != Uid::effective().as_raw() || !valid_mode
-    {
-        let expected = if private { "0600" } else { "0600 or 0644" };
-        bail!(
-            "{name} {} must be a regular file owned by the installing user with mode {expected}",
-            path.display()
-        );
-    }
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(path)
-        .with_context(|| format!("open {name} {}", path.display()))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .with_context(|| format!("read {name} {}", path.display()))?;
-    Ok(bytes)
-}
-
-fn temporary_credential(bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
-    let mut file = tempfile::NamedTempFile::new().context("create temporary credential")?;
-    fs::set_permissions(file.path(), fs::Permissions::from_mode(0o600))
-        .context("protect temporary credential")?;
-    file.write_all(bytes)
-        .context("write temporary credential")?;
-    file.flush().context("flush temporary credential")?;
-    Ok(file)
-}
-
-fn public_key_fields(value: &str) -> Option<(&str, &str)> {
-    let mut fields = value.split_whitespace();
-    Some((fields.next()?, fields.next()?))
 }
 
 fn require_server_user() -> Result<()> {

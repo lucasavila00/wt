@@ -4,6 +4,7 @@ use wt_server::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
     RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_GIT_VSOCK_PORT,
 };
+use wt_setup_core::expand_home;
 
 /// Install input for `wt-server-setup --config`.
 /// Setup materializes [`ServerConfig`] from this and writes `/etc/wt/server.toml`.
@@ -171,24 +172,6 @@ impl AgentGitInstallConfig {
         .into_iter()
         .filter_map(|(kind, provider)| provider.map(|provider| (kind, provider)))
     }
-}
-
-fn expand_home(path: &Path, name: &str) -> Result<PathBuf, String> {
-    if path == Path::new("~") {
-        return std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned());
-    }
-    if let Some(relative) = path.to_str().and_then(|value| value.strip_prefix("~/")) {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_owned())?;
-        return Ok(home.join(relative));
-    }
-    if !path.is_absolute() {
-        return Err(format!("{name} must be absolute or start with ~/"));
-    }
-    Ok(path.to_owned())
 }
 
 /// Serialize `ServerConfig` for `/etc/wt/server.toml` and image provenance.

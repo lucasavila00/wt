@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use wt_git_core::GitService;
 
 pub const PROTOCOL_VERSION: u32 = 2;
 
@@ -118,35 +119,6 @@ impl TransportResponse {
             ok: false,
             error: Some(error.into()),
             message: None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum GitService {
-    #[serde(rename = "git-upload-pack")]
-    UploadPack,
-    #[serde(rename = "git-receive-pack")]
-    ReceivePack,
-}
-
-impl GitService {
-    pub fn command(self) -> &'static str {
-        match self {
-            Self::UploadPack => "git-upload-pack",
-            Self::ReceivePack => "git-receive-pack",
-        }
-    }
-}
-
-impl TryFrom<&str> for GitService {
-    type Error = &'static str;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "git-upload-pack" => Ok(Self::UploadPack),
-            "git-receive-pack" => Ok(Self::ReceivePack),
-            _ => Err("unsupported Git service"),
         }
     }
 }

@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+phase="starting setup"
+temporary=
+
+report_failure() {
+    status=$?
+    if [[ -n $temporary ]]; then
+        rm -f "$temporary"
+    fi
+    if (( status != 0 )); then
+        printf '\nWT Git proxy setup did not complete.\n' >&2
+        printf 'Failed phase: %s\n' "$phase" >&2
+        printf 'Fix the error above, then rerun the same install command. Setup is safe to rerun.\n' >&2
+    fi
+}
+trap report_failure EXIT
+
+show_phase() {
+    phase=$1
+    printf '\n==> %s\n' "$phase"
+}
+
+proxy_user=git-proxy
+proxy_group=git-proxy
+proxy_home=/var/lib/wt-git-proxy
+config_dir=/etc/wt-git-proxy
+config_path=$config_dir/config.toml
+binary_path=/usr/local/bin/wt-git-proxy
+sshd_config=/etc/ssh/sshd_config.d/wt-git-proxy.conf
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+phase="checking command-line arguments"
+if [[ $# -ne 2 || $1 != --config ]]; then
+    echo "usage: scripts/install-git-server --config PATH" >&2
+    exit 2
+fi
+config=$2
+
+if [[ $EUID -eq 0 ]]; then
+    echo "run this script as your normal WT user, not as root" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication may be required" >&2
+    exit 1
+fi
+if [[ ! -f $config ]]; then
+    echo "config file not found: $config" >&2
+    exit 1
+fi
+config=$(realpath "$config")
+
+printf 'WT Git proxy setup\n'
+printf 'Config: %s\n' "$config"
+printf 'This installs or updates the proxy. Setup is safe to rerun.\n'
+
+show_phase "Checking host requirements"
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]]; then
+    echo "Ubuntu 24.04 is required" >&2
+    exit 1
+fi
+if [[ $(dpkg --print-architecture) != amd64 ]]; then
+    echo "amd64 is required" >&2
+    exit 1
+fi
+if ! command -v cargo >/dev/null || ! command -v rustup >/dev/null; then
+    echo "Rust stable via rustup is required" >&2
+    exit 1
+fi
+
+show_phase "Installing host packages"
+sudo -v
+sudo apt-get update -qq
+sudo apt-get install -y -qq build-essential curl musl-tools openssh-client openssh-server
+rustup target add x86_64-unknown-linux-musl
+
+cd "$root"
+show_phase "Building the setup tool and proxy"
+setup_binary=target/x86_64-unknown-linux-musl/release/wt-git-proxy-setup
+proxy_binary=target/x86_64-unknown-linux-musl/release/wt-git-proxy
+cargo build --quiet --locked --release --target x86_64-unknown-linux-musl \
+    -p wt-git-proxy-setup -p wt-git-proxy
+if readelf --program-headers --wide "$setup_binary" | grep -q INTERP ||
+    readelf --version-info --wide "$setup_binary" | grep -q GLIBC_; then
+    echo "wt-git-proxy-setup is not a static musl executable" >&2
+    exit 1
+fi
+
+show_phase "Validating the install input"
+"$setup_binary" validate --config "$config"
+
+show_phase "Configuring the proxy account"
+if ! getent group "$proxy_group" >/dev/null; then
+    sudo groupadd --system "$proxy_group"
+fi
+group_gid=$(getent group "$proxy_group" | cut -d: -f3)
+if getent passwd "$proxy_user" >/dev/null; then
+    IFS=: read -r _ _ _ user_gid _ user_home user_shell < <(getent passwd "$proxy_user")
+    if [[ $user_gid != "$group_gid" || $user_home != "$proxy_home" || $user_shell != /bin/sh ]]; then
+        echo "existing $proxy_user account has unexpected group, home, or shell" >&2
+        exit 1
+    fi
+else
+    sudo useradd --system --create-home --gid "$proxy_group" \
+        --home-dir "$proxy_home" --shell /bin/sh --password '*NP*' "$proxy_user"
+fi
+sudo usermod --password '*NP*' "$proxy_user"
+sudo install -d -o "$proxy_user" -g "$proxy_group" -m 0700 "$proxy_home" "$config_dir"
+sudo install -o root -g root -m 0755 "$proxy_binary" "$binary_path"
+
+show_phase "Installing configuration and provider credentials"
+"$setup_binary" install --config "$config"
+
+show_phase "Configuring OpenSSH"
+temporary=$(mktemp)
+cat >"$temporary" <<'EOF'
+Match User git-proxy
+    AuthorizedKeysFile /etc/wt-git-proxy/authorized_keys
+    PubkeyAuthentication yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+EOF
+sudo install -o root -g root -m 0644 "$temporary" "$sshd_config"
+sudo sshd -t
+sudo systemctl reload ssh
+
+show_phase "Managing client access"
+sudo -u "$proxy_user" /bin/sh -c \
+    'cd /var/lib/wt-git-proxy && exec /usr/local/bin/wt-git-proxy --config /etc/wt-git-proxy/config.toml tui'
+
+printf '\nWT Git proxy is ready. Config: %s\n' "$config_path"

@@ -9,10 +9,8 @@ use console::{extract_phase_markers, progress_message, ConsoleLog};
 
 use self::builder::*;
 use self::recipe::ImageRecipe;
-use crate::files::{require_named_file, require_root_file};
 use crate::host;
 use crate::install_input::InstallInput;
-use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use serde::{Deserialize, Serialize};
@@ -29,6 +27,7 @@ use wt_command::cmd;
 use wt_devcontainer::PackageVersions;
 use wt_libvirt::LIBVIRT_URI;
 use wt_server::ServerConfig;
+use wt_setup_core::{require_named_file, require_root_file, Runner};
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";

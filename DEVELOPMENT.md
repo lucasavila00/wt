@@ -1,7 +1,8 @@
 # Development
 
-WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, and stable Rust
-through rustup. Run setup as a normal user, never as root.
+WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, OpenSSH client
+and server, and stable Rust through rustup. Run setup as a normal user, never
+as root.
 
 ## Prepare a fresh server
 
@@ -35,6 +36,7 @@ Review the config, then install from an interactive terminal:
 
 ```bash
 scripts/install-server --config examples/server-config/wt-server.development.toml
+scripts/install-git-server --config examples/git-proxy-config/wt-git-proxy.development.toml
 ```
 
 If the key is encrypted, the installer asks for its existing passphrase. If

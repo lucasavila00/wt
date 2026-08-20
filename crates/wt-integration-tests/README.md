@@ -5,6 +5,7 @@ Cross-crate tests. This package contains no production code.
 | Test | Backend |
 |------|---------|
 | Service behavior | Injected `WorldWorker` |
+| Standalone Git proxy | Real Git and two local OpenSSH hops |
 | Full lifecycle | Production `wt-libvirt` and local KVM |
 
 Tests use the production API, reservation, background job, lock, registry, log,

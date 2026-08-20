@@ -1,9 +1,7 @@
 use super::console::{wait_for_shutdown, ConsoleLog};
 use super::recipe::ImageRecipe;
 use super::{host_image, manifest_path, recipe, sibling_temporary, BUILD_NAME};
-use crate::files::{sudo_install, sudo_install_owned, sudo_move};
 use crate::install_input::InstallInput;
-use crate::runner::Runner;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -16,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wt_command::cmd;
 use wt_libvirt::LIBVIRT_URI;
 use wt_server::ServerConfig;
+use wt_setup_core::{sudo_install, sudo_install_owned, sudo_move, Runner};
 
 const INSTALL_PACKAGES: &[u8] =
     include_bytes!("../../../../assets/world/shared/install-packages.sh");

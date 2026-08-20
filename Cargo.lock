@@ -1889,6 +1889,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
  "bcrypt-pbkdf",
+ "ed25519-dalek",
  "p256",
  "p384",
  "p521",
@@ -2470,6 +2471,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "wt-git-core",
  "wt-registry",
 ]
 
@@ -2535,6 +2537,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-git-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "wt-git-proxy"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "cliclack",
+ "console",
+ "insta",
+ "serde",
+ "ssh-key",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+ "wt-git-core",
+]
+
+[[package]]
+name = "wt-git-proxy-setup"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cliclack",
+ "insta",
+ "serde",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+ "wt-command",
+ "wt-git-proxy",
+ "wt-setup-core",
+]
+
+[[package]]
 name = "wt-github-ci"
 version = "0.0.0"
 dependencies = [
@@ -2583,6 +2626,7 @@ dependencies = [
  "wt-cli",
  "wt-command",
  "wt-devcontainer",
+ "wt-git-proxy",
  "wt-host",
  "wt-libvirt",
  "wt-provider",
@@ -2659,7 +2703,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
- "cliclack",
  "insta",
  "nix",
  "serde",
@@ -2673,6 +2716,21 @@ dependencies = [
  "wt-libvirt",
  "wt-registry",
  "wt-server",
+ "wt-setup-core",
+ "zeroize",
+]
+
+[[package]]
+name = "wt-setup-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "cliclack",
+ "insta",
+ "nix",
+ "ssh-key",
+ "tempfile",
+ "wt-command",
  "zeroize",
 ]
 
