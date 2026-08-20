@@ -22,8 +22,13 @@ case "${1:-}" in
         ;;
     access)
         if ! id wt >/dev/null 2>&1; then
-            useradd --create-home --shell /bin/bash wt
+            getent group wt >/dev/null || groupadd --gid 1001 wt
+            useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash wt
         fi
+        test "$(id -u wt)" = 1001 && test "$(id -g wt)" = 1001 || {
+            echo 'wt must use uid=1001 and gid=1001' >&2
+            exit 1
+        }
         usermod --append --groups sudo wt
         install -d -m 0700 -o wt -g wt /home/wt/.ssh
         temporary=/home/wt/.ssh/authorized_keys.wt-new

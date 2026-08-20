@@ -53,6 +53,23 @@ pub(super) fn domain_xml(
     let memory_mib = spec.memory_mib;
     let vcpus = spec.vcpus;
     let mac = mac_address(provider_id);
+    let memory_backing = if config.shared_folders.is_empty() {
+        String::new()
+    } else {
+        "  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>\n".to_owned()
+    };
+    let shared_folders = config
+        .shared_folders
+        .iter()
+        .map(|folder| {
+            let source = folder.source.to_string_lossy();
+            let source = quick_xml::escape::escape(source.as_ref());
+            let tag = quick_xml::escape::escape(&folder.tag);
+            format!(
+                "    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{source}'/>\n      <target dir='{tag}'/>\n    </filesystem>\n"
+            )
+        })
+        .collect::<String>();
     let interface = if network_enabled {
         format!(
             "    <interface type='network'>\n      <mac address='{mac}'/>\n      <source network='{network}'/>\n      <model type='virtio'/>\n    </interface>\n"
@@ -64,7 +81,7 @@ pub(super) fn domain_xml(
         "<domain type='kvm'>
   <name>{name}</name>
   <memory unit='MiB'>{memory_mib}</memory>
-  <vcpu>{vcpus}</vcpu>
+{memory_backing}  <vcpu>{vcpus}</vcpu>
   <os firmware='efi'>
     <type arch='{architecture}' machine='{machine}'>hvm</type>
     <firmware><feature enabled='no' name='secure-boot'/></firmware>
@@ -87,7 +104,7 @@ pub(super) fn domain_xml(
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>
-{interface}    <channel type='unix'>
+{interface}{shared_folders}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
     <vsock model='virtio'><cid auto='yes'/></vsock>
@@ -123,6 +140,37 @@ fn mac_address(provider_id: &wt_provider::ProviderId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MachineConfig, SharedFolder};
+    use std::time::Duration;
+
+    fn test_domain_xml(shared_folders: Vec<SharedFolder>) -> String {
+        let provider_id =
+            wt_provider::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
+        let paths = Paths::new(Path::new("/var/lib/libvirt/images/wt"), &provider_id);
+        let config = MachineConfig {
+            image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
+            worlds_dir: PathBuf::from("/var/lib/libvirt/images/wt"),
+            network: "default & private".to_owned(),
+            boot_timeout: Duration::from_secs(300),
+            shared_folders,
+        };
+        let spec = wt_provider::MachineSpec {
+            provider_id: provider_id.clone(),
+            disk_id: uuid::Uuid::nil(),
+            memory_mib: 4096,
+            vcpus: 4,
+            disk_gib: 32,
+            cloud_init: wt_provider::NoCloudConfig::default(),
+        };
+        domain_xml(
+            &provider_id,
+            &paths,
+            Path::new("/var/lib/libvirt/images/wt/disks/world & head.qcow2"),
+            &config,
+            &spec,
+            true,
+        )
+    }
 
     #[test]
     fn guest_dhcp_identity_uses_the_unique_interface_mac() {
@@ -135,5 +183,41 @@ mod tests {
             dhcp4: true
             dhcp-identifier: mac
         "###);
+    }
+
+    #[test]
+    fn domain_without_shared_folders_has_no_virtiofs_support() {
+        insta::assert_snapshot!(
+            "domain_xml_without_shared_folders",
+            test_domain_xml(Vec::new())
+        );
+    }
+
+    #[test]
+    fn domain_with_one_shared_folder_has_virtiofs_support() {
+        insta::assert_snapshot!(
+            "domain_xml_with_one_shared_folder",
+            test_domain_xml(vec![SharedFolder {
+                source: PathBuf::from("/var/lib/wt/shared/codex-sessions"),
+                tag: "wt-shared-0".to_owned(),
+            }])
+        );
+    }
+
+    #[test]
+    fn domain_with_two_shared_folders_escapes_sources_and_keeps_stable_tags() {
+        insta::assert_snapshot!(
+            "domain_xml_with_two_shared_folders",
+            test_domain_xml(vec![
+                SharedFolder {
+                    source: PathBuf::from("/var/lib/wt/shared/codex & sessions"),
+                    tag: "wt-shared-0".to_owned(),
+                },
+                SharedFolder {
+                    source: PathBuf::from("/var/lib/wt/shared/claude-projects"),
+                    tag: "wt-shared-1".to_owned(),
+                },
+            ])
+        );
     }
 }

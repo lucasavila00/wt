@@ -7,6 +7,7 @@ pub use transport::{
 
 use std::fmt;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
@@ -54,6 +55,12 @@ pub struct MachineSpec {
 pub struct NoCloudConfig {
     pub user_data: String,
     pub vendor_data: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedFolderMount {
+    pub tag: String,
+    pub target: PathBuf,
 }
 
 impl Default for NoCloudConfig {

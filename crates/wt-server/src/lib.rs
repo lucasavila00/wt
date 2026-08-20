@@ -9,7 +9,7 @@ pub mod worlds;
 
 pub use runtime_config::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, AGENT_GIT_VSOCK_PORT_ENV,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, SharedFolder, AGENT_GIT_VSOCK_PORT_ENV,
     DEFAULT_AGENT_GIT_VSOCK_PORT, SERVER_CONFIG_PATH,
 };
 

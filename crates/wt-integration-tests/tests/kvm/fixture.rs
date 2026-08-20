@@ -20,12 +20,35 @@ impl GitFixture {
         fs::create_dir(seed.join(".devcontainer")).unwrap();
         fs::write(
             seed.join(".devcontainer/devcontainer.json"),
-            include_str!("../../../../.devcontainer/devcontainer.json"),
+            r#"{
+  "name": "wt-kvm-e2e",
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/wt",
+  "remoteUser": "wt",
+  "onCreateCommand": "sudo chown -R wt:wt /workspaces"
+}
+"#,
         )
         .unwrap();
         fs::write(
             seed.join(".devcontainer/Dockerfile"),
             include_str!("../../../../.devcontainer/Dockerfile"),
+        )
+        .unwrap();
+        fs::write(
+            seed.join(".devcontainer/compose.yaml"),
+            r#"services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    volumes:
+      - /workspace:/workspaces/wt
+      - /home/wt/.codex/sessions:/home/wt/.codex/sessions
+      - /home/wt/.claude/projects:/home/wt/.claude/projects
+"#,
         )
         .unwrap();
         fs::write(seed.join("README.md"), "WT agent Git fixture\n").unwrap();

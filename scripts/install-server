@@ -75,6 +75,7 @@ packages=( \
     qemu-utils \
     libvirt-daemon-system \
     libvirt-clients \
+    virtiofsd \
     virtinst \
     cloud-image-utils \
     libguestfs-tools \

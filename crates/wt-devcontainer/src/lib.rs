@@ -126,6 +126,9 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             log,
         )?;
         self.provisioner
+            .mount_shared_folders_for(&machine, log)
+            .map_err(ForkError::after_pivot)?;
+        self.provisioner
             .inspect(&machine)
             .map_err(ForkError::after_pivot)
     }
@@ -278,6 +281,7 @@ mod tests {
                 packages,
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
             },
+            shared_folders: Vec::new(),
         })
         .unwrap();
         registry.join().unwrap();

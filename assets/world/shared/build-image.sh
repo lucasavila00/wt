@@ -15,6 +15,14 @@ phase "installing shared machine packages"
 phase "configuring shared machine services"
 systemctl enable --now qemu-guest-agent.service
 systemctl disable --now ssh.service ssh.socket
+if ! getent group wt >/dev/null; then
+    groupadd --gid 1001 wt
+fi
+if ! id wt >/dev/null 2>&1; then
+    useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash wt
+fi
+test "$(id -u wt)" = 1001
+test "$(id -g wt)" = 1001
 printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
 sysctl --system
 test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
@@ -56,7 +64,7 @@ TERM=xterm-ghostty tput colors >/dev/null
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
     /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-shell
-printf 'kind=%s\nstatus=ready\nrecipe_version=%s\n' \
+printf 'kind=%s\nstatus=ready\nrecipe_version=%s\nwt_uid=1001\nwt_gid=1001\n' \
     "$WT_IMAGE_KIND" "$WT_IMAGE_RECIPE_VERSION" > /var/lib/wt-image-result
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result

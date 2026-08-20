@@ -11,4 +11,11 @@ pub struct MachineConfig {
     pub worlds_dir: PathBuf,
     pub network: String,
     pub boot_timeout: Duration,
+    pub shared_folders: Vec<SharedFolder>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedFolder {
+    pub source: PathBuf,
+    pub tag: String,
 }

@@ -50,12 +50,13 @@ ensure_directory() {
 
 case ${1-} in
     prepare)
-        test "$#" -eq 6 || exit 2
+        test "$#" -ge 6 || exit 2
         network=$2
         image_dir=$3
         binary_dir=$4
         worlds_dir=$5
         registry_dir=$6
+        shift 6
 
         # shellcheck source=/dev/null
         . /etc/os-release
@@ -93,6 +94,9 @@ case ${1-} in
         ensure_directory "$(id -u)" "$(id -g)" 700 /run/wt-image-build
         ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
         ensure_directory 0 0 755 "$registry_dir"
+        for shared_dir in "$@"; do
+            ensure_directory 1001 1001 700 "$shared_dir"
+        done
         ensure_qemu_acl "$worlds_dir"
         ;;
     acl)
@@ -100,7 +104,7 @@ case ${1-} in
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR REGISTRY_DIR|acl PATH}' >&2
+        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR REGISTRY_DIR [SHARED_DIR ...]|acl PATH}' >&2
         exit 2
         ;;
 esac

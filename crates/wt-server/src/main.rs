@@ -83,6 +83,7 @@ fn run_server() -> Result<()> {
         host_provider,
         Duration::from_secs(server_config.guest.recipe_timeout_seconds),
         server_config.host_agent_git_config(),
+        server_config.guest_shared_folders(),
     )
     .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);

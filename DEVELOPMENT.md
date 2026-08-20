@@ -101,7 +101,7 @@ wt rm jsdev-manual
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 The project devcontainer includes Codex and logs in as its configured
-`remoteUser`, which is `root`. Run `codex` once inside the session to sign in.
+`remoteUser`, which is `wt`. Run `codex` once inside the session to sign in.
 
 ## Manual host test
 

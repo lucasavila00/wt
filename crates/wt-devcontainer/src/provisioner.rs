@@ -1,5 +1,6 @@
 mod containers;
 mod identity;
+mod shared_folders;
 mod support;
 
 use crate::bootstrap::BootstrapPolicy;
@@ -14,8 +15,8 @@ use std::time::{Duration, Instant};
 use support::{context, log_line, require_and_read, verify_registry_cache};
 use wt_command::cmd;
 use wt_provider::{
-    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
-    WriteFileRequest,
+    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, SharedFolderMount,
+    WorkerError, WriteFileRequest,
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -43,6 +44,7 @@ pub struct ProvisionerConfig {
     pub registry_cache_ca_file: PathBuf,
     pub recipe_timeout: Duration,
     pub bootstrap: BootstrapPolicy,
+    pub shared_folders: Vec<SharedFolderMount>,
 }
 
 #[derive(Clone)]
@@ -187,6 +189,7 @@ impl WorldProvisioner {
 
     pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
+        self.mount_shared_folders(machine.transport.as_ref(), deadline, &mut std::io::sink())?;
         containers::start_all(machine.transport.as_ref(), deadline)?;
         loop {
             match self.inspect_with_deadline(machine, deadline, InspectionMode::RecoverAfterStart) {
@@ -325,7 +328,8 @@ impl WorldProvisioner {
             ],
             deadline,
         );
-        result
+        result?;
+        self.mount_shared_folders(transport, deadline, log)
     }
 
     fn read_app_target(

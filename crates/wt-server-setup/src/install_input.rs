@@ -2,7 +2,8 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use wt_server::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_GIT_VSOCK_PORT,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, SharedFolder,
+    DEFAULT_AGENT_GIT_VSOCK_PORT,
 };
 use wt_setup_core::expand_home;
 
@@ -12,6 +13,8 @@ use wt_setup_core::expand_home;
 #[serde(deny_unknown_fields)]
 pub(crate) struct InstallInput {
     pub version: u32,
+    #[serde(default)]
+    pub shared_folders: Vec<SharedFolder>,
     pub capacity: wt_registry::CapacityConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
@@ -113,6 +116,7 @@ impl InstallInput {
     pub(crate) fn materialize(&self) -> ServerConfig {
         ServerConfig {
             version: self.version,
+            shared_folders: self.shared_folders.clone(),
             image: ImageConfig {
                 devcontainer_path: self.image.devcontainer_path.clone(),
                 host_path: self.image.host_path.clone(),
@@ -196,6 +200,14 @@ mod tests {
     const VALID: &str = r#"
 version = 1
 
+[[shared_folders]]
+source = "/var/lib/wt/shared/codex-sessions"
+target = ".codex/sessions"
+
+[[shared_folders]]
+source = "/var/lib/wt/shared/claude-projects"
+target = ".claude/projects"
+
 [capacity]
 version = 1
 limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }
@@ -248,6 +260,7 @@ binary_dir = "/usr/local/bin"
             server.image.devcontainer_path,
             PathBuf::from("/var/lib/wt/images/devcontainer.qcow2")
         );
+        assert_eq!(server.shared_folders, input.shared_folders);
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         insta::assert_snapshot!("materialized_server_config", text);
@@ -281,5 +294,18 @@ binary_dir = "/usr/local/bin"
         let reloaded: ServerConfig = toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
         reloaded.validate().unwrap();
         assert_eq!(reloaded, server);
+    }
+
+    #[test]
+    fn example_install_inputs_are_valid() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for name in [
+            "wt-server.development.toml",
+            "wt-server.kvm-e2e-install.toml",
+        ] {
+            InstallInput::load_from(&workspace.join("examples/server-config").join(name)).unwrap();
+        }
+        ServerConfig::load_from(&workspace.join("examples/server-config/wt-server.kvm-test.toml"))
+            .unwrap();
     }
 }
