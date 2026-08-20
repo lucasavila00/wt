@@ -68,8 +68,3 @@ The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
 the shared WT terminal profile. Ubuntu's Git remains available, and WT adds no
 implicit checkout or provider credentials.
-
-Use the checked-in
-[host-world recipe](../../examples/host-world/cloud-init.yaml) for a complete
-WT development environment with Rust, Codex, and a public checkout. It cannot
-run the real KVM E2E from inside the world.
