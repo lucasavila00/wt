@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use support::{context, log_line, require_and_read, verify_registry_cache};
 use wt_command::cmd;
 use wt_provider::{
-    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
-    WriteFileRequest,
+    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, SharedFolderMount,
+    WorkerError, WriteFileRequest,
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -23,6 +23,7 @@ const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/world/devcontainer/
 const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/world/devcontainer/setup-world.sh");
 const SETUP_WORLD_ROOT: &[u8] =
     include_bytes!("../../../assets/world/devcontainer/setup-world-root.sh");
+const MOUNT_SHARED_FOLDERS: &[u8] = include_bytes!("../../../assets/world/shared/mount-folders.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../assets/world/devcontainer/app-shell.sh");
 const AGENT_GIT_HINT: &[u8] =
     include_bytes!("../../../assets/world/devcontainer/agent-git-hint.sh");
@@ -43,6 +44,7 @@ pub struct ProvisionerConfig {
     pub registry_cache_ca_file: PathBuf,
     pub recipe_timeout: Duration,
     pub bootstrap: BootstrapPolicy,
+    pub shared_folders: Vec<SharedFolderMount>,
 }
 
 #[derive(Clone)]
@@ -187,6 +189,7 @@ impl WorldProvisioner {
 
     pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
+        self.mount_shared_folders(machine.transport.as_ref(), deadline, &mut std::io::sink())?;
         containers::start_all(machine.transport.as_ref(), deadline)?;
         loop {
             match self.inspect_with_deadline(machine, deadline, InspectionMode::RecoverAfterStart) {
@@ -325,7 +328,41 @@ impl WorldProvisioner {
             ],
             deadline,
         );
-        result
+        result?;
+        self.mount_shared_folders(transport, deadline, log)
+    }
+
+    pub(crate) fn mount_shared_folders(
+        &self,
+        transport: &dyn GuestTransport,
+        deadline: Instant,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
+        if self.config.shared_folders.is_empty() {
+            return Ok(());
+        }
+        let args = shared_folder_args(&self.config.shared_folders)?;
+        let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+        guest::run_script(
+            transport,
+            "shared folder mounts",
+            MOUNT_SHARED_FOLDERS,
+            &args,
+            deadline,
+            log,
+        )
+    }
+
+    pub(crate) fn mount_shared_folders_for(
+        &self,
+        machine: &Machine,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
+        self.mount_shared_folders(
+            machine.transport.as_ref(),
+            Instant::now() + self.config.recipe_timeout,
+            log,
+        )
     }
 
     fn read_app_target(
@@ -518,6 +555,21 @@ impl WorldProvisioner {
     }
 }
 
+fn shared_folder_args(folders: &[SharedFolderMount]) -> Result<Vec<String>, WorkerError> {
+    let mut args = Vec::with_capacity(folders.len() * 2);
+    for folder in folders {
+        let target = folder.target.to_str().ok_or_else(|| {
+            WorkerError::new(format!(
+                "shared folder target is not UTF-8: {}",
+                folder.target.display()
+            ))
+        })?;
+        args.push(folder.tag.clone());
+        args.push(target.to_owned());
+    }
+    Ok(args)
+}
+
 pub(crate) mod guest {
     use super::*;
 
@@ -668,5 +720,60 @@ pub(crate) mod guest {
         String::from_utf8_lossy(&combined[start..])
             .trim()
             .to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::{Command, Stdio};
+
+    #[test]
+    fn shared_folder_mount_arguments_preserve_tags_and_targets() {
+        insta::assert_debug_snapshot!(shared_folder_args(&[
+            SharedFolderMount {
+                tag: "wt-shared-0".to_owned(),
+                target: PathBuf::from(".codex/sessions"),
+            },
+            SharedFolderMount {
+                tag: "wt-shared-1".to_owned(),
+                target: PathBuf::from(".claude/projects"),
+            },
+        ])
+        .unwrap(), @r###"
+        [
+            "wt-shared-0",
+            ".codex/sessions",
+            "wt-shared-1",
+            ".claude/projects",
+        ]
+        "###);
+    }
+
+    #[test]
+    fn shared_folder_mount_script_reports_invalid_inputs() {
+        fn failure(args: &[&str]) -> String {
+            let mut child = Command::new("/bin/sh")
+                .args(["-s", "--"])
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(MOUNT_SHARED_FOLDERS)
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(!output.status.success());
+            String::from_utf8(output.stderr).unwrap()
+        }
+
+        insta::assert_snapshot!(failure(&[]), @"usage: mount-folders.sh TAG TARGET [TAG TARGET ...]\n");
+        insta::assert_snapshot!(failure(&["not-a-tag", ".codex/sessions"]), @"invalid shared folder tag: not-a-tag\n");
+        insta::assert_snapshot!(failure(&["wt-shared-0", "../sessions"]), @"invalid shared folder target: ../sessions\n");
     }
 }

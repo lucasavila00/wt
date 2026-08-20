@@ -156,6 +156,7 @@ impl RunnerConfig {
             worlds_dir: self.libvirt.runners_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.runner.boot_timeout_seconds),
+            shared_folders: Vec::new(),
         }
     }
 }

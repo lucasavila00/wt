@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
-use wt_libvirt::MachineConfig;
+use wt_libvirt::{MachineConfig, SharedFolder as LibvirtSharedFolder};
+use wt_provider::SharedFolderMount;
 
 pub const DEFAULT_AGENT_GIT_VSOCK_PORT: u32 = wt_agent_git::VSOCK_PORT;
 pub const AGENT_GIT_VSOCK_PORT_ENV: &str = wt_agent_git::VSOCK_PORT_ENV;
@@ -13,12 +14,21 @@ pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_folders: Vec<SharedFolder>,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
     pub agent_git: AgentGitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SharedFolder {
+    pub source: PathBuf,
+    pub target: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -79,7 +89,9 @@ pub struct InstallConfig {
 
 impl ServerConfig {
     pub fn load() -> Result<Self, String> {
-        Self::load_from(Path::new(SERVER_CONFIG_PATH))
+        let config = Self::load_from(Path::new(SERVER_CONFIG_PATH))?;
+        config.validate_shared_folder_sources()?;
+        Ok(config)
     }
 
     pub fn load_from(path: &Path) -> Result<Self, String> {
@@ -194,6 +206,7 @@ impl ServerConfig {
         }
         self.validate_registry_cache()?;
         self.validate_agent_git()?;
+        self.validate_shared_folders(devcontainer_image_dir)?;
         if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
@@ -206,6 +219,7 @@ impl ServerConfig {
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
+            shared_folders: self.libvirt_shared_folders(),
         }
     }
 
@@ -215,6 +229,7 @@ impl ServerConfig {
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
+            shared_folders: self.libvirt_shared_folders(),
         }
     }
 
@@ -236,6 +251,7 @@ impl ServerConfig {
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             bootstrap,
+            shared_folders: self.guest_shared_folders(),
         })
     }
 
@@ -247,6 +263,84 @@ impl ServerConfig {
             provider_hosts: self.agent_git_provider_hosts(),
             vsock_port: self.agent_git.vsock_port,
         }
+    }
+
+    pub fn validate_shared_folder_sources(&self) -> Result<(), String> {
+        for (index, folder) in self.shared_folders.iter().enumerate() {
+            let metadata = std::fs::metadata(&folder.source).map_err(|error| {
+                format!(
+                    "inspect shared_folders[{index}].source {}: {error}",
+                    folder.source.display()
+                )
+            })?;
+            if !metadata.is_dir() {
+                return Err(format!(
+                    "shared_folders[{index}].source is not a directory: {}",
+                    folder.source.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_shared_folders(&self, image_dir: &Path) -> Result<(), String> {
+        let protected = [
+            ("image directory", image_dir),
+            ("libvirt.worlds_dir", self.libvirt.worlds_dir.as_path()),
+            (
+                "registry_cache.state_dir",
+                self.registry_cache.state_dir.as_path(),
+            ),
+            ("install.binary_dir", self.install.binary_dir.as_path()),
+        ];
+        let mut sources = std::collections::BTreeSet::new();
+        let mut targets = std::collections::BTreeSet::new();
+        for (index, folder) in self.shared_folders.iter().enumerate() {
+            validate_absolute_path(&format!("shared_folders[{index}].source"), &folder.source)?;
+            validate_relative_path(&format!("shared_folders[{index}].target"), &folder.target)?;
+            if !sources.insert(folder.source.as_path()) {
+                return Err(format!(
+                    "duplicate shared folder source: {}",
+                    folder.source.display()
+                ));
+            }
+            if !targets.insert(folder.target.as_path()) {
+                return Err(format!(
+                    "duplicate shared folder target: {}",
+                    folder.target.display()
+                ));
+            }
+            for (name, path) in protected {
+                if folder.source.starts_with(path) || path.starts_with(&folder.source) {
+                    return Err(format!(
+                        "shared_folders[{index}].source and {name} must not overlap"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn libvirt_shared_folders(&self) -> Vec<LibvirtSharedFolder> {
+        self.shared_folders
+            .iter()
+            .enumerate()
+            .map(|(index, folder)| LibvirtSharedFolder {
+                source: folder.source.clone(),
+                tag: shared_folder_tag(index),
+            })
+            .collect()
+    }
+
+    pub fn guest_shared_folders(&self) -> Vec<SharedFolderMount> {
+        self.shared_folders
+            .iter()
+            .enumerate()
+            .map(|(index, folder)| SharedFolderMount {
+                tag: shared_folder_tag(index),
+                target: folder.target.clone(),
+            })
+            .collect()
     }
 
     fn agent_git_provider_hosts(&self) -> Vec<String> {
@@ -322,6 +416,36 @@ impl ServerConfig {
     }
 }
 
+fn shared_folder_tag(index: usize) -> String {
+    format!("wt-shared-{index}")
+}
+
+fn validate_absolute_path(name: &str, path: &Path) -> Result<(), String> {
+    if !path.is_absolute()
+        || path == Path::new("/")
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
+    {
+        return Err(format!(
+            "{name} must be an absolute normalized path below /"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_relative_path(name: &str, path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(format!("{name} must be a normalized relative path"));
+    }
+    Ok(())
+}
+
 fn valid_git_host(value: &str) -> bool {
     !value.is_empty()
         && value == value.to_ascii_lowercase()
@@ -390,6 +514,114 @@ binary_dir = "/usr/local/bin"
             Path::new("/var/lib/wt/images/devcontainer.qcow2")
         );
         assert_eq!(machine.network, "default");
+        assert!(machine.shared_folders.is_empty());
+    }
+
+    #[test]
+    fn shared_folders_are_valid_and_receive_stable_tags() {
+        let shared = r#"
+[[shared_folders]]
+source = "/var/lib/wt/shared/codex-sessions"
+target = ".codex/sessions"
+
+[[shared_folders]]
+source = "/var/lib/wt/shared/claude-projects"
+target = ".claude/projects"
+
+"#;
+        let (config, machine) =
+            parse(&VALID.replace("[image]", &format!("{shared}[image]"))).unwrap();
+        assert_eq!(
+            machine.shared_folders,
+            vec![
+                LibvirtSharedFolder {
+                    source: PathBuf::from("/var/lib/wt/shared/codex-sessions"),
+                    tag: "wt-shared-0".to_owned(),
+                },
+                LibvirtSharedFolder {
+                    source: PathBuf::from("/var/lib/wt/shared/claude-projects"),
+                    tag: "wt-shared-1".to_owned(),
+                },
+            ]
+        );
+        assert_eq!(
+            config.guest_shared_folders(),
+            vec![
+                SharedFolderMount {
+                    tag: "wt-shared-0".to_owned(),
+                    target: PathBuf::from(".codex/sessions"),
+                },
+                SharedFolderMount {
+                    tag: "wt-shared-1".to_owned(),
+                    target: PathBuf::from(".claude/projects"),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_shared_folder_paths_and_duplicates_fail() {
+        fn config_with(entries: &str) -> String {
+            VALID.replace("[image]", &format!("{entries}\n[image]"))
+        }
+        for (entries, expected) in [
+            (
+                "[[shared_folders]]\nsource = \"relative\"\ntarget = \".codex/sessions\"",
+                "shared_folders[0].source must be an absolute normalized path below /",
+            ),
+            (
+                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \"/absolute\"",
+                "shared_folders[0].target must be a normalized relative path",
+            ),
+            (
+                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \"a/../b\"",
+                "shared_folders[0].target must be a normalized relative path",
+            ),
+            (
+                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".a\"\n[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".b\"",
+                "duplicate shared folder source: /var/lib/wt/shared/a",
+            ),
+            (
+                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".same\"\n[[shared_folders]]\nsource = \"/var/lib/wt/shared/b\"\ntarget = \".same\"",
+                "duplicate shared folder target: .same",
+            ),
+            (
+                "[[shared_folders]]\nsource = \"/var/lib/wt/images/shared\"\ntarget = \".a\"",
+                "shared_folders[0].source and image directory must not overlap",
+            ),
+        ] {
+            assert_eq!(parse(&config_with(entries)).unwrap_err(), expected);
+        }
+    }
+
+    #[test]
+    fn runtime_shared_folder_sources_must_be_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing");
+        let file = temp.path().join("file");
+        std::fs::write(&file, "not a directory").unwrap();
+        let mut config = parse(VALID).unwrap().0;
+        config.shared_folders = vec![SharedFolder {
+            source: missing.clone(),
+            target: PathBuf::from(".codex/sessions"),
+        }];
+        let error = config
+            .validate_shared_folder_sources()
+            .unwrap_err()
+            .replace(&temp.path().display().to_string(), "[TEMP]");
+        insta::assert_snapshot!(error, @r###"
+        inspect shared_folders[0].source [TEMP]/missing: No such file or directory (os error 2)
+        "###);
+        config.shared_folders[0].source = file.clone();
+        assert_eq!(
+            config.validate_shared_folder_sources().unwrap_err(),
+            format!(
+                "shared_folders[0].source is not a directory: {}",
+                file.display()
+            )
+        );
+        config.shared_folders[0].source = temp.path().to_path_buf();
+        config.validate_shared_folder_sources().unwrap();
     }
 
     #[test]

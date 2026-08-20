@@ -22,6 +22,18 @@ configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and disk
 limits come from `[capacity]` in the install input and are materialized at
 `/etc/wt/capacity.toml`.
 
+The example `[[shared_folders]]` entries keep Codex sessions and Claude Code
+projects outside world disks. Each `source` is an absolute normalized server
+directory; each `target` is a normalized path relative to `/home/wt` in every
+retained VM. The installer creates missing sources. Existing servers opt in by
+adding the entries and recreating their retained worlds.
+
+Every retained host and devcontainer world can read and change these folders.
+They survive world deletion and server restart, but they are outside world disk
+quotas and snapshots and need a separate backup. Do not open the same agent
+conversation in two worlds at once. GitHub CI runners receive no server shared
+folders.
+
 A world disk cannot be smaller than its image's `build_disk_gib`. The client
 defaults to 32 GiB; a larger build image requires a larger world request.
 

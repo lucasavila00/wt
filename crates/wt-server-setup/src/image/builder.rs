@@ -245,7 +245,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     )?;
     validate_result_metadata(&marker_metadata)?;
     let expected = format!(
-        "kind={}\nstatus=ready\nrecipe_version={}\n",
+        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid=1001\nwt_gid=1001\n",
         spec.kind, spec.recipe_version
     );
     if marker != expected {

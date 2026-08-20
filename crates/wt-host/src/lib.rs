@@ -9,12 +9,13 @@ use uuid::Uuid;
 use wt_api::SshAccess;
 use wt_provider::{
     CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
-    NoCloudConfig, ProviderId, RunRequest, WorkerError, WriteFileRequest,
+    NoCloudConfig, ProviderId, RunRequest, SharedFolderMount, WorkerError, WriteFileRequest,
 };
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
 const INSPECT: &str = "/usr/local/libexec/wt-host-inspect";
+const MOUNT_SHARED_FOLDERS: &[u8] = include_bytes!("../../../assets/world/shared/mount-folders.sh");
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -101,6 +102,7 @@ pub struct CompositeWorker<P> {
     agent_git_cli: Vec<u8>,
     provider_hosts: Vec<u8>,
     vsock_port: Vec<u8>,
+    shared_folders: Vec<SharedFolderMount>,
 }
 
 impl<P> CompositeWorker<P> {
@@ -108,6 +110,7 @@ impl<P> CompositeWorker<P> {
         provider: P,
         readiness_timeout: Duration,
         agent_git: AgentGitConfig,
+        shared_folders: Vec<SharedFolderMount>,
     ) -> Result<Self, WorkerError> {
         let read = |path: &Path, name: &str| {
             fs::read(path).map_err(|error| {
@@ -122,6 +125,7 @@ impl<P> CompositeWorker<P> {
             agent_git_cli: read(&agent_git.cli_binary, "agent Git CLI")?,
             provider_hosts: format!("{}\n", agent_git.provider_hosts.join("\n")).into_bytes(),
             vsock_port: format!("{}\n", agent_git.vsock_port).into_bytes(),
+            shared_folders,
         })
     }
 }
@@ -153,6 +157,12 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             machine.transport.as_ref(),
             "access",
             Some(authorized_keys.as_bytes()),
+            deadline,
+            log,
+        )?;
+        mount_shared_folders(
+            machine.transport.as_ref(),
+            &self.shared_folders,
             deadline,
             log,
         )?;
@@ -208,8 +218,61 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
 
     fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
+        mount_shared_folders(
+            machine.transport.as_ref(),
+            &self.shared_folders,
+            Instant::now() + self.readiness_timeout,
+            &mut std::io::sink(),
+        )?;
         inspect_machine(&machine, self.readiness_timeout, &mut std::io::sink())
     }
+}
+
+fn mount_shared_folders(
+    transport: &dyn GuestTransport,
+    folders: &[SharedFolderMount],
+    deadline: Instant,
+    log: &mut dyn Write,
+) -> Result<(), WorkerError> {
+    if folders.is_empty() {
+        return Ok(());
+    }
+    let args = shared_folder_args(folders)?;
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut shell_args = vec!["-s", "--"];
+    shell_args.extend(args);
+    let output = transport.run(
+        &RunRequest {
+            executable: "/bin/sh",
+            args: &shell_args,
+            stdin: Some(MOUNT_SHARED_FOLDERS),
+            deadline,
+        },
+        log,
+    )?;
+    if output.exit_code != 0 {
+        return Err(WorkerError::new(format!(
+            "shared folder mounts: exit code {}: {}",
+            output.exit_code,
+            String::from_utf8_lossy(&output.diagnostic_tail).trim()
+        )));
+    }
+    Ok(())
+}
+
+fn shared_folder_args(folders: &[SharedFolderMount]) -> Result<Vec<String>, WorkerError> {
+    let mut args = Vec::with_capacity(folders.len() * 2);
+    for folder in folders {
+        let target = folder.target.to_str().ok_or_else(|| {
+            WorkerError::new(format!(
+                "shared folder target is not UTF-8: {}",
+                folder.target.display()
+            ))
+        })?;
+        args.push(folder.tag.clone());
+        args.push(target.to_owned());
+    }
+    Ok(args)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -523,6 +586,28 @@ fn normalized_keys(lines: &str) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_folder_mount_arguments_preserve_tags_and_targets() {
+        insta::assert_debug_snapshot!(shared_folder_args(&[
+            SharedFolderMount {
+                tag: "wt-shared-0".to_owned(),
+                target: PathBuf::from(".codex/sessions"),
+            },
+            SharedFolderMount {
+                tag: "wt-shared-1".to_owned(),
+                target: PathBuf::from(".claude/projects"),
+            },
+        ])
+        .unwrap(), @r###"
+        [
+            "wt-shared-0",
+            ".codex/sessions",
+            "wt-shared-1",
+            ".claude/projects",
+        ]
+        "###);
+    }
 
     #[test]
     fn authorized_keys_are_canonical() {

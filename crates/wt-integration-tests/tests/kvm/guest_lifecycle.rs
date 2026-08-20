@@ -68,6 +68,50 @@ fn agent_git_transport_works_without_provider_credentials() {
     );
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
+    let shared_marker = format!("wt-kvm-e2e-{}", created.id.simple());
+    let codex_source = harness
+        .config
+        .shared_folders
+        .iter()
+        .find(|folder| folder.target == Path::new(".codex/sessions"))
+        .unwrap()
+        .source
+        .join(&shared_marker);
+    let claude_source = harness
+        .config
+        .shared_folders
+        .iter()
+        .find(|folder| folder.target == Path::new(".claude/projects"))
+        .unwrap()
+        .source
+        .join(&shared_marker);
+    run_guest(
+        &harness,
+        &name,
+        &format!(
+            "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-shared-0; \
+             test \"$(findmnt -n -o FSTYPE --mountpoint /home/wt/.codex/sessions)\" = virtiofs; \
+             printf 'from-devcontainer-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
+        ),
+        "write a shared marker through the devcontainer VM",
+    );
+    run_host(
+        &harness,
+        &host_name,
+        &format!(
+            "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
+             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm; \
+             printf 'from-host-vm\\n' > /home/wt/.claude/projects/{shared_marker}; sync"
+        ),
+        "read and write shared markers through the host VM",
+    );
+    run_guest(
+        &harness,
+        &name,
+        &format!("test \"$(cat /home/wt/.claude/projects/{shared_marker})\" = from-host-vm"),
+        "read the host marker through the devcontainer VM",
+    );
     run_host(
         &harness,
         &host_name,
@@ -231,6 +275,15 @@ fn agent_git_transport_works_without_provider_credentials() {
         ),
         "verify devcontainer project tools",
     );
+    app(
+        &harness,
+        &name,
+        &format!(
+            "test \"$(cat /root/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \
+             test \"$(cat /root/.claude/projects/{shared_marker})\" = from-host-vm"
+        ),
+        "verify repository-owned Docker Compose shared-folder binds",
+    );
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
     assert!(help.contains("explicitly identified Git provider resources"));
@@ -346,7 +399,12 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_guest(
         &harness,
         &name,
-        "test -S /run/wt-agent-git/gateway.sock && systemctl is-active --quiet docker.service wt-agent-git-relay.service",
+        &format!(
+            "test -S /run/wt-agent-git/gateway.sock && \
+             systemctl is-active --quiet docker.service wt-agent-git-relay.service && \
+             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \
+             test \"$(cat /home/wt/.claude/projects/{shared_marker})\" = from-host-vm"
+        ),
         "verify guest services after KVM restart",
     );
     app(
@@ -371,7 +429,14 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git && test -S /run/wt-agent-git/gateway.sock && systemctl is-active --quiet wt-agent-git-relay.service && git -C /home/wt/gateway-check fetch origin",
+        &format!(
+            "test -f /var/lib/wt-host-example-ready && test -d /home/wt/wt/.git && \
+             test -S /run/wt-agent-git/gateway.sock && \
+             systemctl is-active --quiet wt-agent-git-relay.service && \
+             git -C /home/wt/gateway-check fetch origin && \
+             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm && \
+             test \"$(cat /home/wt/.claude/projects/{shared_marker})\" = from-host-vm"
+        ),
         "verify host state after KVM restart",
     );
 
@@ -398,6 +463,29 @@ fn agent_git_transport_works_without_provider_credentials() {
     let token = harness.grant_token();
     harness.delete(&name);
     harness.assert_grant_is_revoked(token);
+    run_host(
+        &harness,
+        &host_name,
+        &format!("test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-devcontainer-vm"),
+        "verify shared data after deleting the devcontainer world",
+    );
+    run(
+        cmd!("sudo", "-n", "test", "-f", &codex_source),
+        "verify the Codex marker remains on the server",
+    );
+    run(
+        cmd!("sudo", "-n", "test", "-f", &claude_source),
+        "verify the Claude marker remains on the server",
+    );
+    run_host(
+        &harness,
+        &host_name,
+        &format!(
+            "rm -f /home/wt/.codex/sessions/{shared_marker} \
+             /home/wt/.claude/projects/{shared_marker}"
+        ),
+        "remove shared KVM test markers",
+    );
     let host_token = harness.grant_token_for(host.id);
     harness.delete(&host_name);
     harness.assert_grant_is_revoked(host_token);

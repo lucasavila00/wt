@@ -27,7 +27,14 @@ until apt-get update && apt-get install -y --no-install-recommends $minimal_pack
     sleep 2
 done
 
-id wt >/dev/null 2>&1 || useradd --create-home --shell /bin/bash wt
+if ! id wt >/dev/null 2>&1; then
+    getent group wt >/dev/null || groupadd --gid 1001 wt
+    useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash wt
+fi
+test "$(id -u wt)" = 1001 && test "$(id -g wt)" = 1001 || {
+    echo 'wt must use uid=1001 and gid=1001' >&2
+    exit 1
+}
 usermod -aG docker wt
 install -d -m 0755 -o wt -g wt /workspace
 install -d -m 0700 -o wt -g wt /home/wt/.ssh

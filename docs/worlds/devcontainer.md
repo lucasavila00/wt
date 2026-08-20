@@ -31,6 +31,31 @@ The first `ssh CONTEXT.NAME` completes setup. It clones the repository, starts
 the recipe, and leaves its output in Byobu and the guest setup log. Later
 connections attach to the same session.
 
+## Shared agent conversations
+
+When the server enables the example shared folders, they are mounted in the VM
+at:
+
+```text
+/home/wt/.codex/sessions
+/home/wt/.claude/projects
+```
+
+WT does not inject them into the devcontainer. A repository using Docker
+Compose can expose them to its configured `remoteUser` with service bind
+mounts. For a container whose user is `vscode`:
+
+```yaml
+services:
+  app:
+    volumes:
+      - /home/wt/.codex/sessions:/home/vscode/.codex/sessions
+      - /home/wt/.claude/projects:/home/vscode/.claude/projects
+```
+
+The repository owns the container target paths and permissions; WT does not
+assume every image uses `/home/vscode`.
+
 ## Git
 
 The server holds provider credentials. A world receives a revocable grant that

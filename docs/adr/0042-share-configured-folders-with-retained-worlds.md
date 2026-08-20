@@ -1,6 +1,6 @@
 # ADR 0042: Share agent conversations between worlds
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-20
 
 ## Context

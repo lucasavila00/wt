@@ -1,5 +1,13 @@
 version = 1
 
+[[shared_folders]]
+source = "/var/lib/wt/shared/codex-sessions"
+target = ".codex/sessions"
+
+[[shared_folders]]
+source = "/var/lib/wt/shared/claude-projects"
+target = ".claude/projects"
+
 [image]
 devcontainer_path = "/var/lib/wt/images/wt-devcontainer-ubuntu-24.04-amd64.qcow2"
 host_path = "/var/lib/wt/images/wt-host-ubuntu-24.04-amd64.qcow2"

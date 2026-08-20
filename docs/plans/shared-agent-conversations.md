@@ -73,8 +73,7 @@ the default shares.
 
 ## Devcontainers
 
-Do not add mounts to `devcontainer up`, inspect container users, or edit a
-repository's `devcontainer.json`.
+Do not add mounts to `devcontainer up` or inspect container users.
 
 The shared folders are available on the VM at:
 
@@ -83,14 +82,15 @@ The shared folders are available on the VM at:
 /home/wt/.claude/projects
 ```
 
-A repository owner can expose them to a container with its normal
-`devcontainer.json` mounts, choosing targets that match its `remoteUser`:
+A repository owner using Docker Compose can expose them to a container with
+service bind mounts, choosing targets that match its `remoteUser`:
 
-```json
-"mounts": [
-  "source=/home/wt/.codex/sessions,target=/home/vscode/.codex/sessions,type=bind",
-  "source=/home/wt/.claude/projects,target=/home/vscode/.claude/projects,type=bind"
-]
+```yaml
+services:
+  app:
+    volumes:
+      - /home/wt/.codex/sessions:/home/vscode/.codex/sessions
+      - /home/wt/.claude/projects:/home/vscode/.claude/projects
 ```
 
 The repository owns container-user permissions. WT only guarantees the VM
@@ -107,7 +107,7 @@ paths and does not assume that every devcontainer uses `/home/vscode`.
   the same guest-side procedure.
 - `assets/world/shared`: hold the mount procedure used by both world images.
 - `examples/server-config`: enable the Codex and Claude folders by default.
-- World and server docs: explain the VM paths and the user-owned devcontainer
+- World and server docs: explain the VM paths and the user-owned Docker Compose
   bind mounts.
 
 No container discovery or container launch code needs to change.
@@ -131,9 +131,9 @@ ShellCheck, and behavior tests for the mount script.
 Add a real KVM test that creates a host world and a devcontainer world, writes
 a marker through one VM, reads it through the other, restarts both worlds, and
 checks the marker again. Delete a world and confirm that the server source still
-contains the marker. The devcontainer fixture may declare the two bind mounts
-to prove the documented user-controlled path, but production code must not
-inject them.
+contains the marker. The devcontainer fixture may declare the two Docker
+Compose bind mounts to prove the documented user-controlled path, but
+production code must not inject them.
 
 ## Limits
 
