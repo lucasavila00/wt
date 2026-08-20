@@ -125,6 +125,12 @@ remote:\n"
     )
 }
 
+fn world_prompt() -> String {
+    format!(
+        "This environment has ag-git installed for pull or merge request, review, and CI operations; run ag-git help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
+    )
+}
+
 fn validate_repository(repository: &Repository) -> Result<()> {
     if !valid_host(&repository.host)
         || repository.project.is_empty()
@@ -255,12 +261,13 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
 }
 
 const HELP: &str = "\
-ag-git reads and changes explicitly identified Git provider resources and records\n\
-feedback about ag-git itself. It accepts exactly one JSON command object and\n\
-rejects unknown fields.\n\
+ag-git reads and changes explicitly identified Git provider resources, records\n\
+feedback about ag-git itself, and describes the current WT environment. Provider\n\
+operations accept exactly one JSON command object and reject unknown fields.\n\
 \n\
 USAGE:\n\
     ag-git '<JSON>'\n\
+    ag-git world-prompt\n\
 \n\
 TYPESCRIPT COMMAND TYPE:\n\
     type AgGitCommand =\n\
@@ -294,6 +301,9 @@ EXAMPLE:\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch to the\n\
 gateway grant's base branch. It fails when there is no match or multiple matches.\n\
+\n\
+`world-prompt` prints current instructions for coding agents without requiring a\n\
+Git checkout or provider API.\n\
 \n\
 The four ag-git reporting actions store feedback against this authenticated world\n\
 without contacting the Git provider.\n\

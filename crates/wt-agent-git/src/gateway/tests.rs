@@ -45,6 +45,27 @@ fn cli_status_and_unavailable_command_are_actionable() {
 }
 
 #[test]
+fn world_prompt_does_not_require_a_checkout_or_provider_api() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path: temp.path().join("instances.db"),
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+
+    let output = gateway
+        .serve_cli(&["world-prompt".into()], None, None, None, &test_grant())
+        .unwrap();
+
+    insta::assert_snapshot!(output);
+}
+
+#[test]
 fn opening_the_gateway_revokes_legacy_repository_scoped_grants() {
     let temp = tempfile::tempdir().unwrap();
     let state_file = temp.path().join("gateway.json");
