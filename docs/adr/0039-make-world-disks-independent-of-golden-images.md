@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-16
+- Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
 ## Context
 
@@ -23,6 +24,11 @@ the replaced file and keep running.
 
 There is no migration for old overlay-backed worlds. Clear them once before
 installing this change.
+
+The same rule applies when the shared retained-image foundation changes:
+golden-image replacement does not rewrite existing world disks. Recreate
+affected worlds to receive the new image-owned guest user and terminal
+contract.
 
 ## Consequences
 

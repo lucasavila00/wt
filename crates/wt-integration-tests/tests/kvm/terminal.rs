@@ -31,6 +31,10 @@ on
 on
 256
 256
+wt:wt 644
+BACKGROUND=k
+FOREGROUND=w
+MONOCHROME=1
 "###);
 }
 
@@ -53,6 +57,8 @@ tmux show-options -sv set-clipboard
 tmux show-options -gvw allow-passthrough
 tmux show-options -gv -t {session} focus-events
 TERM=ghostty tput colors
-TERM=xterm-ghostty tput colors"#
+TERM=xterm-ghostty tput colors
+stat -c '%U:%G %a' /home/wt/.byobu/color
+cat /home/wt/.byobu/color"#
     )
 }

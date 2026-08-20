@@ -18,8 +18,13 @@ use wt_cli::inventory::{self, ContextInstance};
 use wt_cli::transport::ContextError;
 
 mod code;
+mod git_author;
 mod host;
 mod reports;
+
+use git_author::read_git_author;
+#[cfg(test)]
+use git_author::{parse_git_config_value, required_git_config_error};
 
 #[derive(Debug, Parser)]
 #[command(name = "wt")]
@@ -82,6 +87,8 @@ fn run() -> Result<()> {
                 memory_mib: input.memory_mib,
                 disk_gib: input.disk_gib,
                 ssh_authorized_keys: input.ssh_authorized_keys,
+                git_user_name: input.git_user_name,
+                git_user_email: input.git_user_email,
                 application: input.application,
             };
             let response = create_with_capacity_retry(context, &request)?;
@@ -264,6 +271,8 @@ struct CreateInput {
     memory_mib: u64,
     disk_gib: u64,
     ssh_authorized_keys: Vec<String>,
+    git_user_name: String,
+    git_user_email: String,
     application: CreateApplication,
 }
 
@@ -348,9 +357,9 @@ fn prompt_create(
             wt_api::InstanceName::parse(name)?
         }
     };
+    let git_author = read_git_author()?;
     let (application, application_summary) = match kind {
         CreateKind::Devcontainer => {
-            let git_author = read_git_author()?;
             let source: String = cliclack::input("Git repository")
                 .placeholder("git@example.com:team/repository.git")
                 .validate(|value: &String| {
@@ -370,21 +379,24 @@ fn prompt_create(
                 git_author.name, git_author.email
             );
             (
-                CreateApplication::Devcontainer {
-                    source,
-                    git_base,
-                    git_user_name: git_author.name,
-                    git_user_email: git_author.email,
+                CreateApplication::Devcontainer { source, git_base },
+                summary,
+            )
+        }
+        CreateKind::Host(input) => {
+            let summary = format!(
+                "{}Git author  {} <{}>\n",
+                host::application_summary(&input.user_data_path),
+                git_author.name,
+                git_author.email,
+            );
+            (
+                CreateApplication::Host {
+                    user_data: input.user_data,
                 },
                 summary,
             )
         }
-        CreateKind::Host(input) => (
-            CreateApplication::Host {
-                user_data: input.user_data,
-            },
-            host::application_summary(&input.user_data_path),
-        ),
     };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
     let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
@@ -413,6 +425,8 @@ fn prompt_create(
         memory_mib,
         disk_gib,
         ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
+        git_user_name: git_author.name,
+        git_user_email: git_author.email,
         application,
     })
 }
@@ -471,51 +485,6 @@ fn discover_public_keys() -> Result<Vec<(String, String)>> {
             Ok((key, parsed.fingerprint(HashAlg::Sha256).to_string()))
         })
         .collect()
-}
-
-#[derive(Debug)]
-struct GitAuthor {
-    name: String,
-    email: String,
-}
-
-fn read_git_author() -> Result<GitAuthor> {
-    Ok(GitAuthor {
-        name: read_global_git_config("user.name")?,
-        email: read_global_git_config("user.email")?,
-    })
-}
-
-fn read_global_git_config(key: &str) -> Result<String> {
-    match ProcessCommand::new("git")
-        .args(["config", "--global", "--null", "--get", key])
-        .output()
-    {
-        Ok(output) if output.status.success() => parse_git_config_value(&output.stdout)?
-            .ok_or_else(|| required_git_config_error(key, None)),
-        Ok(output) if output.status.code() == Some(1) => Err(required_git_config_error(key, None)),
-        Ok(output) => Err(required_git_config_error(
-            key,
-            Some(String::from_utf8_lossy(&output.stderr).trim()),
-        )),
-        Err(error) => Err(required_git_config_error(key, Some(&error.to_string()))),
-    }
-}
-
-fn required_git_config_error(key: &str, detail: Option<&str>) -> anyhow::Error {
-    let detail = detail
-        .filter(|detail| !detail.is_empty())
-        .map(|detail| format!(": {detail}"))
-        .unwrap_or_default();
-    anyhow::anyhow!(
-        "global Git {key} is required; configure it with `git config --global {key} VALUE`{detail}"
-    )
-}
-
-fn parse_git_config_value(stdout: &[u8]) -> Result<Option<String>> {
-    let value = stdout.strip_suffix(b"\0").unwrap_or(stdout);
-    let value = std::str::from_utf8(value).map_err(|error| anyhow::anyhow!(error))?;
-    Ok((!value.is_empty()).then(|| value.to_owned()))
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

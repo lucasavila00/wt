@@ -17,10 +17,12 @@ creates a thin recipe with Diffo and Codex when the default file is missing and
 does not overwrite an existing file. It does not install Rust/Cargo or clone a
 project.
 
-WT first boots the guest, creates `wt`, stages the selected file root-only, and
-verifies SSH. `wt new host` then opens Byobu. Cloud-init starts there and runs
-the standard init, config, and final stages. Output stays in the pane and
-`/var/log/cloud-init-output.log`.
+WT first boots the retained host image, which already owns the `wt` login at
+UID/GID `1001:1001`. Provisioning validates that image contract, stages the
+selected file root-only, transfers the workstation's global Git author, and
+verifies SSH. `wt new host` then opens Byobu.
+Cloud-init starts there and runs the standard init, config, and final stages.
+Output stays in the pane and `/var/log/cloud-init-output.log`.
 
 The recipe is included in a hashed create fingerprint but is not stored in
 SQLite. It and its output remain on the guest disk, so neither is a secret
@@ -66,5 +68,10 @@ not restricted by the gateway.
 
 The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
 guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
-the shared WT terminal profile. Ubuntu's Git remains available, and WT adds no
+the shared WT terminal profile, including the fixed `wt` image user and its
+`/home/wt/.byobu` files. Ubuntu's Git remains available, and WT adds no
 implicit checkout or provider credentials.
+
+Golden-image replacement does not migrate existing host worlds. Existing disks
+retain their current guest user and terminal state; recreate a host world to
+use a newly built image foundation.

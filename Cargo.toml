@@ -13,6 +13,7 @@ members = [
     "crates/wt-libvirt",
     "crates/wt-provider",
     "crates/wt-registry",
+    "crates/wt-retained",
     "crates/wt-github-ci",
     "crates/wt-host",
     "crates/wt-server",
@@ -36,6 +37,7 @@ wt-devcontainer = { path = "crates/wt-devcontainer" }
 wt-libvirt = { path = "crates/wt-libvirt" }
 wt-provider = { path = "crates/wt-provider" }
 wt-registry = { path = "crates/wt-registry" }
+wt-retained = { path = "crates/wt-retained" }
 wt-github-ci = { path = "crates/wt-github-ci" }
 wt-host = { path = "crates/wt-host" }
 wt-server = { path = "crates/wt-server" }

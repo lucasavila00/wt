@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-31
-- Amended by: [ADR 0027](0027-build-images-in-kvm.md)
+- Amended by: [ADR 0027](0027-build-images-in-kvm.md) and
+  [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
 ## Context
 
@@ -21,8 +22,10 @@ artifacts are pinned by version, URL, and SHA-256.
 Installed contract packages stay in the image manifest so world provisioning
 can require their exact versions.
 
-Kind provisioners own per-world users, services, credentials, and configuration.
-They do not download pinned image artifacts.
+The shared image foundation owns the retained `wt` user and shared terminal
+files. Kind provisioners own kind-specific per-world services, credentials, and
+configuration. They do not download pinned image artifacts or create a second
+retained guest user.
 
 The image compatibility field remains `1`. Staged-input hashes detect recipe
 changes. Installed images are not migrated: run `make nuke`, then install again.

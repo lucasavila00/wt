@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+. /usr/local/share/wt-retained-contract
+
 state=/var/lib/wt-setup
 mode=${1:-}
 
@@ -29,13 +31,13 @@ prepare)
         "$registry_url" "$registry_url" \
         > /etc/systemd/system/docker.service.d/wt-registry-cache.conf
 
-    install -d -m 0700 -o wt -g wt /var/lib/wt-app-ssh
+    install -d -m 0700 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-app-ssh
     install -d -m 0755 /var/lib/wt-app-ssh/public /var/lib/wt-app-ssh/public/authorized_keys
     test -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key ||
         ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key
     test -f /var/lib/wt-app-ssh/session_identity ||
         ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/session_identity
-    chown wt:wt /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub
+    chown "$WT_USER:$WT_USER" /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub
     chmod 0600 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key /var/lib/wt-app-ssh/session_identity
     chmod 0644 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub /var/lib/wt-app-ssh/session_identity.pub
     cat > /var/lib/wt-app-ssh/public/sshd_config <<'EOF'
@@ -77,11 +79,11 @@ finalize)
         "/var/lib/wt-app-ssh/public/authorized_keys/$user"
     ;;
 cleanup)
-    rm -f "$state/authorized-keys" "$state/app-authorized-keys" "$state/app-keyscan" \
+    rm -f "$state/app-authorized-keys" "$state/app-keyscan" \
         "$state/root-prepared"
     rm -f /etc/sudoers.d/wt-setup
     printf 'complete\n' > "$state/complete.new"
-    chown wt:wt "$state/complete.new"
+    chown "$WT_USER:$WT_USER" "$state/complete.new"
     mv "$state/complete.new" "$state/complete"
     ;;
 *)

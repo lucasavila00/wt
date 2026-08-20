@@ -27,6 +27,13 @@ on a configured Ubuntu/KVM host with:
 make e2e-tests
 ```
 
+The target first runs the read-only image provenance check. To verify images
+prepared from a different install input, override `KVM_INSTALL_CONFIG`:
+
+```text
+make e2e-tests KVM_INSTALL_CONFIG=/path/to/install-input.toml
+```
+
 Host setup: [Development](../../DEVELOPMENT.md).
 
 ## Clean KVM test host

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-14
+- Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
 ## Context
 
@@ -29,8 +30,9 @@ the pinned Ubuntu image through that builder; neither image is derived from the
 other.
 
 Shared machine and terminal provisioning has one implementation. In particular,
-one shared recipe installs and validates Byobu, tmux, terminfo, and terminal
-settings for both kinds. Kind recipes contain only their application contract:
+one shared recipe creates the fixed `wt` image user and installs and validates
+Byobu, tmux, terminfo, and terminal settings for both kinds. Kind recipes
+contain only their application contract:
 the devcontainer stack or the host additions from
 [ADR 0026](0026-make-world-kinds-first-class.md).
 Devcontainer-specific tmux settings source the shared configuration instead of
@@ -51,19 +53,22 @@ network. Package installation retries transient apt or DNS failures. The whole
 build is bounded by 30 minutes.
 
 The recipe writes `/var/lib/wt-image-result` as root mode `0644` only after all
-installation and validation succeeds. It contains exactly:
+installation and validation succeeds. It contains exactly these five fields:
 
 ```text
 kind=KIND
 status=ready
 recipe_version=1
+wt_uid=1001
+wt_gid=1001
 ```
 
-The compatibility field stays at `1`; staged-input hashes detect recipe drift.
-Setup requires the exact marker before treating guest shutdown as success. It
-then runs `cloud-init clean` offline, removes cached seed and generated network
-state, clears machine identity and SSH host keys, and revalidates the cleaned
-state plus required package versions and asset checksums.
+The compatibility field stays at `1`; the marker also records the fixed image
+user contract. Staged-input hashes detect recipe drift. Setup requires the
+exact marker before treating guest shutdown as success. It then runs
+`cloud-init clean` offline, removes cached seed and generated network state,
+clears machine identity and SSH host keys, and revalidates the cleaned state
+plus required package versions and asset checksums.
 
 The installed manifest records the base-image SHA, recipe version, install
 configuration digest, and SHA-256 of every staged script, configuration file,
@@ -75,6 +80,10 @@ different image.
 Retained contract packages other than pinned artifacts resolve from the Ubuntu
 repositories at build time. Their exact versions are recorded and validated;
 two fresh builds are not promised to be byte-identical.
+
+Image replacement does not migrate existing retained-world disks. Existing
+worlds keep their independent guest users and terminal state; recreate worlds
+when a changed shared image foundation is required.
 
 Scripts write `WT_IMAGE_PHASE=TEXT` lines to the serial console. Setup prints a
 heartbeat with the last phase at least once per minute. Package and download

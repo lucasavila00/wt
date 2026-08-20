@@ -50,8 +50,10 @@ static artifact if it contains a dynamic interpreter or GLIBC requirement.
 
 ## Reset
 
-This world-kind schema has no migration and keeps protocol version 1. Before
-installing it over an older WT version, run from the repository root:
+This world-kind schema has no migration. The common retained-world Git-author
+contract uses protocol version 2, so clients and servers must be upgraded
+together. Before installing it over an older WT version, run from the
+repository root:
 
 ```text
 make nuke
@@ -68,3 +70,9 @@ server is intentionally left empty, remove that workstation's stale
 
 Use `make clear` for the smaller runtime reset described by the installed
 configuration drift diagnostic.
+
+Golden-image rebuilds do not migrate retained worlds. Existing world disks are
+independent of their golden image and keep their current guest user, terminal
+configuration, and runtime state. Recreate affected worlds after adopting a
+changed shared image foundation; use `make nuke` when the complete installation
+reset described above is required.

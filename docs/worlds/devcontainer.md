@@ -14,6 +14,13 @@ supported; the primary devcontainer is the container an editor would open.
 Docker does not apply a seccomp profile because the KVM guest, rather than the
 containers inside it, is the profiling boundary.
 
+The retained guest image supplies the `wt` login at UID/GID `1001:1001` and
+the shared Byobu/tmux foundation. Shared provisioning installs the requested
+Git author for `wt`; repository setup records the same author locally so it
+follows the checkout into the application container. The repository's
+`remoteUser` is a separate container contract; WT does not assume that it is
+`wt`.
+
 ## Access
 
 | Alias | Target |

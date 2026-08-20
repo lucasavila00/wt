@@ -67,16 +67,27 @@ power_state:
     }
 }
 
-pub(super) fn build_environment(
-    kind: &str,
-    recipe_version: u32,
-    tmux_config_sha256: &str,
-    byobu_color_sha256: &str,
-) -> String {
-    format!(
-        "WT_IMAGE_KIND='{}'\nWT_IMAGE_RECIPE_VERSION='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
-        kind,
-        recipe_version,
+pub(super) struct BuildEnvironment<'a> {
+    pub(super) kind: &'a str,
+    pub(super) recipe_version: u32,
+    pub(super) tmux_config_sha256: &'a str,
+    pub(super) byobu_color_sha256: &'a str,
+    pub(super) access_sha256: &'a str,
+    pub(super) git_author_sha256: &'a str,
+    pub(super) agent_git_sha256: &'a str,
+    pub(super) mount_folders_sha256: &'a str,
+}
+
+impl BuildEnvironment<'_> {
+    pub(super) fn render(&self) -> String {
+        format!(
+        "WT_IMAGE_KIND='{}'\nWT_IMAGE_RECIPE_VERSION='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_GIT_SHA256='{}'\nMOUNT_FOLDERS_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
+        self.kind,
+        self.recipe_version,
+        wt_retained::GUEST_USER,
+        wt_retained::GUEST_UID,
+        wt_retained::GUEST_GID,
+        wt_retained::GUEST_HOME,
         BYOBU_VERSION,
         BYOBU_SHA256,
         TMUX_VERSION,
@@ -84,10 +95,15 @@ pub(super) fn build_environment(
         NCURSES_TERM_DEB,
         NCURSES_TERM_SHA256,
         GHOSTTY_TERMINFO_SHA256,
-        tmux_config_sha256,
-        byobu_color_sha256,
+        self.tmux_config_sha256,
+        self.byobu_color_sha256,
+        self.access_sha256,
+        self.git_author_sha256,
+        self.agent_git_sha256,
+        self.mount_folders_sha256,
         DEVCONTAINER_CLI_VERSION,
     )
+    }
 }
 
 #[cfg(test)]
@@ -126,6 +142,45 @@ power_state:
   mode: poweroff
   timeout: 60
   condition: true
+"###
+        );
+    }
+
+    #[test]
+    fn renders_complete_shared_image_environment() {
+        insta::assert_snapshot!(
+            BuildEnvironment {
+                kind: "host",
+                recipe_version: 7,
+                tmux_config_sha256: "tmux-config-sha",
+                byobu_color_sha256: "byobu-color-sha",
+                access_sha256: "access-sha",
+                git_author_sha256: "git-author-sha",
+                agent_git_sha256: "agent-git-sha",
+                mount_folders_sha256: "mount-folders-sha",
+            }
+            .render(),
+            @r###"
+WT_IMAGE_KIND='host'
+WT_IMAGE_RECIPE_VERSION='7'
+WT_USER='wt'
+WT_UID='1001'
+WT_GID='1001'
+WT_HOME='/home/wt'
+BYOBU_VERSION='7.15-0ubuntu1'
+BYOBU_SHA256='7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc'
+TMUX_VERSION='3.6b'
+TMUX_SHA256='390759d25fdba016887ec982b808927e637070fd7d03a8021f8ef3102b9ae3c7'
+NCURSES_TERM_DEB='ncurses-term_6.6+20260608-2_all.deb'
+NCURSES_TERM_SHA256='2696f4d2430b44c1ed25dd20fe91c6bf9811194bfb19a6c5408c83789f9f0cb4'
+GHOSTTY_TERMINFO_SHA256='1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa'
+TMUX_CONFIG_SHA256='tmux-config-sha'
+BYOBU_COLOR_SHA256='byobu-color-sha'
+ACCESS_SHA256='access-sha'
+GIT_AUTHOR_SHA256='git-author-sha'
+AGENT_GIT_SHA256='agent-git-sha'
+MOUNT_FOLDERS_SHA256='mount-folders-sha'
+DEVCONTAINER_CLI_VERSION='0.80.2'
 "###
         );
     }

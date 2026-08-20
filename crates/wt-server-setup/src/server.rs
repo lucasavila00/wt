@@ -87,6 +87,13 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     Ok(())
 }
 
+pub(crate) fn verify_images(input_path: &Path) -> Result<()> {
+    require_server_user()?;
+    let (input, server, server_bytes) = load_install_input(input_path)?;
+    require_workspace()?;
+    image::verify(&input, &server, &server_bytes)
+}
+
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::prepare_state(runner, config)
 }

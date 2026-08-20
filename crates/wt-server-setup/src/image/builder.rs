@@ -1,11 +1,16 @@
+mod contract;
+mod provenance;
+
+pub(super) use contract::validate_result_metadata;
+pub(super) use provenance::{image_config_sha, sha_bytes, stage_publication, staged_input_hashes};
+
+use contract::verify_retained_guest_contract;
+
 use super::console::{wait_for_shutdown, ConsoleLog};
 use super::recipe::ImageRecipe;
 use super::{host_image, manifest_path, recipe, sibling_temporary, BUILD_NAME};
 use crate::install_input::InstallInput;
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -14,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wt_command::cmd;
 use wt_libvirt::LIBVIRT_URI;
 use wt_server::ServerConfig;
-use wt_setup_core::{sudo_install, sudo_install_owned, sudo_move, Runner};
+use wt_setup_core::Runner;
 
 const INSTALL_PACKAGES: &[u8] =
     include_bytes!("../../../../assets/world/shared/install-packages.sh");
@@ -24,11 +29,39 @@ const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/share
 const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../../assets/world/shared/finalize-image.sh");
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
+const CONFIGURE_ACCESS: &[u8] =
+    include_bytes!("../../../../assets/world/shared/configure-access.sh");
+const CONFIGURE_GIT_AUTHOR: &[u8] =
+    include_bytes!("../../../../assets/world/shared/configure-git-author.sh");
+const INSTALL_AGENT_GIT: &[u8] =
+    include_bytes!("../../../../assets/world/shared/install-agent-git.sh");
+const MOUNT_FOLDERS: &[u8] = include_bytes!("../../../../assets/world/shared/mount-folders.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
+
+#[derive(Clone, Copy)]
+pub(super) enum ImageKind {
+    Devcontainer,
+    Host,
+}
+
+impl ImageKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Devcontainer => "devcontainer",
+            Self::Host => "host",
+        }
+    }
+}
+
+impl std::fmt::Display for ImageKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
-    pub(super) kind: &'a str,
+    pub(super) kind: ImageKind,
     pub(super) recipe_version: u32,
     pub(super) recipe: &'a [u8],
 }
@@ -120,6 +153,10 @@ pub(super) fn run_kvm_build<R: Runner>(
     let kind_recipe = build_dir.join("kind-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
     let byobu_color = build_dir.join("byobu-color");
+    let configure_access = build_dir.join("configure-access.sh");
+    let configure_git_author = build_dir.join("configure-git-author.sh");
+    let install_agent_git = build_dir.join("install-agent-git.sh");
+    let mount_folders = build_dir.join("mount-folders.sh");
 
     println!("Preparing temporary {} KVM build disk...", spec.kind);
     runner.run(
@@ -146,12 +183,17 @@ pub(super) fn run_kvm_build<R: Runner>(
 
     fs::write(
         &environment,
-        recipe::build_environment(
-            spec.kind,
-            spec.recipe_version,
-            &sha_bytes(TMUX_CONFIG),
-            &sha_bytes(BYOBU_COLOR),
-        ),
+        recipe::BuildEnvironment {
+            kind: spec.kind.as_str(),
+            recipe_version: spec.recipe_version,
+            tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
+            byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
+            access_sha256: &sha_bytes(CONFIGURE_ACCESS),
+            git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
+            agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
+            mount_folders_sha256: &sha_bytes(MOUNT_FOLDERS),
+        }
+        .render(),
     )
     .context("write image build environment")?;
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
@@ -160,6 +202,11 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&kind_recipe, spec.recipe).context("write kind image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
+    fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
+    fs::write(&configure_git_author, CONFIGURE_GIT_AUTHOR)
+        .context("write shared guest Git author setup")?;
+    fs::write(&install_agent_git, INSTALL_AGENT_GIT).context("write shared agent Git setup")?;
+    fs::write(&mount_folders, MOUNT_FOLDERS).context("write shared folder mount setup")?;
 
     let mut customize = Command::new("sudo");
     customize.arg("virt-customize").arg("-a").arg(&paths.disk);
@@ -178,6 +225,19 @@ pub(super) fn run_kvm_build<R: Runner>(
         (kind_recipe.as_path(), "/var/tmp/wt-kind-image-build.sh"),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
         (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
+        (configure_access.as_path(), "/var/tmp/wt-retained-access"),
+        (
+            configure_git_author.as_path(),
+            "/var/tmp/wt-retained-git-author",
+        ),
+        (
+            install_agent_git.as_path(),
+            "/var/tmp/wt-retained-agent-git",
+        ),
+        (
+            mount_folders.as_path(),
+            "/var/tmp/wt-retained-mount-folders",
+        ),
     ] {
         customize
             .arg("--upload")
@@ -245,8 +305,11 @@ pub(super) fn run_kvm_build<R: Runner>(
     )?;
     validate_result_metadata(&marker_metadata)?;
     let expected = format!(
-        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid=1001\nwt_gid=1001\n",
-        spec.kind, spec.recipe_version
+        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid={}\nwt_gid={}\n",
+        spec.kind.as_str(),
+        spec.recipe_version,
+        wt_retained::GUEST_UID,
+        wt_retained::GUEST_GID,
     );
     if marker != expected {
         bail!(
@@ -273,7 +336,14 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     )?;
     println!("Sysprepping and sanitizing reusable image...");
     runner.run(
-        cmd!("sudo", "virt-sysprep", "-a", &paths.disk),
+        cmd!(
+            "sudo",
+            "virt-sysprep",
+            "-a",
+            &paths.disk,
+            "--operations",
+            "defaults,-user-account"
+        ),
         "sysprep reusable image",
     )?;
     let finalizer = paths.dir.join("finalize-image.sh");
@@ -290,6 +360,11 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
             format!(
                 "{}:/var/tmp/wt-image-build.env",
                 paths.dir.join("build.env").display()
+            ),
+            "--upload",
+            format!(
+                "{}:/var/tmp/wt-byobu-color",
+                paths.dir.join("byobu-color").display()
             ),
             "--run",
             &finalizer
@@ -332,6 +407,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     if ssh_files.lines().any(|name| name.starts_with("ssh_host_")) {
         bail!("reusable image retained SSH host keys");
     }
+    verify_retained_guest_contract(runner, &paths.disk)?;
     let tmux_sha256 = runner
         .text(
             cmd!(
@@ -349,85 +425,6 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         bail!("finalized image recorded an invalid tmux checksum");
     }
     Ok(tmux_sha256)
-}
-
-pub(super) fn staged_input_hashes(
-    spec: &BuildSpec<'_>,
-    extra_inputs: &[(&str, &[u8])],
-) -> BTreeMap<String, String> {
-    let environment = recipe::build_environment(
-        spec.kind,
-        spec.recipe_version,
-        &sha_bytes(TMUX_CONFIG),
-        &sha_bytes(BYOBU_COLOR),
-    );
-    let mut inputs = BTreeMap::from([
-        (
-            "/var/tmp/wt-byobu.deb".to_owned(),
-            recipe::BYOBU_SHA256.to_owned(),
-        ),
-        (
-            "/var/tmp/wt-image-build.env".to_owned(),
-            sha_bytes(environment.as_bytes()),
-        ),
-        (
-            "/var/tmp/wt-install-packages.sh".to_owned(),
-            sha_bytes(INSTALL_PACKAGES),
-        ),
-        (
-            "/var/tmp/wt-install-terminal.sh".to_owned(),
-            sha_bytes(INSTALL_TERMINAL),
-        ),
-        (
-            "/var/tmp/wt-image-build.sh".to_owned(),
-            sha_bytes(SHARED_IMAGE_BUILD),
-        ),
-        (
-            "/var/tmp/wt-kind-image-build.sh".to_owned(),
-            sha_bytes(spec.recipe),
-        ),
-        ("/var/tmp/wt-tmux.conf".to_owned(), sha_bytes(TMUX_CONFIG)),
-        ("/var/tmp/wt-byobu-color".to_owned(), sha_bytes(BYOBU_COLOR)),
-        (
-            "offline:/wt-finalize-image.sh".to_owned(),
-            sha_bytes(FINALIZE_IMAGE),
-        ),
-        (
-            "nocloud:user-data".to_owned(),
-            sha_bytes(ImageRecipe::new().cloud_config().as_bytes()),
-        ),
-        (
-            "nocloud:meta-data".to_owned(),
-            sha_bytes(
-                format!(
-                    "instance-id: {}\nlocal-hostname: {}\n",
-                    spec.name, spec.name
-                )
-                .as_bytes(),
-            ),
-        ),
-    ]);
-    for (path, bytes) in extra_inputs {
-        inputs.insert((*path).to_owned(), sha_bytes(bytes));
-    }
-    inputs
-}
-
-pub(super) fn validate_result_metadata(listing: &str) -> Result<()> {
-    let fields = listing
-        .lines()
-        .find(|line| line.ends_with(" /var/lib/wt-image-result"))
-        .map(|line| line.split_whitespace().collect::<Vec<_>>())
-        .unwrap_or_default();
-    if fields.len() < 6
-        || fields[0] != "-"
-        || fields[1] != "0644"
-        || fields[3] != "0"
-        || fields[4] != "0"
-    {
-        bail!("image build result must be owned by root:root with mode 0644");
-    }
-    Ok(())
 }
 
 pub(super) fn attach_console_tail(error: anyhow::Error, build_dir: &Path) -> anyhow::Error {
@@ -626,66 +623,4 @@ pub(super) fn cleanup_failed_build(
     } else {
         bail!(failures.join("; "))
     }
-}
-
-pub(super) struct PendingPublication {
-    image_temporary: PathBuf,
-    manifest_temporary: PathBuf,
-    image_destination: PathBuf,
-    manifest_destination: PathBuf,
-}
-
-impl PendingPublication {
-    pub(super) fn publish(self, runner: &impl Runner) -> Result<()> {
-        sudo_move(runner, &self.image_temporary, &self.image_destination)?;
-        sudo_move(runner, &self.manifest_temporary, &self.manifest_destination)
-    }
-}
-
-pub(super) fn stage_publication<T: Serialize>(
-    runner: &impl Runner,
-    prepared: &Path,
-    image_destination: &Path,
-    manifest_path: &Path,
-    manifest: &T,
-) -> Result<PendingPublication> {
-    let image_temporary = sibling_temporary(image_destination)?;
-    let manifest_temporary = sibling_temporary(manifest_path)?;
-    if image_temporary.exists() || manifest_temporary.exists() {
-        bail!("stale temporary installed image state exists");
-    }
-    let local_manifest = prepared.with_extension("manifest.json");
-    fs::write(&local_manifest, serde_json::to_vec_pretty(manifest)?)
-        .context("write image manifest")?;
-    sudo_install_owned(
-        runner,
-        prepared,
-        &image_temporary,
-        "libvirt-qemu",
-        "kvm",
-        0o644,
-    )?;
-    sudo_install(runner, &local_manifest, &manifest_temporary, 0o644)?;
-    Ok(PendingPublication {
-        image_temporary,
-        manifest_temporary,
-        image_destination: image_destination.to_path_buf(),
-        manifest_destination: manifest_path.to_path_buf(),
-    })
-}
-
-pub(super) fn image_config_sha(server_bytes: &[u8], input: &InstallInput) -> String {
-    let mut bytes = server_bytes.to_vec();
-    bytes.extend_from_slice(
-        format!(
-            "\nimage_memory_mib={}\nimage_vcpus={}\nimage_disk_gib={}\n",
-            input.image.build_memory_mib, input.image.build_vcpus, input.image.build_disk_gib
-        )
-        .as_bytes(),
-    );
-    sha_bytes(&bytes)
-}
-
-pub(super) fn sha_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }

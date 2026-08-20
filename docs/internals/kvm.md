@@ -11,8 +11,10 @@ Every machine seed contains separate files:
 - `meta-data`: unique instance and host name;
 - `network-config`: DHCP keyed by the unique MAC address.
 
-All three kinds use empty user/vendor cloud config. Host setup creates `wt` and
-stages the operator recipe through the QEMU guest agent after the network stage.
+All three kinds use empty user/vendor cloud config. Retained images create the
+shared `wt` login before kind-specific provisioning; host setup stages the
+operator recipe through the QEMU guest agent after the network stage and
+validates the image-owned UID/GID `1001:1001` contract.
 
 ## Images
 
@@ -32,6 +34,23 @@ the same file. A world disk cannot be smaller than its template image; the
 provider rejects it before copying and resizing the image. The resulting world
 disk has no golden-image backing dependency. Setup may replace stale golden
 images automatically without stopping existing worlds.
+
+The shared image foundation is the same in both retained images: user/group
+`wt:wt` at UID/GID `1001:1001`, home `/home/wt`, and the shared Byobu/tmux
+profile. The image build result is a root-owned `0644` marker with exactly:
+
+```text
+kind=KIND
+status=ready
+recipe_version=1
+wt_uid=1001
+wt_gid=1001
+```
+
+Kind provisioning validates this foundation; it does not create a missing user
+or migrate an existing world. Replacing an installed golden image affects only
+new worlds. Existing retained disks keep their current guest state and must be
+recreated to adopt a changed image foundation.
 
 ## Readiness
 

@@ -28,4 +28,4 @@ generated schema with it.
 
 ADR 0026 replaces the initial schema in place. There is no migration from the
 older database: run `make nuke` before installing this version. The wire
-protocol remains version 1.
+protocol is version 2.

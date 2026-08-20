@@ -214,6 +214,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         concat!(
             "set -eu; ",
             "test \"$(id -un)\" = wt; ",
+            "test \"$(git config --global --get user.name)\" = 'WT E2E'; ",
+            "test \"$(git config --global --get user.email)\" = wt@example.invalid; ",
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
             "test -S /run/wt-agent-git/gateway.sock; ",
@@ -239,8 +241,6 @@ fn agent_git_transport_works_without_provider_credentials() {
             "set -eu; ",
             "git clone https://local.test/acme/widget.git /home/wt/gateway-check; ",
             "cd /home/wt/gateway-check; ",
-            "git config user.name 'WT Host E2E'; ",
-            "git config user.email wt-host@example.invalid; ",
             "git switch -c wt/host-gateway; ",
             "printf 'host gateway\n' >> README.md; ",
             "git commit -am 'host gateway'; ",
@@ -268,8 +268,18 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_guest(
         &harness,
         &name,
-        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git/gateway.sock",
+        concat!(
+            "set -eu; ",
+            "test -z \"${SSH_AUTH_SOCK:-}\"; ",
+            "test -S /run/wt-agent-git/gateway.sock",
+        ),
         "verify guest credential isolation",
+    );
+    run_guest(
+        &harness,
+        &name,
+        "test \"$(git -C /workspace config --get user.name)\" = 'WT E2E' && test \"$(git -C /workspace config --get user.email)\" = wt@example.invalid",
+        "verify guest Git author transfer",
     );
     app(
         &harness,
@@ -288,6 +298,12 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test ! -e /home/wt/.codex/auth.json",
         ),
         "verify devcontainer project tools",
+    );
+    app(
+        &harness,
+        &name,
+        "test \"$(git config --get user.name)\" = 'WT E2E' && test \"$(git config --get user.email)\" = wt@example.invalid",
+        "verify devcontainer Git author transfer",
     );
     app(
         &harness,

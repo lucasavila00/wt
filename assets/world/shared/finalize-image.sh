@@ -12,10 +12,24 @@ TERM=ghostty tput colors >/dev/null
 TERM=xterm-ghostty tput colors >/dev/null
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
     /usr/local/share/wt-tmux.conf | sha256sum --check --strict
-printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
-    /etc/skel/.byobu/.tmux.conf | sha256sum --check --strict
+test "$(id -u "$WT_USER")" = "$WT_UID"
+test "$(id -g "$WT_USER")" = "$WT_GID"
+test "$(getent passwd "$WT_USER" | cut -d: -f6)" = "$WT_HOME"
+install -d -m 0755 -o "$WT_USER" -g "$WT_USER" "$WT_HOME/.byobu"
+install -m 0644 -o "$WT_USER" -g "$WT_USER" \
+    /var/tmp/wt-byobu-color "$WT_HOME/.byobu/color"
 printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
-    /etc/skel/.byobu/color | sha256sum --check --strict
+    "$WT_HOME/.byobu/color" | sha256sum --check --strict
+test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu")" = "$WT_UID:$WT_GID 755"
+test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu/color")" = "$WT_UID:$WT_GID 644"
+printf '%s  %s\n' "$ACCESS_SHA256" \
+    /usr/local/libexec/wt-retained-access | sha256sum --check --strict
+printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
+    /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
+printf '%s  %s\n' "$AGENT_GIT_SHA256" \
+    /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
+printf '%s  %s\n' "$MOUNT_FOLDERS_SHA256" \
+    /usr/local/libexec/wt-retained-mount-folders | sha256sum --check --strict
 
 /usr/bin/tmux -V > /var/lib/wt-tmux-version
 sha256sum /usr/bin/tmux | cut -d ' ' -f 1 > /var/lib/wt-tmux-sha256
@@ -24,6 +38,9 @@ rm -rf /var/lib/cloud/instance /var/lib/cloud/instances
 rm -f /etc/netplan/50-cloud-init.yaml /var/lib/wt-image-result \
     /var/tmp/wt-*.sh /var/tmp/wt-image-build.env /var/tmp/wt-tmux \
     /var/tmp/wt-host-shell /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color \
+    /var/tmp/wt-retained-access /var/tmp/wt-retained-git-author \
+    /var/tmp/wt-retained-agent-git \
+    /var/tmp/wt-retained-mount-folders \
     /var/lib/wt-tmux
 truncate -s 0 /etc/machine-id
 ln -sfn /etc/machine-id /var/lib/dbus/machine-id

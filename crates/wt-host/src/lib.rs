@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -9,13 +7,13 @@ use uuid::Uuid;
 use wt_api::SshAccess;
 use wt_provider::{
     CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
-    NoCloudConfig, ProviderId, RunRequest, SharedFolderMount, WorkerError, WriteFileRequest,
+    NoCloudConfig, ProviderId, RunRequest, WorkerError,
 };
+use wt_retained::{GuestAccess, RetainedConfig};
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
 const INSPECT: &str = "/usr/local/libexec/wt-host-inspect";
-const MOUNT_SHARED_FOLDERS: &[u8] = include_bytes!("../../../assets/world/shared/mount-folders.sh");
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -26,21 +24,13 @@ pub struct ProvisionSpec<'a> {
     pub ssh_authorized_keys: &'a [String],
     pub user_data: &'a str,
     pub git_grant: &'a str,
-}
-
-#[derive(Clone, Debug)]
-pub struct AgentGitConfig {
-    pub relay_binary: PathBuf,
-    pub remote_binary: PathBuf,
-    pub cli_binary: PathBuf,
-    pub provider_hosts: Vec<String>,
-    pub vsock_port: u32,
+    pub git_user_name: &'a str,
+    pub git_user_email: &'a str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct World {
-    pub guest_ip: String,
-    pub ssh: SshAccess,
+    pub access: GuestAccess,
     pub setup_complete: bool,
 }
 
@@ -97,35 +87,20 @@ pub fn validate_user_data(user_data: &str) -> Result<(), String> {
 pub struct CompositeWorker<P> {
     provider: P,
     readiness_timeout: Duration,
-    agent_git_relay: Vec<u8>,
-    agent_git_remote: Vec<u8>,
-    agent_git_cli: Vec<u8>,
-    provider_hosts: Vec<u8>,
-    vsock_port: Vec<u8>,
-    shared_folders: Vec<SharedFolderMount>,
+    retained: RetainedConfig,
 }
 
 impl<P> CompositeWorker<P> {
     pub fn new(
         provider: P,
         readiness_timeout: Duration,
-        agent_git: AgentGitConfig,
-        shared_folders: Vec<SharedFolderMount>,
+        retained: RetainedConfig,
     ) -> Result<Self, WorkerError> {
-        let read = |path: &Path, name: &str| {
-            fs::read(path).map_err(|error| {
-                WorkerError::new(format!("read host {name} {}: {error}", path.display()))
-            })
-        };
+        retained.validate()?;
         Ok(Self {
             provider,
             readiness_timeout,
-            agent_git_relay: read(&agent_git.relay_binary, "agent Git relay")?,
-            agent_git_remote: read(&agent_git.remote_binary, "agent Git remote helper")?,
-            agent_git_cli: read(&agent_git.cli_binary, "agent Git CLI")?,
-            provider_hosts: format!("{}\n", agent_git.provider_hosts.join("\n")).into_bytes(),
-            vsock_port: format!("{}\n", agent_git.vsock_port).into_bytes(),
-            shared_folders,
+            retained,
         })
     }
 }
@@ -139,7 +114,6 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         let readiness_key = ReadinessKey::generate()?;
         let mut authorized_keys = spec.ssh_authorized_keys.to_vec();
         authorized_keys.push(readiness_key.public_key.clone());
-        let authorized_keys = authorized_keys_file(&authorized_keys)?;
         let machine = self.provider.create(
             &MachineSpec {
                 provider_id: ProviderId::parse(spec.backend_id)?,
@@ -155,25 +129,19 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         run_prepare(machine.transport.as_ref(), "wait", None, deadline, log)?;
         run_prepare(
             machine.transport.as_ref(),
-            "access",
-            Some(authorized_keys.as_bytes()),
+            "access-policy",
+            None,
             deadline,
             log,
         )?;
-        mount_shared_folders(
+        self.retained.provision(
             machine.transport.as_ref(),
-            &self.shared_folders,
-            deadline,
-            log,
-        )?;
-        install_agent_git(
-            machine.transport.as_ref(),
-            spec.git_grant,
-            &self.agent_git_relay,
-            &self.agent_git_remote,
-            &self.agent_git_cli,
-            &self.provider_hosts,
-            &self.vsock_port,
+            wt_retained::ProvisionSpec {
+                authorized_keys: &authorized_keys,
+                git_user_name: spec.git_user_name,
+                git_user_email: spec.git_user_email,
+                git_grant: spec.git_grant,
+            },
             deadline,
             log,
         )?;
@@ -186,7 +154,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         )?;
         let world = inspect_machine(&machine, self.readiness_timeout, log)?;
         verify_login(
-            &world.ssh,
+            world.access.ssh(),
             readiness_key.private_key(),
             readiness_key.path(),
         )?;
@@ -218,112 +186,13 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
 
     fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
-        mount_shared_folders(
+        self.retained.mount_shared_folders(
             machine.transport.as_ref(),
-            &self.shared_folders,
             Instant::now() + self.readiness_timeout,
             &mut std::io::sink(),
         )?;
         inspect_machine(&machine, self.readiness_timeout, &mut std::io::sink())
     }
-}
-
-fn mount_shared_folders(
-    transport: &dyn GuestTransport,
-    folders: &[SharedFolderMount],
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    if folders.is_empty() {
-        return Ok(());
-    }
-    let args = shared_folder_args(folders)?;
-    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let mut shell_args = vec!["-s", "--"];
-    shell_args.extend(args);
-    let output = transport.run(
-        &RunRequest {
-            executable: "/bin/sh",
-            args: &shell_args,
-            stdin: Some(MOUNT_SHARED_FOLDERS),
-            deadline,
-        },
-        log,
-    )?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "shared folder mounts: exit code {}: {}",
-            output.exit_code,
-            String::from_utf8_lossy(&output.diagnostic_tail).trim()
-        )));
-    }
-    Ok(())
-}
-
-fn shared_folder_args(folders: &[SharedFolderMount]) -> Result<Vec<String>, WorkerError> {
-    let mut args = Vec::with_capacity(folders.len() * 2);
-    for folder in folders {
-        let target = folder.target.to_str().ok_or_else(|| {
-            WorkerError::new(format!(
-                "shared folder target is not UTF-8: {}",
-                folder.target.display()
-            ))
-        })?;
-        args.push(folder.tag.clone());
-        args.push(target.to_owned());
-    }
-    Ok(args)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn install_agent_git(
-    transport: &dyn GuestTransport,
-    grant: &str,
-    relay: &[u8],
-    remote: &[u8],
-    cli: &[u8],
-    provider_hosts: &[u8],
-    vsock_port: &[u8],
-    deadline: Instant,
-    log: &mut dyn Write,
-) -> Result<(), WorkerError> {
-    for (path, contents) in [
-        ("/tmp/wt-host-agent-git-grant", grant.as_bytes()),
-        ("/tmp/wt-host-agent-git-relay", relay),
-        ("/tmp/wt-host-agent-git-remote", remote),
-        ("/tmp/wt-host-ag-git", cli),
-        ("/tmp/wt-host-agent-git-providers", provider_hosts),
-        ("/tmp/wt-host-agent-git-vsock-port", vsock_port),
-    ] {
-        transport
-            .write_file(&WriteFileRequest {
-                path,
-                contents,
-                owner: "root",
-                group: "root",
-                mode: 0o600,
-                deadline,
-            })
-            .map_err(WorkerError::from)?;
-    }
-    run_prepare(transport, "agent-git", None, deadline, log)
-}
-
-pub fn authorized_keys_file(authorized_keys: &[String]) -> Result<String, WorkerError> {
-    let keys = authorized_keys
-        .iter()
-        .map(|key| {
-            let mut key = ssh_key::PublicKey::from_openssh(key)
-                .map_err(|error| WorkerError::new(format!("parse SSH authorized key: {error}")))?;
-            key.set_comment("");
-            let key = key
-                .to_openssh()
-                .map_err(|error| WorkerError::new(format!("encode SSH authorized key: {error}")))?;
-            Ok(key)
-        })
-        .collect::<Result<Vec<_>, WorkerError>>()?
-        .join("\n");
-    Ok(format!("{keys}\n"))
 }
 
 struct ReadinessKey {
@@ -413,16 +282,10 @@ fn inspect_machine(
             )))
         }
     };
-    let host_keys = read_host_keys(machine.transport.as_ref(), deadline)?;
-    verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
+    let host_keys = wt_retained::read_host_keys(machine.transport.as_ref(), deadline)?;
+    wt_retained::verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
     Ok(World {
-        guest_ip: machine.guest_ip.clone(),
-        ssh: SshAccess {
-            user: "wt".to_owned(),
-            host: machine.guest_ip.clone(),
-            port: 22,
-            host_keys,
-        },
+        access: GuestAccess::from_guest_ip(machine.guest_ip.clone(), host_keys),
         setup_complete,
     })
 }
@@ -453,76 +316,13 @@ fn run_prepare(
     Ok(())
 }
 
-fn read_host_keys(
-    transport: &dyn GuestTransport,
-    deadline: Instant,
-) -> Result<Vec<String>, WorkerError> {
-    let output = transport.capture(&CaptureRequest {
-        executable: "/bin/sh",
-        args: &["-c", "cat /etc/ssh/ssh_host_*_key.pub"],
-        stdin: None,
-        deadline,
-        stdout_limit: CAPTURE_LIMIT,
-        stderr_limit: CAPTURE_LIMIT,
-    })?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "SSH host keys: exit code {}: {}",
-            output.exit_code,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let keys = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    if keys.is_empty() {
-        return Err(WorkerError::new(
-            "SSH host keys: guest returned no public host keys",
-        ));
-    }
-    Ok(keys)
-}
-
-fn verify_guest_ssh(
-    guest_ip: &str,
-    expected: &[String],
-    deadline: Instant,
-) -> Result<(), WorkerError> {
-    let address: SocketAddr = format!("{guest_ip}:22")
-        .parse()
-        .map_err(|error| WorkerError::new(format!("parse guest SSH address: {error}")))?;
-    while TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_err() {
-        if Instant::now() >= deadline {
-            return Err(WorkerError::new(
-                "SSH readiness: timed out waiting for port 22",
-            ));
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    }
-    let output = Command::new("/usr/bin/ssh-keyscan")
-        .args(["-T", "5", "-p", "22", guest_ip])
-        .output()
-        .map_err(|error| WorkerError::new(format!("scan guest SSH host keys: {error}")))?;
-    let expected = normalized_keys(&expected.join("\n"));
-    let presented = normalized_keys(&String::from_utf8_lossy(&output.stdout));
-    if expected.is_disjoint(&presented) {
-        return Err(WorkerError::new(format!(
-            "SSH endpoint identity mismatch at {guest_ip}:22"
-        )));
-    }
-    Ok(())
-}
-
 fn verify_login(
     ssh: &SshAccess,
     private_key: PathBuf,
     directory: &Path,
 ) -> Result<(), WorkerError> {
     let known_hosts = directory.join("known_hosts");
-    let contents = normalized_keys(&ssh.host_keys.join("\n"))
+    let contents = wt_retained::normalized_host_keys(&ssh.host_keys.join("\n"))
         .into_iter()
         .map(|key| format!("{} {key}\n", ssh.host))
         .collect::<String>();
@@ -567,56 +367,9 @@ fn verify_login(
     Ok(())
 }
 
-fn normalized_keys(lines: &str) -> BTreeSet<String> {
-    lines
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let first = fields.next()?;
-            let (kind, data) = if first.starts_with("ssh-") || first.starts_with("ecdsa-") {
-                (first, fields.next()?)
-            } else {
-                (fields.next()?, fields.next()?)
-            };
-            Some(format!("{kind} {data}"))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn shared_folder_mount_arguments_preserve_tags_and_targets() {
-        insta::assert_debug_snapshot!(shared_folder_args(&[
-            SharedFolderMount {
-                tag: "wt-shared-0".to_owned(),
-                target: PathBuf::from(".codex/sessions"),
-            },
-            SharedFolderMount {
-                tag: "wt-shared-1".to_owned(),
-                target: PathBuf::from(".claude/projects"),
-            },
-        ])
-        .unwrap(), @r###"
-        [
-            "wt-shared-0",
-            ".codex/sessions",
-            "wt-shared-1",
-            ".claude/projects",
-        ]
-        "###);
-    }
-
-    #[test]
-    fn authorized_keys_are_canonical() {
-        insta::assert_snapshot!(authorized_keys_file(&[
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo person's-key".to_owned(),
-        ]).unwrap(), @r###"
-        ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo
-        "###);
-    }
 
     #[test]
     fn user_data_cannot_override_host_setup() {

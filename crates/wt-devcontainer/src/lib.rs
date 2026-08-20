@@ -7,11 +7,12 @@ pub use provisioner::{ProvisionerConfig, WorldProvisioner};
 
 use std::io::Write;
 use uuid::Uuid;
-use wt_api::{AppSshAccess, InstanceName, SshAccess};
+use wt_api::{AppSshAccess, InstanceName};
 use wt_provider::{
     ForkError, ForkMachineSpec, MachineInspection, MachineProvider, MachineSpec, NoCloudConfig,
     ProviderId, WorkerError,
 };
+use wt_retained::GuestAccess;
 
 #[derive(Clone)]
 pub struct ProvisionSpec<'a> {
@@ -46,8 +47,7 @@ pub struct ForkSpec<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct World {
-    pub guest_ip: String,
-    pub ssh: SshAccess,
+    pub access: GuestAccess,
     pub app_ssh: Option<AppSshAccess>,
 }
 
@@ -269,11 +269,6 @@ mod tests {
             app_pane_binary: temp.path().join("app-pane"),
             app_info_binary: temp.path().join("app-info"),
             app_proxy_binary: temp.path().join("app-proxy"),
-            agent_git_relay_binary: temp.path().join("agent-git-relay"),
-            agent_git_remote_binary: temp.path().join("agent-git-remote"),
-            agent_git_cli_binary: temp.path().join("agent-git-cli"),
-            agent_git_provider_hosts: vec!["example.test".to_owned()],
-            agent_git_vsock_port: 18017,
             registry_cache_url: format!("http://{registry_address}"),
             registry_cache_ca_file: temp.path().join("ca.crt"),
             recipe_timeout: Duration::from_secs(10),
@@ -281,7 +276,16 @@ mod tests {
                 packages,
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
             },
-            shared_folders: Vec::new(),
+            retained: wt_retained::RetainedConfig {
+                agent_git: wt_retained::AgentGitConfig {
+                    relay_binary: temp.path().join("agent-git-relay"),
+                    remote_binary: temp.path().join("agent-git-remote"),
+                    cli_binary: temp.path().join("agent-git-cli"),
+                    provider_hosts: vec!["example.test".to_owned()],
+                    vsock_port: 18017,
+                },
+                shared_folders: Vec::new(),
+            },
         })
         .unwrap();
         registry.join().unwrap();

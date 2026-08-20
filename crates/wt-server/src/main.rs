@@ -73,17 +73,17 @@ fn run_server() -> Result<()> {
             .map_err(anyhow::Error::msg)?,
         server_config.registry_cache.port
     );
+    let retained = server_config.retained_config();
     let provisioner = WorldProvisioner::new(
         server_config
-            .provisioner_config(registry_cache_url)
+            .provisioner_config(registry_cache_url, retained.clone())
             .map_err(anyhow::Error::msg)?,
     )
     .map_err(anyhow::Error::msg)?;
     let host_worker = wt_host::CompositeWorker::new(
         host_provider,
         Duration::from_secs(server_config.guest.recipe_timeout_seconds),
-        server_config.host_agent_git_config(),
-        server_config.guest_shared_folders(),
+        retained,
     )
     .map_err(anyhow::Error::msg)?;
     let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);

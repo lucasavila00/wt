@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+. /usr/local/share/wt-retained-contract
+
 state=/var/lib/wt-setup
 log=$state/install.log
 workspace=/workspace
@@ -111,11 +113,11 @@ while IFS= read -r host; do
         git config --global --add "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
         git config --global --add "url.ag::git@$host:.insteadOf" "https://$host/"
     ' sh "$host"
-done < "$state/agent-git-providers"
+done < /var/lib/wt-agent-git/providers
 /usr/local/bin/wt-app-info verify-user "$app_user"
 /usr/local/bin/wt-app-info > "$state/app.json"
 app_address=$(/usr/local/bin/wt-app-info address)
-cat "$state/authorized-keys" /var/lib/wt-app-ssh/session_identity.pub > "$state/app-authorized-keys"
+cat "$WT_HOME/.ssh/authorized_keys" /var/lib/wt-app-ssh/session_identity.pub > "$state/app-authorized-keys"
 sudo /usr/local/libexec/wt-setup-root finalize "$app_user"
 ssh-keyscan -T 5 -p 2222 "$app_address" > "$state/app-keyscan"
 expected=$(awk '{print $1 " " $2}' /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub)
