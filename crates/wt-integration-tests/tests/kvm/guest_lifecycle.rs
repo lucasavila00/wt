@@ -10,7 +10,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let _serial = KVM_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut timings = Timings::new();
+    let mut timings = Timings::new("full");
     let mut harness = KvmHarness::new(&mut timings);
     let name = unique_name("git");
 

@@ -36,6 +36,17 @@ pub(crate) struct KvmHarness {
 
 impl KvmHarness {
     pub(crate) fn new(timings: &mut Timings) -> Self {
+        Self::new_with_fixture(timings, GitFixture::create)
+    }
+
+    pub(crate) fn new_fast(timings: &mut Timings) -> Self {
+        Self::new_with_fixture(timings, GitFixture::create_fast)
+    }
+
+    fn new_with_fixture(
+        timings: &mut Timings,
+        create_fixture: impl FnOnce(&Path) -> GitFixture,
+    ) -> Self {
         let temp = TempDir::new().unwrap();
         let vsock_port = unique_vsock_port();
         std::env::set_var(VSOCK_PORT_ENV, vsock_port.to_string());
@@ -67,9 +78,7 @@ impl KvmHarness {
         config.image.host_path = images.path().join("host.qcow2");
         config.install.binary_dir = binary_dir;
         let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
-        let git = timings.run("prepare local Git fixture", || {
-            GitFixture::create(temp.path())
-        });
+        let git = timings.run("prepare local Git fixture", || create_fixture(temp.path()));
         let guest_public_key = fs::read_to_string(&git.guest_public_key)
             .unwrap()
             .trim()
@@ -380,19 +389,18 @@ pub(crate) fn wait_for_running(
 ) -> wt_api::Instance {
     let deadline = Instant::now() + Duration::from_secs(900);
     loop {
-        let Response::Instance { instance } =
-            call_api(home, config, Operation::Get { name: name.clone() })
-        else {
-            panic!("expected instance response")
-        };
-        if instance.status == InstanceStatus::Running {
-            return *instance;
+        let complete = cmd!(
+            "ssh",
+            "-F",
+            home.join(".ssh/config"),
+            format!("local.{name}-host"),
+            "test -e /var/lib/wt-setup/complete",
+        )
+        .output()
+        .unwrap();
+        if complete.status.success() {
+            break;
         }
-        assert_ne!(
-            instance.status,
-            InstanceStatus::Error,
-            "setup failed: {instance:?}"
-        );
         if let Some(status) = setup.try_wait().unwrap() {
             let log = guest_setup_log(home, name);
             panic!("world setup SSH exited before completion: {status}\n{log}");
@@ -400,6 +408,17 @@ pub(crate) fn wait_for_running(
         assert!(Instant::now() < deadline, "timed out waiting for setup");
         std::thread::sleep(Duration::from_secs(2));
     }
+    let Response::Instance { instance } =
+        call_api(home, config, Operation::Get { name: name.clone() })
+    else {
+        panic!("expected instance response")
+    };
+    assert_eq!(
+        instance.status,
+        InstanceStatus::Running,
+        "completed setup did not reconcile to running: {instance:?}"
+    );
+    *instance
 }
 
 fn guest_setup_log(home: &Path, name: &InstanceName) -> String {
@@ -524,13 +543,15 @@ pub(crate) fn call_api_result(
 }
 
 pub(crate) struct Timings {
+    profile: &'static str,
     pub(crate) started: Instant,
     pub(crate) phases: Vec<(&'static str, Duration)>,
 }
 
 impl Timings {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(profile: &'static str) -> Self {
         Self {
+            profile,
             started: Instant::now(),
             phases: Vec::new(),
         }
@@ -546,7 +567,7 @@ impl Timings {
 
 impl Drop for Timings {
     fn drop(&mut self) {
-        eprintln!("KVM E2E timings:");
+        eprintln!("KVM {} E2E timings:", self.profile);
         for (label, elapsed) in &self.phases {
             eprintln!("  {label}: {:.1}s", elapsed.as_secs_f64());
         }

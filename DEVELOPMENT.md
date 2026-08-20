@@ -81,12 +81,16 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-`cargo test --workspace` skips the ignored real-system KVM test. Run it only on
-a configured Ubuntu/KVM host:
+`cargo test --workspace` skips the ignored real-system KVM tests. Use the fast
+profile for VM device, guest mount, and Compose bind changes on a configured
+Ubuntu/KVM host:
 
 ```bash
-make e2e-tests
+make e2e-tests-fast
 ```
+
+Use `make e2e-tests-full` for whole-flow changes and before release.
+`make e2e-tests` remains an alias for the full profile.
 
 ## Manual devcontainer test
 
@@ -101,7 +105,7 @@ wt rm jsdev-manual
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
 The project devcontainer includes Codex and logs in as its configured
-`remoteUser`, which is `root`. Run `codex` once inside the session to sign in.
+`remoteUser`, which is `wt`. Run `codex` once inside the session to sign in.
 
 ## Manual host test
 

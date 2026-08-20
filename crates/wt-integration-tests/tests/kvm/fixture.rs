@@ -3,24 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use wt_command::cmd;
 
-pub(crate) struct GitFixture {
-    pub(crate) repository: PathBuf,
-    pub(crate) guest_key: PathBuf,
-    pub(crate) guest_public_key: PathBuf,
-}
-
-impl GitFixture {
-    pub(crate) fn create(root: &Path) -> Self {
-        let seed = root.join("project");
-        fs::create_dir(&seed).unwrap();
-        run(
-            cmd!("git", "init", "-b", "main", &seed),
-            "initialize fixture repository",
-        );
-        fs::create_dir(seed.join(".devcontainer")).unwrap();
-        fs::write(
-            seed.join(".devcontainer/devcontainer.json"),
-            r#"{
+const FULL_DEVCONTAINER: &str = r#"{
   "name": "wt-kvm-e2e",
   "dockerComposeFile": "compose.yaml",
   "service": "app",
@@ -28,17 +11,18 @@ impl GitFixture {
   "remoteUser": "wt",
   "onCreateCommand": "sudo chown -R wt:wt /workspaces"
 }
-"#,
-        )
-        .unwrap();
-        fs::write(
-            seed.join(".devcontainer/Dockerfile"),
-            include_str!("../../../../.devcontainer/Dockerfile"),
-        )
-        .unwrap();
-        fs::write(
-            seed.join(".devcontainer/compose.yaml"),
-            r#"services:
+"#;
+
+const FAST_DEVCONTAINER: &str = r#"{
+  "name": "wt-kvm-fast",
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/wt",
+  "remoteUser": "wt"
+}
+"#;
+
+const COMPOSE: &str = r#"services:
   app:
     build:
       context: .
@@ -48,9 +32,47 @@ impl GitFixture {
       - /workspace:/workspaces/wt
       - /home/wt/.codex/sessions:/home/wt/.codex/sessions
       - /home/wt/.claude/projects:/home/wt/.claude/projects
-"#,
+"#;
+
+const FAST_DOCKERFILE: &str = r#"FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1001 wt \
+    && useradd --uid 1001 --gid 1001 --create-home --shell /bin/sh wt
+"#;
+
+pub(crate) struct GitFixture {
+    pub(crate) repository: PathBuf,
+    pub(crate) guest_key: PathBuf,
+    pub(crate) guest_public_key: PathBuf,
+}
+
+impl GitFixture {
+    pub(crate) fn create(root: &Path) -> Self {
+        Self::create_with_devcontainer(
+            root,
+            FULL_DEVCONTAINER,
+            include_str!("../../../../.devcontainer/Dockerfile"),
         )
-        .unwrap();
+    }
+
+    pub(crate) fn create_fast(root: &Path) -> Self {
+        Self::create_with_devcontainer(root, FAST_DEVCONTAINER, FAST_DOCKERFILE)
+    }
+
+    fn create_with_devcontainer(root: &Path, devcontainer: &str, dockerfile: &str) -> Self {
+        let seed = root.join("project");
+        fs::create_dir(&seed).unwrap();
+        run(
+            cmd!("git", "init", "-b", "main", &seed),
+            "initialize fixture repository",
+        );
+        fs::create_dir(seed.join(".devcontainer")).unwrap();
+        fs::write(seed.join(".devcontainer/devcontainer.json"), devcontainer).unwrap();
+        fs::write(seed.join(".devcontainer/Dockerfile"), dockerfile).unwrap();
+        fs::write(seed.join(".devcontainer/compose.yaml"), COMPOSE).unwrap();
         fs::write(seed.join("README.md"), "WT agent Git fixture\n").unwrap();
         run(
             cmd!("git", "-C", &seed, "config", "user.name", "WT E2E"),

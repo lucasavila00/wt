@@ -23,3 +23,5 @@ pub(crate) use terminal::*;
 
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;
+#[path = "kvm/shared_folders.rs"]
+mod shared_folders;
