@@ -568,4 +568,9 @@ mod tests {
             @"cloud-init user-data is invalid YAML: did not find expected node content at line 3 column 1, while parsing a flow node"
         );
     }
+
+    #[test]
+    fn default_client_user_data_is_valid() {
+        validate_user_data(include_str!("../../../assets/client/cloud-init.yaml")).unwrap();
+    }
 }

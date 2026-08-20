@@ -50,6 +50,7 @@ handling shared by the regular WT and standalone Git proxy installers.
 ## State
 
 - Client contexts: `~/.wt/config.toml`
+- Default host cloud-init: `~/.config/wt/cloud-init.yaml`
 - Managed SSH: `~/.ssh/wt/`
 - Server configuration: `/etc/wt/server.toml`
 - Capacity configuration: `/etc/wt/capacity.toml`

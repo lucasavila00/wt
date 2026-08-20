@@ -26,7 +26,7 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | Command | Kinds | Result |
 |---------|-------|--------|
 | `wt new` | devcontainer | Interactively create and enter setup |
-| `wt new host FILE` | host | Prepare the guest, then run the file in Byobu |
+| `wt new host NAME` | host | Prepare the guest, then run the default cloud-init recipe in Byobu |
 | `wt ls` | retained | List kind, status, resources, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
@@ -39,6 +39,11 @@ resume it.
 
 New retained worlds require at least one valid regular `~/.ssh/*.pub` file.
 Private keys are never sent to the server.
+
+`scripts/install-client` creates a thin default host recipe at
+`~/.config/wt/cloud-init.yaml` when the file is missing. It installs Diffo and
+Codex, but no Rust/Cargo toolchain or project checkout. The installer never
+replaces an existing recipe.
 
 Host setup does not receive the workstation SSH agent. Configured provider Git
 operations use the gateway.

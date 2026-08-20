@@ -165,15 +165,54 @@ fn new_is_interactive_only() {
 }
 
 #[test]
-fn parses_host_recipe_path() {
-    let cli = Cli::try_parse_from(["wt", "new", "host", "recipe.yaml"]).unwrap();
+fn parses_host_name_with_default_recipe() {
+    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox"]).unwrap();
     let Command::New {
-        kind: Some(NewKind::Host { user_data }),
+        kind: Some(NewKind::Host { name, user_data }),
     } = cli.command
     else {
         panic!("expected host new command")
     };
-    assert_eq!(user_data, PathBuf::from("recipe.yaml"));
+    assert_eq!(name, InstanceName::parse("sandbox").unwrap());
+    assert_eq!(user_data, None);
+}
+
+#[test]
+fn parses_host_recipe_override() {
+    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox", "--user-data", "recipe.yaml"])
+        .unwrap();
+    let Command::New {
+        kind: Some(NewKind::Host { name, user_data }),
+    } = cli.command
+    else {
+        panic!("expected host new command")
+    };
+    assert_eq!(name, InstanceName::parse("sandbox").unwrap());
+    assert_eq!(user_data, Some(PathBuf::from("recipe.yaml")));
+}
+
+#[test]
+fn resolves_default_host_recipe_from_xdg_or_home() {
+    assert_eq!(
+        default_host_user_data_path(Some(OsStr::new("/xdg")), Some(OsStr::new("/home/test")))
+            .unwrap(),
+        PathBuf::from("/xdg/wt/cloud-init.yaml")
+    );
+    assert_eq!(
+        default_host_user_data_path(None, Some(OsStr::new("/home/test"))).unwrap(),
+        PathBuf::from("/home/test/.config/wt/cloud-init.yaml")
+    );
+}
+
+#[test]
+fn host_review_shows_cloud_init_source() {
+    insta::assert_snapshot!(
+        host_application_summary(Path::new("/home/test/.config/wt/cloud-init.yaml")),
+        @r###"
+    Kind        host
+    Cloud-init  /home/test/.config/wt/cloud-init.yaml
+    "###
+    );
 }
 
 #[test]

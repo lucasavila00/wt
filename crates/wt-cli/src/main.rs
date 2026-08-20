@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
 use std::os::unix::process::CommandExt as _;
@@ -55,7 +56,13 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum NewKind {
     /// Create a raw Ubuntu world from cloud-init user-data.
-    Host { user_data: PathBuf },
+    Host {
+        /// Name of the world to create.
+        name: wt_api::InstanceName,
+        /// Override the default cloud-init user-data file.
+        #[arg(long, value_name = "FILE")]
+        user_data: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -69,13 +76,20 @@ fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
         Command::New { kind } => {
-            let application = match kind {
-                None => CreateKind::Devcontainer,
-                Some(NewKind::Host { user_data }) => CreateKind::Host {
-                    user_data: read_user_data(&user_data)?,
-                },
+            let (application, name) = match kind {
+                None => (CreateKind::Devcontainer, None),
+                Some(NewKind::Host { name, user_data }) => {
+                    let (user_data_path, user_data) = read_host_user_data(user_data)?;
+                    (
+                        CreateKind::Host {
+                            user_data,
+                            user_data_path,
+                        },
+                        Some(name),
+                    )
+                }
             };
-            let input = prompt_create(&config, application)?;
+            let input = prompt_create(&config, application, name)?;
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;
@@ -272,7 +286,10 @@ struct CreateInput {
 
 enum CreateKind {
     Devcontainer,
-    Host { user_data: String },
+    Host {
+        user_data: String,
+        user_data_path: PathBuf,
+    },
 }
 
 extern "C" fn cancel_prompt(_: i32) {
@@ -307,7 +324,11 @@ fn install_cancel_handlers() -> Result<SignalGuard> {
     Ok(SignalGuard(previous))
 }
 
-fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput> {
+fn prompt_create(
+    config: &ClientConfig,
+    kind: CreateKind,
+    name: Option<wt_api::InstanceName>,
+) -> Result<CreateInput> {
     if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
@@ -332,16 +353,21 @@ fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput>
             .interact()
             .map_err(prompt_error)?
     };
-    let name: String = cliclack::input("World name")
-        .placeholder("my-world")
-        .validate(|value: &String| {
-            wt_api::InstanceName::parse(value.clone())
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })
-        .interact()
-        .map_err(prompt_error)?;
-    let name = wt_api::InstanceName::parse(name)?;
+    let name = match name {
+        Some(name) => name,
+        None => {
+            let name: String = cliclack::input("World name")
+                .placeholder("my-world")
+                .validate(|value: &String| {
+                    wt_api::InstanceName::parse(value.clone())
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                })
+                .interact()
+                .map_err(prompt_error)?;
+            wt_api::InstanceName::parse(name)?
+        }
+    };
     let (application, application_summary) = match kind {
         CreateKind::Devcontainer => {
             let git_author = read_git_author()?;
@@ -373,9 +399,12 @@ fn prompt_create(config: &ClientConfig, kind: CreateKind) -> Result<CreateInput>
                 summary,
             )
         }
-        CreateKind::Host { user_data } => (
+        CreateKind::Host {
+            user_data,
+            user_data_path,
+        } => (
             CreateApplication::Host { user_data },
-            "Kind        host\n".to_owned(),
+            host_application_summary(&user_data_path),
         ),
     };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
@@ -416,6 +445,39 @@ fn read_user_data(path: &Path) -> Result<String> {
         bail!("cloud-init user-data {} is empty", path.display());
     }
     Ok(user_data)
+}
+
+fn read_host_user_data(path: Option<PathBuf>) -> Result<(PathBuf, String)> {
+    let Some(path) = path else {
+        let path = default_host_user_data_path(
+            std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+            std::env::var_os("HOME").as_deref(),
+        )?;
+        let user_data = read_user_data(&path).with_context(|| {
+            format!(
+                "default cloud-init user-data is unavailable; create {} or pass `--user-data FILE`",
+                path.display()
+            )
+        })?;
+        return Ok((path, user_data));
+    };
+    let user_data = read_user_data(&path)?;
+    Ok((path, user_data))
+}
+
+fn host_application_summary(path: &Path) -> String {
+    format!("Kind        host\nCloud-init  {}\n", path.display())
+}
+
+fn default_host_user_data_path(
+    xdg_config_home: Option<&OsStr>,
+    home: Option<&OsStr>,
+) -> Result<PathBuf> {
+    let config_home = match xdg_config_home.filter(|path| !path.is_empty()) {
+        Some(path) => PathBuf::from(path),
+        None => PathBuf::from(home.context("HOME is not set")?).join(".config"),
+    };
+    Ok(config_home.join("wt/cloud-init.yaml"))
 }
 
 fn prompt_error(error: std::io::Error) -> anyhow::Error {

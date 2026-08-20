@@ -5,10 +5,10 @@ installs Rust, Clippy, rustfmt, libvirt headers, and Codex; clones WT into
 `~/wt`; and runs strict workspace Clippy before creation completes.
 
 ```text
-wt new host examples/host-world/cloud-init.yaml
-ssh CONTEXT.NAME
-ssh CONTEXT.NAME-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
-ssh CONTEXT.NAME-vs codex --version
+wt new host wt-dev --user-data examples/host-world/cloud-init.yaml
+ssh CONTEXT.wt-dev
+ssh CONTEXT.wt-dev-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
+ssh CONTEXT.wt-dev-vs codex --version
 ```
 
 The generated aliases log in as `wt`. The regular alias attaches to Byobu; use

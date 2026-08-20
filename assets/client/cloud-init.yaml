@@ -1,0 +1,20 @@
+#cloud-config
+package_update: true
+packages:
+  - curl
+write_files:
+  - path: /usr/local/sbin/wt-default-host-tools
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      set -eu
+
+      curl --proto '=https' --tlsv1.2 -LsSf \
+        https://raw.githubusercontent.com/lucasavila00/diffo/main/install.sh | sh
+
+      runuser --user wt -- env HOME=/home/wt sh -c \
+        'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'
+      ln -sf /home/wt/.local/bin/codex /usr/local/bin/codex
+runcmd:
+  - [/usr/local/sbin/wt-default-host-tools]

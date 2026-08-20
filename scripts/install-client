@@ -10,3 +10,10 @@ fi
 
 cd "$root"
 cargo install --locked --force --path crates/wt-cli
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+host_user_data="$config_home/wt/cloud-init.yaml"
+install -d -m 0700 "$config_home/wt"
+if [[ ! -e "$host_user_data" && ! -L "$host_user_data" ]]; then
+    install -m 0600 "$root/assets/client/cloud-init.yaml" "$host_user_data"
+fi

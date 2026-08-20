@@ -106,11 +106,10 @@ The project devcontainer includes Codex and logs in as its configured
 ## Manual host test
 
 The checked-in [host recipe](examples/host-world/cloud-init.yaml) is the manual
-host-world test. Choose the `local` context and the name `host-manual` when
-prompted:
+host-world test; choose the `local` context when prompted:
 
 ```bash
-wt new host examples/host-world/cloud-init.yaml
+wt new host host-manual --user-data examples/host-world/cloud-init.yaml
 wt ls
 ssh host-manual-vs 'cd ~/wt && cargo clippy --workspace --all-targets -- -D warnings'
 ssh host-manual-vs codex --version
