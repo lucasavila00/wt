@@ -15,6 +15,7 @@ wt-command = { workspace = true }
 wt-devcontainer = { workspace = true }
 wt-libvirt = { workspace = true }
 wt-registry = { workspace = true }
+wt-retained = { workspace = true }
 wt-server = { workspace = true }
 wt-setup-core = { workspace = true }
 anyhow = { workspace = true }

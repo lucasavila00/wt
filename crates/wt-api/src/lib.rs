@@ -16,7 +16,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -60,6 +60,10 @@ pub struct CreateInstance {
     pub memory_mib: u64,
     pub disk_gib: u64,
     pub ssh_authorized_keys: Vec<String>,
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub git_user_name: String,
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub git_user_email: String,
     #[serde(flatten)]
     pub application: CreateApplication,
 }
@@ -71,10 +75,6 @@ pub enum CreateApplication {
         source: String,
         #[serde(deserialize_with = "deserialize_git_branch")]
         git_base: String,
-        #[serde(deserialize_with = "deserialize_nonempty_string")]
-        git_user_name: String,
-        #[serde(deserialize_with = "deserialize_nonempty_string")]
-        git_user_email: String,
     },
     Host {
         #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -450,7 +450,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn accepts_the_legacy_client_commit_field() {
         let request = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "client_commit": "0000000000000000000000000000000000000000",
             "operation": "list"
         }))
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -493,7 +493,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 1,
+          "protocol_version": 2,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -517,17 +517,17 @@ mod tests {
             memory_mib: 4096,
             disk_gib: 32,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            git_user_name: "Lucas Ávila".to_owned(),
+            git_user_email: "lucaxx@gmail.com".to_owned(),
             application: CreateApplication::Devcontainer {
                 source: "git@github.com:example/repo.git".to_owned(),
                 git_base: "devcontainer".to_owned(),
-                git_user_name: "Lucas Ávila".to_owned(),
-                git_user_email: "lucaxx@gmail.com".to_owned(),
             },
         }));
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "operation": "create",
                 "kind": "devcontainer",
                 "name": "repo-feature",
@@ -551,6 +551,8 @@ mod tests {
             memory_mib: 4096,
             disk_gib: 32,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
+            git_user_name: "Lucas Ávila".to_owned(),
+            git_user_email: "lucaxx@gmail.com".to_owned(),
             application: CreateApplication::Host {
                 user_data: "#cloud-config\nruncmd:\n  - touch /ready\n".to_owned(),
             },
@@ -559,11 +561,13 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&value).unwrap(), @r###"
         {
           "disk_gib": 32,
+          "git_user_email": "lucaxx@gmail.com",
+          "git_user_name": "Lucas Ávila",
           "kind": "host",
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 1,
+          "protocol_version": 2,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -576,7 +580,7 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -586,7 +590,7 @@ mod tests {
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -607,11 +611,11 @@ mod tests {
             memory_mib: 1024,
             disk_gib: 8,
             ssh_authorized_keys: vec![key.to_owned()],
+            git_user_name: "Test User".to_owned(),
+            git_user_email: "test@example.invalid".to_owned(),
             application: CreateApplication::Devcontainer {
                 source: "git@example.test:repo.git".to_owned(),
                 git_base: "main".to_owned(),
-                git_user_name: "Test User".to_owned(),
-                git_user_email: "test@example.invalid".to_owned(),
             },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));
@@ -625,7 +629,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "operation": "get",
             "name": "Not-Valid"
         }))

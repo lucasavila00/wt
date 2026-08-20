@@ -82,6 +82,8 @@ fn run() -> Result<()> {
                 memory_mib: input.memory_mib,
                 disk_gib: input.disk_gib,
                 ssh_authorized_keys: input.ssh_authorized_keys,
+                git_user_name: input.git_user_name,
+                git_user_email: input.git_user_email,
                 application: input.application,
             };
             let response = create_with_capacity_retry(context, &request)?;
@@ -264,6 +266,8 @@ struct CreateInput {
     memory_mib: u64,
     disk_gib: u64,
     ssh_authorized_keys: Vec<String>,
+    git_user_name: String,
+    git_user_email: String,
     application: CreateApplication,
 }
 
@@ -348,9 +352,9 @@ fn prompt_create(
             wt_api::InstanceName::parse(name)?
         }
     };
+    let git_author = read_git_author()?;
     let (application, application_summary) = match kind {
         CreateKind::Devcontainer => {
-            let git_author = read_git_author()?;
             let source: String = cliclack::input("Git repository")
                 .placeholder("git@example.com:team/repository.git")
                 .validate(|value: &String| {
@@ -370,21 +374,24 @@ fn prompt_create(
                 git_author.name, git_author.email
             );
             (
-                CreateApplication::Devcontainer {
-                    source,
-                    git_base,
-                    git_user_name: git_author.name,
-                    git_user_email: git_author.email,
+                CreateApplication::Devcontainer { source, git_base },
+                summary,
+            )
+        }
+        CreateKind::Host(input) => {
+            let summary = format!(
+                "{}Git author  {} <{}>\n",
+                host::application_summary(&input.user_data_path),
+                git_author.name,
+                git_author.email,
+            );
+            (
+                CreateApplication::Host {
+                    user_data: input.user_data,
                 },
                 summary,
             )
         }
-        CreateKind::Host(input) => (
-            CreateApplication::Host {
-                user_data: input.user_data,
-            },
-            host::application_summary(&input.user_data_path),
-        ),
     };
     let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
     let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
@@ -413,6 +420,8 @@ fn prompt_create(
         memory_mib,
         disk_gib,
         ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
+        git_user_name: git_author.name,
+        git_user_email: git_author.email,
         application,
     })
 }

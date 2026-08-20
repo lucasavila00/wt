@@ -24,13 +24,13 @@ admission model; its operator process is not shipped yet.
 
 The control plane has no TCP listener. Local and remote API bridges send one
 versioned JSON request over stdio to the protected server socket. Protocol
-version 1 carries tagged world kinds.
+version 2 carries tagged world kinds and a common retained-world Git author.
 
 ## Crates
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-server`, `wt-server-setup`, `wt-setup-core`, `wt-git-core`, `wt-integration-tests` |
+| Shared | `wt-api`, `wt-cli`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-retained`, `wt-server`, `wt-server-setup`, `wt-setup-core`, `wt-git-core`, `wt-integration-tests` |
 | Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest` |
 | Host | `wt-host` |
 | GitHub CI | `wt-github-ci` |
@@ -46,6 +46,13 @@ workspace but is not part of `wt-server` or a WT world.
 
 `wt-setup-core` contains the host file, command runner, and SSH credential
 handling shared by the regular WT and standalone Git proxy installers.
+
+`wt-retained` contains the fixed retained-guest identity and shared guest
+operations used by both retained kinds. Its runtime calls the image-installed
+helpers for SSH access, Git author transfer, agent Git, and virtiofs
+shared-folder mounts. One retained provisioning operation applies that complete
+contract for both kinds; kind crates retain only their application-specific
+setup.
 
 ## State
 

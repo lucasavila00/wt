@@ -18,6 +18,7 @@ wt-libvirt = { workspace = true }
 wt-host = { workspace = true }
 wt-provider = { workspace = true }
 wt-registry = { workspace = true }
+wt-retained = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }

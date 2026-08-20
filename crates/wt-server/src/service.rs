@@ -255,11 +255,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
 
         let spec = match (&request.application, &stored.instance.application) {
             (
-                CreateApplication::Devcontainer {
-                    git_user_name,
-                    git_user_email,
-                    ..
-                },
+                CreateApplication::Devcontainer { .. },
                 InstanceApplication::Devcontainer {
                     source,
                     git_base,
@@ -276,8 +272,8 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 git_base,
                 git_prefix,
                 git_grant: &grant.as_ref().expect("devcontainer grant").token,
-                git_user_name,
-                git_user_email,
+                git_user_name: &request.git_user_name,
+                git_user_email: &request.git_user_email,
                 memory_mib: request.memory_mib,
                 vcpus: request.vcpus,
                 disk_gib: request.disk_gib,
@@ -293,6 +289,8 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                     ssh_authorized_keys: &request.ssh_authorized_keys,
                     user_data,
                     git_grant: &grant.as_ref().expect("host grant").token,
+                    git_user_name: &request.git_user_name,
+                    git_user_email: &request.git_user_email,
                 })
             }
             _ => unreachable!("request and stored application kinds match"),
@@ -302,16 +300,16 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Ok(world) => match world.application {
                 WorldApplication::Devcontainer { .. } => self
                     .store
-                    .mark_setup(id, &world.guest_ip, &world.ssh)
+                    .mark_setup(id, world.access.guest_ip(), world.access.ssh())
                     .map_err(map_store_error)?,
                 WorldApplication::Host { setup_complete } => {
                     if setup_complete {
                         self.store
-                            .mark_host_running(id, &world.guest_ip, &world.ssh)
+                            .mark_host_running(id, world.access.guest_ip(), world.access.ssh())
                             .map_err(map_store_error)?
                     } else {
                         self.store
-                            .mark_setup(id, &world.guest_ip, &world.ssh)
+                            .mark_setup(id, world.access.guest_ip(), world.access.ssh())
                             .map_err(map_store_error)?
                     }
                 }
@@ -446,7 +444,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .instance
             .ssh
             .as_ref()
-            .is_some_and(|ssh| ssh.host_keys == world.ssh.host_keys);
+            .is_some_and(|ssh| ssh.host_keys == world.access.ssh().host_keys);
         let same_app_identity = match (&stored.instance.application, &world.application) {
             (
                 InstanceApplication::Devcontainer {
@@ -472,20 +470,37 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 app_ssh: Some(app_ssh),
             } => self
                 .store
-                .mark_running(stored.instance.id, &world.guest_ip, &world.ssh, app_ssh)
+                .mark_running(
+                    stored.instance.id,
+                    world.access.guest_ip(),
+                    world.access.ssh(),
+                    app_ssh,
+                )
                 .map_err(map_store_error),
             WorldApplication::Devcontainer { app_ssh: None } => self
                 .store
-                .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                .mark_setup(
+                    stored.instance.id,
+                    world.access.guest_ip(),
+                    world.access.ssh(),
+                )
                 .map_err(map_store_error),
             WorldApplication::Host { setup_complete } => {
                 if *setup_complete {
                     self.store
-                        .mark_host_running(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .mark_host_running(
+                            stored.instance.id,
+                            world.access.guest_ip(),
+                            world.access.ssh(),
+                        )
                         .map_err(map_store_error)
                 } else {
                     self.store
-                        .mark_setup(stored.instance.id, &world.guest_ip, &world.ssh)
+                        .mark_setup(
+                            stored.instance.id,
+                            world.access.guest_ip(),
+                            world.access.ssh(),
+                        )
                         .map_err(map_store_error)
                 }
             }
@@ -673,6 +688,8 @@ mod tests {
             memory_mib: 1024,
             disk_gib: 8,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAATEST".into()],
+            git_user_name: "Test User".into(),
+            git_user_email: "test@example.invalid".into(),
             application: CreateApplication::Host {
                 user_data: format!("#cloud-config\nwrite_files:\n  - content: {secret}\n"),
             },

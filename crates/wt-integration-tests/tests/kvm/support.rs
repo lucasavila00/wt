@@ -124,11 +124,11 @@ impl KvmHarness {
                 memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                git_user_name: "WT E2E".to_owned(),
+                git_user_email: "wt@example.invalid".to_owned(),
                 application: CreateApplication::Devcontainer {
                     source: self.git.url(),
                     git_base: "main".into(),
-                    git_user_name: "WT E2E".to_owned(),
-                    git_user_email: "wt@example.invalid".to_owned(),
                 },
             }),
         ) else {
@@ -159,6 +159,8 @@ impl KvmHarness {
                 memory_mib: 4096,
                 disk_gib: 32,
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
+                git_user_name: "WT E2E".to_owned(),
+                git_user_email: "wt@example.invalid".to_owned(),
                 application: CreateApplication::Host {
                     user_data: user_data.to_owned(),
                 },

@@ -48,10 +48,10 @@ replaces an existing recipe.
 Host setup does not receive the workstation SSH agent. Configured provider Git
 operations use the gateway.
 
-Devcontainer creation also requires an SSH-form Git source and global Git
-`user.name` and `user.email`. The client stops before contacting the server when
-either author value is missing. `wt code` requires the local `code` CLI and VS
-Code Remote-SSH extension.
+Every retained world receives the workstation's global Git `user.name` and
+`user.email`; the client stops before contacting the server when either value is
+missing. Devcontainer creation also requires an SSH-form Git source. `wt code`
+requires the local `code` CLI and VS Code Remote-SSH extension.
 
 ## Managed SSH
 

@@ -49,6 +49,12 @@ enum ImageCommand {
         #[arg(long)]
         config: PathBuf,
     },
+    /// Verify installed golden images and provenance without changing the host.
+    Verify {
+        /// Path to the install input TOML.
+        #[arg(long)]
+        config: PathBuf,
+    },
 }
 
 fn main() {
@@ -78,6 +84,9 @@ fn run() -> Result<()> {
         SetupCommand::Image {
             command: ImageCommand::Rebuild { config },
         } => server::image(&runner, &config, true).context("image preparation stopped")?,
+        SetupCommand::Image {
+            command: ImageCommand::Verify { config },
+        } => server::verify_images(&config).context("image verification stopped")?,
     }
     Ok(())
 }

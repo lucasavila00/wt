@@ -1,23 +1,22 @@
 mod containers;
-mod identity;
-mod shared_folders;
 mod support;
 
 use crate::bootstrap::BootstrapPolicy;
 use crate::devcontainer;
 use crate::{ProvisionSpec, World};
-use identity::{endpoint_identity_error, host_keys_match, normalized_host_keys};
 use serde::Deserialize;
 use std::io::Write;
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use support::{context, log_line, require_and_read, verify_registry_cache};
-use wt_command::cmd;
 use wt_provider::{
-    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, SharedFolderMount,
-    WorkerError, WriteFileRequest,
+    CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
+    WriteFileRequest,
 };
+use wt_retained::{GuestAccess, RetainedConfig};
+
+use crate::devcontainer::APP_SSH_PORT;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/world/devcontainer/install-guest.sh");
@@ -35,16 +34,11 @@ pub struct ProvisionerConfig {
     pub app_pane_binary: PathBuf,
     pub app_info_binary: PathBuf,
     pub app_proxy_binary: PathBuf,
-    pub agent_git_relay_binary: PathBuf,
-    pub agent_git_remote_binary: PathBuf,
-    pub agent_git_cli_binary: PathBuf,
-    pub agent_git_provider_hosts: Vec<String>,
-    pub agent_git_vsock_port: u32,
     pub registry_cache_url: String,
     pub registry_cache_ca_file: PathBuf,
     pub recipe_timeout: Duration,
     pub bootstrap: BootstrapPolicy,
-    pub shared_folders: Vec<SharedFolderMount>,
+    pub retained: RetainedConfig,
 }
 
 #[derive(Clone)]
@@ -54,9 +48,6 @@ pub struct WorldProvisioner {
     app_pane: Vec<u8>,
     app_info: Vec<u8>,
     app_proxy: Vec<u8>,
-    agent_git_relay: Vec<u8>,
-    agent_git_remote: Vec<u8>,
-    agent_git_cli: Vec<u8>,
     registry_cache_ca: Vec<u8>,
 }
 
@@ -80,13 +71,7 @@ impl WorldProvisioner {
         let app_pane = require_and_read(&config.app_pane_binary, "guest app-pane binary")?;
         let app_info = require_and_read(&config.app_info_binary, "guest app-info binary")?;
         let app_proxy = require_and_read(&config.app_proxy_binary, "guest app-proxy binary")?;
-        let agent_git_relay =
-            require_and_read(&config.agent_git_relay_binary, "agent Git relay binary")?;
-        let agent_git_remote = require_and_read(
-            &config.agent_git_remote_binary,
-            "agent Git remote helper binary",
-        )?;
-        let agent_git_cli = require_and_read(&config.agent_git_cli_binary, "agent Git CLI binary")?;
+        config.retained.validate()?;
         let registry_cache_ca = require_and_read(
             &config.registry_cache_ca_file,
             "registry cache certificate authority",
@@ -97,9 +82,6 @@ impl WorldProvisioner {
             app_pane,
             app_info,
             app_proxy,
-            agent_git_relay,
-            agent_git_remote,
-            agent_git_cli,
             registry_cache_ca,
         })
     }
@@ -116,20 +98,14 @@ impl WorldProvisioner {
         let transport = machine.transport.as_ref();
         self.bootstrap(transport, spec, deadline, log)?;
 
-        let host_keys = self.read_host_keys(transport, deadline)?;
-        self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
+        let host_keys = wt_retained::read_host_keys(transport, deadline)?;
+        wt_retained::verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
         log_line(
             log,
             &format!("World {} is ready for setup over SSH.", spec.name),
         )?;
         Ok(World {
-            guest_ip: machine.guest_ip.clone(),
-            ssh: wt_api::SshAccess {
-                user: "wt".to_owned(),
-                host: machine.guest_ip.clone(),
-                port: 22,
-                host_keys,
-            },
+            access: GuestAccess::from_guest_ip(machine.guest_ip.clone(), host_keys),
             app_ssh: None,
         })
     }
@@ -146,8 +122,8 @@ impl WorldProvisioner {
         mode: InspectionMode,
     ) -> Result<World, WorkerError> {
         let transport = machine.transport.as_ref();
-        let host_keys = self.read_host_keys(transport, deadline)?;
-        self.verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
+        let host_keys = wt_retained::read_host_keys(transport, deadline)?;
+        wt_retained::verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
         let complete = guest::exec(
             transport,
             "/usr/bin/test",
@@ -169,27 +145,25 @@ impl WorldProvisioner {
             )?;
             Some(wt_api::AppSshAccess {
                 user: target.user,
-                port: devcontainer::APP_SSH_PORT,
+                port: APP_SSH_PORT,
                 host_keys,
             })
         } else {
             None
         };
         Ok(World {
-            guest_ip: machine.guest_ip.clone(),
-            ssh: wt_api::SshAccess {
-                user: "wt".to_owned(),
-                host: machine.guest_ip.clone(),
-                port: 22,
-                host_keys,
-            },
+            access: GuestAccess::from_guest_ip(machine.guest_ip.clone(), host_keys),
             app_ssh,
         })
     }
 
     pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
-        self.mount_shared_folders(machine.transport.as_ref(), deadline, &mut std::io::sink())?;
+        self.config.retained.mount_shared_folders(
+            machine.transport.as_ref(),
+            deadline,
+            &mut std::io::sink(),
+        )?;
         containers::start_all(machine.transport.as_ref(), deadline)?;
         loop {
             match self.inspect_with_deadline(machine, deadline, InspectionMode::RecoverAfterStart) {
@@ -204,6 +178,18 @@ impl WorldProvisioner {
                 }
             }
         }
+    }
+
+    pub(crate) fn mount_shared_folders_for(
+        &self,
+        machine: &Machine,
+        log: &mut dyn Write,
+    ) -> Result<(), WorkerError> {
+        self.config.retained.mount_shared_folders(
+            machine.transport.as_ref(),
+            Instant::now() + self.config.recipe_timeout,
+            log,
+        )
     }
 
     fn bootstrap(
@@ -251,24 +237,13 @@ impl WorldProvisioner {
             ));
         }
 
-        let mut authorized_keys = spec.ssh_authorized_keys.join("\n").into_bytes();
-        authorized_keys.push(b'\n');
-        let agent_git_providers =
-            format!("{}\n", self.config.agent_git_provider_hosts.join("\n")).into_bytes();
-        let agent_git_vsock_port = format!("{}\n", self.config.agent_git_vsock_port).into_bytes();
         for (suffix, contents) in [
-            ("-authorized-keys", authorized_keys.as_slice()),
             ("-registry-ca", self.registry_cache_ca.as_slice()),
             ("-app-shell", self.app_shell.as_slice()),
             ("-app-pane", self.app_pane.as_slice()),
             ("-app-info", self.app_info.as_slice()),
             ("-app-proxy", self.app_proxy.as_slice()),
-            ("-agent-git-relay", self.agent_git_relay.as_slice()),
-            ("-agent-git-remote", self.agent_git_remote.as_slice()),
-            ("-ag-git", self.agent_git_cli.as_slice()),
             ("-agent-git-hint", AGENT_GIT_HINT),
-            ("-agent-git-providers", agent_git_providers.as_slice()),
-            ("-agent-git-vsock-port", agent_git_vsock_port.as_slice()),
             ("-setup-world", SETUP_WORLD),
             ("-setup-world-root", SETUP_WORLD_ROOT),
         ] {
@@ -281,7 +256,6 @@ impl WorldProvisioner {
         for (name, contents) in [
             ("source", spec.source),
             ("git-base", spec.git_base),
-            ("git-grant", spec.git_grant),
             ("git-prefix", spec.git_prefix),
             ("git-user-name", spec.git_user_name),
             ("git-user-email", spec.git_user_email),
@@ -311,25 +285,29 @@ impl WorldProvisioner {
             "/bin/rm",
             &[
                 "-f",
-                "/tmp/wt-install-guest-authorized-keys",
                 "/tmp/wt-install-guest-registry-ca",
                 "/tmp/wt-install-guest-app-shell",
                 "/tmp/wt-install-guest-app-pane",
                 "/tmp/wt-install-guest-app-info",
                 "/tmp/wt-install-guest-app-proxy",
-                "/tmp/wt-install-guest-agent-git-relay",
-                "/tmp/wt-install-guest-agent-git-remote",
-                "/tmp/wt-install-guest-ag-git",
                 "/tmp/wt-install-guest-agent-git-hint",
-                "/tmp/wt-install-guest-agent-git-providers",
-                "/tmp/wt-install-guest-agent-git-vsock-port",
                 "/tmp/wt-install-guest-setup-world",
                 "/tmp/wt-install-guest-setup-world-root",
             ],
             deadline,
         );
         result?;
-        self.mount_shared_folders(transport, deadline, log)
+        self.config.retained.provision(
+            transport,
+            wt_retained::ProvisionSpec {
+                authorized_keys: spec.ssh_authorized_keys,
+                git_user_name: spec.git_user_name,
+                git_user_email: spec.git_user_email,
+                git_grant: spec.git_grant,
+            },
+            deadline,
+            log,
+        )
     }
 
     fn read_app_target(
@@ -385,21 +363,15 @@ impl WorldProvisioner {
             transport,
             "app SSH readiness",
             "/usr/bin/ssh-keyscan",
-            &[
-                "-T",
-                "5",
-                "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
-                &target.address,
-            ],
+            &["-T", "5", "-p", &APP_SSH_PORT.to_string(), &target.address],
             deadline,
         )?;
-        if !host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
+        if !wt_retained::host_keys_match(&expected, &String::from_utf8_lossy(&scanned)) {
             return Err(WorkerError::new(
                 "app SSH readiness: presented host keys do not match the per-world identity",
             ));
         }
-        let known_hosts = normalized_host_keys(&expected.join("\n"))
+        let known_hosts = wt_retained::normalized_host_keys(&expected.join("\n"))
             .into_iter()
             .map(|key| format!("wt-app {key}\n"))
             .collect::<String>();
@@ -418,7 +390,7 @@ impl WorldProvisioner {
             "/usr/bin/ssh",
             &[
                 "-p",
-                &devcontainer::APP_SSH_PORT.to_string(),
+                &APP_SSH_PORT.to_string(),
                 "-i",
                 "/var/lib/wt-app-ssh/session_identity",
                 "-o",
@@ -462,63 +434,6 @@ impl WorldProvisioner {
             return Err(WorkerError::new("app SSH host keys: no public keys"));
         }
         Ok(keys)
-    }
-
-    fn read_host_keys(
-        &self,
-        transport: &dyn GuestTransport,
-        deadline: Instant,
-    ) -> Result<Vec<String>, WorkerError> {
-        let output = guest::capture_phase(
-            transport,
-            "SSH host keys",
-            "/bin/sh",
-            &["-c", "cat /etc/ssh/ssh_host_*_key.pub"],
-            deadline,
-        )?;
-        let keys = String::from_utf8_lossy(&output)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if keys.is_empty() {
-            return Err(WorkerError::new(
-                "SSH host keys: guest returned no public host keys",
-            ));
-        }
-        Ok(keys)
-    }
-
-    fn verify_guest_ssh(
-        &self,
-        guest_ip: &str,
-        expected: &[String],
-        deadline: Instant,
-    ) -> Result<(), WorkerError> {
-        let address: SocketAddr = format!("{guest_ip}:22")
-            .parse()
-            .map_err(|error| context("parse guest SSH address", error))?;
-        loop {
-            if TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok() {
-                break;
-            }
-            if Instant::now() >= deadline {
-                return Err(WorkerError::new(
-                    "SSH readiness: timed out waiting for port 22",
-                ));
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        }
-        let output = cmd!("/usr/bin/ssh-keyscan", "-T", "5", "-p", "22", guest_ip)
-            .output()
-            .map_err(|error| context("scan guest SSH host keys", error))?;
-        let presented = String::from_utf8_lossy(&output.stdout);
-        if host_keys_match(expected, &presented) {
-            Ok(())
-        } else {
-            Err(endpoint_identity_error(guest_ip, expected, &presented))
-        }
     }
 }
 

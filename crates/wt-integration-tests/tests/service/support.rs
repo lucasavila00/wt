@@ -4,12 +4,14 @@ use std::sync::{
 };
 use tempfile::TempDir;
 use uuid::Uuid;
-use wt_api::{CreateApplication, CreateInstance, InstanceName, SshAccess, WorldKind};
+use wt_api::{CreateApplication, CreateInstance, InstanceName, WorldKind};
 use wt_provider::WorkerError;
 use wt_server::operations::Operations;
 use wt_server::service::{AgentGitGateway, Service};
 use wt_server::store::Store;
-use wt_server::worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
+use wt_server::worlds::{
+    GuestAccess, ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker,
+};
 
 #[derive(Clone, Default)]
 pub(crate) struct Worker {
@@ -137,7 +139,10 @@ impl WorldWorker for Worker {
         }
         let mut inspected = world(kind, self.complete);
         if self.changed_guest_identity {
-            inspected.ssh.host_keys = vec!["ssh-ed25519 AAAACHANGED guest".into()];
+            inspected.access = GuestAccess::from_guest_ip(
+                "192.0.2.2",
+                vec!["ssh-ed25519 AAAACHANGED guest".into()],
+            );
         }
         if self.changed_app_identity {
             let WorldApplication::Devcontainer { app_ssh } = &mut inspected.application else {
@@ -156,13 +161,7 @@ impl WorldWorker for Worker {
 
 fn world(kind: WorldKind, complete: bool) -> World {
     World {
-        guest_ip: "192.0.2.2".into(),
-        ssh: SshAccess {
-            user: "wt".into(),
-            host: "192.0.2.2".into(),
-            port: 22,
-            host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
-        },
+        access: GuestAccess::from_guest_ip("192.0.2.2", vec!["ssh-ed25519 AAAATEST guest".into()]),
         application: match kind {
             WorldKind::Devcontainer => WorldApplication::Devcontainer {
                 app_ssh: complete.then(|| wt_api::AppSshAccess {
@@ -186,11 +185,11 @@ pub(crate) fn create(name: &str) -> CreateInstance {
         memory_mib: 1024,
         disk_gib: 8,
         ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".into()],
+        git_user_name: "Test User".into(),
+        git_user_email: "test@example.invalid".into(),
         application: CreateApplication::Devcontainer {
             source: "git@example.test:repo.git".into(),
             git_base: "main".into(),
-            git_user_name: "Test User".into(),
-            git_user_email: "test@example.invalid".into(),
         },
     }
 }
@@ -202,6 +201,8 @@ pub(crate) fn create_host(name: &str, user_data: &str) -> CreateInstance {
         memory_mib: 1024,
         disk_gib: 8,
         ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".into()],
+        git_user_name: "Test User".into(),
+        git_user_email: "test@example.invalid".into(),
         application: CreateApplication::Host {
             user_data: user_data.into(),
         },

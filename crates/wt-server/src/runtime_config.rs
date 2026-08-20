@@ -236,32 +236,31 @@ impl ServerConfig {
     pub fn provisioner_config(
         &self,
         registry_cache_url: String,
+        retained: wt_retained::RetainedConfig,
     ) -> Result<ProvisionerConfig, String> {
         let bootstrap = self.bootstrap_policy()?;
         Ok(ProvisionerConfig {
             app_pane_binary: self.install.binary_dir.join("wt-app-pane"),
             app_info_binary: self.install.binary_dir.join("wt-app-info"),
             app_proxy_binary: self.install.binary_dir.join("wt-app-proxy"),
-            agent_git_relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
-            agent_git_remote_binary: self.install.binary_dir.join("git-remote-ag"),
-            agent_git_cli_binary: self.install.binary_dir.join("ag-git"),
-            agent_git_provider_hosts: self.agent_git_provider_hosts(),
-            agent_git_vsock_port: self.agent_git.vsock_port,
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
             bootstrap,
-            shared_folders: self.guest_shared_folders(),
+            retained,
         })
     }
 
-    pub fn host_agent_git_config(&self) -> wt_host::AgentGitConfig {
-        wt_host::AgentGitConfig {
-            relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
-            remote_binary: self.install.binary_dir.join("git-remote-ag"),
-            cli_binary: self.install.binary_dir.join("ag-git"),
-            provider_hosts: self.agent_git_provider_hosts(),
-            vsock_port: self.agent_git.vsock_port,
+    pub fn retained_config(&self) -> wt_retained::RetainedConfig {
+        wt_retained::RetainedConfig {
+            agent_git: wt_retained::AgentGitConfig {
+                relay_binary: self.install.binary_dir.join("wt-agent-git-relay"),
+                remote_binary: self.install.binary_dir.join("git-remote-ag"),
+                cli_binary: self.install.binary_dir.join("ag-git"),
+                provider_hosts: self.agent_git_provider_hosts(),
+                vsock_port: self.agent_git.vsock_port,
+            },
+            shared_folders: self.guest_shared_folders(),
         }
     }
 

@@ -15,30 +15,44 @@ phase "installing shared machine packages"
 phase "configuring shared machine services"
 systemctl enable --now qemu-guest-agent.service
 systemctl disable --now ssh.service ssh.socket
-if ! getent group wt >/dev/null; then
-    groupadd --gid 1001 wt
+if ! getent group "$WT_USER" >/dev/null; then
+    groupadd --gid "$WT_GID" "$WT_USER"
 fi
-if ! id wt >/dev/null 2>&1; then
-    useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash wt
+if ! id "$WT_USER" >/dev/null 2>&1; then
+    useradd --uid "$WT_UID" --gid "$WT_GID" --create-home \
+        --home-dir "$WT_HOME" --shell /bin/bash "$WT_USER"
 fi
-test "$(id -u wt)" = 1001
-test "$(id -g wt)" = 1001
+test "$(id -u "$WT_USER")" = "$WT_UID"
+test "$(id -g "$WT_USER")" = "$WT_GID"
+test "$(getent passwd "$WT_USER" | cut -d: -f6)" = "$WT_HOME"
 printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
 sysctl --system
 test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
 phase "installing shared terminal stack"
 /bin/sh /var/tmp/wt-install-terminal.sh
-install -d -m 0755 /usr/local/share /etc/skel/.byobu
+install -d -m 0755 /usr/local/share /usr/local/libexec
+printf "WT_USER='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
+    "$WT_USER" "$WT_UID" "$WT_GID" "$WT_HOME" \
+    > /usr/local/share/wt-retained-contract
+chmod 0644 /usr/local/share/wt-retained-contract
 install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf
-install -m 0644 /var/tmp/wt-tmux.conf /etc/skel/.byobu/.tmux.conf
-install -m 0644 /var/tmp/wt-byobu-color /etc/skel/.byobu/color
+install -m 0755 /var/tmp/wt-retained-access /usr/local/libexec/wt-retained-access
+install -m 0755 /var/tmp/wt-retained-git-author \
+    /usr/local/libexec/wt-retained-git-author
+install -m 0755 /var/tmp/wt-retained-agent-git /usr/local/libexec/wt-retained-agent-git
+install -m 0755 /var/tmp/wt-retained-mount-folders \
+    /usr/local/libexec/wt-retained-mount-folders
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
     /usr/local/share/wt-tmux.conf | sha256sum --check --strict
-printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
-    /etc/skel/.byobu/.tmux.conf | sha256sum --check --strict
-printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
-    /etc/skel/.byobu/color | sha256sum --check --strict
+printf '%s  %s\n' "$ACCESS_SHA256" \
+    /usr/local/libexec/wt-retained-access | sha256sum --check --strict
+printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
+    /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
+printf '%s  %s\n' "$AGENT_GIT_SHA256" \
+    /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
+printf '%s  %s\n' "$MOUNT_FOLDERS_SHA256" \
+    /usr/local/libexec/wt-retained-mount-folders | sha256sum --check --strict
 
 phase "installing $WT_IMAGE_KIND application stack"
 /bin/sh /var/tmp/wt-kind-image-build.sh
@@ -64,8 +78,9 @@ TERM=xterm-ghostty tput colors >/dev/null
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
     /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-shell
-printf 'kind=%s\nstatus=ready\nrecipe_version=%s\nwt_uid=1001\nwt_gid=1001\n' \
-    "$WT_IMAGE_KIND" "$WT_IMAGE_RECIPE_VERSION" > /var/lib/wt-image-result
+printf 'kind=%s\nstatus=ready\nrecipe_version=%s\nwt_uid=%s\nwt_gid=%s\n' \
+    "$WT_IMAGE_KIND" "$WT_IMAGE_RECIPE_VERSION" "$WT_UID" "$WT_GID" \
+    > /var/lib/wt-image-result
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result
 phase "$WT_IMAGE_KIND image ready; requesting shutdown"

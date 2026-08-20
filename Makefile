@@ -1,5 +1,7 @@
 .PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image
 
+KVM_INSTALL_CONFIG ?= examples/server-config/wt-server.kvm-e2e-install.toml
+
 bootstrap-server-user:
 	scripts/bootstrap-server-user
 
@@ -20,6 +22,7 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
+	cargo run --release -p wt-server-setup -- image verify --config "$(KVM_INSTALL_CONFIG)"
 	cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
 
 install-client:

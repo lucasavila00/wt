@@ -142,7 +142,7 @@ fn build_inner<R: Runner>(
 
     let spec = BuildSpec {
         name: BUILD_NAME,
-        kind: "host",
+        kind: ImageKind::Host,
         recipe_version: RECIPE_VERSION,
         recipe: HOST_IMAGE_BUILD,
     };
@@ -266,7 +266,7 @@ fn validate_packages(packages: &BTreeMap<String, String>) -> Result<()> {
     Ok(())
 }
 
-fn verify(
+pub(super) fn verify(
     input: &InstallInput,
     server: &ServerConfig,
     server_bytes: &[u8],
@@ -282,7 +282,7 @@ fn verify(
         || manifest.inputs
             != host_input_hashes(&BuildSpec {
                 name: BUILD_NAME,
-                kind: "host",
+                kind: ImageKind::Host,
                 recipe_version: RECIPE_VERSION,
                 recipe: HOST_IMAGE_BUILD,
             })

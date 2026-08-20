@@ -122,6 +122,27 @@ pub(crate) fn rebuild(
     host_image::build(runner, input, server, server_bytes, &source, &byobu)
 }
 
+pub(crate) fn verify(
+    input: &InstallInput,
+    server: &ServerConfig,
+    server_bytes: &[u8],
+) -> Result<()> {
+    let devcontainer_manifest = manifest_path(&server.image.devcontainer_path);
+    verify_installed_image(input, server, server_bytes, &devcontainer_manifest)?;
+    println!(
+        "Verified devcontainer golden image and provenance: {}",
+        server.image.devcontainer_path.display()
+    );
+
+    let host_manifest = manifest_path(&server.image.host_path);
+    host_image::verify(input, server, server_bytes, &host_manifest)?;
+    println!(
+        "Verified host golden image and provenance: {}",
+        server.image.host_path.display()
+    );
+    Ok(())
+}
+
 fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
     let path = Path::new("imgs").join(SOURCE_IMAGE_NAME);
     fs::create_dir_all("imgs").context("create imgs directory")?;
@@ -236,7 +257,7 @@ fn build_image_inner<R: Runner>(
     let recipe = ImageRecipe::new();
     let spec = BuildSpec {
         name: BUILD_NAME,
-        kind: "devcontainer",
+        kind: ImageKind::Devcontainer,
         recipe_version: recipe::RECIPE_VERSION,
         recipe: DEVCONTAINER_IMAGE_BUILD,
     };
@@ -371,7 +392,7 @@ pub(crate) fn verify_installed_image(
             != staged_input_hashes(
                 &BuildSpec {
                     name: BUILD_NAME,
-                    kind: "devcontainer",
+                    kind: ImageKind::Devcontainer,
                     recipe_version: recipe::RECIPE_VERSION,
                     recipe: DEVCONTAINER_IMAGE_BUILD,
                 },

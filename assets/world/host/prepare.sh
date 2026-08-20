@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+. /usr/local/share/wt-retained-contract
+
 state=/var/lib/wt-host
 
 service_diagnostics() {
@@ -20,25 +22,15 @@ case "${1:-}" in
             exit 1
         fi
         ;;
-    access)
-        if ! id wt >/dev/null 2>&1; then
-            getent group wt >/dev/null || groupadd --gid 1001 wt
-            useradd --uid 1001 --gid 1001 --create-home --shell /bin/bash wt
-        fi
-        test "$(id -u wt)" = 1001 && test "$(id -g wt)" = 1001 || {
-            echo 'wt must use uid=1001 and gid=1001' >&2
+    access-policy)
+        test "$(id -u "$WT_USER")" = "$WT_UID" && test "$(id -g "$WT_USER")" = "$WT_GID" || {
+            echo "image user $WT_USER must use uid=$WT_UID and gid=$WT_GID" >&2
             exit 1
         }
-        usermod --append --groups sudo wt
-        install -d -m 0700 -o wt -g wt /home/wt/.ssh
-        temporary=/home/wt/.ssh/authorized_keys.wt-new
-        cat > "$temporary"
-        chown wt:wt "$temporary"
-        chmod 0600 "$temporary"
-        mv -f "$temporary" /home/wt/.ssh/authorized_keys
+        usermod --append --groups sudo "$WT_USER"
         sudoers=/run/wt-host-sudoers.wt-new
         rm -f "$sudoers"
-        printf 'wt ALL=(ALL:ALL) NOPASSWD: ALL\n' > "$sudoers"
+        printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$WT_USER" > "$sudoers"
         chown root:root "$sudoers"
         chmod 0440 "$sudoers"
         visudo --check --file="$sudoers" >/dev/null
@@ -47,58 +39,7 @@ case "${1:-}" in
             echo "WT sudoers rule is empty after installation" >&2
             exit 1
         fi
-        runuser --user wt -- sudo --non-interactive true
-        ssh-keygen -A
-        if ! systemctl enable --now ssh.service; then
-            service_diagnostics ssh.service
-            exit 1
-        fi
-        ;;
-    agent-git)
-        vsock_port=$(cat /tmp/wt-host-agent-git-vsock-port)
-        case "$vsock_port" in
-            ''|*[!0-9]*) echo "invalid agent Git vsock port" >&2; exit 1 ;;
-        esac
-        install -m 0755 /tmp/wt-host-agent-git-relay /usr/local/bin/wt-agent-git-relay
-        install -m 0755 /tmp/wt-host-agent-git-remote /usr/local/bin/git-remote-ag
-        install -m 0755 /tmp/wt-host-ag-git /usr/local/bin/ag-git
-        install -d -m 0700 -o wt -g wt /var/lib/wt-agent-git
-        install -m 0600 -o wt -g wt /tmp/wt-host-agent-git-grant \
-            /var/lib/wt-agent-git/grant
-        while IFS= read -r host; do
-            test -n "$host" || continue
-            runuser --user wt -- git config --global --replace-all \
-                "url.ag::git@$host:.insteadOf" "git@$host:"
-            runuser --user wt -- git config --global --add \
-                "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
-            runuser --user wt -- git config --global --add \
-                "url.ag::git@$host:.insteadOf" "https://$host/"
-        done < /tmp/wt-host-agent-git-providers
-        cat > /etc/systemd/system/wt-agent-git-relay.service <<EOF
-[Unit]
-Description=WT agent Git relay
-
-[Service]
-Type=simple
-User=wt
-ExecStart=/usr/local/bin/wt-agent-git-relay --vsock-port $vsock_port
-Restart=on-failure
-RuntimeDirectory=wt-agent-git
-RuntimeDirectoryMode=0755
-RuntimeDirectoryPreserve=restart
-UMask=0077
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        rm -f /tmp/wt-host-agent-git-grant /tmp/wt-host-agent-git-relay \
-            /tmp/wt-host-agent-git-remote /tmp/wt-host-ag-git \
-            /tmp/wt-host-agent-git-providers /tmp/wt-host-agent-git-vsock-port
-        systemctl daemon-reload
-        if ! systemctl enable --now wt-agent-git-relay.service; then
-            service_diagnostics wt-agent-git-relay.service
-            exit 1
-        fi
+        runuser --user "$WT_USER" -- sudo --non-interactive true
         ;;
     user-data)
         install -d -m 0700 -o root -g root "$state"
@@ -113,16 +54,16 @@ EOF
         ;;
     remove-key)
         key=$(cat)
-        file=/home/wt/.ssh/authorized_keys
+        file=$WT_HOME/.ssh/authorized_keys
         temporary=$file.wt-readiness
         grep -Fvx -- "$key" "$file" > "$temporary"
-        chown wt:wt "$temporary"
+        chown "$WT_USER:$WT_USER" "$temporary"
         chmod 0600 "$temporary"
         mv -f "$temporary" "$file"
         sync
         ;;
     *)
-        echo "usage: wt-host-prepare wait|access|agent-git|user-data|remove-key" >&2
+        echo "usage: wt-host-prepare wait|access-policy|user-data|remove-key" >&2
         exit 2
         ;;
 esac

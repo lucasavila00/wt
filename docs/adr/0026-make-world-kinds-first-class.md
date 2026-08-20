@@ -5,7 +5,8 @@
 - Amends: [ADR 0016](0016-keep-qemu-and-remove-redundant-world-boot-work.md),
   [ADR 0023](0023-run-github-actions-jobs-in-ephemeral-kvm-guests.md), and
   [ADR 0024](0024-use-a-shared-guest-registry.md)
-- Amended by: [ADR 0040](0040-stop-automatic-ssh-agent-forwarding.md)
+- Amended by: [ADR 0040](0040-stop-automatic-ssh-agent-forwarding.md) and
+  [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
 ## Decision
 
@@ -20,12 +21,15 @@ WT supports three world kinds:
 Kind is immutable and present in registry records, API values, and inventory.
 Creation requests are tagged by kind.
 
-The `devcontainer` contract remains unchanged.
+The devcontainer application contract remains unchanged; its retained guest
+foundation is shared with the host world as described by ADR 0043.
 
-A `host` world boots Ubuntu with OpenSSH, QEMU guest support, and Byobu. WT
-creates the `wt` login, stages the submitted cloud-init YAML, verifies SSH, and
-returns the world in `setup`. The boot seed contains only the data needed to
-bring up the machine and network. The image defers cloud-init's normal init
+A `host` world boots the retained Ubuntu image with the shared `wt` login,
+OpenSSH, QEMU guest support, and Byobu. The image owns `wt` at UID/GID
+`1001:1001`; host provisioning validates that contract, stages the submitted
+cloud-init YAML, verifies SSH, and returns the world in `setup`. The boot seed
+contains only the data needed to bring up the machine and network. The image
+defers cloud-init's normal init
 modules until setup; WT does not delete cloud-init state to run them again. WT
 leaves SSH disabled in the reusable image. After the boot-time cloud-init
 service finishes, WT generates the world's SSH host keys and enables SSH. Those

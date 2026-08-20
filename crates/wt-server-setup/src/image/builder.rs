@@ -24,11 +24,39 @@ const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/share
 const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../../assets/world/shared/finalize-image.sh");
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
+const CONFIGURE_ACCESS: &[u8] =
+    include_bytes!("../../../../assets/world/shared/configure-access.sh");
+const CONFIGURE_GIT_AUTHOR: &[u8] =
+    include_bytes!("../../../../assets/world/shared/configure-git-author.sh");
+const INSTALL_AGENT_GIT: &[u8] =
+    include_bytes!("../../../../assets/world/shared/install-agent-git.sh");
+const MOUNT_FOLDERS: &[u8] = include_bytes!("../../../../assets/world/shared/mount-folders.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
+
+#[derive(Clone, Copy)]
+pub(super) enum ImageKind {
+    Devcontainer,
+    Host,
+}
+
+impl ImageKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Devcontainer => "devcontainer",
+            Self::Host => "host",
+        }
+    }
+}
+
+impl std::fmt::Display for ImageKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
-    pub(super) kind: &'a str,
+    pub(super) kind: ImageKind,
     pub(super) recipe_version: u32,
     pub(super) recipe: &'a [u8],
 }
@@ -120,6 +148,10 @@ pub(super) fn run_kvm_build<R: Runner>(
     let kind_recipe = build_dir.join("kind-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
     let byobu_color = build_dir.join("byobu-color");
+    let configure_access = build_dir.join("configure-access.sh");
+    let configure_git_author = build_dir.join("configure-git-author.sh");
+    let install_agent_git = build_dir.join("install-agent-git.sh");
+    let mount_folders = build_dir.join("mount-folders.sh");
 
     println!("Preparing temporary {} KVM build disk...", spec.kind);
     runner.run(
@@ -146,12 +178,17 @@ pub(super) fn run_kvm_build<R: Runner>(
 
     fs::write(
         &environment,
-        recipe::build_environment(
-            spec.kind,
-            spec.recipe_version,
-            &sha_bytes(TMUX_CONFIG),
-            &sha_bytes(BYOBU_COLOR),
-        ),
+        recipe::BuildEnvironment {
+            kind: spec.kind.as_str(),
+            recipe_version: spec.recipe_version,
+            tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
+            byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
+            access_sha256: &sha_bytes(CONFIGURE_ACCESS),
+            git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
+            agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
+            mount_folders_sha256: &sha_bytes(MOUNT_FOLDERS),
+        }
+        .render(),
     )
     .context("write image build environment")?;
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
@@ -160,6 +197,11 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&kind_recipe, spec.recipe).context("write kind image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
+    fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
+    fs::write(&configure_git_author, CONFIGURE_GIT_AUTHOR)
+        .context("write shared guest Git author setup")?;
+    fs::write(&install_agent_git, INSTALL_AGENT_GIT).context("write shared agent Git setup")?;
+    fs::write(&mount_folders, MOUNT_FOLDERS).context("write shared folder mount setup")?;
 
     let mut customize = Command::new("sudo");
     customize.arg("virt-customize").arg("-a").arg(&paths.disk);
@@ -178,6 +220,19 @@ pub(super) fn run_kvm_build<R: Runner>(
         (kind_recipe.as_path(), "/var/tmp/wt-kind-image-build.sh"),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
         (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
+        (configure_access.as_path(), "/var/tmp/wt-retained-access"),
+        (
+            configure_git_author.as_path(),
+            "/var/tmp/wt-retained-git-author",
+        ),
+        (
+            install_agent_git.as_path(),
+            "/var/tmp/wt-retained-agent-git",
+        ),
+        (
+            mount_folders.as_path(),
+            "/var/tmp/wt-retained-mount-folders",
+        ),
     ] {
         customize
             .arg("--upload")
@@ -245,8 +300,11 @@ pub(super) fn run_kvm_build<R: Runner>(
     )?;
     validate_result_metadata(&marker_metadata)?;
     let expected = format!(
-        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid=1001\nwt_gid=1001\n",
-        spec.kind, spec.recipe_version
+        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid={}\nwt_gid={}\n",
+        spec.kind.as_str(),
+        spec.recipe_version,
+        wt_retained::GUEST_UID,
+        wt_retained::GUEST_GID,
     );
     if marker != expected {
         bail!(
@@ -273,7 +331,14 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     )?;
     println!("Sysprepping and sanitizing reusable image...");
     runner.run(
-        cmd!("sudo", "virt-sysprep", "-a", &paths.disk),
+        cmd!(
+            "sudo",
+            "virt-sysprep",
+            "-a",
+            &paths.disk,
+            "--operations",
+            "defaults,-user-account"
+        ),
         "sysprep reusable image",
     )?;
     let finalizer = paths.dir.join("finalize-image.sh");
@@ -290,6 +355,11 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
             format!(
                 "{}:/var/tmp/wt-image-build.env",
                 paths.dir.join("build.env").display()
+            ),
+            "--upload",
+            format!(
+                "{}:/var/tmp/wt-byobu-color",
+                paths.dir.join("byobu-color").display()
             ),
             "--run",
             &finalizer
@@ -332,6 +402,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     if ssh_files.lines().any(|name| name.starts_with("ssh_host_")) {
         bail!("reusable image retained SSH host keys");
     }
+    verify_retained_guest_contract(runner, &paths.disk)?;
     let tmux_sha256 = runner
         .text(
             cmd!(
@@ -355,12 +426,17 @@ pub(super) fn staged_input_hashes(
     spec: &BuildSpec<'_>,
     extra_inputs: &[(&str, &[u8])],
 ) -> BTreeMap<String, String> {
-    let environment = recipe::build_environment(
-        spec.kind,
-        spec.recipe_version,
-        &sha_bytes(TMUX_CONFIG),
-        &sha_bytes(BYOBU_COLOR),
-    );
+    let environment = recipe::BuildEnvironment {
+        kind: spec.kind.as_str(),
+        recipe_version: spec.recipe_version,
+        tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
+        byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
+        access_sha256: &sha_bytes(CONFIGURE_ACCESS),
+        git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
+        agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
+        mount_folders_sha256: &sha_bytes(MOUNT_FOLDERS),
+    }
+    .render();
     let mut inputs = BTreeMap::from([
         (
             "/var/tmp/wt-byobu.deb".to_owned(),
@@ -389,6 +465,22 @@ pub(super) fn staged_input_hashes(
         ("/var/tmp/wt-tmux.conf".to_owned(), sha_bytes(TMUX_CONFIG)),
         ("/var/tmp/wt-byobu-color".to_owned(), sha_bytes(BYOBU_COLOR)),
         (
+            "/var/tmp/wt-retained-access".to_owned(),
+            sha_bytes(CONFIGURE_ACCESS),
+        ),
+        (
+            "/var/tmp/wt-retained-git-author".to_owned(),
+            sha_bytes(CONFIGURE_GIT_AUTHOR),
+        ),
+        (
+            "/var/tmp/wt-retained-agent-git".to_owned(),
+            sha_bytes(INSTALL_AGENT_GIT),
+        ),
+        (
+            "/var/tmp/wt-retained-mount-folders".to_owned(),
+            sha_bytes(MOUNT_FOLDERS),
+        ),
+        (
             "offline:/wt-finalize-image.sh".to_owned(),
             sha_bytes(FINALIZE_IMAGE),
         ),
@@ -411,6 +503,88 @@ pub(super) fn staged_input_hashes(
         inputs.insert((*path).to_owned(), sha_bytes(bytes));
     }
     inputs
+}
+
+fn verify_retained_guest_contract(runner: &impl Runner, disk: &Path) -> Result<()> {
+    let contract = runner.text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            disk,
+            "/usr/local/share/wt-retained-contract"
+        ),
+        "inspect finalized retained guest contract",
+    )?;
+    let expected_contract = format!(
+        "WT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\n",
+        wt_retained::GUEST_USER,
+        wt_retained::GUEST_UID,
+        wt_retained::GUEST_GID,
+        wt_retained::GUEST_HOME,
+    );
+    if contract != expected_contract {
+        bail!("finalized image retained guest contract differs from policy");
+    }
+
+    let passwd = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/etc/passwd"),
+        "inspect finalized guest users",
+    )?;
+    let expected_user = format!(
+        "{}:x:{}:{}:",
+        wt_retained::GUEST_USER,
+        wt_retained::GUEST_UID,
+        wt_retained::GUEST_GID
+    );
+    let expected_home = format!(":{}:", wt_retained::GUEST_HOME);
+    if !passwd
+        .lines()
+        .any(|line| line.starts_with(&expected_user) && line.contains(&expected_home))
+    {
+        bail!("finalized image does not contain the required retained guest user");
+    }
+
+    let color = runner.output(cmd!(
+        "sudo",
+        "virt-cat",
+        "-a",
+        disk,
+        format!("{}/.byobu/color", wt_retained::GUEST_HOME)
+    ))?;
+    if !color.status.success() || color.stdout != BYOBU_COLOR {
+        bail!("finalized image retained guest Byobu color differs from policy");
+    }
+    let listing = runner.text(
+        cmd!(
+            "sudo",
+            "virt-ls",
+            "--long",
+            "--recursive",
+            "--uids",
+            "-a",
+            disk,
+            wt_retained::GUEST_HOME
+        ),
+        "inspect finalized retained guest home",
+    )?;
+    let color_path = format!("{}/.byobu/color", wt_retained::GUEST_HOME);
+    let fields = listing
+        .lines()
+        .find(|line| line.ends_with(&format!(" {color_path}")))
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .unwrap_or_default();
+    if fields.len() < 6
+        || fields[0] != "-"
+        || fields[1] != "0644"
+        || fields[3] != wt_retained::GUEST_UID.to_string()
+        || fields[4] != wt_retained::GUEST_GID.to_string()
+    {
+        bail!(
+            "finalized retained guest Byobu color must be owned by the guest user with mode 0644"
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn validate_result_metadata(listing: &str) -> Result<()> {

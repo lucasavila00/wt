@@ -1,7 +1,8 @@
 use std::io::Write;
 use uuid::Uuid;
-use wt_api::{AppSshAccess, SshAccess, WorldKind};
+use wt_api::{AppSshAccess, WorldKind};
 use wt_provider::WorkerError;
+pub use wt_retained::GuestAccess;
 
 pub enum ProvisionSpec<'a> {
     Devcontainer(wt_devcontainer::ProvisionSpec<'a>),
@@ -10,8 +11,7 @@ pub enum ProvisionSpec<'a> {
 
 #[derive(Clone, Debug)]
 pub struct World {
-    pub guest_ip: String,
-    pub ssh: SshAccess,
+    pub access: GuestAccess,
     pub application: WorldApplication,
 }
 
@@ -122,8 +122,7 @@ where
 impl From<wt_devcontainer::World> for World {
     fn from(world: wt_devcontainer::World) -> Self {
         Self {
-            guest_ip: world.guest_ip,
-            ssh: world.ssh,
+            access: world.access,
             application: WorldApplication::Devcontainer {
                 app_ssh: world.app_ssh,
             },
@@ -134,8 +133,7 @@ impl From<wt_devcontainer::World> for World {
 impl From<wt_host::World> for World {
     fn from(world: wt_host::World) -> Self {
         Self {
-            guest_ip: world.guest_ip,
-            ssh: world.ssh,
+            access: world.access,
             application: WorldApplication::Host {
                 setup_complete: world.setup_complete,
             },

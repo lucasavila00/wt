@@ -298,11 +298,11 @@ mod tests {
         };
         let error = ApiError::new(
             wt_api::ErrorCode::UnsupportedProtocol,
-            "unsupported protocol version 2; expected 1",
+            "unsupported protocol version 3; expected 2",
         );
         insta::assert_snapshot!(rejection(&context, &error).diagnostic("error"), @r###"
         error: context lab could not be queried: server rejected the request
-          unsupported protocol: unsupported protocol version 2; expected 1
+          unsupported protocol: unsupported protocol version 3; expected 2
           hint: install protocol-compatible `wt` and `wt-server` versions on wt-lab
         "###);
     }
