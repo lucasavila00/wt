@@ -142,6 +142,25 @@ fn one_shortcut_can_open_the_shared_host_form() -> Result<()> {
 }
 
 #[test]
+fn world_form_receives_field_navigation_keys() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("dev")?
+        .press(Key::Enter)?
+        .press(Key::Down)?
+        .type_text("arrow-name")?
+        .press(Key::Enter)?
+        .wait_for_text("git@example.com:team/repository.git")?
+        .press(Key::Up)?
+        .press(Key::Down)?;
+    Ok(())
+}
+
+#[test]
 fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;

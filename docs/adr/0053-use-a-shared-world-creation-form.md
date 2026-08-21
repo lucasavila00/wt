@@ -24,10 +24,11 @@ does not own terminal setup, rendering, transport calls, or post-create
 navigation. Protocol types and validators remain the source of truth; the UI
 does not duplicate creation rules.
 
-`Tab` and `Shift-Tab` move focus, selector arrows change options, and `Enter`
-advances or confirms. `Escape` cancels. While the form is active it owns these
-keys before activity navigation. `F5` only toggles the shell control layer and
-does not cancel the form; reopening it restores the form state. `F6` exits.
+`Up`, `Down`, `Tab`, and `Shift-Tab` move focus. `Left` and `Right` change a
+selector, and `Enter` advances or confirms. `Escape` cancels. While the form is
+active it owns these keys before activity navigation. `F5` only toggles the
+shell control layer and does not cancel the form; reopening it restores the form
+state. `F6` exits.
 
 Confirmation produces the existing typed `CreateInstance` request. In
 `wt shell`, creation runs outside the render/input loop and reports progress and
