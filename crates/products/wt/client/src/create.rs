@@ -14,7 +14,6 @@ use wt_client::config::ClientConfig;
 use wt_control_protocol::{Capacity, CapacityResource, Instance, InstanceName};
 
 use crate::git_author::read_git_author;
-use crate::host;
 
 mod form;
 mod task;
@@ -24,11 +23,6 @@ use task::{Task, TaskEvent};
 
 const INPUT_POLL: Duration = Duration::from_millis(50);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
-
-#[derive(Clone, Debug)]
-pub(crate) enum Kind {
-    Host(host::Input),
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Created {
@@ -163,11 +157,11 @@ impl Flow {
     }
 }
 
-pub(crate) fn run(config: &ClientConfig, kind: Kind) -> Result<Created> {
+pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
-    let mut flow = prepare(config, kind)?;
+    let mut flow = prepare(config)?;
     let _signals = install_cancel_handlers()?;
     let mut terminal = ratatui::init();
     let result = run_loop(&mut terminal, &mut flow, config);
@@ -175,10 +169,10 @@ pub(crate) fn run(config: &ClientConfig, kind: Kind) -> Result<Created> {
     result
 }
 
-pub(crate) fn prepare(config: &ClientConfig, kind: Kind) -> Result<Flow> {
+pub(crate) fn prepare(config: &ClientConfig) -> Result<Flow> {
     let author = read_git_author()?;
     let keys = discover_public_keys()?;
-    Form::new(config, kind, author, keys).map(Flow::new)
+    Form::new(config, author, keys).map(Flow::new)
 }
 
 fn run_loop(

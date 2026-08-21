@@ -3,10 +3,10 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use wt_control_protocol::{
-    ApiError, Capacity, CapacityResource, CreateApplication, CreateInstance, ErrorCode, Instance,
-    InstanceApplication, InstanceStatus, Operation, Response,
+    ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
+    Operation, Response,
 };
-use wt_retained_worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
+use wt_retained_worlds::{ProvisionSpec, World, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod codex;
@@ -88,8 +88,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
         wt_control_protocol::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
-        let CreateApplication::Host { user_data } = &request.application;
-        wt_retained_worlds::host::validate_user_data(user_data)
+        wt_retained_worlds::host::validate_user_data(include_str!(
+            "../../../../../assets/client/cloud-init.yaml"
+        ))
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
@@ -157,14 +158,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
-                application: InstanceApplication::Host,
             },
             backend_id,
             disk_id,
             setup_fingerprint,
-            application: wt_workload_registry::StoredApplication::Host {
-                gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
-            },
+            gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
         if let Err(error) = self
             .store
@@ -178,23 +176,21 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(map_store_error(error));
         }
 
-        let spec = ProvisionSpec::Host(wt_retained_worlds::host::ProvisionSpec {
+        let spec = ProvisionSpec {
             backend_id: &stored.backend_id,
             disk_id,
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
             ssh_authorized_keys: &request.ssh_authorized_keys,
-            user_data,
             git_grant: &grant.as_ref().expect("host grant").token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
-        });
+        };
         let result = self.worker.provision(spec, &mut std::io::stderr());
         match result {
             Ok(world) => {
-                let WorldApplication::Host { setup_complete } = world.application;
-                if setup_complete {
+                if world.setup_complete {
                     self.store
                         .mark_host_running(id, world.access.guest_ip(), world.access.ssh())
                         .map_err(map_store_error)?
@@ -275,7 +271,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         match self
             .worker
-            .inspect(stored.instance.kind(), &stored.backend_id)
+            .inspect(&stored.backend_id)
         {
             Ok(WorldInspection::Running(world)) => {
                 self.store
@@ -310,7 +306,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
 
     fn disk_usage(&self, stored: &StoredInstance) -> Result<u64, ApiError> {
         self.worker
-            .disk_usage(stored.instance.kind(), stored.disk_id)
+            .disk_usage(stored.disk_id)
             .map_err(|error| {
                 ApiError::new(
                     ErrorCode::Backend,
@@ -331,8 +327,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 .mark_error(stored.instance.id, "SSH host identity changed")
                 .map_err(map_store_error);
         }
-        let WorldApplication::Host { setup_complete } = &world.application;
-        if *setup_complete {
+        if world.setup_complete {
             self.store
                 .mark_host_running(
                     stored.instance.id,
@@ -348,8 +343,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     world.access.ssh(),
                 )
                 .map_err(map_store_error)
-        }
-            }
         }
     }
 
@@ -401,13 +394,13 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .map_err(map_store_error)?;
         let world = match self
             .worker
-            .start(stored.instance.kind(), &stored.backend_id)
+            .start(&stored.backend_id)
         {
             Ok(world) => world,
             Err(error) => {
                 if let Ok(WorldInspection::Stopped { reason }) = self
                     .worker
-                    .inspect(stored.instance.kind(), &stored.backend_id)
+                    .inspect(&stored.backend_id)
                 {
                     let disk_usage_bytes = self.disk_usage(&stored)?;
                     self.store
@@ -445,9 +438,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .try_lock(owner, name)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        let wt_workload_registry::StoredApplication::Host { gateway_grant_id } =
-            &stored.application;
-        let gateway_grant_id = gateway_grant_id.as_ref();
+        let gateway_grant_id = stored.gateway_grant_id.as_ref();
         if let Some(gateway_grant_id) = gateway_grant_id {
             self.gateway
                 .revoke(gateway_grant_id)
@@ -458,7 +449,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .map_err(map_store_error)?;
         if let Err(error) =
             self.worker
-                .destroy(stored.instance.kind(), &stored.backend_id, stored.disk_id)
+                .destroy(&stored.backend_id, stored.disk_id)
         {
             let message = error.to_string();
             self.store
@@ -475,11 +466,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
 
 fn retryable_create(instance: &Instance) -> bool {
     matches!(
-        (&instance.application, instance.status),
-        (
-            InstanceApplication::Host,
-            InstanceStatus::Provisioning | InstanceStatus::Setup | InstanceStatus::Running
-        )
+        instance.status,
+        InstanceStatus::Provisioning | InstanceStatus::Setup | InstanceStatus::Running
     )
 }
 

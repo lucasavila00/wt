@@ -12,7 +12,6 @@ use wt_control_protocol::{ApiRequest, Operation, Response};
 
 mod create;
 mod git_author;
-mod host;
 mod reports;
 mod shell;
 
@@ -29,7 +28,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a world.
-    New(host::New),
+    New,
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -60,8 +59,8 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New(command) => {
-            let created = create::run(&config, command.into_kind()?)?;
+        Command::New => {
+            let created = create::run(&config)?;
             let context = created.context;
             let instance = created.instance;
             println!(

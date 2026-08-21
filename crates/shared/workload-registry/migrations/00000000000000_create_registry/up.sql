@@ -4,7 +4,6 @@ CREATE TABLE disks (
 
 CREATE TABLE guests (
     id           TEXT PRIMARY KEY NOT NULL,
-    kind         TEXT NOT NULL CHECK (kind IN ('host', 'github-ci')),
     backend_id   TEXT NOT NULL UNIQUE,
     disk_id      TEXT NOT NULL UNIQUE REFERENCES disks(id),
     vcpus        BIGINT NOT NULL CHECK (vcpus > 0),
@@ -26,13 +25,6 @@ CREATE TABLE worlds (
     ssh_host          TEXT,
     ssh_port          INTEGER,
     ssh_host_keys     TEXT NOT NULL,
+    gateway_grant_id  TEXT UNIQUE,
     UNIQUE (owner, name)
-);
-
-CREATE TABLE runners (
-    id               TEXT PRIMARY KEY NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
-    name             TEXT NOT NULL UNIQUE,
-    status           TEXT NOT NULL,
-    github_runner_id BIGINT UNIQUE,
-    last_error       TEXT
 );

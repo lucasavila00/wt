@@ -7,7 +7,6 @@ members = [
     "crates/products/wt/retained-worlds",
     "crates/products/wt/codex-integration",
     "crates/products/wt/server-installer",
-    "crates/products/gh-actions-runner/service",
     "crates/products/agent-tools/gateway",
     "crates/products/agent-tools/tools",
     "crates/products/git-proxy/service",

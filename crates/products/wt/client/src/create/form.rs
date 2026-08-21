@@ -7,7 +7,6 @@ use ratatui::Frame;
 use wt_client::config::ClientConfig;
 use wt_control_protocol::{CreateApplication, InstanceName};
 
-use super::Kind;
 use crate::git_author::GitAuthor;
 
 const DEFAULT_VCPUS: u32 = 2;
@@ -32,7 +31,6 @@ pub(crate) struct Input {
     pub(crate) ssh_authorized_keys: Vec<String>,
     pub(crate) git_user_name: String,
     pub(crate) git_user_email: String,
-    pub(crate) application: CreateApplication,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +57,6 @@ enum Field {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Form {
-    kind: Kind,
     contexts: Vec<String>,
     context: usize,
     name: String,
@@ -76,7 +73,6 @@ pub(crate) struct Form {
 impl Form {
     pub(crate) fn new(
         config: &ClientConfig,
-        kind: Kind,
         author: GitAuthor,
         keys: Vec<(String, String)>,
     ) -> anyhow::Result<Self> {
@@ -84,7 +80,6 @@ impl Form {
             anyhow::bail!("no contexts are configured");
         }
         Ok(Self {
-            kind,
             contexts: config
                 .contexts
                 .iter()
@@ -174,7 +169,7 @@ impl Form {
         frame.render_widget(
             Block::new()
                 .borders(Borders::ALL)
-                .title(format!("Create {} world", self.kind_name())),
+                .title("Create world"),
             area,
         );
         let inner = area.inner(Margin::new(2, 1));
@@ -262,8 +257,6 @@ impl Form {
 
     fn details(&self) -> String {
         let mut lines = Vec::new();
-        let Kind::Host(input) = &self.kind;
-        lines.push(format!("Cloud-init  {}", input.user_data_path.display()));
         lines.push(format!(
             "Git author  {} <{}>",
             self.author.name, self.author.email
@@ -273,14 +266,10 @@ impl Form {
     }
 
     fn summary(&self) -> String {
-        let Kind::Host(input) = &self.kind;
-        let application = format!("Cloud-init  {}", input.user_data_path.display());
         let mut summary = format!(
-            "World       {}\nContext     {}\nKind        {}\n{}\nResources   {} CPU · {} MiB RAM · {} GiB disk\nGit author  {} <{}>\nSSH keys    {}",
+            "World       {}\nContext     {}\nResources   {} CPU · {} MiB RAM · {} GiB disk\nGit author  {} <{}>\nSSH keys    {}",
             self.name,
             self.contexts[self.context],
-            self.kind_name(),
-            application,
             number(&self.vcpus, DEFAULT_VCPUS),
             number(&self.memory, DEFAULT_MEMORY_MIB),
             number(&self.disk, DEFAULT_DISK_GIB),
@@ -318,10 +307,6 @@ impl Form {
         for field in self.fields() {
             self.validate(*field)?;
         }
-        let Kind::Host(input) = &self.kind;
-        let application = CreateApplication::Host {
-            user_data: input.user_data.clone(),
-        };
         Ok(Input {
             context: self.contexts[self.context].clone(),
             name: InstanceName::parse(self.name.clone()).map_err(|error| error.to_string())?,
@@ -331,7 +316,6 @@ impl Form {
             ssh_authorized_keys: self.keys.iter().map(|(key, _)| key.clone()).collect(),
             git_user_name: self.author.name.clone(),
             git_user_email: self.author.email.clone(),
-            application,
         })
     }
 
@@ -403,10 +387,6 @@ impl Form {
         } else {
             (self.context + 1) % self.contexts.len()
         };
-    }
-
-    fn kind_name(&self) -> &'static str {
-        "host"
     }
 
     fn fail(&mut self, error: String) -> Action {

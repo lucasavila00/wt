@@ -5,7 +5,6 @@ use std::path::Path;
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
-use wt_retained_worlds::Workers;
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
 use wt_server::operations::Operations;
@@ -70,7 +69,7 @@ fn run_server() -> Result<()> {
         retained,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = Workers::new(host_worker);
+    let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let owner = process_user()?;
 
@@ -90,7 +89,7 @@ fn run_server() -> Result<()> {
 fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
-    worker: &Workers<wt_retained_worlds::host::CompositeWorker<LibvirtProvider>>,
+    worker: &wt_retained_worlds::host::CompositeWorker<LibvirtProvider>,
     gateway: &wt_agent_tool_gateway::ControlClient,
     owner: &str,
     capacity_limit: wt_workload_registry::Resources,

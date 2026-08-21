@@ -29,7 +29,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             ));
         }
         self.worker
-            .stop(stored.instance.kind(), &stored.backend_id)
+            .stop(&stored.backend_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("stop world: {error}")))?;
         let disk_usage_bytes = self.disk_usage(&stored)?;
         self.store

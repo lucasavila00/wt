@@ -22,7 +22,6 @@ pub struct ProvisionSpec<'a> {
     pub vcpus: u32,
     pub disk_gib: u64,
     pub ssh_authorized_keys: &'a [String],
-    pub user_data: &'a str,
     pub git_grant: &'a str,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
@@ -39,19 +38,6 @@ pub enum WorldInspection {
     Missing,
     Running(World),
     Stopped { reason: Option<String> },
-}
-
-pub trait WorldWorker {
-    fn provision(
-        &self,
-        spec: &ProvisionSpec<'_>,
-        log: &mut dyn Write,
-    ) -> Result<World, WorkerError>;
-    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
-    fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
-    fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
-    fn stop(&self, backend_id: &str) -> Result<(), WorkerError>;
-    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
 }
 
 pub fn validate_user_data(user_data: &str) -> Result<(), String> {
@@ -107,10 +93,10 @@ impl<P> CompositeWorker<P> {
     }
 }
 
-impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
+impl<P: MachineProvider> crate::WorldWorker for CompositeWorker<P> {
     fn provision(
         &self,
-        spec: &ProvisionSpec<'_>,
+        spec: ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<World, WorkerError> {
         let readiness_key = ReadinessKey::generate()?;
@@ -150,7 +136,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         run_prepare(
             machine.transport.as_ref(),
             "user-data",
-            Some(spec.user_data.as_bytes()),
+            Some(include_bytes!("../../../../../assets/client/cloud-init.yaml")),
             deadline,
             log,
         )?;

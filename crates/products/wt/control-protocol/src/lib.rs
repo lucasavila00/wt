@@ -18,7 +18,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -61,31 +61,6 @@ pub struct CreateInstance {
     pub git_user_name: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     pub git_user_email: String,
-    #[serde(flatten)]
-    pub application: CreateApplication,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum CreateApplication {
-    Host {
-        #[serde(deserialize_with = "deserialize_nonempty_string")]
-        user_data: String,
-    },
-}
-
-impl CreateInstance {
-    pub fn kind(&self) -> WorldKind {
-        self.application.kind()
-    }
-}
-
-impl CreateApplication {
-    pub fn kind(&self) -> WorldKind {
-        match self {
-            Self::Host { .. } => WorldKind::Host,
-        }
-    }
 }
 
 pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
@@ -195,44 +170,6 @@ pub struct Instance {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshAccess>,
-    #[serde(flatten)]
-    pub application: InstanceApplication,
-}
-
-impl Instance {
-    pub fn kind(&self) -> WorldKind {
-        self.application.kind()
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum InstanceApplication {
-    Host,
-}
-
-impl InstanceApplication {
-    pub fn kind(&self) -> WorldKind {
-        match self {
-            Self::Host => WorldKind::Host,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WorldKind {
-    Host,
-    GithubCi,
-}
-
-impl fmt::Display for WorldKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Host => "host",
-            Self::GithubCi => "github-ci",
-        })
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -531,40 +468,6 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_setup_shape() {
-        let request = ApiRequest::new(Operation::Create(CreateInstance {
-            name: InstanceName::parse("repo-feature").unwrap(),
-            vcpus: 2,
-            memory_mib: 4096,
-            disk_gib: 32,
-            ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
-            git_user_name: "Lucas Ávila".to_owned(),
-            git_user_email: "lucaxx@gmail.com".to_owned(),
-            application: CreateApplication::Devcontainer {
-                source: "git@github.com:example/repo.git".to_owned(),
-                git_base: "devcontainer".to_owned(),
-            },
-        }));
-        assert_eq!(
-            serde_json::to_value(request).unwrap(),
-            serde_json::json!({
-                "protocol_version": 4,
-                "operation": "create",
-                "kind": "devcontainer",
-                "name": "repo-feature",
-                "source": "git@github.com:example/repo.git",
-                "git_base": "devcontainer",
-                "git_user_name": "Lucas Ávila",
-                "git_user_email": "lucaxx@gmail.com",
-                "vcpus": 2,
-                "memory_mib": 4096,
-                "disk_gib": 32,
-                "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"]
-            })
-        );
-    }
-
-    #[test]
     fn host_create_request_has_tagged_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("build-world").unwrap(),
@@ -603,20 +506,18 @@ mod tests {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 4,
             "operation": "create",
-            "kind": "devcontainer",
+            "kind": "host",
             "name": "repo-feature",
-            "source": "git@github.com:example/repo.git",
-            "git_base": "main",
+            "user_data": "#cloud-config\n",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 4,
             "operation": "create",
-            "kind": "devcontainer",
+            "kind": "host",
             "name": "repo-feature",
-            "source": "git@github.com:example/repo.git",
-            "git_base": "main",
+            "user_data": "#cloud-config\n",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
         }));
@@ -634,9 +535,8 @@ mod tests {
             ssh_authorized_keys: vec![key.to_owned()],
             git_user_name: "Test User".to_owned(),
             git_user_email: "test@example.invalid".to_owned(),
-            application: CreateApplication::Devcontainer {
-                source: "git@example.test:repo.git".to_owned(),
-                git_base: "main".to_owned(),
+            application: CreateApplication::Host {
+                user_data: "#cloud-config\n".to_owned(),
             },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));

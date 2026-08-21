@@ -17,7 +17,6 @@ diesel::table! {
     agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
-        kind -> Text,
         description -> Text,
     }
 }
@@ -43,23 +42,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    hosts (id) {
-        id -> Text,
-        gateway_grant_id -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    runners (id) {
-        id -> Text,
-        name -> Text,
-        status -> Text,
-        github_runner_id -> Nullable<BigInt>,
-        last_error -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     worlds (id) {
         id -> Text,
         owner -> Text,
@@ -72,14 +54,13 @@ diesel::table! {
         ssh_host -> Nullable<Text>,
         ssh_port -> Nullable<Integer>,
         ssh_host_keys -> Text,
+        gateway_grant_id -> Nullable<Text>,
     }
 }
 
 diesel::joinable!(guests -> disks (disk_id));
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(codex_session_reports -> worlds (world_id));
-diesel::joinable!(hosts -> worlds (id));
-diesel::joinable!(runners -> guests (id));
 diesel::joinable!(worlds -> guests (id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -87,7 +68,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     codex_session_reports,
     disks,
     guests,
-    hosts,
-    runners,
     worlds
 );
