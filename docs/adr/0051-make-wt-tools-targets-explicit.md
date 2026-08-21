@@ -1,4 +1,4 @@
-# ADR 0050: Make wt-tools targets explicit
+# ADR 0051: Make wt-tools targets explicit
 
 - Status: Accepted; Date: 2026-08-21
 
