@@ -241,6 +241,16 @@ fn agent_tools_transport_works_without_provider_credentials() {
             && host_pane.contains("WT host cloud-init complete."),
         "host cloud-init output was not preserved in Byobu:\n{host_pane}"
     );
+    run_host(
+        &harness,
+        &host_name,
+        concat!(
+            "test \"$(sudo grep -Fc \"running 'modules:init'\" /var/log/cloud-init-output.log)\" = 1; ",
+            "test \"$(sudo grep -Fc \"running 'modules:config'\" /var/log/cloud-init-output.log)\" = 1; ",
+            "test \"$(sudo grep -Fc \"running 'modules:final'\" /var/log/cloud-init-output.log)\" = 1",
+        ),
+        "verify host cloud-init output is not duplicated",
+    );
     let _ = host_setup.kill();
     let _ = host_setup.wait();
     start_host_byobu(&harness, &host_name);
