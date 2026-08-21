@@ -16,16 +16,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 instance: Box::new(stored.instance),
             });
         }
-        if !matches!(
-            stored.instance.status,
-            InstanceStatus::Setup | InstanceStatus::Running
-        ) {
+        if stored.instance.status != InstanceStatus::Running {
             return Err(ApiError::new(
                 ErrorCode::Conflict,
-                format!(
-                    "world is {}; expected setup or running",
-                    stored.instance.status
-                ),
+                format!("world is {}; expected running", stored.instance.status),
             ));
         }
         self.worker

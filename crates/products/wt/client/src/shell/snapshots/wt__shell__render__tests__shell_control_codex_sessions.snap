@@ -1,6 +1,5 @@
 ---
 source: crates/products/wt/client/src/shell/render_tests.rs
-assertion_line: 235
 expression: terminal.backend().buffer()
 ---
 Buffer {
@@ -8,13 +7,13 @@ Buffer {
     content: [
         "    │┌Codex sessions · Last updated 2026-08-21T20:00:00Z───────────────────────────────────────────┐",
         "▌ 󰚩 ││┌ 󰚩 NEEDS ATTENTION · 0s ago ───────────────────────────────────────────────────────────────┐│",
-        "    │││ars.dev · wt-app:%1 · session 123e4567                                                     ││",
-        "    │││/workspace/wt                                                                              ││",
+        "    │││ars.dev · wt-host:%1 · session 123e4567                                                    ││",
+        "    │││/home/wt/project                                                                           ││",
         "   │││Enter or click to open                                                                     ││",
         "    ││└───────────────────────────────────────────────────────────────────────────────────────────┘│",
         "    ││┌ 󰋗 UNKNOWN (compact) · 0s ago ─────────────────────────────────────────────────────────────┐│",
-        "    │││ars.compact · wt-app:%2 · session 223e4567                                                 ││",
-        "    │││/workspace/wt                                                                              ││",
+        "    │││ars.compact · wt-host:%2 · session 223e4567                                                ││",
+        "    │││/home/wt/project                                                                           ││",
         "    │││Enter or click to open                                                                     ││",
         "    ││└───────────────────────────────────────────────────────────────────────────────────────────┘│",
         "    ││┌ 󰈙 ROLLOUT ONLY · 0s ago ──────────────────────────────────────────────────────────────────┐│",

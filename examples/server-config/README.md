@@ -16,13 +16,11 @@ them and stores encrypted copies for the gateway; worlds never receive them.
 `agent_tools.vsock_port` is the private gateway endpoint shared by the server and
 world relays. Installed services use the configured value. Development and E2E
 processes may override it with `WT_AGENT_TOOL_VSOCK_PORT`.
-The `image` section names one retained-world image used by devcontainer and
-host worlds.
+The `image` section names the retained-world golden image.
 Before installation, the server's `wt` user must log in to Codex and own a
 regular, non-symlink `/home/wt/.codex/auth.json`. Codex integration has no
 configuration: every retained world receives the server-backed sessions and
-read-only login, and devcontainer worlds inject them into their primary
-container automatically.
+read-only login.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated

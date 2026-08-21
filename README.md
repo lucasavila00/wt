@@ -6,9 +6,9 @@
 > Rust test threads. Do not remove, bypass, or raise these limits: unrestricted
 > workspace test runs can consume every CPU on a shared host.
 
-WT models devcontainer, raw Ubuntu, and GitHub CI worlds on KVM. Devcontainer
-and host worlds are operator-ready; the GitHub CI service is still foundation
-code.
+WT runs retained Ubuntu worlds on KVM. Each world boots from a verified golden
+image with persistent storage, managed SSH, Codex integration, and scoped Git
+access.
 
 [Development and setup](./DEVELOPMENT.md)
 
@@ -16,7 +16,7 @@ code.
 
 | Document | Contents |
 |----------|----------|
-| [Documentation](./docs/README.md) | World kinds, guides, and internals |
+| [Documentation](./docs/README.md) | User guides and internals |
 | [Rust workspace](./WORKSPACE.md) | Packages and build commands |
 | [Development](./DEVELOPMENT.md) | Setup, examples, and checks |
 | [Examples](./examples/) | Client and server configuration samples |

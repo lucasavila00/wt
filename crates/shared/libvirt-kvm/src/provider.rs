@@ -42,22 +42,6 @@ pub struct MachineSpec {
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
-    pub cloud_init: NoCloudConfig,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoCloudConfig {
-    pub user_data: String,
-    pub vendor_data: String,
-}
-
-impl Default for NoCloudConfig {
-    fn default() -> Self {
-        Self {
-            user_data: "#cloud-config\n".to_owned(),
-            vendor_data: "#cloud-config\n".to_owned(),
-        }
-    }
 }
 
 #[derive(Clone)]

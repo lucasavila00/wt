@@ -52,7 +52,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 5; expected 4"
+            @"unsupported protocol version 6; expected 5"
         );
     }
 }

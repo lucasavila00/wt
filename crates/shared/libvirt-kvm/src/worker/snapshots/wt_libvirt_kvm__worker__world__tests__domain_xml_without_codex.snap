@@ -1,6 +1,5 @@
 ---
 source: crates/shared/libvirt-kvm/src/worker/world.rs
-assertion_line: 177
 expression: test_domain_xml(None)
 ---
 <domain type='kvm'>
@@ -22,12 +21,6 @@ expression: test_domain_xml(None)
       <driver name='qemu' type='qcow2'/>
       <source file='/var/lib/libvirt/images/wt/disks/world &amp; head.qcow2'/>
       <target dev='vda' bus='virtio'/>
-    </disk>
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='/var/lib/libvirt/images/wt/wt-0123456789abcdef0123456789abcdef/seed.img'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
     </disk>
     <interface type='network'>
       <mac address='52:54:00:01:23:45'/>

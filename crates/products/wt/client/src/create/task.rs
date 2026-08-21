@@ -102,7 +102,7 @@ fn run(
                 let instance = *instance;
                 if let Err(error) = crate::sync_complete_inventory(&config).with_context(|| {
                     format!(
-                        "world {}.{} was created, but setup was not entered\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
+                        "world {}.{} was created, but SSH was not opened\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
                         context_name, instance.name, context_name, instance.name
                     )
                 }) {

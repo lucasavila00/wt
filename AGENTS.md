@@ -79,7 +79,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   then source `$HOME/.cargo/env` and run
   `rustup component add rustfmt clippy`. Use `sudo apt-get` only for missing
   system prerequisites such as `curl`.
-- Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
+- Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git access, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-installer`. Real-system tests belong in `wt-end-to-end-tests`.
 - Use Rust for typed validation, state, and lifecycle decisions. Whole-flow POSIX

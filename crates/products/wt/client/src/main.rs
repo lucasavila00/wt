@@ -74,7 +74,7 @@ fn run() -> Result<()> {
                 .ssh
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
-            println!("\nStarting setup: ssh {}.{}", context, instance.name);
+            println!("\nOpening: ssh {}.{}", context, instance.name);
             println!("Direct: ssh {}.{}-direct", context, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;

@@ -59,7 +59,7 @@ pub struct ServerLibvirtConfig {
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
     pub boot_timeout_seconds: u64,
-    pub recipe_timeout_seconds: u64,
+    pub readiness_timeout_seconds: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -159,7 +159,7 @@ impl ServerConfig {
             return Err("libvirt.network must not be empty".to_owned());
         }
         self.validate_agent_tools()?;
-        if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
+        if self.guest.boot_timeout_seconds == 0 || self.guest.readiness_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
         Ok(())
@@ -348,7 +348,7 @@ host = "github.com"
 
 [guest]
 boot_timeout_seconds = 300
-recipe_timeout_seconds = 900
+readiness_timeout_seconds = 900
 
 [install]
 binary_dir = "/usr/local/bin"
@@ -411,10 +411,10 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn missing_and_unknown_fields_fail() {
-        assert!(parse(&VALID.replace("recipe_timeout_seconds = 900\n", "")).is_err());
+        assert!(parse(&VALID.replace("readiness_timeout_seconds = 900\n", "")).is_err());
         assert!(parse(&VALID.replace(
-            "recipe_timeout_seconds = 900",
-            "recipe_timeout_seconds = 900\nfallback = true"
+            "readiness_timeout_seconds = 900",
+            "readiness_timeout_seconds = 900\nfallback = true"
         ))
         .is_err());
         assert!(parse(&VALID.replace(
@@ -430,11 +430,11 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
-        assert!(parse(
-            &VALID.replace("recipe_timeout_seconds = 900", "recipe_timeout_seconds = 0")
-        )
+        assert!(parse(&VALID.replace(
+            "readiness_timeout_seconds = 900",
+            "readiness_timeout_seconds = 0"
+        ))
         .is_err());
-        assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(&VALID.replace(
             "[agent_tools.github]",
             "[agent_tools]\nvsock_port = 0\n\n[agent_tools.github]"

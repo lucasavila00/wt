@@ -18,7 +18,6 @@ wt-server-installer image rebuild --config PATH
 - Ubuntu, KVM, libvirt, directory, and permission setup.
 - Strict `/etc/wt/server.toml` and `/etc/wt/capacity.toml` materialization and
   drift checks.
-- Registry-cache installation and verification.
 - Retained-world image build, provenance, and verification.
 - `wt` and `wt-server` binary installation.
 - `wt-server.service` installation and startup under the installing user.
@@ -28,8 +27,8 @@ wt-server-installer image rebuild --config PATH
 `scripts/install-server` builds the setup tool and every installed WT
 executable except `wt-server` as static `x86_64-unknown-linux-musl` binaries.
 Setup verifies installed artifacts have no ELF interpreter or GLIBC symbol
-requirement. This covers the CLI, agent tool gateway and relay, Git helpers, and
-guest app helpers. `wt-server` is the deliberate exception: it is built for the
+requirement. This covers the CLI, agent tool gateway and relay, and Git helpers.
+`wt-server` is the deliberate exception: it is built for the
 Ubuntu GNU target because it links the host's supported libvirt ABI.
 
 `PATH` is the install input. It is not the runtime config. Setup accepts matching

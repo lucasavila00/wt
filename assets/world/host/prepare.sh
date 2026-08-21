@@ -3,23 +3,7 @@ set -eu
 
 . /usr/local/share/wt-retained-contract
 
-service_diagnostics() {
-    systemctl status --no-pager --full "$1" >&2 || true
-    journalctl --no-pager -u "$1" -n 100 >&2 || true
-}
-
 case "${1:-}" in
-    wait)
-        if ! systemctl start cloud-init.service; then
-            service_diagnostics cloud-init.service
-            exit 1
-        fi
-        if [ "$(systemctl show --property=SubState --value cloud-init.service)" != exited ]; then
-            echo "cloud-init.service did not finish its boot stage" >&2
-            service_diagnostics cloud-init.service
-            exit 1
-        fi
-        ;;
     access-policy)
         test "$(id -u "$WT_USER")" = "$WT_UID" && test "$(id -g "$WT_USER")" = "$WT_GID" || {
             echo "image user $WT_USER must use uid=$WT_UID and gid=$WT_GID" >&2
@@ -50,7 +34,7 @@ case "${1:-}" in
         sync
         ;;
     *)
-        echo "usage: wt-host-prepare wait|access-policy|remove-key" >&2
+        echo "usage: wt-host-prepare access-policy|remove-key" >&2
         exit 2
         ;;
 esac

@@ -56,7 +56,6 @@ impl GitFixture {
             guest_public_key,
         }
     }
-
 }
 
 pub(crate) fn generate_key(path: &Path, passphrase: &str) {

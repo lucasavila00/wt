@@ -5,15 +5,14 @@ consumers from at least two products.
 
 ```text
 crates/products/wt/{client,control-protocol,server,retained-worlds}
-crates/products/wt/{devcontainer-guest-tools,codex-integration,server-installer}
-crates/products/gh-actions-runner/service
+crates/products/wt/{codex-integration,server-installer}
 crates/products/agent-tools/{gateway,tools}
 crates/products/git-proxy/{service,installer}
 crates/shared/{libvirt-kvm,workload-registry,git-smart-protocol,installer-support}
 crates/tests/end-to-end
 ```
 
-`wt-retained-worlds` owns both retained-world lifecycles. `wt-libvirt-kvm`
+`wt-retained-worlds` owns retained host lifecycle. `wt-libvirt-kvm`
 owns the supported machine implementation and transport contract.
 `wt-workload-registry` owns all persisted workload state and capacity.
 

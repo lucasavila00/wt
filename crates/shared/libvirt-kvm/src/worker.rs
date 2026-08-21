@@ -144,42 +144,8 @@ impl LibvirtProvider {
         let paths = world::Paths::new(&self.config.worlds_dir, &spec.provider_id);
         fs::create_dir(&paths.directory)
             .map_err(|error| context("create machine directory", error))?;
-        fs::write(&paths.user_data, &spec.cloud_init.user_data)
-            .map_err(|error| context("write cloud-init user-data", error))?;
-        fs::write(&paths.vendor_data, &spec.cloud_init.vendor_data)
-            .map_err(|error| context("write cloud-init vendor-data", error))?;
-        fs::write(
-            &paths.meta_data,
-            format!(
-                "instance-id: {}\nlocal-hostname: {}\n",
-                spec.provider_id, spec.provider_id
-            ),
-        )
-        .map_err(|error| context("write cloud-init meta-data", error))?;
-        fs::write(&paths.network_config, world::network_config())
-            .map_err(|error| context("write cloud-init network-config", error))?;
-        run(
-            cmd!(
-                "cloud-localds",
-                "--network-config",
-                &paths.network_config,
-                "--vendor-data",
-                &paths.vendor_data,
-                &paths.seed,
-                &paths.user_data,
-                &paths.meta_data
-            ),
-            "create cloud-init seed",
-        )?;
         prepare_qemu_file_access(&paths, disk)?;
-        let xml = world::domain_xml(
-            &spec.provider_id,
-            &paths,
-            disk,
-            &self.config,
-            spec,
-            network_enabled,
-        );
+        let xml = world::domain_xml(&spec.provider_id, disk, &self.config, spec, network_enabled);
         let connection = LibvirtConnection::open()?;
         let domain = Domain::define_xml(&connection, &xml)
             .map_err(|error| context("define KVM domain", error))?;
@@ -353,11 +319,6 @@ fn prepare_qemu_file_access(
             "set machine directory permissions",
         ),
         (disk, 0o660, "set world disk permissions"),
-        (
-            paths.seed.as_path(),
-            0o640,
-            "set cloud-init seed permissions",
-        ),
     ] {
         fs::set_permissions(path, fs::Permissions::from_mode(mode))
             .map_err(|error| context(action, error))?;

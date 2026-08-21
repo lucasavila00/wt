@@ -236,7 +236,6 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
 fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &Path) -> Process {
     let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway"))
         .args([
-            "serve",
             "--control-socket",
             control.to_str().unwrap(),
             "--transport-socket",

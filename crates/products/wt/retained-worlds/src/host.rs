@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, NoCloudConfig,
-    ProviderId, RunRequest, WorkerError,
+    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId,
+    RunRequest, WorkerError,
 };
 
 const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
@@ -75,12 +75,10 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
                 memory_mib: spec.memory_mib,
                 vcpus: spec.vcpus,
                 disk_gib: spec.disk_gib,
-                cloud_init: NoCloudConfig::default(),
             },
             log,
         )?;
         let deadline = Instant::now() + self.readiness_timeout;
-        run_prepare(machine.transport.as_ref(), "wait", None, deadline, log)?;
         run_prepare(
             machine.transport.as_ref(),
             "access-policy",

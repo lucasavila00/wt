@@ -217,7 +217,7 @@ ssh_known_hosts_file = "/tmp/known_hosts"
 
 [guest]
 boot_timeout_seconds = 300
-recipe_timeout_seconds = 900
+readiness_timeout_seconds = 900
 
 [install]
 binary_dir = "/usr/local/bin"

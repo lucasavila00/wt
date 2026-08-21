@@ -181,7 +181,6 @@ pub struct SshAccess {
 #[serde(rename_all = "snake_case")]
 pub enum InstanceStatus {
     Provisioning,
-    Setup,
     Running,
     Stopped,
     Destroying,
@@ -192,7 +191,6 @@ impl fmt::Display for InstanceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Provisioning => "provisioning",
-            Self::Setup => "setup",
             Self::Running => "running",
             Self::Stopped => "stopped",
             Self::Destroying => "destroying",
@@ -208,7 +206,6 @@ impl FromStr for InstanceStatus {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "provisioning" => Ok(Self::Provisioning),
-            "setup" => Ok(Self::Setup),
             "running" => Ok(Self::Running),
             "stopped" => Ok(Self::Stopped),
             "destroying" => Ok(Self::Destroying),

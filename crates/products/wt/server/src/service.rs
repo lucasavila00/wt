@@ -254,7 +254,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {
         if !matches!(
             stored.instance.status,
-            InstanceStatus::Setup | InstanceStatus::Running | InstanceStatus::Stopped
+            InstanceStatus::Running | InstanceStatus::Stopped
         ) {
             return Ok(());
         }
@@ -349,10 +349,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
         self.reconcile(&stored)?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        if matches!(
-            stored.instance.status,
-            InstanceStatus::Setup | InstanceStatus::Running
-        ) {
+        if matches!(stored.instance.status, InstanceStatus::Running) {
             return Ok(Response::Instance {
                 instance: Box::new(stored.instance),
             });
@@ -434,7 +431,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
 fn retryable_create(instance: &Instance) -> bool {
     matches!(
         instance.status,
-        InstanceStatus::Provisioning | InstanceStatus::Setup | InstanceStatus::Running
+        InstanceStatus::Provisioning | InstanceStatus::Running
     )
 }
 

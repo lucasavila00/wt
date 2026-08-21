@@ -71,18 +71,8 @@ pub(in crate::image) fn staged_input_hashes(
             sha_bytes(FINALIZE_IMAGE),
         ),
         (
-            "nocloud:user-data".to_owned(),
-            sha_bytes(ImageRecipe::new().cloud_config().as_bytes()),
-        ),
-        (
-            "nocloud:meta-data".to_owned(),
-            sha_bytes(
-                format!(
-                    "instance-id: {}\nlocal-hostname: {}\n",
-                    spec.name, spec.name
-                )
-                .as_bytes(),
-            ),
+            "offline:/etc/netplan/50-wt.yaml".to_owned(),
+            sha_bytes(NETWORK_CONFIG),
         ),
     ]);
     for (path, bytes) in extra_inputs {

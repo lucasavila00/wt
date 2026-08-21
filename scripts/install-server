@@ -77,7 +77,6 @@ packages=( \
     libvirt-clients \
     virtiofsd \
     virtinst \
-    cloud-image-utils \
     libguestfs-tools \
     ovmf \
     libvirt-dev \

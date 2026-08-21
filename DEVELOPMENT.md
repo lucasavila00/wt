@@ -6,8 +6,7 @@ as root.
 
 ## Prepare a fresh server
 
-When the server has only root SSH access, run this from a root shell in a WT
-checkout:
+From a root shell in a WT checkout:
 
 ```text
 scripts/bootstrap-server-user
@@ -17,8 +16,8 @@ Reconnect as `wt` before continuing.
 
 ## Install the server
 
-The development config enables GitHub. Create its token file without putting
-the value in shell history:
+The development config enables GitHub access for the world gateway. Create its
+token file without putting the value in shell history:
 
 ```bash
 install -d -m 0700 ~/.config/wt/credentials
@@ -55,8 +54,7 @@ main SSH configuration is absent, `wt sync` creates it with the managed
 inventory include. It reports the required manual change instead of modifying
 an existing file.
 
-The example client config includes a local context and a remote `lab` context.
-For the remote context, add its server alias to `~/.ssh/config`:
+For the example remote `lab` context, add its server alias to `~/.ssh/config`:
 
 ```sshconfig
 Host wt-server
@@ -67,12 +65,6 @@ Host wt-server
 The server must allow TCP forwarding and reach its libvirt guest network. The
 client does not need a direct route to guest addresses.
 
-After CLI-only changes, rebuild and reinstall just the client:
-
-```bash
-scripts/install-client
-```
-
 ## Checks
 
 ```bash
@@ -80,51 +72,29 @@ scripts/cargo test --workspace
 make static
 ```
 
-`scripts/cargo` defaults Cargo build jobs and Rust test threads to half the
-available CPUs. Set `CARGO_BUILD_JOBS` or `RUST_TEST_THREADS` to override it.
-
-`scripts/cargo test --workspace` skips the ignored real-system KVM test. Run it
-only on a configured Ubuntu/KVM host:
+The repository-wide Cargo settings cap build jobs and test threads at four.
+The workspace test command skips the ignored real-system KVM test. Run it only
+on a configured Ubuntu/KVM host:
 
 ```bash
 make e2e-tests
 ```
 
-## Manual devcontainer test
+## Manual world test
+
+Choose the `local` context when prompted:
 
 ```bash
 wt new
 wt ls
-ssh jsdev-manual
-ssh jsdev-manual-vs
-ssh jsdev-manual-host git -C /workspace status
-wt rm jsdev-manual
+ssh WORLD-direct 'codex --version && wt-tools --help'
+ssh WORLD
+wt rm WORLD
 ```
 
-Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
-WT injects Codex and `wt-codex-integration` into the project devcontainer for its configured
-`remoteUser`, which is `wt`. The session uses the WT server's Codex login and
-shared conversation history.
-
-## Manual host test
-
-The client installer's default cloud-init recipe is the manual host-world test;
-choose the `local` context when prompted:
-
-```bash
-wt new host host-manual
-wt ls
-ssh host-manual-vs 'command -v diffo && codex --version'
-ssh host-manual
-wt rm host-manual
-```
-
-`wt new host` enters `host-manual` Byobu and runs cloud-init there.
-`host-manual-vs` is direct guest SSH. The retained image supplies Codex and WT
-uses the server's login.
-
-The devcontainer can run the normal Rust checks for this workspace. Neither
-environment can run the real KVM E2E from inside a world.
+`wt new` opens the world Byobu workspace. The `-direct` alias bypasses the
+workspace shell. The golden image supplies Codex and WT uses the server's
+login.
 
 ## Reset
 
@@ -135,10 +105,9 @@ make clear
 This destroys `wt-*` domains and removes worlds, gateway grants, the server
 database, generated runtime configuration, and generated SSH inventory. It
 keeps verified golden images, installed services and provider credentials,
-source credential files, downloaded image and package artifacts, and the
-registry cache. Rerun `scripts/install-server --config PATH` afterward.
+source credential files, and downloaded image and package artifacts. Rerun
+`scripts/install-server --config PATH` afterward.
 
 Use `make nuke` for a full teardown, including installed golden images,
-services and credentials, downloaded artifacts, and registry-cache state.
-Neither target removes source credential files or uninstalls packages and
-binaries.
+services and credentials, and downloaded artifacts. Neither target removes
+source credential files or uninstalls packages and binaries.

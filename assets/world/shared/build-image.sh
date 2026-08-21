@@ -63,12 +63,16 @@ phase "installing retained-world tools"
 phase "removing image-build dependencies"
 DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
     bison build-essential curl libevent-dev libncurses-dev pkg-config
+DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    cloud-init cloud-initramfs-copymods cloud-initramfs-dyn-netconf
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y
 apt-get clean
 ! command -v cc
 ! command -v gcc
 ! command -v g++
 ! command -v make
 ! command -v curl
+! command -v cloud-init
 
 phase "validating installed terminal tools"
 test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"
@@ -87,3 +91,5 @@ printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result
 phase "recipe complete; requesting VM shutdown"
+sync
+systemctl poweroff

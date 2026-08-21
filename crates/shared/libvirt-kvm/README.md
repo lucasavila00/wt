@@ -4,11 +4,11 @@ Production libvirt/KVM backend.
 
 ## Owns
 
-- Domain, network, independent qcow2 disk, and NoCloud seed lifecycle.
+- Domain, network, and independent qcow2 disk lifecycle.
 - Guest-agent readiness and bounded guest transport.
 - Machine inspection, start, stop, disk usage, and deletion.
 
-World-kind crates own application provisioning and readiness after the machine
-is available.
+The retained-world crate owns provisioning and readiness after the machine is
+available.
 
-Lifecycle: [KVM and NoCloud](../../docs/internals/kvm.md).
+Lifecycle: [KVM](../../docs/internals/kvm.md).

@@ -5,24 +5,12 @@ use std::path::{Path, PathBuf};
 
 pub(super) struct Paths {
     pub(super) directory: PathBuf,
-    pub(super) seed: PathBuf,
-    pub(super) user_data: PathBuf,
-    pub(super) vendor_data: PathBuf,
-    pub(super) meta_data: PathBuf,
-    pub(super) network_config: PathBuf,
 }
 
 impl Paths {
     pub(super) fn new(root: &Path, provider_id: &crate::ProviderId) -> Self {
         let directory = root.join(provider_id.as_str());
-        Self {
-            seed: directory.join("seed.img"),
-            user_data: directory.join("user-data"),
-            vendor_data: directory.join("vendor-data"),
-            meta_data: directory.join("meta-data"),
-            network_config: directory.join("network-config"),
-            directory,
-        }
+        Self { directory }
     }
 }
 
@@ -30,23 +18,16 @@ pub(super) fn disk_path(root: &Path, disk_id: uuid::Uuid) -> PathBuf {
     root.join("disks").join(format!("{disk_id}.qcow2"))
 }
 
-pub(super) fn network_config() -> &'static str {
-    "version: 2\nethernets:\n  primary:\n    match:\n      name: \"en*\"\n    dhcp4: true\n    dhcp-identifier: mac\n"
-}
-
 pub(super) fn domain_xml(
     provider_id: &crate::ProviderId,
-    paths: &Paths,
     disk_path: &Path,
     config: &MachineConfig,
     spec: &crate::MachineSpec,
     network_enabled: bool,
 ) -> String {
     let disk_path = disk_path.to_string_lossy();
-    let seed_path = paths.seed.to_string_lossy();
     let name = quick_xml::escape::escape(provider_id.as_str());
     let disk = quick_xml::escape::escape(disk_path.as_ref());
-    let seed = quick_xml::escape::escape(seed_path.as_ref());
     let network = quick_xml::escape::escape(&config.network);
     let architecture = quick_xml::escape::escape(crate::GUEST_ARCHITECTURE);
     let machine = quick_xml::escape::escape(crate::GUEST_MACHINE);
@@ -97,12 +78,6 @@ pub(super) fn domain_xml(
       <source file='{disk}'/>
       <target dev='vda' bus='virtio'/>
     </disk>
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='{seed}'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
-    </disk>
 {interface}{codex_mounts}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
@@ -133,7 +108,6 @@ mod tests {
 
     fn test_domain_xml(codex_mounts: Option<CodexMounts>) -> String {
         let provider_id = crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
-        let paths = Paths::new(Path::new("/var/lib/libvirt/images/wt"), &provider_id);
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
             worlds_dir: PathBuf::from("/var/lib/libvirt/images/wt"),
@@ -147,29 +121,14 @@ mod tests {
             memory_mib: 4096,
             vcpus: 4,
             disk_gib: 32,
-            cloud_init: crate::NoCloudConfig::default(),
         };
         domain_xml(
             &provider_id,
-            &paths,
             Path::new("/var/lib/libvirt/images/wt/disks/world & head.qcow2"),
             &config,
             &spec,
             true,
         )
-    }
-
-    #[test]
-    fn guest_dhcp_identity_uses_the_unique_interface_mac() {
-        insta::assert_snapshot!(network_config(), @r###"
-        version: 2
-        ethernets:
-          primary:
-            match:
-              name: "en*"
-            dhcp4: true
-            dhcp-identifier: mac
-        "###);
     }
 
     #[test]

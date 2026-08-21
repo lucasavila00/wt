@@ -213,7 +213,7 @@ ssh_public_key_file = "/tmp/id_ed25519.pub"
 ssh_known_hosts_file = "/tmp/known_hosts"
 [guest]
 boot_timeout_seconds = 30
-recipe_timeout_seconds = 30
+readiness_timeout_seconds = 30
 [install]
 binary_dir = "/opt/wt bin"
 "#,

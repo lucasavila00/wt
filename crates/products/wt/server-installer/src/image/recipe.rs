@@ -128,20 +128,6 @@ impl ImageRecipe {
         Self { packages }
     }
 
-    pub(super) fn cloud_config(&self) -> String {
-        r#"#cloud-config
-output:
-  all: '| tee -a /var/log/cloud-init-output.log'
-runcmd:
-  - /bin/sh /var/tmp/wt-image-build.sh
-power_state:
-  mode: poweroff
-  timeout: 60
-  condition: true
-"#
-        .to_owned()
-    }
-
     pub(super) fn parse_package_versions(&self, text: &str) -> Result<PackageVersions> {
         let packages = self.packages.parse_versions(text).map_err(Error::msg)?;
         self.validate_package_versions(&packages)?;
@@ -218,24 +204,6 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    #[test]
-    fn renders_shared_image_cloud_config() {
-        insta::assert_snapshot!(
-            ImageRecipe::new().cloud_config(),
-            @r###"
-#cloud-config
-output:
-  all: '| tee -a /var/log/cloud-init-output.log'
-runcmd:
-  - /bin/sh /var/tmp/wt-image-build.sh
-power_state:
-  mode: poweroff
-  timeout: 60
-  condition: true
-"###
-        );
     }
 
     #[test]

@@ -77,7 +77,7 @@ pub(super) fn wait_for_shutdown(
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
     let mut next_state_check = Instant::now();
     let mut next_heartbeat = Instant::now() + Duration::from_secs(60);
-    let mut phase = String::from("starting cloud-init");
+    let mut phase = String::from("starting image build");
     loop {
         if let Some(next_phase) = drain_console(console, started, kind)? {
             phase = next_phase;

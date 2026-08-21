@@ -65,7 +65,7 @@ fn run_server() -> Result<()> {
     let retained = server_config.retained_config();
     let host_worker = wt_retained_worlds::host::Worker::new(
         provider,
-        Duration::from_secs(server_config.guest.recipe_timeout_seconds),
+        Duration::from_secs(server_config.guest.readiness_timeout_seconds),
         retained,
     )
     .map_err(anyhow::Error::msg)?;

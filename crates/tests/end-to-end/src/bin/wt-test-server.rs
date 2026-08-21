@@ -53,7 +53,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let retained = server.retained_config();
     let worker = wt_retained_worlds::host::Worker::new(
         provider,
-        Duration::from_secs(server.guest.recipe_timeout_seconds),
+        Duration::from_secs(server.guest.readiness_timeout_seconds),
         retained,
     )
     .map_err(anyhow::Error::msg)?;
