@@ -13,8 +13,14 @@ TYPESCRIPT COMMAND TYPE:
     /** State transition accepted by the set_mr command. */
     export type ChangeRequestState = "ready" | "draft" | "open" | "closed";
 
-    /** One JSON command accepted by wt-tools. Provider resource IDs are strings. */
-    export type WtToolsCommand =
+    /** Explicit Git hosting provider and repository. */
+    export type GitHostingTarget = {
+      provider: "github" | "gitlab";
+      repository: string;
+    };
+
+    /** Command sent to a Git hosting provider. */
+    export type GitHostingCommand =
       | { action: "show_mr"; mr: string }
       | { action: "show_mr_for_branch"; branch: string }
       | { action: "show_run"; run: string }
@@ -34,24 +40,32 @@ TYPESCRIPT COMMAND TYPE:
       | { action: "set_thread"; mr: string; thread: string; resolved: boolean }
       | { action: "retry_job"; job: string }
       | { action: "cancel_job"; job: string }
-      | { action: "cancel_run"; run: string }
+      | { action: "cancel_run"; run: string };
+
+    /** Feedback about wt-tools itself. */
+    export type WtToolsFeedbackCommand =
       | { action: "report_wt_tool_bug"; description: string }
       | { action: "report_wt_tool_issue"; description: string }
       | { action: "suggest_wt_tool_improvement"; description: string }
       | { action: "request_wt_tool_feature"; description: string };
 
+    /** One JSON command accepted by wt-tools. */
+    export type WtToolsCommand =
+      | { target: GitHostingTarget; command: GitHostingCommand }
+      | { command: WtToolsFeedbackCommand };
+
 EXAMPLE:
-wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+wt-tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"}}'
 
-`show_mr_for_branch` returns the single open MR from the named branch to the
-gateway grant's base branch. It fails when there is no match or multiple matches.
+`show_mr_for_branch` returns the single open MR from the named branch in the target
+repository. It fails when there is no match or multiple matches.
 
-The four wt-tools reporting actions store feedback against this authenticated world
+The four wt-tools feedback actions omit `target` and store feedback against this world
 without contacting the Git provider.
 
 Provider operations return one JSON result or error object. Help remains
 plain text.
 
-The provider and project come from this world's gateway grant. Every other
-resource is explicit. IDs must be positive integer strings. Commit values must be 7 to
+The target selects one installer-configured provider and an explicit repository.
+IDs must be positive integers. Commit values must be 7 to
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.

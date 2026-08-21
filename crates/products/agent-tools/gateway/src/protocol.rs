@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -61,23 +61,8 @@ pub struct ClientRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ClientOperation {
-    Git {
-        service: GitService,
-        source: String,
-    },
-    Cli {
-        args: Vec<String>,
-        #[serde(default)]
-        repository: Option<Repository>,
-        branch: Option<String>,
-        head: Option<String>,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Repository {
-    pub host: String,
-    pub project: String,
+    Git { service: GitService, source: String },
+    Cli { args: Vec<String> },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

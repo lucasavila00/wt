@@ -15,23 +15,23 @@ fn rejects_types_outside_the_command_contract() {
         ("generic", "export type Value<T> = T;"),
         (
             "missing_action",
-            "export type WtToolsCommand = { value: string } | { action: \"ok\" };",
+            "export type GitHostingCommand = { value: string } | { action: \"ok\" };",
         ),
         (
             "optional_action",
-            "export type WtToolsCommand = { action?: \"show_mr\"; mr: string } | { action: \"ok\" };",
+            "export type GitHostingCommand = { action?: \"show_mr\"; mr: string } | { action: \"ok\" };",
         ),
         (
             "duplicate_action",
-            "export type WtToolsCommand = { action: \"show_mr\" } | { action: \"show_mr\"; mr: string };",
+            "export type GitHostingCommand = { action: \"show_mr\" } | { action: \"show_mr\"; mr: string };",
         ),
         (
             "rust_keyword",
-            "export type WtToolsCommand = { action: \"show_mr\"; type: string } | { action: \"ok\" };",
+            "export type GitHostingCommand = { action: \"show_mr\"; type: string } | { action: \"ok\" };",
         ),
         (
             "unsupported_number",
-            "export type WtToolsCommand = { action: \"show_mr\"; value: number } | { action: \"ok\" };",
+            "export type GitHostingCommand = { action: \"show_mr\"; value: number } | { action: \"ok\" };",
         ),
     ] {
         insta::assert_snapshot!(name, codegen::generate("contract.ts", source.to_owned()).unwrap_err());

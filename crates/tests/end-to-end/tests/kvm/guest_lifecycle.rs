@@ -445,8 +445,8 @@ fn agent_tools_transport_works_without_provider_credentials() {
             &harness,
             &name,
             &format!(
-                "wt-tools '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
-                local.trim()
+                "wt-tools '{{\"target\":{{\"provider\":\"{provider}\",\"repository\":\"acme/widget\"}},\"command\":{{\"action\":\"list_ci\",\"commit\":\"{}\"}}}}'",
+                local.trim(),
             ),
             "read explicit CI through provider API fixture",
         );

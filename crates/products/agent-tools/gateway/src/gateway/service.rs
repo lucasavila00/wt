@@ -6,12 +6,18 @@ impl Gateway {
             bail!("at least one Git provider is required");
         }
         let mut hosts = std::collections::BTreeSet::new();
+        let mut api_kinds = std::collections::BTreeSet::new();
         for provider in &config.providers {
             if !valid_host(provider.host()) || !hosts.insert(provider.host()) {
                 bail!(
                     "invalid or duplicate Git provider host: {}",
                     provider.host()
                 );
+            }
+            if let Some(kind) = provider.api_kind() {
+                if !api_kinds.insert(kind) {
+                    bail!("duplicate {} API provider", api::provider_name(kind));
+                }
             }
         }
         let state = match fs::read(&config.state_file) {
@@ -71,19 +77,8 @@ impl Gateway {
                 }
                 Ok(())
             }
-            ClientOperation::Cli {
-                args,
-                repository,
-                branch,
-                head,
-            } => {
-                let response = match self.serve_cli(
-                    &args,
-                    repository.as_ref(),
-                    branch.as_deref(),
-                    head.as_deref(),
-                    &grant,
-                ) {
+            ClientOperation::Cli { args } => {
+                let response = match self.serve_cli(&args, &grant) {
                     Ok(output) => TransportResponse::with_message(output),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
@@ -216,6 +211,19 @@ impl Gateway {
             .ok_or_else(|| anyhow::anyhow!("Git provider {host} is not configured"))
     }
 
+    fn cli_provider(&self, kind: ProviderKind) -> Result<&Provider> {
+        self.config
+            .providers
+            .iter()
+            .find(|provider| provider.api_kind() == Some(kind))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{} API provider is not configured",
+                    api::provider_name(kind)
+                )
+            })
+    }
+
     fn serve_git<S: DuplexStream>(
         &self,
         stream: &mut S,
@@ -225,12 +233,10 @@ impl Gateway {
         let source = parse_source(source)?;
         let provider = self.provider(&source.host)?;
         let policy = WritePolicy::new(format!("refs/heads/{BRANCH_PREFIX}"), [])?;
-        let provider_api_available = match provider {
-            Provider::Ssh { .. } => true,
-            Provider::Local { api, .. } => api.is_some(),
-        };
+        let repository = source.path.trim_end_matches(".git");
+        let provider_target = provider.api_kind().map(|kind| (kind, repository));
         let message = |commands: &[u8], response: &[u8], sideband: bool| {
-            push_result_message(provider_api_available, commands, response, sideband)
+            push_result_message(provider_target, commands, response, sideband)
         };
         serve_git(
             stream,
@@ -242,14 +248,7 @@ impl Gateway {
         )
     }
 
-    pub(super) fn serve_cli(
-        &self,
-        args: &[String],
-        repository: Option<&Repository>,
-        _branch: Option<&str>,
-        _head: Option<&str>,
-        grant: &GrantRecord,
-    ) -> Result<String> {
+    pub(super) fn serve_cli(&self, args: &[String], grant: &GrantRecord) -> Result<String> {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(wt_tools_help());
         }
@@ -258,22 +257,24 @@ impl Gateway {
         if args == ["world-prompt"] {
             return Ok(world_prompt());
         }
-        let command = api::WtToolsCommand::parse(args)?;
-        if let Some((kind, description)) = command.wt_tool_report() {
-            let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-            wt_workload_registry::Registry::open(&self.config.database_path)
-                .context("open WT registry")?
-                .insert_agent_tool_report(world_id, kind, description)
-                .context("store agent tool report")?;
-            return Ok(api::render_cli_confirmation(
-                "Recorded wt-tools report for this world.",
-            ));
-        }
-        let repository = repository.context(
-            "wt-tools needs a Git checkout with an origin to select a repository for this command",
-        )?;
-        validate_repository(repository)?;
-        let provider = self.provider(&repository.host)?;
+        let parsed = api::WtToolsCommand::parse(args)?;
+        let (target, command) = match &parsed {
+            api::WtToolsCommand::Feedback { command } => {
+                let (kind, description) = command.wt_tool_report();
+                let world_id =
+                    Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+                wt_workload_registry::Registry::open(&self.config.database_path)
+                    .context("open WT registry")?
+                    .insert_agent_tool_report(world_id, kind, description)
+                    .context("store agent tool report")?;
+                return Ok(api::render_cli_confirmation(
+                    "Recorded wt-tools report for this world.",
+                ));
+            }
+            api::WtToolsCommand::GitHosting { target, command } => (target, command),
+        };
+        validate_repository(&target.repository)?;
+        let provider = self.cli_provider(target.provider)?;
         let api = match provider {
             Provider::Ssh {
                 kind,
@@ -288,8 +289,8 @@ impl Gateway {
             bail!("{}", cli_unavailable().trim());
         };
         let scope = api::ProviderProjectScope {
-            host: &repository.host,
-            project: &repository.project,
+            host: provider.host(),
+            project: &target.repository,
             prefix: BRANCH_PREFIX,
         };
         let output = match api_base {
@@ -298,9 +299,9 @@ impl Gateway {
                 api_token_file,
                 base,
                 &scope,
-                &command,
+                command,
             ),
-            None => api::execute_cli_provider_command(kind, api_token_file, &scope, &command),
+            None => api::execute_cli_provider_command(kind, api_token_file, &scope, command),
         }?;
         Ok(api::render_cli_command_output(output))
     }
@@ -321,7 +322,7 @@ pub(super) fn push_rejection_message(violation: &PushViolation) -> String {
 }
 
 pub(super) fn push_result_message(
-    provider_api_available: bool,
+    provider_target: Option<(ProviderKind, &str)>,
     commands: &[u8],
     response: &[u8],
     sideband: bool,
@@ -334,17 +335,17 @@ pub(super) fn push_result_message(
             continue;
         }
         message.push_str(&format!("Published branch `{branch}`.\n"));
-        if !provider_api_available {
+        let Some((provider, repository)) = provider_target else {
             message.push_str("Run `wt-tools --help` for explicit provider commands.\n");
             continue;
-        }
+        };
         let show_mr = serde_json::json!({
-            "action": "show_mr_for_branch",
-            "branch": branch,
+            "target": { "provider": provider, "repository": repository },
+            "command": { "action": "show_mr_for_branch", "branch": branch },
         });
         let list_ci = serde_json::json!({
-            "action": "list_ci",
-            "commit": head,
+            "target": { "provider": provider, "repository": repository },
+            "command": { "action": "list_ci", "commit": head },
         });
         message.push_str(&format!(
             "Inspect its open MR with:\n  wt-tools '{show_mr}'\nIf that reports no open MR, run `wt-tools --help` and open one with an explicit base.\nInspect CI with:\n  wt-tools '{list_ci}'\n"

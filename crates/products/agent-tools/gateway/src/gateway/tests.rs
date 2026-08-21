@@ -45,6 +45,33 @@ fn cli_status_and_unavailable_command_are_actionable() {
 }
 
 #[test]
+fn provider_targets_are_validated_and_unambiguous() {
+    assert!(validate_repository("acme/widget").is_ok());
+    for invalid in ["", "/acme/widget", "acme/widget.git", "acme/../widget"] {
+        assert!(validate_repository(invalid).is_err());
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let provider = |host: &str| Provider::Local {
+        host: host.into(),
+        repositories: temp.path().to_owned(),
+        api: Some(FixtureApi {
+            kind: ProviderKind::GitHub,
+            base_url: "http://github.test".into(),
+            token_file: temp.path().join("token"),
+        }),
+    };
+    let error = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path: temp.path().join("instances.db"),
+        providers: vec![provider("github.test"), provider("enterprise.test")],
+    })
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "duplicate GitHub API provider");
+}
+
+#[test]
 fn world_prompt_does_not_require_a_checkout_or_provider_api() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = Gateway::open(GatewayConfig {
@@ -59,7 +86,7 @@ fn world_prompt_does_not_require_a_checkout_or_provider_api() {
     .unwrap();
 
     let output = gateway
-        .serve_cli(&["world-prompt".into()], None, None, None, &test_grant())
+        .serve_cli(&["world-prompt".into()], &test_grant())
         .unwrap();
 
     insta::assert_snapshot!(output);
@@ -111,7 +138,7 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
         ),
     ] {
         let output = gateway
-            .serve_cli(&[command.into()], None, None, None, &grant)
+            .serve_cli(&[format!(r#"{{"command":{command}}}"#)], &grant)
             .unwrap();
         insta::assert_snapshot!(name, output);
     }
@@ -159,7 +186,7 @@ fn push_messages_cover_publish_delete_and_rejection() {
     );
     insta::assert_snapshot!(
         service::push_result_message(
-            true,
+            Some((ProviderKind::GitHub, "acme/widget")),
             &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
             &response("ok refs/heads/wt/fix-login"),
             true,
@@ -168,10 +195,10 @@ fn push_messages_cover_publish_delete_and_rejection() {
         @r###"
     Published branch `wt/fix-login`.
     Inspect its open MR with:
-      wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+      wt-tools '{"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"},"target":{"provider":"github","repository":"acme/widget"}}'
     If that reports no open MR, run `wt-tools --help` and open one with an explicit base.
     Inspect CI with:
-      wt-tools '{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+      wt-tools '{"command":{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"provider":"github","repository":"acme/widget"}}'
     "###
     );
     assert_eq!(

@@ -1,8 +1,14 @@
 /** State transition accepted by the set_mr command. */
 export type ChangeRequestState = "ready" | "draft" | "open" | "closed";
 
-/** One JSON command accepted by wt-tools. Provider resource IDs are strings. */
-export type WtToolsCommand =
+/** Explicit Git hosting provider and repository. */
+export type GitHostingTarget = {
+  provider: "github" | "gitlab";
+  repository: string;
+};
+
+/** Command sent to a Git hosting provider. */
+export type GitHostingCommand =
   | { action: "show_mr"; mr: string }
   | { action: "show_mr_for_branch"; branch: string }
   | { action: "show_run"; run: string }
@@ -22,8 +28,16 @@ export type WtToolsCommand =
   | { action: "set_thread"; mr: string; thread: string; resolved: boolean }
   | { action: "retry_job"; job: string }
   | { action: "cancel_job"; job: string }
-  | { action: "cancel_run"; run: string }
+  | { action: "cancel_run"; run: string };
+
+/** Feedback about wt-tools itself. */
+export type WtToolsFeedbackCommand =
   | { action: "report_wt_tool_bug"; description: string }
   | { action: "report_wt_tool_issue"; description: string }
   | { action: "suggest_wt_tool_improvement"; description: string }
   | { action: "request_wt_tool_feature"; description: string };
+
+/** One JSON command accepted by wt-tools. */
+export type WtToolsCommand =
+  | { target: GitHostingTarget; command: GitHostingCommand }
+  | { command: WtToolsFeedbackCommand };

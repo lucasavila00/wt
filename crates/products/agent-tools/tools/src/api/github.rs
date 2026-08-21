@@ -2,8 +2,8 @@ mod client;
 
 use super::{
     ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, ConflictState,
-    GitProviderApi, ProviderCommand, ProviderCommandOutput, ProviderCommandScope,
-    ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle, WtToolsCommand,
+    GitHostingCommand as WtToolsCommand, GitProviderApi, ProviderCommand, ProviderCommandOutput,
+    ProviderCommandScope, ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};

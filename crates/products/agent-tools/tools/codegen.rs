@@ -74,8 +74,71 @@ fn emit_alias(path: &str, alias: &TsTypeAliasDecl, output: &mut String) -> Resul
             }
             writeln!(output, "}}\n").unwrap();
         }
-        ty if name == "WtToolsCommand" => emit_commands(path, name, ty, output)?,
+        ty if name == "GitHostingTarget" => emit_object(path, name, ty, output)?,
+        ty if matches!(name, "GitHostingCommand" | "WtToolsFeedbackCommand") => {
+            emit_commands(path, name, ty, output)?
+        }
+        ty if name == "WtToolsCommand" => emit_envelope(path, ty, output)?,
         _ => return Err(format!("{path}: unsupported type alias `{name}`")),
+    }
+    Ok(())
+}
+
+fn emit_object(path: &str, name: &str, ty: &TsType, output: &mut String) -> Result<(), String> {
+    let fields = object_fields(path, ty)?;
+    writeln!(
+        output,
+        "#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]\n#[serde(deny_unknown_fields)]\npub struct {name} {{"
+    )
+    .unwrap();
+    emit_fields(path, &fields, output, true)?;
+    writeln!(output, "}}\n").unwrap();
+    Ok(())
+}
+
+fn emit_envelope(path: &str, ty: &TsType, output: &mut String) -> Result<(), String> {
+    let TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) = ty
+    else {
+        return Err(format!("{path}: `WtToolsCommand` must be an object union"));
+    };
+    if union.types.len() != 2 {
+        return Err(format!("{path}: `WtToolsCommand` must have two members"));
+    }
+    writeln!(
+        output,
+        "#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]\n#[serde(untagged, deny_unknown_fields)]\npub enum WtToolsCommand {{"
+    )
+    .unwrap();
+    for member in &union.types {
+        let fields = object_fields(path, member)?;
+        let variant = if fields.iter().any(|field| field.0 == "target") {
+            "GitHosting"
+        } else {
+            "Feedback"
+        };
+        writeln!(output, "    {variant} {{").unwrap();
+        emit_fields(path, &fields, output, false)?;
+        writeln!(output, "    }},").unwrap();
+    }
+    writeln!(output, "}}\n").unwrap();
+    Ok(())
+}
+
+fn emit_fields(
+    path: &str,
+    fields: &[(String, bool, &TsType)],
+    output: &mut String,
+    public: bool,
+) -> Result<(), String> {
+    for (field_name, optional, field_type) in fields {
+        let field_type = rust_type(path, field_name, field_type)?;
+        let field_type = if *optional {
+            format!("Option<{field_type}>")
+        } else {
+            field_type
+        };
+        let visibility = if public { "pub " } else { "" };
+        writeln!(output, "        {visibility}{field_name}: {field_type},").unwrap();
     }
     Ok(())
 }
@@ -199,6 +262,11 @@ fn object_fields<'a>(
 }
 
 fn rust_type(path: &str, field: &str, ty: &TsType) -> Result<String, String> {
+    if field == "provider"
+        && string_union(ty).as_deref() == Some(&["github".to_owned(), "gitlab".to_owned()])
+    {
+        return Ok("ProviderKind".into());
+    }
     match ty {
         TsType::TsKeywordType(keyword) => match keyword.kind {
             TsKeywordTypeKind::TsStringKeyword => Ok("String".into()),
