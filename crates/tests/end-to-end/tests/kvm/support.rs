@@ -1,21 +1,19 @@
 use super::binaries::prepare_test_binaries;
 use super::fixture::*;
-use super::gateway::{spawn_gateway, spawn_provider_api_fixture};
+use super::gateway::spawn_gateway;
 use super::images::{isolated_test_images, unique_vsock_port};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_agent_tool_gateway::{
-    read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION, VSOCK_PORT_ENV,
+    read_json_line, write_json_line, ClientOperation, TransportRequest, TransportResponse,
+    PROTOCOL_VERSION, VSOCK_PORT_ENV,
 };
 use wt_control_protocol::{
-    ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
-    Operation, Outcome, Response,
+    ApiRequest, ApiResponse, CreateInstance, InstanceName, Operation, Outcome, Response,
 };
 use wt_end_to_end_tests::cmd;
 use wt_server::ServerConfig;
@@ -32,7 +30,6 @@ pub(crate) struct KvmHarness {
     pub(crate) guest_public_key: String,
     pub(crate) initial_disks: usize,
     _images: TempDir,
-    api_fixture: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl KvmHarness {
@@ -99,7 +96,7 @@ impl KvmHarness {
             toml::to_string(&capacity).unwrap(),
         )
         .unwrap();
-        let gateway = spawn_gateway(temp.path(), &config.install.binary_dir, None);
+        let gateway = spawn_gateway(temp.path(), &config.install.binary_dir);
         let control_socket = temp.path().join("gateway-control.sock");
         let deadline = Instant::now() + Duration::from_secs(5);
         while !control_socket.exists() {
@@ -118,7 +115,6 @@ impl KvmHarness {
             guest_public_key,
             initial_disks,
             _images: images,
-            api_fixture: None,
         }
     }
 
@@ -134,50 +130,11 @@ impl KvmHarness {
                 ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
-                application: CreateApplication::Devcontainer {
-                    source: self.git.url(),
-                    git_base: "main".into(),
-                },
             }),
         ) else {
             panic!("expected instance response");
         };
         *instance
-    }
-
-    pub(crate) fn create_host(
-        &self,
-        name: &InstanceName,
-        user_data: &str,
-    ) -> wt_control_protocol::Instance {
-        let Response::Instance { instance } = self.create_host_result(name, user_data).unwrap()
-        else {
-            panic!("expected instance response");
-        };
-        *instance
-    }
-
-    pub(crate) fn create_host_result(
-        &self,
-        name: &InstanceName,
-        user_data: &str,
-    ) -> Result<Response, String> {
-        call_api_result(
-            self.temp.path(),
-            &self.server_config_path,
-            Operation::Create(CreateInstance {
-                name: name.clone(),
-                vcpus: 2,
-                memory_mib: 4096,
-                disk_gib: 32,
-                ssh_authorized_keys: vec![self.guest_public_key.clone()],
-                git_user_name: "WT E2E".to_owned(),
-                git_user_email: "wt@example.invalid".to_owned(),
-                application: CreateApplication::Host {
-                    user_data: user_data.to_owned(),
-                },
-            }),
-        )
     }
 
     pub(crate) fn sync_inventory(&self) -> Vec<wt_control_protocol::Instance> {
@@ -190,34 +147,11 @@ impl KvmHarness {
         instances
     }
 
-    pub(crate) fn finish_setup(&self, name: &InstanceName) -> wt_control_protocol::Instance {
-        self.sync_inventory();
-        let mut setup = start_world_setup(self.temp.path(), name);
-        let instance =
-            wait_for_running(self.temp.path(), &self.server_config_path, name, &mut setup);
-        let _ = setup.kill();
-        let _ = setup.wait();
-        instance
-    }
-
     pub(crate) fn delete(&self, name: &InstanceName) {
         call_api(
             self.temp.path(),
             &self.server_config_path,
             Operation::Delete { name: name.clone() },
-        );
-    }
-
-    pub(crate) fn stop(&self, instance: &wt_control_protocol::Instance) {
-        run(
-            cmd!(
-                "virsh",
-                "--connect",
-                "qemu:///system",
-                "destroy",
-                format!("wt-{}", instance.id.simple()),
-            ),
-            "stop KVM world",
         );
     }
 
@@ -246,48 +180,7 @@ impl KvmHarness {
     pub(crate) fn restart_gateway(&mut self) {
         self.gateway.kill().unwrap();
         self.gateway.wait().unwrap();
-        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir, None);
-        if let Some(fixture) = self.api_fixture.take() {
-            fixture.join().unwrap().unwrap();
-        }
-    }
-
-    pub(crate) fn use_provider_api_fixture(&mut self, kind: &str, head: &str) {
-        self.gateway.kill().unwrap();
-        self.gateway.wait().unwrap();
-        let (base_url, fixture) = spawn_provider_api_fixture(kind, head);
-        let token_file = self.temp.path().join("provider-api-token");
-        fs::write(&token_file, "fixture-token\n").unwrap();
-        self.gateway = spawn_gateway(
-            self.temp.path(),
-            &self.config.install.binary_dir,
-            Some((kind, &base_url, &token_file)),
-        );
-        self.api_fixture = Some(fixture);
-    }
-
-    pub(crate) fn assert_shared_prefix_is_available(&self) {
-        let mut stream =
-            std::os::unix::net::UnixStream::connect(self.temp.path().join("gateway-control.sock"))
-                .unwrap();
-        write_json_line(
-            &mut stream,
-            &ControlRequest::Reserve {
-                world_id: "different-world".to_owned(),
-                source: Some(self.git.url()),
-                base: Some("main".to_owned()),
-            },
-        )
-        .unwrap();
-        let response: ControlResponse = read_json_line(&mut stream).unwrap();
-        assert!(response.ok, "another world could not share the WT prefix");
-    }
-
-    pub(crate) fn grant_token(&self) -> String {
-        let state: serde_json::Value =
-            serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
-                .unwrap();
-        state["grants"][0]["token"].as_str().unwrap().to_owned()
+        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir);
     }
 
     pub(crate) fn grant_token_for(&self, world_id: uuid::Uuid) -> String {
@@ -387,92 +280,9 @@ pub(crate) fn guest_command(
         harness.temp.path().join(".ssh/config"),
         "-i",
         &harness.git.guest_key,
-        format!("local.{name}-host"),
+        format!("local.{name}-direct"),
         command,
     )
-}
-
-pub(crate) fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
-    let output = app_command(harness, name, command).output().unwrap();
-    ensure_success(action, &output).unwrap();
-}
-
-pub(crate) fn app_output(
-    harness: &KvmHarness,
-    name: &InstanceName,
-    command: &str,
-    action: &str,
-) -> String {
-    let output = app_command(harness, name, command).output().unwrap();
-    ensure_success(action, &output).unwrap();
-    String::from_utf8(output.stdout).unwrap()
-}
-
-pub(crate) fn app_command(
-    harness: &KvmHarness,
-    name: &InstanceName,
-    command: &str,
-) -> std::process::Command {
-    let mut command_process = cmd!(
-        "ssh",
-        "-F",
-        harness.temp.path().join(".ssh/config"),
-        "-i",
-        &harness.git.guest_key,
-        format!("local.{name}-vs"),
-        format!("cd /workspaces/wt && {command}"),
-    );
-    command_process.env_remove("SSH_AUTH_SOCK");
-    command_process
-}
-
-pub(crate) fn wait_for_running(
-    home: &Path,
-    config: &Path,
-    name: &InstanceName,
-    setup: &mut Child,
-) -> wt_control_protocol::Instance {
-    let deadline = Instant::now() + Duration::from_secs(900);
-    loop {
-        let Response::Instance { instance } =
-            call_api(home, config, Operation::Get { name: name.clone() })
-        else {
-            panic!("expected instance response")
-        };
-        if instance.status == InstanceStatus::Running {
-            return *instance;
-        }
-        assert_ne!(
-            instance.status,
-            InstanceStatus::Error,
-            "setup failed: {instance:?}"
-        );
-        if let Some(status) = setup.try_wait().unwrap() {
-            let log = guest_setup_log(home, name);
-            panic!("world setup SSH exited before completion: {status}\n{log}");
-        }
-        assert!(Instant::now() < deadline, "timed out waiting for setup");
-        std::thread::sleep(Duration::from_secs(2));
-    }
-}
-
-fn guest_setup_log(home: &Path, name: &InstanceName) -> String {
-    let output = cmd!(
-        "ssh",
-        "-F",
-        home.join(".ssh/config"),
-        format!("local.{name}-host"),
-        "tail -n 200 /var/lib/wt-setup/install.log",
-    )
-    .output();
-    match output {
-        Ok(output) => format!(
-            "guest setup log:\n{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ),
-        Err(error) => format!("could not read guest setup log: {error}"),
-    }
 }
 
 pub(crate) fn count_disks(worlds_dir: &Path) -> usize {
@@ -509,21 +319,6 @@ pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Res
     )
     .map(|_| ())
     .map_err(|error| error.to_string())
-}
-
-pub(crate) fn start_world_setup(home: &Path, name: &InstanceName) -> Child {
-    cmd!(
-        "ssh",
-        "-F",
-        home.join(".ssh/config"),
-        format!("local.{name}")
-    )
-    .env_remove("SSH_AUTH_SOCK")
-    .env("TERM", "xterm-ghostty")
-    .stdout(Stdio::null())
-    .stderr(Stdio::inherit())
-    .spawn()
-    .expect("start first-SSH world setup")
 }
 
 pub(crate) fn call_api(home: &Path, config: &Path, operation: Operation) -> Response {

@@ -372,7 +372,7 @@ mod tests {
         let world = ShellWorld::test("ars.dev", 1);
         let cards = validate_context(
             "ars",
-            vec![session(&world, "/workspace")],
+            vec![session(&world, "/home/wt/project")],
             std::slice::from_ref(&world),
         )
         .unwrap();
@@ -389,25 +389,25 @@ mod tests {
     #[test]
     fn rejects_world_name_and_kind_mismatches() {
         let world = ShellWorld::test("ars.dev", 1);
-        let mut wrong_name = session(&world, "/workspace");
+        let mut wrong_name = session(&world, "/home/wt/project");
         wrong_name.observations[0].world_name = InstanceName::parse("other").unwrap();
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_name], std::slice::from_ref(&world)).unwrap_err(),
             @"context ars: failed invariant world_name matches inventory world_id; value other"
         );
 
-        let mut wrong_tmux = session(&world, "/workspace");
-        wrong_tmux.observations[0].target.tmux_session = "wt-app".into();
+        let mut wrong_tmux = session(&world, "/home/wt/project");
+        wrong_tmux.observations[0].target.tmux_session = "other".into();
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_tmux], &[world]).unwrap_err(),
-            @"context ars: failed invariant tmux_session matches world kind; value wt-app"
+            @"context ars: failed invariant tmux_session matches world kind; value other"
         );
     }
 
     #[test]
     fn rejects_duplicate_sessions_and_negative_timestamps() {
         let world = ShellWorld::test("ars.dev", 1);
-        let valid = session(&world, "/workspace");
+        let valid = session(&world, "/home/wt/project");
         insta::assert_snapshot!(
             validate_context(
                 "ars",

@@ -194,8 +194,8 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
     let session_id = Uuid::new_v4();
     let mut event = CodexSessionEvent {
         session_id,
-        cwd: "/workspace".into(),
-        tmux_session: "wt-app".into(),
+        cwd: "/home/wt/project".into(),
+        tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
         session_start_source: None,
@@ -229,7 +229,7 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
         reports[0].state,
         wt_workload_registry::CodexSessionState::NeedsAttention
     );
-    assert_eq!(reports[0].tmux_session, "wt-app");
+    assert_eq!(reports[0].tmux_session, "wt-host");
     assert_eq!(reports[0].pane_id, "%3");
     assert_eq!(reports[0].session_start_source, None);
 }

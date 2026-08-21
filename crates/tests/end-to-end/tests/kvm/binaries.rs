@@ -14,8 +14,6 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
         "-p",
         "wt-agent-tool-gateway",
         "-p",
-        "wt-devcontainer-guest-tools",
-        "-p",
         "wt-codex-integration",
     );
     build.current_dir(workspace);
@@ -26,9 +24,6 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     for name in [
         "wt-agent-tool-gateway",
         "wt-agent-tool-gateway-relay",
-        "wt-devcontainer-pane",
-        "wt-devcontainer-info",
-        "wt-devcontainer-ssh-proxy",
         "git-remote-wt-agent",
         "wt-tools",
         "wt-codex-integration",

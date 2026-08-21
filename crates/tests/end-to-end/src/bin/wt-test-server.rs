@@ -5,8 +5,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
-use wt_retained_worlds::devcontainer::{CompositeWorker, WorldProvisioner};
-use wt_retained_worlds::Workers;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
 use wt_server::service::Service;
@@ -51,31 +49,14 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let server = ServerConfig::load_runtime_from(config_path).map_err(anyhow::Error::msg)?;
-    let provider =
-        LibvirtProvider::new(server.devcontainer_machine_config()).map_err(anyhow::Error::msg)?;
-    let host_provider =
-        LibvirtProvider::new(server.host_machine_config()).map_err(anyhow::Error::msg)?;
-    let registry_cache_url = format!(
-        "http://{}:{}",
-        provider
-            .network_bridge_address()
-            .map_err(anyhow::Error::msg)?,
-        server.registry_cache.port
-    );
+    let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server.retained_config();
-    let provisioner = WorldProvisioner::new(
-        server
-            .provisioner_config(registry_cache_url, retained.clone())
-            .map_err(anyhow::Error::msg)?,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let host_worker = wt_retained_worlds::host::CompositeWorker::new(
-        host_provider,
+    let worker = wt_retained_worlds::host::Worker::new(
+        provider,
         Duration::from_secs(server.guest.recipe_timeout_seconds),
         retained,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
     let gateway_socket = std::env::var_os("WT_AGENT_TOOL_TEST_CONTROL_SOCKET")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(wt_agent_tool_gateway::CONTROL_SOCKET));

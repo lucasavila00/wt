@@ -515,7 +515,7 @@ mod tests {
             "hostname 192.0.2.10",
             "user wt",
             "port 22",
-            "hostkeyalias lab.world-one-host",
+            "hostkeyalias lab.world-one",
             "proxyjump wt-server",
         ] {
             assert!(evaluated.lines().any(|line| line == expected), "{expected}");

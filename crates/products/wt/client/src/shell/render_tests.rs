@@ -168,7 +168,7 @@ fn control_ui_shows_codex_session_cards() {
     let unknown_session_id = Uuid::parse_str("223e4567-e89b-12d3-a456-426614174002").unwrap();
     let unknown_world_id = Uuid::parse_str("223e4567-e89b-12d3-a456-426614174003").unwrap();
     let target = ByobuTarget {
-        tmux_session: "wt-app".into(),
+        tmux_session: "wt-host".into(),
         pane_id: "%1".into(),
     };
     model.set_codex(
@@ -187,7 +187,7 @@ fn control_ui_shows_codex_session_cards() {
                 kind: CodexCardKind::Observation {
                     world_id,
                     world_name: "dev".into(),
-                    cwd: "/workspace/wt".into(),
+                    cwd: "/home/wt/project".into(),
                     state: CodexSessionState::NeedsAttention,
                     session_start_source: None,
                     target,
@@ -198,7 +198,7 @@ fn control_ui_shows_codex_session_cards() {
                     context: "ars".into(),
                     session_id: unknown_session_id,
                     world_id: unknown_world_id,
-                    tmux_session: "wt-app".into(),
+                    tmux_session: "wt-host".into(),
                     pane_id: "%2".into(),
                 },
                 context: "ars".into(),
@@ -207,11 +207,11 @@ fn control_ui_shows_codex_session_cards() {
                 kind: CodexCardKind::Observation {
                     world_id: unknown_world_id,
                     world_name: "compact".into(),
-                    cwd: "/workspace/wt".into(),
+                    cwd: "/home/wt/project".into(),
                     state: CodexSessionState::Unknown,
                     session_start_source: Some("compact".into()),
                     target: ByobuTarget {
-                        tmux_session: "wt-app".into(),
+                        tmux_session: "wt-host".into(),
                         pane_id: "%2".into(),
                     },
                 },

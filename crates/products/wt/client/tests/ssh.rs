@@ -24,7 +24,7 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"operation":"list"'*)
-    printf '%s\n' '{"protocol_version":4,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"jsdev","owner":"tester","status":"running","kind":"devcontainer","source":"git@example.test:group/repo.git","git_base":"main","git_prefix":"jsdev/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}]}}'
+    printf '%s\n' '{"protocol_version":5,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
     ;;
   *) exit 2 ;;
 esac
@@ -50,7 +50,7 @@ exit 23
 "#,
     );
 
-    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "ssh", "jsdev")
+    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "ssh", "world")
         .env("HOME", temp.path())
         .env("PATH", path)
         .output()
@@ -61,10 +61,10 @@ exit 23
     assert!(output.stderr.is_empty());
     assert_eq!(
         fs::read_to_string(temp.path().join("ssh-args")).unwrap(),
-        "--\nars.jsdev\n"
+        "--\nars.world\n"
     );
     let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-    assert!(managed.contains("Host ars.jsdev"));
+    assert!(managed.contains("Host ars.world"));
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn ssh_does_not_start_when_sync_fails() {
         "#!/bin/sh\ntouch \"$HOME/ssh-started\"\n",
     );
 
-    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "ssh", "ars.jsdev")
+    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "ssh", "ars.world")
         .env("HOME", temp.path())
         .env("PATH", path)
         .output()

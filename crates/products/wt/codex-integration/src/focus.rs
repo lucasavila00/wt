@@ -76,7 +76,7 @@ mod tests {
             @"invalid Codex tmux session: other"
         );
         insta::assert_snapshot!(
-            focus(session_id, "wt-app", "%bad").unwrap_err(),
+            focus(session_id, "wt-host", "%bad").unwrap_err(),
             @"invalid Codex pane ID: %bad"
         );
     }

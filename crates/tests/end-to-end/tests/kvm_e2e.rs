@@ -1,4 +1,3 @@
-use std::fs;
 use wt_control_protocol::{InstanceName, InstanceStatus};
 use wt_end_to_end_tests::cmd;
 
@@ -17,9 +16,6 @@ pub(crate) use codex::*;
 #[path = "kvm/support.rs"]
 mod support;
 pub(crate) use support::*;
-#[path = "kvm/host.rs"]
-mod host;
-pub(crate) use host::*;
 #[path = "kvm/terminal.rs"]
 mod terminal;
 pub(crate) use terminal::*;

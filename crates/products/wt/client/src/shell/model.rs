@@ -501,7 +501,7 @@ mod tests {
                 kind: super::super::control::CodexCardKind::Observation {
                     world_id,
                     world_name: "two".into(),
-                    cwd: "/workspace".into(),
+                    cwd: "/home/wt/project".into(),
                     state: CodexSessionState::Working,
                     session_start_source: None,
                     target,

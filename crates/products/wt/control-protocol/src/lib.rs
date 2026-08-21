@@ -372,11 +372,11 @@ mod tests {
             observations: vec![CodexSessionObservation {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
-                cwd: "/workspace".into(),
+                cwd: "/home/wt/project".into(),
                 state: CodexSessionState::Unknown,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
-                    tmux_session: "wt-app".into(),
+                    tmux_session: "wt-host".into(),
                     pane_id: "%3".into(),
                 },
                 received_at_unix_ms: 42,
@@ -391,11 +391,11 @@ mod tests {
             {
               "world_id": "123e4567-e89b-12d3-a456-426614174001",
               "world_name": "checkout",
-              "cwd": "/workspace",
+              "cwd": "/home/wt/project",
               "state": "unknown",
               "session_start_source": "compact",
               "target": {
-                "tmux_session": "wt-app",
+                "tmux_session": "wt-host",
                 "pane_id": "%3"
               },
               "received_at_unix_ms": 42

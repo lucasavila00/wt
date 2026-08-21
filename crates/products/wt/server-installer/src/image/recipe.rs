@@ -35,6 +35,7 @@ impl PackageSet {
         Ok(self)
     }
 
+    #[cfg(test)]
     fn names(&self) -> &[&'static str] {
         &self.names
     }

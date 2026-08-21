@@ -1,5 +1,5 @@
 ---
-source: crates/products/wt/client/src/shell/render.rs
+source: crates/products/wt/client/src/shell/render_tests.rs
 expression: terminal.backend().buffer()
 ---
 Buffer {
@@ -11,9 +11,9 @@ Buffer {
         "    ││        ┌Command Palette────────────────────────┐        │",
         "   ││        │> █                                    │        │",
         "    ││        │───────────────────────────────────────│        │",
-        "    ││        │ World: New host                      │        │",
-        "    ││        │  World: New dev                       │        │",
+        "    ││        │ World: New                           │        │",
         "    ││        │  World: Delete...                     │        │",
+        "    ││        │                                       │        │",
         "    ││        │                                       │        │",
         "    ││        │↑/↓ select · Enter run · Esc close     │        │",
         "    ││        └───────────────────────────────────────┘        │",

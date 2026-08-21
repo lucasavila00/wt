@@ -17,38 +17,6 @@ impl GitFixture {
             cmd!("git", "init", "-b", "main", &seed),
             "initialize fixture repository",
         );
-        fs::create_dir(seed.join(".devcontainer")).unwrap();
-        fs::write(
-            seed.join(".devcontainer/devcontainer.json"),
-            r#"{
-  "name": "wt-kvm-e2e",
-  "dockerComposeFile": "compose.yaml",
-  "service": "app",
-  "workspaceFolder": "/workspaces/wt",
-  "remoteUser": "wt",
-  "onCreateCommand": "sudo chown -R wt:wt /workspaces"
-}
-"#,
-        )
-        .unwrap();
-        fs::write(
-            seed.join(".devcontainer/Dockerfile"),
-            include_str!("../../../../../.devcontainer/Dockerfile"),
-        )
-        .unwrap();
-        fs::write(
-            seed.join(".devcontainer/compose.yaml"),
-            r#"services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: sleep infinity
-    volumes:
-      - /workspace:/workspaces/wt
-"#,
-        )
-        .unwrap();
         fs::write(seed.join("README.md"), "WT agent tool fixture\n").unwrap();
         run(
             cmd!("git", "-C", &seed, "config", "user.name", "WT E2E"),
@@ -89,9 +57,6 @@ impl GitFixture {
         }
     }
 
-    pub(crate) fn url(&self) -> String {
-        "git@local.test:acme/widget.git".to_owned()
-    }
 }
 
 pub(crate) fn generate_key(path: &Path, passphrase: &str) {
