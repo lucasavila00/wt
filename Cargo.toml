@@ -1,26 +1,23 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/wt-agent-git",
-    "crates/wt-git-core",
-    "crates/wt-git-proxy",
-    "crates/wt-devcontainer",
-    "crates/wt-api",
-    "crates/wt-cli",
-    "crates/wt-command",
-    "crates/wt-codex",
-    "crates/wt-devcontainer-guest",
-    "crates/wt-integration-tests",
-    "crates/wt-libvirt",
-    "crates/wt-provider",
-    "crates/wt-registry",
-    "crates/wt-retained",
-    "crates/wt-github-ci",
-    "crates/wt-host",
-    "crates/wt-server",
-    "crates/wt-server-setup",
-    "crates/wt-setup-core",
-    "crates/wt-git-proxy-setup",
+    "crates/products/wt/client",
+    "crates/products/wt/control-protocol",
+    "crates/products/wt/server",
+    "crates/products/wt/retained-worlds",
+    "crates/products/wt/devcontainer-guest-tools",
+    "crates/products/wt/codex-integration",
+    "crates/products/wt/server-installer",
+    "crates/products/gh-actions-runner/service",
+    "crates/products/agent-git-gateway/gateway",
+    "crates/products/agent-git-gateway/git-hosting",
+    "crates/products/git-proxy/service",
+    "crates/products/git-proxy/installer",
+    "crates/shared/libvirt-kvm",
+    "crates/shared/workload-registry",
+    "crates/shared/git-smart-protocol",
+    "crates/shared/installer-support",
+    "crates/tests/end-to-end",
 ]
 
 [workspace.package]
@@ -30,19 +27,17 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-wt-git-core = { path = "crates/wt-git-core" }
-wt-git-proxy = { path = "crates/wt-git-proxy" }
-wt-api = { path = "crates/wt-api" }
-wt-command = { path = "crates/wt-command" }
-wt-devcontainer = { path = "crates/wt-devcontainer" }
-wt-libvirt = { path = "crates/wt-libvirt" }
-wt-provider = { path = "crates/wt-provider" }
-wt-registry = { path = "crates/wt-registry" }
-wt-retained = { path = "crates/wt-retained" }
-wt-github-ci = { path = "crates/wt-github-ci" }
-wt-host = { path = "crates/wt-host" }
-wt-server = { path = "crates/wt-server" }
-wt-setup-core = { path = "crates/wt-setup-core" }
+wt-agent-git-gateway-gateway = { path = "crates/products/agent-git-gateway/gateway" }
+wt-clientent = { path = "crates/products/wt/client" }
+wt-control-protocol = { path = "crates/products/wt/control-protocol" }
+wt-git-hosting = { path = "crates/products/agent-git-gateway/git-hosting" }
+wt-git-proxy = { path = "crates/products/git-proxy/service" }
+wt-git-smart-protocol = { path = "crates/shared/git-smart-protocol" }
+wt-installer-support = { path = "crates/shared/installer-support" }
+wt-libvirt-kvm-kvm = { path = "crates/shared/libvirt-kvm" }
+wt-retained-worlds = { path = "crates/products/wt/retained-worlds" }
+wt-server = { path = "crates/products/wt/server" }
+wt-workload-registry = { path = "crates/shared/workload-registry" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 cliclack = "0.5.4"

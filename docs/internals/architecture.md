@@ -9,11 +9,11 @@ wt client
                                           ├─ devcontainer lifecycle
                                           └─ host lifecycle
 
-wt-github-ci library foundation
+wt-gh-actions-runner library foundation
   └─ GitHub CI lifecycle ─────── shared registry and capacity
 
 devcontainer / host / github-ci
-  └─ wt-provider contracts ──── wt-libvirt ── KVM + QEMU guest agent
+  └─ wt-provider contracts ──── wt-libvirt-kvm ── KVM + QEMU guest agent
 
 standalone Git client
   └─ OpenSSH forced command ── wt-git-proxy ── SSH Git upstream
@@ -30,21 +30,21 @@ version 2 carries tagged world kinds and a common retained-world Git author.
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-api`, `wt-cli`, `wt-codex`, `wt-command`, `wt-provider`, `wt-libvirt`, `wt-registry`, `wt-retained`, `wt-server`, `wt-server-setup`, `wt-setup-core`, `wt-git-core`, `wt-integration-tests` |
-| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest` |
+| Shared | `wt-control-protocol`, `wt-client`, `wt-codex-integration`, `wt-command`, `wt-provider`, `wt-libvirt-kvm`, `wt-workload-registry`, `wt-retained`, `wt-server`, `wt-server-installer`, `wt-installer-support`, `wt-git-smart-protocol`, `wt-end-to-end-tests` |
+| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest-tools` |
 | Host | `wt-host` |
-| GitHub CI | `wt-github-ci` |
-| WT Git gateway | `wt-agent-git` |
-| Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-setup` |
+| GitHub CI | `wt-gh-actions-runner` |
+| WT Git gateway | `wt-agent-git-gateway` |
+| Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 
 Generic names are used only for behavior shared by more than one kind.
 Executable names used inside existing guests remain stable.
 
-`wt-git-core` contains the Git protocol bridge and branch write policy shared
+`wt-git-smart-protocol` contains the Git protocol bridge and branch write policy shared
 by the WT gateway and standalone proxy. `wt-git-proxy` is released from this
 workspace but is not part of `wt-server` or a WT world.
 
-`wt-setup-core` contains the host file, command runner, and SSH credential
+`wt-installer-support` contains the host file, command runner, and SSH credential
 handling shared by the regular WT and standalone Git proxy installers.
 
 `wt-retained` contains the fixed retained-guest identity and shared guest

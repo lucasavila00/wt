@@ -56,7 +56,7 @@ may retain a stale socket after disconnect or reattach. WT does not retarget
 that socket, and host setup never receives it.
 
 The retained image contains Codex. Provisioning installs and activates
-`wt-codex`, mounts the server-backed sessions read-write at
+`wt-codex-integration`, mounts the server-backed sessions read-write at
 `/home/wt/.codex/sessions`, and links `.codex/auth.json` to the server login
 exposed read-only. These mounts are restored and verified whenever a stopped
 host world starts.

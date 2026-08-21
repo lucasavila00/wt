@@ -30,7 +30,7 @@ The existing machine-provider and world-provisioner boundaries are described in
 |-------|------|
 | `wt-provider` | Neutral machine and guest transport contracts |
 | `wt-devcontainer` | Bootstrap, provisioning, and devcontainer lifecycle |
-| `wt-libvirt` | KVM lifecycle and QEMU guest-agent transport |
+| `wt-libvirt-kvm` | KVM lifecycle and QEMU guest-agent transport |
 | `wt-static-ssh` | Existing-machine claim and pinned OpenSSH transport |
 
 Transport is a behavior contract, not always SSH. Shared provisioning never

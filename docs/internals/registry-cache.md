@@ -4,7 +4,7 @@ The registry cache is a server-side pull-through cache for public container
 image blobs used by devcontainer worlds. It is not a world and holds no
 repository or provider credentials.
 
-`wt-server-setup` owns its CA, storage, Docker container, and daemon trust
+`wt-server-installer` owns its CA, storage, Docker container, and daemon trust
 configuration. The devcontainer bootstrap receives the cache URL and CA and
 configures the guest Docker daemon for the allowed registries.
 

@@ -1,0 +1,35 @@
+[package]
+name = "wt-end-to-end-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+wt-retained-worlds = { workspace = true }
+wt-agent-git-gateway = { path = "../wt-agent-git-gateway" }
+wt-git-proxy = { workspace = true }
+wt-control-protocol = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+wt-retained-worlds = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+wt-workload-registry = { workspace = true }
+wt-server = { workspace = true }
+wt-client = { path = "../wt-client" }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[[bin]]
+name = "wt-test-server"
+path = "src/bin/wt-test-server.rs"
+
+[[bin]]
+name = "wt-test-git-proxy"
+path = "src/bin/wt-test-git-proxy.rs"
+
+[dev-dependencies]
+insta = { workspace = true }
+serde = { workspace = true }
+tempfile = "3.27.0"
+toml = { workspace = true }

@@ -79,7 +79,7 @@ if test -e "$state/source"; then
 # WT agent Git hint
 status=0
 test ! -x '$project_hook' || '$project_hook' "\$@" || status=\$?
-/usr/local/bin/wt-agent-git-hint '$hint_mode'
+/usr/local/bin/wt-agent-git-gateway-hint '$hint_mode'
 exit "\$status"
 EOF
         chmod 0755 "$hook"
@@ -96,21 +96,21 @@ app_user=$(
         /usr/local/bin/wt-app-info configured-user
 )
 # The CLI's additional-mount grammar has no read-only flag. The authentication
-# source remains read-only because /run/wt-codex-auth is itself a read-only
+# source remains read-only because /run/wt-codex-integration-auth is itself a read-only
 # virtiofs mount.
 devcontainer up --log-level debug --log-format text --workspace-folder "$workspace" \
     --additional-features "$additional_features" \
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
     --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config \
-    --mount type=bind,source=/run/wt-agent-git,target=/run/wt-agent-git \
+    --mount type=bind,source=/run/wt-agent-git-gateway,target=/run/wt-agent-git-gateway \
     --mount type=bind,source=/usr/local/bin/git-remote-ag,target=/usr/local/bin/git-remote-ag \
     --mount type=bind,source=/usr/local/bin/ag-git,target=/usr/local/bin/ag-git \
-    --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint \
-    --mount type=bind,source=/usr/local/bin/wt-codex,target=/usr/local/bin/wt-codex \
-    --mount type=bind,source=/usr/local/bin/wt-codex,target=/usr/local/bin/codex \
+    --mount type=bind,source=/usr/local/bin/wt-agent-git-gateway-hint,target=/usr/local/bin/wt-agent-git-gateway-hint \
+    --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/wt-codex-integration \
+    --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/codex \
     --mount type=bind,source=/usr/local/bin/.codex.wt-real,target=/usr/local/bin/.codex.wt-real \
-    --mount type=bind,source=/home/wt/.codex/sessions,target=/var/lib/wt-codex-sessions \
-    --mount type=bind,source=/run/wt-codex-auth,target=/var/lib/wt-codex-auth
+    --mount type=bind,source=/home/wt/.codex/sessions,target=/var/lib/wt-codex-integration-sessions \
+    --mount type=bind,source=/run/wt-codex-integration-auth,target=/var/lib/wt-codex-integration-auth
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
     'set -eu
     workspace=$(pwd -P)
@@ -123,8 +123,8 @@ devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
             exit 1
         fi
     done
-    ln -sfn /var/lib/wt-codex-sessions "$HOME/.codex/sessions"
-    ln -sfn /var/lib/wt-codex-auth/auth.json "$HOME/.codex/auth.json"'
+    ln -sfn /var/lib/wt-codex-integration-sessions "$HOME/.codex/sessions"
+    ln -sfn /var/lib/wt-codex-integration-auth/auth.json "$HOME/.codex/auth.json"'
 while IFS= read -r host; do
     test -n "$host" || continue
     devcontainer exec --workspace-folder "$workspace" /bin/sh -c '
@@ -133,7 +133,7 @@ while IFS= read -r host; do
         git config --global --add "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
         git config --global --add "url.ag::git@$host:.insteadOf" "https://$host/"
     ' sh "$host"
-done < /var/lib/wt-agent-git/providers
+done < /var/lib/wt-agent-git-gateway/providers
 /usr/local/bin/wt-app-info verify-user "$app_user"
 /usr/local/bin/wt-app-info > "$state/app.json"
 app_address=$(/usr/local/bin/wt-app-info address)

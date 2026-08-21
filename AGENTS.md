@@ -69,7 +69,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Read `docs/README.md` and `docs/internals/architecture.md` first.
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git/devcontainer recipes, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
-- Keep `wt-server` slim. Host setup belongs in `wt-server-setup`. Real-system tests belong in `wt-integration-tests`.
+- Keep `wt-server` slim. Host setup belongs in `wt-server-installer`. Real-system tests belong in `wt-end-to-end-tests`.
 - Use Rust for typed validation, state, and lifecycle decisions. Whole-flow POSIX
   shell assets are allowed for guest and server installation procedures.
 - Match verification to the files changed. Documentation-only changes need no Rust

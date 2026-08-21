@@ -1,0 +1,19 @@
+---
+source: crates/wt-agent-git-gateway/tests/hints.rs
+expression: "stderr(run_hint(temp.path(), \"commit\"))"
+---
+WT: This is a WT-managed development environment for a coding agent.
+WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
+WT: not available here. Do not look for credentials or use gh or glab.
+WT: WT gives you read access to every repository available to the Git gateway.
+WT: This checkout is project group/project and its configured base is main.
+WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
+WT: write branches under wt/ in any available repository.
+WT: ag-git uses explicit provider resource types and IDs; it does not infer
+WT: resources from the current checkout.
+WT: Run ag-git --help to discover every available command.
+WT:
+WT: Commit created on wt/fix-login.
+WT: Publish it with:
+WT:   git push
+WT: After pushing, use the explicit ag-git commands printed by the Git gateway.

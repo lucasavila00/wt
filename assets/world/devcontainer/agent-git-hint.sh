@@ -49,7 +49,7 @@ WT: After pushing, use the explicit ag-git commands printed by the Git gateway.
 EOF
     ;;
 *)
-    echo "usage: wt-agent-git-hint checkout | commit" >&2
+    echo "usage: wt-agent-git-gateway-hint checkout | commit" >&2
     exit 2
     ;;
 esac

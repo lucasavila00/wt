@@ -10,9 +10,9 @@ description = "Raw Ubuntu host world lifecycle for wt"
 ssh-key = { workspace = true }
 serde_yaml_ng = { workspace = true }
 tempfile = "3.27.0"
-wt-api = { workspace = true }
-wt-provider = { workspace = true }
-wt-retained = { workspace = true }
+wt-control-protocol = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+wt-retained-worlds = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

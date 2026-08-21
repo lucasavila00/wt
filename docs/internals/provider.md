@@ -7,7 +7,7 @@ contracts:
 - create, inspect, start, stop, disk usage, and delete operations;
 - bounded guest command, capture, and file-write transport.
 
-`wt-libvirt` implements those contracts with libvirt/KVM and the QEMU guest
+`wt-libvirt-kvm` implements those contracts with libvirt/KVM and the QEMU guest
 agent. It does not know repository, host-recipe, or GitHub job semantics.
 
 Kind crates compose machines into applications:
@@ -16,7 +16,7 @@ Kind crates compose machines into applications:
   restart recovery;
 - `wt-host` owns QGA login preparation, root-only recipe staging, cloud-init
   setup state, one-use login proof and key removal, and direct SSH;
-- `wt-github-ci` defines JIT runner execution and one-job cleanup; its operator
+- `wt-gh-actions-runner` defines JIT runner execution and one-job cleanup; its operator
   process is not shipped yet.
 
 `wt-server` dispatches retained operations by the stored kind. It never sends a

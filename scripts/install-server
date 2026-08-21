@@ -93,11 +93,11 @@ rustup target add x86_64-unknown-linux-musl
 
 cd "$root"
 show_phase "Building the setup tool"
-setup_binary=target/x86_64-unknown-linux-musl/release/wt-server-setup
-cargo build --quiet --release --target x86_64-unknown-linux-musl -p wt-server-setup
+setup_binary=target/x86_64-unknown-linux-musl/release/wt-server-installer
+cargo build --quiet --release --target x86_64-unknown-linux-musl -p wt-server-installer
 if readelf --program-headers --wide "$setup_binary" | grep -q INTERP ||
     readelf --version-info --wide "$setup_binary" | grep -q GLIBC_; then
-    echo "wt-server-setup is not a static musl executable" >&2
+    echo "wt-server-installer is not a static musl executable" >&2
     exit 1
 fi
 

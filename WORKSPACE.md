@@ -8,30 +8,30 @@ common dependencies from the root `Cargo.toml`.
 
 | Package | Kind | Role |
 |---------|------|------|
-| [`wt-api`](./crates/wt-api/) | Library | Control-plane JSON types |
-| [`wt-cli`](./crates/wt-cli/) | Binary `wt` | Client CLI |
+| [`wt-control-protocol`](./crates/products/wt/control-protocol/) | Library | Control-plane JSON types |
+| [`wt-client`](./crates/products/wt/client/) | Binary `wt` | Client CLI |
 | [`wt-command`](./crates/wt-command/) | Library | Process command builder |
 | [`wt-devcontainer`](./crates/wt-devcontainer/) | Library | Devcontainer world lifecycle and provisioning |
-| [`wt-git-core`](./crates/wt-git-core/) | Library | Shared Git transport and write policy |
-| [`wt-agent-git`](./crates/wt-agent-git/) | Library and binaries | WT world Git access and provider CLI |
-| [`wt-git-proxy`](./crates/wt-git-proxy/) | Binary | Standalone OpenSSH Git proxy |
-| [`wt-devcontainer-guest`](./crates/wt-devcontainer-guest/) | Binaries | Devcontainer session and SSH helpers |
-| [`wt-github-ci`](./crates/wt-github-ci/) | Library | Ephemeral GitHub Actions world lifecycle |
+| [`wt-git-smart-protocol`](./crates/shared/git-smart-protocol/) | Library | Shared Git transport and write policy |
+| [`wt-agent-git-gateway`](./crates/wt-agent-git-gateway/) | Library and binaries | WT world Git access and provider CLI |
+| [`wt-git-proxy`](./crates/products/git-proxy/service/) | Binary | Standalone OpenSSH Git proxy |
+| [`wt-devcontainer-guest-tools`](./crates/wt-devcontainer-guest-tools/) | Binaries | Devcontainer session and SSH helpers |
+| [`wt-gh-actions-runner`](./crates/wt-gh-actions-runner/) | Library | Ephemeral GitHub Actions world lifecycle |
 | [`wt-host`](./crates/wt-host/) | Library | Raw Ubuntu host world lifecycle |
-| [`wt-libvirt`](./crates/wt-libvirt/) | Library | Libvirt/KVM backend |
+| [`wt-libvirt-kvm`](./crates/shared/libvirt-kvm/) | Library | Libvirt/KVM backend |
 | [`wt-provider`](./crates/wt-provider/) | Library | Shared machine-provider contracts |
-| [`wt-registry`](./crates/wt-registry/) | Library | Shared guest registry and capacity admission |
+| [`wt-workload-registry`](./crates/shared/workload-registry/) | Library | Shared guest registry and capacity admission |
 | [`wt-server`](./crates/wt-server/) | Binary | Server API, registry, and jobs |
-| [`wt-server-setup`](./crates/wt-server-setup/) | Binary | Server installer and image builder |
-| [`wt-integration-tests`](./crates/wt-integration-tests/) | Tests | Cross-crate and KVM tests |
+| [`wt-server-installer`](./crates/products/wt/server-installer/) | Binary | Server installer and image builder |
+| [`wt-end-to-end-tests`](./crates/tests/end-to-end/) | Tests | Cross-crate and KVM tests |
 
 ## Commands
 
 ```text
 cargo check --workspace
-cargo run -p wt-cli -- --help
+cargo run -p wt-client -- --help
 cargo run -p wt-server -- --help
-cargo run -p wt-server-setup -- --help
+cargo run -p wt-server-installer -- --help
 make install-git-server
 ```
 

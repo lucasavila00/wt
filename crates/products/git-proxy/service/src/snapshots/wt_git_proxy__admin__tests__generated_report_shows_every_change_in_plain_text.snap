@@ -1,0 +1,90 @@
+---
+source: crates/products/git-proxy/service/src/admin.rs
+expression: report
+---
+
+======================================================================
+SECRET: this report contains the agent private key
+======================================================================
+
+CLIENT
+
+Name:        wt-git-abc123
+Fingerprint: SHA256:abc123
+Proxy:       git-proxy@proxy.example.com:2222
+Providers:
+  - github.com
+  - gitlab.com
+
+SERVER CHANGE
+
+Updated /etc/wt-git-proxy/authorized_keys (mode 0600). The new entry is:
+
+restrict,command="/usr/local/bin/wt-git-proxy serve --config /etc/wt-git-proxy/config.toml" ssh-ed25519 PUBLICKEY wt-git-abc123
+
+FILES THE COMMAND WRITES ON THE AGENT
+
+~/.ssh/wt-git-proxy/wt-git-abc123/id_ed25519 (mode 0600)
+----------------------------------------------------------------------
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATE KEY
+-----END OPENSSH PRIVATE KEY-----
+----------------------------------------------------------------------
+
+~/.ssh/wt-git-proxy/wt-git-abc123/known_hosts (mode 0600)
+----------------------------------------------------------------------
+[proxy.example.com]:2222 ssh-ed25519 HOSTKEY
+----------------------------------------------------------------------
+
+~/.ssh/wt-git-proxy/wt-git-abc123/config (mode 0600)
+----------------------------------------------------------------------
+Host wt-git-abc123
+  HostName proxy.example.com
+  Port 2222
+  User git-proxy
+  IdentityFile ~/.ssh/wt-git-proxy/wt-git-abc123/id_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile ~/.ssh/wt-git-proxy/wt-git-abc123/known_hosts
+  StrictHostKeyChecking yes
+  PasswordAuthentication no
+----------------------------------------------------------------------
+
+~/.ssh/wt-git-proxy/gitconfig (mode 0600)
+----------------------------------------------------------------------
+[url "wt-git-abc123:github.com/"]
+  insteadOf = https://github.com/
+  insteadOf = git@github.com:
+  insteadOf = ssh://git@github.com/
+[url "wt-git-abc123:gitlab.com/"]
+  insteadOf = https://gitlab.com/
+  insteadOf = git@gitlab.com:
+  insteadOf = ssh://git@gitlab.com/
+----------------------------------------------------------------------
+
+CHANGES TO EXISTING AGENT FILES
+
+~/.ssh/config gets this line if it is not already present:
+
+Include ~/.ssh/wt-git-proxy/*/config
+
+~/.gitconfig gets an include.path pointing to:
+
+$HOME/.ssh/wt-git-proxy/gitconfig
+
+INSTALL ON THE AGENT
+
+Paste this entire command into the agent VM as the user that runs Git:
+
+umask 077; d="$HOME/.ssh/wt-git-proxy/wt-git-abc123"; g="$HOME/.ssh/wt-git-proxy/gitconfig"; install -d "$d"; printf '%s' 'LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KUFJJVkFURSBLRVkKLS0tLS1FTkQgT1BFTlNTSCBQUklWQVRFIEtFWS0tLS0tCg==' | base64 -d > "$d/id_ed25519"; printf '%s' 'W3Byb3h5LmV4YW1wbGUuY29tXToyMjIyIHNzaC1lZDI1NTE5IEhPU1RLRVkK' | base64 -d > "$d/known_hosts"; printf '%s' 'SG9zdCB3dC1naXQtYWJjMTIzCiAgSG9zdE5hbWUgcHJveHkuZXhhbXBsZS5jb20KICBQb3J0IDIyMjIKICBVc2VyIGdpdC1wcm94eQogIElkZW50aXR5RmlsZSB+Ly5zc2gvd3QtZ2l0LXByb3h5L3d0LWdpdC1hYmMxMjMvaWRfZWQyNTUxOQogIElkZW50aXRpZXNPbmx5IHllcwogIFVzZXJLbm93bkhvc3RzRmlsZSB+Ly5zc2gvd3QtZ2l0LXByb3h5L3d0LWdpdC1hYmMxMjMva25vd25faG9zdHMKICBTdHJpY3RIb3N0S2V5Q2hlY2tpbmcgeWVzCiAgUGFzc3dvcmRBdXRoZW50aWNhdGlvbiBubwo=' | base64 -d > "$d/config"; printf '%s' 'W3VybCAid3QtZ2l0LWFiYzEyMzpnaXRodWIuY29tLyJdCiAgaW5zdGVhZE9mID0gaHR0cHM6Ly9naXRodWIuY29tLwogIGluc3RlYWRPZiA9IGdpdEBnaXRodWIuY29tOgogIGluc3RlYWRPZiA9IHNzaDovL2dpdEBnaXRodWIuY29tLwpbdXJsICJ3dC1naXQtYWJjMTIzOmdpdGxhYi5jb20vIl0KICBpbnN0ZWFkT2YgPSBodHRwczovL2dpdGxhYi5jb20vCiAgaW5zdGVhZE9mID0gZ2l0QGdpdGxhYi5jb206CiAgaW5zdGVhZE9mID0gc3NoOi8vZ2l0QGdpdGxhYi5jb20vCg==' | base64 -d > "$g"; touch "$HOME/.ssh/config"; chmod 600 "$HOME/.ssh/config"; grep -qxF 'Include ~/.ssh/wt-git-proxy/*/config' "$HOME/.ssh/config" || printf '\nInclude ~/.ssh/wt-git-proxy/*/config\n' >> "$HOME/.ssh/config"; git config --global --get-all include.path 2>/dev/null | grep -qxF "$g" || git config --global --add include.path "$g"
+
+ROLL BACK THE AGENT
+
+This removes all wt-git-proxy configuration for this agent user:
+
+g="$HOME/.ssh/wt-git-proxy/gitconfig"; git config --global --fixed-value --unset-all include.path "$g" 2>/dev/null || :; if [ -f "$HOME/.ssh/config" ]; then sed -i '\|^Include ~/.ssh/wt-git-proxy/\*/config$|d' "$HOME/.ssh/config"; fi; rm -rf -- "$HOME/.ssh/wt-git-proxy"
+
+ROLL BACK THE SERVER
+
+Press R and revoke wt-git-abc123 (SHA256:abc123). Client cleanup alone does not
+revoke the key on this proxy.
+======================================================================

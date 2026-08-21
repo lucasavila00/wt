@@ -37,7 +37,7 @@ server restart, but are outside world disk quotas and snapshots and need a
 separate backup. Do not open the same conversation in two worlds at once.
 
 Both retained images install Codex. Provisioning installs and activates
-`wt-codex`, which reconciles shared conversations before starting the real
+`wt-codex-integration`, which reconciles shared conversations before starting the real
 Codex CLI. Devcontainer worlds inject both executables and the fixed Codex
 mounts into the primary container automatically. GitHub CI runners receive no
 server Codex data.

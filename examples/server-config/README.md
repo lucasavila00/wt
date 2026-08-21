@@ -27,4 +27,4 @@ Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated
 KVM test host with disposable provider fixtures. It must not be used to run a
-real WT server. See the [integration-test instructions](../../crates/wt-integration-tests/README.md#clean-kvm-test-host).
+real WT server. See the [integration-test instructions](../../crates/tests/end-to-end/README.md#clean-kvm-test-host).

@@ -1,0 +1,33 @@
+[package]
+name = "wt-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Unix-socket control-plane daemon and bare-metal worker"
+
+[[bin]]
+name = "wt-server"
+path = "src/main.rs"
+
+[dependencies]
+wt-retained-worlds = { workspace = true }
+wt-agent-git-gateway = { workspace = true }
+wt-control-protocol = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+wt-workload-registry = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+nix = { workspace = true }
+diesel = { workspace = true }
+libsqlite3-sys = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = "3.27.0"

@@ -23,7 +23,7 @@ current use. Starting one reacquires its full configured capacity.
 
 ## Schema changes
 
-Migrations and generated schema are owned by `crates/wt-registry`. Migrations
+Migrations and generated schema are owned by `crates/shared/workload-registry`. Migrations
 are embedded in the binaries. Normally, add a migration there and commit its
 generated schema with it.
 

@@ -7,10 +7,9 @@ publish.workspace = true
 description = "Devcontainer world lifecycle and provisioning for wt"
 
 [dependencies]
-wt-api = { workspace = true }
-wt-command = { workspace = true }
-wt-provider = { workspace = true }
-wt-retained = { workspace = true }
+wt-control-protocol = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+wt-retained-worlds = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

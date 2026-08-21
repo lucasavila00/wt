@@ -45,7 +45,7 @@ Private keys are never sent to the server.
 
 `scripts/install-client` creates a thin default host recipe at
 `~/.config/wt/cloud-init.yaml` when the file is missing. It installs Diffo. The
-retained image already contains Codex, and provisioning installs the `wt-codex`
+retained image already contains Codex, and provisioning installs the `wt-codex-integration`
 trampoline so shared sessions are indexed before Codex starts. The recipe
 installs no Rust/Cargo toolchain or project checkout. The installer never
 replaces an existing recipe.

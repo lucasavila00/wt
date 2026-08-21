@@ -51,7 +51,7 @@ install -m 0755 "$stage-setup-world-root" /usr/local/libexec/wt-setup-root
 install -m 0755 "$stage-app-pane" /usr/local/bin/wt-app-pane
 install -m 0755 "$stage-app-info" /usr/local/bin/wt-app-info
 install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
-install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-hint
+install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-gateway-hint
 install -d -m 0755 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-setup
 install -m 0644 "$WT_HOME/.byobu/.tmux.conf" \
     /usr/local/share/wt-devcontainer-tmux.conf

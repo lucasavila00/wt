@@ -40,13 +40,13 @@ connections attach to the same session.
 
 ## Codex
 
-WT installs Codex and `wt-codex` in the retained image and automatically
+WT installs Codex and `wt-codex-integration` in the retained image and automatically
 injects both commands into the primary devcontainer. It links the configured
 `remoteUser`'s `.codex/sessions` to the server-backed read-write session store
 and `.codex/auth.json` to the server login exposed read-only. Repositories do
 not configure these mounts.
 
-`wt-codex` reconciles shared conversations into each environment's local Codex
+`wt-codex-integration` reconciles shared conversations into each environment's local Codex
 index before starting the real CLI. Databases, indexes, logs, and locks remain
 local to the world or container. Do not open the same conversation in two
 worlds at once.
