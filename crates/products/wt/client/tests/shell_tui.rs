@@ -96,10 +96,6 @@ fn command_palette_opens_the_shared_dev_form_and_escape_cancels() -> Result<()> 
     let mut screen = fixture.screen()?;
 
     screen
-        .wait_for_text("session: local.existing")?
-        .press(Key::Function(5))?
-        .wait_for_text("F5: disable navbar")?
-        .press(Key::Up)?
         .wait_for_text("World management")?
         .press(Key::Function(1))?
         .wait_for_text("Command Palette")?
@@ -127,9 +123,6 @@ fn one_shortcut_can_open_the_shared_host_form() -> Result<()> {
     let mut screen = fixture.screen()?;
 
     screen
-        .wait_for_text("session: local.existing")?
-        .press(Key::Function(5))?
-        .press(Key::Up)?
         .wait_for_text("World management")?
         .press(Key::Char('1'))?
         .wait_for_text("Command Palette")?
@@ -147,9 +140,6 @@ fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> 
     let mut screen = fixture.screen()?;
 
     screen
-        .wait_for_text("session: local.existing")?
-        .press(Key::Function(5))?
-        .press(Key::Up)?
         .wait_for_text("World management")?
         .press(Key::Function(1))?
         .type_text("dev")?
