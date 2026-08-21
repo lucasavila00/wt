@@ -11,6 +11,7 @@ use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod control;
 mod input;
 mod model;
 mod render;
@@ -97,10 +98,15 @@ fn run_loop(
             continue;
         }
         loop {
+            let area = terminal
+                .size()
+                .context("read wt shell terminal area")?
+                .into();
             redraw |= dispatch_event(
                 event::read().context("read terminal input")?,
                 sessions,
                 model,
+                area,
             )?;
             if model.should_quit() {
                 return Ok(());
@@ -113,10 +119,15 @@ fn run_loop(
     Ok(())
 }
 
-fn dispatch_event(event: Event, sessions: &mut SessionSet, model: &mut ShellModel) -> Result<bool> {
+fn dispatch_event(
+    event: Event,
+    sessions: &mut SessionSet,
+    model: &mut ShellModel,
+    area: ratatui::layout::Rect,
+) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
-            if model.handle_key(key.code) == InputRoute::World {
+            if model.handle_key(key) == InputRoute::World {
                 let screen = sessions.screen(model.active());
                 if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
                     sessions.write(model.active(), &bytes)?;
@@ -140,6 +151,7 @@ fn dispatch_event(event: Event, sessions: &mut SessionSet, model: &mut ShellMode
             }
             Ok(false)
         }
+        Event::Mouse(mouse) if model.mode() == Mode::Control => Ok(model.handle_mouse(mouse, area)),
         Event::Resize(columns, rows) => {
             sessions.resize(rows, columns)?;
             Ok(true)

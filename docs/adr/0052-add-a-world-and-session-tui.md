@@ -36,5 +36,6 @@ buffer and input target; it never reconnects or detaches.
 `wt shell` owns the overlay and cross-world navigation. Each world's Byobu owns
 its sessions and terminal behavior.
 
-The initial control UI contains only `CONTORL UI`; its contents and actions are
-deferred. `F5` closes it.
+The full-screen control UI has a left activity rail. `Tab` switches between
+Worlds and Codex sessions. `1` or `F1` opens its command palette. The initial
+activities and commands are scaffolding with no actions. `F5` closes it.

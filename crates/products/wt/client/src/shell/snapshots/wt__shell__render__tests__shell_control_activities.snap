@@ -1,0 +1,47 @@
+---
+source: crates/products/wt/client/src/shell/render.rs
+expression: terminal.backend().buffer()
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 64, height: 12 },
+    content: [
+        "    │┌Worlds───────────────────────────────────────────────────┐",
+        "▌  ││                    World management                     │",
+        "    ││                                                         │",
+        "    ││                                                         │",
+        "  󰚩 ││                                                         │",
+        "    ││                                                         │",
+        "    ││                                                         │",
+        "    ││                                                         │",
+        "    ││                                                         │",
+        "    ││                                                         │",
+        "    │└─────────────────────────────────────────────────────────┘",
+        "    │[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]  ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 0, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 1, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 1, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 2, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 2, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 3, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 3, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 4, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 4, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 5, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 5, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 6, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 6, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 7, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 7, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 8, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 8, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 9, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 9, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 10, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 5, y: 10, fg: Reset, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 11, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+    ]
+}

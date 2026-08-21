@@ -1,4 +1,6 @@
-use crossterm::event::KeyCode;
+use super::control::ControlState;
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use ratatui::layout::Rect;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
@@ -18,6 +20,7 @@ pub(super) struct ShellModel {
     worlds: Vec<String>,
     active: usize,
     mode: Mode,
+    control: ControlState,
     should_quit: bool,
 }
 
@@ -28,6 +31,7 @@ impl ShellModel {
             worlds,
             active: 0,
             mode: Mode::World,
+            control: ControlState::default(),
             should_quit: false,
         }
     }
@@ -52,19 +56,23 @@ impl ShellModel {
         self.should_quit
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyCode) -> InputRoute {
-        if key == KeyCode::F(6) {
+    pub(super) fn control(&self) -> &ControlState {
+        &self.control
+    }
+
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> InputRoute {
+        if key.code == KeyCode::F(6) {
             self.should_quit = true;
             return InputRoute::Consumed;
         }
         match self.mode {
-            Mode::World if key == KeyCode::F(5) => {
+            Mode::World if key.code == KeyCode::F(5) => {
                 self.mode = Mode::Switcher;
                 InputRoute::Consumed
             }
             Mode::World => InputRoute::World,
             Mode::Switcher => {
-                match key {
+                match key.code {
                     KeyCode::F(5) => self.mode = Mode::World,
                     KeyCode::Left => {
                         self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
@@ -76,42 +84,54 @@ impl ShellModel {
                 InputRoute::Consumed
             }
             Mode::Control => {
-                if key == KeyCode::F(5) {
+                if key.code == KeyCode::F(5) {
+                    self.control.close();
                     self.mode = Mode::World;
+                } else {
+                    self.control.handle_key(key);
                 }
                 InputRoute::Consumed
             }
         }
+    }
+
+    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
+        self.mode == Mode::Control && self.control.handle_mouse(mouse, area)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
 
     fn model() -> ShellModel {
         ShellModel::new(vec!["one".into(), "two".into(), "three".into()])
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
     }
 
     #[test]
     fn world_mode_forwards_every_key_except_f5() {
         let mut model = model();
 
-        assert_eq!(model.handle_key(KeyCode::Left), InputRoute::World);
+        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::World);
         assert_eq!(model.active(), 0);
-        assert_eq!(model.handle_key(KeyCode::F(5)), InputRoute::Consumed);
+        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
     #[test]
     fn switcher_cycles_worlds_without_leaving_the_overlay() {
         let mut model = model();
-        model.handle_key(KeyCode::F(5));
+        model.handle_key(key(KeyCode::F(5)));
 
-        model.handle_key(KeyCode::Left);
+        model.handle_key(key(KeyCode::Left));
         assert_eq!(model.active(), 2);
-        model.handle_key(KeyCode::Right);
-        model.handle_key(KeyCode::Right);
+        model.handle_key(key(KeyCode::Right));
+        model.handle_key(key(KeyCode::Right));
         assert_eq!(model.active(), 1);
         assert_eq!(model.mode(), Mode::Switcher);
     }
@@ -119,21 +139,24 @@ mod tests {
     #[test]
     fn up_opens_control_and_f5_closes_it() {
         let mut model = model();
-        model.handle_key(KeyCode::F(5));
-        model.handle_key(KeyCode::Up);
+        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::Up));
 
         assert_eq!(model.mode(), Mode::Control);
-        assert_eq!(model.handle_key(KeyCode::Left), InputRoute::Consumed);
+        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::Consumed);
         assert_eq!(model.active(), 0);
-        model.handle_key(KeyCode::F(5));
+        model.handle_key(key(KeyCode::F(1)));
+        assert!(model.control().palette().is_open());
+        model.handle_key(key(KeyCode::F(5)));
         assert_eq!(model.mode(), Mode::World);
+        assert!(!model.control().palette().is_open());
     }
 
     #[test]
     fn f5_closes_the_switcher() {
         let mut model = model();
-        model.handle_key(KeyCode::F(5));
-        model.handle_key(KeyCode::F(5));
+        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::F(5)));
 
         assert_eq!(model.mode(), Mode::World);
     }
@@ -144,7 +167,7 @@ mod tests {
             let mut model = model();
             model.mode = mode;
 
-            assert_eq!(model.handle_key(KeyCode::F(6)), InputRoute::Consumed);
+            assert_eq!(model.handle_key(key(KeyCode::F(6))), InputRoute::Consumed);
             assert!(model.should_quit());
         }
     }
