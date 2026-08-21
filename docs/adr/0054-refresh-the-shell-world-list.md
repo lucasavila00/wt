@@ -2,28 +2,28 @@
 
 - Status: Accepted; Date: 2026-08-21
 
-## Context
-
-`wt shell` originally read its worlds only at startup. A world created or
-removed in another terminal therefore left the open shell out of date.
-
 ## Decision
 
-The shell lists worlds in a background worker every five seconds. Successful
-complete results reconcile the visible list and SSH sessions without blocking
-terminal input.
+Inventory refresh uses one dedicated `std::thread`. Running `list_all` in the UI
+timer path is rejected because one slow local or OpenSSH context would block
+terminal input and rendering.
 
-World UUIDs identify sessions. Names remain display labels and SSH destinations,
-because a removed world can be recreated with the same name and a new identity.
+The refresh thread owns a cloned client configuration. A stop-channel
+`recv_timeout` provides both the five-second cadence and prompt cancellation
+between refreshes. Each iteration performs one `list_all` followed by managed
+SSH synchronization, so refreshes never overlap.
 
-New worlds get a new SSH session. Removed worlds lose their session. The active
-world stays selected while its UUID remains present; otherwise the first world
-becomes active. If no worlds remain, the shell shows its empty Control UI.
+Successful complete snapshots cross to the UI thread through an MPSC channel.
+The UI loop drains the channel without blocking and uses only its newest value.
+Failed or partial reads are not published.
 
-If any context cannot be listed or managed SSH configuration cannot be synced,
-the shell keeps its last complete list and tries again later.
+The UI thread remains the sole owner of the model, PTYs, and terminal buffers;
+the refresh thread never mutates UI state. World UUID is the reconciliation key
+because names can be reused after deletion.
+
+Dropping the refresh owner signals the stop channel and joins the thread.
 
 ## Consequences
 
-Changes made outside the shell normally appear within five seconds. Each open
-shell also performs a small, regular amount of control-plane and SSH setup work.
+Each shell consumes one additional thread. Shutdown can wait for an in-progress
+list or SSH-sync call because the transport APIs are synchronous.
