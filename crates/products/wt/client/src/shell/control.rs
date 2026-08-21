@@ -134,7 +134,7 @@ impl CodexCard {
                 state: CodexSessionState::Inactive,
                 ..
             } => Some("session ended"),
-            CodexCardKind::RolloutOnly => Some("no live pane reported"),
+            CodexCardKind::RolloutOnly => Some("session is not open in a WT pane"),
             CodexCardKind::ContextError { .. } => Some("context data rejected"),
             CodexCardKind::Observation { .. } => None,
         }
