@@ -141,6 +141,7 @@ impl GitlabApi {
             draft: node.draft,
             head: node.diff_head_sha.unwrap_or_else(|| scope.head.to_owned()),
             base: node.target_branch,
+            conflict_state: None,
             review_state: None,
             threads,
             jobs,

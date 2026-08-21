@@ -581,6 +581,8 @@ fn write_scope_comes_from_provider_resource_metadata() {
         target_branch: "main".to_owned(),
         source_project_id: Some(12),
         target_project_id: Some(12),
+        has_conflicts: false,
+        detailed_merge_status: Some("mergeable".to_owned()),
     };
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
     request.source_branch = "wt/fix".to_owned();
@@ -659,4 +661,20 @@ fn project_scope() -> ProviderProjectScope<'static> {
         project: "acme/widget",
         prefix: "wt/",
     }
+}
+
+#[test]
+fn gitlab_mergeability_distinguishes_pending_clean_and_conflicting() {
+    assert_eq!(
+        gitlab_conflict_state(false, Some("checking")),
+        ConflictState::Pending
+    );
+    assert_eq!(
+        gitlab_conflict_state(false, Some("mergeable")),
+        ConflictState::Clean
+    );
+    assert_eq!(
+        gitlab_conflict_state(true, Some("conflict")),
+        ConflictState::Conflicting
+    );
 }
