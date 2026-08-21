@@ -5,7 +5,7 @@ use crossterm::event::KeyCode;
 use ratatui::layout::Position;
 use ratatui::{backend::TestBackend, Terminal};
 use uuid::Uuid;
-use wt_control_protocol::{ByobuTarget, CodexSessionState};
+use wt_control_protocol::{ByobuTarget, CodexSessionState, InstanceStatus};
 
 fn parser() -> vt100::Parser {
     let mut parser = vt100::Parser::new(6, 80, 0);
@@ -141,6 +141,27 @@ fn control_ui_has_activity_scaffolding() {
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
+}
+
+#[test]
+fn control_ui_shows_world_cards() {
+    let backend = TestBackend::new(100, 17);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev", "lab.broken"]);
+    model.worlds_mut()[0].resources = "4 CPU · 8G · 12.3G/64G disk".into();
+    model.worlds_mut()[0].detail = "2 wt-tools reports; run `wt reports`".into();
+    model.worlds_mut()[1].status = InstanceStatus::Error;
+    model.worlds_mut()[1].resources = "2 CPU · 4G · 8G/32G disk".into();
+    model.worlds_mut()[1].detail = "host preparation failed; run `wt rm lab.broken`".into();
+    model.set_worlds_updated_at("2026-08-21T23:26:52Z".into());
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 17));
+    let parser = parser();
+
+    terminal
+        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_control_world_cards", terminal.backend().buffer());
 }
 
 #[test]

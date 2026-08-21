@@ -46,6 +46,39 @@ pub fn format_resources(instance: &Instance, disk_usage_bytes: Option<u64>) -> S
     format!("{} CPU · {memory} · {disk}", instance.vcpus)
 }
 
+pub fn format_detail(item: &ContextInstance) -> String {
+    let instance = &item.instance;
+    let target = format!("{}.{}", item.context, instance.name);
+    let detail = match instance.status {
+        wt_control_protocol::InstanceStatus::Stopped => format!(
+            "{}; run `wt start {target}` or `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("guest stopped")
+        ),
+        wt_control_protocol::InstanceStatus::Error => format!(
+            "{}; run `wt rm {target}`",
+            instance.last_error.as_deref().unwrap_or("world failed")
+        ),
+        _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
+    };
+    if item.agent_tool_report_count == 0 {
+        return detail;
+    }
+    let reports = format!(
+        "{} wt-tools report{}; run `wt reports`",
+        item.agent_tool_report_count,
+        if item.agent_tool_report_count == 1 {
+            ""
+        } else {
+            "s"
+        }
+    );
+    if detail == "-" {
+        reports
+    } else {
+        format!("{detail}; {reports}")
+    }
+}
+
 fn format_disk_usage(bytes: u64) -> String {
     const KIB: u64 = 1024;
     const MIB: u64 = 1024 * KIB;

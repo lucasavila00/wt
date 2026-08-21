@@ -8,6 +8,7 @@ pub(super) const COMMANDS: [ControlCommand; 2] =
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
 pub(super) const CODEX_CARD_HEIGHT: u16 = 5;
+pub(super) const WORLD_CARD_HEIGHT: u16 = 6;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum CodexCardIdentity {
@@ -552,6 +553,44 @@ pub(super) fn codex_card_rects(area: Rect, offset: usize, count: usize) -> Vec<(
             )
         })
         .collect()
+}
+
+pub(super) fn world_card_rects(area: Rect, selected: usize, count: usize) -> Vec<(usize, Rect)> {
+    let (body, _) = control_content_areas(area);
+    let viewport = body.inner(Margin::new(1, 1));
+    if viewport.is_empty() {
+        return Vec::new();
+    }
+    let visible = usize::from(viewport.height.div_ceil(WORLD_CARD_HEIGHT)).max(1);
+    let offset = selected / visible * visible;
+    (offset..count.min(offset.saturating_add(visible)))
+        .enumerate()
+        .map(|(row, index)| {
+            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * WORLD_CARD_HEIGHT;
+            (
+                index,
+                Rect::new(
+                    viewport.x,
+                    y,
+                    viewport.width,
+                    WORLD_CARD_HEIGHT.min(viewport.bottom().saturating_sub(y)),
+                ),
+            )
+        })
+        .collect()
+}
+
+pub(super) fn world_card_at_position(
+    area: Rect,
+    selected: usize,
+    count: usize,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    world_card_rects(area, selected, count)
+        .into_iter()
+        .find(|(_, rect)| rect.contains((column, row).into()))
+        .map(|(index, _)| index)
 }
 
 fn codex_visible_cards(area: Rect) -> usize {

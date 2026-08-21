@@ -1,6 +1,7 @@
 use super::control::{
-    codex_card_rects, command_palette_layout, control_areas, control_content_areas, Activity,
-    CodexCard, CodexCardKind, CommandPalette, ControlState, ACTIVITY_BUTTON_HEIGHT,
+    codex_card_rects, command_palette_layout, control_areas, control_content_areas,
+    world_card_rects, Activity, CodexCard, CodexCardKind, CommandPalette, ControlState,
+    ACTIVITY_BUTTON_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
@@ -227,24 +228,13 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     draw_activity_bar(frame, activity_bar, model.control().activity());
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
-        Activity::Worlds => frame.render_widget(
-            Paragraph::new(if model.has_worlds() {
-                "World management"
-            } else {
-                "No worlds with SSH access\nCreate a world to get started"
-            })
-            .alignment(Alignment::Center)
-            .block(
-                Block::new()
-                    .borders(Borders::ALL)
-                    .title(refresh_title("Worlds", model.control().worlds_updated_at())),
-            ),
-            body,
-        ),
+        Activity::Worlds => draw_worlds(frame, body, model),
         Activity::Codex => draw_codex(frame, body, model.control()),
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
-        (Activity::Worlds, true) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]",
+        (Activity::Worlds, true) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+        }
         (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
         (Activity::Codex, true) => {
             "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
@@ -258,6 +248,59 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
         footer,
     );
     draw_command_palette(frame, content, model.control().palette());
+}
+
+fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(refresh_title("Worlds", model.control().worlds_updated_at()));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if !model.has_worlds() {
+        frame.render_widget(
+            Paragraph::new("No worlds with SSH access\nCreate a world to get started")
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    }
+    for (index, rect) in world_card_rects(frame.area(), model.active(), model.world_count()) {
+        let world = &model.worlds()[index];
+        let (icon, color) = match world.status {
+            wt_control_protocol::InstanceStatus::Running => ("󰐊", Color::Green),
+            wt_control_protocol::InstanceStatus::Provisioning => ("󰔟", Color::Yellow),
+            wt_control_protocol::InstanceStatus::Stopped => ("󰅖", Color::DarkGray),
+            wt_control_protocol::InstanceStatus::Destroying => ("󰩹", Color::Yellow),
+            wt_control_protocol::InstanceStatus::Error => ("󰅚", Color::Red),
+        };
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .border_style(Style::new().fg(if index == model.active() {
+                Color::Cyan
+            } else {
+                Color::DarkGray
+            }))
+            .title(Span::styled(
+                format!(" {icon} {} ", world.status.to_string().to_uppercase()),
+                Style::new().fg(color).add_modifier(Modifier::BOLD),
+            ));
+        let inner = block.inner(rect);
+        frame.render_widget(block, rect);
+        let detail = (world.detail != "-").then(|| Line::from(world.detail.clone()));
+        let mut lines = vec![
+            Line::from(world.name.clone()),
+            Line::from(world.resources.clone()),
+        ];
+        if let Some(detail) = detail {
+            lines.push(detail);
+        }
+        let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
+        frame.render_widget(
+            Paragraph::new("Enter or click to open").style(Style::new().fg(Color::DarkGray)),
+            rows[1],
+        );
+    }
 }
 
 fn refresh_title(label: &str, updated_at: Option<&str>) -> String {

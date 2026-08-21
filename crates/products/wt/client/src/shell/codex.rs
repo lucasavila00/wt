@@ -28,7 +28,11 @@ pub(super) enum CodexContextSnapshot {
 
 impl ShellWorld {
     pub(super) fn from_inventory(item: &ContextInstance) -> Self {
-        Self::from_instance(&item.context, &item.instance)
+        let mut world = Self::from_instance(&item.context, &item.instance);
+        world.resources =
+            wt_client::inventory::format_resources(&item.instance, item.disk_usage_bytes);
+        world.detail = wt_client::inventory::format_detail(item);
+        world
     }
 
     pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
@@ -42,6 +46,9 @@ impl ShellWorld {
             name: qualified_name,
             instance_name: instance.name.clone(),
             control_alias,
+            status: instance.status,
+            resources: wt_client::inventory::format_resources(instance, None),
+            detail: instance.last_error.as_deref().unwrap_or("-").into(),
         }
     }
 
@@ -56,6 +63,9 @@ impl ShellWorld {
             name: name.into(),
             instance_name: wt_control_protocol::InstanceName::parse(world_name).unwrap(),
             control_alias: format!("{name}-direct"),
+            status: wt_control_protocol::InstanceStatus::Running,
+            resources: "2 CPU · 4G · 1G/32G disk".into(),
+            detail: "-".into(),
         }
     }
 }

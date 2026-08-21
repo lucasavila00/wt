@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 use uuid::Uuid;
 use wt_control_protocol::InstanceName;
+use wt_control_protocol::InstanceStatus;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -18,6 +19,9 @@ pub(super) struct ShellWorld {
     pub(super) name: String,
     pub(super) instance_name: InstanceName,
     pub(super) control_alias: String,
+    pub(super) status: InstanceStatus,
+    pub(super) resources: String,
+    pub(super) detail: String,
 }
 
 #[cfg(test)]
@@ -37,6 +41,9 @@ impl From<&str> for ShellWorld {
             )
             .unwrap(),
             control_alias: format!("{name}-direct"),
+            status: InstanceStatus::Running,
+            resources: "2 CPU · 4G · 1G/32G disk".into(),
+            detail: "-".into(),
         }
     }
 }
@@ -110,6 +117,11 @@ impl ShellModel {
 
     pub(super) fn worlds(&self) -> &[ShellWorld] {
         &self.worlds
+    }
+
+    #[cfg(test)]
+    pub(super) fn worlds_mut(&mut self) -> &mut [ShellWorld] {
+        &mut self.worlds
     }
 
     pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
@@ -218,6 +230,26 @@ impl ShellModel {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
+                    if self.has_worlds()
+                        && self.control.activity() == super::control::Activity::Worlds
+                    {
+                        match key.code {
+                            KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
+                                self.active = self.active.saturating_sub(1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
+                                self.active = (self.active + 1).min(self.worlds.len() - 1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
+                                self.control.close();
+                                self.mode = Mode::World;
+                                return InputRoute::Consumed;
+                            }
+                            _ => {}
+                        }
+                    }
                     if let Some(action) = self.control.handle_key(key, area) {
                         return route(action);
                     }
@@ -236,6 +268,40 @@ impl ShellModel {
             return (false, None);
         }
         let (changed, action) = self.control.handle_mouse(mouse, area);
+        if !changed
+            && self.has_worlds()
+            && self.control.activity() == super::control::Activity::Worlds
+        {
+            match mouse.kind {
+                crossterm::event::MouseEventKind::ScrollUp => {
+                    self.active = self.active.saturating_sub(3);
+                    return (true, Some(InputRoute::Consumed));
+                }
+                crossterm::event::MouseEventKind::ScrollDown => {
+                    self.active = (self.active + 3).min(self.worlds.len() - 1);
+                    return (true, Some(InputRoute::Consumed));
+                }
+                _ => {}
+            }
+        }
+        if !changed && self.control.activity() == super::control::Activity::Worlds {
+            let Some(index) = super::control::world_card_at_position(
+                area,
+                self.active,
+                self.worlds.len(),
+                mouse.column,
+                mouse.row,
+            ) else {
+                return (changed, action.map(route));
+            };
+            self.active = index;
+            if mouse.kind
+                == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            {
+                self.mode = Mode::World;
+            }
+            return (true, Some(InputRoute::Consumed));
+        }
         (changed, action.map(route))
     }
 
@@ -349,6 +415,20 @@ mod tests {
         let model = ShellModel::new(vec![world("one")]);
 
         assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn world_cards_select_and_open_worlds() {
+        let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
+        model.handle_key(key(KeyCode::Tab), area());
+
+        model.handle_key(key(KeyCode::Down), area());
+        assert_eq!(model.active_world(), "two");
+        assert_eq!(model.mode(), Mode::Control);
+
+        model.handle_key(key(KeyCode::Enter), area());
+        assert_eq!(model.active_world(), "two");
+        assert_eq!(model.mode(), Mode::World);
     }
 
     #[test]
