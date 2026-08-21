@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_api::SshAccess;
-use wt_provider::{CaptureRequest, GuestTransport, RunRequest, SharedFolderMount, WorkerError};
+use wt_provider::{CaptureRequest, GuestTransport, RunRequest, WorkerError};
 
 pub const GUEST_USER: &str = "wt";
 pub const GUEST_HOME: &str = "/home/wt";
@@ -14,9 +14,9 @@ pub const GUEST_SSH_PORT: u16 = 22;
 pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-retained-access";
 pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
 pub const AGENT_GIT_HELPER: &str = "/usr/local/libexec/wt-retained-agent-git";
-pub const MOUNT_FOLDERS_HELPER: &str = "/usr/local/libexec/wt-retained-mount-folders";
+pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex";
 
-const MOUNT_FOLDERS: &[u8] = include_bytes!("../../../assets/world/shared/mount-folders.sh");
+const MOUNT_CODEX: &[u8] = include_bytes!("../../../assets/world/shared/mount-codex.sh");
 const AGENT_GIT_STAGE: &str = "/tmp/wt-retained-agent-git-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -120,7 +120,6 @@ impl AgentGitConfig {
 pub struct RetainedConfig {
     pub agent_git: AgentGitConfig,
     pub wt_codex_binary: PathBuf,
-    pub shared_folders: Vec<SharedFolderMount>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -140,7 +139,7 @@ impl RetainedConfig {
                 self.wt_codex_binary.display()
             )));
         }
-        shared_folder_args(&self.shared_folders).map(|_| ())
+        Ok(())
     }
 
     pub fn provision(
@@ -159,8 +158,8 @@ impl RetainedConfig {
             log,
         )?;
         self.install_agent_git(transport, spec.git_grant, deadline, log)?;
-        self.install_wt_codex(transport, deadline)?;
-        self.mount_shared_folders(transport, deadline, log)
+        self.install_wt_codex(transport, deadline, log)?;
+        self.mount_codex(transport, deadline, log)
     }
 
     fn install_access(
@@ -263,6 +262,7 @@ impl RetainedConfig {
         &self,
         transport: &dyn GuestTransport,
         deadline: Instant,
+        log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
         let contents = std::fs::read(&self.wt_codex_binary)
             .map_err(|error| WorkerError::new(format!("read wt-codex: {error}")))?;
@@ -275,31 +275,34 @@ impl RetainedConfig {
                 mode: 0o755,
                 deadline,
             })
-            .map_err(WorkerError::from)
+            .map_err(WorkerError::from)?;
+        run_helper(
+            transport,
+            "/usr/local/bin/wt-codex",
+            &["install"],
+            None,
+            deadline,
+            log,
+        )
     }
 
-    pub fn mount_shared_folders(
+    pub fn mount_codex(
         &self,
         transport: &dyn GuestTransport,
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
-        if self.shared_folders.is_empty() {
-            return Ok(());
-        }
         transport
             .write_file(&wt_provider::WriteFileRequest {
-                path: MOUNT_FOLDERS_HELPER,
-                contents: MOUNT_FOLDERS,
+                path: MOUNT_CODEX_HELPER,
+                contents: MOUNT_CODEX,
                 owner: "root",
                 group: "root",
                 mode: 0o755,
                 deadline,
             })
             .map_err(WorkerError::from)?;
-        let args = shared_folder_args(&self.shared_folders)?;
-        let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-        run_helper(transport, MOUNT_FOLDERS_HELPER, &args, None, deadline, log)
+        run_helper(transport, MOUNT_CODEX_HELPER, &[], None, deadline, log)
     }
 }
 
@@ -430,21 +433,6 @@ pub fn endpoint_identity_error(
     ))
 }
 
-pub fn shared_folder_args(folders: &[SharedFolderMount]) -> Result<Vec<String>, WorkerError> {
-    let mut args = Vec::with_capacity(folders.len() * 2);
-    for folder in folders {
-        let target = folder.target.to_str().ok_or_else(|| {
-            WorkerError::new(format!(
-                "shared folder target is not UTF-8: {}",
-                folder.target.display()
-            ))
-        })?;
-        args.push(folder.tag.clone());
-        args.push(target.to_owned());
-    }
-    Ok(args)
-}
-
 fn run_helper(
     transport: &dyn GuestTransport,
     executable: &str,
@@ -516,24 +504,6 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "agent Git provider hosts must not contain duplicates"
-        );
-    }
-
-    #[test]
-    fn serializes_shared_folder_mount_arguments() {
-        assert_eq!(
-            shared_folder_args(&[
-                SharedFolderMount {
-                    tag: "wt-shared-0".to_owned(),
-                    target: PathBuf::from(".codex/sessions"),
-                },
-                SharedFolderMount {
-                    tag: "wt-shared-1".to_owned(),
-                    target: PathBuf::from("notes"),
-                },
-            ])
-            .unwrap(),
-            ["wt-shared-0", ".codex/sessions", "wt-shared-1", "notes",]
         );
     }
 }

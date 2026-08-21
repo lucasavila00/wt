@@ -1,34 +1,28 @@
 use serde::{Deserialize, Serialize};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
-use wt_libvirt::{MachineConfig, SharedFolder as LibvirtSharedFolder};
-use wt_provider::SharedFolderMount;
+use wt_libvirt::{CodexMounts, MachineConfig};
 
 pub const DEFAULT_AGENT_GIT_VSOCK_PORT: u32 = wt_agent_git::VSOCK_PORT;
 pub const AGENT_GIT_VSOCK_PORT_ENV: &str = wt_agent_git::VSOCK_PORT_ENV;
 
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
+pub const CODEX_AUTH_PATH: &str = "/home/wt/.codex/auth.json";
+pub const CODEX_AUTH_SHARE_DIR: &str = "/home/wt/.codex/.wt-auth";
+pub const CODEX_SESSIONS_PATH: &str = "/home/wt/.codex/sessions";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub version: u32,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shared_folders: Vec<SharedFolder>,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
     pub agent_git: AgentGitConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SharedFolder {
-    pub source: PathBuf,
-    pub target: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -90,7 +84,7 @@ pub struct InstallConfig {
 impl ServerConfig {
     pub fn load() -> Result<Self, String> {
         let config = Self::load_from(Path::new(SERVER_CONFIG_PATH))?;
-        config.validate_shared_folder_sources()?;
+        config.validate_codex_sources()?;
         Ok(config)
     }
 
@@ -206,7 +200,6 @@ impl ServerConfig {
         }
         self.validate_registry_cache()?;
         self.validate_agent_git()?;
-        self.validate_shared_folders(devcontainer_image_dir)?;
         if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
@@ -219,7 +212,7 @@ impl ServerConfig {
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-            shared_folders: self.libvirt_shared_folders(),
+            codex_mounts: Some(self.codex_mounts()),
         }
     }
 
@@ -229,7 +222,7 @@ impl ServerConfig {
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-            shared_folders: self.libvirt_shared_folders(),
+            codex_mounts: Some(self.codex_mounts()),
         }
     }
 
@@ -261,95 +254,98 @@ impl ServerConfig {
                 vsock_port: self.agent_git.vsock_port,
             },
             wt_codex_binary: self.install.binary_dir.join("wt-codex"),
-            shared_folders: self.guest_shared_folders(),
         }
     }
 
-    pub fn validate_shared_folder_sources(&self) -> Result<(), String> {
-        for (index, folder) in self.shared_folders.iter().enumerate() {
-            let metadata = match std::fs::metadata(&folder.source) {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    return Err(format!(
-                        "shared_folders[{index}].source does not exist: {}. Create this directory before starting wt-server.",
-                        folder.source.display()
-                    ));
-                }
-                Err(error) => {
-                    return Err(format!(
-                        "inspect shared_folders[{index}].source {}: {error}",
-                        folder.source.display()
-                    ));
-                }
-            };
-            if !metadata.is_dir() {
+    pub fn validate_codex_sources(&self) -> Result<(), String> {
+        self.validate_codex_login()?;
+        let sessions = Path::new(CODEX_SESSIONS_PATH);
+        match std::fs::symlink_metadata(sessions) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => {
                 return Err(format!(
-                    "shared_folders[{index}].source is not a directory: {}",
-                    folder.source.display()
-                ));
+                    "Codex sessions path is not a directory: {}",
+                    sessions.display()
+                ))
             }
+            Err(error) => {
+                return Err(format!(
+                    "inspect Codex sessions path {}: {error}",
+                    sessions.display()
+                ))
+            }
+        }
+        let auth = Path::new(CODEX_AUTH_PATH);
+        let metadata = std::fs::symlink_metadata(auth).map_err(|error| {
+            format!(
+                "inspect Codex authentication file {}: {error}",
+                auth.display()
+            )
+        })?;
+        let share = Path::new(CODEX_AUTH_SHARE_DIR);
+        let shared_auth = share.join("auth.json");
+        let shared_metadata = std::fs::symlink_metadata(&shared_auth).map_err(|error| {
+            format!(
+                "inspect Codex authentication share {}: {error}",
+                shared_auth.display()
+            )
+        })?;
+        if shared_metadata.file_type().is_symlink()
+            || !shared_metadata.is_file()
+            || metadata.dev() != shared_metadata.dev()
+            || metadata.ino() != shared_metadata.ino()
+        {
+            return Err(format!(
+                "Codex authentication share must be a hard link to {}: {}",
+                auth.display(),
+                shared_auth.display()
+            ));
+        }
+        let entries = std::fs::read_dir(share)
+            .map_err(|error| {
+                format!(
+                    "read Codex authentication share {}: {error}",
+                    share.display()
+                )
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                format!(
+                    "read Codex authentication share {}: {error}",
+                    share.display()
+                )
+            })?;
+        if entries.len() != 1 {
+            return Err(format!(
+                "Codex authentication share must contain only auth.json: {}",
+                share.display()
+            ));
         }
         Ok(())
     }
 
-    fn validate_shared_folders(&self, image_dir: &Path) -> Result<(), String> {
-        let protected = [
-            ("image directory", image_dir),
-            ("libvirt.worlds_dir", self.libvirt.worlds_dir.as_path()),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-            ),
-            ("install.binary_dir", self.install.binary_dir.as_path()),
-        ];
-        let mut sources = std::collections::BTreeSet::new();
-        let mut targets = std::collections::BTreeSet::new();
-        for (index, folder) in self.shared_folders.iter().enumerate() {
-            validate_absolute_path(&format!("shared_folders[{index}].source"), &folder.source)?;
-            validate_relative_path(&format!("shared_folders[{index}].target"), &folder.target)?;
-            if !sources.insert(folder.source.as_path()) {
-                return Err(format!(
-                    "duplicate shared folder source: {}",
-                    folder.source.display()
-                ));
-            }
-            if !targets.insert(folder.target.as_path()) {
-                return Err(format!(
-                    "duplicate shared folder target: {}",
-                    folder.target.display()
-                ));
-            }
-            for (name, path) in protected {
-                if folder.source.starts_with(path) || path.starts_with(&folder.source) {
-                    return Err(format!(
-                        "shared_folders[{index}].source and {name} must not overlap"
-                    ));
-                }
-            }
+    pub fn validate_codex_login(&self) -> Result<(), String> {
+        let auth = Path::new(CODEX_AUTH_PATH);
+        let metadata = std::fs::symlink_metadata(auth).map_err(|error| {
+            format!(
+                "inspect Codex authentication file {}: {error}",
+                auth.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(format!(
+                "Codex authentication path must be a regular, non-symlink file: {}",
+                auth.display()
+            ));
         }
         Ok(())
     }
 
-    fn libvirt_shared_folders(&self) -> Vec<LibvirtSharedFolder> {
-        self.shared_folders
-            .iter()
-            .enumerate()
-            .map(|(index, folder)| LibvirtSharedFolder {
-                source: folder.source.clone(),
-                tag: shared_folder_tag(index),
-            })
-            .collect()
-    }
-
-    pub fn guest_shared_folders(&self) -> Vec<SharedFolderMount> {
-        self.shared_folders
-            .iter()
-            .enumerate()
-            .map(|(index, folder)| SharedFolderMount {
-                tag: shared_folder_tag(index),
-                target: folder.target.clone(),
-            })
-            .collect()
+    fn codex_mounts(&self) -> CodexMounts {
+        CodexMounts {
+            sessions: PathBuf::from(CODEX_SESSIONS_PATH),
+            auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
+        }
     }
 
     fn agent_git_provider_hosts(&self) -> Vec<String> {
@@ -425,36 +421,6 @@ impl ServerConfig {
     }
 }
 
-fn shared_folder_tag(index: usize) -> String {
-    format!("wt-shared-{index}")
-}
-
-fn validate_absolute_path(name: &str, path: &Path) -> Result<(), String> {
-    if !path.is_absolute()
-        || path == Path::new("/")
-        || path
-            .components()
-            .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
-    {
-        return Err(format!(
-            "{name} must be an absolute normalized path below /"
-        ));
-    }
-    Ok(())
-}
-
-fn validate_relative_path(name: &str, path: &Path) -> Result<(), String> {
-    if path.as_os_str().is_empty()
-        || path.is_absolute()
-        || path
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(format!("{name} must be a normalized relative path"));
-    }
-    Ok(())
-}
-
 fn valid_git_host(value: &str) -> bool {
     !value.is_empty()
         && value == value.to_ascii_lowercase()
@@ -523,114 +489,22 @@ binary_dir = "/usr/local/bin"
             Path::new("/var/lib/wt/images/devcontainer.qcow2")
         );
         assert_eq!(machine.network, "default");
-        assert!(machine.shared_folders.is_empty());
-    }
-
-    #[test]
-    fn shared_folders_are_valid_and_receive_stable_tags() {
-        let shared = r#"
-[[shared_folders]]
-source = "/home/wt/.codex/sessions"
-target = ".codex/sessions"
-
-[[shared_folders]]
-source = "/var/lib/wt/shared/notes"
-target = "notes"
-
-"#;
-        let (config, machine) =
-            parse(&VALID.replace("[image]", &format!("{shared}[image]"))).unwrap();
         assert_eq!(
-            machine.shared_folders,
-            vec![
-                LibvirtSharedFolder {
-                    source: PathBuf::from("/home/wt/.codex/sessions"),
-                    tag: "wt-shared-0".to_owned(),
-                },
-                LibvirtSharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/notes"),
-                    tag: "wt-shared-1".to_owned(),
-                },
-            ]
-        );
-        assert_eq!(
-            config.guest_shared_folders(),
-            vec![
-                SharedFolderMount {
-                    tag: "wt-shared-0".to_owned(),
-                    target: PathBuf::from(".codex/sessions"),
-                },
-                SharedFolderMount {
-                    tag: "wt-shared-1".to_owned(),
-                    target: PathBuf::from("notes"),
-                },
-            ]
+            machine.codex_mounts,
+            Some(CodexMounts {
+                sessions: PathBuf::from(CODEX_SESSIONS_PATH),
+                auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
+            })
         );
     }
 
     #[test]
-    fn invalid_shared_folder_paths_and_duplicates_fail() {
-        fn config_with(entries: &str) -> String {
-            VALID.replace("[image]", &format!("{entries}\n[image]"))
-        }
-        for (entries, expected) in [
-            (
-                "[[shared_folders]]\nsource = \"relative\"\ntarget = \".codex/sessions\"",
-                "shared_folders[0].source must be an absolute normalized path below /",
-            ),
-            (
-                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \"/absolute\"",
-                "shared_folders[0].target must be a normalized relative path",
-            ),
-            (
-                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \"a/../b\"",
-                "shared_folders[0].target must be a normalized relative path",
-            ),
-            (
-                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".a\"\n[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".b\"",
-                "duplicate shared folder source: /var/lib/wt/shared/a",
-            ),
-            (
-                "[[shared_folders]]\nsource = \"/var/lib/wt/shared/a\"\ntarget = \".same\"\n[[shared_folders]]\nsource = \"/var/lib/wt/shared/b\"\ntarget = \".same\"",
-                "duplicate shared folder target: .same",
-            ),
-            (
-                "[[shared_folders]]\nsource = \"/var/lib/wt/images/shared\"\ntarget = \".a\"",
-                "shared_folders[0].source and image directory must not overlap",
-            ),
-        ] {
-            assert_eq!(parse(&config_with(entries)).unwrap_err(), expected);
-        }
-    }
-
-    #[test]
-    fn runtime_shared_folder_sources_must_be_directories() {
-        let temp = tempfile::tempdir().unwrap();
-        let missing = temp.path().join("missing");
-        let file = temp.path().join("file");
-        std::fs::write(&file, "not a directory").unwrap();
-        let mut config = parse(VALID).unwrap().0;
-        config.shared_folders = vec![SharedFolder {
-            source: missing.clone(),
-            target: PathBuf::from(".codex/sessions"),
-        }];
-        let error = config
-            .validate_shared_folder_sources()
-            .unwrap_err()
-            .replace(&temp.path().display().to_string(), "[TEMP]");
-        insta::assert_snapshot!(error, @r###"
-        shared_folders[0].source does not exist: [TEMP]/missing. Create this directory before starting wt-server.
-        "###);
-        config.shared_folders[0].source = file.clone();
-        assert_eq!(
-            config.validate_shared_folder_sources().unwrap_err(),
-            format!(
-                "shared_folders[0].source is not a directory: {}",
-                file.display()
-            )
+    fn configurable_shares_are_rejected() {
+        let config = VALID.replace(
+            "[image]",
+            "[[shared_folders]]\nsource = \"/tmp/a\"\ntarget = \"a\"\n\n[image]",
         );
-        config.shared_folders[0].source = temp.path().to_path_buf();
-        config.validate_shared_folder_sources().unwrap();
+        assert!(toml::from_str::<ServerConfig>(&config).is_err());
     }
 
     #[test]

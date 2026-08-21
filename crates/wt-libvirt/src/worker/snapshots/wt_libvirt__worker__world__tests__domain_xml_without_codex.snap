@@ -1,6 +1,6 @@
 ---
 source: crates/wt-libvirt/src/worker/world.rs
-expression: "test_domain_xml(Vec::new())"
+expression: test_domain_xml(None)
 ---
 <domain type='kvm'>
   <name>wt-0123456789abcdef0123456789abcdef</name>

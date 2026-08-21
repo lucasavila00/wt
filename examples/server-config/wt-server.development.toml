@@ -1,10 +1,6 @@
 # Install-input sample for scripts/install-server --config PATH.
 version = 1
 
-[[shared_folders]]
-source = "/home/wt/.codex/sessions"
-target = ".codex/sessions"
-
 [capacity]
 version = 1
 limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }

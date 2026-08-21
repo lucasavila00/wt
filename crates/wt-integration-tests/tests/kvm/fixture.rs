@@ -46,7 +46,6 @@ impl GitFixture {
     command: sleep infinity
     volumes:
       - /workspace:/workspaces/wt
-      - /home/wt/.codex/sessions:/home/wt/.codex/sessions
 "#,
         )
         .unwrap();

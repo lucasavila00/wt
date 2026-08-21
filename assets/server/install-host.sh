@@ -48,22 +48,22 @@ ensure_directory() {
     fi
 }
 
-ensure_shared_directory() {
+ensure_codex_sessions() {
     path=$1
     host_uid=$(id -u)
     host_gid=$(id -g)
     if test -L "$path"; then
-        echo "shared folder source must not be a symbolic link: $path" >&2
+        echo "Codex sessions path must not be a symbolic link: $path" >&2
         exit 1
     fi
     if test -e "$path"; then
         if ! test -d "$path"; then
-            echo "shared folder source is not a directory: $path" >&2
+            echo "Codex sessions path is not a directory: $path" >&2
             exit 1
         fi
         owner=$(stat -Lc %u "$path")
         if test "$owner" != "$host_uid" && test "$owner" != 1001; then
-            echo "shared folder source owner must be uid=$host_uid or uid=1001: $path" >&2
+            echo "Codex sessions path owner must be uid=$host_uid or uid=1001: $path" >&2
             exit 1
         fi
         sudo chmod 0700 "$path"
@@ -77,13 +77,12 @@ ensure_shared_directory() {
 
 case ${1-} in
     prepare)
-        test "$#" -ge 6 || exit 2
+        test "$#" -eq 6 || exit 2
         network=$2
         image_dir=$3
         binary_dir=$4
         worlds_dir=$5
         registry_dir=$6
-        shift 6
 
         # shellcheck source=/dev/null
         . /etc/os-release
@@ -121,9 +120,7 @@ case ${1-} in
         ensure_directory "$(id -u)" "$(id -g)" 700 /run/wt-image-build
         ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
         ensure_directory 0 0 755 "$registry_dir"
-        for shared_dir in "$@"; do
-            ensure_shared_directory "$shared_dir"
-        done
+        ensure_codex_sessions /home/wt/.codex/sessions
         ensure_qemu_acl "$worlds_dir"
         ;;
     acl)
@@ -131,7 +128,7 @@ case ${1-} in
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR REGISTRY_DIR [SHARED_DIR ...]|acl PATH}' >&2
+        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR REGISTRY_DIR|acl PATH}' >&2
         exit 2
         ;;
 esac

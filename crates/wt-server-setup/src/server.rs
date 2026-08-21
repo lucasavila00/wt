@@ -28,6 +28,9 @@ use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
 const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
+const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-auth.service";
+const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-auth.path";
+const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-auth-share";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
@@ -101,6 +104,7 @@ fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
 fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8>)> {
     let input = InstallInput::load_from(path).map_err(anyhow::Error::msg)?;
     let server = input.materialize();
+    server.validate_codex_login().map_err(anyhow::Error::msg)?;
     let server_bytes = serialize_server_config(&server).map_err(anyhow::Error::msg)?;
     Ok((input, server, server_bytes))
 }
@@ -402,6 +406,21 @@ fn install_services(
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
+    install_codex_auth_helper(runner)?;
+    install_service_unit(
+        runner,
+        "wt-codex-auth",
+        Path::new(CODEX_AUTH_SERVICE_PATH),
+        &codex_auth_service(&user),
+        replace_runtime,
+    )?;
+    install_service_unit(
+        runner,
+        "wt-codex-auth-path",
+        Path::new(CODEX_AUTH_PATH_UNIT_PATH),
+        &codex_auth_path_unit(),
+        replace_runtime,
+    )?;
     install_service_unit(
         runner,
         "wt-agent-git-gateway",
@@ -420,7 +439,11 @@ fn install_services(
         cmd!("sudo", "systemctl", "daemon-reload"),
         "reload systemd units",
     )?;
-    for name in ["wt-agent-git-gateway.service", "wt-server.service"] {
+    for name in [
+        "wt-codex-auth.path",
+        "wt-agent-git-gateway.service",
+        "wt-server.service",
+    ] {
         runner.run(
             cmd!("sudo", "systemctl", "enable", name),
             &format!("enable {name}"),
@@ -430,6 +453,16 @@ fn install_services(
             &format!("restart {name}"),
         )?;
     }
+    Ok(())
+}
+
+fn install_codex_auth_helper(runner: &impl Runner) -> Result<()> {
+    let local = Path::new("target/wt-codex-auth-share.install");
+    fs::write(local, host::CODEX_AUTH_SHARE).context("stage Codex auth share helper")?;
+    let temporary = Path::new("/usr/local/libexec/.wt-codex-auth-share.wt-new");
+    sudo_install(runner, local, temporary, 0o755)?;
+    sudo_move(runner, temporary, Path::new(CODEX_AUTH_HELPER_PATH))?;
+    let _ = fs::remove_file(local);
     Ok(())
 }
 
@@ -537,8 +570,9 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
-Wants=network-online.target wt-agent-git-gateway.service\n\
-After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service\n\
+Requires=wt-codex-auth.service\n\
+Wants=network-online.target wt-agent-git-gateway.service wt-codex-auth.path\n\
+After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-auth.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -561,6 +595,40 @@ WantedBy=multi-user.target\n",
             server.agent_git.vsock_port
         )),
         systemd_quote(&executable.display().to_string()),
+    )
+    .into_bytes()
+}
+
+fn codex_auth_service(user: &User) -> Vec<u8> {
+    format!(
+        "[Unit]\n\
+Description=Refresh the WT Codex authentication share\n\
+\n\
+[Service]\n\
+Type=oneshot\n\
+User={}\n\
+Environment={}\n\
+ExecStart={}\n\
+UMask=0077\n",
+        user.name,
+        systemd_quote(&format!("HOME={}", user.dir.display())),
+        CODEX_AUTH_HELPER_PATH,
+    )
+    .into_bytes()
+}
+
+fn codex_auth_path_unit() -> Vec<u8> {
+    format!(
+        "[Unit]\n\
+Description=Watch the WT Codex authentication file\n\
+\n\
+[Path]\n\
+PathChanged={}\n\
+Unit=wt-codex-auth.service\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n",
+        wt_server::CODEX_AUTH_PATH,
     )
     .into_bytes()
 }

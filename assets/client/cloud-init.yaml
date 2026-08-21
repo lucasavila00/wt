@@ -13,9 +13,5 @@ write_files:
       curl --proto '=https' --tlsv1.2 -LsSf \
         https://raw.githubusercontent.com/lucasavila00/diffo/main/install.sh | sh
 
-      runuser --user wt -- env HOME=/home/wt sh -c \
-        'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'
-      ln -sf /home/wt/.local/bin/codex /usr/local/bin/codex
-      wt-codex install
 runcmd:
   - [/usr/local/sbin/wt-default-host-tools]

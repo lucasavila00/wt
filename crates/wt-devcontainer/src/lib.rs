@@ -255,7 +255,6 @@ mod tests {
                     vsock_port: 18017,
                 },
                 wt_codex_binary: temp.path().join("wt-codex"),
-                shared_folders: Vec::new(),
             },
         })
         .unwrap();

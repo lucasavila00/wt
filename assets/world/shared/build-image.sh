@@ -31,6 +31,9 @@ test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
 phase "installing shared terminal stack"
 /bin/sh /var/tmp/wt-install-terminal.sh
+
+phase "installing Codex"
+/bin/sh /var/tmp/wt-install-codex.sh
 install -d -m 0755 /usr/local/share /usr/local/libexec
 printf "WT_USER='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
     "$WT_USER" "$WT_UID" "$WT_GID" "$WT_HOME" \
@@ -41,8 +44,8 @@ install -m 0755 /var/tmp/wt-retained-access /usr/local/libexec/wt-retained-acces
 install -m 0755 /var/tmp/wt-retained-git-author \
     /usr/local/libexec/wt-retained-git-author
 install -m 0755 /var/tmp/wt-retained-agent-git /usr/local/libexec/wt-retained-agent-git
-install -m 0755 /var/tmp/wt-retained-mount-folders \
-    /usr/local/libexec/wt-retained-mount-folders
+install -m 0755 /var/tmp/wt-retained-mount-codex \
+    /usr/local/libexec/wt-retained-mount-codex
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
     /usr/local/share/wt-tmux.conf | sha256sum --check --strict
 printf '%s  %s\n' "$ACCESS_SHA256" \
@@ -51,8 +54,8 @@ printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
     /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
 printf '%s  %s\n' "$AGENT_GIT_SHA256" \
     /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
-printf '%s  %s\n' "$MOUNT_FOLDERS_SHA256" \
-    /usr/local/libexec/wt-retained-mount-folders | sha256sum --check --strict
+printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
+    /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 
 phase "installing $WT_IMAGE_KIND application stack"
 /bin/sh /var/tmp/wt-kind-image-build.sh

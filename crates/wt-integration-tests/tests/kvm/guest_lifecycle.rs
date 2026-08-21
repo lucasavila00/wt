@@ -68,22 +68,18 @@ fn agent_git_transport_works_without_provider_credentials() {
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
     let shared_marker = format!("wt-kvm-e2e-{}", created.id.simple());
-    let codex_source = harness
-        .config
-        .shared_folders
-        .iter()
-        .find(|folder| folder.target == Path::new(".codex/sessions"))
-        .unwrap()
-        .source
-        .join(&shared_marker);
+    let codex_source = Path::new(wt_server::CODEX_SESSIONS_PATH).join(&shared_marker);
     run_guest(
         &harness,
         &name,
         &format!(
             "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
              test -x /usr/local/bin/wt-codex; \
-             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-shared-0; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-codex-sessions; \
              test \"$(findmnt -n -o FSTYPE --mountpoint /home/wt/.codex/sessions)\" = virtiofs; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /run/wt-codex-auth)\" = wt-codex-auth; \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-auth/auth.json; \
+             test -s /home/wt/.codex/auth.json; test ! -w /home/wt/.codex/auth.json; \
              printf 'from-devcontainer-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
         "write a shared marker through the devcontainer VM",
@@ -217,7 +213,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
             "test -S /run/wt-agent-git/gateway.sock; ",
-            "test ! -e /home/wt/.codex/auth.json; ",
+            "test -s /home/wt/.codex/auth.json; test ! -w /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
             "git --version; curl --version; codex --version; command -v diffo; ",
@@ -298,7 +294,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test \"$(id -un)\" = wt; ",
             "rustc --version; cargo clippy --version; rustfmt --version; ",
             "codex --version; pkg-config --exists libvirt; ",
-            "test ! -e /home/wt/.codex/auth.json",
+            "test -s /home/wt/.codex/auth.json && test ! -w /home/wt/.codex/auth.json",
         ),
         "verify devcontainer project tools",
     );

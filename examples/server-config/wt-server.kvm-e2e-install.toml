@@ -3,10 +3,6 @@
 # crates/wt-integration-tests/README.md. Do not put real credentials there.
 version = 1
 
-[[shared_folders]]
-source = "/home/wt/.codex/sessions"
-target = ".codex/sessions"
-
 [capacity]
 version = 1
 limits = { vcpus = 16, memory_mib = 32768, disk_gib = 1024 }

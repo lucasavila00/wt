@@ -22,14 +22,16 @@ printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
     "$WT_HOME/.byobu/color" | sha256sum --check --strict
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu")" = "$WT_UID:$WT_GID 755"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu/color")" = "$WT_UID:$WT_GID 644"
+test -x "$WT_HOME/.local/bin/codex"
+test "$(readlink /usr/local/bin/codex)" = "$WT_HOME/.local/bin/codex"
 printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
     /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
 printf '%s  %s\n' "$AGENT_GIT_SHA256" \
     /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
-printf '%s  %s\n' "$MOUNT_FOLDERS_SHA256" \
-    /usr/local/libexec/wt-retained-mount-folders | sha256sum --check --strict
+printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
+    /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 
 /usr/bin/tmux -V > /var/lib/wt-tmux-version
 sha256sum /usr/bin/tmux | cut -d ' ' -f 1 > /var/lib/wt-tmux-sha256
@@ -40,7 +42,7 @@ rm -f /etc/netplan/50-cloud-init.yaml /var/lib/wt-image-result \
     /var/tmp/wt-host-shell /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color \
     /var/tmp/wt-retained-access /var/tmp/wt-retained-git-author \
     /var/tmp/wt-retained-agent-git \
-    /var/tmp/wt-retained-mount-folders \
+    /var/tmp/wt-retained-mount-codex \
     /var/lib/wt-tmux
 truncate -s 0 /etc/machine-id
 ln -sfn /etc/machine-id /var/lib/dbus/machine-id
