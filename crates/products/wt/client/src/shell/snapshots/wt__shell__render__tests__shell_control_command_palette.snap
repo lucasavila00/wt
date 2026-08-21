@@ -5,11 +5,11 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 64, height: 16 },
     content: [
-        "    │┌Worlds───────────────────────────────────────────────────┐",
-        "▌  ││                    World management                     │",
-        "    ││                                                         │",
+        "    │┌Codex sessions · read-only startup snapshot──────────────┐",
+        "▌ 󰚩 ││                    No Codex sessions                    │",
+        "    ││     Start Codex in a world to see its session here      │",
         "    ││        ┌Command Palette────────────────────────┐        │",
-        "  󰚩 ││        │> █                                    │        │",
+        "   ││        │> █                                    │        │",
         "    ││        │───────────────────────────────────────│        │",
         "    ││        │ World: New host                      │        │",
         "    ││        │  World: New dev                       │        │",

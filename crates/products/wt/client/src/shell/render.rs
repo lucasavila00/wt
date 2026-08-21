@@ -220,7 +220,7 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, contexts: &[CodexContextSnapsho
     let rows = contexts.iter().flat_map(codex_rows).collect::<Vec<_>>();
     if rows.is_empty() {
         frame.render_widget(
-            Paragraph::new("No Codex sessions")
+            Paragraph::new("No Codex sessions\nStart Codex in a world to see its session here")
                 .alignment(Alignment::Center)
                 .block(block),
             area,
@@ -306,7 +306,7 @@ fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
             .border_style(Style::new().fg(Color::DarkGray)),
         area,
     );
-    for (index, (activity, icon)) in [(Activity::Worlds, ""), (Activity::Codex, "󰚩")]
+    for (index, (activity, icon)) in [(Activity::Codex, "󰚩"), (Activity::Worlds, "")]
         .into_iter()
         .enumerate()
     {
@@ -520,10 +520,6 @@ mod tests {
                 message: "context lab could not be queried: SSH failed".into(),
             },
         ]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        ));
         let parser = parser();
 
         terminal

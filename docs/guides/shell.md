@@ -22,6 +22,10 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
+`wt shell` opens in the Control UI with Codex sessions selected. `Tab` switches
+between session and world management. `F5` opens the active world when one is
+available.
+
 The Control UI's Codex activity is a read-only snapshot loaded when `wt shell`
 starts. It lists rollout-only sessions and every reported world, Byobu pane,
 activity state, and working directory across configured contexts. A failed
