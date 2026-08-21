@@ -50,15 +50,18 @@ pub(super) fn extract_phase_markers(pending_line: &mut Vec<u8>, bytes: &[u8]) ->
     phases
 }
 
-pub(super) fn progress_message(phase: &str, elapsed: Duration) -> String {
-    format!("Image build: {phase} (elapsed={}s)", elapsed.as_secs())
+pub(super) fn progress_message(kind: &str, phase: &str, elapsed: Duration) -> String {
+    format!(
+        "{kind} image build: {phase} (elapsed={}s)",
+        elapsed.as_secs()
+    )
 }
 
-fn drain_console(console: &mut ConsoleLog, started: Instant) -> Result<Option<String>> {
+fn drain_console(console: &mut ConsoleLog, started: Instant, kind: &str) -> Result<Option<String>> {
     let phases = console.drain()?;
     let mut last_phase = None;
     for phase in phases {
-        println!("{}", progress_message(&phase, started.elapsed()));
+        println!("{}", progress_message(kind, &phase, started.elapsed()));
         last_phase = Some(phase);
     }
     Ok(last_phase)
@@ -68,6 +71,7 @@ pub(super) fn wait_for_shutdown(
     runner: &impl Runner,
     console: &mut ConsoleLog,
     domain_name: &str,
+    kind: &str,
 ) -> Result<()> {
     let started = Instant::now();
     let deadline = Instant::now() + IMAGE_BUILD_TIMEOUT;
@@ -75,7 +79,7 @@ pub(super) fn wait_for_shutdown(
     let mut next_heartbeat = Instant::now() + Duration::from_secs(60);
     let mut phase = String::from("starting cloud-init");
     loop {
-        if let Some(next_phase) = drain_console(console, started)? {
+        if let Some(next_phase) = drain_console(console, started, kind)? {
             phase = next_phase;
             next_heartbeat = Instant::now() + Duration::from_secs(60);
         }
@@ -87,15 +91,18 @@ pub(super) fn wait_for_shutdown(
                 "read image build domain state",
             )?;
             if state.trim() == "shut off" {
-                drain_console(console, started)?;
-                println!("Guest powered off after {}s.", started.elapsed().as_secs());
+                drain_console(console, started, kind)?;
+                println!(
+                    "{kind} image-build VM powered off after {}s.",
+                    started.elapsed().as_secs()
+                );
                 return Ok(());
             }
             next_state_check = now + Duration::from_secs(3);
         }
 
         if now >= next_heartbeat {
-            println!("{}", progress_message(&phase, started.elapsed()));
+            println!("{}", progress_message(kind, &phase, started.elapsed()));
             next_heartbeat = now + Duration::from_secs(60);
         }
         if now >= deadline {

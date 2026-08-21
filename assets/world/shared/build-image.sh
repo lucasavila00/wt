@@ -7,12 +7,12 @@ phase() {
     echo "WT_IMAGE_PHASE=$*" > /dev/ttyS0
 }
 
-phase "installing shared machine packages"
+phase "installing base operating-system packages"
 /bin/sh /var/tmp/wt-install-packages.sh \
     openssh-server qemu-guest-agent tmux \
     bison build-essential curl libevent-dev libncurses-dev pkg-config
 
-phase "configuring shared machine services"
+phase "configuring base operating-system services"
 systemctl enable --now qemu-guest-agent.service
 systemctl disable --now ssh.service ssh.socket
 if ! getent group "$WT_USER" >/dev/null; then
@@ -29,7 +29,7 @@ printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
 sysctl --system
 test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
-phase "installing shared terminal stack"
+phase "installing terminal tools"
 /bin/sh /var/tmp/wt-install-terminal.sh
 
 phase "installing Codex"
@@ -57,10 +57,10 @@ printf '%s  %s\n' "$AGENT_GIT_SHA256" \
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
     /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 
-phase "installing $WT_IMAGE_KIND application stack"
+phase "installing $WT_IMAGE_KIND-specific tools"
 /bin/sh /var/tmp/wt-kind-image-build.sh
 
-phase "removing shared build dependencies"
+phase "removing image-build dependencies"
 DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
     bison build-essential curl libevent-dev libncurses-dev pkg-config
 apt-get clean
@@ -70,7 +70,7 @@ apt-get clean
 ! command -v make
 ! command -v curl
 
-phase "validating shared terminal stack"
+phase "validating installed terminal tools"
 test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"
 test "$(dpkg-query -W -f='${Version}' byobu)" = "$BYOBU_VERSION"
 printf '%s  %s\n' "$GHOSTTY_TERMINFO_SHA256" \
@@ -86,4 +86,4 @@ printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
     > /var/lib/wt-image-result
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result
-phase "$WT_IMAGE_KIND image ready; requesting shutdown"
+phase "recipe complete; requesting VM shutdown"
