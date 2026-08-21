@@ -1,11 +1,18 @@
+use super::control::{
+    command_palette_layout, control_areas, Activity, CommandPalette, ACTIVITY_BUTTON_HEIGHT,
+};
 use super::model::{Mode, ShellModel};
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellModel) {
+    if model.mode() == Mode::Control {
+        draw_control(frame, model);
+        return;
+    }
     frame.render_widget(TerminalView(screen), frame.area());
     match model.mode() {
         Mode::World => {
@@ -15,7 +22,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
             }
         }
         Mode::Switcher => draw_switcher(frame, model),
-        Mode::Control => draw_control(frame),
+        Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
 }
 
@@ -81,8 +88,102 @@ fn draw_switcher(frame: &mut Frame<'_>, model: &ShellModel) {
     );
 }
 
-fn draw_control(frame: &mut Frame<'_>) {
-    draw_overlay(frame, 32, 5, "CONTORL UI\n\nF5 close".to_owned());
+fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
+    let area = frame.area();
+    frame.render_widget(Block::new().style(Style::new().bg(Color::Black)), area);
+    let (activity_bar, content) = control_areas(area);
+    draw_activity_bar(frame, activity_bar, model.control().activity());
+    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(content);
+    let (title, placeholder) = match model.control().activity() {
+        Activity::Worlds => ("Worlds", "World management"),
+        Activity::Codex => ("Codex sessions", "Codex session management"),
+    };
+    frame.render_widget(
+        Paragraph::new(placeholder)
+            .alignment(Alignment::Center)
+            .block(Block::new().borders(Borders::ALL).title(title)),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new("[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]")
+            .style(Style::new().fg(Color::DarkGray)),
+        rows[1],
+    );
+    draw_command_palette(frame, content, model.control().palette());
+}
+
+fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
+    frame.render_widget(
+        Block::new()
+            .borders(Borders::RIGHT)
+            .border_style(Style::new().fg(Color::DarkGray)),
+        area,
+    );
+    for (index, (activity, icon)) in [(Activity::Worlds, ""), (Activity::Codex, "󰚩")]
+        .into_iter()
+        .enumerate()
+    {
+        let button = Rect::new(
+            area.x,
+            area.y.saturating_add(index as u16 * ACTIVITY_BUTTON_HEIGHT),
+            area.width.saturating_sub(1),
+            ACTIVITY_BUTTON_HEIGHT,
+        );
+        frame.render_widget(
+            Paragraph::new(icon).alignment(Alignment::Center),
+            Rect::new(button.x, button.y + 1, button.width, 1),
+        );
+        if activity == active {
+            frame.render_widget(Paragraph::new("▌"), Rect::new(button.x, button.y + 1, 1, 1));
+        }
+    }
+}
+
+fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandPalette) {
+    if !palette.is_open() {
+        return;
+    }
+    let (area, _) = command_palette_layout(content);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Block::new().borders(Borders::ALL).title("Command Palette"),
+        area,
+    );
+    let inner = area.inner(Margin::new(1, 1));
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+    frame.render_widget(Paragraph::new(format!("> {}█", palette.query())), rows[0]);
+    frame.render_widget(
+        Paragraph::new("─".repeat(usize::from(rows[1].width)))
+            .style(Style::new().fg(Color::DarkGray)),
+        rows[1],
+    );
+    let commands = palette.matches();
+    let items = if commands.is_empty() {
+        vec![ListItem::new("No matching commands").style(Style::new().fg(Color::DarkGray))]
+    } else {
+        commands
+            .iter()
+            .map(|command| ListItem::new(command.label()))
+            .collect()
+    };
+    let list = List::new(items)
+        .highlight_symbol(" ")
+        .highlight_style(Style::new().bg(Color::DarkGray));
+    let mut state = ListState::default().with_selected(
+        (!commands.is_empty()).then_some(palette.selected().min(commands.len().saturating_sub(1))),
+    );
+    frame.render_stateful_widget(list, rows[2], &mut state);
+    frame.render_widget(
+        Paragraph::new("↑/↓ select · Enter run · Esc close")
+            .style(Style::new().fg(Color::DarkGray)),
+        rows[3],
+    );
 }
 
 fn draw_overlay(frame: &mut Frame<'_>, width: u16, height: u16, text: String) {
@@ -124,7 +225,10 @@ mod tests {
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
-        model.handle_key(KeyCode::F(5));
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(5),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let parser = parser();
 
         terminal
@@ -135,18 +239,42 @@ mod tests {
     }
 
     #[test]
-    fn control_ui_is_only_the_placeholder() {
-        let backend = TestBackend::new(80, 6);
+    fn control_ui_has_activity_scaffolding() {
+        let backend = TestBackend::new(64, 12);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into()]);
-        model.handle_key(KeyCode::F(5));
-        model.handle_key(KeyCode::Up);
+        for code in [KeyCode::F(5), KeyCode::Up] {
+            model.handle_key(crossterm::event::KeyEvent::new(
+                code,
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
         let parser = parser();
 
         terminal
             .draw(|frame| draw(frame, parser.screen(), &model))
             .unwrap();
 
-        insta::assert_debug_snapshot!("shell_control_placeholder", terminal.backend().buffer());
+        insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn control_ui_opens_the_command_palette() {
+        let backend = TestBackend::new(64, 16);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["local.one".into()]);
+        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::F(1)] {
+            model.handle_key(crossterm::event::KeyEvent::new(
+                code,
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+        let parser = parser();
+
+        terminal
+            .draw(|frame| draw(frame, parser.screen(), &model))
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
     }
 }
