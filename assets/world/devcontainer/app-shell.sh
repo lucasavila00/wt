@@ -21,7 +21,7 @@ fi
 if ! "$tmux" has-session -t wt-app 2>/dev/null; then
     attempt=1
     while ! "$byobu" -f /usr/local/share/wt-devcontainer-tmux.conf new-session -d -s wt-app \
-        "$(test -e "$state/complete" && echo /usr/local/bin/wt-app-pane || echo /usr/local/bin/wt-setup-world)"; do
+        "$(test -e "$state/complete" && echo /usr/local/bin/wt-devcontainer-pane || echo /usr/local/bin/wt-setup-world)"; do
         "$tmux" has-session -t wt-app 2>/dev/null && break
         if test "$attempt" -ge 3; then
             echo "wt: failed to start the Byobu session after $attempt attempts" >&2
@@ -35,7 +35,7 @@ fi
 "$tmux" set-option -g remain-on-exit failed
 if test -e "$state/complete"; then
     if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then
-        "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-app-pane
+        "$tmux" respawn-pane -k -t wt-app:0.0 /usr/local/bin/wt-devcontainer-pane
     fi
 else
     if test "$("$tmux" display-message -p -t wt-app:0.0 '#{pane_dead}')" = 1; then

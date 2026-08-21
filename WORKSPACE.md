@@ -1,38 +1,30 @@
 # Workspace
 
-The repository is one Cargo workspace plus [shell assets](./assets/README.md).
-Rust packages are private and share their version, Rust edition, license, and
-common dependencies from the root `Cargo.toml`.
+The Cargo workspace is organized by product. Shared crates require production
+consumers from at least two products.
 
-## Packages
+```text
+crates/products/wt/{client,control-protocol,server,retained-worlds}
+crates/products/wt/{devcontainer-guest-tools,codex-integration,server-installer}
+crates/products/gh-actions-runner/service
+crates/products/agent-git-gateway/{gateway,git-hosting}
+crates/products/git-proxy/{service,installer}
+crates/shared/{libvirt-kvm,workload-registry,git-smart-protocol,installer-support}
+crates/tests/end-to-end
+```
 
-| Package | Kind | Role |
-|---------|------|------|
-| [`wt-api`](./crates/wt-api/) | Library | Control-plane JSON types |
-| [`wt-cli`](./crates/wt-cli/) | Binary `wt` | Client CLI |
-| [`wt-command`](./crates/wt-command/) | Library | Process command builder |
-| [`wt-devcontainer`](./crates/wt-devcontainer/) | Library | Devcontainer world lifecycle and provisioning |
-| [`wt-git-core`](./crates/wt-git-core/) | Library | Shared Git transport and write policy |
-| [`wt-agent-git`](./crates/wt-agent-git/) | Library and binaries | WT world Git access and provider CLI |
-| [`wt-git-proxy`](./crates/wt-git-proxy/) | Binary | Standalone OpenSSH Git proxy |
-| [`wt-devcontainer-guest`](./crates/wt-devcontainer-guest/) | Binaries | Devcontainer session and SSH helpers |
-| [`wt-github-ci`](./crates/wt-github-ci/) | Library | Ephemeral GitHub Actions world lifecycle |
-| [`wt-host`](./crates/wt-host/) | Library | Raw Ubuntu host world lifecycle |
-| [`wt-libvirt`](./crates/wt-libvirt/) | Library | Libvirt/KVM backend |
-| [`wt-provider`](./crates/wt-provider/) | Library | Shared machine-provider contracts |
-| [`wt-registry`](./crates/wt-registry/) | Library | Shared guest registry and capacity admission |
-| [`wt-server`](./crates/wt-server/) | Binary | Server API, registry, and jobs |
-| [`wt-server-setup`](./crates/wt-server-setup/) | Binary | Server installer and image builder |
-| [`wt-integration-tests`](./crates/wt-integration-tests/) | Tests | Cross-crate and KVM tests |
+`wt-retained-worlds` owns both retained-world lifecycles. `wt-libvirt-kvm`
+owns the supported machine implementation and transport contract.
+`wt-workload-registry` owns all persisted workload state and capacity.
 
-## Commands
+Useful commands:
 
 ```text
 cargo check --workspace
-cargo run -p wt-cli -- --help
+cargo run -p wt-client -- --help
 cargo run -p wt-server -- --help
-cargo run -p wt-server-setup -- --help
-make install-git-server
+cargo run -p wt-server-installer -- --help
+make install-git-server CONFIG=path/to/config.toml
 ```
 
 Development setup and required checks: [Development](./DEVELOPMENT.md).

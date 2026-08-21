@@ -28,7 +28,7 @@ configuration. They do not download pinned image artifacts or create a second
 retained guest user.
 
 The image compatibility field remains `1`. Staged-input hashes detect recipe
-changes. Installed images are not migrated: run `make nuke`, then install again.
+changes.
 
 Installing the expected version is not enough to prove compatibility. Run the
 real KVM E2E after rebuilding.

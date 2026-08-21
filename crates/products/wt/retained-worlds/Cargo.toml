@@ -1,0 +1,20 @@
+[package]
+name = "wt-retained-worlds"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Shared retained-world guest contracts and operations for wt"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+tempfile = { workspace = true }
+uuid = { workspace = true }
+ssh-key = { workspace = true }
+wt-control-protocol = { workspace = true }
+wt-libvirt-kvm = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

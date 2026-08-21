@@ -99,7 +99,7 @@ wt rm jsdev-manual
 ```
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
-WT injects Codex and `wt-codex` into the project devcontainer for its configured
+WT injects Codex and `wt-codex-integration` into the project devcontainer for its configured
 `remoteUser`, which is `wt`. The session uses the WT server's Codex login and
 shared conversation history.
 

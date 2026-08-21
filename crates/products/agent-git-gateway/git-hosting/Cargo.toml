@@ -1,0 +1,21 @@
+[package]
+name = "wt-git-hosting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "GitHub and GitLab operations for WT"
+
+[dependencies]
+anyhow = { workspace = true }
+wt-workload-registry = { workspace = true }
+graphql_client = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+

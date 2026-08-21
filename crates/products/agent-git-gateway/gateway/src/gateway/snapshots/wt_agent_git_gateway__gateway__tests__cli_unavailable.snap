@@ -1,0 +1,7 @@
+---
+source: crates/products/agent-git-gateway/gateway/src/gateway/tests.rs
+assertion_line: 44
+expression: cli_unavailable()
+---
+wt-git-hosting: provider API commands are not available for this project.
+Normal Git fetch, pull, and push are available.

@@ -2,7 +2,7 @@
 set -eu
 
 sessions=/home/wt/.codex/sessions
-auth_mount=/run/wt-codex-auth
+auth_mount=/run/wt-codex-integration-auth
 auth=/home/wt/.codex/auth.json
 
 escape_fstab_path() {
@@ -24,8 +24,8 @@ if ! findmnt --noheadings --mountpoint "$auth_mount" >/dev/null; then
     install -d -m 0700 -o root -g root "$auth_mount"
 fi
 
-sessions_entry="wt-codex-sessions $(escape_fstab_path "$sessions") virtiofs rw,nosuid,nodev 0 0"
-auth_entry="wt-codex-auth $(escape_fstab_path "$auth_mount") virtiofs ro,nosuid,nodev,noexec 0 0"
+sessions_entry="wt-codex-integration-sessions $(escape_fstab_path "$sessions") virtiofs rw,nosuid,nodev 0 0"
+auth_entry="wt-codex-integration-auth $(escape_fstab_path "$auth_mount") virtiofs ro,nosuid,nodev,noexec 0 0"
 for entry in "$sessions_entry" "$auth_entry"; do
     tag=${entry%% *}
     rest=${entry#* }

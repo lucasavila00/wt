@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-18
-- Related: [ADR 0017](0017-integrate-agent-git-gateway.md)
 
 ## Context
 
@@ -13,8 +12,9 @@ protocol and write-policy code.
 ## Decision
 
 Publish `wt-git-proxy` as a separate binary from this repository. Put the
-shared Git transport and policy in `wt-git-core`; keep WT world behavior in
-`wt-agent-git` and standalone OpenSSH configuration in `wt-git-proxy`.
+shared Git transport and policy in `wt-git-smart-protocol`; keep WT world
+behavior in `wt-agent-git-gateway` and standalone OpenSSH configuration in
+`wt-git-proxy`.
 
 OpenSSH runs the proxy as a forced command for each connection. Client access
 is just one managed `authorized_keys` file: the TUI can add an existing public
@@ -28,7 +28,7 @@ Tags and other refs are denied, and one denied ref rejects the whole push.
 Each configured Git host uses its own SSH credential and pinned host key. The
 client puts that host in the repository path, such as
 `github.com/lucasavila00/wt.git`. The proxy has no WT world or registry
-features. A real Git and two-hop OpenSSH test lives in `wt-integration-tests`.
+features. A real Git and two-hop OpenSSH test lives in `wt-end-to-end-tests`.
 
 ## Consequences
 

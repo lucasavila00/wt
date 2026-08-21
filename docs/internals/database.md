@@ -6,7 +6,7 @@ WT uses SQLite through Diesel at `~/.local/state/wt/instances.db`.
 resource reservation. `worlds` stores retained ownership, name, status,
 fingerprint, and guest SSH. `devcontainers` stores repository, Git grant, and
 app SSH. `hosts` stores the host Git grant. `runners` stores GitHub CI lifecycle
-state. `agent_git_reports` stores `ag-git` feedback attributed to the
+state. `agent_git_reports` stores `wt-git-hosting` feedback attributed to the
 authenticated world and removes it with that world.
 
 The store rejects an unknown kind, a missing required subtype, or a subtype on
@@ -23,10 +23,6 @@ current use. Starting one reacquires its full configured capacity.
 
 ## Schema changes
 
-Migrations and generated schema are owned by `crates/wt-registry`. Migrations
-are embedded in the binaries. Normally, add a migration there and commit its
-generated schema with it.
-
-ADR 0026 replaces the initial schema in place. There is no migration from the
-older database: run `make nuke` before installing this version. The wire
-protocol is version 2.
+Migrations and generated schema are owned by `crates/shared/workload-registry`.
+Migrations are embedded in the binaries. Normally, add a migration there and
+commit its generated schema with it.

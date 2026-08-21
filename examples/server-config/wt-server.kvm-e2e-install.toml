@@ -1,6 +1,6 @@
 # Test-only install input for preparing a clean host for make e2e-tests.
 # The provider files are disposable fixtures created by the instructions in
-# crates/wt-integration-tests/README.md. Do not put real credentials there.
+# crates/tests/end-to-end/README.md. Do not put real credentials there.
 version = 1
 
 [capacity]

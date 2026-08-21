@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-17
-- Supersedes: [ADR 0007](0007-require-matching-client-and-server-commits.md)
 - Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
 ## Context

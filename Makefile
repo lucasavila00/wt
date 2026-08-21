@@ -32,11 +32,17 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
-	@cargo run --release -p wt-server-setup -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
+	@test -f /etc/wt/server.toml \
+		&& test -f /etc/wt/capacity.toml \
+		&& systemctl is-active --quiet wt-codex-integration-auth.path || { \
+		printf '\nWT server must be installed before KVM E2E tests. Install it with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
+		exit 1; \
+	}
+	@cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
 		printf '\nImage verification failed. Rebuild the E2E images with:\n  make prepare-image CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}
-	cargo test -p wt-integration-tests --test kvm_e2e -- --ignored
+	cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
 
 install-client:
 	scripts/install-client

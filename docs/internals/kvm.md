@@ -1,6 +1,6 @@
 # KVM and NoCloud
 
-`wt-libvirt` owns machine creation, inspection, start, stop, disk usage, and
+`wt-libvirt-kvm` owns machine creation, inspection, start, stop, disk usage, and
 deletion. It creates
 independent qcow2 world disks, libvirt domains, NoCloud seed images, network
 identity, and QEMU guest-agent transport.
@@ -26,7 +26,7 @@ source:
 - host: upstream Ubuntu plus OpenSSH, QEMU guest agent, Byobu, tmux, and shared
   terminal assets.
 
-`wt-server-setup` builds each image independently through one KVM builder.
+`wt-server-installer` builds each image independently through one KVM builder.
 Shared recipes live in `assets/world/shared`; kind recipes live beside their
 kind. [ADR 0027](../adr/0027-build-images-in-kvm.md) records the build contract.
 

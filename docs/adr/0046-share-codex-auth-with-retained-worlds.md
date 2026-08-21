@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-21
-- Supersedes: ADR 0044
 
 ## Context
 
@@ -19,7 +18,7 @@ server user logs in again, while worlds must remain read-only consumers.
 ## Decision
 
 Codex is required for every retained host and devcontainer world. Both retained
-images install the upstream Codex CLI. Provisioning installs `wt-codex` and
+images install the upstream Codex CLI. Provisioning installs `wt-codex-integration` and
 activates its `codex` trampoline. The trampoline asks Codex to reconcile shared
 rollouts into the environment's local index before starting the saved real CLI;
 it never edits the index directly, and reconciliation failure warns without
@@ -36,11 +35,11 @@ additional paths:
 
 The auth export is a hard link to the live server credential, not a copy. A
 systemd path unit reruns the export helper after an atomic replacement. The
-guest mounts the export directory at `/run/wt-codex-auth` and links
+guest mounts the export directory at `/run/wt-codex-integration-auth` and links
 `/home/wt/.codex/auth.json` to its file. Refreshing expired authentication is a
 server-user operation; worlds cannot write it back.
 
-Devcontainer setup injects Codex, `wt-codex`, the read-write sessions path, and
+Devcontainer setup injects Codex, `wt-codex-integration`, the read-write sessions path, and
 the read-only auth export into the primary container. It links both resources
 under the configured `remoteUser`'s `.codex` directory. Repositories do not own
 or configure this integration.
@@ -48,9 +47,6 @@ or configure this integration.
 Do not share the complete `.codex` directory. Databases, indexes, logs, locks,
 and other runtime state remain local to each world and container. GitHub CI
 runners do not receive the server's Codex data.
-
-There is no migration or compatibility path for earlier worlds or server
-configuration. Reset the installation and recreate worlds.
 
 ## Consequences
 

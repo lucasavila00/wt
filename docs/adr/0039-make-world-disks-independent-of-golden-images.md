@@ -21,9 +21,6 @@ builds and publishes its replacement automatically. Publication remains staged:
 a failed build leaves the installed image unchanged. Existing worlds do not use
 the replaced file and keep running.
 
-There is no migration for old overlay-backed worlds. Clear them once before
-installing this change.
-
 The same rule applies when the shared retained-image foundation changes:
 golden-image replacement does not rewrite existing world disks. Recreate
 affected worlds to receive the new image-owned guest user and terminal

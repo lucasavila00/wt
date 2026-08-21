@@ -20,9 +20,9 @@ WT: WT gives you read access to every repository available to the Git gateway.
 WT: This checkout is project $project and its configured base is $base.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
 WT: write branches under $prefix in any available repository.
-WT: ag-git uses explicit provider resource types and IDs; it does not infer
+WT: wt-git-hosting uses explicit provider resource types and IDs; it does not infer
 WT: resources from the current checkout.
-WT: Run ag-git --help to discover every available command.
+WT: Run wt-git-hosting --help to discover every available command.
 WT:
 EOF
 
@@ -45,11 +45,11 @@ commit)
 WT: Commit created on $branch.
 WT: Publish it with:
 WT:   git push
-WT: After pushing, use the explicit ag-git commands printed by the Git gateway.
+WT: After pushing, use the explicit wt-git-hosting commands printed by the Git gateway.
 EOF
     ;;
 *)
-    echo "usage: wt-agent-git-hint checkout | commit" >&2
+    echo "usage: wt-agent-git-gateway-hint checkout | commit" >&2
     exit 2
     ;;
 esac

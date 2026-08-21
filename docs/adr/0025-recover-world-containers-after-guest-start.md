@@ -2,16 +2,14 @@
 
 - Status: Accepted
 - Date: 2026-08-14
-- Amends: [ADR 0020](0020-reserve-world-memory-before-starting-guests.md)
 - Uses the user contract from
   [ADR 0014](0014-require-explicit-devcontainer-remote-user.md)
 
 ## Context
 
-ADR 0020 added `wt start` for a stopped world. For a devcontainer world,
-starting its libvirt domain and inspecting it is not enough. After an abrupt
-guest stop, systemd starts Docker but the devcontainer and Compose sidecars
-remain stopped.
+For a devcontainer world, starting its libvirt domain and inspecting it is not
+enough. After an abrupt guest stop, systemd starts Docker but the devcontainer
+and Compose sidecars remain stopped.
 
 Starting the containers exposes a second recovery problem. The injected Dev
 Containers SSH feature can truncate its bind-mounted
@@ -124,8 +122,8 @@ of the environment.
 
 ### Use automatic container or guest restart policies
 
-Rejected because ADR 0020 intentionally requires an explicit `wt start`; the
-condition that stopped the guest may still exist.
+Rejected because retained worlds require an explicit `wt start`; the condition
+that stopped the guest may still exist.
 
 ### Save a second username and authorized-keys backup during setup
 

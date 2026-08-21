@@ -25,11 +25,11 @@ prepare)
     devcontainer --version
 
     registry_url=$(cat "$state/registry-url")
-    install -m 0644 "$state/registry-ca" /usr/local/share/ca-certificates/wt-registry-cache.crt
+    install -m 0644 "$state/registry-ca" /usr/local/share/ca-certificates/wt-workload-registry-cache.crt
     install -d -m 0755 /etc/systemd/system/docker.service.d
     printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
         "$registry_url" "$registry_url" \
-        > /etc/systemd/system/docker.service.d/wt-registry-cache.conf
+        > /etc/systemd/system/docker.service.d/wt-workload-registry-cache.conf
 
     install -d -m 0700 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-app-ssh
     install -d -m 0755 /var/lib/wt-app-ssh/public /var/lib/wt-app-ssh/public/authorized_keys

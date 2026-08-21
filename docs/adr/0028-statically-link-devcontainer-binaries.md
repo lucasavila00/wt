@@ -2,18 +2,17 @@
 
 - Status: Accepted
 - Date: 2026-08-14
-- Amends: [ADR 0017](0017-integrate-agent-git-gateway.md)
 
 ## Context
 
-`wt-server-setup` builds WT on the Ubuntu server. World setup copies `ag-git`
-and `git-remote-ag` into the guest and bind-mounts them into the primary
-devcontainer.
+`wt-server-installer` builds WT on the Ubuntu server. World setup copies
+`wt-git-hosting` and `git-remote-wt-agent` into the guest and bind-mounts them
+into the primary devcontainer.
 
 The server and guest are WT-controlled Ubuntu 24.04 systems, but the repository
 controls the devcontainer userland. A binary dynamically linked on the server
 therefore inherits a glibc version requirement that the devcontainer may not
-meet. In practice, `ag-git` failed before it could connect to the relay because
+meet. In practice, `wt-git-hosting` failed before it could connect to the relay because
 it required GLIBC 2.39 and the devcontainer provided an older version.
 
 WT must not make the server's libc version part of the devcontainer contract.
@@ -35,7 +34,7 @@ symbol-version requirement. Installation fails rather than falling back to a
 dynamically linked devcontainer binary.
 
 `scripts/install-server` installs the musl linker toolchain and the Rust musl
-target. `wt-server-setup` rejects any designated static artifact with a dynamic
+target. `wt-server-installer` rejects any designated static artifact with a dynamic
 program interpreter or GLIBC symbol requirement before installing it.
 
 This changes only executable packaging. The relay socket, transport protocol,
@@ -43,14 +42,12 @@ commands, and authorization model remain unchanged.
 
 ## Consequences
 
-- `ag-git` and normal Git operations through `git-remote-ag` do not depend on
+- `wt-git-hosting` and normal Git operations through `git-remote-wt-agent` do not depend on
   the devcontainer's libc implementation or glibc version.
 - Server installation produces one native server artifact and static musl
   artifacts for every other installed WT executable.
 - The musl target matches WT's current amd64 platform requirement; this decision
   does not add another architecture.
-- Existing worlds retain their copied client binaries and must be recreated to
-  receive the statically linked artifacts.
 
 ## Alternatives
 

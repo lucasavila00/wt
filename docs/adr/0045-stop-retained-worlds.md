@@ -2,8 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-20
-- Amends: [ADR 0020](0020-reserve-world-memory-before-starting-guests.md),
-  [ADR 0024](0024-use-a-shared-guest-registry.md)
 
 ## Context
 

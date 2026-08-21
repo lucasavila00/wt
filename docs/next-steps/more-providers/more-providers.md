@@ -28,9 +28,8 @@ The existing machine-provider and world-provisioner boundaries are described in
 
 | Crate | Role |
 |-------|------|
-| `wt-provider` | Neutral machine and guest transport contracts |
-| `wt-devcontainer` | Bootstrap, provisioning, and devcontainer lifecycle |
-| `wt-libvirt` | KVM lifecycle and QEMU guest-agent transport |
+| `wt-libvirt-kvm` | Current machine and guest transport contracts plus KVM implementation |
+| `wt-retained-worlds` | Bootstrap, provisioning, and retained-world lifecycle |
 | `wt-static-ssh` | Existing-machine claim and pinned OpenSSH transport |
 
 Transport is a behavior contract, not always SSH. Shared provisioning never

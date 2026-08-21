@@ -34,15 +34,11 @@ If `wt ls` shows a branch or commit in the future, obtain it on demand from the
 running world and label failures or unavailable worlds explicitly. Do not infer
 live Git state from creation inputs.
 
-WT has not shipped. Replace the registry schema and protocol version 1 instance
-shape in place without a migration or compatibility path.
-
 ## Consequences
 
 - Local and remote contexts have the same useful default columns.
 - The table reports configured capacity, not live utilization.
 - The table does not present stale checkout information as current state.
-- Existing development registries must be cleared and recreated.
 
 ## Alternatives
 

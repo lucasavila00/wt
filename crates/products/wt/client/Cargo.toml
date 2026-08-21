@@ -1,0 +1,27 @@
+[package]
+name = "wt-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Local wt workstation CLI (binary name: wt)"
+
+[[bin]]
+name = "wt"
+path = "src/main.rs"
+
+[dependencies]
+wt-control-protocol = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+cliclack = { workspace = true }
+nix = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+ssh-key = { workspace = true }
+tempfile = "3.27.0"
+toml = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+uuid = { workspace = true }
