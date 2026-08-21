@@ -25,6 +25,9 @@ use wt_installer_support::cmd;
 use wt_installer_support::{require_named_file, require_root_file, Runner};
 use wt_libvirt_kvm::LIBVIRT_URI;
 use wt_retained_worlds::devcontainer::PackageVersions;
+#[cfg(test)]
+use wt_server::image_generation::manifest_path;
+use wt_server::image_generation::resolve;
 use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
@@ -96,39 +99,30 @@ pub(crate) fn ensure(
     require_clean_publication_state(server)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let manifest_path = manifest_path(&server.image.path);
-    match installed_image_state(server.image.path.exists(), manifest_path.exists(), || {
-        verify_installed_image(input, server, server_bytes, &manifest_path)
-    }) {
-        InstalledImageState::Reusable => {
+    let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
+    match installed_image_state(
+        installed.image.exists(),
+        installed.manifest.exists(),
+        || verify_installed_image(input, server_bytes, &installed.image, &installed.manifest),
+    ) {
+        InstalledImageState::Reusable if installed.current => {
             println!(
                 "Reusing verified retained golden image: {}",
                 server.image.path.display()
             );
         }
+        InstalledImageState::Reusable => {
+            println!("Migrating verified retained golden image to generation storage.");
+            let publication = stage_legacy_publication(runner, &server.image.path)?;
+            publication.publish(runner)?;
+        }
         InstalledImageState::Missing => {
-            build_image(
-                runner,
-                input,
-                server,
-                server_bytes,
-                &source,
-                &byobu,
-                &manifest_path,
-            )?;
+            build_image(runner, input, server, server_bytes, &source, &byobu)?;
         }
         InstalledImageState::Replace(reason) => {
             println!("Replacing the installed retained golden image: {reason}");
             println!("Existing worlds use independent disks and are unaffected.");
-            build_image(
-                runner,
-                input,
-                server,
-                server_bytes,
-                &source,
-                &byobu,
-                &manifest_path,
-            )?;
+            build_image(runner, input, server, server_bytes, &source, &byobu)?;
         }
     }
     Ok(())
@@ -145,16 +139,7 @@ pub(crate) fn rebuild(
     require_clean_publication_state(server)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let manifest = manifest_path(&server.image.path);
-    build_image(
-        runner,
-        input,
-        server,
-        server_bytes,
-        &source,
-        &byobu,
-        &manifest,
-    )?;
+    build_image(runner, input, server, server_bytes, &source, &byobu)?;
     Ok(())
 }
 
@@ -163,8 +148,8 @@ pub(crate) fn verify(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
-    let manifest = manifest_path(&server.image.path);
-    verify_installed_image(input, server, server_bytes, &manifest)?;
+    let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
+    verify_installed_image(input, server_bytes, &installed.image, &installed.manifest)?;
     println!(
         "Verified retained golden image and provenance: {}",
         server.image.path.display()
@@ -241,7 +226,6 @@ fn build_image(
     server_bytes: &[u8],
     source: &Path,
     byobu: &Path,
-    manifest_path: &Path,
 ) -> Result<()> {
     println!("Building retained golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
@@ -261,7 +245,7 @@ fn build_image(
         fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
             .context("set image build directory permissions")?;
         host::ensure_qemu_search_acl(runner, &build_dir)?;
-        build_image_inner(&context, server_bytes, manifest_path, &build_dir)
+        build_image_inner(&context, server_bytes, &build_dir)
     })();
     if let Err(primary) = result {
         let primary = attach_console_tail(primary, &build_dir);
@@ -278,7 +262,6 @@ fn build_image(
 fn build_image_inner<R: Runner>(
     context: &BuildContext<'_, R>,
     server_bytes: &[u8],
-    manifest_path: &Path,
     build_dir: &Path,
 ) -> Result<()> {
     let runner = context.runner;
@@ -392,13 +375,7 @@ fn build_image_inner<R: Runner>(
         packages,
         devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
     };
-    let publication = stage_publication(
-        runner,
-        &paths.prepared,
-        &server.image.path,
-        manifest_path,
-        &manifest,
-    )?;
+    let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(
@@ -410,12 +387,12 @@ fn build_image_inner<R: Runner>(
 
 pub(crate) fn verify_installed_image(
     input: &InstallInput,
-    server: &ServerConfig,
     server_bytes: &[u8],
+    image_path: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
-    require_named_file(&server.image.path, "libvirt-qemu", "kvm", 0o644)?;
+    require_named_file(image_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
         &fs::read(manifest_path)
@@ -438,7 +415,7 @@ pub(crate) fn verify_installed_image(
         .validate_package_versions(&manifest.packages)
         .context("installed image package provenance differs")?;
     require_sha(
-        &server.image.path,
+        image_path,
         &manifest.golden_sha256,
         "installed golden image",
     )
@@ -474,10 +451,6 @@ pub(super) fn installed_image_state(
             "the image and provenance manifest are not a complete pair".to_owned(),
         ),
     }
-}
-
-pub(crate) fn manifest_path(image: &Path) -> PathBuf {
-    PathBuf::from(format!("{}.manifest.json", image.display()))
 }
 
 pub(crate) fn sibling_temporary(path: &Path) -> Result<PathBuf> {

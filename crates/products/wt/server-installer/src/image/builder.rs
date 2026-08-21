@@ -2,13 +2,15 @@ mod contract;
 mod provenance;
 
 pub(super) use contract::validate_result_metadata;
-pub(super) use provenance::{image_config_sha, sha_bytes, stage_publication, staged_input_hashes};
+pub(super) use provenance::{
+    image_config_sha, sha_bytes, stage_legacy_publication, stage_publication, staged_input_hashes,
+};
 
 use contract::verify_retained_guest_contract;
 
 use super::console::{wait_for_shutdown, ConsoleLog};
 use super::recipe::ImageRecipe;
-use super::{manifest_path, recipe, sibling_temporary, BUILD_NAME};
+use super::{recipe, sibling_temporary, BUILD_NAME};
 use crate::install_input::InstallInput;
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
@@ -19,6 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wt_installer_support::cmd;
 use wt_installer_support::Runner;
 use wt_libvirt_kvm::LIBVIRT_URI;
+use wt_server::image_generation::{current_path, generations_path};
 use wt_server::ServerConfig;
 
 const INSTALL_PACKAGES: &[u8] =
@@ -494,14 +497,24 @@ pub(super) fn require_clean_build_state(runner: &impl Runner, server: &ServerCon
 
 pub(super) fn require_clean_publication_state(server: &ServerConfig) -> Result<()> {
     let image = &server.image.path;
-    let manifest = manifest_path(image);
-    let image_temporary = sibling_temporary(image)?;
-    let manifest_temporary = sibling_temporary(&manifest)?;
-    if image_temporary.exists() || manifest_temporary.exists() {
+    let current_temporary = sibling_temporary(&current_path(image))?;
+    let generations = generations_path(image);
+    let temporary_generation = if generations.exists() {
+        fs::read_dir(&generations)
+            .with_context(|| format!("read image generations {}", generations.display()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with('.') && name.ends_with(".wt-new"))
+            })
+    } else {
+        None
+    };
+    if fs::symlink_metadata(&current_temporary).is_ok() || temporary_generation.is_some() {
         bail!(
-            "image publication drift: remove abandoned temporary files {} and {} with make nuke",
-            image_temporary.display(),
-            manifest_temporary.display()
+            "image publication drift: remove abandoned temporary generation state with make nuke"
         );
     }
     Ok(())
