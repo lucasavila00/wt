@@ -2,13 +2,13 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use wt_client::config::ClientConfig;
 use wt_client::transport::{self, ContextError};
-use wt_control_protocol::{AgentGitReport, ApiRequest, Operation, Response};
+use wt_control_protocol::{AgentToolReport, ApiRequest, Operation, Response};
 
 pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     let result = list_all(config);
     if result.failures.len() == config.contexts.len() {
         return Err(super::context_failures(
-            "could not list wt-git-hosting reports because every context failed",
+            "could not list wt-tools reports because every context failed",
             &result.failures,
             None,
         ));
@@ -23,13 +23,13 @@ pub fn clear(config: &ClientConfig) -> anyhow::Result<()> {
     let result = clear_all(config);
     if result.failures.len() == config.contexts.len() {
         return Err(super::context_failures(
-            "could not clear wt-git-hosting reports because every context failed",
+            "could not clear wt-tools reports because every context failed",
             &result.failures,
             None,
         ));
     }
     println!(
-        "cleared {} wt-git-hosting report{}",
+        "cleared {} wt-tools report{}",
         result.count,
         if result.count == 1 { "" } else { "s" }
     );
@@ -38,13 +38,13 @@ pub fn clear(config: &ClientConfig) -> anyhow::Result<()> {
 }
 
 #[derive(Debug)]
-pub struct ContextAgentGitReport {
+pub struct ContextAgentToolReport {
     context: String,
-    report: AgentGitReport,
+    report: AgentToolReport,
 }
 
 pub struct ListResult {
-    pub reports: Vec<ContextAgentGitReport>,
+    pub reports: Vec<ContextAgentToolReport>,
     pub failures: Vec<ContextError>,
 }
 
@@ -57,21 +57,20 @@ pub fn list_all(config: &ClientConfig) -> ListResult {
     let mut reports = Vec::new();
     let mut failures = Vec::new();
     for context in &config.contexts {
-        match transport::call(context, &ApiRequest::new(Operation::ListAgentGitReports)) {
-            Ok(Response::AgentGitReports {
+        match transport::call(context, &ApiRequest::new(Operation::ListAgentToolReports)) {
+            Ok(Response::AgentToolReports {
                 reports: context_reports,
-            }) => reports.extend(
-                context_reports
-                    .into_iter()
-                    .map(|report| ContextAgentGitReport {
-                        context: context.name.clone(),
-                        report,
-                    }),
-            ),
-            Ok(_) => failures.push(transport::wrong_response(
-                context,
-                "list wt-git-hosting reports",
-            )),
+            }) => {
+                reports.extend(
+                    context_reports
+                        .into_iter()
+                        .map(|report| ContextAgentToolReport {
+                            context: context.name.clone(),
+                            report,
+                        }),
+                )
+            }
+            Ok(_) => failures.push(transport::wrong_response(context, "list wt-tools reports")),
             Err(error) => failures.push(error),
         }
     }
@@ -82,23 +81,20 @@ pub fn clear_all(config: &ClientConfig) -> ClearResult {
     let mut count = 0;
     let mut failures = Vec::new();
     for context in &config.contexts {
-        match transport::call(context, &ApiRequest::new(Operation::ClearAgentGitReports)) {
-            Ok(Response::AgentGitReportsCleared {
+        match transport::call(context, &ApiRequest::new(Operation::ClearAgentToolReports)) {
+            Ok(Response::AgentToolReportsCleared {
                 count: context_count,
             }) => count += context_count,
-            Ok(_) => failures.push(transport::wrong_response(
-                context,
-                "clear wt-git-hosting reports",
-            )),
+            Ok(_) => failures.push(transport::wrong_response(context, "clear wt-tools reports")),
             Err(error) => failures.push(error),
         }
     }
     ClearResult { count, failures }
 }
 
-pub fn format(reports: &[ContextAgentGitReport]) -> String {
+pub fn format(reports: &[ContextAgentToolReport]) -> String {
     if reports.is_empty() {
-        return "No wt-git-hosting reports.\n".to_owned();
+        return "No wt-tools reports.\n".to_owned();
     }
     let mut rows = vec![[
         "CONTEXT".to_owned(),
@@ -149,26 +145,26 @@ pub fn format(reports: &[ContextAgentGitReport]) -> String {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use wt_control_protocol::{AgentGitReport, AgentGitReportKind, InstanceName};
+    use wt_control_protocol::{AgentToolReport, AgentToolReportKind, InstanceName};
 
     #[test]
     fn formats_reports_as_bounded_rows() {
         let reports = vec![
-            ContextAgentGitReport {
+            ContextAgentToolReport {
                 context: "local".into(),
-                report: AgentGitReport {
+                report: AgentToolReport {
                     world_id: Uuid::nil(),
                     world_name: InstanceName::parse("checkout").unwrap(),
-                    kind: AgentGitReportKind::Bug,
+                    kind: AgentToolReportKind::Bug,
                     description: "log output is missing\nfor failed jobs".into(),
                 },
             },
-            ContextAgentGitReport {
+            ContextAgentToolReport {
                 context: "lab".into(),
-                report: AgentGitReport {
+                report: AgentToolReport {
                     world_id: Uuid::nil(),
                     world_name: InstanceName::parse("review").unwrap(),
-                    kind: AgentGitReportKind::FeatureRequest,
+                    kind: AgentToolReportKind::FeatureRequest,
                     description: "support commit search".into(),
                 },
             },
@@ -183,6 +179,6 @@ mod tests {
 
     #[test]
     fn explains_an_empty_report_list() {
-        insta::assert_snapshot!(format(&[]), @"No wt-git-hosting reports.");
+        insta::assert_snapshot!(format(&[]), @"No wt-tools reports.");
     }
 }

@@ -3,7 +3,8 @@ mod binaries;
 use crate::host;
 use crate::image;
 use crate::install_input::{
-    serialize_capacity_config, serialize_server_config, AgentGitProviderInstallConfig, InstallInput,
+    serialize_capacity_config, serialize_server_config, AgentToolsProviderInstallConfig,
+    InstallInput,
 };
 use crate::registry_cache;
 use anyhow::{bail, Context, Result};
@@ -27,7 +28,7 @@ use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
-const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
+const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-tool-gateway.service";
 const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.service";
 const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.path";
 const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-integration-auth-share";
@@ -43,7 +44,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
 
     phase("Preparing Git provider credentials");
     let prompt = TerminalPassphrasePrompt::new(ssh_key_passphrase_context);
-    let credentials = prepare_agent_git_credentials(runner, &prompt, &input)?;
+    let credentials = prepare_agent_tools_credentials(runner, &prompt, &input)?;
 
     phase("Preparing host state and caches");
     prepare_host(runner, &server)?;
@@ -58,7 +59,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Installing configuration and credentials");
     install_server_config(runner, input_path, &server, &server_bytes)?;
     install_capacity_config(runner, input_path, &input.capacity)?;
-    install_agent_git_credentials(runner, &credentials)?;
+    install_agent_tools_credentials(runner, &credentials)?;
 
     phase("Starting WT services");
     install_services(runner, &input, &server, replace_runtime)?;
@@ -68,7 +69,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
 
 pub(crate) fn validate(input_path: &Path) -> Result<()> {
     let (input, _, _) = load_install_input(input_path)?;
-    validate_agent_git_files(&input)
+    validate_agent_tools_files(&input)
 }
 
 pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> Result<()> {
@@ -116,29 +117,29 @@ struct PreparedProviderCredentials {
     known_hosts: tempfile::NamedTempFile,
 }
 
-fn validate_agent_git_files(input: &InstallInput) -> Result<()> {
-    for (kind, provider) in input.agent_git.providers() {
+fn validate_agent_tools_files(input: &InstallInput) -> Result<()> {
+    for (kind, provider) in input.agent_tools.providers() {
         let token = read_owned_file(
             &provider.api_token_file,
             true,
-            &format!("agent_git.{kind}.api_token_file"),
+            &format!("agent_tools.{kind}.api_token_file"),
         )?;
         if token.iter().all(u8::is_ascii_whitespace) {
-            bail!("agent_git.{kind}.api_token_file must not be empty");
+            bail!("agent_tools.{kind}.api_token_file must not be empty");
         }
         validate_ssh_files(&provider_ssh_input(kind, provider))?;
     }
     Ok(())
 }
 
-fn prepare_agent_git_credentials(
+fn prepare_agent_tools_credentials(
     runner: &impl Runner,
     prompt: &impl PassphrasePrompt,
     input: &InstallInput,
 ) -> Result<Vec<PreparedProviderCredentials>> {
-    validate_agent_git_files(input)?;
+    validate_agent_tools_files(input)?;
     input
-        .agent_git
+        .agent_tools
         .providers()
         .map(|(kind, provider)| prepare_provider_credentials(runner, prompt, kind, provider))
         .collect()
@@ -148,12 +149,12 @@ fn prepare_provider_credentials(
     runner: &impl Runner,
     prompt: &impl PassphrasePrompt,
     kind: &'static str,
-    provider: &AgentGitProviderInstallConfig,
+    provider: &AgentToolsProviderInstallConfig,
 ) -> Result<PreparedProviderCredentials> {
     let api_token = temporary_credential(&read_owned_file(
         &provider.api_token_file,
         true,
-        &format!("agent_git.{kind}.api_token_file"),
+        &format!("agent_tools.{kind}.api_token_file"),
     )?)?;
     let ssh = prepare_ssh_credentials(runner, prompt, &provider_ssh_input(kind, provider))?;
     Ok(PreparedProviderCredentials {
@@ -166,7 +167,7 @@ fn prepare_provider_credentials(
 
 fn provider_ssh_input<'a>(
     kind: &'a str,
-    provider: &'a AgentGitProviderInstallConfig,
+    provider: &'a AgentToolsProviderInstallConfig,
 ) -> SshCredentialInput<'a> {
     SshCredentialInput {
         name: kind,
@@ -186,7 +187,7 @@ fn ssh_key_passphrase_context(kind: &str, path: &Path) -> String {
     format!(
         "{provider} SSH key is passphrase-protected\n\n\
 Key: {}\n\
-WT needs an unlocked copy so the local agent Git gateway can fetch and push.\n\
+WT needs an unlocked copy so the local agent tool gateway can fetch and push.\n\
 The original key will not be changed. WT verifies the key pair, encrypts the\n\
 unlocked copy as a systemd credential, and removes the temporary copy.",
         path.display()
@@ -203,7 +204,7 @@ fn phase_message(message: &str) -> String {
 
 fn success_message(input_path: &Path) -> String {
     format!(
-        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-git-gateway\nNext: configure a WT client, then run `wt new`.",
+        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-tool-gateway\nNext: configure a WT client, then run `wt new`.",
         input_path.display()
     )
 }
@@ -341,7 +342,7 @@ fn install_capacity_config(
     require_root_file(path, 0o644)
 }
 
-fn install_agent_git_credentials(
+fn install_agent_tools_credentials(
     runner: &impl Runner,
     providers: &[PreparedProviderCredentials],
 ) -> Result<()> {
@@ -372,7 +373,7 @@ fn install_agent_git_credentials(
         ] {
             let credential = format!("{}-{suffix}", provider.kind);
             let destination =
-                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-agent-git-gateway-{credential}"));
+                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-agent-tool-gateway-{credential}"));
             let temporary = destination.with_extension("wt-new");
             if temporary.exists() {
                 bail!(
@@ -424,7 +425,7 @@ fn install_services(
     )?;
     install_service_unit(
         runner,
-        "wt-agent-git-gateway",
+        "wt-agent-tool-gateway",
         Path::new(GATEWAY_SERVICE_PATH),
         &gateway_service(&user, input, server),
         replace_runtime,
@@ -442,7 +443,7 @@ fn install_services(
     )?;
     for name in [
         "wt-codex-integration-auth.path",
-        "wt-agent-git-gateway.service",
+        "wt-agent-tool-gateway.service",
         "wt-server.service",
     ] {
         runner.run(
@@ -516,10 +517,10 @@ fn service_unit_needs_replacement(
 }
 
 fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt-agent-git-gateway");
+    let executable = server.install.binary_dir.join("wt-agent-tool-gateway");
     let mut command = format!("{} serve", systemd_quote(&executable.display().to_string()));
     let mut credentials = String::new();
-    for (kind, provider) in input.agent_git.providers() {
+    for (kind, provider) in input.agent_tools.providers() {
         let token = format!("%d/{kind}-api-token");
         let key = format!("%d/{kind}-ssh-private-key");
         let known_hosts = format!("%d/{kind}-ssh-known-hosts");
@@ -531,13 +532,13 @@ fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> 
         for suffix in ["api-token", "ssh-private-key", "ssh-known-hosts"] {
             let id = format!("{kind}-{suffix}");
             credentials.push_str(&format!(
-                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-agent-git-gateway-{id}\n"
+                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-agent-tool-gateway-{id}\n"
             ));
         }
     }
     format!(
         "[Unit]\n\
-Description=WT agent Git gateway\n\
+Description=WT agent tool gateway\n\
 Wants=network-online.target\n\
 After=network-online.target\n\
 \n\
@@ -549,9 +550,9 @@ Environment={}\n\
 {}\n\
 ExecStart={}\n\
 Restart=on-failure\n\
-RuntimeDirectory=wt-agent-git-gateway\n\
+RuntimeDirectory=wt-agent-tool-gateway\n\
 RuntimeDirectoryMode=0700\n\
-StateDirectory=wt/agent-git\n\
+StateDirectory=wt/agent-tools\n\
 StateDirectoryMode=0700\n\
 UMask=0077\n\
 \n\
@@ -561,8 +562,8 @@ WantedBy=multi-user.target\n",
         systemd_quote(&format!("HOME={}", user.dir.display())),
         systemd_quote(&format!(
             "{}={}",
-            wt_server::AGENT_GIT_VSOCK_PORT_ENV,
-            server.agent_git.vsock_port
+            wt_server::AGENT_TOOL_VSOCK_PORT_ENV,
+            server.agent_tools.vsock_port
         )),
         credentials.trim_end(),
         command,
@@ -576,8 +577,8 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
         "[Unit]\n\
 Description=WT control-plane daemon\n\
 Requires=wt-codex-integration-auth.service\n\
-Wants=network-online.target wt-agent-git-gateway.service wt-codex-integration-auth.path\n\
-After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-integration-auth.service\n\
+Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path\n\
+After=network-online.target docker.service libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -596,8 +597,8 @@ WantedBy=multi-user.target\n",
         systemd_quote(&format!("HOME={}", user.dir.display())),
         systemd_quote(&format!(
             "{}={}",
-            wt_server::AGENT_GIT_VSOCK_PORT_ENV,
-            server.agent_git.vsock_port
+            wt_server::AGENT_TOOL_VSOCK_PORT_ENV,
+            server.agent_tools.vsock_port
         )),
         systemd_quote(&executable.display().to_string()),
     )

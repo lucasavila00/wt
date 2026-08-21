@@ -11,7 +11,7 @@ use wt_control_protocol::{
 fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
     ContextInstance {
         context: context.to_owned(),
-        agent_git_report_count: 0,
+        agent_tool_report_count: 0,
         disk_usage_bytes: None,
         instance: Instance {
             id: Uuid::new_v4(),
@@ -86,13 +86,13 @@ fn formats_stopped_world_with_recovery_commands() {
 }
 
 #[test]
-fn ls_points_to_wt_git_hosting_reports_without_changing_world_status() {
+fn ls_points_to_wt_tools_reports_without_changing_world_status() {
     let mut running = item("local", "jsdev", InstanceStatus::Running);
-    running.agent_git_report_count = 2;
+    running.agent_tool_report_count = 2;
 
     insta::assert_snapshot!(format_instances(&[running]), @r###"
     CONTEXT  NAME   KIND          STATUS   REPO  RESOURCES         DETAIL
-    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 wt-git-hosting reports; run `wt reports`
+    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
     "###);
 }
 
@@ -153,7 +153,7 @@ fn parses_stop_target() {
 }
 
 #[test]
-fn parses_agent_git_report_commands() {
+fn parses_agent_tool_report_commands() {
     assert!(matches!(
         Cli::try_parse_from(["wt", "reports"]).unwrap().command,
         Command::Reports

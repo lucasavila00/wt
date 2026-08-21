@@ -6,7 +6,7 @@ WT uses SQLite through Diesel at `~/.local/state/wt/instances.db`.
 resource reservation. `worlds` stores retained ownership, name, status,
 fingerprint, and guest SSH. `devcontainers` stores repository, Git grant, and
 app SSH. `hosts` stores the host Git grant. `runners` stores GitHub CI lifecycle
-state. `agent_git_reports` stores `wt-git-hosting` feedback attributed to the
+state. `agent_tool_reports` stores `wt-tools` feedback attributed to the
 authenticated world and removes it with that world.
 
 The store rejects an unknown kind, a missing required subtype, or a subtype on

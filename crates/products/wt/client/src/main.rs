@@ -54,9 +54,9 @@ enum Command {
     Ssh { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
-    /// Show reports submitted about wt-git-hosting.
+    /// Show reports submitted about wt-tools.
     Reports,
-    /// Clear reports submitted about wt-git-hosting.
+    /// Clear reports submitted about wt-tools.
     ClearReports,
 }
 
@@ -587,13 +587,13 @@ fn instance_detail(item: &ContextInstance) -> String {
         ),
         _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
     };
-    if item.agent_git_report_count == 0 {
+    if item.agent_tool_report_count == 0 {
         return detail;
     }
     let reports = format!(
-        "{} wt-git-hosting report{}; run `wt reports`",
-        item.agent_git_report_count,
-        if item.agent_git_report_count == 1 {
+        "{} wt-tools report{}; run `wt reports`",
+        item.agent_tool_report_count,
+        if item.agent_tool_report_count == 1 {
             ""
         } else {
             "s"

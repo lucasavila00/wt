@@ -12,7 +12,7 @@ still prevent concurrent runs.
 ## Decision
 
 Treat the gateway vsock port as runtime configuration. Production config and
-service units set `18017`. `WT_AGENT_GIT_VSOCK_PORT` may override it for an
+service units set `18017`. `WT_AGENT_TOOL_VSOCK_PORT` may override it for an
 unmanaged server or gateway process. Provision every world relay with the
 server's resolved port.
 

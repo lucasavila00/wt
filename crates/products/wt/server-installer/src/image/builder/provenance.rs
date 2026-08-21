@@ -14,7 +14,7 @@ pub(in crate::image) fn staged_input_hashes(
         byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
         access_sha256: &sha_bytes(CONFIGURE_ACCESS),
         git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
-        agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
+        agent_tools_sha256: &sha_bytes(INSTALL_AGENT_TOOLS),
         mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
     }
     .render();
@@ -58,8 +58,8 @@ pub(in crate::image) fn staged_input_hashes(
             sha_bytes(CONFIGURE_GIT_AUTHOR),
         ),
         (
-            "/var/tmp/wt-retained-agent-git".to_owned(),
-            sha_bytes(INSTALL_AGENT_GIT),
+            "/var/tmp/wt-retained-agent-tools".to_owned(),
+            sha_bytes(INSTALL_AGENT_TOOLS),
         ),
         (
             "/var/tmp/wt-retained-mount-codex".to_owned(),

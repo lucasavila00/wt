@@ -7,7 +7,7 @@ consumers from at least two products.
 crates/products/wt/{client,control-protocol,server,retained-worlds}
 crates/products/wt/{devcontainer-guest-tools,codex-integration,server-installer}
 crates/products/gh-actions-runner/service
-crates/products/agent-git-gateway/{gateway,git-hosting}
+crates/products/agent-tools/{gateway,tools}
 crates/products/git-proxy/{service,installer}
 crates/shared/{libvirt-kvm,workload-registry,git-smart-protocol,installer-support}
 crates/tests/end-to-end

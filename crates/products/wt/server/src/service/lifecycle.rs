@@ -1,8 +1,8 @@
-use super::{map_store_error, AgentGitGateway, Service};
+use super::{map_store_error, AgentToolGateway, Service};
 use wt_control_protocol::{ApiError, ErrorCode, InstanceName, InstanceStatus, Response};
 use wt_retained_worlds::WorldWorker;
 
-impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub(super) fn stop(&self, owner: &str, name: &InstanceName) -> Result<Response, ApiError> {
         let _operation = self
             .operations

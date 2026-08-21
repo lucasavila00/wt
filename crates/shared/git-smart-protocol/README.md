@@ -7,7 +7,7 @@ through. Before a push passes through, the crate reads every requested ref
 update and checks it against a branch policy. If one update is not allowed, the
 whole push is rejected before the upstream sees it.
 
-- `wt-agent-git-gateway` supplies WT world authorization and reporting.
+- `wt-agent-tool-gateway` supplies WT world authorization and reporting.
 - `wt-git-proxy` supplies standalone OpenSSH and repository configuration.
 
 ## How it works

@@ -8,7 +8,7 @@ use wt_control_protocol::{ApiRequest, Instance, InstanceName, Operation, Respons
 pub struct ContextInstance {
     pub context: String,
     pub instance: Instance,
-    pub agent_git_report_count: u64,
+    pub agent_tool_report_count: u64,
     pub disk_usage_bytes: Option<u64>,
 }
 
@@ -79,14 +79,14 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
         let Response::Instances {
             instances,
             disk_usage_bytes,
-            agent_git_report_counts,
+            agent_tool_report_counts,
         } = response
         else {
             failures.push(transport::wrong_response(context, "list"));
             continue;
         };
         all.extend(instances.into_iter().map(|instance| {
-            let agent_git_report_count = agent_git_report_counts
+            let agent_tool_report_count = agent_tool_report_counts
                 .get(&instance.id)
                 .copied()
                 .unwrap_or_default();
@@ -94,7 +94,7 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
             ContextInstance {
                 context: context.name.clone(),
                 instance,
-                agent_git_report_count,
+                agent_tool_report_count,
                 disk_usage_bytes,
             }
         }));
@@ -166,7 +166,7 @@ mod tests {
     fn item(context: &str, name: &str) -> ContextInstance {
         ContextInstance {
             context: context.into(),
-            agent_git_report_count: 0,
+            agent_tool_report_count: 0,
             disk_usage_bytes: None,
             instance: Instance {
                 id: Uuid::new_v4(),

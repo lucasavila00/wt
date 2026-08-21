@@ -37,8 +37,8 @@ const CONFIGURE_ACCESS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/configure-access.sh");
 const CONFIGURE_GIT_AUTHOR: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/configure-git-author.sh");
-const INSTALL_AGENT_GIT: &[u8] =
-    include_bytes!("../../../../../../assets/world/shared/install-agent-git.sh");
+const INSTALL_AGENT_TOOLS: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/install-agent-tools.sh");
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
 
@@ -166,7 +166,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let byobu_color = build_dir.join("byobu-color");
     let configure_access = build_dir.join("configure-access.sh");
     let configure_git_author = build_dir.join("configure-git-author.sh");
-    let install_agent_git = build_dir.join("install-agent-git.sh");
+    let install_agent_tools = build_dir.join("install-agent-tools.sh");
     let mount_codex = build_dir.join("mount-codex.sh");
 
     println!(
@@ -203,7 +203,7 @@ pub(super) fn run_kvm_build<R: Runner>(
             byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
             git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
-            agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
+            agent_tools_sha256: &sha_bytes(INSTALL_AGENT_TOOLS),
             mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
         }
         .render(),
@@ -219,7 +219,8 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
     fs::write(&configure_git_author, CONFIGURE_GIT_AUTHOR)
         .context("write shared guest Git author setup")?;
-    fs::write(&install_agent_git, INSTALL_AGENT_GIT).context("write shared agent Git setup")?;
+    fs::write(&install_agent_tools, INSTALL_AGENT_TOOLS)
+        .context("write shared agent tool setup")?;
     fs::write(&mount_codex, MOUNT_CODEX).context("write Codex mount setup")?;
 
     let mut customize = Command::new("sudo");
@@ -246,8 +247,8 @@ pub(super) fn run_kvm_build<R: Runner>(
             "/var/tmp/wt-retained-git-author",
         ),
         (
-            install_agent_git.as_path(),
-            "/var/tmp/wt-retained-agent-git",
+            install_agent_tools.as_path(),
+            "/var/tmp/wt-retained-agent-tools",
         ),
         (mount_codex.as_path(), "/var/tmp/wt-retained-mount-codex"),
     ] {

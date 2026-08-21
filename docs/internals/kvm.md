@@ -73,7 +73,7 @@ The KVM lifecycle test does not mutate installed golden images. Each harness
 creates temporary qcow2 overlays backed by those images, applies branch assets
 only to the overlays, and keeps them alive until its worlds are deleted.
 
-The production agent Git gateway uses vsock port `18017`. Each harness selects
+The production agent tool gateway uses vsock port `18017`. Each harness selects
 a different high port and gives the same value to its server, gateway, and
 world relays. Test server and capacity configuration, sockets, grants, provider
 fixtures, and database state stay in that harness's temporary directory. The

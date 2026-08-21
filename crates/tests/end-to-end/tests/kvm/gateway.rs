@@ -23,7 +23,7 @@ pub(crate) fn spawn_gateway(
         }
     }
     let mut gateway = cmd!(
-        binary_dir.join("wt-agent-git-gateway"),
+        binary_dir.join("wt-agent-tool-gateway"),
         "serve",
         "--control-socket",
         &control_socket,
@@ -37,9 +37,9 @@ pub(crate) fn spawn_gateway(
     gateway.stdout(Stdio::null());
     if let Some((kind, base_url, token_file)) = api {
         gateway
-            .env("WT_AGENT_GIT_TEST_PROVIDER_KIND", kind)
-            .env("WT_AGENT_GIT_TEST_API_BASE", base_url)
-            .env("WT_AGENT_GIT_TEST_TOKEN_FILE", token_file);
+            .env("WT_AGENT_TOOL_TEST_PROVIDER_KIND", kind)
+            .env("WT_AGENT_TOOL_TEST_API_BASE", base_url)
+            .env("WT_AGENT_TOOL_TEST_TOKEN_FILE", token_file);
     }
     let log = fs::OpenOptions::new()
         .create(true)

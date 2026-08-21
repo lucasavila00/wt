@@ -24,7 +24,7 @@ systemctl daemon-reload
 git --version
 test ! -e /workspace
 test ! -e /usr/local/bin/wt-app-shell
-test ! -e /usr/local/bin/wt-agent-git-gateway-relay
+test ! -e /usr/local/bin/wt-agent-tool-gateway-relay
 systemd-analyze verify /etc/systemd/system/wt-host-setup.service
 
 dpkg-query -W -f='${Package}\t${Version}\n' \

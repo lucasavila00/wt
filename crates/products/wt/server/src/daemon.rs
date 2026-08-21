@@ -138,7 +138,7 @@ mod tests {
                 ApiResponse::ok(Response::Instances {
                     instances: vec![],
                     disk_usage_bytes: Default::default(),
-                    agent_git_report_counts: Default::default(),
+                    agent_tool_report_counts: Default::default(),
                 })
             })
             .unwrap();

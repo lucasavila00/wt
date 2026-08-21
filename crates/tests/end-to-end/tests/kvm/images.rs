@@ -3,7 +3,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tempfile::TempDir;
-use wt_agent_git_gateway::VSOCK_PORT;
+use wt_agent_tool_gateway::VSOCK_PORT;
 use wt_end_to_end_tests::cmd;
 
 pub(crate) fn unique_vsock_port() -> u32 {

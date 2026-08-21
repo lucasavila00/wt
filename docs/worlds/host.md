@@ -61,7 +61,7 @@ The retained image contains Codex. Provisioning installs and activates
 exposed read-only. These mounts are restored and verified whenever a stopped
 host world starts.
 
-Every host receives `wt-git-hosting` and a revocable gateway grant. Configured provider
+Every host receives `wt-tools` and a revocable gateway grant. Configured provider
 URLs use the gateway automatically. The grant can read every available
 repository and write only branches under `wt/`; provider credentials remain on
 the server. Explicit OpenSSH agent forwarding is a separate access path and is

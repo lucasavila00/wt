@@ -21,7 +21,7 @@ impl PassphrasePrompt for FixedPassphrase {
     }
 }
 
-fn provider_config(temp: &Path, passphrase: &str) -> AgentGitProviderInstallConfig {
+fn provider_config(temp: &Path, passphrase: &str) -> AgentToolsProviderInstallConfig {
     let private = temp.join("id_ed25519");
     let output = cmd!(
         "ssh-keygen",
@@ -53,7 +53,7 @@ fn provider_config(temp: &Path, passphrase: &str) -> AgentGitProviderInstallConf
     let token = temp.join("token");
     fs::write(&token, "test-token\n").unwrap();
     fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
-    AgentGitProviderInstallConfig {
+    AgentToolsProviderInstallConfig {
         host: "github.com".to_owned(),
         api_token_file: token,
         ssh_private_key_file: private,
@@ -118,7 +118,7 @@ fn setup_messages_explain_the_operation() {
     GitHub SSH key is passphrase-protected
 
     Key: /home/wt/.ssh/id_ed25519
-    WT needs an unlocked copy so the local agent Git gateway can fetch and push.
+    WT needs an unlocked copy so the local agent tool gateway can fetch and push.
     The original key will not be changed. WT verifies the key pair, encrypts the
     unlocked copy as a systemd credential, and removes the temporary copy.
     "
@@ -127,7 +127,7 @@ fn setup_messages_explain_the_operation() {
     insta::assert_snapshot!(success_message(Path::new("./server.toml")), @"
     WT server is ready.
     Config: ./server.toml
-    Services started: wt-server, wt-agent-git-gateway
+    Services started: wt-server, wt-agent-tool-gateway
     Next: configure a WT client, then run `wt new`.
     ");
 }
@@ -211,7 +211,7 @@ state_dir = "/var/lib/wt/cache"
 port = 3128
 max_size_gib = 1
 registries = ["docker.io"]
-[agent_git.github]
+[agent_tools.github]
 host = "github.com"
 api_token_file = "/tmp/github.token"
 ssh_private_key_file = "/tmp/id_ed25519"
@@ -234,14 +234,14 @@ binary_dir = "/opt/wt bin"
     [Unit]
     Description=WT control-plane daemon
     Requires=wt-codex-integration-auth.service
-    Wants=network-online.target wt-agent-git-gateway.service wt-codex-integration-auth.path
-    After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-integration-auth.service
+    Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path
+    After=network-online.target docker.service libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service
 
     [Service]
     Type=simple
     User=[USER]
     Environment="HOME=[HOME]"
-    Environment="WT_AGENT_GIT_VSOCK_PORT=18017"
+    Environment="WT_AGENT_TOOL_VSOCK_PORT=18017"
     ExecStart="/opt/wt bin/wt-server" serve
     Restart=on-failure
     RuntimeDirectory=wt

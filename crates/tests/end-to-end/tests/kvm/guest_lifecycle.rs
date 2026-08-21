@@ -5,7 +5,7 @@ const HOST_DEFAULT_USER_DATA: &str = include_str!("../../../../../assets/client/
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
-fn agent_git_transport_works_without_provider_credentials() {
+fn agent_tools_transport_works_without_provider_credentials() {
     let _serial = KVM_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -253,7 +253,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test \"$(git config --global --get user.email)\" = wt@example.invalid; ",
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
-            "test -S /run/wt-agent-git-gateway/gateway.sock; ",
+            "test -S /run/wt-agent-tool-gateway/gateway.sock; ",
             "test -s /home/wt/.codex/auth.json; test ! -w /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
@@ -265,10 +265,10 @@ fn agent_git_transport_works_without_provider_credentials() {
             "sudo -n wt-codex-integration install; ",
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
-            "test -x /usr/local/bin/wt-agent-git-gateway-relay; ",
+            "test -x /usr/local/bin/wt-agent-tool-gateway-relay; ",
             "test -x /usr/local/bin/git-remote-wt-agent; ",
-            "test -x /usr/local/bin/wt-git-hosting; ",
-            "systemctl is-active --quiet wt-agent-git-gateway-relay.service; ",
+            "test -x /usr/local/bin/wt-tools; ",
+            "systemctl is-active --quiet wt-agent-tool-gateway-relay.service; ",
             "test -x /usr/local/bin/wt-host-shell; ",
             "tmux has-session -t wt-host",
         ),
@@ -285,7 +285,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "printf 'host gateway\n' >> README.md; ",
             "git commit -am 'host gateway'; ",
             "git push -u origin wt/host-gateway; ",
-            "wt-git-hosting --help >/dev/null; ",
+            "wt-tools --help >/dev/null; ",
             "git switch -c outside-host; ",
             "printf 'outside\n' >> README.md; ",
             "git commit -am outside; ",
@@ -301,7 +301,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); sudo kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done; git -C /home/wt/gateway-check fetch origin",
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); sudo kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-tool-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done; git -C /home/wt/gateway-check fetch origin",
         "restart the host Git relay",
     );
 
@@ -311,7 +311,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         concat!(
             "set -eu; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
-            "test -S /run/wt-agent-git-gateway/gateway.sock",
+            "test -S /run/wt-agent-tool-gateway/gateway.sock",
         ),
         "verify guest credential isolation",
     );
@@ -324,7 +324,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git-gateway/gateway.sock && test \"$(git remote get-url origin)\" = wt-agent::git@local.test:acme/widget.git",
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-tool-gateway/gateway.sock && test \"$(git remote get-url origin)\" = wt-agent::git@local.test:acme/widget.git",
         "verify devcontainer gateway setup",
     );
     app(
@@ -351,22 +351,17 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify automatic Codex session mount",
     );
 
-    let help = app_output(
-        &harness,
-        &name,
-        "wt-git-hosting --help",
-        "read wt-git-hosting help",
-    );
+    let help = app_output(&harness, &name, "wt-tools --help", "read wt-tools help");
     insta::assert_snapshot!(help, @r###"
-    wt-git-hosting reads and changes explicitly identified Git provider resources and records
-    feedback about wt-git-hosting itself. It accepts exactly one JSON command object and
+    wt-tools reads and changes explicitly identified Git provider resources and records
+    feedback about wt-tools itself. It accepts exactly one JSON command object and
     rejects unknown fields.
 
     USAGE:
-    wt-git-hosting '<JSON>'
+    wt-tools '<JSON>'
 
     TYPESCRIPT COMMAND TYPE:
-    type WtGitHostingCommand =
+    type WtToolsCommand =
     | { action: "show_mr"; mr: number }
     | { action: "show_mr_for_branch"; branch: string }
     | { action: "show_run"; run: number }
@@ -387,18 +382,18 @@ fn agent_git_transport_works_without_provider_credentials() {
     | { action: "retry_job"; job: number }
     | { action: "cancel_job"; job: number }
     | { action: "cancel_run"; run: number }
-    | { action: "report_wt_git_hosting_bug"; description: string }
-    | { action: "report_wt_git_hosting_issue"; description: string }
-    | { action: "suggest_wt_git_hosting_improvement"; description: string }
-    | { action: "request_wt_git_hosting_feature"; description: string };
+    | { action: "report_wt_tool_bug"; description: string }
+    | { action: "report_wt_tool_issue"; description: string }
+    | { action: "suggest_wt_tool_improvement"; description: string }
+    | { action: "request_wt_tool_feature"; description: string };
 
     EXAMPLE:
-    wt-git-hosting '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+    wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
 
     `show_mr_for_branch` returns the single open MR from the named branch to the
     gateway grant's base branch. It fails when there is no match or multiple matches.
 
-    The four wt-git-hosting reporting actions store feedback against this authenticated world
+    The four wt-tools reporting actions store feedback against this authenticated world
     without contacting the Git provider.
 
     The provider and project come from this world's gateway grant. Every other
@@ -409,7 +404,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_guest(
         &harness,
         &name,
-        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done",
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-tool-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done",
         "restart the guest Git relay",
     );
     app(
@@ -444,12 +439,12 @@ fn agent_git_transport_works_without_provider_credentials() {
     This Git operation is for project acme/widget.
     Use normal Git for commits, fetches, pulls, and pushes.
     Every WT world can write branches under wt/.
-    wt-git-hosting uses explicit provider resource types and IDs; it does not infer
+    wt-tools uses explicit provider resource types and IDs; it does not infer
     resources from the current checkout.
-    Run wt-git-hosting --help to discover every available command.
+    Run wt-tools --help to discover every available command.
 
     Published branch `wt/fix-login`.
-    Run `wt-git-hosting --help` for explicit provider commands.
+    Run `wt-tools --help` for explicit provider commands.
     "###);
     assert_ref(
         &harness.git.repository,
@@ -493,7 +488,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             &harness,
             &name,
             &format!(
-                "wt-git-hosting '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
+                "wt-tools '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
                 local.trim()
             ),
             "read explicit CI through provider API fixture",
@@ -528,8 +523,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &name,
         &format!(
-            "test -S /run/wt-agent-git-gateway/gateway.sock && \
-             systemctl is-active --quiet docker.service wt-agent-git-gateway-relay.service && \
+            "test -S /run/wt-agent-tool-gateway/gateway.sock && \
+             systemctl is-active --quiet docker.service wt-agent-tool-gateway-relay.service && \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json && \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
              test ! -w /home/wt/.codex/auth.json && \
@@ -565,8 +560,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &host_name,
         &format!(
-            "command -v codex diffo && test -S /run/wt-agent-git-gateway/gateway.sock && \
-             systemctl is-active --quiet wt-agent-git-gateway-relay.service && \
+            "command -v codex diffo && test -S /run/wt-agent-tool-gateway/gateway.sock && \
+             systemctl is-active --quiet wt-agent-tool-gateway-relay.service && \
              git -C /home/wt/gateway-check fetch origin && \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json && \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \

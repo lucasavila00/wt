@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_agent_git_gateway::{
+use wt_agent_tool_gateway::{
     read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
     TransportRequest, TransportResponse, PROTOCOL_VERSION, VSOCK_PORT_ENV,
 };
@@ -53,8 +53,8 @@ impl KvmHarness {
             )
             .unwrap(),
         };
-        assert_eq!(config.agent_git.vsock_port, vsock_port);
-        config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
+        assert_eq!(config.agent_tools.vsock_port, vsock_port);
+        config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
         let installed_devcontainer_image = config.image.devcontainer_path.clone();
         let installed_host_image = config.image.host_path.clone();
         let images = timings.run("prepare isolated golden images", || {
@@ -512,7 +512,7 @@ pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Res
             .cloned()
             .map(|instance| wt_client::inventory::ContextInstance {
                 context: "local".into(),
-                agent_git_report_count: 0,
+                agent_tool_report_count: 0,
                 disk_usage_bytes: None,
                 instance,
             })
@@ -562,7 +562,7 @@ pub(crate) fn call_api_result(
     )
     .env("HOME", home)
     .env(
-        "WT_AGENT_GIT_TEST_CONTROL_SOCKET",
+        "WT_AGENT_TOOL_TEST_CONTROL_SOCKET",
         home.join("gateway-control.sock"),
     )
     .stdin(Stdio::piped())

@@ -2456,7 +2456,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
-name = "wt-agent-git-gateway"
+name = "wt-agent-tool-gateway"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2470,8 +2470,8 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
- "wt-git-hosting",
  "wt-git-smart-protocol",
+ "wt-tools",
  "wt-workload-registry",
 ]
 
@@ -2539,7 +2539,7 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-agent-git-gateway",
+ "wt-agent-tool-gateway",
  "wt-client",
  "wt-control-protocol",
  "wt-git-proxy",
@@ -2566,21 +2566,6 @@ dependencies = [
  "wt-libvirt-kvm",
  "wt-workload-registry",
  "zeroize",
-]
-
-[[package]]
-name = "wt-git-hosting"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "graphql_client",
- "insta",
- "serde",
- "serde_json",
- "tempfile",
- "ureq",
- "url",
- "wt-workload-registry",
 ]
 
 [[package]]
@@ -2682,7 +2667,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-agent-git-gateway",
+ "wt-agent-tool-gateway",
  "wt-control-protocol",
  "wt-libvirt-kvm",
  "wt-retained-worlds",
@@ -2709,6 +2694,21 @@ dependencies = [
  "wt-server",
  "wt-workload-registry",
  "zeroize",
+]
+
+[[package]]
+name = "wt-tools"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "graphql_client",
+ "insta",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ureq",
+ "url",
+ "wt-workload-registry",
 ]
 
 [[package]]

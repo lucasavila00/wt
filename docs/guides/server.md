@@ -18,7 +18,7 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, the shared capacity registry, registry cache,
-agent Git gateway, and two retained-world images:
+agent tool gateway, and two retained-world images:
 
 - a devcontainer image with Docker, Git, the Dev Container CLI, and guest tools;
 - a host image with upstream Ubuntu, OpenSSH, QEMU guest support, Byobu, and
@@ -49,7 +49,7 @@ worlds cannot write the credential back.
 A world disk cannot be smaller than its image's `build_disk_gib`. The client
 defaults to 32 GiB; a larger build image requires a larger world request.
 
-The current server install requires at least one agent Git provider. Its token,
+The current server install requires at least one agent tool provider. Its token,
 SSH private key, and trusted host keys stay in encrypted systemd credentials.
 Host recipes never receive them. Tests use local fake provider services and
 keys, not developer credentials.

@@ -2,4 +2,4 @@
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = '''wt-git-hosting world-prompt 2>/dev/null || true'''
+command = '''wt-tools world-prompt 2>/dev/null || true'''
