@@ -9,6 +9,12 @@ pub(super) enum Mode {
     Control,
 }
 
+impl Mode {
+    pub(super) fn forwards_mouse(self) -> bool {
+        matches!(self, Self::World | Self::Switcher)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum InputRoute {
     Consumed,
@@ -159,6 +165,13 @@ mod tests {
         model.handle_key(key(KeyCode::F(5)));
 
         assert_eq!(model.mode(), Mode::World);
+    }
+
+    #[test]
+    fn switcher_forwards_mouse_to_the_world() {
+        assert!(Mode::World.forwards_mouse());
+        assert!(Mode::Switcher.forwards_mouse());
+        assert!(!Mode::Control.forwards_mouse());
     }
 
     #[test]

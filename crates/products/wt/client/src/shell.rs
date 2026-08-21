@@ -140,7 +140,7 @@ fn dispatch_event(
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
-        Event::Mouse(mouse) if model.mode() == Mode::World => {
+        Event::Mouse(mouse) if model.mode().forwards_mouse() => {
             let screen = sessions.screen(model.active());
             if let Some(bytes) = input::encode_mouse(
                 mouse,
