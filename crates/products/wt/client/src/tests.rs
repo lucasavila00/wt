@@ -86,7 +86,7 @@ fn formats_stopped_world_with_recovery_commands() {
 }
 
 #[test]
-fn ls_points_to_ag_git_reports_without_changing_world_status() {
+fn ls_points_to_wt_git_hosting_reports_without_changing_world_status() {
     let mut running = item("local", "jsdev", InstanceStatus::Running);
     running.agent_git_report_count = 2;
 

@@ -37,10 +37,10 @@ impl CliCommand {
                 nonempty(head, "head")?;
                 nonempty(base, "base")?;
             }
-            Self::ReportAgGitBug { description }
-            | Self::ReportAgGitIssue { description }
-            | Self::SuggestAgGitImprovement { description }
-            | Self::RequestAgGitFeature { description } => {
+            Self::ReportWtGitHostingBug { description }
+            | Self::ReportWtGitHostingIssue { description }
+            | Self::SuggestWtGitHostingImprovement { description }
+            | Self::RequestWtGitHostingFeature { description } => {
                 nonempty(description.trim(), "description")?
             }
         }
@@ -87,10 +87,10 @@ impl CliCommand {
             Self::RetryJob { .. } => "retry the CI job",
             Self::CancelJob { .. } => "cancel the CI job",
             Self::CancelRun { .. } => "cancel the CI run",
-            Self::ReportAgGitBug { .. } => "report an wt-git-hosting bug",
-            Self::ReportAgGitIssue { .. } => "report an wt-git-hosting issue",
-            Self::SuggestAgGitImprovement { .. } => "suggest an wt-git-hosting improvement",
-            Self::RequestAgGitFeature { .. } => "request an wt-git-hosting feature",
+            Self::ReportWtGitHostingBug { .. } => "report a wt-git-hosting bug",
+            Self::ReportWtGitHostingIssue { .. } => "report a wt-git-hosting issue",
+            Self::SuggestWtGitHostingImprovement { .. } => "suggest a wt-git-hosting improvement",
+            Self::RequestWtGitHostingFeature { .. } => "request a wt-git-hosting feature",
         }
     }
 
@@ -117,26 +117,26 @@ impl CliCommand {
             | Self::CancelJob { job } => format!("job {job}"),
             Self::ListCi { commit } => format!("commit {commit}"),
             Self::OpenMr { head, base, .. } => format!("mr {head} -> {base}"),
-            Self::ReportAgGitBug { .. }
-            | Self::ReportAgGitIssue { .. }
-            | Self::SuggestAgGitImprovement { .. }
-            | Self::RequestAgGitFeature { .. } => "wt-git-hosting".to_owned(),
+            Self::ReportWtGitHostingBug { .. }
+            | Self::ReportWtGitHostingIssue { .. }
+            | Self::SuggestWtGitHostingImprovement { .. }
+            | Self::RequestWtGitHostingFeature { .. } => "wt-git-hosting".to_owned(),
         }
     }
 
     pub fn agent_git_report(&self) -> Option<(wt_workload_registry::AgentGitReportKind, &str)> {
         match self {
-            Self::ReportAgGitBug { description } => {
+            Self::ReportWtGitHostingBug { description } => {
                 Some((wt_workload_registry::AgentGitReportKind::Bug, description))
             }
-            Self::ReportAgGitIssue { description } => {
+            Self::ReportWtGitHostingIssue { description } => {
                 Some((wt_workload_registry::AgentGitReportKind::Issue, description))
             }
-            Self::SuggestAgGitImprovement { description } => Some((
+            Self::SuggestWtGitHostingImprovement { description } => Some((
                 wt_workload_registry::AgentGitReportKind::Improvement,
                 description,
             )),
-            Self::RequestAgGitFeature { description } => Some((
+            Self::RequestWtGitHostingFeature { description } => Some((
                 wt_workload_registry::AgentGitReportKind::FeatureRequest,
                 description,
             )),

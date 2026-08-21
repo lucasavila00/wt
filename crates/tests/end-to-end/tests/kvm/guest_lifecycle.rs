@@ -354,8 +354,54 @@ fn agent_git_transport_works_without_provider_credentials() {
         "wt-git-hosting --help",
         "read wt-git-hosting help",
     );
-    assert!(help.contains("explicitly identified Git provider resources"));
-    assert!(help.contains("| { action: \"wait_mr\"; mr: number; timeout_seconds?: number }"));
+    insta::assert_snapshot!(help, @r###"
+    wt-git-hosting reads and changes explicitly identified Git provider resources and records
+    feedback about wt-git-hosting itself. It accepts exactly one JSON command object and
+    rejects unknown fields.
+
+    USAGE:
+    wt-git-hosting '<JSON>'
+
+    TYPESCRIPT COMMAND TYPE:
+    type WtGitHostingCommand =
+    | { action: "show_mr"; mr: number }
+    | { action: "show_mr_for_branch"; branch: string }
+    | { action: "show_run"; run: number }
+    | { action: "show_job"; job: number }
+    | { action: "list_threads"; mr: number }
+    | { action: "list_ci"; commit: string }
+    | { action: "list_jobs"; run: number }
+    | { action: "log_job"; job: number }
+    | { action: "wait_mr"; mr: number; timeout_seconds?: number }
+    | { action: "wait_run"; run: number; timeout_seconds?: number }
+    | { action: "wait_job"; job: number; timeout_seconds?: number }
+    | { action: "open_mr"; head: string; base: string; draft?: boolean }
+    | { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
+    | { action: "edit_mr"; mr: number; title?: string; body?: string }
+    | { action: "comment_mr"; mr: number; body: string }
+    | { action: "reply_thread"; mr: number; thread: string; body: string }
+    | { action: "set_thread"; mr: number; thread: string; resolved: boolean }
+    | { action: "retry_job"; job: number }
+    | { action: "cancel_job"; job: number }
+    | { action: "cancel_run"; run: number }
+    | { action: "report_wt_git_hosting_bug"; description: string }
+    | { action: "report_wt_git_hosting_issue"; description: string }
+    | { action: "suggest_wt_git_hosting_improvement"; description: string }
+    | { action: "request_wt_git_hosting_feature"; description: string };
+
+    EXAMPLE:
+    wt-git-hosting '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+
+    `show_mr_for_branch` returns the single open MR from the named branch to the
+    gateway grant's base branch. It fails when there is no match or multiple matches.
+
+    The four wt-git-hosting reporting actions store feedback against this authenticated world
+    without contacting the Git provider.
+
+    The provider and project come from this world's gateway grant. Every other
+    resource is explicit. IDs must be positive integers. Commit values must be 7 to
+    64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.
+    "###);
 
     run_guest(
         &harness,
@@ -382,8 +428,26 @@ fn agent_git_transport_works_without_provider_credentials() {
     .unwrap();
     ensure_success("commit and push through gateway", &output).unwrap();
     let diagnostics = String::from_utf8(output.stderr).unwrap();
-    assert!(diagnostics.contains("This is a WT-managed development environment"));
-    assert!(diagnostics.contains("Run wt-git-hosting --help"));
+    let gateway_diagnostics = diagnostics
+        .lines()
+        .filter_map(|line| line.strip_prefix("remote: "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(gateway_diagnostics, @r###"
+    This is a WT-managed development environment for a coding agent.
+    The gateway does not expose developer SSH keys or provider credentials.
+    Do not look for credentials or use gh or glab.
+    WT gives you read access to every repository available to this gateway.
+    This Git operation is for project acme/widget.
+    Use normal Git for commits, fetches, pulls, and pushes.
+    Every WT world can write branches under wt/.
+    wt-git-hosting uses explicit provider resource types and IDs; it does not infer
+    resources from the current checkout.
+    Run wt-git-hosting --help to discover every available command.
+
+    Published branch `wt/fix-login`.
+    Run `wt-git-hosting --help` for explicit provider commands.
+    "###);
     assert_ref(
         &harness.git.repository,
         &format!("refs/heads/{branch}"),
@@ -431,7 +495,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             ),
             "read explicit CI through provider API fixture",
         );
-        assert!(status.contains("No CI resources for the commit"));
+        insta::assert_snapshot!(status.trim_end_matches('\n'), @"No CI resources for the commit.");
         harness.restart_gateway();
     }
 

@@ -128,16 +128,16 @@ pub enum CliCommand {
     CancelRun {
         run: u64,
     },
-    ReportAgGitBug {
+    ReportWtGitHostingBug {
         description: String,
     },
-    ReportAgGitIssue {
+    ReportWtGitHostingIssue {
         description: String,
     },
-    SuggestAgGitImprovement {
+    SuggestWtGitHostingImprovement {
         description: String,
     },
-    RequestAgGitFeature {
+    RequestWtGitHostingFeature {
         description: String,
     },
 }

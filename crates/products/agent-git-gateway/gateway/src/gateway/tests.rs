@@ -93,10 +93,10 @@ fn agent_git_reports_are_stored_for_the_authenticated_world_without_a_provider_a
     grant.world_id = world_id.to_string();
 
     let commands = [
-        r#"{"action":"report_ag_git_bug","description":"job logs disappear"}"#,
-        r#"{"action":"report_ag_git_issue","description":"the hint is unclear"}"#,
-        r#"{"action":"suggest_ag_git_improvement","description":"show the check name"}"#,
-        r#"{"action":"request_ag_git_feature","description":"support CI search"}"#,
+        r#"{"action":"report_wt_git_hosting_bug","description":"job logs disappear"}"#,
+        r#"{"action":"report_wt_git_hosting_issue","description":"the hint is unclear"}"#,
+        r#"{"action":"suggest_wt_git_hosting_improvement","description":"show the check name"}"#,
+        r#"{"action":"request_wt_git_hosting_feature","description":"support CI search"}"#,
     ];
     let outputs = commands
         .map(|command| {

@@ -104,10 +104,10 @@ fn command_parser_accepts_only_valid_json_objects() {
         r#"{"action":"retry_job","job":44}"#,
         r#"{"action":"cancel_job","job":44}"#,
         r#"{"action":"cancel_run","run":91}"#,
-        r#"{"action":"report_ag_git_bug","description":"build failed"}"#,
-        r#"{"action":"report_ag_git_issue","description":"output is unclear"}"#,
-        r#"{"action":"suggest_ag_git_improvement","description":"show progress"}"#,
-        r#"{"action":"request_ag_git_feature","description":"add search"}"#,
+        r#"{"action":"report_wt_git_hosting_bug","description":"build failed"}"#,
+        r#"{"action":"report_wt_git_hosting_issue","description":"output is unclear"}"#,
+        r#"{"action":"suggest_wt_git_hosting_improvement","description":"show progress"}"#,
+        r#"{"action":"request_wt_git_hosting_feature","description":"add search"}"#,
     ] {
         CliCommand::parse(&[json.to_owned()]).unwrap();
     }
@@ -145,10 +145,10 @@ fn command_parser_accepts_only_valid_json_objects() {
     assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":0}"#.into()]).is_err());
     assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":7,"extra":true}"#.into()]).is_err());
     assert!(CliCommand::parse(&[r#"{"action":"edit_mr","mr":7}"#.into()]).is_err());
-    assert!(
-        CliCommand::parse(&[r#"{"action":"report_ag_git_bug","description":"  "}"#.into()])
-            .is_err()
-    );
+    assert!(CliCommand::parse(&[
+        r#"{"action":"report_wt_git_hosting_bug","description":"  "}"#.into()
+    ])
+    .is_err());
 }
 
 #[test]

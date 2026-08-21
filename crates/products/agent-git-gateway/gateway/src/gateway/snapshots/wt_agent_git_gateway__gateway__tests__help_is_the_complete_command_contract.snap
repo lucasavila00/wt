@@ -11,7 +11,7 @@ USAGE:
 wt-git-hosting '<JSON>'
 
 TYPESCRIPT COMMAND TYPE:
-type AgGitCommand =
+type WtGitHostingCommand =
 | { action: "show_mr"; mr: number }
 | { action: "show_mr_for_branch"; branch: string }
 | { action: "show_run"; run: number }
@@ -32,10 +32,10 @@ type AgGitCommand =
 | { action: "retry_job"; job: number }
 | { action: "cancel_job"; job: number }
 | { action: "cancel_run"; run: number }
-| { action: "report_ag_git_bug"; description: string }
-| { action: "report_ag_git_issue"; description: string }
-| { action: "suggest_ag_git_improvement"; description: string }
-| { action: "request_ag_git_feature"; description: string };
+| { action: "report_wt_git_hosting_bug"; description: string }
+| { action: "report_wt_git_hosting_issue"; description: string }
+| { action: "suggest_wt_git_hosting_improvement"; description: string }
+| { action: "request_wt_git_hosting_feature"; description: string };
 
 EXAMPLE:
 wt-git-hosting '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'

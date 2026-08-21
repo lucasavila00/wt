@@ -513,10 +513,10 @@ impl GitProviderApi for GithubApi {
                     "Cancellation requested for run {run}."
                 )))
             }
-            CliCommand::ReportAgGitBug { .. }
-            | CliCommand::ReportAgGitIssue { .. }
-            | CliCommand::SuggestAgGitImprovement { .. }
-            | CliCommand::RequestAgGitFeature { .. } => {
+            CliCommand::ReportWtGitHostingBug { .. }
+            | CliCommand::ReportWtGitHostingIssue { .. }
+            | CliCommand::SuggestWtGitHostingImprovement { .. }
+            | CliCommand::RequestWtGitHostingFeature { .. } => {
                 unreachable!("agent Git reports are handled before provider commands")
             }
         }
