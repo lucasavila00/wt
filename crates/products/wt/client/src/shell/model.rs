@@ -1,6 +1,35 @@
 use super::control::{CodexContextSnapshot, ControlCommand, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
+use uuid::Uuid;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WorldIdentity {
+    pub(super) context: String,
+    pub(super) id: Uuid,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ShellWorld {
+    pub(super) identity: WorldIdentity,
+    pub(super) name: String,
+}
+
+#[cfg(test)]
+impl From<&str> for ShellWorld {
+    fn from(name: &str) -> Self {
+        Self {
+            identity: WorldIdentity {
+                context: name
+                    .split_once('.')
+                    .map_or("local", |(context, _)| context)
+                    .into(),
+                id: Uuid::new_v4(),
+            },
+            name: name.into(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
@@ -24,7 +53,7 @@ pub(super) enum InputRoute {
 
 #[derive(Debug)]
 pub(super) struct ShellModel {
-    worlds: Vec<String>,
+    worlds: Vec<ShellWorld>,
     active: usize,
     mode: Mode,
     control: ControlState,
@@ -32,7 +61,7 @@ pub(super) struct ShellModel {
 }
 
 impl ShellModel {
-    pub(super) fn new(worlds: Vec<String>) -> Self {
+    pub(super) fn new(worlds: Vec<ShellWorld>) -> Self {
         Self {
             worlds,
             active: 0,
@@ -55,19 +84,21 @@ impl ShellModel {
     }
 
     pub(super) fn active_world(&self) -> &str {
-        &self.worlds[self.active]
+        &self.worlds[self.active].name
     }
 
     pub(super) fn world_count(&self) -> usize {
         self.worlds.len()
     }
 
-    pub(super) fn world_index(&self, world: &str) -> Option<usize> {
-        self.worlds.iter().position(|candidate| candidate == world)
+    pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
+        self.worlds
+            .iter()
+            .position(|world| &world.identity == identity)
     }
 
-    pub(super) fn activate_world(&mut self, world: String) {
-        self.active = match self.world_index(&world) {
+    pub(super) fn activate_world(&mut self, world: ShellWorld) {
+        self.active = match self.world_index(&world.identity) {
             Some(index) => index,
             None => {
                 self.worlds.push(world);
@@ -75,6 +106,23 @@ impl ShellModel {
             }
         };
         self.mode = Mode::World;
+    }
+
+    pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
+        let active_identity = self
+            .worlds
+            .get(self.active)
+            .map(|world| world.identity.clone());
+        self.worlds = worlds;
+        self.active = self
+            .worlds
+            .iter()
+            .position(|world| Some(&world.identity) == active_identity.as_ref())
+            .unwrap_or(0);
+        if self.worlds.is_empty() {
+            self.control.close();
+            self.mode = Mode::Control;
+        }
     }
 
     pub(super) fn should_quit(&self) -> bool {
@@ -146,9 +194,19 @@ mod tests {
     use crossterm::event::KeyModifiers;
 
     fn model() -> ShellModel {
-        let mut model = ShellModel::new(vec!["one".into(), "two".into(), "three".into()]);
+        let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::F(5)));
         model
+    }
+
+    fn world(name: &str) -> ShellWorld {
+        ShellWorld {
+            identity: WorldIdentity {
+                context: "local".into(),
+                id: Uuid::new_v4(),
+            },
+            name: name.into(),
+        }
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -243,5 +301,51 @@ mod tests {
             assert_eq!(model.handle_key(key(KeyCode::F(6))), InputRoute::Consumed);
             assert!(model.should_quit());
         }
+    }
+
+    #[test]
+    fn reconciliation_preserves_the_active_world_or_selects_the_first() {
+        let mut model = model();
+        model.active = 1;
+
+        let active = model.worlds[1].clone();
+        model.reconcile_worlds(vec![world("zero"), active, world("four")]);
+        assert_eq!(model.active_world(), "two");
+
+        model.reconcile_worlds(vec![world("four"), world("zero")]);
+        assert_eq!(model.active_world(), "four");
+    }
+
+    #[test]
+    fn reconciliation_opens_control_when_all_worlds_are_removed() {
+        let mut model = model();
+
+        model.reconcile_worlds(Vec::new());
+
+        assert!(!model.has_worlds());
+        assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn world_identity_includes_the_context() {
+        let id = Uuid::new_v4();
+        let local = ShellWorld {
+            identity: WorldIdentity {
+                context: "local".into(),
+                id,
+            },
+            name: "local.same".into(),
+        };
+        let lab = ShellWorld {
+            identity: WorldIdentity {
+                context: "lab".into(),
+                id,
+            },
+            name: "lab.same".into(),
+        };
+        let model = ShellModel::new(vec![local.clone(), lab.clone()]);
+
+        assert_eq!(model.world_index(&local.identity), Some(0));
+        assert_eq!(model.world_index(&lab.identity), Some(1));
     }
 }

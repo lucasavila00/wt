@@ -1,3 +1,4 @@
+use super::model::ShellWorld;
 use anyhow::{Context as _, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read as _, Write as _};
@@ -8,28 +9,28 @@ const OUTPUT_QUEUE: usize = 256;
 const SCROLLBACK_ROWS: usize = 10_000;
 
 enum SessionEvent {
-    Output { index: usize, bytes: Vec<u8> },
-    Closed { index: usize, error: Option<String> },
+    Output { token: u64, bytes: Vec<u8> },
+    Closed { token: u64, error: Option<String> },
 }
 
 pub(super) struct SessionSet {
     sessions: Vec<WorldSession>,
     events: Option<Receiver<SessionEvent>>,
     sender: SyncSender<SessionEvent>,
+    next_token: u64,
 }
 
 impl SessionSet {
-    pub(super) fn start(worlds: &[String], rows: u16, columns: u16) -> Result<Self> {
+    pub(super) fn start(worlds: &[ShellWorld], rows: u16, columns: u16) -> Result<Self> {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut set = Self {
             sessions: Vec::with_capacity(worlds.len()),
             events: Some(events),
             sender: sender.clone(),
+            next_token: 0,
         };
-        for (index, world) in worlds.iter().enumerate() {
-            set.sessions.push(WorldSession::start_ssh(
-                index, world, rows, columns, &sender,
-            )?);
+        for world in worlds {
+            set.add_world(world, rows, columns)?;
         }
         Ok(set)
     }
@@ -41,14 +42,20 @@ impl SessionSet {
         while let Ok(event) = events.try_recv() {
             changed = true;
             match event {
-                SessionEvent::Output { index, bytes } => {
+                SessionEvent::Output { token, bytes } => {
+                    let Some(index) = self.token_index(token) else {
+                        continue;
+                    };
                     let writes = self.sessions[index].clipboard.process(&bytes);
                     if index == active {
                         clipboard_writes.extend(writes);
                     }
                     self.sessions[index].parser.process(&bytes);
                 }
-                SessionEvent::Closed { index, error } => {
+                SessionEvent::Closed { token, error } => {
+                    let Some(index) = self.token_index(token) else {
+                        continue;
+                    };
                     self.sessions[index].closed = true;
                     if let Some(error) = error {
                         let message = format!("\r\nwt shell: session reader failed: {error}\r\n");
@@ -93,20 +100,61 @@ impl SessionSet {
         Ok(())
     }
 
-    pub(super) fn all_closed(&self) -> bool {
-        !self.sessions.is_empty() && self.sessions.iter().all(|session| session.closed)
-    }
-
-    pub(super) fn add_world(&mut self, world: &str, rows: u16, columns: u16) -> Result<()> {
-        let index = self.sessions.len();
+    pub(super) fn add_world(&mut self, world: &ShellWorld, rows: u16, columns: u16) -> Result<()> {
+        let token = self.next_token;
+        self.next_token = self
+            .next_token
+            .checked_add(1)
+            .expect("shell session token overflow");
         self.sessions.push(WorldSession::start_ssh(
-            index,
+            token,
             world,
             rows,
             columns,
             &self.sender,
         )?);
         Ok(())
+    }
+
+    pub(super) fn reconcile(
+        &mut self,
+        worlds: &[ShellWorld],
+        rows: u16,
+        columns: u16,
+    ) -> Result<()> {
+        self.sessions.retain_mut(|session| {
+            let retained = !session.closed
+                && worlds
+                    .iter()
+                    .any(|world| world.identity == session.world.identity);
+            if !retained {
+                session.stop_without_joining_reader();
+            }
+            retained
+        });
+        for world in worlds {
+            if self.world_index(world).is_none() {
+                self.add_world(world, rows, columns)?;
+            }
+        }
+        self.sessions.sort_by_key(|session| {
+            worlds
+                .iter()
+                .position(|world| world.identity == session.world.identity)
+        });
+        Ok(())
+    }
+
+    fn world_index(&self, world: &ShellWorld) -> Option<usize> {
+        self.sessions
+            .iter()
+            .position(|session| session.world.identity == world.identity)
+    }
+
+    fn token_index(&self, token: u64) -> Option<usize> {
+        self.sessions
+            .iter()
+            .position(|session| session.token == token)
     }
 }
 
@@ -118,6 +166,8 @@ impl Drop for SessionSet {
 }
 
 struct WorldSession {
+    token: u64,
+    world: ShellWorld,
     name: String,
     parser: vt100::Parser,
     writer: Option<Box<dyn std::io::Write + Send>>,
@@ -130,20 +180,20 @@ struct WorldSession {
 
 impl WorldSession {
     fn start_ssh(
-        index: usize,
-        world: &str,
+        token: u64,
+        world: &ShellWorld,
         rows: u16,
         columns: u16,
         sender: &SyncSender<SessionEvent>,
     ) -> Result<Self> {
         let mut command = CommandBuilder::new("ssh");
-        command.args(["--", world]);
-        Self::start(index, world, command, rows, columns, sender)
+        command.args(["--", &world.name]);
+        Self::start(token, world, command, rows, columns, sender)
     }
 
     fn start(
-        index: usize,
-        name: &str,
+        token: u64,
+        world: &ShellWorld,
         command: CommandBuilder,
         rows: u16,
         columns: u16,
@@ -151,27 +201,30 @@ impl WorldSession {
     ) -> Result<Self> {
         let pair = native_pty_system()
             .openpty(pty_size(rows, columns))
-            .with_context(|| format!("open {name} terminal"))?;
+            .with_context(|| format!("open {} terminal", world.name))?;
         let reader = pair
             .master
             .try_clone_reader()
-            .with_context(|| format!("open {name} terminal output"))?;
+            .with_context(|| format!("open {} terminal output", world.name))?;
         let writer = pair
             .master
             .take_writer()
-            .with_context(|| format!("open {name} terminal input"))?;
+            .with_context(|| format!("open {} terminal input", world.name))?;
         let child = pair
             .slave
             .spawn_command(command)
-            .with_context(|| format!("start SSH for {name}"))?;
+            .with_context(|| format!("start SSH for {}", world.name))?;
         drop(pair.slave);
         let output_sender = sender.clone();
+        let event_token = token;
         let reader = thread::Builder::new()
-            .name(format!("wt-shell-{index}"))
-            .spawn(move || read_output(index, reader, &output_sender))
-            .with_context(|| format!("start {name} terminal reader"))?;
+            .name(format!("wt-shell-{}", world.name))
+            .spawn(move || read_output(event_token, reader, &output_sender))
+            .with_context(|| format!("start {} terminal reader", world.name))?;
         Ok(Self {
-            name: name.to_owned(),
+            token,
+            world: world.clone(),
+            name: world.name.clone(),
             parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
             writer: Some(writer),
             master: Some(pair.master),
@@ -180,6 +233,16 @@ impl WorldSession {
             clipboard: ClipboardRelay::default(),
             closed: false,
         })
+    }
+
+    fn stop_without_joining_reader(&mut self) {
+        self.writer.take();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        self.master.take();
+        self.reader.take();
     }
 }
 
@@ -265,7 +328,7 @@ impl Drop for WorldSession {
 }
 
 fn read_output(
-    index: usize,
+    token: u64,
     mut reader: Box<dyn std::io::Read + Send>,
     sender: &SyncSender<SessionEvent>,
 ) {
@@ -273,13 +336,13 @@ fn read_output(
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => {
-                let _ = sender.send(SessionEvent::Closed { index, error: None });
+                let _ = sender.send(SessionEvent::Closed { token, error: None });
                 return;
             }
             Ok(length) => {
                 if sender
                     .send(SessionEvent::Output {
-                        index,
+                        token,
                         bytes: buffer[..length].to_vec(),
                     })
                     .is_err()
@@ -288,12 +351,12 @@ fn read_output(
                 }
             }
             Err(error) if is_pty_eof(&error) => {
-                let _ = sender.send(SessionEvent::Closed { index, error: None });
+                let _ = sender.send(SessionEvent::Closed { token, error: None });
                 return;
             }
             Err(error) => {
                 let _ = sender.send(SessionEvent::Closed {
-                    index,
+                    token,
                     error: Some(error.to_string()),
                 });
                 return;
@@ -332,6 +395,7 @@ mod tests {
             ],
             events: Some(events),
             sender,
+            next_token: 2,
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");
@@ -353,31 +417,81 @@ mod tests {
             ],
             events: Some(events),
             sender: sender.clone(),
+            next_token: 2,
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");
         let sequence = b"\x1b]52;c;Y29weQ==\x1b\\";
+        let one = sessions.sessions[0].token;
+        let two = sessions.sessions[1].token;
 
         sender
             .send(SessionEvent::Output {
-                index: 1,
+                token: two,
                 bytes: sequence.to_vec(),
             })
             .unwrap();
         assert!(sessions.drain_output(0).1.is_empty());
         sender
             .send(SessionEvent::Output {
-                index: 0,
+                token: one,
                 bytes: sequence.to_vec(),
             })
             .unwrap();
         assert_eq!(sessions.drain_output(0).1, vec![sequence.to_vec()]);
     }
 
-    fn fake_session(index: usize, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
+    fn fake_session(token: u64, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", r"stty -echo; printf '\033[2J\033[Hready'; cat"]);
-        WorldSession::start(index, name, command, 4, 20, sender).unwrap()
+        WorldSession::start(token, &ShellWorld::from(name), command, 4, 20, sender).unwrap()
+    }
+
+    #[test]
+    fn reconciliation_adds_removes_and_reorders_sessions() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let mut sessions = SessionSet {
+            sessions: vec![
+                fake_session(0, "one", &sender),
+                fake_session(1, "two", &sender),
+            ],
+            events: Some(events),
+            sender,
+            next_token: 2,
+        };
+        let two = sessions.sessions[1].world.clone();
+        let replacement = ShellWorld::from("one");
+        let replacement_identity = replacement.identity.clone();
+
+        sessions.reconcile(&[two, replacement], 4, 20).unwrap();
+
+        assert_eq!(
+            sessions
+                .sessions
+                .iter()
+                .map(|session| session.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["two", "one"]
+        );
+        assert_eq!(sessions.sessions[1].world.identity, replacement_identity);
+    }
+
+    #[test]
+    fn reconciliation_restarts_a_closed_session() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let world = ShellWorld::from("one");
+        let mut sessions = SessionSet {
+            sessions: vec![fake_session(0, "one", &sender)],
+            events: Some(events),
+            sender,
+            next_token: 1,
+        };
+        sessions.sessions[0].closed = true;
+
+        sessions.reconcile(&[world], 4, 20).unwrap();
+
+        assert_eq!(sessions.sessions[0].token, 1);
+        assert!(!sessions.sessions[0].closed);
     }
 
     fn wait_for(sessions: &mut SessionSet, index: usize, expected: &str) {

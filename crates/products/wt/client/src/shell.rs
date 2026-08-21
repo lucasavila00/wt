@@ -6,8 +6,10 @@ use crossterm::event::{
 use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
@@ -19,17 +21,21 @@ mod render;
 mod session;
 
 use control::ControlCommand;
-use model::{InputRoute, Mode, ShellModel};
+use model::{InputRoute, Mode, ShellModel, ShellWorld};
 use session::SessionSet;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
+const WORLD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const WORLD_REFRESH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("wt shell requires an interactive terminal");
     }
-    let report = inventory::list_all(config);
+    let cancelled = AtomicBool::new(false);
+    let report =
+        inventory::list_all_with_timeout(config, WORLD_REFRESH_REQUEST_TIMEOUT, &cancelled);
     if !report.failures.is_empty() {
         return Err(crate::context_failures(
             "wt shell was not started because the complete world list is unavailable",
@@ -38,16 +44,12 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         ));
     }
     ssh::sync(config, &report.instances)?;
-    let worlds = report
-        .instances
-        .iter()
-        .filter(|world| ssh::has_alias(world))
-        .map(inventory::ContextInstance::qualified_name)
-        .collect::<Vec<_>>();
+    let worlds = shell_worlds(&report.instances);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     model.set_codex(load_codex(config));
+    let refresh = WorldRefresh::start(config.clone());
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -59,7 +61,14 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         return Err(error).context("enable terminal input for wt shell");
     }
 
-    let result = run_loop(&mut terminal, &mut sessions, &mut model, config, &shutdown);
+    let result = run_loop(
+        &mut terminal,
+        &mut sessions,
+        &mut model,
+        config,
+        &refresh,
+        &shutdown,
+    );
     let input_result = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
@@ -68,6 +77,106 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     .context("disable terminal input for wt shell");
     ratatui::restore();
     result.and(input_result)
+}
+
+fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
+    instances
+        .iter()
+        .filter(|world| ssh::has_alias(world))
+        .map(|world| ShellWorld {
+            identity: model::WorldIdentity {
+                context: world.context.clone(),
+                id: world.instance.id,
+            },
+            name: world.qualified_name(),
+        })
+        .collect()
+}
+
+struct WorldRefresh {
+    updates: Receiver<WorldSnapshot>,
+    generation: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    stop: Sender<()>,
+    worker: Option<JoinHandle<()>>,
+}
+
+struct WorldSnapshot {
+    generation: u64,
+    instances: Vec<inventory::ContextInstance>,
+}
+
+struct ShellRuntime<'a> {
+    config: &'a ClientConfig,
+    refresh: &'a WorldRefresh,
+}
+
+impl WorldRefresh {
+    fn start(config: ClientConfig) -> Self {
+        let (updates_tx, updates) = mpsc::sync_channel(1);
+        let (stop, stop_rx) = mpsc::channel();
+        let generation = Arc::new(AtomicU64::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_generation = Arc::clone(&generation);
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker = thread::Builder::new()
+            .name("wt-shell-world-refresh".into())
+            .spawn(move || loop {
+                if stop_rx.recv_timeout(WORLD_REFRESH_INTERVAL).is_ok() {
+                    break;
+                }
+                let generation = worker_generation.load(Ordering::Relaxed);
+                let report = inventory::list_all_with_timeout(
+                    &config,
+                    WORLD_REFRESH_REQUEST_TIMEOUT,
+                    &worker_cancelled,
+                );
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                if report.failures.is_empty() {
+                    match updates_tx.try_send(WorldSnapshot {
+                        generation,
+                        instances: report.instances,
+                    }) {
+                        Ok(()) | Err(TrySendError::Full(_)) => {}
+                        Err(TrySendError::Disconnected(_)) => break,
+                    }
+                }
+            })
+            .expect("start wt shell world refresh worker");
+        Self {
+            updates,
+            generation,
+            cancelled,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn invalidate(&self) {
+        self.generation.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Drop for WorldRefresh {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn take_current_snapshot(
+    updates: &Receiver<WorldSnapshot>,
+    generation: u64,
+) -> Option<WorldSnapshot> {
+    updates
+        .try_iter()
+        .last()
+        .filter(|snapshot| snapshot.generation == generation)
 }
 
 fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
@@ -111,12 +220,30 @@ fn run_loop(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     config: &ClientConfig,
+    refresh: &WorldRefresh,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut creation = None;
     let mut creation_error = None;
+    let runtime = ShellRuntime { config, refresh };
     while !shutdown.load(Ordering::Relaxed) {
+        if creation.is_none() {
+            if let Some(snapshot) =
+                take_current_snapshot(&refresh.updates, refresh.generation.load(Ordering::Relaxed))
+            {
+                if ssh::sync(config, &snapshot.instances).is_ok() {
+                    let worlds = shell_worlds(&snapshot.instances);
+                    let area: Rect = terminal
+                        .size()
+                        .context("read wt shell terminal area")?
+                        .into();
+                    sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+                    model.reconcile_worlds(worlds);
+                    redraw = true;
+                }
+            }
+        }
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
         for sequence in clipboard_writes {
@@ -132,6 +259,7 @@ fn run_loop(
                 &mut creation_error,
                 sessions,
                 model,
+                refresh,
                 terminal
                     .size()
                     .context("read wt shell terminal area")?
@@ -151,9 +279,6 @@ fn run_loop(
             })?;
             redraw = false;
         }
-        if sessions.all_closed() {
-            return Ok(());
-        }
         if !event::poll(Duration::from_millis(16)).context("poll terminal input")? {
             continue;
         }
@@ -167,7 +292,7 @@ fn run_loop(
                 sessions,
                 model,
                 area,
-                config,
+                &runtime,
                 &mut creation,
                 &mut creation_error,
             )?;
@@ -187,7 +312,7 @@ fn dispatch_event(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     area: Rect,
-    config: &ClientConfig,
+    runtime: &ShellRuntime<'_>,
     creation: &mut Option<crate::create::Flow>,
     creation_error: &mut Option<String>,
 ) -> Result<bool> {
@@ -208,13 +333,14 @@ fn dispatch_event(
                     return Ok(true);
                 }
                 if let Some(flow) = creation.as_mut() {
-                    let action = flow.handle_key(key, config);
+                    let action = flow.handle_key(key, runtime.config);
                     let _ = apply_creation_action(
                         action,
                         creation,
                         creation_error,
                         sessions,
                         model,
+                        runtime.refresh,
                         area,
                     )?;
                     return Ok(true);
@@ -228,7 +354,13 @@ fn dispatch_event(
                     }
                 }
                 InputRoute::Command(command) => {
-                    start_creation(command, config, creation, creation_error);
+                    start_creation(
+                        command,
+                        runtime.config,
+                        runtime.refresh,
+                        creation,
+                        creation_error,
+                    );
                 }
                 InputRoute::Consumed => {}
             }
@@ -261,7 +393,13 @@ fn dispatch_event(
         Event::Mouse(mouse) if model.mode() == Mode::Control => {
             if creation.is_none() {
                 if let Some(command) = model.handle_mouse(mouse, area) {
-                    start_creation(command, config, creation, creation_error);
+                    start_creation(
+                        command,
+                        runtime.config,
+                        runtime.refresh,
+                        creation,
+                        creation_error,
+                    );
                 }
             }
             Ok(true)
@@ -306,6 +444,7 @@ fn world_mouse(
 fn start_creation(
     command: ControlCommand,
     config: &ClientConfig,
+    refresh: &WorldRefresh,
     creation: &mut Option<crate::create::Flow>,
     error: &mut Option<String>,
 ) {
@@ -315,6 +454,7 @@ fn start_creation(
     };
     match kind.and_then(|kind| crate::create::prepare(config, kind)) {
         Ok(flow) => {
+            refresh.invalidate();
             *creation = Some(flow);
             *error = None;
         }
@@ -328,6 +468,7 @@ fn apply_creation_action(
     error: &mut Option<String>,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    refresh: &WorldRefresh,
     area: ratatui::layout::Rect,
 ) -> Result<bool> {
     match action {
@@ -343,8 +484,15 @@ fn apply_creation_action(
             Ok(true)
         }
         crate::create::FlowAction::Created(created) => {
-            let world = format!("{}.{}", created.context, created.instance.name);
-            if model.world_index(&world).is_none() {
+            refresh.invalidate();
+            let world = ShellWorld {
+                identity: model::WorldIdentity {
+                    context: created.context.clone(),
+                    id: created.instance.id,
+                },
+                name: format!("{}.{}", created.context, created.instance.name),
+            };
+            if model.world_index(&world.identity).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
             }
             model.activate_world(world);
@@ -382,5 +530,18 @@ mod tests {
             row,
             modifiers: KeyModifiers::NONE,
         }
+    }
+
+    #[test]
+    fn local_mutation_invalidates_an_older_refresh() {
+        let (sender, updates) = mpsc::sync_channel(1);
+        sender
+            .send(WorldSnapshot {
+                generation: 4,
+                instances: Vec::new(),
+            })
+            .unwrap();
+
+        assert!(take_current_snapshot(&updates, 5).is_none());
     }
 }
