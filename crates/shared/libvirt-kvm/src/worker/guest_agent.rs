@@ -42,7 +42,7 @@ impl GuestTransport for QemuGuestTransport {
         validate_executable(request.executable)?;
         require_time(request.deadline)?;
         let domain = self.domain()?;
-        let log_path = format!("/run/wt-command-{}.log", Uuid::new_v4());
+        let log_path = format!("/run/wt-guest-command-{}.log", Uuid::new_v4());
         write_bytes(&domain, &log_path, b"")?;
         let handle = open_file(&domain, &log_path, "r")?;
         let result = (|| {
@@ -51,7 +51,7 @@ impl GuestTransport for QemuGuestTransport {
             let mut shell_args = vec![
                 "-c",
                 script,
-                "wt-command",
+                "wt-guest-command",
                 log_path.as_str(),
                 request.executable,
             ];
