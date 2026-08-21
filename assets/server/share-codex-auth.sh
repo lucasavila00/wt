@@ -17,13 +17,9 @@ if test "$(stat -c %u "$auth")" != "$server_uid"; then
     exit 1
 fi
 
-if test "$(id -u)" != 0; then
-    exec sudo /bin/sh "$0"
-fi
-
-install -d -m 0750 -o "$server_uid" -g 1001 "$share"
-chown "$server_uid:1001" "$auth"
-chmod 0640 "$auth"
+sudo install -d -m 0750 -o "$server_uid" -g 1001 "$share"
+sudo chown "$server_uid:1001" "$auth"
+sudo chmod 0640 "$auth"
 rm -f "$temporary"
 if test ! -L "$shared_auth" && test -f "$shared_auth" &&
     test "$(stat -c %d:%i "$auth")" = "$(stat -c %d:%i "$shared_auth")"; then
