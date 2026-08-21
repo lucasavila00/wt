@@ -1,0 +1,11 @@
+---
+source: crates/products/agent-tools/tools/src/api/tests.rs
+expression: normalized
+---
+{
+  "result": {
+    "data": "Operation completed.",
+    "type": "confirmation"
+  },
+  "version": 1
+}

@@ -1,0 +1,26 @@
+---
+source: crates/products/agent-tools/tools/src/api/tests.rs
+expression: normalized
+---
+{
+  "result": {
+    "data": [
+      {
+        "comments": [
+          {
+            "author": "reviewer",
+            "body": "Handle this error.",
+            "url": "https://github.test/thread-1"
+          }
+        ],
+        "handle": "T:thread-1",
+        "line": 42,
+        "path": "src/login.rs",
+        "resolvable": true,
+        "resolved": false
+      }
+    ],
+    "type": "review_threads"
+  },
+  "version": 1
+}

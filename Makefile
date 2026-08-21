@@ -25,6 +25,9 @@ check-file-lines:
 	done; \
 	test -z "$$failed"; }
 
+check-snapshot-lines:
+	cargo run --quiet -p wt-repository-checks -- snapshot-lines
+
 clear:
 	scripts/clear
 
@@ -60,7 +63,7 @@ prepare-image:
 	@test -n "$(CONFIG)" || { echo "usage: make prepare-image CONFIG=PATH" >&2; exit 2; }
 	scripts/prepare-image --config "$(CONFIG)"
 
-static: check-crate-readmes check-file-lines
+static: check-crate-readmes check-file-lines check-snapshot-lines
 	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \

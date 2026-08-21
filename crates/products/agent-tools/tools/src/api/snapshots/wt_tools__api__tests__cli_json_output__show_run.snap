@@ -1,0 +1,19 @@
+---
+source: crates/products/agent-tools/tools/src/api/tests.rs
+expression: normalized
+---
+{
+  "result": {
+    "data": {
+      "branch": "wt/fix",
+      "handle": "91",
+      "head": "abc123",
+      "name": "CI",
+      "state": "success",
+      "trigger": "pull_request",
+      "url": "https://github.test/runs/91"
+    },
+    "type": "ci_run"
+  },
+  "version": 1
+}

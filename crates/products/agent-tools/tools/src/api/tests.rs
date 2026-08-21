@@ -1,56 +1,77 @@
 use super::*;
 
+const CLI_JSON_OUTPUT_LINE_LIMIT: usize = 1_000;
+const CLI_COMMAND_CASES: &[(&str, &str)] = &[
+    ("show_mr", r#"{"action":"show_mr","mr":7}"#),
+    (
+        "show_mr_for_branch",
+        r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#,
+    ),
+    ("show_run", r#"{"action":"show_run","run":91}"#),
+    ("show_job", r#"{"action":"show_job","job":44}"#),
+    ("list_threads", r#"{"action":"list_threads","mr":7}"#),
+    ("list_ci", r#"{"action":"list_ci","commit":"abc1234"}"#),
+    ("list_jobs", r#"{"action":"list_jobs","run":91}"#),
+    ("log_job", r#"{"action":"log_job","job":44}"#),
+    ("wait_mr", r#"{"action":"wait_mr","mr":7}"#),
+    ("wait_run", r#"{"action":"wait_run","run":91}"#),
+    ("wait_job", r#"{"action":"wait_job","job":44}"#),
+    (
+        "open_mr",
+        r#"{"action":"open_mr","head":"wt/fix","base":"main"}"#,
+    ),
+    ("set_mr", r#"{"action":"set_mr","mr":7,"state":"ready"}"#),
+    (
+        "edit_mr",
+        r#"{"action":"edit_mr","mr":7,"title":"Fix login"}"#,
+    ),
+    (
+        "comment_mr",
+        r#"{"action":"comment_mr","mr":7,"body":"Done"}"#,
+    ),
+    (
+        "reply_thread",
+        r#"{"action":"reply_thread","mr":7,"thread":"T1","body":"Done"}"#,
+    ),
+    (
+        "set_thread",
+        r#"{"action":"set_thread","mr":7,"thread":"T1","resolved":true}"#,
+    ),
+    ("retry_job", r#"{"action":"retry_job","job":44}"#),
+    ("cancel_job", r#"{"action":"cancel_job","job":44}"#),
+    ("cancel_run", r#"{"action":"cancel_run","run":91}"#),
+    (
+        "report_wt_tool_bug",
+        r#"{"action":"report_wt_tool_bug","description":"build failed"}"#,
+    ),
+    (
+        "report_wt_tool_issue",
+        r#"{"action":"report_wt_tool_issue","description":"output is unclear"}"#,
+    ),
+    (
+        "suggest_wt_tool_improvement",
+        r#"{"action":"suggest_wt_tool_improvement","description":"show progress"}"#,
+    ),
+    (
+        "request_wt_tool_feature",
+        r#"{"action":"request_wt_tool_feature","description":"add search"}"#,
+    ),
+];
+
 #[test]
-fn ci_output_includes_the_trigger_event() {
-    let run = CiRun {
-        handle: "91".to_owned(),
-        name: "CI".to_owned(),
-        state: "success".to_owned(),
-        trigger: Some("pull_request".to_owned()),
-        url: Some("https://github.test/runs/91".to_owned()),
-        head: "abc123".to_owned(),
-        branch: Some("wt/fix".to_owned()),
-    };
-
-    insta::assert_snapshot!(
-        render_cli_command_output(ProviderCommandOutput::CiRun(run.clone())),
-        @r###"
-    {"result":{"data":{"branch":"wt/fix","handle":"91","head":"abc123","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91"},"type":"ci_run"},"version":1}
-    "###
-    );
-    insta::assert_snapshot!(
-        render_cli_command_output(ProviderCommandOutput::CiRunsAndJobs {
-            runs: vec![run],
-            jobs: Vec::new(),
-        }),
-        @r###"
-    {"result":{"data":{"jobs":[],"runs":[{"branch":"wt/fix","handle":"91","head":"abc123","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91"}]},"type":"ci_runs_and_jobs"},"version":1}
-    "###
-    );
-}
-
-#[test]
-fn merge_request_output_includes_the_body() {
-    let request = ChangeRequestStatus {
-        handle: "#7".to_owned(),
-        url: "https://github.test/pull/7".to_owned(),
-        title: "Fix login".to_owned(),
-        body: Some("First paragraph.\n\nSecond paragraph.".to_owned()),
-        state: "open".to_owned(),
-        draft: false,
-        head: "abc123".to_owned(),
-        base: "main".to_owned(),
-        review_state: None,
-        threads: Vec::new(),
-        jobs: Vec::new(),
-    };
-
-    insta::assert_snapshot!(
-        render_cli_command_output(ProviderCommandOutput::ChangeRequest(request)),
-        @r###"
-    {"result":{"data":{"base":"main","body":"First paragraph.\n\nSecond paragraph.","draft":false,"handle":"#7","head":"abc123","jobs":[],"review_state":null,"state":"open","threads":[],"title":"Fix login","url":"https://github.test/pull/7"},"type":"change_request"},"version":1}
-    "###
-    );
+fn every_cli_command_has_bounded_snapshot_json_output() {
+    for &(name, json) in CLI_COMMAND_CASES {
+        let command = CliCommand::parse(&[json.to_owned()]).unwrap();
+        let rendered = render_cli_command_output(representative_output(command));
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        let normalized = serde_json::to_string_pretty(&value).unwrap();
+        let lines = normalized.lines().count();
+        assert!(
+            lines <= CLI_JSON_OUTPUT_LINE_LIMIT,
+            "{name} output has {lines} normalized JSON lines; limit is {CLI_JSON_OUTPUT_LINE_LIMIT}"
+        );
+        insta::assert_snapshot!(format!("cli_json_output__{name}"), normalized);
+    }
 }
 
 #[test]
@@ -68,32 +89,7 @@ fn ci_job_logs_keep_only_a_bounded_tail() {
 
 #[test]
 fn command_parser_accepts_only_valid_json_objects() {
-    for json in [
-        r#"{"action":"show_mr","mr":7}"#,
-        r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#,
-        r#"{"action":"show_run","run":91}"#,
-        r#"{"action":"show_job","job":44}"#,
-        r#"{"action":"list_threads","mr":7}"#,
-        r#"{"action":"list_ci","commit":"abc1234"}"#,
-        r#"{"action":"list_jobs","run":91}"#,
-        r#"{"action":"log_job","job":44}"#,
-        r#"{"action":"wait_mr","mr":7}"#,
-        r#"{"action":"wait_run","run":91}"#,
-        r#"{"action":"wait_job","job":44}"#,
-        r#"{"action":"open_mr","head":"wt/fix","base":"main"}"#,
-        r#"{"action":"set_mr","mr":7,"state":"ready"}"#,
-        r#"{"action":"edit_mr","mr":7,"title":"Fix login"}"#,
-        r#"{"action":"comment_mr","mr":7,"body":"Done"}"#,
-        r#"{"action":"reply_thread","mr":7,"thread":"T1","body":"Done"}"#,
-        r#"{"action":"set_thread","mr":7,"thread":"T1","resolved":true}"#,
-        r#"{"action":"retry_job","job":44}"#,
-        r#"{"action":"cancel_job","job":44}"#,
-        r#"{"action":"cancel_run","run":91}"#,
-        r#"{"action":"report_wt_tool_bug","description":"build failed"}"#,
-        r#"{"action":"report_wt_tool_issue","description":"output is unclear"}"#,
-        r#"{"action":"suggest_wt_tool_improvement","description":"show progress"}"#,
-        r#"{"action":"request_wt_tool_feature","description":"add search"}"#,
-    ] {
+    for &(_, json) in CLI_COMMAND_CASES {
         CliCommand::parse(&[json.to_owned()]).unwrap();
     }
     assert_eq!(
@@ -136,9 +132,54 @@ fn command_parser_accepts_only_valid_json_objects() {
     );
 }
 
-#[test]
-fn review_output_includes_actionable_commands() {
-    let threads = vec![ReviewThread {
+fn representative_output(command: CliCommand) -> ProviderCommandOutput {
+    match command {
+        CliCommand::ShowMr { .. }
+        | CliCommand::ShowMrForBranch { .. }
+        | CliCommand::WaitMr { .. }
+        | CliCommand::OpenMr { .. }
+        | CliCommand::SetMr { .. }
+        | CliCommand::EditMr { .. } => change_request_output(),
+        CliCommand::ShowRun { .. } | CliCommand::WaitRun { .. } => ci_run_output(),
+        CliCommand::ShowJob { .. } | CliCommand::WaitJob { .. } => ci_job_output(),
+        CliCommand::ListThreads { .. } => review_threads_output(),
+        CliCommand::ListCi { .. } => ci_runs_and_jobs_output(),
+        CliCommand::ListJobs { .. } => ci_jobs_output(),
+        CliCommand::LogJob { .. } => ci_job_log_output(),
+        CliCommand::CommentMr { .. }
+        | CliCommand::ReplyThread { .. }
+        | CliCommand::SetThread { .. }
+        | CliCommand::RetryJob { .. }
+        | CliCommand::CancelJob { .. }
+        | CliCommand::CancelRun { .. }
+        | CliCommand::ReportWtToolBug { .. }
+        | CliCommand::ReportWtToolIssue { .. }
+        | CliCommand::SuggestWtToolImprovement { .. }
+        | CliCommand::RequestWtToolFeature { .. } => confirmation_output(),
+    }
+}
+
+fn change_request_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::ChangeRequest(ChangeRequestStatus {
+        handle: "7".to_owned(),
+        url: "https://github.test/acme/widget/pull/7".to_owned(),
+        title: "Fix login".to_owned(),
+        body: Some("First paragraph.\n\nSecond paragraph.".to_owned()),
+        state: "open".to_owned(),
+        draft: false,
+        head: "abc123".to_owned(),
+        base: "main".to_owned(),
+        review_state: Some("approved".to_owned()),
+        threads: match review_threads_output() {
+            ProviderCommandOutput::ReviewThreads(threads) => threads,
+            _ => unreachable!(),
+        },
+        jobs: vec![ci_job()],
+    })
+}
+
+fn review_threads_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::ReviewThreads(vec![ReviewThread {
         handle: ReviewThreadHandle::new("T:thread-1"),
         resolvable: true,
         resolved: false,
@@ -149,30 +190,54 @@ fn review_output_includes_actionable_commands() {
             body: "Handle this error.".to_owned(),
             url: Some("https://github.test/thread-1".to_owned()),
         }],
-    }];
+    }])
+}
 
-    insta::assert_snapshot!(
-        serde_json::to_string_pretty(&ProviderCommandOutput::ReviewThreads(threads)).unwrap(),
-        @r###"
-    {
-      "type": "review_threads",
-      "data": [
-        {
-          "handle": "T:thread-1",
-          "resolvable": true,
-          "resolved": false,
-          "path": "src/login.rs",
-          "line": 42,
-          "comments": [
-            {
-              "author": "reviewer",
-              "body": "Handle this error.",
-              "url": "https://github.test/thread-1"
-            }
-          ]
-        }
-      ]
+fn ci_run() -> CiRun {
+    CiRun {
+        handle: "91".to_owned(),
+        name: "CI".to_owned(),
+        state: "success".to_owned(),
+        trigger: Some("pull_request".to_owned()),
+        url: Some("https://github.test/runs/91".to_owned()),
+        head: "abc123".to_owned(),
+        branch: Some("wt/fix".to_owned()),
     }
-    "###
-    );
+}
+
+fn ci_run_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::CiRun(ci_run())
+}
+
+fn ci_job() -> CiJob {
+    CiJob {
+        handle: CiJobHandle::new("44"),
+        run: Some("91".to_owned()),
+        name: "checks".to_owned(),
+        state: "success".to_owned(),
+        url: Some("https://github.test/jobs/44".to_owned()),
+    }
+}
+
+fn ci_job_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::CiJob(ci_job())
+}
+
+fn ci_jobs_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::CiJobs(vec![ci_job()])
+}
+
+fn ci_runs_and_jobs_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::CiRunsAndJobs {
+        runs: vec![ci_run()],
+        jobs: vec![ci_job()],
+    }
+}
+
+fn ci_job_log_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
+}
+
+fn confirmation_output() -> ProviderCommandOutput {
+    ProviderCommandOutput::Confirmation("Operation completed.".to_owned())
 }

@@ -1,0 +1,19 @@
+---
+source: crates/products/agent-tools/tools/src/api/tests.rs
+expression: normalized
+---
+{
+  "result": {
+    "data": [
+      {
+        "handle": "44",
+        "name": "checks",
+        "run": "91",
+        "state": "success",
+        "url": "https://github.test/jobs/44"
+      }
+    ],
+    "type": "ci_jobs"
+  },
+  "version": 1
+}
