@@ -66,29 +66,11 @@ fn world_prompt_does_not_require_a_checkout_or_provider_api() {
 }
 
 #[test]
-fn opening_the_gateway_revokes_legacy_repository_scoped_grants() {
-    let temp = tempfile::tempdir().unwrap();
-    let state_file = temp.path().join("gateway.json");
-    fs::write(
-        &state_file,
-        r#"{"grants":[{"id":"legacy","token":"secret","world_id":"world","source":"git@github.com:acme/widget.git","base":"main","prefix":"wt/","revoked":false}]}"#,
-    )
-    .unwrap();
-
-    let gateway = Gateway::open(GatewayConfig {
-        state_file: state_file.clone(),
-        database_path: temp.path().join("instances.db"),
-        providers: vec![Provider::Local {
-            host: "github.com".into(),
-            repositories: temp.path().to_owned(),
-            api: None,
-        }],
-    })
-    .unwrap();
-
-    assert!(gateway.state.lock().unwrap().grants[0].revoked);
-    let persisted: State = serde_json::from_slice(&fs::read(state_file).unwrap()).unwrap();
-    assert!(persisted.grants[0].revoked);
+fn gateway_state_rejects_unknown_grant_fields() {
+    let state = serde_json::from_str::<State>(
+        r#"{"grants":[{"id":"id","token":"token","world_id":"world","revoked":false,"unexpected":true}]}"#,
+    );
+    assert!(state.is_err());
 }
 
 #[test]
@@ -218,9 +200,6 @@ fn test_grant() -> GrantRecord {
         id: "id".to_owned(),
         token: "token".to_owned(),
         world_id: "world".to_owned(),
-        legacy_source: None,
-        legacy_base: None,
-        legacy_prefix: None,
         revoked: false,
     }
 }

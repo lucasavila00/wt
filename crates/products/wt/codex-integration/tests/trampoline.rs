@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 
 #[test]
-fn install_runs_and_remove_restores_the_real_codex() {
+fn install_runs_and_uninstall_restores_the_real_codex() {
     let temp = tempfile::tempdir().unwrap();
     let codex = temp.path().join("codex");
     fs::write(
@@ -69,15 +69,15 @@ fn install_runs_and_remove_restores_the_real_codex() {
     );
     assert_eq!(run.stderr, b"stderr=unchanged\n");
 
-    let remove = Command::new(wt_codex_integration)
-        .arg("remove")
+    let uninstall = Command::new(wt_codex_integration)
+        .arg("uninstall")
         .env("PATH", &path)
         .output()
         .unwrap();
     assert!(
-        remove.status.success(),
+        uninstall.status.success(),
         "{}",
-        String::from_utf8_lossy(&remove.stderr)
+        String::from_utf8_lossy(&uninstall.stderr)
     );
     assert!(fs::symlink_metadata(&codex).unwrap().file_type().is_file());
     assert!(!temp.path().join(".codex.wt-real").exists());

@@ -21,7 +21,6 @@ enum Command {
     /// Replace the Codex command in PATH with the WT trampoline.
     Install,
     /// Restore the Codex command replaced by `install`.
-    #[command(visible_alias = "remove")]
     Uninstall,
 }
 
@@ -94,7 +93,7 @@ Usage: wt-codex-integration <COMMAND>
 Commands:
   reconcile  Ask Codex to discover shared session rollouts
   install    Replace the Codex command in PATH with the WT trampoline
-  uninstall  Restore the Codex command replaced by `install` [aliases: remove]
+  uninstall  Restore the Codex command replaced by `install`
   help       Print this message or the help of the given subcommand(s)
 
 Options:
@@ -102,15 +101,5 @@ Options:
           Print help
 "###
         );
-    }
-
-    #[test]
-    fn remove_is_an_alias_for_uninstall() {
-        assert!(matches!(
-            Cli::try_parse_from(["wt-codex-integration", "remove"])
-                .unwrap()
-                .command,
-            Command::Uninstall
-        ));
     }
 }

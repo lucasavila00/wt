@@ -19,6 +19,7 @@ use uuid::Uuid;
 pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiRequest {
     pub protocol_version: u32,
     #[serde(flatten)]
@@ -35,7 +36,7 @@ impl ApiRequest {
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
     Create(CreateInstance),
     List,
@@ -454,14 +455,13 @@ mod tests {
     }
 
     #[test]
-    fn accepts_the_legacy_client_commit_field() {
+    fn rejects_unknown_request_fields() {
         let request = serde_json::from_value::<ApiRequest>(serde_json::json!({
             "protocol_version": 2,
             "client_commit": "0000000000000000000000000000000000000000",
             "operation": "list"
-        }))
-        .unwrap();
-        assert_eq!(request, ApiRequest::new(Operation::List));
+        }));
+        assert!(request.is_err());
     }
 
     #[test]

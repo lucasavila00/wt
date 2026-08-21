@@ -14,28 +14,15 @@ impl Gateway {
                 );
             }
         }
-        let mut state = match fs::read(&config.state_file) {
+        let state = match fs::read(&config.state_file) {
             Ok(bytes) => serde_json::from_slice(&bytes).context("decode gateway state")?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(error) => return Err(error).context("read gateway state"),
         };
-        let revoked_legacy_grant = state.grants.iter_mut().fold(false, |changed, grant| {
-            let revoke = grant.is_legacy_scoped() && !grant.revoked;
-            grant.revoked |= revoke;
-            changed || revoke
-        });
-        let gateway = Self {
+        Ok(Self {
             config,
             state: Arc::new(Mutex::new(state)),
-        };
-        if revoked_legacy_grant {
-            let state = gateway
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-            gateway.save(&state)?;
-        }
-        Ok(gateway)
+        })
     }
 
     pub fn handle_control<S: Read + Write>(&self, mut stream: S) -> Result<()> {
@@ -155,9 +142,6 @@ impl Gateway {
             id: Uuid::new_v4().to_string(),
             token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
             world_id: world_id.to_owned(),
-            legacy_source: None,
-            legacy_base: None,
-            legacy_prefix: None,
             revoked: false,
         };
         let response = ControlResponse::ok(Some(Grant {

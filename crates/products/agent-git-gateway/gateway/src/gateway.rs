@@ -70,23 +70,12 @@ struct State {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct GrantRecord {
     id: String,
     token: String,
     world_id: String,
-    #[serde(default, rename = "source", skip_serializing_if = "Option::is_none")]
-    legacy_source: Option<String>,
-    #[serde(default, rename = "base", skip_serializing_if = "Option::is_none")]
-    legacy_base: Option<String>,
-    #[serde(default, rename = "prefix", skip_serializing_if = "Option::is_none")]
-    legacy_prefix: Option<String>,
     revoked: bool,
-}
-
-impl GrantRecord {
-    fn is_legacy_scoped(&self) -> bool {
-        self.legacy_source.is_some() || self.legacy_base.is_some() || self.legacy_prefix.is_some()
-    }
 }
 
 fn cli_unavailable() -> String {
