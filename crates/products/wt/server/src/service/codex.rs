@@ -297,9 +297,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let reports = [("first", "%1", 10), ("second", "%2", 20)]
             .into_iter()
-            .map(
-                |(world_name, pane_id, received_at_unix_ms)| {
-                    wt_workload_registry::CodexSessionReport {
+            .map(|(world_name, pane_id, received_at_unix_ms)| {
+                wt_workload_registry::CodexSessionReport {
                     world_id: Uuid::new_v4(),
                     world_name: world_name.into(),
                     session_id,
@@ -307,10 +306,9 @@ mod tests {
                     tmux_session: "wt-app".into(),
                     pane_id: pane_id.into(),
                     state: wt_workload_registry::CodexSessionState::Working,
-                        received_at_unix_ms,
-                    }
-                },
-            )
+                    received_at_unix_ms,
+                }
+            })
             .collect();
 
         let sessions = merge_sessions(Vec::new(), reports).unwrap();

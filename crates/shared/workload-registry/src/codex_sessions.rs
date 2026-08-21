@@ -111,8 +111,7 @@ impl Registry {
                     codex_session_reports::tmux_session.eq(report.tmux_session),
                     codex_session_reports::pane_id.eq(report.pane_id),
                     codex_session_reports::state.eq(report.state),
-                    codex_session_reports::received_at_unix_ms
-                        .eq(report.received_at_unix_ms),
+                    codex_session_reports::received_at_unix_ms.eq(report.received_at_unix_ms),
                 ))
                 .execute(connection)?;
             Ok(())
