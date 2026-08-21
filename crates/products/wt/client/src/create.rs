@@ -44,6 +44,7 @@ enum Phase {
     Form,
     Creating {
         world: String,
+        resources: String,
         started: Instant,
         status: String,
     },
@@ -56,6 +57,7 @@ pub(crate) struct Flow {
     phase: Phase,
     task: Option<Task>,
     world: Option<String>,
+    resources: Option<String>,
 }
 
 impl Flow {
@@ -65,6 +67,7 @@ impl Flow {
             phase: Phase::Form,
             task: None,
             world: None,
+            resources: None,
         }
     }
 
@@ -75,12 +78,21 @@ impl Flow {
                 FormAction::Cancel => FlowAction::Cancel,
                 FormAction::Submit(input) => {
                     let world = format!("{}.{}", input.context, input.name);
+                    let memory = if input.memory_mib.is_multiple_of(1024) {
+                        format!("{}G", input.memory_mib / 1024)
+                    } else {
+                        format!("{}MiB", input.memory_mib)
+                    };
+                    let resources =
+                        format!("{} CPU · {memory} · {}G disk", input.vcpus, input.disk_gib);
                     match Task::start(config, input) {
                         Ok(task) => {
                             self.task = Some(task);
                             self.world = Some(world.clone());
+                            self.resources = Some(resources.clone());
                             self.phase = Phase::Creating {
                                 world,
+                                resources,
                                 started: Instant::now(),
                                 status: "WT is provisioning the guest".into(),
                             };
@@ -101,6 +113,7 @@ impl Flow {
                     }
                     self.phase = Phase::Creating {
                         world: self.world.clone().unwrap_or_else(|| "world".into()),
+                        resources: self.resources.clone().unwrap_or_default(),
                         started: Instant::now(),
                         status: "WT is retrying world creation".into(),
                     };
@@ -184,33 +197,54 @@ impl Flow {
         !matches!(self.phase, Phase::Creating { .. })
     }
 
+    pub(crate) fn creating_world(&self) -> Option<(&str, &str)> {
+        match &self.phase {
+            Phase::Creating {
+                world, resources, ..
+            } => Some((world, resources)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn render_progress(&self, frame: &mut ratatui::Frame<'_>, outer: Rect) {
         let Phase::Creating {
             world,
             started,
             status,
+            ..
         } = &self.phase
         else {
             return;
         };
         let elapsed_duration = started.elapsed();
         let elapsed = elapsed_duration.as_secs();
-        let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-            [(elapsed_duration.as_millis() as usize / 100) % 10];
-        let width = 50.min(outer.width);
-        let height = 5.min(outer.height);
+        const GRADIENT: [u8; 12] = [24, 25, 31, 37, 43, 42, 36, 30, 24, 60, 54, 53];
+        let animation_tick = elapsed_duration.as_millis() as usize / 25;
+        let spinner = ["", "", "", ""][(animation_tick / 2) % 4];
+        let width = 44.min(outer.width.saturating_sub(2));
+        if width < 24 || outer.height < 7 {
+            return;
+        }
+        let height = 6;
         let area = Rect::new(
-            outer.right().saturating_sub(width),
-            outer.bottom().saturating_sub(height),
+            outer.right().saturating_sub(1).saturating_sub(width),
+            outer.y.saturating_add(1),
             width,
             height,
         );
         frame.render_widget(Clear, area);
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .border_style(Style::new().fg(Color::DarkGray))
+            .title(" World creation ");
+        frame.render_widget(block, area);
         frame.render_widget(
-            Paragraph::new(format!("{spinner} {world}\n{status} · {elapsed}s elapsed"))
+            Paragraph::new(format!("{spinner} {world}\n{status}\n{elapsed}s elapsed"))
                 .wrap(Wrap { trim: false })
-                .block(Block::new().borders(Borders::ALL).title("Creating world")),
-            area,
+                .style(Style::new().fg(Color::Indexed(
+                    GRADIENT[(animation_tick / 4) % GRADIENT.len()],
+                ))),
+            area.inner(Margin::new(1, 1)),
         );
     }
 }

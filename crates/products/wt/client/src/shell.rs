@@ -576,7 +576,16 @@ fn apply_creation_action(
 ) -> Result<bool> {
     match action {
         crate::create::FlowAction::None => Ok(false),
-        crate::create::FlowAction::Changed => Ok(true),
+        crate::create::FlowAction::Changed => {
+            if creation
+                .as_ref()
+                .and_then(crate::create::Flow::creating_world)
+                .is_some()
+            {
+                model.show_worlds();
+            }
+            Ok(true)
+        }
         crate::create::FlowAction::Cancel => {
             creation.take();
             Ok(true)
