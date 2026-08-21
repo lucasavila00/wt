@@ -230,7 +230,7 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, contexts: &[CodexContextSnapsho
     let table = Table::new(
         rows,
         [
-            Constraint::Length(11),
+            Constraint::Length(17),
             Constraint::Length(20),
             Constraint::Length(11),
             Constraint::Length(10),
@@ -274,7 +274,10 @@ fn codex_rows(context: &CodexContextSnapshot) -> Vec<Row<'static>> {
                     .iter()
                     .map(|observation| {
                         Row::new([
-                            codex_state(observation.state).to_owned(),
+                            codex_state(
+                                observation.state,
+                                observation.session_start_source.as_deref(),
+                            ),
                             format!("{context}.{}", observation.world_name),
                             format!(
                                 "{}:{}",
@@ -290,12 +293,17 @@ fn codex_rows(context: &CodexContextSnapshot) -> Vec<Row<'static>> {
     }
 }
 
-fn codex_state(state: wt_control_protocol::CodexSessionState) -> &'static str {
+fn codex_state(
+    state: wt_control_protocol::CodexSessionState,
+    session_start_source: Option<&str>,
+) -> String {
     match state {
-        wt_control_protocol::CodexSessionState::Unknown => "unknown",
-        wt_control_protocol::CodexSessionState::Working => "working",
-        wt_control_protocol::CodexSessionState::NeedsAttention => "attention",
-        wt_control_protocol::CodexSessionState::Inactive => "inactive",
+        wt_control_protocol::CodexSessionState::Unknown => session_start_source
+            .map(|source| format!("unknown({source})"))
+            .unwrap_or_else(|| "unknown".into()),
+        wt_control_protocol::CodexSessionState::Working => "working".into(),
+        wt_control_protocol::CodexSessionState::NeedsAttention => "attention".into(),
+        wt_control_protocol::CodexSessionState::Inactive => "inactive".into(),
     }
 }
 
@@ -500,11 +508,30 @@ mod tests {
                             world_name: InstanceName::parse("dev").unwrap(),
                             cwd: "/workspace/wt".into(),
                             state: CodexSessionState::NeedsAttention,
+                            session_start_source: None,
                             target: ByobuTarget {
                                 tmux_session: "wt-app".into(),
                                 pane_id: "%1".into(),
                             },
                             received_at_unix_ms: 20,
+                        }],
+                    },
+                    CodexSession {
+                        session_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174002")
+                            .unwrap(),
+                        rollout_updated_at_unix_ms: Some(15),
+                        observations: vec![CodexSessionObservation {
+                            world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174003")
+                                .unwrap(),
+                            world_name: InstanceName::parse("compact").unwrap(),
+                            cwd: "/workspace/wt".into(),
+                            state: CodexSessionState::Unknown,
+                            session_start_source: Some("compact".into()),
+                            target: ByobuTarget {
+                                tmux_session: "wt-app".into(),
+                                pane_id: "%2".into(),
+                            },
+                            received_at_unix_ms: 15,
                         }],
                     },
                     CodexSession {

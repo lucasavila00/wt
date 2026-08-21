@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -76,6 +76,23 @@ pub enum CodexSessionEventKind {
     SessionEnd,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexSessionStartSourceKind {
+    Startup,
+    Resume,
+    Clear,
+    Compact,
+    Other,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexSessionStartSource {
+    pub kind: CodexSessionStartSourceKind,
+    pub raw: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodexSessionEvent {
@@ -84,6 +101,8 @@ pub struct CodexSessionEvent {
     pub tmux_session: String,
     pub pane_id: String,
     pub kind: CodexSessionEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_start_source: Option<CodexSessionStartSource>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

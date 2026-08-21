@@ -1,4 +1,5 @@
 use super::*;
+use crate::{CodexSessionStartSource, CodexSessionStartSourceKind};
 use diesel::prelude::*;
 use wt_git_smart_protocol::{validate_push, PushViolation};
 use wt_workload_registry::schema::{disks, guests, worlds};
@@ -182,10 +183,27 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
         tmux_session: "wt-app".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
+        session_start_source: None,
     };
 
     gateway.store_codex_session_event(&event, &grant).unwrap();
+    event.kind = CodexSessionEventKind::SessionStart;
+    event.session_start_source = Some(CodexSessionStartSource {
+        kind: CodexSessionStartSourceKind::Compact,
+        raw: "compact".into(),
+    });
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::Unknown
+    );
+    assert_eq!(reports[0].session_start_source.as_deref(), Some("compact"));
+
     event.kind = CodexSessionEventKind::Stop;
+    event.session_start_source = None;
     gateway.store_codex_session_event(&event, &grant).unwrap();
 
     let reports = registry.list_codex_session_reports("alice").unwrap();
@@ -198,6 +216,7 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
     );
     assert_eq!(reports[0].tmux_session, "wt-app");
     assert_eq!(reports[0].pane_id, "%3");
+    assert_eq!(reports[0].session_start_source, None);
 }
 
 #[test]
