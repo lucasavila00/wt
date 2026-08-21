@@ -56,11 +56,7 @@ impl SessionSet {
                     let Some(index) = self.token_index(token) else {
                         continue;
                     };
-                    self.sessions[index].closed = true;
-                    if let Some(error) = error {
-                        let message = format!("\r\nwt shell: session reader failed: {error}\r\n");
-                        self.sessions[index].parser.process(message.as_bytes());
-                    }
+                    self.sessions[index].mark_closed(error);
                 }
             }
         }
@@ -69,6 +65,26 @@ impl SessionSet {
 
     pub(super) fn screen(&self, index: usize) -> &vt100::Screen {
         self.sessions[index].parser.screen()
+    }
+
+    pub(super) fn closed_message(&self, index: usize) -> Option<&str> {
+        self.sessions[index].closed_message.as_deref()
+    }
+
+    pub(super) fn restart(&mut self, index: usize, rows: u16, columns: u16) {
+        let token = self.next_token;
+        self.next_token = self
+            .next_token
+            .checked_add(1)
+            .expect("shell session token overflow");
+        let world = self.sessions[index].world.clone();
+        match WorldSession::start_ssh(token, &world, rows, columns, &self.sender) {
+            Ok(session) => self.sessions[index] = session,
+            Err(error) => {
+                self.sessions[index].closed_message =
+                    Some(format!("SSH reconnect failed: {error:#}"));
+            }
+        }
     }
 
     pub(super) fn write(&mut self, index: usize, bytes: &[u8]) -> Result<()> {
@@ -89,12 +105,11 @@ impl SessionSet {
     pub(super) fn resize(&mut self, rows: u16, columns: u16) -> Result<()> {
         let size = pty_size(rows, columns);
         for session in &mut self.sessions {
-            session
-                .master
-                .as_ref()
-                .context("world terminal is closed")?
-                .resize(size)
-                .with_context(|| format!("resize {} terminal", session.name))?;
+            if let Some(master) = session.master.as_ref() {
+                master
+                    .resize(size)
+                    .with_context(|| format!("resize {} terminal", session.name))?;
+            }
             session.parser.set_size(rows, columns);
         }
         Ok(())
@@ -119,7 +134,7 @@ impl SessionSet {
     pub(super) fn is_open(&self, index: usize) -> bool {
         self.sessions
             .get(index)
-            .is_some_and(|session| !session.closed)
+            .is_some_and(|session| session.closed_message.is_none())
     }
 
     pub(super) fn reconcile(
@@ -129,10 +144,9 @@ impl SessionSet {
         columns: u16,
     ) -> Result<()> {
         self.sessions.retain_mut(|session| {
-            let retained = !session.closed
-                && worlds
-                    .iter()
-                    .any(|world| world.identity == session.world.identity);
+            let retained = worlds
+                .iter()
+                .any(|world| world.identity == session.world.identity);
             if !retained {
                 session.stop_without_joining_reader();
             }
@@ -181,7 +195,7 @@ struct WorldSession {
     child: Option<Box<dyn Child + Send + Sync>>,
     reader: Option<JoinHandle<()>>,
     clipboard: ClipboardRelay,
-    closed: bool,
+    closed_message: Option<String>,
 }
 
 impl WorldSession {
@@ -237,8 +251,25 @@ impl WorldSession {
             child: Some(child),
             reader: Some(reader),
             clipboard: ClipboardRelay::default(),
-            closed: false,
+            closed_message: None,
         })
+    }
+
+    fn mark_closed(&mut self, reader_error: Option<String>) {
+        let status = self
+            .child
+            .as_mut()
+            .and_then(|child| child.try_wait().ok())
+            .flatten();
+        self.closed_message = Some(match (reader_error, status) {
+            (Some(error), _) => format!("SSH session reader failed: {error}"),
+            (None, Some(status)) if status.success() => "SSH session ended".into(),
+            (None, Some(status)) => format!("SSH session ended: {status}"),
+            (None, None) => "SSH connection closed".into(),
+        });
+        self.writer.take();
+        self.master.take();
+        self.reader.take();
     }
 
     fn stop_without_joining_reader(&mut self) {
@@ -483,21 +514,47 @@ mod tests {
     }
 
     #[test]
-    fn reconciliation_restarts_a_closed_session() {
+    fn reconciliation_preserves_a_closed_session_for_manual_reconnect() {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
-        let world = ShellWorld::from("one");
         let mut sessions = SessionSet {
             sessions: vec![fake_session(0, "one", &sender)],
             events: Some(events),
             sender,
             next_token: 1,
         };
-        sessions.sessions[0].closed = true;
+        let world = sessions.sessions[0].world.clone();
+        sessions.sessions[0].closed_message = Some("SSH connection closed".into());
 
         sessions.reconcile(&[world], 4, 20).unwrap();
 
-        assert_eq!(sessions.sessions[0].token, 1);
-        assert!(!sessions.sessions[0].closed);
+        assert_eq!(sessions.sessions[0].token, 0);
+        assert!(sessions.sessions[0].closed_message.is_some());
+    }
+
+    #[test]
+    fn child_exit_is_reported() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let world = ShellWorld::from("one");
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.args(["-c", "exit 23"]);
+        let session = WorldSession::start(0, &world, command, 4, 20, &sender).unwrap();
+        let mut sessions = SessionSet {
+            sessions: vec![session],
+            events: Some(events),
+            sender,
+            next_token: 1,
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while sessions.closed_message(0).is_none() && Instant::now() < deadline {
+            sessions.drain_output(0);
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        assert_eq!(
+            sessions.closed_message(0),
+            Some("SSH session ended: Exited with code 23")
+        );
     }
 
     fn wait_for(sessions: &mut SessionSet, index: usize, expected: &str) {

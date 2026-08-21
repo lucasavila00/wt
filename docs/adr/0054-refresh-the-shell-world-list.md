@@ -22,7 +22,8 @@ snapshot accepted by the UI; a write failure leaves the UI unchanged.
 World identity is `(context, UUID)`; names can be reused and one server can be
 configured through multiple contexts. Session reader events use local monotonic
 tokens so removed readers cannot address replacement sessions.
-Closed SSH sessions restart on the next accepted snapshot.
+Closed SSH sessions remain attached to their world until the user reconnects;
+inventory refresh does not silently replace them.
 Timed helpers run in a dedicated process group while separate threads drain
 stdout and stderr. On interruption, the group is killed and the helper reaped.
 Cancellation is checked during a request and between contexts before joining

@@ -3,7 +3,11 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
-pub(super) const COMMANDS: [ControlCommand; 2] = [ControlCommand::NewHost, ControlCommand::NewDev];
+pub(super) const COMMANDS: [ControlCommand; 3] = [
+    ControlCommand::NewHost,
+    ControlCommand::NewDev,
+    ControlCommand::DeleteWorld,
+];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
 pub(super) const CODEX_CARD_HEIGHT: u16 = 5;
@@ -158,6 +162,7 @@ impl Activity {
 pub(super) enum ControlCommand {
     NewHost,
     NewDev,
+    DeleteWorld,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +176,7 @@ impl ControlCommand {
         match self {
             Self::NewHost => "World: New host",
             Self::NewDev => "World: New dev",
+            Self::DeleteWorld => "World: Delete...",
         }
     }
 }

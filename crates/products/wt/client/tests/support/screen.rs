@@ -17,6 +17,7 @@ pub enum Key {
     Char(char),
     Tab,
     BackTab,
+    Backspace,
     Enter,
     Escape,
     Left,
@@ -85,6 +86,19 @@ impl Screen {
     pub fn type_text(&mut self, text: &str) -> Result<&mut Self> {
         self.write(text.as_bytes())?;
         self.wait_for_text(text)
+    }
+
+    #[allow(dead_code)]
+    pub fn click(&mut self, column: u16, row: u16) -> Result<&mut Self> {
+        self.write(
+            format!(
+                "\x1b[<0;{};{}M",
+                column.saturating_add(1),
+                row.saturating_add(1)
+            )
+            .as_bytes(),
+        )?;
+        Ok(self)
     }
 
     pub fn wait_for_text(&mut self, text: &str) -> Result<&mut Self> {
@@ -237,6 +251,7 @@ fn key_bytes(key: Key) -> Result<Vec<u8>> {
         Key::Char(character) => character.to_string().into_bytes(),
         Key::Tab => b"\t".to_vec(),
         Key::BackTab => b"\x1b[Z".to_vec(),
+        Key::Backspace => b"\x7f".to_vec(),
         Key::Enter => b"\r".to_vec(),
         Key::Escape => b"\x1b".to_vec(),
         Key::Up => b"\x1b[A".to_vec(),

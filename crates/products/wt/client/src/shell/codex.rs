@@ -44,8 +44,8 @@ impl ShellWorld {
                 context: context.into(),
                 id: instance.id,
             },
-            world_name: instance.name.to_string(),
             name: qualified_name,
+            instance_name: instance.name.clone(),
             kind,
             control_alias,
         }
@@ -59,8 +59,8 @@ impl ShellWorld {
                 context: context.into(),
                 id: Uuid::from_u128(index),
             },
-            world_name: world_name.into(),
             name: name.into(),
+            instance_name: wt_control_protocol::InstanceName::parse(world_name).unwrap(),
             kind: WorldKind::Host,
             control_alias: format!("{name}-vs"),
         }
@@ -194,7 +194,7 @@ fn validate_context(
                     &observation.world_id.to_string(),
                 ));
             };
-            if world.world_name != observation.world_name.as_str() {
+            if world.instance_name.as_str() != observation.world_name.as_str() {
                 return Err(invalid(
                     context,
                     "world_name matches inventory world_id",
@@ -240,7 +240,7 @@ fn validate_context(
                 timestamp: Some(observation.received_at_unix_ms),
                 kind: CodexCardKind::Observation {
                     world_id: observation.world_id,
-                    world_name: world.world_name.clone(),
+                    world_name: world.instance_name.to_string(),
                     cwd: observation.cwd,
                     state: observation.state,
                     target: observation.target,
@@ -370,7 +370,7 @@ mod tests {
             rollout_updated_at_unix_ms: Some(10),
             observations: vec![CodexSessionObservation {
                 world_id: world.identity.id,
-                world_name: InstanceName::parse(&world.world_name).unwrap(),
+                world_name: world.instance_name.clone(),
                 cwd: cwd.into(),
                 state: CodexSessionState::NeedsAttention,
                 target: ByobuTarget {

@@ -4,6 +4,7 @@ use super::control::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 use uuid::Uuid;
+use wt_control_protocol::InstanceName;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -15,7 +16,7 @@ pub(super) struct WorldIdentity {
 pub(super) struct ShellWorld {
     pub(super) identity: WorldIdentity,
     pub(super) name: String,
-    pub(super) world_name: String,
+    pub(super) instance_name: InstanceName,
     pub(super) kind: wt_control_protocol::WorldKind,
     pub(super) control_alias: String,
 }
@@ -32,10 +33,10 @@ impl From<&str> for ShellWorld {
                 id: Uuid::new_v4(),
             },
             name: name.into(),
-            world_name: name
-                .rsplit_once('.')
-                .map_or(name, |(_, world)| world)
-                .into(),
+            instance_name: InstanceName::parse(
+                name.split_once('.').map_or(name, |(_, instance)| instance),
+            )
+            .unwrap(),
             kind: wt_control_protocol::WorldKind::Host,
             control_alias: format!("{name}-vs"),
         }
