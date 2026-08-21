@@ -80,6 +80,10 @@ fn handle(
 ) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
     validate_codex_target(&request.operation)?;
+    let codex_event = match &request.operation {
+        ClientOperation::CodexSession { event } => Some(event.clone()),
+        _ => None,
+    };
     let streams_git = matches!(
         &request.operation,
         wt_agent_tool_gateway::ClientOperation::Git { .. }
@@ -94,6 +98,11 @@ fn handle(
             .with_context(|| format!("connect to gateway {}", path.display()))?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
+        if response.ok {
+            if let Some(event) = &codex_event {
+                update_codex_marker(event)?;
+            }
+        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -102,6 +111,11 @@ fn handle(
         let mut gateway = VsockStream::connect(2, vsock_port).context("connect to host gateway")?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
+        if response.ok {
+            if let Some(event) = &codex_event {
+                update_codex_marker(event)?;
+            }
+        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -137,41 +151,18 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
             escaped(&output.stderr)
         );
     }
-    update_codex_marker(event)?;
     Ok(())
 }
 
 fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Result<()> {
     if event.kind == CodexSessionEventKind::SessionEnd {
-        let output = Command::new("/usr/bin/tmux")
-            .args([
-                "show-options",
-                "-p",
-                "-v",
-                "-t",
-                &event.pane_id,
-                CODEX_SESSION_PANE_OPTION,
-            ])
-            .output()
-            .context("read Codex session pane marker")?;
-        if !output.status.success() {
-            return Ok(());
-        }
-        if marker_matches(&output.stdout, event.session_id) {
-            let status = Command::new("/usr/bin/tmux")
-                .args([
-                    "set-option",
-                    "-p",
-                    "-u",
-                    "-t",
-                    &event.pane_id,
-                    CODEX_SESSION_PANE_OPTION,
-                ])
-                .status()
-                .context("clear Codex session pane marker")?;
-            if !status.success() {
-                bail!("could not clear Codex session pane marker");
-            }
+        let (condition, clear) = clear_marker_command(event);
+        let status = Command::new("/usr/bin/tmux")
+            .args(["if-shell", "-F", "-t", &event.pane_id, &condition, &clear])
+            .status()
+            .context("clear matching Codex session pane marker")?;
+        if !status.success() {
+            bail!("could not clear matching Codex session pane marker");
         }
         return Ok(());
     }
@@ -193,8 +184,17 @@ fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Resu
     Ok(())
 }
 
-fn marker_matches(output: &[u8], session_id: uuid::Uuid) -> bool {
-    output == format!("{session_id}\n").as_bytes()
+fn clear_marker_command(event: &wt_agent_tool_gateway::CodexSessionEvent) -> (String, String) {
+    (
+        format!(
+            "#{{==:#{{{CODEX_SESSION_PANE_OPTION}}},{}}}",
+            event.session_id
+        ),
+        format!(
+            "set-option -p -u -t {} {CODEX_SESSION_PANE_OPTION}",
+            event.pane_id
+        ),
+    )
 }
 
 fn escaped(bytes: &[u8]) -> String {
@@ -210,19 +210,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clears_only_the_exact_session_marker() {
-        let session_id = uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
-        assert!(marker_matches(
-            b"123e4567-e89b-12d3-a456-426614174000\n",
-            session_id
-        ));
-        assert!(!marker_matches(
-            b"223e4567-e89b-12d3-a456-426614174000\n",
-            session_id
-        ));
-        assert!(!marker_matches(
-            b"123e4567-e89b-12d3-a456-426614174000",
-            session_id
-        ));
+    fn clears_the_marker_with_one_conditional_tmux_command() {
+        let event = wt_agent_tool_gateway::CodexSessionEvent {
+            session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            cwd: "/workspace".into(),
+            tmux_session: "wt-app".into(),
+            pane_id: "%1".into(),
+            kind: CodexSessionEventKind::SessionEnd,
+        };
+
+        assert_eq!(
+            clear_marker_command(&event),
+            (
+                "#{==:#{@wt_codex_session_id},123e4567-e89b-12d3-a456-426614174000}".into(),
+                "set-option -p -u -t %1 @wt_codex_session_id".into(),
+            )
+        );
     }
 }
