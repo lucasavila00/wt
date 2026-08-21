@@ -45,7 +45,14 @@ fn command_parser_accepts_only_valid_json_objects() {
     }
     assert_eq!(
         CliCommand::parse(&[r#"{"action":"wait_job","job":42}"#.into()]).unwrap(),
-        CliCommand::WaitJob { job: 42 }
+        CliCommand::WaitJob {
+            job: 42,
+            timeout_seconds: None,
+        }
+    );
+    assert!(
+        CliCommand::parse(&[r#"{"action":"wait_run","run":91,"timeout_seconds":0}"#.into()])
+            .is_err()
     );
     assert_eq!(
         CliCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])

@@ -20,9 +20,9 @@ type AgGitCommand =
 | { action: "list_ci"; commit: string }
 | { action: "list_jobs"; run: number }
 | { action: "log_job"; job: number }
-| { action: "wait_mr"; mr: number }
-| { action: "wait_run"; run: number }
-| { action: "wait_job"; job: number }
+| { action: "wait_mr"; mr: number; timeout_seconds?: number }
+| { action: "wait_run"; run: number; timeout_seconds?: number }
+| { action: "wait_job"; job: number; timeout_seconds?: number }
 | { action: "open_mr"; head: string; base: string; draft?: boolean }
 | { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
 | { action: "edit_mr"; mr: number; title?: string; body?: string }
