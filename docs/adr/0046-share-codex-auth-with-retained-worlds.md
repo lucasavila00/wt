@@ -24,6 +24,10 @@ rollouts into the environment's local index before starting the saved real CLI;
 it never edits the index directly, and reconciliation failure warns without
 blocking Codex startup.
 
+Trampoline activation is part of restart-only retained-world provisioning. WT
+does not resume or repair an interrupted activation transition. A failed world
+is removed, and another create starts from the retained image.
+
 The server `wt` user must already be logged in. Installation requires
 `/home/wt/.codex/auth.json` to be a regular, non-symlink file owned by that
 user. WT has exactly two fixed server-backed resources and no configuration for
@@ -59,3 +63,5 @@ runners do not receive the server's Codex data.
   so the shared login has account-wide security impact.
 - Codex image installation and the server login become hard prerequisites for
   building images and installing WT.
+- Codex trampoline installation needs clear failure diagnostics, but no
+  intermediate-state recovery protocol.

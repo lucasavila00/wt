@@ -50,6 +50,10 @@ trampoline so shared sessions are indexed before Codex starts. The recipe
 installs no Rust/Cargo toolchain or project checkout. The installer never
 replaces an existing recipe.
 
+WT does not resume failed world provisioning, including a partially installed
+Codex trampoline. Remove the failed world with `wt rm`, then run `wt new` again;
+the replacement starts from the retained image instead of repairing the disk.
+
 Host setup does not receive the workstation SSH agent. Configured provider Git
 operations use the gateway.
 

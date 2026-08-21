@@ -64,7 +64,10 @@ Do not print a partially entered value.
 the prompt phase mutation-free, so `SIGKILL` before confirmation leaves no
 world or client state. After confirmation, the server owns the create
 operation. If the client is killed during that request, `wt ls` reports the
-world and an identical retry follows the existing idempotent create rules.
+world and an identical request may observe the same in-flight or completed
+operation under the existing idempotent create rules. It does not resume failed
+provisioning. Remove a failed world before creating it again from the retained
+image.
 
 ### Client-owned SSH keys
 
@@ -133,6 +136,7 @@ use one global world size as both a default and a limit.
   devcontainer.
 - A remote context uses keys from the client workstation, not the WT server.
 - Different resources or keys make an existing-world retry conflict.
+- Failed provisioning is removed and recreated, never resumed in place.
 - Server config rejects removed world-owned fields as unknown.
 - Real-system creation applies the requested CPU, RAM, disk, and SSH keys.
 

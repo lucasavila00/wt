@@ -41,6 +41,10 @@ terminal settings.
 The typed `wt-retained-worlds` crate owns the corresponding guest constants and one
 provisioning operation for guest access, Git author transfer, agent tooling, and
 Codex mounts. Both retained kind workers call that complete operation.
+The operation has no checkpoints or recovery transitions. After interruption
+or failure, remove the failed world; retry starts on a fresh disk from the
+retained image. Healthy provisioning takes about 5–10 seconds, so restart is
+simpler than preserving and validating intermediate state.
 The image installs its helpers at
 `/usr/local/libexec/wt-retained-access`,
 `/usr/local/libexec/wt-retained-git-author`,
@@ -81,6 +85,8 @@ injects them into the primary devcontainer.
   shared foundation.
 - A malformed or incompatible image fails during build or provisioning instead
   of receiving kind-specific fallback behavior.
+- Retained provisioning is restart-only; helpers do not define recovery for
+  partially applied transitions.
 - Replacing a golden image does not rewrite existing world disks. Worlds that
   need a new image-foundation contract must be recreated.
 - Changes to shared user or terminal behavior invalidate image provenance and
