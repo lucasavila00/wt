@@ -14,15 +14,18 @@ macro_rules! cmd {
 pub mod host;
 mod retained;
 
-pub use host::{ProvisionSpec, World, WorldInspection};
+pub use host::{ProvisionSpec, WorldInspection};
 pub use retained::*;
 
 pub trait WorldWorker: Clone + Send + Sync + 'static {
-    fn provision(&self, spec: ProvisionSpec<'_>, log: &mut dyn Write)
-        -> Result<World, WorkerError>;
+    fn provision(
+        &self,
+        spec: ProvisionSpec<'_>,
+        log: &mut dyn Write,
+    ) -> Result<GuestAccess, WorkerError>;
     fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
-    fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
+    fn start(&self, backend_id: &str) -> Result<GuestAccess, WorkerError>;
     fn stop(&self, backend_id: &str) -> Result<(), WorkerError>;
     fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
 }

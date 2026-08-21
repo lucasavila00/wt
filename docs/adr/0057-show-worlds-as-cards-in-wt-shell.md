@@ -13,9 +13,7 @@ hit-testing.
 Each inventory world has one card identified by `(context, world_id)`. A card
 shows every field currently emitted by `wt ls`:
 
-- context and name;
-- kind and status;
-- repository;
+- context, name, and status;
 - CPU, memory, and disk allocation/usage;
 - detail, including last error, report count, and recovery commands.
 
