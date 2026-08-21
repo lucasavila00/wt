@@ -4,14 +4,16 @@
 
 ## Problem
 
-Codex persists each session as an append-only JSONL rollout under its sessions
-directory. The first `session_meta` record contains the session UUID and source;
-the remaining records contain the conversation and tool events. Subagents have
-their own rollouts linked through the source metadata.
+WT cannot query Codex for a session inventory. Codex instead keeps one on-disk
+event log for each conversation. Codex calls this log a rollout.
 
-Rollouts provide the durable session catalog and modification time. They do not
-identify the WT world or Byobu pane running the session, and parsing their event
-stream is not a reliable activity signal.
+A rollout is a JSON Lines file: one JSON record per line. Its first record,
+`session_meta`, identifies the session and whether it belongs to a subagent.
+Later records append prompts, responses, and tool events. The file remains after
+Codex exits, so WT uses rollouts as its durable session catalog.
+
+A rollout does not identify the WT world or Byobu pane running Codex. Its event
+stream is also not a reliable current activity signal.
 
 ## Decision
 
@@ -19,12 +21,14 @@ Each `wt-server` combines a rollout catalog with lifecycle observations.
 
 ### Rollout catalog
 
-- Read the bounded first `session_meta` record only.
-- Require a canonical session UUID.
+- Read `session_meta` for the canonical session UUID and source.
 - Exclude subagent rollouts.
-- Expose the rollout modification time; infer no activity from later records.
+- Expose the file modification time; ignore later records.
 
 ### Lifecycle observations
+
+Codex hooks are commands invoked by Codex at configured lifecycle events. WT
+installs hooks for these events:
 
 | Codex hook | State |
 | --- | --- |
