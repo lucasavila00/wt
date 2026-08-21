@@ -58,6 +58,10 @@ impl Fixture {
             self.home.path(),
             &[
                 ("HOME", self.home.path().as_os_str().to_os_string()),
+                (
+                    "XDG_CONFIG_HOME",
+                    self.home.path().join(".config").into_os_string(),
+                ),
                 ("PATH", self.path.clone()),
             ],
         )

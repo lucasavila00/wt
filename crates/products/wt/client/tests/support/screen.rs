@@ -195,7 +195,11 @@ impl Screen {
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => {
                 if let Some(status) = self.child.try_wait().context("poll wt process")? {
-                    bail!("wt exited before the expected UI appeared: {status:?}")
+                    self.pump_available();
+                    bail!(
+                        "wt exited before the expected UI appeared: {status:?}\n{}",
+                        self.contents()
+                    )
                 }
                 bail!("wt PTY output stopped")
             }
