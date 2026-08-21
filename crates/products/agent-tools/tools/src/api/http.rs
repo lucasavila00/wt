@@ -76,16 +76,20 @@ impl ProviderHttpClient {
         decode_json(&body, &url, "JSON")
     }
 
-    pub fn read_text(&self, path: &str) -> Result<String> {
+    pub fn read_text_tail(&self, path: &str, limit: usize) -> Result<(String, bool)> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.get(&url))
             .call()
             .with_context(|| connection_context("GET", &url))?;
-        read_response(response, "GET", &url)
+        read_response_tail(response, "GET", &url, limit)
     }
 
-    pub fn read_optional_text(&self, path: &str) -> Result<Option<String>> {
+    pub fn read_optional_text_tail(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<Option<(String, bool)>> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.get(&url))
@@ -94,7 +98,7 @@ impl ProviderHttpClient {
         if response.status() == ureq::http::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        read_response(response, "GET", &url).map(Some)
+        read_response_tail(response, "GET", &url, limit).map(Some)
     }
 
     pub fn post_without_body(&self, path: &str) -> Result<()> {
@@ -184,6 +188,46 @@ fn read_response(
     )
 }
 
+fn read_response_tail(
+    mut response: ureq::http::Response<ureq::Body>,
+    method: &str,
+    url: &str,
+    limit: usize,
+) -> Result<(String, bool)> {
+    if !response.status().is_success() {
+        return read_response(response, method, url).map(|body| (body, false));
+    }
+
+    let mut reader = response.body_mut().as_reader();
+    let mut tail = Vec::with_capacity(limit);
+    let mut total = 0;
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .with_context(|| format!("read provider response from {url}"))?;
+        if count == 0 {
+            break;
+        }
+        total += count;
+        tail.extend_from_slice(&buffer[..count]);
+        if tail.len() > limit {
+            tail.drain(..tail.len() - limit);
+        }
+    }
+    let truncated = total > limit;
+    while truncated
+        && tail
+            .first()
+            .is_some_and(|byte| byte & 0b1100_0000 == 0b1000_0000)
+    {
+        tail.remove(0);
+    }
+    String::from_utf8(tail)
+        .context("provider text response is not UTF-8")
+        .map(|tail| (tail, truncated))
+}
+
 fn response_metadata(response: &ureq::http::Response<ureq::Body>) -> String {
     const HEADERS: [&str; 6] = [
         "retry-after",
@@ -250,6 +294,30 @@ mod tests {
         Provider response: {"message":"Resource not accessible by token"}
         Next step: The installed API credential lacks permission, or the provider has rate-limited it. Check the credential and provider response.
         "###);
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn text_tails_are_bounded_while_reading_provider_responses() {
+        let (base_url, server) = serve_one_with_status(
+            ExpectedRequest {
+                method: "GET",
+                path: "/job/log",
+                required_header: Some(("authorization", "Bearer fixture-token")),
+                body_contains: None,
+                response_content_type: "text/plain",
+                response_body: Box::leak(format!("{}tail", "x".repeat(16 * 1024)).into_boxed_str()),
+            },
+            200,
+        );
+        let client =
+            ProviderHttpClient::new(base_url, "fixture-token", ProviderAuthentication::Github)
+                .unwrap();
+
+        assert_eq!(
+            client.read_text_tail("job/log", 8).unwrap(),
+            ("xxxxtail".into(), true)
+        );
         server.join().unwrap().unwrap();
     }
 }

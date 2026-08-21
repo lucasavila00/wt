@@ -1,23 +1,15 @@
 use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget};
+pub(super) use super::model::ShellWorld;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+#[cfg(test)]
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
 use wt_control_protocol::{CodexSession, Instance, InstanceApplication, WorldKind};
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ShellWorld {
-    pub(super) context: String,
-    pub(super) world_id: Uuid,
-    pub(super) world_name: String,
-    pub(super) qualified_name: String,
-    pub(super) kind: WorldKind,
-    pub(super) control_alias: String,
-}
 
 impl ShellWorld {
     pub(super) fn from_inventory(item: &ContextInstance) -> Self {
@@ -33,10 +25,12 @@ impl ShellWorld {
             InstanceApplication::Host => (WorldKind::Host, format!("{qualified_name}-vs")),
         };
         Self {
-            context: context.into(),
-            world_id: instance.id,
+            identity: super::model::WorldIdentity {
+                context: context.into(),
+                id: instance.id,
+            },
             world_name: instance.name.to_string(),
-            qualified_name,
+            name: qualified_name,
             kind,
             control_alias,
         }
@@ -46,10 +40,12 @@ impl ShellWorld {
     pub(super) fn test(name: &str, index: u128) -> Self {
         let (context, world_name) = name.split_once('.').unwrap_or(("local", name));
         Self {
-            context: context.into(),
-            world_id: Uuid::from_u128(index),
+            identity: super::model::WorldIdentity {
+                context: context.into(),
+                id: Uuid::from_u128(index),
+            },
             world_name: world_name.into(),
-            qualified_name: name.into(),
+            name: name.into(),
             kind: WorldKind::Host,
             control_alias: format!("{name}-vs"),
         }
@@ -144,7 +140,9 @@ fn validate_context(
             }
             let matching_worlds = worlds
                 .iter()
-                .filter(|world| world.context == context && world.world_id == observation.world_id)
+                .filter(|world| {
+                    world.identity.context == context && world.identity.id == observation.world_id
+                })
                 .collect::<Vec<_>>();
             let [world] = matching_worlds.as_slice() else {
                 return Err(invalid(
@@ -319,7 +317,7 @@ mod tests {
             session_id: Uuid::from_u128(10),
             rollout_updated_at_unix_ms: Some(10),
             observations: vec![CodexSessionObservation {
-                world_id: world.world_id,
+                world_id: world.identity.id,
                 world_name: InstanceName::parse(&world.world_name).unwrap(),
                 cwd: cwd.into(),
                 state: CodexSessionState::NeedsAttention,

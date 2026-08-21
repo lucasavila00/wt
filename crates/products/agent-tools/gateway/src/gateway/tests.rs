@@ -45,6 +45,21 @@ fn cli_status_and_unavailable_command_are_actionable() {
 }
 
 #[test]
+fn worst_case_ci_log_tail_fits_the_transport_header() {
+    let output = api::render_cli_command_output(api::ProviderCommandOutput::CiJobLog {
+        log: "\0".repeat(1024 * 1024),
+        truncated: true,
+    });
+    let mut encoded = Vec::new();
+
+    crate::write_json_line(&mut encoded, &TransportResponse::with_message(output)).unwrap();
+
+    assert!(encoded.len() < 8 * 1024 * 1024);
+    let decoded: TransportResponse = crate::read_json_line(&mut encoded.as_slice()).unwrap();
+    assert!(decoded.ok);
+}
+
+#[test]
 fn provider_targets_are_validated_and_unambiguous() {
     assert!(validate_repository("acme/widget").is_ok());
     for invalid in ["", "/acme/widget", "acme/widget.git", "acme/../widget"] {

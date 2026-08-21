@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use wt_git_smart_protocol::DuplexStream;
 
-const MAX_HEADER: usize = 64 * 1024;
+const MAX_HEADER: usize = 8 * 1024 * 1024;
 
 pub fn read_json_line<T: DeserializeOwned>(stream: &mut impl Read) -> Result<T> {
     let mut line = Vec::new();

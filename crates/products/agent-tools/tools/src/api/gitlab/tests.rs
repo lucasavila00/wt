@@ -458,7 +458,10 @@ fn job_log_can_be_read_outside_the_current_commit() {
 
     assert_eq!(
         output,
-        ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
+        ProviderCommandOutput::CiJobLog {
+            log: "build complete\n".to_owned(),
+            truncated: false,
+        }
     );
     server.join().unwrap().unwrap();
 }
@@ -473,6 +476,14 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
             body_contains: None,
             response_content_type: "application/json",
             response_body: r#"{"iid":8,"title":"Fix login","description":"Fixes the login flow.","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main","source_project_id":12,"target_project_id":12}"#,
+        },
+        ExpectedRequest {
+            method: "GET",
+            path: "/api/v4/projects/acme%2Fwidget/pipelines?sha=abc123&per_page=100",
+            required_header: Some(("private-token", "fixture-token")),
+            body_contains: None,
+            response_content_type: "application/json",
+            response_body: "[]",
         },
         ExpectedRequest {
             method: "GET",

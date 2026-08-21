@@ -118,16 +118,87 @@ fn cli_commands_render_provider_results_as_json() {
     }
 }
 
+#[test]
+fn wait_timeouts_preserve_the_last_observed_state() {
+    let cases = [
+        (
+            WtToolsCommand::WaitMr {
+                mr: "8".into(),
+                timeout_seconds: Some(0),
+            },
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            "mr 8",
+            "opened",
+        ),
+        (
+            WtToolsCommand::WaitRun {
+                run: "92".into(),
+                timeout_seconds: Some(0),
+            },
+            get(
+                "/api/v4/projects/acme%2Fwidget/pipelines/92",
+                PIPELINE
+                    .replace(r#""status":"success""#, r#""status":"running""#)
+                    .leak(),
+            ),
+            "run 92",
+            "running",
+        ),
+        (
+            WtToolsCommand::WaitJob {
+                job: "45".into(),
+                timeout_seconds: Some(0),
+            },
+            get(
+                "/api/v4/projects/acme%2Fwidget/jobs/45",
+                JOB.replace(r#""status":"success""#, r#""status":"running""#)
+                    .leak(),
+            ),
+            "job 45",
+            "running",
+        ),
+    ];
+
+    for (command, request, resource, last_state) in cases {
+        let (base_url, server) = serve(vec![request]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        assert_eq!(
+            provider
+                .execute_cli_command(&project_scope(), &command)
+                .unwrap(),
+            ProviderCommandOutput::WaitTimeout {
+                resource: resource.to_owned(),
+                last_state: last_state.to_owned(),
+            }
+        );
+        server.join().unwrap().unwrap();
+    }
+}
+
 fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
     match command {
-        WtToolsCommand::ShowMr { .. } | WtToolsCommand::WaitMr { .. } => vec![get(
+        WtToolsCommand::ShowMr { .. } => vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/pipelines?sha=abc123&per_page=100",
+                "[]",
+            ),
+        ],
+        WtToolsCommand::WaitMr { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/merge_requests/8",
             MR,
         )],
-        WtToolsCommand::ShowMrForBranch { .. } => vec![get(
-            "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Ffix-login&per_page=100",
-            format!("[{OPEN_MR}]").leak(),
-        )],
+        WtToolsCommand::ShowMrForBranch { .. } => vec![
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Ffix-login&per_page=100",
+                format!("[{OPEN_MR}]").leak(),
+            ),
+            get(
+                "/api/v4/projects/acme%2Fwidget/pipelines?sha=abc123&per_page=100",
+                "[]",
+            ),
+        ],
         WtToolsCommand::ShowRun { .. } | WtToolsCommand::WaitRun { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/pipelines/92",
             PIPELINE,
