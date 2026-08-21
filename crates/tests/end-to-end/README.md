@@ -15,7 +15,7 @@ images and registry cache.
 Run from the workspace root:
 
 ```text
-cargo test --workspace
+scripts/cargo test --workspace
 ```
 
 The workspace command skips the ignored full-lifecycle test. Each full-lifecycle

@@ -13,13 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Limit test parallelism
-        run: |
-          wt_ci_jobs=$(( $(nproc) / 2 ))
-          if [ "$wt_ci_jobs" -lt 1 ]; then wt_ci_jobs=1; fi
-          echo "CARGO_BUILD_JOBS=$wt_ci_jobs" >> "$GITHUB_ENV"
-          echo "WT_CI_TEST_THREADS=$wt_ci_jobs" >> "$GITHUB_ENV"
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install --yes libvirt-dev openssh-server ripgrep shellcheck
 
@@ -41,7 +34,7 @@ jobs:
         run: make static
 
       - name: Run tests
-        run: cargo test --workspace --locked -- --test-threads "$WT_CI_TEST_THREADS"
+        run: scripts/cargo test --workspace --locked
 
   stress:
     runs-on: ubuntu-24.04
@@ -50,13 +43,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Limit test parallelism
-        run: |
-          wt_ci_jobs=$(( $(nproc) / 2 ))
-          if [ "$wt_ci_jobs" -lt 1 ]; then wt_ci_jobs=1; fi
-          echo "CARGO_BUILD_JOBS=$wt_ci_jobs" >> "$GITHUB_ENV"
-          echo "WT_CI_TEST_THREADS=$wt_ci_jobs" >> "$GITHUB_ENV"
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install --yes libvirt-dev openssh-server
 
@@ -64,10 +50,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build workspace tests
-        run: cargo test --workspace --locked --no-run
+        run: scripts/cargo test --workspace --locked --no-run
 
       - name: Run tests under scheduler contention
         run: |
           timeout --signal=TERM --kill-after=10s 180s \
             taskset --cpu-list 0 \
-            cargo test --workspace --locked -- --test-threads "$WT_CI_TEST_THREADS"
+            scripts/cargo test --workspace --locked

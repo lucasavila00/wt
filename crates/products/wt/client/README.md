@@ -26,7 +26,7 @@ It does not install or change the server.
 ## Run
 
 ```text
-cargo run -p wt-client -- --help
+scripts/cargo run -p wt-client -- --help
 ```
 
 User-visible behavior: [Worlds](../../docs/worlds/README.md). Transport and SSH

@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+wt_cargo_cores=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1\n')
+case "$wt_cargo_cores" in
+    ''|*[!0-9]*) wt_cargo_cores=1 ;;
+esac
+wt_cargo_jobs=$((wt_cargo_cores / 2))
+if [ "$wt_cargo_jobs" -lt 1 ]; then
+    wt_cargo_jobs=1
+fi
+
+: "${CARGO_BUILD_JOBS:=$wt_cargo_jobs}"
+: "${RUST_TEST_THREADS:=$wt_cargo_jobs}"
+export CARGO_BUILD_JOBS RUST_TEST_THREADS
+
+exec cargo "$@"
