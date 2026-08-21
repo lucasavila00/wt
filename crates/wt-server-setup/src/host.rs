@@ -13,7 +13,7 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
         .devcontainer_path
         .parent()
         .context("image.devcontainer_path has no parent directory")?;
-    let args = vec![
+    let args = [
         "prepare".to_owned(),
         config.libvirt.network.clone(),
         image_dir.display().to_string(),
