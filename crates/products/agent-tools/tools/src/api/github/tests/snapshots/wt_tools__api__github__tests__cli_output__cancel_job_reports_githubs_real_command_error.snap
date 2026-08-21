@@ -1,0 +1,5 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: error
+---
+GitHub cannot cancel one job; use a `cancel_run` JSON action for run 91

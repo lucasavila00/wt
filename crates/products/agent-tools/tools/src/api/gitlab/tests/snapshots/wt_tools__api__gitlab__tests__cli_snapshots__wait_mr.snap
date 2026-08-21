@@ -1,0 +1,20 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": {
+    "base": "main",
+    "body": "Fixes the login flow.",
+    "draft": false,
+    "handle": "8",
+    "head": "abc123",
+    "jobs": [],
+    "review_state": null,
+    "state": "merged",
+    "threads": [],
+    "title": "Fix login",
+    "url": "https://gitlab.test/acme/widget/-/merge_requests/8"
+  },
+  "type": "change_request"
+}

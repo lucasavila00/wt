@@ -1,0 +1,14 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": {
+    "handle": "44",
+    "name": "Linux",
+    "run": "91",
+    "state": "success",
+    "url": "https://github.test/jobs/44"
+  },
+  "type": "ci_job"
+}

@@ -1,0 +1,16 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": {
+    "branch": "wt/fix-login",
+    "handle": "92",
+    "head": "abc123",
+    "name": "pipeline",
+    "state": "success",
+    "trigger": "merge_request_event",
+    "url": "https://gitlab.test/pipelines/92"
+  },
+  "type": "ci_run"
+}

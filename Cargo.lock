@@ -2636,6 +2636,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-repository-checks"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "wt-retained-worlds"
 version = "0.0.0"
 dependencies = [

@@ -92,26 +92,29 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
     let mut grant = test_grant();
     grant.world_id = world_id.to_string();
 
-    let commands = [
-        r#"{"action":"report_wt_tool_bug","description":"job logs disappear"}"#,
-        r#"{"action":"report_wt_tool_issue","description":"the hint is unclear"}"#,
-        r#"{"action":"suggest_wt_tool_improvement","description":"show the check name"}"#,
-        r#"{"action":"request_wt_tool_feature","description":"support CI search"}"#,
-    ];
-    let outputs = commands
-        .map(|command| {
-            gateway
-                .serve_cli(&[command.into()], None, None, None, &grant)
-                .unwrap()
-        })
-        .concat();
-
-    insta::assert_snapshot!(outputs, @r###"
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
-    "###);
+    for (name, command) in [
+        (
+            "report_wt_tool_bug",
+            r#"{"action":"report_wt_tool_bug","description":"job logs disappear"}"#,
+        ),
+        (
+            "report_wt_tool_issue",
+            r#"{"action":"report_wt_tool_issue","description":"the hint is unclear"}"#,
+        ),
+        (
+            "suggest_wt_tool_improvement",
+            r#"{"action":"suggest_wt_tool_improvement","description":"show the check name"}"#,
+        ),
+        (
+            "request_wt_tool_feature",
+            r#"{"action":"request_wt_tool_feature","description":"support CI search"}"#,
+        ),
+    ] {
+        let output = gateway
+            .serve_cli(&[command.into()], None, None, None, &grant)
+            .unwrap();
+        insta::assert_snapshot!(name, output);
+    }
     let reports = registry.list_agent_tool_reports("alice").unwrap();
     assert_eq!(reports.len(), 4);
     assert!(reports.iter().all(|report| report.world_id == world_id));

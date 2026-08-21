@@ -1,0 +1,20 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": {
+    "base": "main",
+    "body": "Fixes the login flow.",
+    "draft": false,
+    "handle": "7",
+    "head": "abc123",
+    "jobs": [],
+    "review_state": null,
+    "state": "closed",
+    "threads": [],
+    "title": "Fix login",
+    "url": "https://github.test/acme/widget/pull/7"
+  },
+  "type": "change_request"
+}

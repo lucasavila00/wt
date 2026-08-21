@@ -1,0 +1,35 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": {
+    "base": "main",
+    "body": null,
+    "draft": false,
+    "handle": "!8",
+    "head": "abc123",
+    "jobs": [],
+    "review_state": null,
+    "state": "opened",
+    "threads": [
+      {
+        "comments": [
+          {
+            "author": "reviewer",
+            "body": "Handle the error here.",
+            "url": "https://gitlab.test/acme/widget/-/merge_requests/8#note_1"
+          }
+        ],
+        "handle": "discussion-1",
+        "line": 42,
+        "path": "src/login.rs",
+        "resolvable": true,
+        "resolved": false
+      }
+    ],
+    "title": "Fix login",
+    "url": "https://gitlab.test/acme/widget/-/merge_requests/8"
+  },
+  "type": "change_request"
+}

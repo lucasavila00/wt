@@ -1,0 +1,8 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": "Reply added.",
+  "type": "confirmation"
+}

@@ -1,0 +1,23 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": [
+    {
+      "comments": [
+        {
+          "author": "reviewer",
+          "body": "Please clarify this.",
+          "url": "https://github.test/thread/7"
+        }
+      ],
+      "handle": "thread-7",
+      "line": 12,
+      "path": "src/lib.rs",
+      "resolvable": true,
+      "resolved": false
+    }
+  ],
+  "type": "review_threads"
+}

@@ -15,13 +15,7 @@ fn ci_output_includes_the_trigger_event() {
     insta::assert_snapshot!(
         render_cli_command_output(ProviderCommandOutput::CiRun(run.clone())),
         @r###"
-    Run: 91
-    State: success
-    Name: CI
-    Trigger: pull_request
-    Commit: abc123
-    Ref: wt/fix
-    URL: https://github.test/runs/91
+    {"type":"ci_run","data":{"handle":"91","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91","head":"abc123","branch":"wt/fix"}}
     "###
     );
     insta::assert_snapshot!(
@@ -30,7 +24,7 @@ fn ci_output_includes_the_trigger_event() {
             jobs: Vec::new(),
         }),
         @r###"
-    run 91 [success] CI trigger=pull_request
+    {"type":"ci_runs_and_jobs","data":{"runs":[{"handle":"91","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91","head":"abc123","branch":"wt/fix"}],"jobs":[]}}
     "###
     );
 }
@@ -54,16 +48,7 @@ fn merge_request_output_includes_the_body() {
     insta::assert_snapshot!(
         render_cli_command_output(ProviderCommandOutput::ChangeRequest(request)),
         @r###"
-    MR: #7
-    State: open
-    Title: Fix login
-    Head: abc123
-    Base: main
-    URL: https://github.test/pull/7
-    Body:
-    First paragraph.
-
-    Second paragraph.
+    {"type":"change_request","data":{"handle":"#7","url":"https://github.test/pull/7","title":"Fix login","body":"First paragraph.\n\nSecond paragraph.","state":"open","draft":false,"head":"abc123","base":"main","review_state":null,"threads":[],"jobs":[]}}
     "###
     );
 }
@@ -166,9 +151,28 @@ fn review_output_includes_actionable_commands() {
         }],
     }];
 
-    insta::assert_snapshot!(render_threads(&threads), @r###"
-    T:thread-1 [open] src/login.rs:42
-      reviewer: Handle this error.
-      https://github.test/thread-1
-    "###);
+    insta::assert_snapshot!(
+        serde_json::to_string_pretty(&ProviderCommandOutput::ReviewThreads(threads)).unwrap(),
+        @r###"
+    {
+      "type": "review_threads",
+      "data": [
+        {
+          "handle": "T:thread-1",
+          "resolvable": true,
+          "resolved": false,
+          "path": "src/login.rs",
+          "line": 42,
+          "comments": [
+            {
+              "author": "reviewer",
+              "body": "Handle this error.",
+              "url": "https://github.test/thread-1"
+            }
+          ]
+        }
+      ]
+    }
+    "###
+    );
 }

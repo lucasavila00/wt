@@ -265,7 +265,9 @@ impl Gateway {
                 .context("open WT registry")?
                 .insert_agent_tool_report(world_id, kind, description)
                 .context("store agent tool report")?;
-            return Ok("Recorded wt-tools report for this world.\n".to_owned());
+            return Ok(api::render_cli_confirmation(
+                "Recorded wt-tools report for this world.",
+            ));
         }
         let repository = repository.context(
             "wt-tools needs a Git checkout with an origin to select a repository for this command",
@@ -283,7 +285,7 @@ impl Gateway {
                 .map(|api| (api.kind, &api.token_file, Some(api.base_url.as_str()))),
         };
         let Some((kind, api_token_file, api_base)) = api else {
-            return Ok(cli_unavailable());
+            bail!("{}", cli_unavailable().trim());
         };
         let scope = api::ProviderProjectScope {
             host: &repository.host,

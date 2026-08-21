@@ -23,14 +23,7 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
         .unwrap();
 
     insta::assert_snapshot!(render_cli_command_output(output), @r###"
-    MR: 7
-    State: open
-    Title: Fix login
-    Head: abc123
-    Base: main
-    URL: https://github.test/acme/widget/pull/7
-    Body:
-    Fixes the login flow.
+    {"type":"change_request","data":{"handle":"7","url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"open","draft":false,"head":"abc123","base":"main","review_state":null,"threads":[],"jobs":[]}}
     "###);
     server.join().unwrap().unwrap();
 }
