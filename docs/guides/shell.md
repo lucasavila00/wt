@@ -17,6 +17,10 @@ Control UI. Press `F5` again to return keyboard control to the world. `F6`
 closes `wt shell` from every view. Other keyboard input is forwarded to the
 active world, including while the navbar is enabled.
 
+If an SSH process exits, its last terminal contents remain visible and a red
+bottom bar reports that the session ended. Press `Space` to reconnect that
+world. Other terminal input is held until the connection is restored.
+
 `Shift+F5` disables WT's `F5` override so `F5` reaches Byobu. A red top bar
 shows that the override is disabled. Press `Shift+F5` again to restore it.
 
