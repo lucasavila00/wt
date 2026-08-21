@@ -1,6 +1,11 @@
 use super::*;
 
 #[test]
+fn generated_typescript_is_the_complete_command_contract() {
+    insta::assert_snapshot!(typescript_command_type());
+}
+
+#[test]
 fn ci_output_includes_the_trigger_event() {
     let run = CiRun {
         handle: "91".to_owned(),
