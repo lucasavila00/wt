@@ -1,11 +1,12 @@
 use crate::cmd;
 use crate::config::{Context, ContextKind};
 use std::fmt::Write as _;
-use std::io::Write;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::io::{Read as _, Write};
+use std::os::unix::process::CommandExt as _;
+use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 
 #[derive(Debug)]
@@ -65,7 +66,17 @@ pub fn call_with_timeout(
     request: &ApiRequest,
     timeout: Duration,
 ) -> std::result::Result<Response, ContextError> {
-    match call_outcome_inner(context, request, Some(timeout))? {
+    let cancelled = AtomicBool::new(false);
+    call_with_timeout_until(context, request, timeout, &cancelled)
+}
+
+pub fn call_with_timeout_until(
+    context: &Context,
+    request: &ApiRequest,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+) -> std::result::Result<Response, ContextError> {
+    match call_outcome_inner(context, request, Some((timeout, cancelled)))? {
         Outcome::Ok { response } => Ok(*response),
         Outcome::Error { error } => Err(rejection(context, &error)),
     }
@@ -102,9 +113,10 @@ pub fn call_outcome(
 fn call_outcome_inner(
     context: &Context,
     request: &ApiRequest,
-    timeout: Option<Duration>,
+    timeout: Option<(Duration, &AtomicBool)>,
 ) -> std::result::Result<Outcome, ContextError> {
     let mut command = helper_command(context);
+    command.process_group(0);
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -194,40 +206,66 @@ fn call_outcome_inner(
 }
 
 fn wait_with_output(
-    child: std::process::Child,
-    timeout: Option<Duration>,
-) -> std::io::Result<std::process::Output> {
-    let Some(timeout) = timeout else {
+    mut child: std::process::Child,
+    timeout: Option<(Duration, &AtomicBool)>,
+) -> std::io::Result<Output> {
+    let Some((timeout, cancelled)) = timeout else {
         return child.wait_with_output();
     };
-    let pid = child.id();
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let waiter = thread::spawn(move || {
-        let output = child.wait_with_output();
-        let _ = sender.send(output);
-    });
-    match receiver.recv_timeout(timeout) {
-        Ok(output) => {
-            let _ = waiter.join();
-            output
+
+    let stdout = drain_pipe(child.stdout.take());
+    let stderr = drain_pipe(child.stderr.take());
+    let deadline = Instant::now() + timeout;
+    let mut interrupted = None;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
         }
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid.cast_signed()),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-            let _ = waiter.join();
-            Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "context helper timed out",
-            ))
+        if cancelled.load(Ordering::Relaxed) {
+            interrupted = Some((std::io::ErrorKind::Interrupted, "context helper cancelled"));
+        } else if Instant::now() >= deadline {
+            interrupted = Some((std::io::ErrorKind::TimedOut, "context helper timed out"));
         }
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            let _ = waiter.join();
-            Err(std::io::Error::other(
-                "context helper waiter stopped without returning output",
-            ))
+        if interrupted.is_some() {
+            kill_process_group(&mut child);
+            break child.wait()?;
         }
+        thread::sleep(Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())));
+    };
+    let stdout = join_pipe(stdout)?;
+    let stderr = join_pipe(stderr)?;
+    if let Some((kind, message)) = interrupted {
+        return Err(std::io::Error::new(kind, message));
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn drain_pipe<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<std::io::Result<Vec<u8>>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe {
+            pipe.read_to_end(&mut bytes)?;
+        }
+        Ok(bytes)
+    })
+}
+
+fn join_pipe(
+    reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+) -> std::io::Result<Vec<u8>> {
+    reader
+        .join()
+        .map_err(|_| std::io::Error::other("context helper output reader panicked"))?
+}
+
+fn kill_process_group(child: &mut std::process::Child) {
+    let pid = nix::unistd::Pid::from_raw(child.id().cast_signed());
+    if nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL).is_err() {
+        let _ = child.kill();
     }
 }
 

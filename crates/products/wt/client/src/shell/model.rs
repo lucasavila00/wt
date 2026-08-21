@@ -4,8 +4,14 @@ use ratatui::layout::Rect;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ShellWorld {
+pub(super) struct WorldIdentity {
+    pub(super) context: String,
     pub(super) id: Uuid,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ShellWorld {
+    pub(super) identity: WorldIdentity,
     pub(super) name: String,
 }
 
@@ -13,7 +19,10 @@ pub(super) struct ShellWorld {
 impl From<&str> for ShellWorld {
     fn from(name: &str) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            identity: WorldIdentity {
+                context: name.split_once('.').map_or("local", |(context, _)| context).into(),
+                id: Uuid::new_v4(),
+            },
             name: name.into(),
         }
     }
@@ -79,12 +88,14 @@ impl ShellModel {
         self.worlds.len()
     }
 
-    pub(super) fn world_id_index(&self, id: Uuid) -> Option<usize> {
-        self.worlds.iter().position(|world| world.id == id)
+    pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
+        self.worlds
+            .iter()
+            .position(|world| &world.identity == identity)
     }
 
     pub(super) fn activate_world(&mut self, world: ShellWorld) {
-        self.active = match self.world_id_index(world.id) {
+        self.active = match self.world_index(&world.identity) {
             Some(index) => index,
             None => {
                 self.worlds.push(world);
@@ -95,12 +106,15 @@ impl ShellModel {
     }
 
     pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
-        let active_id = self.worlds.get(self.active).map(|world| world.id);
+        let active_identity = self
+            .worlds
+            .get(self.active)
+            .map(|world| world.identity.clone());
         self.worlds = worlds;
         self.active = self
             .worlds
             .iter()
-            .position(|world| Some(world.id) == active_id)
+            .position(|world| Some(&world.identity) == active_identity.as_ref())
             .unwrap_or(0);
         if self.worlds.is_empty() {
             self.control.close();
@@ -184,7 +198,10 @@ mod tests {
 
     fn world(name: &str) -> ShellWorld {
         ShellWorld {
-            id: Uuid::new_v4(),
+            identity: WorldIdentity {
+                context: "local".into(),
+                id: Uuid::new_v4(),
+            },
             name: name.into(),
         }
     }

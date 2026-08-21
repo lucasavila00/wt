@@ -2,6 +2,7 @@ use crate::config::{ClientConfig, Context};
 use crate::transport::{self, ContextError};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use wt_control_protocol::{ApiRequest, Instance, InstanceName, Operation, Response};
 
@@ -70,18 +71,30 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
     list_all_inner(config, None)
 }
 
-pub fn list_all_with_timeout(config: &ClientConfig, timeout: Duration) -> InventoryReport {
-    list_all_inner(config, Some(timeout))
+pub fn list_all_with_timeout(
+    config: &ClientConfig,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+) -> InventoryReport {
+    list_all_inner(config, Some((timeout, cancelled)))
 }
 
-fn list_all_inner(config: &ClientConfig, timeout: Option<Duration>) -> InventoryReport {
+fn list_all_inner(
+    config: &ClientConfig,
+    timeout: Option<(Duration, &AtomicBool)>,
+) -> InventoryReport {
     let mut all = Vec::new();
     let mut failures = Vec::new();
     for context in &config.contexts {
+        if timeout.is_some_and(|(_, cancelled)| cancelled.load(Ordering::Relaxed)) {
+            break;
+        }
         let request = ApiRequest::new(Operation::List);
         let response = match timeout.map_or_else(
             || transport::call(context, &request),
-            |timeout| transport::call_with_timeout(context, &request, timeout),
+            |(timeout, cancelled)| {
+                transport::call_with_timeout_until(context, &request, timeout, cancelled)
+            },
         ) {
             Ok(response) => response,
             Err(error) => {
