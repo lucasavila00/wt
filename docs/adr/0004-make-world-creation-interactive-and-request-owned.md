@@ -97,9 +97,6 @@ Rust code on the client and server validates resource values and public keys.
 The server includes resources and authorized keys in the exact create-input
 fingerprint. Retrying an existing world succeeds only when every input matches.
 
-WT has not shipped. Replace protocol version 1 in place. Do not add a
-compatibility path.
-
 ### Server configuration
 
 Remove these fields from `guest` in `/etc/wt/server.toml`:

@@ -61,10 +61,7 @@ static artifact if it contains a dynamic interpreter or GLIBC requirement.
 
 ## Reset
 
-This world-kind schema has no migration. The common retained-world Git-author
-contract uses protocol version 2, so clients and servers must be upgraded
-together. Before installing it over an older WT version, run from the
-repository root:
+To remove all WT runtime state, run from the repository root:
 
 ```text
 make nuke

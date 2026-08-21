@@ -21,7 +21,7 @@ WT must not make the server's libc version part of the devcontainer contract.
 
 Build every installed WT executable for `x86_64-unknown-linux-musl` except
 `wt-server`. This includes the CLI, gateway, relay, Git helpers, and guest app
-helpers. Build the installer executable for musl too. Keep `wt-agent-tools-hint`
+helpers. Build the installer executable for musl too. Keep `wt-agent-tool-gateway-hint`
 as a POSIX shell asset.
 
 `wt-server` remains a native GNU binary because it uses libvirt's supported C

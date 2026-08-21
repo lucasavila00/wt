@@ -6,10 +6,9 @@
 
 ## Context
 
-World disks use the installed golden image as a live qcow2 backing file. Setup
-therefore cannot replace a stale image while worlds exist, so an ordinary WT
-upgrade stops and asks the operator to run a second command that may also be
-blocked by those worlds.
+Golden images must remain replaceable build artifacts. A world disk must be
+self-contained so its lifetime and availability do not depend on the installed
+template.
 
 ## Decision
 
