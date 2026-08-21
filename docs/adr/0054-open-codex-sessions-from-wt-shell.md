@@ -21,18 +21,26 @@ location:
 └ Enter or click to open ───────────────────────────────┘
 ```
 
-Card identity is `(context, session_id, world_id, tmux_session, pane_id)`.
-Never merge multiple locations for the same session into one clickable card.
-Rollout-only sessions and context failures use disabled cards.
+Observation-card identity is
+`(context, session_id, world_id, tmux_session, pane_id)`. Never merge multiple
+locations for the same session into one clickable card. `inactive`,
+rollout-only, and context-error cards are disabled.
+Rollout-card identity is `(context, session_id)`; context-error identity is
+`context`. Disabled cards state why they cannot open.
 
-Sort by `needs_attention`, `working`, `unknown`, `inactive`, then newest report.
-State is always glyph plus text; color is supplementary.
+Sort by `needs_attention`, `working`, `unknown`, `inactive`, `rollout-only`,
+then `context-error`; next by descending report/rollout timestamp, then the
+complete identity. A missing timestamp sorts as zero. State is always glyph
+plus text; color is supplementary.
 
 ### Interaction
 
 - `Up` and `Down` move selection; the viewport follows it.
-- Mouse wheel scrolls the cards and left click opens the hit card.
+- Mouse wheel moves selection and the viewport together. Left click opens the
+  card whose rendered rectangle was hit.
 - `Enter` opens the selected card. Moving selection never opens it.
+- A disabled-card click or `Enter` is consumed and its reason remains visible;
+  it performs no network operation.
 - `Tab`, `F1`, `F5`, and global `F6` keep their current meanings.
 - There is no hover state or multi-column layout.
 
@@ -44,35 +52,54 @@ Browse --Enter/click--> Opening --success--> active world view
 
 ### Validation and diagnostics
 
-A card is openable only when all of these hold:
+A context produces cards only when all of these hold:
 
-- the complete context response decoded without unknown or malformed fields;
+- an operation-specific response envelope decoded without unknown or malformed
+  fields at any level; generic response decoding is insufficient;
+- every identity is unique, every timestamp is nonnegative, and every `cwd` is
+  absolute, at most 4096 bytes, and contains no control characters;
 - `(context, world_id, world_name)` exactly matches the shell inventory;
-- the world has an existing playback PTY and direct `-vs` SSH alias;
-- `tmux_session` matches the world kind and `pane_id` is `%` plus digits.
+- the world has an existing playback PTY and its required control SSH alias;
+- `tmux_session` matches the world kind and `pane_id` is `%` plus 1–16 ASCII
+  digits.
 
 Reject the whole context snapshot when its response is invalid. Do not salvage
 records, match by display name, choose another observation, or guess a target.
-Show a persistent error card containing the context and failed invariant.
+Show a persistent error card containing the context, failed invariant, and a
+bounded escaped offending value.
 
-Opening revalidates that the pane still belongs to the reported tmux session.
-Failure returns to the same selected card and shows context, world, session,
+Store selection as the complete card identity; hit-testing never uses a label or
+truncated UUID. Opening revalidates the playback PTY and remote target. Failure
+keeps the same selection and active world, and shows context, world, session,
 target, and the exact failed check. It is never silent.
 
 ### Opening
 
 The card emits a typed open intent; rendering does not construct commands.
-The shell session layer runs the validated focus operation through the world's
-direct `context.world-vs` SSH alias, then switches to its existing playback PTY.
-The operation selects the pane's window and pane only after the exact tmux
-session/pane check succeeds.
+Retain launch inventory and playback indices keyed by `(context, world_id)`;
+never reconstruct them from rendered names.
+
+On accepted non-inactive reports, the guest relay writes the pane-local tmux
+option `@wt_codex_session_id`. `SessionEnd` removes it only when it still equals
+that session UUID.
+
+The shell session layer runs one WT-owned focus helper through
+`context.world-host` for a dev world or `context.world-vs` for a host world, as
+selected from typed inventory. The helper requires session, pane, pane marker,
+and `pane_dead` to equal
+`<tmux_session>:<pane_id>:<session_id>:0`. It then derives and selects the pane's
+window before selecting the pane, and returns exactly that value followed by one
+LF. Any other bytes, mismatch, or nonzero status is a visible failure.
+
+After focus succeeds, switch to the mapped existing playback PTY and world view.
+The active world never changes before success.
 
 The short control connection never replaces or restarts any playback SSH/PTTY.
 All world sessions continue running and parsing output in the background.
 
-Inactive or rollout-only sessions are not resumable. Refresh and resume are
-separate decisions; the initial implementation keeps the current launch-time
-snapshot and always detects stale targets during open.
+Inactive and rollout-only sessions are not openable or resumable. Refresh and
+resume are separate decisions; the initial implementation keeps the current
+launch-time snapshot and detects stale targets during open.
 
 ## Source precedent
 
