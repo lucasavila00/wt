@@ -133,6 +133,8 @@ struct GitlabDiscussionId(String);
 struct Pipeline {
     id: u64,
     status: String,
+    #[serde(default, rename = "source")]
+    trigger: Option<String>,
     web_url: Option<String>,
     yaml_errors: Option<String>,
     #[serde(default)]
@@ -240,6 +242,7 @@ fn gitlab_run(pipeline: Pipeline) -> CiRun {
         handle: pipeline.id.to_string(),
         name: "pipeline".to_owned(),
         state: normalized_ci_state(pipeline.status),
+        trigger: pipeline.trigger,
         url: pipeline.web_url,
         head: pipeline.sha,
         branch: pipeline.reference,

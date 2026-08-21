@@ -227,6 +227,7 @@ pub(crate) struct CiRun {
     pub handle: String,
     pub name: String,
     pub state: String,
+    pub trigger: Option<String>,
     pub url: Option<String>,
     pub head: String,
     pub branch: Option<String>,
