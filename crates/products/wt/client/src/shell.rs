@@ -5,7 +5,7 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use ratatui::layout::Rect;
-use std::io::IsTerminal as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -88,7 +88,14 @@ fn run_loop(
 ) -> Result<()> {
     let mut redraw = true;
     while !shutdown.load(Ordering::Relaxed) {
-        redraw |= sessions.drain_output();
+        let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
+        redraw |= output_changed;
+        for sequence in clipboard_writes {
+            terminal
+                .backend_mut()
+                .write_all(&sequence)
+                .context("relay world clipboard write")?;
+        }
         if redraw {
             let screen = sessions.screen(model.active());
             terminal.draw(|frame| render::draw(frame, screen, model))?;

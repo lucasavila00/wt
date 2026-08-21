@@ -33,6 +33,7 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | `wt stop NAME` | retained | Shut down the guest and keep its disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
 | `wt ssh NAME` | retained | Sync managed aliases and connect to Byobu |
+| `wt shell` | retained | Open all accessible worlds in one terminal workspace |
 | `wt rm NAME` | retained | Destroy the world |
 | `wt sync` | retained | Rewrite managed SSH inventory |
 
@@ -88,3 +89,38 @@ that unrestricted credential path bypasses gateway policy.
 
 `wt new`, `wt ls`, `wt start`, `wt stop`, `wt rm`, and `wt ssh` synchronize automatically.
 Run `wt sync` on another workstation after changing worlds elsewhere.
+
+## Terminal workspace
+
+`wt shell` opens one SSH process, local PTY, and terminal buffer for every
+accessible world. Background worlds remain connected and continue processing
+output. The top row is a WT navbar; the active world's Byobu uses the remaining
+terminal rows.
+
+The dim navbar shows the active world and its position in the world list. `F5`
+enables the navbar controls, `Left` and `Right` change worlds, and `Up` opens the
+Control UI. Press `F5` again to return keyboard control to the world. `F6`
+closes `wt shell` from every view. Other keyboard input is forwarded to the
+active world, including while the navbar is enabled.
+
+Paste, terminal resize, application cursor mode, bracketed paste, mouse button
+press and release, and vertical and horizontal wheel events are supported.
+Mouse input is forwarded only when the application has enabled a terminal
+mouse protocol. The navbar row is WT-owned; mouse coordinates in the world view
+are translated to the guest PTY, and mouse input on the navbar is ignored.
+
+OSC 52 clipboard writes from the visible world are relayed to the workstation
+terminal. Writes from background worlds are ignored. Clipboard-read queries
+are deliberately not relayed; visible world code can set, but cannot retrieve,
+the workstation clipboard through `wt shell`.
+
+Known terminal-compatibility gaps are TODOs to fix:
+
+- TODO: Forward mouse drag, position, and hover/motion events when the active
+  application requests button-motion or any-motion reporting.
+- TODO: Forward terminal focus gained and lost events when the application
+  enables focus reporting.
+- TODO: Forward paste input while the F5 navbar is enabled, just as unhandled
+  keyboard input is forwarded.
+- TODO: Propagate guest window-title changes and audible or visual bells to the
+  workstation terminal.
