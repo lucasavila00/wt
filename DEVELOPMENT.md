@@ -100,8 +100,9 @@ wt rm jsdev-manual
 ```
 
 Use the `-vs` alias for editor Remote-SSH and open the mounted workspace path.
-The project devcontainer includes Codex and logs in as its configured
-`remoteUser`, which is `wt`. Run `codex` once inside the session to sign in.
+WT injects Codex and `wt-codex` into the project devcontainer for its configured
+`remoteUser`, which is `wt`. The session uses the WT server's Codex login and
+shared conversation history.
 
 ## Manual host test
 
@@ -117,8 +118,8 @@ wt rm host-manual
 ```
 
 `wt new host` enters `host-manual` Byobu and runs cloud-init there.
-`host-manual-vs` is direct guest SSH. Run `codex` once inside the session to
-sign in.
+`host-manual-vs` is direct guest SSH. The retained image supplies Codex and WT
+uses the server's login.
 
 The devcontainer can run the normal Rust checks for this workspace. Neither
 environment can run the real KVM E2E from inside a world.

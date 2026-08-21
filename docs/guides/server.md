@@ -3,6 +3,13 @@
 WT servers run Ubuntu 24.04 amd64 with KVM. Install as the normal `wt` user,
 never as root.
 
+Log in to Codex as that user before installing WT. Installation requires
+`/home/wt/.codex/auth.json` to be a regular, non-symlink file owned by `wt`:
+
+```text
+codex
+```
+
 Copy and edit the install input:
 
 ```text
@@ -22,17 +29,22 @@ configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and disk
 limits come from `[capacity]` in the install input and are materialized at
 `/etc/wt/capacity.toml`.
 
-The example `[[shared_folders]]` entry shares the server `wt` user's Codex
-sessions with every retained world. Its `source` is an absolute normalized
-server directory; its `target` is a normalized path relative to `/home/wt` in
-every retained VM. The installer creates a missing source. Existing servers opt
-in by adding the entry and recreating their retained worlds.
+Codex is a required retained-world integration and has no server setting. The
+installer creates `/home/wt/.codex/sessions` and a WT-managed auth export. Every
+retained host and devcontainer world receives the sessions directory read-write
+and the server login read-only. The shared sessions survive world deletion and
+server restart, but are outside world disk quotas and snapshots and need a
+separate backup. Do not open the same conversation in two worlds at once.
 
-Every retained host and devcontainer world can read and change these folders.
-They survive world deletion and server restart, but they are outside world disk
-quotas and snapshots and need a separate backup. Do not open the same agent
-conversation in two worlds at once. GitHub CI runners receive no server shared
-folders.
+Both retained images install Codex. Provisioning installs and activates
+`wt-codex`, which reconciles shared conversations before starting the real
+Codex CLI. Devcontainer worlds inject both executables and the fixed Codex
+mounts into the primary container automatically. GitHub CI runners receive no
+server Codex data.
+
+If Codex authentication expires, refresh it as the server `wt` user. A systemd
+path unit republishes an atomically replaced `auth.json` to running worlds;
+worlds cannot write the credential back.
 
 A world disk cannot be smaller than its image's `build_disk_gib`. The client
 defaults to 32 GiB; a larger build image requires a larger world request.

@@ -308,7 +308,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &name,
         &format!("test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm"),
-        "verify repository-owned Docker Compose shared-folder binds",
+        "verify automatic Codex session mount",
     );
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");

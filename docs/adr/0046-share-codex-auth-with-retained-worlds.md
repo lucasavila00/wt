@@ -1,62 +1,65 @@
-# ADR 0046: Share Codex authentication with retained worlds
+# ADR 0046: Make Codex a required retained-world integration
 
 - Status: Accepted
 - Date: 2026-08-21
-- Amends: [ADR 0042](0042-share-configured-folders-with-retained-worlds.md)
+- Supersedes: ADR 0044
 
 ## Context
 
-We already share Codex sessions between the server, worlds, and the
-devcontainer. Users still have to log in separately because Codex auth lives
-in `.codex/auth.json`.
+Codex is part of the standard WT agent environment. Installing it in a client
+host recipe, asking repositories to define container mounts, and configuring
+server paths independently produces worlds with different capabilities.
+Sharing only rollout files also leaves each environment's local Codex index
+unaware of conversations created elsewhere.
+
+Authentication must follow the same world lifecycle without copying a mutable
+credential into world disks. Codex may replace `auth.json` atomically when the
+server user logs in again, while worlds must remain read-only consumers.
 
 ## Decision
 
-The KVM host must already be logged in to Codex. Share its live `auth.json`
-with worlds alongside the existing sessions folder:
+Codex is required for every retained host and devcontainer world. Both retained
+images install the upstream Codex CLI. Provisioning installs `wt-codex` and
+activates its `codex` trampoline. The trampoline asks Codex to reconcile shared
+rollouts into the environment's local index before starting the saved real CLI;
+it never edits the index directly, and reconciliation failure warns without
+blocking Codex startup.
 
-```toml
-[[shared_files]]
-source = "/home/wt/.codex/auth.json"
-target = ".codex/auth.json"
-```
+The server `wt` user must already be logged in. Installation requires
+`/home/wt/.codex/auth.json` to be a regular, non-symlink file owned by that
+user. WT has exactly two fixed server-backed resources and no configuration for
+additional paths:
 
-Add this to the development and KVM server examples, and document it in the
-server-config README. This is a shared-file mount, not a copy: worlds see
-updates to the host credential but cannot write it back. Test fixtures should
-use a disposable credential or leave the mount out when authentication is not
-under test.
+- `/home/wt/.codex/sessions`, mounted read-write in retained worlds;
+- `/home/wt/.codex/.wt-auth`, a WT-managed export containing only `auth.json`,
+  mounted read-only in retained worlds.
 
-The repository devcontainer mirrors the session mount:
+The auth export is a hard link to the live server credential, not a copy. A
+systemd path unit reruns the export helper after an atomic replacement. The
+guest mounts the export directory at `/run/wt-codex-auth` and links
+`/home/wt/.codex/auth.json` to its file. Refreshing expired authentication is a
+server-user operation; worlds cannot write it back.
 
-```yaml
-volumes:
-  - /home/wt/.codex/sessions:/home/wt/.codex/sessions
-  - /home/wt/.codex/auth.json:/home/wt/.codex/auth.json:ro
-```
+Devcontainer setup injects Codex, `wt-codex`, the read-write sessions path, and
+the read-only auth export into the primary container. It links both resources
+under the configured `remoteUser`'s `.codex` directory. Repositories do not own
+or configure this integration.
 
-The shared file is mounted read-only in both the KVM world and its
-devcontainer. Do not share the complete `.codex` directory:
-Codex indexes, databases, logs, and locks remain local to each world.
+Do not share the complete `.codex` directory. Databases, indexes, logs, locks,
+and other runtime state remain local to each world and container. GitHub CI
+runners do not receive the server's Codex data.
 
-## Implementation constraints
-
-Before implementation, resolve the following:
-
-- WT currently mounts directories; define the regular-file mount contract and
-  make sure host-side atomic replacement of `auth.json` is visible in worlds
-  and nested devcontainers.
-- Require file-backed Codex auth and a regular, non-symlink `auth.json`; do not
-  assume that a logged-in Codex account always uses this file.
-- Define what happens when a token expires. Refresh must be performed by the
-  logged-in WT server `wt` user, while worlds remain read-only consumers.
-- Keep the devcontainer bind mount repository-controlled, as with sessions.
-- Treat test credentials as disposable, and define whether existing worlds are
-  recreated or explicitly migrated after the configuration changes.
+There is no migration or compatibility path for earlier worlds or server
+configuration. Reset the installation and recreate worlds.
 
 ## Consequences
 
-New worlds and the devcontainer reuse the host's login. The credential remains
-outside world disks, but any trusted process in a world with the mount can use
-it, so read-only access does not prevent exfiltration or account-wide impact.
-Re-login or credential refresh happens on the WT server host.
+- Every retained environment has the same Codex CLI, login, session history,
+  and reconciliation behavior without project configuration.
+- Sessions outlive worlds and remain writable from every retained environment;
+  users must not open one conversation concurrently in multiple worlds.
+- The credential stays outside world disks, and mount consumers cannot modify
+  it. Any trusted process in a retained world can still read and exfiltrate it,
+  so the shared login has account-wide security impact.
+- Codex image installation and the server login become hard prerequisites for
+  building images and installing WT.

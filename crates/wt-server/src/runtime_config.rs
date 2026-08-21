@@ -499,15 +499,6 @@ binary_dir = "/usr/local/bin"
     }
 
     #[test]
-    fn configurable_shares_are_rejected() {
-        let config = VALID.replace(
-            "[image]",
-            "[[shared_folders]]\nsource = \"/tmp/a\"\ntarget = \"a\"\n\n[image]",
-        );
-        assert!(toml::from_str::<ServerConfig>(&config).is_err());
-    }
-
-    #[test]
     fn missing_and_unknown_fields_fail() {
         assert!(parse(&VALID.replace("recipe_timeout_seconds = 900\n", "")).is_err());
         assert!(parse(&VALID.replace(
