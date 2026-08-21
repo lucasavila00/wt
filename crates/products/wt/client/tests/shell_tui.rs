@@ -43,6 +43,9 @@ impl Fixture {
         let server = r#"#!/bin/sh
 request=$(cat)
 case "$request" in
+  *'"operation":"list_codex_sessions"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]}}'
+    ;;
   *'"operation":"create"'*)
     : > "$HOME/created"
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000002","name":"new-world","owner":"tester","status":"setup","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"new-world/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAANEW guest"]}}}}'
@@ -96,7 +99,11 @@ fn command_palette_opens_the_shared_dev_form_and_escape_cancels() -> Result<()> 
     let mut screen = fixture.screen()?;
 
     screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Tab)?
         .wait_for_text("World management")?
+        .press(Key::Tab)?
+        .wait_for_text("No Codex sessions")?
         .press(Key::Function(1))?
         .wait_for_text("Command Palette")?
         .type_text("dev")?
@@ -112,7 +119,7 @@ fn command_palette_opens_the_shared_dev_form_and_escape_cancels() -> Result<()> 
         .wait_for_quiet(Duration::from_millis(100))?;
     screen
         .press(Key::Escape)?
-        .wait_for_text("World management")?
+        .wait_for_text("No Codex sessions")?
         .wait_for_text_gone("Create development world")?;
     Ok(())
 }
@@ -123,14 +130,14 @@ fn one_shortcut_can_open_the_shared_host_form() -> Result<()> {
     let mut screen = fixture.screen()?;
 
     screen
-        .wait_for_text("World management")?
+        .wait_for_text("No Codex sessions")?
         .press(Key::Char('1'))?
         .wait_for_text("Command Palette")?
         .press(Key::Enter)?
         .wait_for_text("Create host world")?
         .wait_for_text("cloud-init.yaml")?
         .press(Key::Escape)?
-        .wait_for_text("World management")?;
+        .wait_for_text("No Codex sessions")?;
     Ok(())
 }
 
@@ -140,7 +147,7 @@ fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> 
     let mut screen = fixture.screen()?;
 
     screen
-        .wait_for_text("World management")?
+        .wait_for_text("No Codex sessions")?
         .press(Key::Function(1))?
         .type_text("dev")?
         .press(Key::Enter)?

@@ -58,7 +58,7 @@ pub(super) struct ControlState {
 impl Default for ControlState {
     fn default() -> Self {
         Self {
-            activity: Activity::Worlds,
+            activity: Activity::Codex,
             palette: CommandPalette::default(),
             codex: Vec::new(),
         }
@@ -237,8 +237,8 @@ fn activity_at_position(area: Rect, column: u16, row: u16) -> Option<Activity> {
         return None;
     }
     match row.saturating_sub(bar.y) / ACTIVITY_BUTTON_HEIGHT {
-        0 => Some(Activity::Worlds),
-        1 => Some(Activity::Codex),
+        0 => Some(Activity::Codex),
+        1 => Some(Activity::Worlds),
         _ => None,
     }
 }
@@ -251,10 +251,11 @@ mod tests {
     fn tab_cycles_activities() {
         let mut state = ControlState::default();
 
-        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(state.activity(), Activity::Codex);
         state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(state.activity(), Activity::Worlds);
+        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(state.activity(), Activity::Codex);
     }
 
     #[test]
@@ -288,7 +289,7 @@ mod tests {
         let area = Rect::new(0, 0, 64, 16);
 
         assert_eq!(state.handle_mouse(mouse(1, 4), area), None);
-        assert_eq!(state.activity(), Activity::Codex);
+        assert_eq!(state.activity(), Activity::Worlds);
         state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
         let (_, results) = command_palette_layout(control_areas(area).1);
         assert_eq!(
