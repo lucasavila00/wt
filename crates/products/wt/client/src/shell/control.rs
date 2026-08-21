@@ -163,7 +163,7 @@ pub(super) enum ControlCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum ControlAction {
     Command(ControlCommand),
-    OpenCodex(CodexOpenTarget),
+    OpenCodex(Box<CodexOpenTarget>),
 }
 
 impl ControlCommand {
@@ -257,7 +257,10 @@ impl ControlState {
             KeyCode::Up if self.activity == Activity::Codex => self.move_codex(-1, area),
             KeyCode::Down if self.activity == Activity::Codex => self.move_codex(1, area),
             KeyCode::Enter if self.activity == Activity::Codex => {
-                return self.activate_selected().map(ControlAction::OpenCodex)
+                return self
+                    .activate_selected()
+                    .map(Box::new)
+                    .map(ControlAction::OpenCodex)
             }
             _ => {}
         }
@@ -310,7 +313,12 @@ impl ControlState {
                 mouse.row,
             ) {
                 self.selected = Some(self.codex[index].identity.clone());
-                return (true, self.activate_selected().map(ControlAction::OpenCodex));
+                return (
+                    true,
+                    self.activate_selected()
+                        .map(Box::new)
+                        .map(ControlAction::OpenCodex),
+                );
             }
         }
         (false, None)

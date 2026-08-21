@@ -183,7 +183,7 @@ impl ShellModel {
 fn route(action: ControlAction) -> InputRoute {
     match action {
         ControlAction::Command(command) => InputRoute::Command(command),
-        ControlAction::OpenCodex(target) => InputRoute::OpenCodex(Box::new(target)),
+        ControlAction::OpenCodex(target) => InputRoute::OpenCodex(target),
     }
 }
 

@@ -25,6 +25,11 @@ use session::SessionSet;
 
 const BAR_HEIGHT: u16 = 1;
 
+struct Services<'a> {
+    focus: &'a codex::FocusWorker,
+    config: &'a ClientConfig,
+}
+
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("wt shell requires an interactive terminal");
@@ -100,6 +105,7 @@ fn run_loop(
     config: &ClientConfig,
     shutdown: &AtomicBool,
 ) -> Result<()> {
+    let services = Services { focus, config };
     let mut redraw = true;
     let mut creation = None;
     let mut creation_error = None;
@@ -171,9 +177,8 @@ fn run_loop(
                 event::read().context("read terminal input")?,
                 sessions,
                 model,
-                focus,
+                &services,
                 area,
-                config,
                 &mut creation,
                 &mut creation_error,
             )?;
@@ -192,9 +197,8 @@ fn dispatch_event(
     event: Event,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    focus: &codex::FocusWorker,
+    services: &Services<'_>,
     area: Rect,
-    config: &ClientConfig,
     creation: &mut Option<crate::create::Flow>,
     creation_error: &mut Option<String>,
 ) -> Result<bool> {
@@ -215,7 +219,7 @@ fn dispatch_event(
                     return Ok(true);
                 }
                 if let Some(flow) = creation.as_mut() {
-                    let action = flow.handle_key(key, config);
+                    let action = flow.handle_key(key, services.config);
                     let _ = apply_creation_action(
                         action,
                         creation,
@@ -235,9 +239,11 @@ fn dispatch_event(
                     }
                 }
                 InputRoute::Command(command) => {
-                    start_creation(command, config, creation, creation_error);
+                    start_creation(command, services.config, creation, creation_error);
                 }
-                InputRoute::OpenCodex(target) => start_focus(sessions, model, focus, *target),
+                InputRoute::OpenCodex(target) => {
+                    start_focus(sessions, model, services.focus, *target)
+                }
                 InputRoute::Consumed => {}
             }
             Ok(true)
@@ -271,10 +277,10 @@ fn dispatch_event(
                 let (changed, route) = model.handle_mouse(mouse, area);
                 match route {
                     Some(InputRoute::Command(command)) => {
-                        start_creation(command, config, creation, creation_error)
+                        start_creation(command, services.config, creation, creation_error)
                     }
                     Some(InputRoute::OpenCodex(target)) => {
-                        start_focus(sessions, model, focus, *target)
+                        start_focus(sessions, model, services.focus, *target)
                     }
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
