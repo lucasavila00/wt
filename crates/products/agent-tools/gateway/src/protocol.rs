@@ -3,6 +3,17 @@ use uuid::Uuid;
 use wt_git_smart_protocol::GitService;
 
 pub const PROTOCOL_VERSION: u32 = 4;
+pub const CODEX_SESSION_PANE_OPTION: &str = "@wt_codex_session_id";
+
+pub fn valid_codex_tmux_session(value: &str) -> bool {
+    matches!(value, "wt-app" | "wt-host")
+}
+
+pub fn valid_codex_pane_id(value: &str) -> bool {
+    value.strip_prefix('%').is_some_and(|number| {
+        !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -84,6 +95,24 @@ pub struct CodexSessionEvent {
     pub tmux_session: String,
     pub pane_id: String,
     pub kind: CodexSessionEventKind,
+}
+
+#[cfg(test)]
+mod codex_target_tests {
+    use super::*;
+
+    #[test]
+    fn validates_only_wt_byobu_targets() {
+        assert!(valid_codex_tmux_session("wt-app"));
+        assert!(valid_codex_tmux_session("wt-host"));
+        assert!(!valid_codex_tmux_session("other"));
+
+        assert!(valid_codex_pane_id("%0"));
+        assert!(valid_codex_pane_id("%1234567890123456"));
+        for invalid in ["", "%", "%a", "1", "%12345678901234567"] {
+            assert!(!valid_codex_pane_id(invalid), "{invalid}");
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

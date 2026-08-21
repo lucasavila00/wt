@@ -1,3 +1,4 @@
+mod focus;
 mod install;
 mod reconcile;
 mod report;
@@ -26,6 +27,13 @@ enum Command {
     /// Report a WT-managed Codex lifecycle hook.
     #[command(hide = true)]
     ReportHook,
+    /// Focus a strictly identified WT Byobu pane.
+    #[command(hide = true)]
+    FocusPane {
+        session_id: uuid::Uuid,
+        tmux_session: String,
+        pane_id: String,
+    },
     /// Restore the Codex command replaced by `install`.
     Uninstall,
 }
@@ -64,6 +72,11 @@ fn run(args: Vec<OsString>) -> Result<()> {
         }
         Command::InstallConfig => install::install_user_config()?,
         Command::ReportHook => report::report_hook()?,
+        Command::FocusPane {
+            session_id,
+            tmux_session,
+            pane_id,
+        } => println!("{}", focus::focus(session_id, &tmux_session, &pane_id)?),
         Command::Uninstall => {
             let path = install::uninstall()?;
             println!("Removed Codex trampoline: {}", path.display());

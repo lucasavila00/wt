@@ -6,8 +6,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::Command;
 use wt_agent_tool_gateway::{
-    copy_bidirectional, read_json_line, resolve_vsock_port, write_json_line, ClientOperation,
-    ClientRequest, TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
+    copy_bidirectional, read_json_line, resolve_vsock_port, valid_codex_pane_id,
+    valid_codex_tmux_session, write_json_line, ClientOperation, ClientRequest,
+    CodexSessionEventKind, TransportRequest, TransportResponse, VsockStream,
+    CODEX_SESSION_PANE_OPTION, RELAY_SOCKET,
 };
 
 #[derive(Debug, Parser)]
@@ -112,9 +114,7 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
     let ClientOperation::CodexSession { event } = operation else {
         return Ok(());
     };
-    if !matches!(event.tmux_session.as_str(), "wt-app" | "wt-host")
-        || !valid_pane_id(&event.pane_id)
-    {
+    if !valid_codex_tmux_session(&event.tmux_session) || !valid_codex_pane_id(&event.pane_id) {
         bail!("invalid Codex Byobu target");
     }
     let output = Command::new("/usr/bin/tmux")
@@ -133,11 +133,58 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
     {
         bail!("Codex Byobu target is not in the active world session");
     }
+    update_codex_marker(event)?;
     Ok(())
 }
 
-fn valid_pane_id(value: &str) -> bool {
-    value.strip_prefix('%').is_some_and(|number| {
-        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
-    })
+fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Result<()> {
+    if event.kind == CodexSessionEventKind::SessionEnd {
+        let output = Command::new("/usr/bin/tmux")
+            .args([
+                "show-options",
+                "-p",
+                "-v",
+                "-t",
+                &event.pane_id,
+                CODEX_SESSION_PANE_OPTION,
+            ])
+            .output()
+            .context("read Codex session pane marker")?;
+        if !output.status.success() {
+            return Ok(());
+        }
+        if output.stdout == format!("{}\n", event.session_id).as_bytes() {
+            let status = Command::new("/usr/bin/tmux")
+                .args([
+                    "set-option",
+                    "-p",
+                    "-u",
+                    "-t",
+                    &event.pane_id,
+                    CODEX_SESSION_PANE_OPTION,
+                ])
+                .status()
+                .context("clear Codex session pane marker")?;
+            if !status.success() {
+                bail!("could not clear Codex session pane marker");
+            }
+        }
+        return Ok(());
+    }
+
+    let status = Command::new("/usr/bin/tmux")
+        .args([
+            "set-option",
+            "-p",
+            "-t",
+            &event.pane_id,
+            CODEX_SESSION_PANE_OPTION,
+            &event.session_id.to_string(),
+        ])
+        .status()
+        .context("write Codex session pane marker")?;
+    if !status.success() {
+        bail!("could not write Codex session pane marker");
+    }
+    Ok(())
 }
