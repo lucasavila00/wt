@@ -55,6 +55,10 @@ case "$request" in
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000002","name":"new-world","owner":"tester","status":"setup","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"new-world/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAANEW guest"]}}}}'
     ;;
   *'"operation":"delete"'*)
+    printf '%s\n' "$request" > "$HOME/delete-request"
+    if test -f "$HOME/delete-fails"; then
+      exit 23
+    fi
     : > "$HOME/deleted"
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"deleted","name":"existing"}}'
     ;;
@@ -266,6 +270,144 @@ fn delete_world_picker_and_confirmation_are_clickable() -> Result<()> {
         .click(60, 15)?
         .wait_for_text("Close (F6)")?;
     assert!(fixture.home.path().join("deleted").exists());
+    Ok(())
+}
+
+#[test]
+fn escape_closes_the_delete_picker_without_contacting_the_server() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("local.existing")?
+        .press(Key::Escape)?
+        .wait_for_text("No Codex sessions")?
+        .wait_for_text_gone("Delete world")?;
+    assert!(!fixture.home.path().join("delete-request").exists());
+    Ok(())
+}
+
+#[test]
+fn a_no_match_search_cannot_advance_and_backspace_recovers() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .type_text("zz")?
+        .wait_for_text("No matching worlds")?
+        .press(Key::Enter)?
+        .wait_for_quiet(Duration::from_millis(100))?;
+    assert!(screen.contents().contains("No matching worlds"));
+    assert!(!screen.contents().contains("Delete world?"));
+
+    screen
+        .press(Key::Backspace)?
+        .press(Key::Backspace)?
+        .wait_for_text("local.existing")?
+        .press(Key::Escape)?
+        .wait_for_text("No Codex sessions")?;
+    assert!(!fixture.home.path().join("delete-request").exists());
+    Ok(())
+}
+
+#[test]
+fn mouse_can_cancel_the_confirmation_without_deleting() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world?")?
+        .click(25, 15)?
+        .wait_for_text("No Codex sessions")?
+        .wait_for_text_gone("Delete world?")?;
+    assert!(!fixture.home.path().join("delete-request").exists());
+    Ok(())
+}
+
+#[test]
+fn a_delete_failure_keeps_the_world_and_can_be_dismissed() -> Result<()> {
+    let fixture = Fixture::new();
+    fs::write(fixture.home.path().join("delete-fails"), "").unwrap();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Right)?
+        .press(Key::Enter)?
+        .wait_for_text("World deletion failed")?
+        .press(Key::Enter)?
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(5))?
+        .wait_for_text("session: local.existing")?;
+    assert!(fixture.home.path().join("delete-request").exists());
+    assert!(!fixture.home.path().join("deleted").exists());
+    Ok(())
+}
+
+#[test]
+fn deleting_the_last_world_leaves_an_explanatory_empty_picker() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Right)?
+        .press(Key::Enter)?
+        .wait_for_text("Close (F6)")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("No worlds to delete")?
+        .press(Key::Enter)?
+        .wait_for_quiet(Duration::from_millis(100))?;
+    assert!(screen.contents().contains("No worlds to delete"));
+
+    screen
+        .press(Key::Escape)?
+        .wait_for_text("Close (F6)")?
+        .wait_for_text_gone("No worlds to delete")?;
+    Ok(())
+}
+
+#[test]
+fn down_selects_a_non_first_world_for_confirmation() -> Result<()> {
+    let fixture = Fixture::new();
+    fs::write(fixture.home.path().join("created"), "").unwrap();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("local.new-world")?
+        .press(Key::Down)?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world \"local.new-world\"?")?
+        .press(Key::Escape)?
+        .wait_for_text("No Codex sessions")?;
+    assert!(!fixture.home.path().join("delete-request").exists());
     Ok(())
 }
 
