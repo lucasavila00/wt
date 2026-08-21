@@ -2,8 +2,43 @@ use super::*;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+pub(crate) struct CodexSessionFixture {
+    pub(crate) marker: String,
+    root: PathBuf,
+}
+
+impl CodexSessionFixture {
+    pub(crate) fn new(name: &InstanceName) -> Self {
+        let sessions = Path::new(wt_server::CODEX_SESSIONS_PATH);
+        let fixture_name = format!(".wt-kvm-e2e-{name}");
+        let root = sessions.join(&fixture_name);
+        let transcript_dir = root.join("2026/08/21");
+        fs::create_dir_all(&transcript_dir).unwrap();
+
+        for directory in [
+            root.as_path(),
+            root.join("2026").as_path(),
+            root.join("2026/08").as_path(),
+            transcript_dir.as_path(),
+        ] {
+            let metadata = fs::metadata(directory).unwrap();
+            assert_eq!(metadata.gid(), 1001, "{}", directory.display());
+            assert_eq!(metadata.mode() & 0o2020, 0o2020, "{}", directory.display());
+        }
+
+        let marker = format!("{fixture_name}/2026/08/21/rollout.jsonl");
+        Self { marker, root }
+    }
+}
+
+impl Drop for CodexSessionFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
 
 pub(crate) fn assert_server_codex_auth_export() -> String {
     let source = Path::new(wt_server::CODEX_AUTH_PATH);
