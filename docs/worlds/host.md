@@ -16,7 +16,7 @@ default with `wt new host NAME --user-data ./host.yaml`. The client installer
 creates a thin recipe with Diffo when the default file is missing and does not
 overwrite an existing file. It does not install Rust/Cargo or clone a project.
 
-WT first boots the retained host image, which already owns the `wt` login at
+WT first boots the retained image, which already owns the `wt` login at
 UID/GID `1001:1001`. Provisioning validates that image contract, stages the
 selected file root-only, transfers the workstation's global Git author, and
 verifies SSH. `wt new host` then opens Byobu.
@@ -67,11 +67,11 @@ repository and write only branches under `wt/`; provider credentials remain on
 the server. Explicit OpenSSH agent forwarding is a separate access path and is
 not restricted by the gateway.
 
-The host image is separate from the devcontainer image. It adds OpenSSH, QEMU
-guest support, the pinned Byobu package, compiled tmux, Ghostty terminfo, and
-the shared WT terminal profile, including the fixed `wt` image user and its
-`/home/wt/.byobu` files. Ubuntu's Git remains available, and WT adds no
-implicit checkout or provider credentials.
+Host and devcontainer worlds use the same retained image. It includes Docker
+and the Dev Container CLI, but host provisioning does not create a checkout,
+container, or app SSH endpoint. The image also includes OpenSSH, QEMU guest
+support, Byobu, tmux, Ghostty terminfo, the host setup service, and the shared
+WT terminal profile.
 
 Golden-image replacement does not migrate existing host worlds. Existing disks
 retain their current guest user and terminal state; recreate a host world to

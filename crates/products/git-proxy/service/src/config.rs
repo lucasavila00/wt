@@ -1,10 +1,26 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+
+pub const LOCK_PATH: &str = "/etc/wt-git-proxy.lock";
+
+pub struct ProcessLock {
+    _lock: nix::fcntl::Flock<File>,
+}
+
+impl ProcessLock {
+    pub fn acquire(path: &Path) -> Result<Self> {
+        let file = File::open(path).with_context(|| format!("open lock {}", path.display()))?;
+        nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusive)
+            .map(|lock| Self { _lock: lock })
+            .map_err(|(_, error)| error)
+            .with_context(|| format!("lock {}", path.display()))
+    }
+}
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -159,6 +175,26 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn process_lock_blocks_until_the_owner_exits() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("lock");
+        fs::write(&path, []).unwrap();
+        let first = ProcessLock::acquire(&path).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || sender.send(ProcessLock::acquire(&path)).unwrap());
+
+        assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
+        drop(first);
+        receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap();
+        thread.join().unwrap();
+    }
 
     #[test]
     fn config_resolves_provider_paths() {

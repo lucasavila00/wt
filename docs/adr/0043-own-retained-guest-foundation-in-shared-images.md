@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-20
+- Amended by: [ADR 0049](0049-use-one-image-for-retained-worlds.md)
 - Amends: [ADR 0012](0012-separate-image-packages-from-world-configuration.md),
   [ADR 0027](0027-build-images-in-kvm.md),
   [ADR 0039](0039-make-world-disks-independent-of-golden-images.md),

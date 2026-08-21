@@ -9,7 +9,7 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
         required_header: Some(("private-token", "fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
-        response_body: r#"[{"iid":8,"title":"Fix login","description":"Fixes the login flow.","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main"}]"#,
+        response_body: r#"[{"iid":8,"title":"Fix login","description":"Fixes the login flow.","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main","has_conflicts":false,"detailed_merge_status":"checking"}]"#,
     }]);
     let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
 
@@ -23,7 +23,7 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
         .unwrap();
 
     insta::assert_snapshot!(render_cli_command_output(output), @r###"
-    {"type":"change_request","data":{"handle":"8","url":"https://gitlab.test/acme/widget/-/merge_requests/8","title":"Fix login","body":"Fixes the login flow.","state":"opened","draft":false,"head":"abc123","base":"main","review_state":null,"threads":[],"jobs":[]}}
+    {"type":"change_request","data":{"handle":"8","url":"https://gitlab.test/acme/widget/-/merge_requests/8","title":"Fix login","body":"Fixes the login flow.","state":"opened","draft":false,"head":"abc123","base":"main","conflict_state":"pending","review_state":null,"threads":[],"jobs":[]}}
     "###);
     server.join().unwrap().unwrap();
 }

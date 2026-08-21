@@ -2986,6 +2986,7 @@ dependencies = [
  "cliclack",
  "console",
  "insta",
+ "nix",
  "serde",
  "ssh-key",
  "tempfile",

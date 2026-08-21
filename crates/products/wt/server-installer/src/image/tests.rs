@@ -36,6 +36,31 @@ fn image_manifest_records_structured_package_versions() {
 }
 
 #[test]
+fn retained_manifest_tracks_host_assets() {
+    let inputs = retained_input_hashes(&BuildSpec {
+        name: BUILD_NAME,
+        recipe: RETAINED_IMAGE_BUILD,
+    });
+    let paths = inputs
+        .keys()
+        .filter(|path| path.starts_with("/var/tmp/wt-host-"))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(paths, @r###"
+    /var/tmp/wt-host-cloud-config
+    /var/tmp/wt-host-cloud-final
+    /var/tmp/wt-host-cloud-init
+    /var/tmp/wt-host-defer-init
+    /var/tmp/wt-host-inspect
+    /var/tmp/wt-host-prepare
+    /var/tmp/wt-host-setup
+    /var/tmp/wt-host-setup-service
+    /var/tmp/wt-host-shell
+    "###);
+}
+
+#[test]
 fn installed_image_drift_is_replaced_automatically() {
     assert_eq!(
         installed_image_state(false, false, || unreachable!()),
@@ -155,9 +180,9 @@ fn console_reader_opens_the_replaced_log() {
 #[test]
 fn progress_output_is_phase_based() {
     let message = progress_message(
-        "Devcontainer",
+        "Retained",
         "installing base operating-system packages",
         Duration::from_secs(60),
     );
-    insta::assert_snapshot!(message, @"Devcontainer image build: installing base operating-system packages (elapsed=60s)");
+    insta::assert_snapshot!(message, @"Retained image build: installing base operating-system packages (elapsed=60s)");
 }

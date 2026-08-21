@@ -1,7 +1,7 @@
 use super::*;
 use crate::api::render_cli_command_output;
 
-const PULL_REQUEST: &str = r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"closed","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#;
+const PULL_REQUEST: &str = r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"closed","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}},"mergeable":false}"#;
 const WORKFLOW_RUN: &str = r#"{"id":91,"name":"CI","event":"pull_request","status":"completed","conclusion":"success","html_url":"https://github.test/runs/91","head_sha":"abc123","head_branch":"wt/fix-login","head_repository":{"full_name":"acme/widget"}}"#;
 const WORKFLOW_JOB: &str = r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#;
 const REVIEW_THREADS: &str = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"author":{"__typename":"User","login":"reviewer"},"body":"Please clarify this.","url":"https://github.test/thread/7"}]}}]}}}}}"#;
@@ -19,13 +19,19 @@ fn cli_commands_render_complete_json_from_github_responses() {
             WtToolsCommand::ShowMrForBranch {
                 branch: "wt/fix-login".to_owned(),
             },
-            vec![get(
-                "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Ffix-login&per_page=100",
-                leak(format!(
-                    "[{}]",
-                    PULL_REQUEST.replace(r#""state":"closed""#, r#""state":"open""#)
-                )),
-            )],
+            vec![
+                get(
+                    "/repos/acme/widget/pulls?state=open&head=acme%3Awt%2Ffix-login&per_page=100",
+                    leak(format!(
+                        "[{}]",
+                        PULL_REQUEST.replace(r#""state":"closed""#, r#""state":"open""#)
+                    )),
+                ),
+                get(
+                    "/repos/acme/widget/pulls/7",
+                    leak(PULL_REQUEST.replace(r#""state":"closed""#, r#""state":"open""#)),
+                ),
+            ],
         ),
         (
             "show_run",

@@ -59,7 +59,7 @@ chmod 0600 "$fixture_dir/github.token" "$fixture_dir/known_hosts"
 
 Prepare the host with the test-only install input. The test starts its own
 server and agent tool gateway with temporary server and capacity configuration.
-It uses the installed golden images as read-only inputs and the installed
+It uses the installed golden image as a read-only input and the installed
 registry cache and Codex authentication integration as host prerequisites:
 
 ```bash

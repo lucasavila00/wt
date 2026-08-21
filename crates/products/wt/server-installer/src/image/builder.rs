@@ -8,7 +8,7 @@ use contract::verify_retained_guest_contract;
 
 use super::console::{wait_for_shutdown, ConsoleLog};
 use super::recipe::ImageRecipe;
-use super::{host_image, manifest_path, recipe, sibling_temporary, BUILD_NAME};
+use super::{manifest_path, recipe, sibling_temporary, BUILD_NAME};
 use crate::install_input::InstallInput;
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
@@ -41,38 +41,10 @@ const INSTALL_AGENT_TOOLS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-agent-tools.sh");
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
-
-#[derive(Clone, Copy)]
-pub(super) enum ImageKind {
-    Devcontainer,
-    Host,
-}
-
-impl ImageKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Devcontainer => "devcontainer",
-            Self::Host => "host",
-        }
-    }
-
-    fn title(self) -> &'static str {
-        match self {
-            Self::Devcontainer => "Devcontainer",
-            Self::Host => "Host",
-        }
-    }
-}
-
-impl std::fmt::Display for ImageKind {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
+pub(super) const IMAGE_KIND: &str = "retained";
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
-    pub(super) kind: ImageKind,
     pub(super) recipe: &'a [u8],
 }
 
@@ -161,7 +133,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_terminal = build_dir.join("install-terminal.sh");
     let install_codex = build_dir.join("install-codex.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
-    let kind_recipe = build_dir.join("kind-build-image.sh");
+    let retained_recipe = build_dir.join("retained-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
     let byobu_color = build_dir.join("byobu-color");
     let configure_access = build_dir.join("configure-access.sh");
@@ -171,7 +143,7 @@ pub(super) fn run_kvm_build<R: Runner>(
 
     println!(
         "Creating {} image-build disk from the verified Ubuntu source image...",
-        spec.kind
+        IMAGE_KIND
     );
     runner.run(
         cmd!(
@@ -198,7 +170,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(
         &environment,
         recipe::BuildEnvironment {
-            kind: spec.kind.as_str(),
+            kind: IMAGE_KIND,
             tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
             byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
@@ -213,7 +185,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&shared_recipe, SHARED_IMAGE_BUILD).context("write shared image recipe")?;
-    fs::write(&kind_recipe, spec.recipe).context("write kind image recipe")?;
+    fs::write(&retained_recipe, spec.recipe).context("write retained image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
     fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
@@ -238,7 +210,10 @@ pub(super) fn run_kvm_build<R: Runner>(
         ),
         (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
-        (kind_recipe.as_path(), "/var/tmp/wt-kind-image-build.sh"),
+        (
+            retained_recipe.as_path(),
+            "/var/tmp/wt-retained-image-build.sh",
+        ),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
         (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
         (configure_access.as_path(), "/var/tmp/wt-retained-access"),
@@ -291,9 +266,9 @@ pub(super) fn run_kvm_build<R: Runner>(
     )?;
     println!(
         "Building {} golden image in a temporary KVM guest (30-minute timeout)...",
-        spec.kind
+        IMAGE_KIND
     );
-    wait_for_shutdown(runner, &mut console_log, spec.name, spec.kind.title())?;
+    wait_for_shutdown(runner, &mut console_log, spec.name, "Retained")?;
     undefine_build_domain(runner, spec.name)?;
 
     let marker = read_build_file(
@@ -319,26 +294,22 @@ pub(super) fn run_kvm_build<R: Runner>(
     validate_result_metadata(&marker_metadata)?;
     let expected = format!(
         "kind={}\nstatus=ready\nwt_uid={}\nwt_gid={}\n",
-        spec.kind.as_str(),
+        IMAGE_KIND,
         wt_retained_worlds::GUEST_UID,
         wt_retained_worlds::GUEST_GID,
     );
     if marker != expected {
         bail!(
             "{} image build returned an unexpected result marker: {:?}",
-            spec.kind,
+            IMAGE_KIND,
             marker
         );
     }
-    println!("Validated {} image recipe output.", spec.kind);
+    println!("Validated {IMAGE_KIND} image recipe output.");
     Ok(paths)
 }
 
-pub(super) fn finalize_reusable_image(
-    runner: &impl Runner,
-    paths: &BuildPaths,
-    kind: ImageKind,
-) -> Result<String> {
+pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<String> {
     runner.run(
         cmd!(
             "sudo",
@@ -350,10 +321,7 @@ pub(super) fn finalize_reusable_image(
         ),
         "preserve pinned tmux across image sysprep",
     )?;
-    println!(
-        "Finalizing {} golden image for reuse (sysprep and sanitization)...",
-        kind
-    );
+    println!("Finalizing {IMAGE_KIND} golden image for reuse (sysprep and sanitization)...");
     runner.run(
         cmd!(
             "sudo",
@@ -517,27 +485,24 @@ pub(super) fn domain_exists(runner: &impl Runner, name: &str) -> Result<bool> {
 }
 
 pub(super) fn require_clean_build_state(runner: &impl Runner, server: &ServerConfig) -> Result<()> {
-    for name in [BUILD_NAME, host_image::BUILD_NAME] {
-        let directory = server.libvirt.worlds_dir.join(name);
-        if directory.exists() || domain_exists(runner, name)? {
-            bail!("stale image build state exists for {name}");
-        }
+    let directory = server.libvirt.worlds_dir.join(BUILD_NAME);
+    if directory.exists() || domain_exists(runner, BUILD_NAME)? {
+        bail!("stale image build state exists for {BUILD_NAME}");
     }
     Ok(())
 }
 
 pub(super) fn require_clean_publication_state(server: &ServerConfig) -> Result<()> {
-    for image in [&server.image.devcontainer_path, &server.image.host_path] {
-        let manifest = manifest_path(image);
-        let image_temporary = sibling_temporary(image)?;
-        let manifest_temporary = sibling_temporary(&manifest)?;
-        if image_temporary.exists() || manifest_temporary.exists() {
-            bail!(
-                "image publication drift: remove abandoned temporary files {} and {} with make nuke",
-                image_temporary.display(),
-                manifest_temporary.display()
-            );
-        }
+    let image = &server.image.path;
+    let manifest = manifest_path(image);
+    let image_temporary = sibling_temporary(image)?;
+    let manifest_temporary = sibling_temporary(&manifest)?;
+    if image_temporary.exists() || manifest_temporary.exists() {
+        bail!(
+            "image publication drift: remove abandoned temporary files {} and {} with make nuke",
+            image_temporary.display(),
+            manifest_temporary.display()
+        );
     }
     Ok(())
 }

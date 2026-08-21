@@ -55,17 +55,11 @@ impl KvmHarness {
         };
         assert_eq!(config.agent_tools.vsock_port, vsock_port);
         config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
-        let installed_devcontainer_image = config.image.devcontainer_path.clone();
-        let installed_host_image = config.image.host_path.clone();
+        let installed_image = config.image.path.clone();
         let images = timings.run("prepare isolated golden images", || {
-            isolated_test_images(
-                &workspace,
-                &installed_devcontainer_image,
-                &installed_host_image,
-            )
+            isolated_test_images(&workspace, &installed_image)
         });
-        config.image.devcontainer_path = images.path().join("devcontainer.qcow2");
-        config.image.host_path = images.path().join("host.qcow2");
+        config.image.path = images.path().join("retained.qcow2");
         config.install.binary_dir = binary_dir;
         let initial_disks = count_disks(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {

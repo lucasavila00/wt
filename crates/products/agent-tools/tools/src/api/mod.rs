@@ -46,6 +46,14 @@ include!(concat!(env!("OUT_DIR"), "/wt_tools_command.rs"));
 
 pub const TYPESCRIPT_COMMAND_TYPE: &str = include_str!("wt-tools-command.ts");
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictState {
+    Pending,
+    Clean,
+    Conflicting,
+}
+
 #[allow(
     dead_code,
     reason = "contextual variants remain for shared provider implementations and private tests"
@@ -99,6 +107,8 @@ pub struct ChangeRequestStatus {
     pub draft: bool,
     pub head: String,
     pub base: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_state: Option<ConflictState>,
     pub review_state: Option<String>,
     pub threads: Vec<ReviewThread>,
     pub jobs: Vec<CiJob>,
