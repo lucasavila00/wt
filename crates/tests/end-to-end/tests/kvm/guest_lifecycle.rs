@@ -92,10 +92,16 @@ fn retained_host_lifecycle() {
         &harness,
         &name,
         &format!(
-            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; printf 'from-host\\n' > /home/wt/.codex/sessions/{}; wt-tools --help >/dev/null",
+            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; printf 'from-host\\n' > /home/wt/.codex/sessions/{}",
             codex_sessions.marker
         ),
-        "verify Codex and agent tools integration",
+        "verify Codex integration",
+    );
+    run_guest(
+        &harness,
+        &name,
+        r#"test "$(wt-tools '{"command":{"action":"report_wt_tool_issue","description":"KVM host fixture"}}')" = '{"type":"confirmation","data":"Recorded wt-tools report for this world."}'"#,
+        "use agent tool gateway",
     );
     assert_eq!(
         std::fs::read_to_string(
