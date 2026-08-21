@@ -21,6 +21,7 @@ mod session;
 use control::ControlCommand;
 use model::{InputRoute, Mode, ShellModel};
 use session::SessionSet;
+use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
 
@@ -50,6 +51,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
+    model.set_codex(load_codex(config));
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -70,6 +72,33 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     .context("disable terminal input for wt shell");
     ratatui::restore();
     result.and(input_result)
+}
+
+fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
+    let request = ApiRequest::new(Operation::ListCodexSessions);
+    config
+        .contexts
+        .iter()
+        .map(
+            |context| match wt_client::transport::call(context, &request) {
+                Ok(Response::CodexSessions { sessions }) => {
+                    control::CodexContextSnapshot::Sessions {
+                        context: context.name.clone(),
+                        sessions,
+                    }
+                }
+                Ok(_) => control::CodexContextSnapshot::Failure {
+                    context: context.name.clone(),
+                    message: wt_client::transport::wrong_response(context, "list Codex sessions")
+                        .to_string(),
+                },
+                Err(error) => control::CodexContextSnapshot::Failure {
+                    context: context.name.clone(),
+                    message: error.to_string(),
+                },
+            },
+        )
+        .collect()
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
