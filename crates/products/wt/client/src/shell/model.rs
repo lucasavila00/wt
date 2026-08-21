@@ -77,18 +77,25 @@ impl ShellModel {
                 InputRoute::Consumed
             }
             Mode::World => InputRoute::World,
-            Mode::Switcher => {
-                match key.code {
-                    KeyCode::F(5) => self.mode = Mode::World,
-                    KeyCode::Left => {
-                        self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
-                    }
-                    KeyCode::Right => self.active = (self.active + 1) % self.worlds.len(),
-                    KeyCode::Up => self.mode = Mode::Control,
-                    _ => {}
+            Mode::Switcher => match key.code {
+                KeyCode::F(5) => {
+                    self.mode = Mode::World;
+                    InputRoute::Consumed
                 }
-                InputRoute::Consumed
-            }
+                KeyCode::Left => {
+                    self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
+                    InputRoute::Consumed
+                }
+                KeyCode::Right => {
+                    self.active = (self.active + 1) % self.worlds.len();
+                    InputRoute::Consumed
+                }
+                KeyCode::Up => {
+                    self.mode = Mode::Control;
+                    InputRoute::Consumed
+                }
+                _ => InputRoute::World,
+            },
             Mode::Control => {
                 if key.code == KeyCode::F(5) {
                     self.control.close();
@@ -134,11 +141,20 @@ mod tests {
         let mut model = model();
         model.handle_key(key(KeyCode::F(5)));
 
-        model.handle_key(key(KeyCode::Left));
+        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::Consumed);
         assert_eq!(model.active(), 2);
-        model.handle_key(key(KeyCode::Right));
-        model.handle_key(key(KeyCode::Right));
+        assert_eq!(model.handle_key(key(KeyCode::Right)), InputRoute::Consumed);
+        assert_eq!(model.handle_key(key(KeyCode::Right)), InputRoute::Consumed);
         assert_eq!(model.active(), 1);
+        assert_eq!(model.mode(), Mode::Switcher);
+    }
+
+    #[test]
+    fn switcher_forwards_unadvertised_keys_to_the_world() {
+        let mut model = model();
+        model.handle_key(key(KeyCode::F(5)));
+
+        assert_eq!(model.handle_key(key(KeyCode::Char('x'))), InputRoute::World);
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
@@ -146,14 +162,14 @@ mod tests {
     fn up_opens_control_and_f5_closes_it() {
         let mut model = model();
         model.handle_key(key(KeyCode::F(5)));
-        model.handle_key(key(KeyCode::Up));
+        assert_eq!(model.handle_key(key(KeyCode::Up)), InputRoute::Consumed);
 
         assert_eq!(model.mode(), Mode::Control);
         assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::Consumed);
         assert_eq!(model.active(), 0);
         model.handle_key(key(KeyCode::F(1)));
         assert!(model.control().palette().is_open());
-        model.handle_key(key(KeyCode::F(5)));
+        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
         assert_eq!(model.mode(), Mode::World);
         assert!(!model.control().palette().is_open());
     }

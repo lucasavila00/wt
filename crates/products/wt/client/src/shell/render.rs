@@ -80,7 +80,7 @@ fn draw_switcher(frame: &mut Frame<'_>, model: &ShellModel) {
         52,
         4,
         format!(
-            "←/→ worlds   ↑ control   F5 close\n {}  ({}/{})",
+            "←/→ worlds   ↑ control   F5 close   F6 quit\n {}  ({}/{})",
             model.active_world(),
             model.active() + 1,
             model.world_count()
