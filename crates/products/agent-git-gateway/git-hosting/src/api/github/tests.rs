@@ -476,6 +476,7 @@ fn ci_write_scope_requires_the_selected_repository() {
     let mut run = WorkflowRun {
         id: 91,
         name: String::new(),
+        trigger: None,
         status: String::new(),
         conclusion: None,
         html_url: None,

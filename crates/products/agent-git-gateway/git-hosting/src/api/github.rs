@@ -152,6 +152,8 @@ struct WorkflowRun {
     id: u64,
     #[serde(default)]
     name: String,
+    #[serde(default, rename = "event")]
+    trigger: Option<String>,
     #[serde(default)]
     status: String,
     conclusion: Option<String>,
@@ -266,6 +268,7 @@ fn ci_run(run: WorkflowRun) -> CiRun {
             run.name
         },
         state: run.conclusion.unwrap_or(run.status),
+        trigger: run.trigger,
         url: run.html_url,
         head: run.head_sha,
         branch: run.head_branch,
