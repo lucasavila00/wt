@@ -24,6 +24,7 @@ pub enum Key {
     Up,
     Down,
     Function(u8),
+    ShiftFunction(u8),
     Ctrl(char),
 }
 
@@ -246,6 +247,8 @@ fn key_bytes(key: Key) -> Result<Vec<u8>> {
         Key::Function(5) => b"\x1b[15~".to_vec(),
         Key::Function(6) => b"\x1b[17~".to_vec(),
         Key::Function(number) => bail!("unsupported function key F{number}"),
+        Key::ShiftFunction(5) => b"\x1b[15;2~".to_vec(),
+        Key::ShiftFunction(number) => bail!("unsupported shifted function key F{number}"),
         Key::Ctrl(character) if character.is_ascii_alphabetic() => {
             vec![(character.to_ascii_lowercase() as u8) & 0x1f]
         }

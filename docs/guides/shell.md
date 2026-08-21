@@ -16,6 +16,9 @@ Control UI. Press `F5` again to return keyboard control to the world. `F6`
 closes `wt shell` from every view. Other keyboard input is forwarded to the
 active world, including while the navbar is enabled.
 
+`Shift+F5` disables WT's `F5` override so `F5` reaches Byobu. A red top bar
+shows that the override is disabled. Press `Shift+F5` again to restore it.
+
 Paste, terminal resize, application cursor mode, bracketed paste, mouse button
 press and release, and vertical and horizontal wheel events are supported.
 Mouse input is forwarded only when the application has enabled a terminal
