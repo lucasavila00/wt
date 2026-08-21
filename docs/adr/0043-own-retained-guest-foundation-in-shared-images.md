@@ -38,12 +38,12 @@ that kind-specific profile separately; it does not redefine the shared
 terminal settings.
 
 The typed `wt-retained-worlds` crate owns the corresponding guest constants and one
-provisioning operation for guest access, Git author transfer, agent Git, and
+provisioning operation for guest access, Git author transfer, agent tooling, and
 Codex mounts. Both retained kind workers call that complete operation.
 The image installs its helpers at
 `/usr/local/libexec/wt-retained-access`,
 `/usr/local/libexec/wt-retained-git-author`,
-`/usr/local/libexec/wt-retained-agent-git`, and
+`/usr/local/libexec/wt-retained-agent-tools`, and
 `/usr/local/libexec/wt-retained-mount-codex`.
 
 Git author name and email are common retained-world create fields rather than a

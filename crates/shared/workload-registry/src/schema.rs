@@ -1,7 +1,7 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    agent_git_reports (id) {
+    agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
         kind -> Text,
@@ -76,14 +76,14 @@ diesel::table! {
 }
 
 diesel::joinable!(guests -> disks (disk_id));
-diesel::joinable!(agent_git_reports -> worlds (world_id));
+diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(devcontainers -> worlds (id));
 diesel::joinable!(hosts -> worlds (id));
 diesel::joinable!(runners -> guests (id));
 diesel::joinable!(worlds -> guests (id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    agent_git_reports,
+    agent_tool_reports,
     devcontainers,
     disks,
     guests,

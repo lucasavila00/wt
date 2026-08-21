@@ -32,10 +32,11 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
-	@test -f /etc/wt/server.toml \
-		&& test -f /etc/wt/capacity.toml \
-		&& systemctl is-active --quiet wt-codex-integration-auth.path || { \
-		printf '\nWT server must be installed before KVM E2E tests. Install it with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
+	@test -f /home/wt/.codex/.wt-auth/auth.json \
+		&& systemctl is-active --quiet wt-codex-integration-auth.path \
+		&& test -f /var/lib/wt/registry-cache/ca/ca.crt \
+		&& test "$$(docker inspect --format '{{.State.Running}}' wt-workload-registry-cache 2>/dev/null)" = true || { \
+		printf '\nKVM E2E host prerequisites are missing. Install them with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}
 	@cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \

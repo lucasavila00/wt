@@ -71,15 +71,15 @@ if test -e "$state/source"; then
         hint_mode=${spec#* }
         hook="$workspace/.git/hooks/$hook_name"
         project_hook="$hook.wt-project"
-        if test -e "$hook" && ! grep -q '^# WT agent Git hint$' "$hook"; then
+        if test -e "$hook" && ! grep -q '^# WT agent tool hint$' "$hook"; then
             mv "$hook" "$project_hook"
         fi
         cat > "$hook" <<EOF
 #!/bin/sh
-# WT agent Git hint
+# WT agent tool hint
 status=0
 test ! -x '$project_hook' || '$project_hook' "\$@" || status=\$?
-/usr/local/bin/wt-agent-git-gateway-hint '$hint_mode'
+/usr/local/bin/wt-agent-tool-gateway-hint '$hint_mode'
 exit "\$status"
 EOF
         chmod 0755 "$hook"
@@ -102,10 +102,10 @@ devcontainer up --log-level debug --log-format text --workspace-folder "$workspa
     --additional-features "$additional_features" \
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
     --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config \
-    --mount type=bind,source=/run/wt-agent-git-gateway,target=/run/wt-agent-git-gateway \
+    --mount type=bind,source=/run/wt-agent-tool-gateway,target=/run/wt-agent-tool-gateway \
     --mount type=bind,source=/usr/local/bin/git-remote-wt-agent,target=/usr/local/bin/git-remote-wt-agent \
-    --mount type=bind,source=/usr/local/bin/wt-git-hosting,target=/usr/local/bin/wt-git-hosting \
-    --mount type=bind,source=/usr/local/bin/wt-agent-git-gateway-hint,target=/usr/local/bin/wt-agent-git-gateway-hint \
+    --mount type=bind,source=/usr/local/bin/wt-tools,target=/usr/local/bin/wt-tools \
+    --mount type=bind,source=/usr/local/bin/wt-agent-tool-gateway-hint,target=/usr/local/bin/wt-agent-tool-gateway-hint \
     --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/wt-codex-integration \
     --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/codex \
     --mount type=bind,source=/usr/local/bin/.codex.wt-real,target=/usr/local/bin/.codex.wt-real \
@@ -133,7 +133,7 @@ while IFS= read -r host; do
         git config --global --add "url.wt-agent::git@$host:.insteadOf" "ssh://git@$host/"
         git config --global --add "url.wt-agent::git@$host:.insteadOf" "https://$host/"
     ' sh "$host"
-done < /var/lib/wt-agent-git-gateway/providers
+done < /var/lib/wt-agent-tool-gateway/providers
 /usr/local/bin/wt-devcontainer-info verify-user "$app_user"
 /usr/local/bin/wt-devcontainer-info > "$state/app.json"
 app_address=$(/usr/local/bin/wt-devcontainer-info address)

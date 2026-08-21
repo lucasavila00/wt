@@ -12,7 +12,7 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
         "--target",
         MUSL_TARGET,
         "-p",
-        "wt-agent-git-gateway",
+        "wt-agent-tool-gateway",
         "-p",
         "wt-devcontainer-guest-tools",
         "-p",
@@ -24,13 +24,13 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     fs::create_dir(destination).unwrap();
     let binaries = workspace.join("target").join(MUSL_TARGET).join("debug");
     for name in [
-        "wt-agent-git-gateway",
-        "wt-agent-git-gateway-relay",
+        "wt-agent-tool-gateway",
+        "wt-agent-tool-gateway-relay",
         "wt-devcontainer-pane",
         "wt-devcontainer-info",
         "wt-devcontainer-ssh-proxy",
         "git-remote-wt-agent",
-        "wt-git-hosting",
+        "wt-tools",
         "wt-codex-integration",
     ] {
         let source = binaries.join(name);

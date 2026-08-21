@@ -49,7 +49,7 @@ impl GitFixture {
 "#,
         )
         .unwrap();
-        fs::write(seed.join("README.md"), "WT agent Git fixture\n").unwrap();
+        fs::write(seed.join("README.md"), "WT agent tool fixture\n").unwrap();
         run(
             cmd!("git", "-C", &seed, "config", "user.name", "WT E2E"),
             "configure fixture Git name",

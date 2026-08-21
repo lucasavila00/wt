@@ -48,7 +48,7 @@ disk. Failed cleanup will keep its reservation until reconciliation succeeds.
 
 The runner image will contain Ubuntu 24.04, the official GitHub Actions runner,
 Docker Engine, and QEMU guest support. It will contain no checkout,
-devcontainer, Byobu session, SSH access, or agent Git gateway grant.
+devcontainer, Byobu session, SSH access, or agent tool gateway grant.
 
 `wt-server-installer` will own the runner image, strict runtime configuration,
 systemd service, dedicated libvirt network and firewall policy, log retention,

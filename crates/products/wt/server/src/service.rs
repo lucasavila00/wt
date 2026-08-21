@@ -12,24 +12,24 @@ mod lifecycle;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub trait AgentGitGateway {
+pub trait AgentToolGateway {
     fn reserve(
         &self,
         world_id: Uuid,
         source: Option<&str>,
         base: Option<&str>,
-    ) -> Result<wt_agent_git_gateway::Grant, String>;
+    ) -> Result<wt_agent_tool_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
-impl AgentGitGateway for wt_agent_git_gateway::ControlClient {
+impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
     fn reserve(
         &self,
         world_id: Uuid,
         source: Option<&str>,
         base: Option<&str>,
-    ) -> Result<wt_agent_git_gateway::Grant, String> {
+    ) -> Result<wt_agent_tool_gateway::Grant, String> {
         let response = self
-            .request(&wt_agent_git_gateway::ControlRequest::Reserve {
+            .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
                 source: source.map(str::to_owned),
                 base: base.map(str::to_owned),
@@ -47,7 +47,7 @@ impl AgentGitGateway for wt_agent_git_gateway::ControlClient {
     }
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         let response = self
-            .request(&wt_agent_git_gateway::ControlRequest::Revoke {
+            .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
                 grant_id: grant_id.to_owned(),
             })
             .map_err(|error| error.to_string())?;
@@ -68,7 +68,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
@@ -115,8 +115,8 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             Operation::Start { name } => self.start(owner, &name),
             Operation::Stop { name } => self.stop(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
-            Operation::ListAgentGitReports => self.list_agent_git_reports(owner),
-            Operation::ClearAgentGitReports => self.clear_agent_git_reports(owner),
+            Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
+            Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
         }
     }
 
@@ -203,7 +203,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 InstanceApplication::Devcontainer {
                     source: source.clone(),
                     git_base: git_base.clone(),
-                    git_prefix: wt_agent_git_gateway::BRANCH_PREFIX.to_owned(),
+                    git_prefix: wt_agent_tool_gateway::BRANCH_PREFIX.to_owned(),
                     app_ssh: None,
                 },
                 wt_workload_registry::StoredApplication::Devcontainer {
@@ -393,14 +393,14 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             disk_usage_bytes.insert(world.instance.id, usage);
         }
         let instances = stored.into_iter().map(|stored| stored.instance).collect();
-        let agent_git_report_counts = self
+        let agent_tool_report_counts = self
             .store
-            .agent_git_report_counts(owner)
+            .agent_tool_report_counts(owner)
             .map_err(map_store_error)?;
         Ok(Response::Instances {
             instances,
             disk_usage_bytes,
-            agent_git_report_counts,
+            agent_tool_report_counts,
         })
     }
 

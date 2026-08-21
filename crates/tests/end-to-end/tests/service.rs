@@ -9,8 +9,8 @@ use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_workload_registry::{Store, StoredApplication, StoredInstance};
 
-#[path = "service/agent_git_reports.rs"]
-mod agent_git_reports;
+#[path = "service/agent_tool_reports.rs"]
+mod agent_tool_reports;
 #[path = "service/host_failure.rs"]
 mod host_failure;
 #[path = "service/stop.rs"]

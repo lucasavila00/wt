@@ -18,7 +18,7 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, the shared capacity registry, registry cache,
-agent Git gateway, and two retained-world images:
+agent tool gateway, and two retained-world images:
 
 - a devcontainer image with Docker, Git, the Dev Container CLI, and guest tools;
 - a host image with upstream Ubuntu, OpenSSH, QEMU guest support, Byobu, and
@@ -49,7 +49,7 @@ worlds cannot write the credential back.
 A world disk cannot be smaller than its image's `build_disk_gib`. The client
 defaults to 32 GiB; a larger build image requires a larger world request.
 
-The current server install requires at least one agent Git provider. Its token,
+The current server install requires at least one agent tool provider. Its token,
 SSH private key, and trusted host keys stay in encrypted systemd credentials.
 Host recipes never receive them. Tests use local fake provider services and
 keys, not developer credentials.
@@ -61,10 +61,7 @@ static artifact if it contains a dynamic interpreter or GLIBC requirement.
 
 ## Reset
 
-This world-kind schema has no migration. The common retained-world Git-author
-contract uses protocol version 2, so clients and servers must be upgraded
-together. Before installing it over an older WT version, run from the
-repository root:
+To remove all WT runtime state, run from the repository root:
 
 ```text
 make nuke
@@ -80,7 +77,9 @@ server is intentionally left empty, remove that workstation's stale
 `~/.ssh/wt` inventory manually.
 
 Use `make clear` for the smaller runtime reset described by the installed
-configuration drift diagnostic.
+configuration drift diagnostic. It preserves verified golden images and their
+provenance manifests so reinstalling unchanged image inputs does not rebuild
+them.
 
 Golden-image rebuilds do not migrate retained worlds. Existing world disks are
 independent of their golden image and keep their current guest user, terminal

@@ -212,9 +212,9 @@ mod tests {
             "app-pane",
             "app-info",
             "app-proxy",
-            "agent-git-relay",
-            "agent-git-remote",
-            "agent-git-cli",
+            "agent-tools-relay",
+            "agent-tools-remote",
+            "agent-tools-cli",
             "wt-codex-integration",
             "ca.crt",
         ] {
@@ -247,10 +247,10 @@ mod tests {
                 devcontainer_cli_version: DEVCONTAINER_CLI_VERSION.to_owned(),
             },
             retained: crate::RetainedConfig {
-                agent_git: crate::AgentGitConfig {
-                    relay_binary: temp.path().join("agent-git-relay"),
-                    remote_binary: temp.path().join("agent-git-remote"),
-                    cli_binary: temp.path().join("agent-git-cli"),
+                agent_tools: crate::AgentToolsConfig {
+                    relay_binary: temp.path().join("agent-tools-relay"),
+                    remote_binary: temp.path().join("agent-tools-remote"),
+                    cli_binary: temp.path().join("agent-tools-cli"),
                     provider_hosts: vec!["example.test".to_owned()],
                     vsock_port: 18017,
                 },

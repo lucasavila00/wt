@@ -5,7 +5,7 @@ const HOST_DEFAULT_USER_DATA: &str = include_str!("../../../../../assets/client/
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
-fn agent_git_transport_works_without_provider_credentials() {
+fn agent_tools_transport_works_without_provider_credentials() {
     let _serial = KVM_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -16,6 +16,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let codex_session_fixture = CodexSessionFixture::new(&name);
 
     let disks_before_rejection = count_disks(&harness.config.libvirt.worlds_dir);
+    let mut reserved_field_errors = Vec::new();
     for (index, field) in ["ssh_keys", "ssh_deletekeys", "output"]
         .into_iter()
         .enumerate()
@@ -27,11 +28,13 @@ fn agent_git_transport_works_without_provider_credentials() {
                 &format!("#cloud-config\n{field}: forbidden\n"),
             )
             .unwrap_err();
-        assert!(
-            error.contains(&format!("cannot set top-level {field}")),
-            "unexpected reserved-field rejection: {error}"
-        );
+        reserved_field_errors.push(error);
     }
+    insta::assert_snapshot!(reserved_field_errors.join("\n"), @r###"
+    0: cloud-init user-data cannot set top-level ssh_keys; WT owns host identity, setup stages, and output
+    0: cloud-init user-data cannot set top-level ssh_deletekeys; WT owns host identity, setup stages, and output
+    0: cloud-init user-data cannot set top-level output; WT owns host identity, setup stages, and output
+    "###);
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
         disks_before_rejection
@@ -59,13 +62,13 @@ fn agent_git_transport_works_without_provider_credentials() {
         .libvirt
         .worlds_dir
         .join(format!("wt-{}", created_host.id.simple()));
-    assert_eq!(
+    insta::assert_snapshot!(
         fs::read_to_string(host_machine.join("user-data")).unwrap(),
-        "#cloud-config\n"
+        @"#cloud-config"
     );
-    assert_eq!(
+    insta::assert_snapshot!(
         fs::read_to_string(host_machine.join("vendor-data")).unwrap(),
-        "#cloud-config\n"
+        @"#cloud-config"
     );
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
@@ -250,7 +253,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test \"$(git config --global --get user.email)\" = wt@example.invalid; ",
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
-            "test -S /run/wt-agent-git-gateway/gateway.sock; ",
+            "test -S /run/wt-agent-tool-gateway/gateway.sock; ",
             "test -s /home/wt/.codex/auth.json; test ! -w /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
@@ -262,10 +265,10 @@ fn agent_git_transport_works_without_provider_credentials() {
             "sudo -n wt-codex-integration install; ",
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
-            "test -x /usr/local/bin/wt-agent-git-gateway-relay; ",
+            "test -x /usr/local/bin/wt-agent-tool-gateway-relay; ",
             "test -x /usr/local/bin/git-remote-wt-agent; ",
-            "test -x /usr/local/bin/wt-git-hosting; ",
-            "systemctl is-active --quiet wt-agent-git-gateway-relay.service; ",
+            "test -x /usr/local/bin/wt-tools; ",
+            "systemctl is-active --quiet wt-agent-tool-gateway-relay.service; ",
             "test -x /usr/local/bin/wt-host-shell; ",
             "tmux has-session -t wt-host",
         ),
@@ -282,7 +285,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "printf 'host gateway\n' >> README.md; ",
             "git commit -am 'host gateway'; ",
             "git push -u origin wt/host-gateway; ",
-            "wt-git-hosting --help >/dev/null; ",
+            "wt-tools --help >/dev/null; ",
             "git switch -c outside-host; ",
             "printf 'outside\n' >> README.md; ",
             "git commit -am outside; ",
@@ -298,7 +301,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     run_host(
         &harness,
         &host_name,
-        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); sudo kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done; git -C /home/wt/gateway-check fetch origin",
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); sudo kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-tool-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done; git -C /home/wt/gateway-check fetch origin",
         "restart the host Git relay",
     );
 
@@ -308,7 +311,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         concat!(
             "set -eu; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
-            "test -S /run/wt-agent-git-gateway/gateway.sock",
+            "test -S /run/wt-agent-tool-gateway/gateway.sock",
         ),
         "verify guest credential isolation",
     );
@@ -321,7 +324,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git-gateway/gateway.sock && test \"$(git remote get-url origin)\" = wt-agent::git@local.test:acme/widget.git",
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-tool-gateway/gateway.sock && test \"$(git remote get-url origin)\" = wt-agent::git@local.test:acme/widget.git",
         "verify devcontainer gateway setup",
     );
     app(
@@ -348,19 +351,60 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify automatic Codex session mount",
     );
 
-    let help = app_output(
-        &harness,
-        &name,
-        "wt-git-hosting --help",
-        "read wt-git-hosting help",
-    );
-    assert!(help.contains("explicitly identified Git provider resources"));
-    assert!(help.contains("| { action: \"wait_mr\"; mr: number }"));
+    let help = app_output(&harness, &name, "wt-tools --help", "read wt-tools help");
+    insta::assert_snapshot!(help, @r###"
+    wt-tools reads and changes explicitly identified Git provider resources and records
+    feedback about wt-tools itself. It accepts exactly one JSON command object and
+    rejects unknown fields.
+
+    USAGE:
+    wt-tools '<JSON>'
+
+    TYPESCRIPT COMMAND TYPE:
+    type WtToolsCommand =
+    | { action: "show_mr"; mr: number }
+    | { action: "show_mr_for_branch"; branch: string }
+    | { action: "show_run"; run: number }
+    | { action: "show_job"; job: number }
+    | { action: "list_threads"; mr: number }
+    | { action: "list_ci"; commit: string }
+    | { action: "list_jobs"; run: number }
+    | { action: "log_job"; job: number }
+    | { action: "wait_mr"; mr: number; timeout_seconds?: number }
+    | { action: "wait_run"; run: number; timeout_seconds?: number }
+    | { action: "wait_job"; job: number; timeout_seconds?: number }
+    | { action: "open_mr"; head: string; base: string; draft?: boolean }
+    | { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
+    | { action: "edit_mr"; mr: number; title?: string; body?: string }
+    | { action: "comment_mr"; mr: number; body: string }
+    | { action: "reply_thread"; mr: number; thread: string; body: string }
+    | { action: "set_thread"; mr: number; thread: string; resolved: boolean }
+    | { action: "retry_job"; job: number }
+    | { action: "cancel_job"; job: number }
+    | { action: "cancel_run"; run: number }
+    | { action: "report_wt_tool_bug"; description: string }
+    | { action: "report_wt_tool_issue"; description: string }
+    | { action: "suggest_wt_tool_improvement"; description: string }
+    | { action: "request_wt_tool_feature"; description: string };
+
+    EXAMPLE:
+    wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+
+    `show_mr_for_branch` returns the single open MR from the named branch to the
+    gateway grant's base branch. It fails when there is no match or multiple matches.
+
+    The four wt-tools reporting actions store feedback against this authenticated world
+    without contacting the Git provider.
+
+    The provider and project come from this world's gateway grant. Every other
+    resource is explicit. IDs must be positive integers. Commit values must be 7 to
+    64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.
+    "###);
 
     run_guest(
         &harness,
         &name,
-        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-git-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-git-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done",
+        "set -eu; old=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); kill -KILL \"$old\"; attempt=0; while :; do new=$(systemctl show -p MainPID --value wt-agent-tool-gateway-relay.service); test \"$new\" != 0 && test \"$new\" != \"$old\" && test -S /run/wt-agent-tool-gateway/gateway.sock && break; attempt=$((attempt + 1)); test \"$attempt\" -lt 100; sleep 0.1; done",
         "restart the guest Git relay",
     );
     app(
@@ -382,8 +426,26 @@ fn agent_git_transport_works_without_provider_credentials() {
     .unwrap();
     ensure_success("commit and push through gateway", &output).unwrap();
     let diagnostics = String::from_utf8(output.stderr).unwrap();
-    assert!(diagnostics.contains("This is a WT-managed development environment"));
-    assert!(diagnostics.contains("Run wt-git-hosting --help"));
+    let gateway_diagnostics = diagnostics
+        .lines()
+        .filter_map(|line| line.strip_prefix("remote: "))
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(gateway_diagnostics, @"
+    This is a WT-managed development environment for a coding agent.
+    The gateway does not expose developer SSH keys or provider credentials.
+    Do not look for credentials or use gh or glab.
+    WT gives you read access to every repository available to this gateway.
+    This Git operation is for project acme/widget.
+    Use normal Git for commits, fetches, pulls, and pushes.
+    Every WT world can write branches under wt/.
+    wt-tools uses explicit provider resource types and IDs; it does not infer
+    resources from the current checkout.
+    Run wt-tools --help to discover every available command.
+    Published branch `wt/fix-login`.
+    Run `wt-tools --help` for explicit provider commands.
+    ");
     assert_ref(
         &harness.git.repository,
         &format!("refs/heads/{branch}"),
@@ -420,20 +482,25 @@ fn agent_git_transport_works_without_provider_credentials() {
         String::from_utf8(upstream.stdout).unwrap().trim()
     );
 
+    let mut provider_statuses = Vec::new();
     for provider in ["github", "gitlab"] {
         harness.use_provider_api_fixture(provider, local.trim());
         let status = app_output(
             &harness,
             &name,
             &format!(
-                "wt-git-hosting '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
+                "wt-tools '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
                 local.trim()
             ),
             "read explicit CI through provider API fixture",
         );
-        assert!(status.contains("No CI resources for the commit"));
+        provider_statuses.push(format!("{provider}: {}", status.trim_end_matches('\n')));
         harness.restart_gateway();
     }
+    insta::assert_snapshot!(provider_statuses.join("\n"), @"
+    github: No CI resources for the commit.
+    gitlab: No CI resources for the commit.
+    ");
 
     app(
         &harness,
@@ -461,8 +528,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &name,
         &format!(
-            "test -S /run/wt-agent-git-gateway/gateway.sock && \
-             systemctl is-active --quiet docker.service wt-agent-git-gateway-relay.service && \
+            "test -S /run/wt-agent-tool-gateway/gateway.sock && \
+             systemctl is-active --quiet docker.service wt-agent-tool-gateway-relay.service && \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json && \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
              test ! -w /home/wt/.codex/auth.json && \
@@ -498,8 +565,8 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &host_name,
         &format!(
-            "command -v codex diffo && test -S /run/wt-agent-git-gateway/gateway.sock && \
-             systemctl is-active --quiet wt-agent-git-gateway-relay.service && \
+            "command -v codex diffo && test -S /run/wt-agent-tool-gateway/gateway.sock && \
+             systemctl is-active --quiet wt-agent-tool-gateway-relay.service && \
              git -C /home/wt/gateway-check fetch origin && \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json && \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
@@ -591,12 +658,9 @@ fn agent_git_transport_works_without_provider_credentials() {
         disks_before + 1
     );
     assert_eq!(failed.status, InstanceStatus::Error);
-    assert!(
-        failed
-            .last_error
-            .as_deref()
-            .is_some_and(|error| error.contains("cloud-init final stage failed")),
-        "failed host has no useful error: {failed:?}"
+    insta::assert_snapshot!(
+        failed.last_error.as_deref().unwrap(),
+        @"guest reconciliation: host cloud-init failed: cloud-init final stage failed with exit status 1"
     );
     harness.sync_inventory();
     run_host(
@@ -613,55 +677,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         disks_before
     );
 
-    let interrupted_name = unique_name("host-interrupted");
-    let interrupted = harness.create_host(
-        &interrupted_name,
-        concat!(
-            "#cloud-config\n",
-            "runcmd:\n",
-            "  - |\n",
-            "    echo attempt >> /var/lib/wt-host-attempts\n",
-            "    echo 'interrupt host setup now'\n",
-            "    sleep 300\n",
-        ),
-    );
-    assert_eq!(interrupted.status, InstanceStatus::Setup);
-    harness.sync_inventory();
-    let mut interrupted_setup = spawn_host_byobu(&harness, &interrupted_name);
-    wait_for_live_host_output(
-        &harness,
-        &interrupted_name,
-        &mut interrupted_setup,
-        "interrupt host setup now",
-    );
-    run_host(
-        &harness,
-        &interrupted_name,
-        "sudo systemctl kill --kill-whom=main --signal=KILL wt-host-setup.service",
-        "interrupt host setup service",
-    );
-    let interrupted_error = wait_for_host_status(
-        &harness,
-        &interrupted_name,
-        &mut interrupted_setup,
-        InstanceStatus::Error,
-    );
-    assert!(
-        interrupted_error
-            .last_error
-            .as_deref()
-            .is_some_and(|error| error.contains("host cloud-init was interrupted")),
-        "interrupted host has no useful error: {interrupted_error:?}"
-    );
-    run_host(
-        &harness,
-        &interrupted_name,
-        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
-        "verify interrupted host setup ran once",
-    );
-    let _ = interrupted_setup.kill();
-    let _ = interrupted_setup.wait();
-    harness.delete(&interrupted_name);
+    assert_interrupted_host_setup_is_reported(&mut harness);
 }
 
 fn assert_ref(repository: &Path, reference: &str, exists: bool) {

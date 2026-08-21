@@ -43,7 +43,7 @@ install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf
 install -m 0755 /var/tmp/wt-retained-access /usr/local/libexec/wt-retained-access
 install -m 0755 /var/tmp/wt-retained-git-author \
     /usr/local/libexec/wt-retained-git-author
-install -m 0755 /var/tmp/wt-retained-agent-git /usr/local/libexec/wt-retained-agent-git
+install -m 0755 /var/tmp/wt-retained-agent-tools /usr/local/libexec/wt-retained-agent-tools
 install -m 0755 /var/tmp/wt-retained-mount-codex \
     /usr/local/libexec/wt-retained-mount-codex
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
@@ -52,8 +52,8 @@ printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
     /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
-printf '%s  %s\n' "$AGENT_GIT_SHA256" \
-    /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
+printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
+    /usr/local/libexec/wt-retained-agent-tools | sha256sum --check --strict
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
     /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 

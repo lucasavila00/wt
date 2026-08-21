@@ -58,6 +58,24 @@ fn installed_image_drift_is_replaced_automatically() {
 }
 
 #[test]
+fn development_and_kvm_inputs_share_image_identity() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+    let load = |name| {
+        InstallInput::load_from(&workspace.join("examples/server-config").join(name)).unwrap()
+    };
+    let development = load("wt-server.development.toml");
+    let kvm = load("wt-server.kvm-e2e-install.toml");
+    let fingerprint = |input: &InstallInput| {
+        let server_bytes = crate::install_input::serialize_server_config(&input.materialize())
+            .expect("serialize server config");
+        image_config_sha(&server_bytes, input)
+    };
+
+    assert_eq!(development.source_sha256(), kvm.source_sha256());
+    assert_eq!(fingerprint(&development), fingerprint(&kvm));
+}
+
+#[test]
 fn result_marker_requires_root_0644_metadata() {
     validate_result_metadata("- 0644 46 0 0 /var/lib/wt-image-result").unwrap();
     assert!(validate_result_metadata("- 0600 46 0 0 /var/lib/wt-image-result").is_err());

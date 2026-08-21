@@ -1,18 +1,18 @@
-use crate::schema::{agent_git_reports, worlds};
+use crate::schema::{agent_tool_reports, worlds};
 use crate::{Registry, RegistryError};
 use diesel::prelude::*;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentGitReportKind {
+pub enum AgentToolReportKind {
     Bug,
     Issue,
     Improvement,
     FeatureRequest,
 }
 
-impl AgentGitReportKind {
+impl AgentToolReportKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bug => "bug",
@@ -36,23 +36,23 @@ impl AgentGitReportKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentGitReport {
+pub struct AgentToolReport {
     pub world_id: Uuid,
     pub world_name: String,
-    pub kind: AgentGitReportKind,
+    pub kind: AgentToolReportKind,
     pub description: String,
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = agent_git_reports)]
-struct NewAgentGitReport<'a> {
+#[diesel(table_name = agent_tool_reports)]
+struct NewAgentToolReport<'a> {
     world_id: String,
     kind: &'static str,
     description: &'a str,
 }
 
 #[derive(Queryable)]
-struct AgentGitReportRow {
+struct AgentToolReportRow {
     world_id: String,
     world_name: String,
     kind: String,
@@ -60,20 +60,20 @@ struct AgentGitReportRow {
 }
 
 impl Registry {
-    pub fn insert_agent_git_report(
+    pub fn insert_agent_tool_report(
         &self,
         world_id: Uuid,
-        kind: AgentGitReportKind,
+        kind: AgentToolReportKind,
         description: &str,
     ) -> Result<(), RegistryError> {
         if description.trim().is_empty() {
             return Err(RegistryError::InvalidData(
-                "agent Git report description is empty".into(),
+                "agent tool report description is empty".into(),
             ));
         }
         self.read(|connection| {
-            diesel::insert_into(agent_git_reports::table)
-                .values(NewAgentGitReport {
+            diesel::insert_into(agent_tool_reports::table)
+                .values(NewAgentToolReport {
                     world_id: world_id.to_string(),
                     kind: kind.as_str(),
                     description,
@@ -83,29 +83,29 @@ impl Registry {
         })
     }
 
-    pub fn list_agent_git_reports(
+    pub fn list_agent_tool_reports(
         &self,
         owner: &str,
-    ) -> Result<Vec<AgentGitReport>, RegistryError> {
+    ) -> Result<Vec<AgentToolReport>, RegistryError> {
         self.read(|connection| {
-            agent_git_reports::table
+            agent_tool_reports::table
                 .inner_join(worlds::table)
                 .filter(worlds::owner.eq(owner))
-                .order(agent_git_reports::id)
+                .order(agent_tool_reports::id)
                 .select((
-                    agent_git_reports::world_id,
+                    agent_tool_reports::world_id,
                     worlds::name,
-                    agent_git_reports::kind,
-                    agent_git_reports::description,
+                    agent_tool_reports::kind,
+                    agent_tool_reports::description,
                 ))
-                .load::<AgentGitReportRow>(connection)?
+                .load::<AgentToolReportRow>(connection)?
                 .into_iter()
                 .map(|row| {
-                    Ok(AgentGitReport {
+                    Ok(AgentToolReport {
                         world_id: Uuid::parse_str(&row.world_id)
                             .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
                         world_name: row.world_name,
-                        kind: AgentGitReportKind::parse(&row.kind)?,
+                        kind: AgentToolReportKind::parse(&row.kind)?,
                         description: row.description,
                     })
                 })
@@ -113,11 +113,11 @@ impl Registry {
         })
     }
 
-    pub fn agent_git_report_counts(
+    pub fn agent_tool_report_counts(
         &self,
         owner: &str,
     ) -> Result<BTreeMap<Uuid, u64>, RegistryError> {
-        let reports = self.list_agent_git_reports(owner)?;
+        let reports = self.list_agent_tool_reports(owner)?;
         let mut counts = BTreeMap::new();
         for report in reports {
             *counts.entry(report.world_id).or_default() += 1;
@@ -125,13 +125,13 @@ impl Registry {
         Ok(counts)
     }
 
-    pub fn clear_agent_git_reports(&self, owner: &str) -> Result<u64, RegistryError> {
+    pub fn clear_agent_tool_reports(&self, owner: &str) -> Result<u64, RegistryError> {
         self.read(|connection| {
             let world_ids = worlds::table
                 .filter(worlds::owner.eq(owner))
                 .select(worlds::id);
             let deleted = diesel::delete(
-                agent_git_reports::table.filter(agent_git_reports::world_id.eq_any(world_ids)),
+                agent_tool_reports::table.filter(agent_tool_reports::world_id.eq_any(world_ids)),
             )
             .execute(connection)?;
             u64::try_from(deleted)
@@ -153,28 +153,31 @@ mod tests {
         let second = insert_world(&registry, "bob", "second");
 
         registry
-            .insert_agent_git_report(first, AgentGitReportKind::Bug, "build is broken")
+            .insert_agent_tool_report(first, AgentToolReportKind::Bug, "build is broken")
             .unwrap();
         registry
-            .insert_agent_git_report(first, AgentGitReportKind::FeatureRequest, "add search")
+            .insert_agent_tool_report(first, AgentToolReportKind::FeatureRequest, "add search")
             .unwrap();
         registry
-            .insert_agent_git_report(second, AgentGitReportKind::Issue, "unclear output")
+            .insert_agent_tool_report(second, AgentToolReportKind::Issue, "unclear output")
             .unwrap();
 
-        let reports = registry.list_agent_git_reports("alice").unwrap();
+        let reports = registry.list_agent_tool_reports("alice").unwrap();
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].world_id, first);
         assert_eq!(reports[0].world_name, "first");
-        assert_eq!(reports[0].kind, AgentGitReportKind::Bug);
+        assert_eq!(reports[0].kind, AgentToolReportKind::Bug);
         assert_eq!(reports[0].description, "build is broken");
         assert_eq!(
-            registry.agent_git_report_counts("alice").unwrap()[&first],
+            registry.agent_tool_report_counts("alice").unwrap()[&first],
             2
         );
-        assert_eq!(registry.clear_agent_git_reports("alice").unwrap(), 2);
-        assert!(registry.list_agent_git_reports("alice").unwrap().is_empty());
-        assert_eq!(registry.list_agent_git_reports("bob").unwrap().len(), 1);
+        assert_eq!(registry.clear_agent_tool_reports("alice").unwrap(), 2);
+        assert!(registry
+            .list_agent_tool_reports("alice")
+            .unwrap()
+            .is_empty());
+        assert_eq!(registry.list_agent_tool_reports("bob").unwrap().len(), 1);
     }
 
     #[test]
@@ -182,11 +185,11 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
         let error = registry
-            .insert_agent_git_report(Uuid::new_v4(), AgentGitReportKind::Issue, "  \n")
+            .insert_agent_tool_report(Uuid::new_v4(), AgentToolReportKind::Issue, "  \n")
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "invalid stored data: agent Git report description is empty"
+            "invalid stored data: agent tool report description is empty"
         );
     }
 

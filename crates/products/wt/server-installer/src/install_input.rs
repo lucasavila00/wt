@@ -2,8 +2,8 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use wt_installer_support::expand_home;
 use wt_server::{
-    AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_GIT_VSOCK_PORT,
+    AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_TOOL_VSOCK_PORT,
 };
 
 /// Install input for `wt-server-installer --config`.
@@ -16,7 +16,7 @@ pub(crate) struct InstallInput {
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
-    pub agent_git: AgentGitInstallConfig,
+    pub agent_tools: AgentToolsInstallConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
 }
@@ -35,20 +35,20 @@ pub(crate) struct InstallImageConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AgentGitInstallConfig {
-    #[serde(default = "default_agent_git_vsock_port")]
+pub(crate) struct AgentToolsInstallConfig {
+    #[serde(default = "default_agent_tools_vsock_port")]
     pub vsock_port: u32,
-    pub github: Option<AgentGitProviderInstallConfig>,
-    pub gitlab: Option<AgentGitProviderInstallConfig>,
+    pub github: Option<AgentToolsProviderInstallConfig>,
+    pub gitlab: Option<AgentToolsProviderInstallConfig>,
 }
 
-fn default_agent_git_vsock_port() -> u32 {
-    DEFAULT_AGENT_GIT_VSOCK_PORT
+fn default_agent_tools_vsock_port() -> u32 {
+    DEFAULT_AGENT_TOOL_VSOCK_PORT
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AgentGitProviderInstallConfig {
+pub(crate) struct AgentToolsProviderInstallConfig {
     pub host: String,
     pub api_token_file: PathBuf,
     pub ssh_private_key_file: PathBuf,
@@ -68,14 +68,14 @@ impl InstallInput {
     }
 
     fn resolve_paths(&mut self) -> Result<(), String> {
-        for (kind, provider) in self.agent_git.providers_mut() {
+        for (kind, provider) in self.agent_tools.providers_mut() {
             for (field, path) in [
                 ("api_token_file", &mut provider.api_token_file),
                 ("ssh_private_key_file", &mut provider.ssh_private_key_file),
                 ("ssh_public_key_file", &mut provider.ssh_public_key_file),
                 ("ssh_known_hosts_file", &mut provider.ssh_known_hosts_file),
             ] {
-                *path = expand_home(path, &format!("agent_git.{kind}.{field}"))?;
+                *path = expand_home(path, &format!("agent_tools.{kind}.{field}"))?;
             }
         }
         Ok(())
@@ -119,20 +119,20 @@ impl InstallInput {
             },
             libvirt: self.libvirt.clone(),
             registry_cache: self.registry_cache.clone(),
-            agent_git: AgentGitConfig {
-                vsock_port: self.agent_git.vsock_port,
+            agent_tools: AgentToolsConfig {
+                vsock_port: self.agent_tools.vsock_port,
                 github: self
-                    .agent_git
+                    .agent_tools
                     .github
                     .as_ref()
-                    .map(|provider| AgentGitProviderConfig {
+                    .map(|provider| AgentToolsProviderConfig {
                         host: provider.host.clone(),
                     }),
                 gitlab: self
-                    .agent_git
+                    .agent_tools
                     .gitlab
                     .as_ref()
-                    .map(|provider| AgentGitProviderConfig {
+                    .map(|provider| AgentToolsProviderConfig {
                         host: provider.host.clone(),
                     }),
             },
@@ -150,10 +150,10 @@ impl InstallInput {
     }
 }
 
-impl AgentGitInstallConfig {
+impl AgentToolsInstallConfig {
     pub(crate) fn providers(
         &self,
-    ) -> impl Iterator<Item = (&'static str, &AgentGitProviderInstallConfig)> {
+    ) -> impl Iterator<Item = (&'static str, &AgentToolsProviderInstallConfig)> {
         [
             ("github", self.github.as_ref()),
             ("gitlab", self.gitlab.as_ref()),
@@ -164,7 +164,7 @@ impl AgentGitInstallConfig {
 
     fn providers_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&'static str, &mut AgentGitProviderInstallConfig)> {
+    ) -> impl Iterator<Item = (&'static str, &mut AgentToolsProviderInstallConfig)> {
         [
             ("github", self.github.as_mut()),
             ("gitlab", self.gitlab.as_mut()),
@@ -219,7 +219,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io"]
 
-[agent_git.github]
+[agent_tools.github]
 host = "github.com"
 api_token_file = "/tmp/github.token"
 ssh_private_key_file = "/tmp/id_ed25519"

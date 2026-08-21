@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_agent_git_gateway::{
+use wt_agent_tool_gateway::{
     read_json_line, write_json_line, ClientOperation, ControlRequest, ControlResponse,
     TransportRequest, TransportResponse, PROTOCOL_VERSION, VSOCK_PORT_ENV,
 };
@@ -19,6 +19,7 @@ use wt_control_protocol::{
 };
 use wt_end_to_end_tests::cmd;
 use wt_server::ServerConfig;
+use wt_workload_registry::{CapacityConfig, Resources};
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -52,8 +53,8 @@ impl KvmHarness {
             )
             .unwrap(),
         };
-        assert_eq!(config.agent_git.vsock_port, vsock_port);
-        config.agent_git.github.as_mut().unwrap().host = "local.test".to_owned();
+        assert_eq!(config.agent_tools.vsock_port, vsock_port);
+        config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
         let installed_devcontainer_image = config.image.devcontainer_path.clone();
         let installed_host_image = config.image.host_path.clone();
         let images = timings.run("prepare isolated golden images", || {
@@ -91,6 +92,19 @@ impl KvmHarness {
         .unwrap();
         let server_config_path = temp.path().join("server.toml");
         fs::write(&server_config_path, toml::to_string(&config).unwrap()).unwrap();
+        let capacity = CapacityConfig {
+            version: 1,
+            limits: Resources {
+                vcpus: 16,
+                memory_mib: 32_768,
+                disk_gib: 1_024,
+            },
+        };
+        fs::write(
+            temp.path().join("capacity.toml"),
+            toml::to_string(&capacity).unwrap(),
+        )
+        .unwrap();
         let gateway = spawn_gateway(temp.path(), &config.install.binary_dir, None);
         let control_socket = temp.path().join("gateway-control.sock");
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -498,7 +512,7 @@ pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Res
             .cloned()
             .map(|instance| wt_client::inventory::ContextInstance {
                 context: "local".into(),
-                agent_git_report_count: 0,
+                agent_tool_report_count: 0,
                 disk_usage_bytes: None,
                 instance,
             })
@@ -542,11 +556,13 @@ pub(crate) fn call_api_result(
         env!("CARGO_BIN_EXE_wt-test-server"),
         "--config",
         config,
+        "--capacity",
+        home.join("capacity.toml"),
         "api",
     )
     .env("HOME", home)
     .env(
-        "WT_AGENT_GIT_TEST_CONTROL_SOCKET",
+        "WT_AGENT_TOOL_TEST_CONTROL_SOCKET",
         home.join("gateway-control.sock"),
     )
     .stdin(Stdio::piped())

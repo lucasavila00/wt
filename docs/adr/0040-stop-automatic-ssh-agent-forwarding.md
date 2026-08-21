@@ -5,7 +5,7 @@
 
 ## Context
 
-Devcontainer worlds use the agent Git gateway and do not receive the
+Devcontainer worlds use the agent tool gateway and do not receive the
 workstation's SSH authentication agent by default. Host worlds use the same
 gateway but also forward the workstation agent into direct SSH and persistent
 Byobu sessions.
@@ -24,7 +24,7 @@ any world.
 - Generated SSH configuration never enables `ForwardAgent`.
 - Host setup does not consume `SSH_AUTH_SOCK` and does not maintain a stable
   forwarded-agent socket for Byobu or cloud-init.
-- The agent Git gateway is the only WT-managed credential path for provider Git
+- The agent tool gateway is the only WT-managed credential path for provider Git
   and API operations from a world.
 
 WT does not disable OpenSSH's native authentication-agent forwarding. A

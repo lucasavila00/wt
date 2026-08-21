@@ -4,7 +4,7 @@ assertion_line: 282
 expression: gateway
 ---
 [Unit]
-Description=WT agent Git gateway
+Description=WT agent tool gateway
 Wants=network-online.target
 After=network-online.target
 
@@ -12,15 +12,15 @@ After=network-online.target
 Type=simple
 User=[USER]
 Environment="HOME=[HOME]"
-Environment="WT_AGENT_GIT_VSOCK_PORT=18017"
-LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wt-agent-git-gateway-github-api-token
-LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent-git-gateway-github-ssh-private-key
-LoadCredentialEncrypted=github-ssh-known-hosts:/etc/credstore.encrypted/wt-agent-git-gateway-github-ssh-known-hosts
-ExecStart="/opt/wt bin/wt-agent-git-gateway" serve --github-provider "github.com=%d/github-api-token,%d/github-ssh-private-key,%d/github-ssh-known-hosts"
+Environment="WT_AGENT_TOOL_VSOCK_PORT=18017"
+LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wt-agent-tool-gateway-github-api-token
+LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-private-key
+LoadCredentialEncrypted=github-ssh-known-hosts:/etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-known-hosts
+ExecStart="/opt/wt bin/wt-agent-tool-gateway" serve --github-provider "github.com=%d/github-api-token,%d/github-ssh-private-key,%d/github-ssh-known-hosts"
 Restart=on-failure
-RuntimeDirectory=wt-agent-git-gateway
+RuntimeDirectory=wt-agent-tool-gateway
 RuntimeDirectoryMode=0700
-StateDirectory=wt/agent-git
+StateDirectory=wt/agent-tools
 StateDirectoryMode=0700
 UMask=0077
 

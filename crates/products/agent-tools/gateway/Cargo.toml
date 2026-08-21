@@ -1,0 +1,41 @@
+[package]
+name = "wt-agent-tool-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Scoped Git transport for WT devcontainer worlds"
+
+[[bin]]
+name = "wt-agent-tool-gateway"
+path = "src/bin/gateway.rs"
+
+[[bin]]
+name = "wt-agent-tool-gateway-relay"
+path = "src/bin/relay.rs"
+
+[[bin]]
+name = "git-remote-wt-agent"
+path = "src/bin/git-remote-wt-agent.rs"
+
+[[bin]]
+name = "wt-tools"
+path = "src/bin/wt-tools.rs"
+
+[dependencies]
+wt-git-smart-protocol = { workspace = true }
+wt-tools = { workspace = true }
+wt-workload-registry = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+socket2 = { workspace = true }
+ureq = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+diesel = { workspace = true }
+insta = { workspace = true }
+tempfile = "3.27.0"

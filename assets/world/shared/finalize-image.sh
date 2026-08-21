@@ -28,8 +28,8 @@ printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
     /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
-printf '%s  %s\n' "$AGENT_GIT_SHA256" \
-    /usr/local/libexec/wt-retained-agent-git | sha256sum --check --strict
+printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
+    /usr/local/libexec/wt-retained-agent-tools | sha256sum --check --strict
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
     /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 
@@ -41,7 +41,7 @@ rm -f /etc/netplan/50-cloud-init.yaml /var/lib/wt-image-result \
     /var/tmp/wt-*.sh /var/tmp/wt-image-build.env /var/tmp/wt-tmux \
     /var/tmp/wt-host-shell /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color \
     /var/tmp/wt-retained-access /var/tmp/wt-retained-git-author \
-    /var/tmp/wt-retained-agent-git \
+    /var/tmp/wt-retained-agent-tools \
     /var/tmp/wt-retained-mount-codex \
     /var/lib/wt-tmux
 truncate -s 0 /etc/machine-id

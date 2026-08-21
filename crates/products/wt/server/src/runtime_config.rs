@@ -5,8 +5,8 @@ use std::time::Duration;
 use wt_libvirt_kvm::{CodexMounts, MachineConfig};
 use wt_retained_worlds::devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
-pub const DEFAULT_AGENT_GIT_VSOCK_PORT: u32 = wt_agent_git_gateway::VSOCK_PORT;
-pub const AGENT_GIT_VSOCK_PORT_ENV: &str = wt_agent_git_gateway::VSOCK_PORT_ENV;
+pub const DEFAULT_AGENT_TOOL_VSOCK_PORT: u32 = wt_agent_tool_gateway::VSOCK_PORT;
+pub const AGENT_TOOL_VSOCK_PORT_ENV: &str = wt_agent_tool_gateway::VSOCK_PORT_ENV;
 
 pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 pub const CODEX_AUTH_PATH: &str = "/home/wt/.codex/auth.json";
@@ -20,7 +20,7 @@ pub struct ServerConfig {
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub registry_cache: RegistryCacheConfig,
-    pub agent_git: AgentGitConfig,
+    pub agent_tools: AgentToolsConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
 }
@@ -36,20 +36,20 @@ pub struct RegistryCacheConfig {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentGitConfig {
-    #[serde(default = "default_agent_git_vsock_port")]
+pub struct AgentToolsConfig {
+    #[serde(default = "default_agent_tools_vsock_port")]
     pub vsock_port: u32,
-    pub github: Option<AgentGitProviderConfig>,
-    pub gitlab: Option<AgentGitProviderConfig>,
+    pub github: Option<AgentToolsProviderConfig>,
+    pub gitlab: Option<AgentToolsProviderConfig>,
 }
 
-fn default_agent_git_vsock_port() -> u32 {
-    DEFAULT_AGENT_GIT_VSOCK_PORT
+fn default_agent_tools_vsock_port() -> u32 {
+    DEFAULT_AGENT_TOOL_VSOCK_PORT
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentGitProviderConfig {
+pub struct AgentToolsProviderConfig {
     pub host: String,
 }
 
@@ -94,9 +94,9 @@ impl ServerConfig {
         let mut config: Self = toml::from_str(&contents)
             .map_err(|error| format!("parse config {}: {error}", path.display()))?;
         if let Some(port) =
-            wt_agent_git_gateway::vsock_port_from_env().map_err(|error| error.to_string())?
+            wt_agent_tool_gateway::vsock_port_from_env().map_err(|error| error.to_string())?
         {
-            config.agent_git.vsock_port = port;
+            config.agent_tools.vsock_port = port;
         }
         config.validate()?;
         Ok(config)
@@ -199,7 +199,7 @@ impl ServerConfig {
             return Err("libvirt.network must not be empty".to_owned());
         }
         self.validate_registry_cache()?;
-        self.validate_agent_git()?;
+        self.validate_agent_tools()?;
         if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
@@ -246,12 +246,12 @@ impl ServerConfig {
 
     pub fn retained_config(&self) -> wt_retained_worlds::RetainedConfig {
         wt_retained_worlds::RetainedConfig {
-            agent_git: wt_retained_worlds::AgentGitConfig {
-                relay_binary: self.install.binary_dir.join("wt-agent-git-gateway-relay"),
+            agent_tools: wt_retained_worlds::AgentToolsConfig {
+                relay_binary: self.install.binary_dir.join("wt-agent-tool-gateway-relay"),
                 remote_binary: self.install.binary_dir.join("git-remote-wt-agent"),
-                cli_binary: self.install.binary_dir.join("wt-git-hosting"),
-                provider_hosts: self.agent_git_provider_hosts(),
-                vsock_port: self.agent_git.vsock_port,
+                cli_binary: self.install.binary_dir.join("wt-tools"),
+                provider_hosts: self.agent_tools_provider_hosts(),
+                vsock_port: self.agent_tools.vsock_port,
             },
             wt_codex_integration_binary: self.install.binary_dir.join("wt-codex-integration"),
         }
@@ -348,10 +348,10 @@ impl ServerConfig {
         }
     }
 
-    fn agent_git_provider_hosts(&self) -> Vec<String> {
+    fn agent_tools_provider_hosts(&self) -> Vec<String> {
         [
-            self.agent_git.github.as_ref(),
-            self.agent_git.gitlab.as_ref(),
+            self.agent_tools.github.as_ref(),
+            self.agent_tools.gitlab.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -399,16 +399,16 @@ impl ServerConfig {
         Ok(())
     }
 
-    fn validate_agent_git(&self) -> Result<(), String> {
-        if self.agent_git.vsock_port == 0 || self.agent_git.vsock_port == u32::MAX {
-            return Err("agent_git.vsock_port must be a concrete nonzero port".to_owned());
+    fn validate_agent_tools(&self) -> Result<(), String> {
+        if self.agent_tools.vsock_port == 0 || self.agent_tools.vsock_port == u32::MAX {
+            return Err("agent_tools.vsock_port must be a concrete nonzero port".to_owned());
         }
         let providers = [
-            ("agent_git.github.host", self.agent_git.github.as_ref()),
-            ("agent_git.gitlab.host", self.agent_git.gitlab.as_ref()),
+            ("agent_tools.github.host", self.agent_tools.github.as_ref()),
+            ("agent_tools.gitlab.host", self.agent_tools.gitlab.as_ref()),
         ];
         if providers.iter().all(|(_, provider)| provider.is_none()) {
-            return Err("at least one agent Git provider is required".to_owned());
+            return Err("at least one agent tool provider is required".to_owned());
         }
         let mut hosts = std::collections::BTreeSet::new();
         for (name, provider) in providers {
@@ -462,7 +462,7 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io", "mcr.microsoft.com"]
 
-[agent_git.github]
+[agent_tools.github]
 host = "github.com"
 
 [guest]
@@ -483,7 +483,7 @@ binary_dir = "/usr/local/bin"
     #[test]
     fn complete_config_is_valid() {
         let (config, machine) = parse(VALID).unwrap();
-        assert_eq!(config.agent_git.vsock_port, DEFAULT_AGENT_GIT_VSOCK_PORT);
+        assert_eq!(config.agent_tools.vsock_port, DEFAULT_AGENT_TOOL_VSOCK_PORT);
         assert_eq!(
             machine.image,
             Path::new("/var/lib/wt/images/devcontainer.qcow2")
@@ -525,8 +525,8 @@ binary_dir = "/usr/local/bin"
         .is_err());
         assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(&VALID.replace(
-            "[agent_git.github]",
-            "[agent_git]\nvsock_port = 0\n\n[agent_git.github]"
+            "[agent_tools.github]",
+            "[agent_tools]\nvsock_port = 0\n\n[agent_tools.github]"
         ))
         .is_err());
         assert!(parse(&VALID.replace(

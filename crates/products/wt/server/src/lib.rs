@@ -5,15 +5,15 @@ pub mod runtime_config;
 pub mod service;
 
 pub use runtime_config::{
-    AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, AGENT_GIT_VSOCK_PORT_ENV,
-    CODEX_AUTH_PATH, CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_GIT_VSOCK_PORT,
+    AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
+    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV,
+    CODEX_AUTH_PATH, CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_TOOL_VSOCK_PORT,
     SERVER_CONFIG_PATH,
 };
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentGitGateway>(
+pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

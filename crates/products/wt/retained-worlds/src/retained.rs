@@ -13,11 +13,11 @@ pub const GUEST_GID: u32 = 1001;
 pub const GUEST_SSH_PORT: u16 = 22;
 pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-retained-access";
 pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
-pub const AGENT_GIT_HELPER: &str = "/usr/local/libexec/wt-retained-agent-git";
+pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-retained-agent-tools";
 pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex";
 
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../assets/world/shared/mount-codex.sh");
-const AGENT_GIT_STAGE: &str = "/tmp/wt-retained-agent-git-";
+const AGENT_TOOLS_STAGE: &str = "/tmp/wt-retained-agent-tools-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 
@@ -51,7 +51,7 @@ impl GuestAccess {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentGitConfig {
+pub struct AgentToolsConfig {
     pub relay_binary: PathBuf,
     pub remote_binary: PathBuf,
     pub cli_binary: PathBuf,
@@ -59,11 +59,11 @@ pub struct AgentGitConfig {
     pub vsock_port: u32,
 }
 
-impl AgentGitConfig {
+impl AgentToolsConfig {
     pub fn validate(&self) -> Result<(), WorkerError> {
         if self.vsock_port == 0 || self.vsock_port == u32::MAX {
             return Err(WorkerError::new(
-                "agent Git vsock port must be concrete and nonzero",
+                "agent tool vsock port must be concrete and nonzero",
             ));
         }
         if self.provider_hosts.is_empty()
@@ -80,7 +80,7 @@ impl AgentGitConfig {
             })
         {
             return Err(WorkerError::new(
-                "agent Git provider hosts must be nonempty lowercase DNS names",
+                "agent tool provider hosts must be nonempty lowercase DNS names",
             ));
         }
         let hosts = self
@@ -89,13 +89,13 @@ impl AgentGitConfig {
             .collect::<std::collections::BTreeSet<_>>();
         if hosts.len() != self.provider_hosts.len() {
             return Err(WorkerError::new(
-                "agent Git provider hosts must not contain duplicates",
+                "agent tool provider hosts must not contain duplicates",
             ));
         }
         for (name, path) in [
-            ("agent Git relay", &self.relay_binary),
-            ("agent Git remote helper", &self.remote_binary),
-            ("agent Git CLI", &self.cli_binary),
+            ("agent tool relay", &self.relay_binary),
+            ("agent tool remote helper", &self.remote_binary),
+            ("agent tool CLI", &self.cli_binary),
         ] {
             if !path.is_file() {
                 return Err(WorkerError::new(format!(
@@ -118,7 +118,7 @@ impl AgentGitConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetainedConfig {
-    pub agent_git: AgentGitConfig,
+    pub agent_tools: AgentToolsConfig,
     pub wt_codex_integration_binary: PathBuf,
 }
 
@@ -132,7 +132,7 @@ pub struct ProvisionSpec<'a> {
 
 impl RetainedConfig {
     pub fn validate(&self) -> Result<(), WorkerError> {
-        self.agent_git.validate()?;
+        self.agent_tools.validate()?;
         if !self.wt_codex_integration_binary.is_file() {
             return Err(WorkerError::new(format!(
                 "wt-codex-integration not found: {}",
@@ -157,7 +157,7 @@ impl RetainedConfig {
             deadline,
             log,
         )?;
-        self.install_agent_git(transport, spec.git_grant, deadline, log)?;
+        self.install_agent_tools(transport, spec.git_grant, deadline, log)?;
         self.install_wt_codex_integration(transport, deadline, log)?;
         self.mount_codex(transport, deadline, log)
     }
@@ -180,7 +180,7 @@ impl RetainedConfig {
         )
     }
 
-    fn install_agent_git(
+    fn install_agent_tools(
         &self,
         transport: &dyn GuestTransport,
         grant: &str,
@@ -188,34 +188,37 @@ impl RetainedConfig {
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
         if grant.is_empty() {
-            return Err(WorkerError::new("agent Git grant must not be empty"));
+            return Err(WorkerError::new("agent tool grant must not be empty"));
         }
-        self.agent_git.validate()?;
+        self.agent_tools.validate()?;
         for (suffix, contents) in [
             ("grant", grant.as_bytes().to_vec()),
             (
                 "relay",
-                std::fs::read(&self.agent_git.relay_binary)
-                    .map_err(|error| WorkerError::new(format!("read agent Git relay: {error}")))?,
+                std::fs::read(&self.agent_tools.relay_binary)
+                    .map_err(|error| WorkerError::new(format!("read agent tool relay: {error}")))?,
             ),
             (
                 "remote",
-                std::fs::read(&self.agent_git.remote_binary).map_err(|error| {
-                    WorkerError::new(format!("read agent Git remote helper: {error}"))
+                std::fs::read(&self.agent_tools.remote_binary).map_err(|error| {
+                    WorkerError::new(format!("read agent tool remote helper: {error}"))
                 })?,
             ),
             (
                 "cli",
-                std::fs::read(&self.agent_git.cli_binary)
-                    .map_err(|error| WorkerError::new(format!("read agent Git CLI: {error}")))?,
+                std::fs::read(&self.agent_tools.cli_binary)
+                    .map_err(|error| WorkerError::new(format!("read agent tool CLI: {error}")))?,
             ),
             (
                 "providers",
-                self.agent_git.provider_hosts_file().into_bytes(),
+                self.agent_tools.provider_hosts_file().into_bytes(),
             ),
-            ("vsock-port", self.agent_git.vsock_port_file().into_bytes()),
+            (
+                "vsock-port",
+                self.agent_tools.vsock_port_file().into_bytes(),
+            ),
         ] {
-            let path = format!("{AGENT_GIT_STAGE}{suffix}");
+            let path = format!("{AGENT_TOOLS_STAGE}{suffix}");
             transport
                 .write_file(&wt_libvirt_kvm::WriteFileRequest {
                     path: &path,
@@ -227,7 +230,7 @@ impl RetainedConfig {
                 })
                 .map_err(WorkerError::from)?;
         }
-        run_helper(transport, AGENT_GIT_HELPER, &[], None, deadline, log)
+        run_helper(transport, AGENT_TOOLS_HELPER, &[], None, deadline, log)
     }
 
     fn install_git_author(
@@ -492,8 +495,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_agent_git_hosts() {
-        let config = AgentGitConfig {
+    fn rejects_duplicate_agent_tools_hosts() {
+        let config = AgentToolsConfig {
             relay_binary: PathBuf::from("relay"),
             remote_binary: PathBuf::from("remote"),
             cli_binary: PathBuf::from("cli"),
@@ -503,7 +506,7 @@ mod tests {
         let error = config.validate().unwrap_err();
         assert_eq!(
             error.to_string(),
-            "agent Git provider hosts must not contain duplicates"
+            "agent tool provider hosts must not contain duplicates"
         );
     }
 }

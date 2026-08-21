@@ -26,8 +26,8 @@ const SETUP_WORLD: &[u8] =
 const SETUP_WORLD_ROOT: &[u8] =
     include_bytes!("../../../../../../assets/world/devcontainer/setup-world-root.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/app-shell.sh");
-const AGENT_GIT_HINT: &[u8] =
-    include_bytes!("../../../../../../assets/world/devcontainer/agent-git-hint.sh");
+const AGENT_TOOLS_HINT: &[u8] =
+    include_bytes!("../../../../../../assets/world/devcontainer/agent-tools-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 const START_READINESS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -233,7 +233,7 @@ impl WorldProvisioner {
             ("-app-pane", self.app_pane.as_slice()),
             ("-app-info", self.app_info.as_slice()),
             ("-app-proxy", self.app_proxy.as_slice()),
-            ("-agent-git-hint", AGENT_GIT_HINT),
+            ("-agent-tools-hint", AGENT_TOOLS_HINT),
             ("-setup-world", SETUP_WORLD),
             ("-setup-world-root", SETUP_WORLD_ROOT),
         ] {
@@ -280,7 +280,7 @@ impl WorldProvisioner {
                 "/tmp/wt-install-guest-app-pane",
                 "/tmp/wt-install-guest-app-info",
                 "/tmp/wt-install-guest-app-proxy",
-                "/tmp/wt-install-guest-agent-git-hint",
+                "/tmp/wt-install-guest-agent-tools-hint",
                 "/tmp/wt-install-guest-setup-world",
                 "/tmp/wt-install-guest-setup-world-root",
             ],

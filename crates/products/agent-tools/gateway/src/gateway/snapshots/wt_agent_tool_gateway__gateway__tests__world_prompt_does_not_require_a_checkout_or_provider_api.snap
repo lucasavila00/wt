@@ -1,0 +1,6 @@
+---
+source: crates/products/agent-tools/gateway/src/gateway/tests.rs
+assertion_line: 65
+expression: output
+---
+This environment has wt-tools installed for pull or merge request, review, and CI operations; run wt-tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `wt/` prefix (for example, `wt/fix-login`). Every WT world may update, force-push, or delete any branch under `wt/`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m wt/NAME.

@@ -10,7 +10,7 @@ use wt_retained_worlds::{
     GuestAccess, ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker,
 };
 use wt_server::operations::Operations;
-use wt_server::service::{AgentGitGateway, Service};
+use wt_server::service::{AgentToolGateway, Service};
 use wt_workload_registry::Store;
 
 #[derive(Clone, Default)]
@@ -44,14 +44,14 @@ pub(crate) struct UnavailableGateway {
     pub(crate) revocations: Arc<AtomicUsize>,
 }
 
-impl AgentGitGateway for Gateway {
+impl AgentToolGateway for Gateway {
     fn reserve(
         &self,
         world_id: Uuid,
         _source: Option<&str>,
         _base: Option<&str>,
-    ) -> Result<wt_agent_git_gateway::Grant, String> {
-        Ok(wt_agent_git_gateway::Grant {
+    ) -> Result<wt_agent_tool_gateway::Grant, String> {
+        Ok(wt_agent_tool_gateway::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })
@@ -62,14 +62,14 @@ impl AgentGitGateway for Gateway {
     }
 }
 
-impl AgentGitGateway for UnavailableGateway {
+impl AgentToolGateway for UnavailableGateway {
     fn reserve(
         &self,
         world_id: Uuid,
         _source: Option<&str>,
         _base: Option<&str>,
-    ) -> Result<wt_agent_git_gateway::Grant, String> {
-        Ok(wt_agent_git_gateway::Grant {
+    ) -> Result<wt_agent_tool_gateway::Grant, String> {
+        Ok(wt_agent_tool_gateway::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })

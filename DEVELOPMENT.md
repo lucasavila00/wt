@@ -129,12 +129,13 @@ environment can run the real KVM E2E from inside a world.
 make clear
 ```
 
-This destroys `wt-*` domains and removes worlds, gateway grants, installed
-images, the server database, generated runtime configuration, and generated SSH
-inventory. It keeps installed services and provider credentials, source
-credential files, downloaded image and package artifacts, and the registry
-cache. Rerun `scripts/install-server --config PATH` afterward.
+This destroys `wt-*` domains and removes worlds, gateway grants, the server
+database, generated runtime configuration, and generated SSH inventory. It
+keeps verified golden images, installed services and provider credentials,
+source credential files, downloaded image and package artifacts, and the
+registry cache. Rerun `scripts/install-server --config PATH` afterward.
 
-Use `make nuke` for a full teardown, including installed services and
-credentials, downloaded artifacts, and registry-cache state. Neither target
-removes source credential files or uninstalls packages and binaries.
+Use `make nuke` for a full teardown, including installed golden images,
+services and credentials, downloaded artifacts, and registry-cache state.
+Neither target removes source credential files or uninstalls packages and
+binaries.

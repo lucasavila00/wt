@@ -26,10 +26,10 @@ port = 3128
 max_size_gib = 64
 registries = ["docker.io"]
 
-[agent_git]
+[agent_tools]
 vsock_port = 18017
 
-[agent_git.github]
+[agent_tools.github]
 host = "github.com"
 api_token_file = "~/.config/wt/kvm-test/github.token"
 ssh_private_key_file = "~/.config/wt/kvm-test/id_ed25519"

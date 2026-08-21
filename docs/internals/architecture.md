@@ -32,7 +32,7 @@ version 2 carries tagged world kinds and a common retained-world Git author.
 |-------|--------|
 | WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-retained-worlds`, `wt-devcontainer-guest-tools`, `wt-codex-integration`, `wt-server-installer` |
 | GitHub Actions | `wt-gh-actions-runner` |
-| Agent Git gateway | `wt-agent-git-gateway`, `wt-git-hosting` |
+| Agent tool gateway | `wt-agent-tool-gateway`, `wt-tools` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 | Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
 | Tests | `wt-end-to-end-tests` |
@@ -49,7 +49,7 @@ handling shared by the regular WT and standalone Git proxy installers.
 
 `wt-retained-worlds` owns devcontainer and host lifecycle, the fixed retained
 guest identity, and operations shared by both retained kinds. Its runtime calls the image-installed
-helpers for SSH access, Git author transfer, agent Git, and virtiofs
+helpers for SSH access, Git author transfer, agent tooling, and virtiofs
 Codex session and authentication mounts. One retained provisioning operation
 applies that complete contract for both kinds; kind crates retain only their
 application-specific setup.

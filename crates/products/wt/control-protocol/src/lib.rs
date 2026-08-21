@@ -3,7 +3,7 @@
 mod reports;
 mod validation;
 
-pub use reports::{AgentGitReport, AgentGitReportKind};
+pub use reports::{AgentToolReport, AgentToolReportKind};
 
 pub use validation::{
     validate_git_branch, validate_ssh_git_source, InstanceName, InvalidGitBranch, InvalidGitSource,
@@ -43,8 +43,8 @@ pub enum Operation {
     Start { name: InstanceName },
     Stop { name: InstanceName },
     Delete { name: InstanceName },
-    ListAgentGitReports,
-    ClearAgentGitReports,
+    ListAgentToolReports,
+    ClearAgentToolReports,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -176,12 +176,12 @@ pub enum Response {
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         disk_usage_bytes: std::collections::BTreeMap<Uuid, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        agent_git_report_counts: std::collections::BTreeMap<Uuid, u64>,
+        agent_tool_report_counts: std::collections::BTreeMap<Uuid, u64>,
     },
-    AgentGitReports {
-        reports: Vec<AgentGitReport>,
+    AgentToolReports {
+        reports: Vec<AgentToolReport>,
     },
-    AgentGitReportsCleared {
+    AgentToolReportsCleared {
         count: u64,
     },
     Deleted {

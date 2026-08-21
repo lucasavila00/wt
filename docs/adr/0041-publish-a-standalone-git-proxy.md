@@ -13,7 +13,7 @@ protocol and write-policy code.
 
 Publish `wt-git-proxy` as a separate binary from this repository. Put the
 shared Git transport and policy in `wt-git-smart-protocol`; keep WT world
-behavior in `wt-agent-git-gateway` and standalone OpenSSH configuration in
+behavior in `wt-agent-tool-gateway` and standalone OpenSSH configuration in
 `wt-git-proxy`.
 
 OpenSSH runs the proxy as a forced command for each connection. Client access
