@@ -8,6 +8,15 @@ use std::path::{Path, PathBuf};
 const REAL_NAME: &str = ".codex.wt-real";
 const NEW_NAME: &str = ".codex.wt-new";
 const REMOVE_NAME: &str = ".codex.wt-remove";
+const LEGACY_CONFIG: &str = r#"approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-tools world-prompt'''
+"#;
 const CONFIG: &str = r#"approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
@@ -16,6 +25,28 @@ sandbox_mode = "danger-full-access"
 [[hooks.SessionStart.hooks]]
 type = "command"
 command = '''wt-tools world-prompt'''
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
 "#;
 
 #[derive(Debug)]
@@ -78,6 +109,7 @@ fn install_config(codex_home: &Path) -> Result<()> {
     let path = codex_home.join("config.toml");
     match fs::read(&path) {
         Ok(contents) if contents == CONFIG.as_bytes() => return Ok(()),
+        Ok(contents) if contents == LEGACY_CONFIG.as_bytes() => {}
         Ok(_) => bail!(
             "Codex configuration differs from WT's configuration: {}",
             path.display()
@@ -281,6 +313,28 @@ mod tests {
         [[hooks.SessionStart.hooks]]
         type = "command"
         command = '''wt-tools world-prompt'''
+
+        [[hooks.SessionStart.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
+
+        [[hooks.UserPromptSubmit]]
+
+        [[hooks.UserPromptSubmit.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
+
+        [[hooks.Stop]]
+
+        [[hooks.Stop.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
+
+        [[hooks.SessionEnd]]
+
+        [[hooks.SessionEnd.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
         "###
         );
         install_config(&codex_home).unwrap();
@@ -291,6 +345,21 @@ mod tests {
             .to_string()
             .replace(&codex_home.display().to_string(), "<CODEX_HOME>");
         insta::assert_snapshot!(error, @"Codex configuration differs from WT's configuration: <CODEX_HOME>/config.toml");
+    }
+
+    #[test]
+    fn config_install_upgrades_the_previous_wt_config() {
+        let temp = tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        fs::create_dir_all(&codex_home).unwrap();
+        fs::write(codex_home.join("config.toml"), LEGACY_CONFIG).unwrap();
+
+        install_config(&codex_home).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(codex_home.join("config.toml")).unwrap(),
+            CONFIG
+        );
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -63,6 +64,26 @@ pub struct ClientRequest {
 pub enum ClientOperation {
     Git { service: GitService, source: String },
     Cli { args: Vec<String> },
+    CodexSession { event: CodexSessionEvent },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexSessionEventKind {
+    SessionStart,
+    UserPromptSubmit,
+    Stop,
+    SessionEnd,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexSessionEvent {
+    pub session_id: Uuid,
+    pub cwd: String,
+    pub tmux_session: String,
+    pub pane_id: String,
+    pub kind: CodexSessionEventKind,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

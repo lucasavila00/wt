@@ -1,6 +1,18 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    codex_session_reports (world_id, session_id) {
+        world_id -> Text,
+        session_id -> Text,
+        cwd -> Text,
+        tmux_session -> Text,
+        pane_id -> Text,
+        state -> Text,
+        received_at -> BigInt,
+    }
+}
+
+diesel::table! {
     agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
@@ -77,6 +89,7 @@ diesel::table! {
 
 diesel::joinable!(guests -> disks (disk_id));
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
+diesel::joinable!(codex_session_reports -> worlds (world_id));
 diesel::joinable!(devcontainers -> worlds (id));
 diesel::joinable!(hosts -> worlds (id));
 diesel::joinable!(runners -> guests (id));
@@ -84,6 +97,7 @@ diesel::joinable!(worlds -> guests (id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     agent_tool_reports,
+    codex_session_reports,
     devcontainers,
     disks,
     guests,

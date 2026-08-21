@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+wt-agent-tool-gateway.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true

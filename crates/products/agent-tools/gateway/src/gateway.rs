@@ -1,8 +1,9 @@
 mod service;
 
 use crate::{
-    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
-    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
+    ClientOperation, CodexSessionEvent, CodexSessionEventKind, ControlRequest, ControlResponse,
+    DuplexStream, GitService, Grant, TransportRequest, TransportResponse, BRANCH_PREFIX,
+    PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
