@@ -2,6 +2,7 @@ use super::control::{
     command_palette_layout, control_areas, Activity, CodexContextSnapshot, CommandPalette,
     ACTIVITY_BUTTON_HEIGHT,
 };
+use super::delete;
 use super::model::{Mode, ShellModel};
 use super::world_area;
 use crate::create::Flow;
@@ -19,6 +20,7 @@ pub(super) fn draw(
     model: &ShellModel,
     creation: Option<&Flow>,
     creation_error: Option<&str>,
+    deletion: Option<&delete::Flow>,
 ) {
     if model.mode() == Mode::Control {
         if let Some(creation) = creation {
@@ -28,6 +30,9 @@ pub(super) fn draw(
         draw_control(frame, model);
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
+        }
+        if let Some(deletion) = deletion {
+            deletion.render(frame, frame.area());
         }
         return;
     }
@@ -466,7 +471,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -492,7 +497,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -519,7 +524,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
@@ -545,6 +550,7 @@ mod tests {
                     &model,
                     None,
                     None,
+                    None,
                 )
             })
             .unwrap();
@@ -565,7 +571,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -583,7 +589,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -634,7 +640,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
@@ -659,7 +665,7 @@ mod tests {
         let model = ShellModel::new(Vec::new());
 
         terminal
-            .draw(|frame| draw(frame, None, None, &model, None, None))
+            .draw(|frame| draw(frame, None, None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());

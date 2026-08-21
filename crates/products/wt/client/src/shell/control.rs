@@ -2,7 +2,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use wt_control_protocol::CodexSession;
 
-pub(super) const COMMANDS: [ControlCommand; 2] = [ControlCommand::NewHost, ControlCommand::NewDev];
+pub(super) const COMMANDS: [ControlCommand; 3] = [
+    ControlCommand::NewHost,
+    ControlCommand::NewDev,
+    ControlCommand::DeleteWorld,
+];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
 
@@ -37,6 +41,7 @@ impl Activity {
 pub(super) enum ControlCommand {
     NewHost,
     NewDev,
+    DeleteWorld,
 }
 
 impl ControlCommand {
@@ -44,6 +49,7 @@ impl ControlCommand {
         match self {
             Self::NewHost => "World: New host",
             Self::NewDev => "World: New dev",
+            Self::DeleteWorld => "World: Delete...",
         }
     }
 }

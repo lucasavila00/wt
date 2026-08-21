@@ -55,8 +55,14 @@ case "$request" in
     : > "$HOME/created"
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instance","instance":{"id":"00000000-0000-0000-0000-000000000002","name":"new-world","owner":"tester","status":"setup","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"new-world/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAANEW guest"]}}}}'
     ;;
+  *'"operation":"delete"'*)
+    : > "$HOME/deleted"
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"deleted","name":"existing"}}'
+    ;;
   *'"operation":"list"'*)
-    if test -f "$HOME/created"; then
+    if test -f "$HOME/deleted"; then
+      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instances","instances":[]}}'
+    elif test -f "$HOME/created"; then
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"existing/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}},{"id":"00000000-0000-0000-0000-000000000002","name":"new-world","owner":"tester","status":"running","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"new-world/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAANEW guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAANEWAPP app"]}}]}}'
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","kind":"devcontainer","source":"git@example.test:repo.git","git_base":"main","git_prefix":"existing/","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]},"app_ssh":{"user":"vscode","port":2222,"host_keys":["ssh-ed25519 AAAAAPPLICATION app"]}}]}}'
@@ -211,6 +217,56 @@ fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> 
         .wait_for_text("local.new-world (2/2)")?
         .wait_for_text("F5: disable navbar")?;
     assert!(fixture.home.path().join("created").exists());
+    Ok(())
+}
+
+#[test]
+fn delete_world_search_requires_explicit_confirmation() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world")?
+        .type_text("existing")?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world?")?
+        .press(Key::Enter)?
+        .wait_for_text("No Codex sessions")?;
+    assert!(!fixture.home.path().join("deleted").exists());
+
+    screen
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .type_text("existing")?
+        .press(Key::Enter)?
+        .press(Key::Right)?
+        .press(Key::Enter)?
+        .wait_for_text("Close (F6)")?;
+    assert!(fixture.home.path().join("deleted").exists());
+    Ok(())
+}
+
+#[test]
+fn delete_world_picker_and_confirmation_are_clickable() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("local.existing")?
+        .click(18, 9)?
+        .wait_for_text("Delete world?")?
+        .click(60, 15)?
+        .wait_for_text("Close (F6)")?;
+    assert!(fixture.home.path().join("deleted").exists());
     Ok(())
 }
 

@@ -1,6 +1,5 @@
 ---
 source: crates/products/wt/client/src/shell/render.rs
-assertion_line: 507
 expression: terminal.backend().buffer()
 ---
 Buffer {
@@ -14,7 +13,7 @@ Buffer {
         "    ││        │───────────────────────────────────────│        │",
         "    ││        │ World: New host                      │        │",
         "    ││        │  World: New dev                       │        │",
-        "    ││        │                                       │        │",
+        "    ││        │  World: Delete...                     │        │",
         "    ││        │                                       │        │",
         "    ││        │↑/↓ select · Enter run · Esc close     │        │",
         "    ││        └───────────────────────────────────────┘        │",
