@@ -1,4 +1,4 @@
-# ADR 0054: Open Codex sessions from `wt shell`
+# ADR 0056: Open Codex sessions from `wt shell`
 
 - Status: Proposed; Date: 2026-08-21
 
@@ -41,6 +41,8 @@ plus text; color is supplementary.
 - `Enter` opens the selected card. Moving selection never opens it.
 - A disabled-card click or `Enter` is consumed and its reason remains visible;
   it performs no network operation.
+- While opening, selection and the displayed card snapshot stay pinned until
+  success, failure, or timeout.
 - `Tab`, `F1`, `F5`, and global `F6` keep their current meanings.
 - There is no hover state or multi-column layout.
 
@@ -94,12 +96,12 @@ LF. Any other bytes, mismatch, or nonzero status is a visible failure.
 After focus succeeds, switch to the mapped existing playback PTY and world view.
 The active world never changes before success.
 
-The short control connection never replaces or restarts any playback SSH/PTTY.
-All world sessions continue running and parsing output in the background.
+The short control connection has a 15-second whole-operation deadline. It never
+replaces or restarts any playback SSH/PTTY. All world sessions continue running
+and parsing output in the background.
 
-Inactive and rollout-only sessions are not openable or resumable. Refresh and
-resume are separate decisions; the initial implementation keeps the current
-launch-time snapshot and detects stale targets during open.
+Inactive and rollout-only sessions are not openable or resumable. ADR 0055
+refreshes the cards in the background; each open still revalidates its target.
 
 ## Source precedent
 

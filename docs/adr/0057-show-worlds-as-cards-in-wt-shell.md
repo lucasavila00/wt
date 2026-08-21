@@ -1,4 +1,4 @@
-# ADR 0056: Show worlds as cards in `wt shell`
+# ADR 0057: Show worlds as cards in `wt shell`
 
 - Status: Proposed; Date: 2026-08-21
 
