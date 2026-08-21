@@ -242,6 +242,7 @@ fn insert_world(registry: &wt_registry::Registry) -> Uuid {
                     guests::vcpus.eq(1_i64),
                     guests::memory_mib.eq(1024_i64),
                     guests::disk_gib.eq(10_i64),
+                    guests::disk_reserved_gib.eq(10_i64),
                     guests::compute_reserved.eq(true),
                 ))
                 .execute(connection)?;
