@@ -1,5 +1,6 @@
 ---
 source: crates/products/wt/server-installer/src/install_input.rs
+assertion_line: 253
 expression: text
 ---
 version = 1

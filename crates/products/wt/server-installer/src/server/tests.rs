@@ -127,7 +127,7 @@ fn setup_messages_explain_the_operation() {
     insta::assert_snapshot!(success_message(Path::new("./server.toml")), @"
     WT server is ready.
     Config: ./server.toml
-    Services started: wt-server, wt-agent-git-gateway-gateway
+    Services started: wt-server, wt-agent-git-gateway
     Next: configure a WT client, then run `wt new`.
     ");
 }
@@ -233,8 +233,8 @@ binary_dir = "/opt/wt bin"
     [Unit]
     Description=WT control-plane daemon
     Requires=wt-codex-integration-auth.service
-    Wants=network-online.target wt-agent-git-gateway-gateway.service wt-codex-integration-auth.path
-    After=network-online.target docker.service libvirtd.service wt-agent-git-gateway-gateway.service wt-codex-integration-auth.service
+    Wants=network-online.target wt-agent-git-gateway.service wt-codex-integration-auth.path
+    After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-integration-auth.service
 
     [Service]
     Type=simple

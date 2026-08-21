@@ -1,5 +1,6 @@
 ---
-source: crates/wt-agent-git-gateway/src/gateway/tests.rs
+source: crates/products/agent-git-gateway/gateway/src/gateway/tests.rs
+assertion_line: 39
 expression: "git_context_header(\"git@github.com:group/project.git\")"
 ---
 remote: This is a WT-managed development environment for a coding agent.

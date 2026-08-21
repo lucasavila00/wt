@@ -6,6 +6,8 @@ mod network;
 mod provider;
 mod world;
 
+use crate::cmd;
+use crate::{Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId, WorkerError};
 use crate::{MachineConfig, LIBVIRT_URI};
 use image::{read_virtual_size as read_image_virtual_size, validate_disk_size};
 use network::{domain_ip, network_address};
@@ -21,10 +23,6 @@ use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use virt::network::Network;
-use crate::cmd;
-use crate::{
-    Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId, WorkerError,
-};
 
 const GUEST_AGENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const GUEST_IP_POLL_INTERVAL: Duration = Duration::from_millis(250);

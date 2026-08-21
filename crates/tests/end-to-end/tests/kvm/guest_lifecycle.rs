@@ -317,7 +317,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git-gateway/gateway.sock && test \"$(git remote get-url origin)\" = ag::git@local.test:acme/widget.git",
+        "test -z \"${SSH_AUTH_SOCK:-}\" && test -S /run/wt-agent-git-gateway/gateway.sock && test \"$(git remote get-url origin)\" = wt-agent::git@local.test:acme/widget.git",
         "verify devcontainer gateway setup",
     );
     app(
@@ -344,7 +344,12 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify automatic Codex session mount",
     );
 
-    let help = app_output(&harness, &name, "wt-git-hosting --help", "read wt-git-hosting help");
+    let help = app_output(
+        &harness,
+        &name,
+        "wt-git-hosting --help",
+        "read wt-git-hosting help",
+    );
     assert!(help.contains("explicitly identified Git provider resources"));
     assert!(help.contains("| { action: \"wait_mr\"; mr: number }"));
 

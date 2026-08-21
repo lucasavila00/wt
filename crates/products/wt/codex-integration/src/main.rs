@@ -107,7 +107,9 @@ Options:
     #[test]
     fn remove_is_an_alias_for_uninstall() {
         assert!(matches!(
-            Cli::try_parse_from(["wt-codex-integration", "remove"]).unwrap().command,
+            Cli::try_parse_from(["wt-codex-integration", "remove"])
+                .unwrap()
+                .command,
             Command::Uninstall
         ));
     }

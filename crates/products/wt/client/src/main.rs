@@ -9,13 +9,13 @@ use std::os::unix::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
+use wt_client::config::{ClientConfig, Context};
+use wt_client::inventory::{self, ContextInstance};
+use wt_client::transport::ContextError;
 use wt_control_protocol::{
     ApiRequest, Capacity, CapacityResource, CreateApplication, CreateInstance, InstanceApplication,
     Operation, Outcome, Response, WorldKind,
 };
-use wt_client::config::{ClientConfig, Context};
-use wt_client::inventory::{self, ContextInstance};
-use wt_client::transport::ContextError;
 
 mod code;
 mod git_author;
@@ -266,7 +266,11 @@ fn prompt_capacity_retry(
         .map_err(prompt_error)
 }
 
-fn capacity_message(context: &str, name: &wt_control_protocol::InstanceName, capacity: &Capacity) -> String {
+fn capacity_message(
+    context: &str,
+    name: &wt_control_protocol::InstanceName,
+    capacity: &Capacity,
+) -> String {
     let (resource, unit) = match capacity.resource {
         CapacityResource::Cpu => ("CPU", "CPU"),
         CapacityResource::Memory => ("memory", "MiB"),
@@ -382,14 +386,16 @@ fn prompt_create(
             let source: String = cliclack::input("Git repository")
                 .placeholder("git@example.com:team/repository.git")
                 .validate(|value: &String| {
-                    wt_control_protocol::validate_ssh_git_source(value).map_err(|error| error.to_string())
+                    wt_control_protocol::validate_ssh_git_source(value)
+                        .map_err(|error| error.to_string())
                 })
                 .interact()
                 .map_err(prompt_error)?;
             let git_base: String = cliclack::input("Base branch")
                 .placeholder("main")
                 .validate(|value: &String| {
-                    wt_control_protocol::validate_git_branch(value).map_err(|error| error.to_string())
+                    wt_control_protocol::validate_git_branch(value)
+                        .map_err(|error| error.to_string())
                 })
                 .interact()
                 .map_err(prompt_error)?;

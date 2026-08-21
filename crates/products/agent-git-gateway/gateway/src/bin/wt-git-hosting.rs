@@ -68,7 +68,7 @@ fn origin_repository() -> Option<Repository> {
 }
 
 fn repository_from_origin(origin: &str) -> Option<Repository> {
-    let origin = origin.strip_prefix("ag::").unwrap_or(origin);
+    let origin = origin.strip_prefix("wt-agent::").unwrap_or(origin);
     let (host, path) = if let Some(rest) = origin.strip_prefix("https://") {
         let (host, path) = rest.split_once('/')?;
         (host, path)
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn recognizes_normal_and_gateway_origins() {
         for origin in [
-            "ag::git@github.com:wtco/wt.git",
+            "wt-agent::git@github.com:wtco/wt.git",
             "git@github.com:wtco/wt.git",
             "ssh://git@github.com/wtco/wt.git",
             "https://github.com/wtco/wt.git",

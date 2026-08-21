@@ -2,8 +2,9 @@ mod containers;
 mod support;
 
 use super::bootstrap::BootstrapPolicy;
-use super::devcontainer;
+use super::runtime as devcontainer;
 use super::{ProvisionSpec, World};
+use crate::{GuestAccess, RetainedConfig};
 use serde::Deserialize;
 use std::io::Write;
 use std::net::IpAddr;
@@ -14,13 +15,14 @@ use wt_libvirt_kvm::{
     CaptureRequest, CapturedOutput, GuestTransport, Machine, RunRequest, WorkerError,
     WriteFileRequest,
 };
-use crate::{GuestAccess, RetainedConfig};
 
-use super::devcontainer::APP_SSH_PORT;
+use super::runtime::APP_SSH_PORT;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
-const GUEST_INSTALL: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/install-guest.sh");
-const SETUP_WORLD: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/setup-world.sh");
+const GUEST_INSTALL: &[u8] =
+    include_bytes!("../../../../../../assets/world/devcontainer/install-guest.sh");
+const SETUP_WORLD: &[u8] =
+    include_bytes!("../../../../../../assets/world/devcontainer/setup-world.sh");
 const SETUP_WORLD_ROOT: &[u8] =
     include_bytes!("../../../../../../assets/world/devcontainer/setup-world-root.sh");
 const APP_SHELL: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/app-shell.sh");

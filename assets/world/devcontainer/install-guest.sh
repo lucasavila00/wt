@@ -38,7 +38,7 @@ install -d -m 0755 -o "$WT_USER" -g "$WT_USER" /workspace
 install -d -m 0755 -o "$WT_USER" -g "$WT_USER" "$WT_HOME/.byobu"
 printf '%s\n' \
     'source-file /usr/local/share/wt-tmux.conf' \
-    'set-option -g default-command /usr/local/bin/wt-app-pane' \
+    'set-option -g default-command /usr/local/bin/wt-devcontainer-pane' \
     > "$WT_HOME/.byobu/.tmux.conf"
 test -f "$WT_HOME/.byobu/color"
 chown "$WT_USER:$WT_USER" "$WT_HOME/.byobu/.tmux.conf" "$WT_HOME/.byobu/color"
@@ -48,9 +48,9 @@ install -m 0755 "$stage-app-shell" /usr/local/bin/wt-app-shell
 install -m 0755 "$stage-setup-world" /usr/local/bin/wt-setup-world
 install -d -m 0755 /usr/local/libexec
 install -m 0755 "$stage-setup-world-root" /usr/local/libexec/wt-setup-root
-install -m 0755 "$stage-app-pane" /usr/local/bin/wt-app-pane
-install -m 0755 "$stage-app-info" /usr/local/bin/wt-app-info
-install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-app-proxy
+install -m 0755 "$stage-app-pane" /usr/local/bin/wt-devcontainer-pane
+install -m 0755 "$stage-app-info" /usr/local/bin/wt-devcontainer-info
+install -m 0755 "$stage-app-proxy" /usr/local/bin/wt-devcontainer-ssh-proxy
 install -m 0755 "$stage-agent-git-hint" /usr/local/bin/wt-agent-git-gateway-hint
 install -d -m 0755 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-setup
 install -m 0644 "$WT_HOME/.byobu/.tmux.conf" \

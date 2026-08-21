@@ -24,7 +24,7 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     fs::create_dir(destination).unwrap();
     let binaries = workspace.join("target").join(MUSL_TARGET).join("debug");
     for name in [
-        "wt-agent-git-gateway-gateway",
+        "wt-agent-git-gateway",
         "wt-agent-git-gateway-relay",
         "wt-devcontainer-pane",
         "wt-devcontainer-info",

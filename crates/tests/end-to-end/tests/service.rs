@@ -444,7 +444,11 @@ fn create_retry_fingerprint_includes_resources_and_authorized_keys() {
         let error = service(&temp, worker)
             .execute("tester", Operation::Create(different))
             .unwrap_err();
-        assert_eq!(error.code, wt_control_protocol::ErrorCode::Conflict, "{change}");
+        assert_eq!(
+            error.code,
+            wt_control_protocol::ErrorCode::Conflict,
+            "{change}"
+        );
     }
 }
 

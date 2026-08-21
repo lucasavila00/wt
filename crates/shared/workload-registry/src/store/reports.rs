@@ -1,7 +1,7 @@
 use super::{map_registry_error, Store, StoreError};
+use crate::AgentGitReport;
 use std::collections::BTreeMap;
 use uuid::Uuid;
-use crate::AgentGitReport;
 
 impl Store {
     pub fn list_agent_git_reports(&self, owner: &str) -> Result<Vec<AgentGitReport>, StoreError> {

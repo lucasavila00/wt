@@ -1,9 +1,9 @@
 use anyhow::{bail, Context as _, Result};
 use std::path::Path;
 use std::process::Command;
-use wt_control_protocol::WorldKind;
 use wt_client::config::ClientConfig;
 use wt_client::inventory;
+use wt_control_protocol::WorldKind;
 
 #[derive(Debug, serde::Deserialize)]
 struct AppInfo {

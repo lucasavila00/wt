@@ -19,11 +19,7 @@ pub struct ProviderHttpClient {
 }
 
 impl ProviderHttpClient {
-    pub fn new(
-        base: String,
-        token: &str,
-        authentication: ProviderAuthentication,
-    ) -> Result<Self> {
+    pub fn new(base: String, token: &str, authentication: ProviderAuthentication) -> Result<Self> {
         let base = base.trim_end_matches('/').to_owned();
         let parsed = url::Url::parse(&base).context("parse provider API URL")?;
         if !matches!(parsed.scheme(), "https" | "http") || parsed.host_str().is_none() {
@@ -41,11 +37,7 @@ impl ProviderHttpClient {
         })
     }
 
-    pub fn execute_graphql<Q>(
-        &self,
-        path: &str,
-        variables: Q::Variables,
-    ) -> Result<Q::ResponseData>
+    pub fn execute_graphql<Q>(&self, path: &str, variables: Q::Variables) -> Result<Q::ResponseData>
     where
         Q: GraphQLQuery,
         Q::Variables: Serialize,

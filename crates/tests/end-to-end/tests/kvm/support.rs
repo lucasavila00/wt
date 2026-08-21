@@ -137,7 +137,11 @@ impl KvmHarness {
         *instance
     }
 
-    pub(crate) fn create_host(&self, name: &InstanceName, user_data: &str) -> wt_control_protocol::Instance {
+    pub(crate) fn create_host(
+        &self,
+        name: &InstanceName,
+        user_data: &str,
+    ) -> wt_control_protocol::Instance {
         let Response::Instance { instance } = self.create_host_result(name, user_data).unwrap()
         else {
             panic!("expected instance response");

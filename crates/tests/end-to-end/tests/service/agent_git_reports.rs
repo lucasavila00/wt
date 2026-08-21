@@ -40,7 +40,10 @@ fn reports_are_listed_counted_and_cleared_for_the_world_owner() {
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].world_id, instance.id);
     assert_eq!(reports[0].world_name.as_str(), "sample");
-    assert_eq!(reports[0].kind, wt_control_protocol::AgentGitReportKind::Bug);
+    assert_eq!(
+        reports[0].kind,
+        wt_control_protocol::AgentGitReportKind::Bug
+    );
     assert_eq!(reports[0].description, "job log was unavailable");
 
     let Response::AgentGitReports { reports } = service(&temp, Worker::default())

@@ -1,10 +1,10 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use wt_installer_support::expand_home;
 use wt_server::{
     AgentGitConfig, AgentGitProviderConfig, GuestConfig, ImageConfig, InstallConfig,
     RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_GIT_VSOCK_PORT,
 };
-use wt_installer_support::expand_home;
 
 /// Install input for `wt-server-installer --config`.
 /// Setup materializes [`ServerConfig`] from this and writes `/etc/wt/server.toml`.
@@ -285,7 +285,7 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn example_install_inputs_are_valid() {
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..");
         for name in [
             "wt-server.development.toml",
             "wt-server.kvm-e2e-install.toml",

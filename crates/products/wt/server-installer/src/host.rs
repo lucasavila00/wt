@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use wt_server::ServerConfig;
 use wt_installer_support::Runner;
+use wt_server::ServerConfig;
 
 const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../../../assets/server/install-host.sh");
 pub(crate) const CODEX_AUTH_SHARE: &[u8] =

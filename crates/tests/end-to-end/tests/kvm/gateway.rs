@@ -23,7 +23,7 @@ pub(crate) fn spawn_gateway(
         }
     }
     let mut gateway = cmd!(
-        binary_dir.join("wt-agent-git-gateway-gateway"),
+        binary_dir.join("wt-agent-git-gateway"),
         "serve",
         "--control-socket",
         &control_socket,

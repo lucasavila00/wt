@@ -4,13 +4,13 @@ mod stream;
 mod vsock;
 
 pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider};
-pub use wt_git_hosting::ProviderKind;
 pub use protocol::{
     ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, Repository,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line};
 pub use vsock::{VsockListener, VsockStream};
+pub use wt_git_hosting::ProviderKind;
 pub use wt_git_smart_protocol::{DuplexStream, GitService, WritePolicy};
 
 pub const VSOCK_PORT: u32 = 18017;

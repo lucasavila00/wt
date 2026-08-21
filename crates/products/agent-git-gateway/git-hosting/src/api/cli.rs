@@ -118,12 +118,14 @@ impl CliCommand {
             Self::ReportAgGitIssue { description } => {
                 Some((wt_workload_registry::AgentGitReportKind::Issue, description))
             }
-            Self::SuggestAgGitImprovement { description } => {
-                Some((wt_workload_registry::AgentGitReportKind::Improvement, description))
-            }
-            Self::RequestAgGitFeature { description } => {
-                Some((wt_workload_registry::AgentGitReportKind::FeatureRequest, description))
-            }
+            Self::SuggestAgGitImprovement { description } => Some((
+                wt_workload_registry::AgentGitReportKind::Improvement,
+                description,
+            )),
+            Self::RequestAgGitFeature { description } => Some((
+                wt_workload_registry::AgentGitReportKind::FeatureRequest,
+                description,
+            )),
             _ => None,
         }
     }

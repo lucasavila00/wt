@@ -1,14 +1,11 @@
 ---
 source: crates/shared/libvirt-kvm/src/worker/world.rs
-expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"/home/wt/.codex/sessions & rollouts\"), auth:\n    PathBuf::from(\"/home/wt/.codex/.wt-auth\"),\n}))"
+assertion_line: 177
+expression: test_domain_xml(None)
 ---
 <domain type='kvm'>
   <name>wt-0123456789abcdef0123456789abcdef</name>
   <memory unit='MiB'>4096</memory>
-  <memoryBacking>
-    <source type='memfd'/>
-    <access mode='shared'/>
-  </memoryBacking>
   <vcpu>4</vcpu>
   <os firmware='efi'>
     <type arch='x86_64' machine='q35'>hvm</type>
@@ -37,16 +34,6 @@ expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"
       <source network='default &amp; private'/>
       <model type='virtio'/>
     </interface>
-    <filesystem type='mount' accessmode='passthrough'>
-      <driver type='virtiofs'/>
-      <source dir='/home/wt/.codex/sessions &amp; rollouts'/>
-      <target dir='wt-codex-integration-sessions'/>
-    </filesystem>
-    <filesystem type='mount' accessmode='passthrough'>
-      <driver type='virtiofs'/>
-      <source dir='/home/wt/.codex/.wt-auth'/>
-      <target dir='wt-codex-integration-auth'/>
-    </filesystem>
     <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>

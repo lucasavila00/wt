@@ -32,7 +32,7 @@ if ! "$inner"; then
     if "$rich"; then
         script -qefc '/usr/local/bin/wt-setup-world --inner' /dev/null
         finish_log 0
-        exec /usr/local/bin/wt-app-pane
+        exec /usr/local/bin/wt-devcontainer-pane
     fi
 fi
 
@@ -48,7 +48,7 @@ if test -e "$state/source"; then
     prefix=$(cat "$state/git-prefix")
     git_name=$(cat "$state/git-user-name")
     git_email=$(cat "$state/git-user-email")
-    origin="ag::$source"
+    origin="wt-agent::$source"
 
     if test -d "$workspace/.git" &&
         test "$(git -C "$workspace" remote get-url origin)" = "$origin" &&
@@ -93,7 +93,7 @@ sudo /usr/local/libexec/wt-setup-root prepare
 additional_features='{"ghcr.io/devcontainers/features/sshd:1":{}}'
 app_user=$(
     devcontainer read-configuration --workspace-folder "$workspace" |
-        /usr/local/bin/wt-app-info configured-user
+        /usr/local/bin/wt-devcontainer-info configured-user
 )
 # The CLI's additional-mount grammar has no read-only flag. The authentication
 # source remains read-only because /run/wt-codex-integration-auth is itself a read-only
@@ -103,8 +103,8 @@ devcontainer up --log-level debug --log-format text --workspace-folder "$workspa
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
     --mount type=bind,source=/var/lib/wt-app-ssh/public/sshd_config,target=/etc/ssh/sshd_config \
     --mount type=bind,source=/run/wt-agent-git-gateway,target=/run/wt-agent-git-gateway \
-    --mount type=bind,source=/usr/local/bin/git-remote-ag,target=/usr/local/bin/git-remote-ag \
-    --mount type=bind,source=/usr/local/bin/ag-git,target=/usr/local/bin/ag-git \
+    --mount type=bind,source=/usr/local/bin/git-remote-wt-agent,target=/usr/local/bin/git-remote-wt-agent \
+    --mount type=bind,source=/usr/local/bin/wt-git-hosting,target=/usr/local/bin/wt-git-hosting \
     --mount type=bind,source=/usr/local/bin/wt-agent-git-gateway-hint,target=/usr/local/bin/wt-agent-git-gateway-hint \
     --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/wt-codex-integration \
     --mount type=bind,source=/usr/local/bin/wt-codex-integration,target=/usr/local/bin/codex \
@@ -129,14 +129,14 @@ while IFS= read -r host; do
     test -n "$host" || continue
     devcontainer exec --workspace-folder "$workspace" /bin/sh -c '
         host=$1
-        git config --global --replace-all "url.ag::git@$host:.insteadOf" "git@$host:"
-        git config --global --add "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
-        git config --global --add "url.ag::git@$host:.insteadOf" "https://$host/"
+        git config --global --replace-all "url.wt-agent::git@$host:.insteadOf" "git@$host:"
+        git config --global --add "url.wt-agent::git@$host:.insteadOf" "ssh://git@$host/"
+        git config --global --add "url.wt-agent::git@$host:.insteadOf" "https://$host/"
     ' sh "$host"
 done < /var/lib/wt-agent-git-gateway/providers
-/usr/local/bin/wt-app-info verify-user "$app_user"
-/usr/local/bin/wt-app-info > "$state/app.json"
-app_address=$(/usr/local/bin/wt-app-info address)
+/usr/local/bin/wt-devcontainer-info verify-user "$app_user"
+/usr/local/bin/wt-devcontainer-info > "$state/app.json"
+app_address=$(/usr/local/bin/wt-devcontainer-info address)
 cat "$WT_HOME/.ssh/authorized_keys" /var/lib/wt-app-ssh/session_identity.pub > "$state/app-authorized-keys"
 sudo /usr/local/libexec/wt-setup-root finalize "$app_user"
 ssh-keyscan -T 5 -p 2222 "$app_address" > "$state/app-keyscan"
@@ -154,4 +154,4 @@ sudo /usr/local/libexec/wt-setup-root cleanup
 echo "World setup complete. Entering the devcontainer."
 "$inner" && exit 0
 finish_log 0
-exec /usr/local/bin/wt-app-pane
+exec /usr/local/bin/wt-devcontainer-pane

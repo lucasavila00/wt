@@ -13,7 +13,7 @@ wt-gh-actions-runner library foundation
   └─ GitHub CI lifecycle ─────── shared registry and capacity
 
 devcontainer / host / github-ci
-  └─ wt-provider contracts ──── wt-libvirt-kvm ── KVM + QEMU guest agent
+  └─ wt-libvirt-kvm ── KVM + QEMU guest agent
 
 standalone Git client
   └─ OpenSSH forced command ── wt-git-proxy ── SSH Git upstream
@@ -30,15 +30,15 @@ version 2 carries tagged world kinds and a common retained-world Git author.
 
 | Scope | Crates |
 |-------|--------|
-| Shared | `wt-control-protocol`, `wt-client`, `wt-codex-integration`, `wt-command`, `wt-provider`, `wt-libvirt-kvm`, `wt-workload-registry`, `wt-retained`, `wt-server`, `wt-server-installer`, `wt-installer-support`, `wt-git-smart-protocol`, `wt-end-to-end-tests` |
-| Devcontainer | `wt-devcontainer`, `wt-devcontainer-guest-tools` |
-| Host | `wt-host` |
-| GitHub CI | `wt-gh-actions-runner` |
-| WT Git gateway | `wt-agent-git-gateway` |
+| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-retained-worlds`, `wt-devcontainer-guest-tools`, `wt-codex-integration`, `wt-server-installer` |
+| GitHub Actions | `wt-gh-actions-runner` |
+| Agent Git gateway | `wt-agent-git-gateway`, `wt-git-hosting` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
+| Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
+| Tests | `wt-end-to-end-tests` |
 
 Generic names are used only for behavior shared by more than one kind.
-Executable names used inside existing guests remain stable.
+Installed executable names match their owning crates.
 
 `wt-git-smart-protocol` contains the Git protocol bridge and branch write policy shared
 by the WT gateway and standalone proxy. `wt-git-proxy` is released from this
@@ -47,8 +47,8 @@ workspace but is not part of `wt-server` or a WT world.
 `wt-installer-support` contains the host file, command runner, and SSH credential
 handling shared by the regular WT and standalone Git proxy installers.
 
-`wt-retained` contains the fixed retained-guest identity and shared guest
-operations used by both retained kinds. Its runtime calls the image-installed
+`wt-retained-worlds` owns devcontainer and host lifecycle, the fixed retained
+guest identity, and operations shared by both retained kinds. Its runtime calls the image-installed
 helpers for SSH access, Git author transfer, agent Git, and virtiofs
 Codex session and authentication mounts. One retained provisioning operation
 applies that complete contract for both kinds; kind crates retain only their

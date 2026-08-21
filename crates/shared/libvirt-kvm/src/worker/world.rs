@@ -132,8 +132,7 @@ mod tests {
     use std::time::Duration;
 
     fn test_domain_xml(codex_mounts: Option<CodexMounts>) -> String {
-        let provider_id =
-            crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
+        let provider_id = crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
         let paths = Paths::new(Path::new("/var/lib/libvirt/images/wt"), &provider_id);
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),

@@ -3,14 +3,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
-use wt_retained_worlds::devcontainer::{CompositeWorker, WorldProvisioner};
 use wt_libvirt_kvm::LibvirtProvider;
+use wt_retained_worlds::devcontainer::{CompositeWorker, WorldProvisioner};
+use wt_retained_worlds::Workers;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
 use wt_server::service::Service;
-use wt_workload_registry::Store;
-use wt_retained_worlds::Workers;
 use wt_server::ServerConfig;
+use wt_workload_registry::Store;
 
 fn main() {
     if let Err(error) = run() {

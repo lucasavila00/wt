@@ -10,7 +10,7 @@ use wt_agent_git_gateway::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-agent-git-gateway-gateway")]
+#[command(name = "wt-agent-git-gateway")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -42,7 +42,7 @@ enum Command {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("wt-agent-git-gateway-gateway: {error:#}");
+        eprintln!("wt-agent-git-gateway: {error:#}");
         std::process::exit(1);
     }
 }
@@ -109,11 +109,11 @@ fn run() -> Result<()> {
                     let gateway = control_gateway.clone();
                     std::thread::spawn(move || {
                         if let Err(error) = gateway.handle_control(stream) {
-                            eprintln!("wt-agent-git-gateway-gateway: control request: {error:#}");
+                            eprintln!("wt-agent-git-gateway: control request: {error:#}");
                         }
                     });
                 }
-                Err(error) => eprintln!("wt-agent-git-gateway-gateway: accept control request: {error}"),
+                Err(error) => eprintln!("wt-agent-git-gateway: accept control request: {error}"),
             }
         }
     });
@@ -127,12 +127,12 @@ fn run() -> Result<()> {
                         let gateway = transport_gateway.clone();
                         std::thread::spawn(move || {
                             if let Err(error) = gateway.handle_transport(stream) {
-                                eprintln!("wt-agent-git-gateway-gateway: transport request: {error:#}");
+                                eprintln!("wt-agent-git-gateway: transport request: {error:#}");
                             }
                         });
                     }
                     Err(error) => {
-                        eprintln!("wt-agent-git-gateway-gateway: accept transport request: {error}")
+                        eprintln!("wt-agent-git-gateway: accept transport request: {error}")
                     }
                 }
             }
@@ -149,7 +149,7 @@ fn run() -> Result<()> {
         let gateway = gateway.clone();
         std::thread::spawn(move || {
             if let Err(error) = gateway.handle_transport(stream) {
-                eprintln!("wt-agent-git-gateway-gateway: transport request: {error:#}");
+                eprintln!("wt-agent-git-gateway: transport request: {error:#}");
             }
         });
     }

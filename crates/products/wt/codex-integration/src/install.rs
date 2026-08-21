@@ -46,20 +46,23 @@ pub(crate) fn active_installation(args: &[OsString]) -> Result<PathBuf> {
 }
 
 pub(crate) fn install() -> Result<InstallOutcome> {
-    let wt_codex_integration = env::current_exe().context("find the wt-codex-integration executable")?;
+    let wt_codex_integration =
+        env::current_exe().context("find the wt-codex-integration executable")?;
     let codex = find_in_path("codex")?;
     install_at(&codex, &wt_codex_integration)
 }
 
 pub(crate) fn uninstall() -> Result<PathBuf> {
-    let wt_codex_integration = env::current_exe().context("find the wt-codex-integration executable")?;
+    let wt_codex_integration =
+        env::current_exe().context("find the wt-codex-integration executable")?;
     let codex = find_in_path("codex")?;
     uninstall_at(&codex, &wt_codex_integration)
 }
 
 pub(crate) fn real_codex_in_path() -> Result<PathBuf> {
     let codex = find_in_path("codex")?;
-    let wt_codex_integration = env::current_exe().context("find the wt-codex-integration executable")?;
+    let wt_codex_integration =
+        env::current_exe().context("find the wt-codex-integration executable")?;
     if is_symlink_to(&codex, &wt_codex_integration)? {
         let real = sibling(&codex, REAL_NAME)?;
         if !real.exists() {
@@ -95,7 +98,9 @@ fn install_at(codex: &Path, wt_codex_integration: &Path) -> Result<InstallOutcom
     }
     fs::rename(codex, &real)
         .with_context(|| format!("save the real Codex CLI as {}", real.display()))?;
-    if let Err(error) = symlink(wt_codex_integration, &temporary).and_then(|()| fs::rename(&temporary, codex)) {
+    if let Err(error) =
+        symlink(wt_codex_integration, &temporary).and_then(|()| fs::rename(&temporary, codex))
+    {
         let _ = fs::remove_file(&temporary);
         let _ = fs::rename(&real, codex);
         return Err(error).context("install the Codex trampoline");

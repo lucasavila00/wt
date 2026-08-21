@@ -10,8 +10,8 @@ case "$vsock_port" in
 esac
 
 install -m 0755 "$stage-relay" /usr/local/bin/wt-agent-git-gateway-relay
-install -m 0755 "$stage-remote" /usr/local/bin/git-remote-ag
-install -m 0755 "$stage-cli" /usr/local/bin/ag-git
+install -m 0755 "$stage-remote" /usr/local/bin/git-remote-wt-agent
+install -m 0755 "$stage-cli" /usr/local/bin/wt-git-hosting
 install -d -m 0700 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-agent-git-gateway
 install -m 0600 -o "$WT_USER" -g "$WT_USER" "$stage-grant" /var/lib/wt-agent-git-gateway/grant
 install -m 0600 -o "$WT_USER" -g "$WT_USER" \
@@ -19,11 +19,11 @@ install -m 0600 -o "$WT_USER" -g "$WT_USER" \
 while IFS= read -r host; do
     test -n "$host" || continue
     runuser --user "$WT_USER" -- git config --global --replace-all \
-        "url.ag::git@$host:.insteadOf" "git@$host:"
+        "url.wt-agent::git@$host:.insteadOf" "git@$host:"
     runuser --user "$WT_USER" -- git config --global --add \
-        "url.ag::git@$host:.insteadOf" "ssh://git@$host/"
+        "url.wt-agent::git@$host:.insteadOf" "ssh://git@$host/"
     runuser --user "$WT_USER" -- git config --global --add \
-        "url.ag::git@$host:.insteadOf" "https://$host/"
+        "url.wt-agent::git@$host:.insteadOf" "https://$host/"
 done < /var/lib/wt-agent-git-gateway/providers
 cat > /etc/systemd/system/wt-agent-git-gateway-relay.service <<EOF
 [Unit]

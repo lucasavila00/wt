@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
-use wt_retained_worlds::devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 use wt_libvirt_kvm::{CodexMounts, MachineConfig};
+use wt_retained_worlds::devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
 pub const DEFAULT_AGENT_GIT_VSOCK_PORT: u32 = wt_agent_git_gateway::VSOCK_PORT;
 pub const AGENT_GIT_VSOCK_PORT_ENV: &str = wt_agent_git_gateway::VSOCK_PORT_ENV;

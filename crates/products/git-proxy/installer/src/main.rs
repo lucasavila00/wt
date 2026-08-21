@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use wt_installer_support::cmd;
 use wt_git_proxy::{ProviderConfig, ProxyConfig};
+use wt_installer_support::cmd;
 use wt_installer_support::{
     expand_home, prepare_ssh_credentials, sudo_install_owned, temporary_credential,
     validate_ssh_files, Runner, SshCredentialInput, SystemRunner, TerminalPassphrasePrompt,

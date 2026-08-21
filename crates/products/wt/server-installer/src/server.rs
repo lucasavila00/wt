@@ -14,8 +14,6 @@ use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use wt_installer_support::cmd;
-use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
-use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
 #[cfg(test)]
 use wt_installer_support::validate_passphrase;
 use wt_installer_support::{
@@ -23,11 +21,13 @@ use wt_installer_support::{
     temporary_credential, validate_ssh_files, PassphrasePrompt, Runner, SshCredentialInput,
     TerminalPassphrasePrompt,
 };
+use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
+use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 #[cfg(test)]
 use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
-const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway-gateway.service";
+const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-git-gateway.service";
 const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.service";
 const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.path";
 const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-integration-auth-share";
@@ -203,7 +203,7 @@ fn phase_message(message: &str) -> String {
 
 fn success_message(input_path: &Path) -> String {
     format!(
-        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-git-gateway-gateway\nNext: configure a WT client, then run `wt new`.",
+        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-git-gateway\nNext: configure a WT client, then run `wt new`.",
         input_path.display()
     )
 }
@@ -218,8 +218,8 @@ fn require_server_user() -> Result<()> {
 fn require_workspace() -> Result<()> {
     if !Path::new("Cargo.toml").is_file()
         || !Path::new("crates/products/wt/client/Cargo.toml").is_file()
-        || !Path::new("crates/wt-devcontainer-guest-tools/Cargo.toml").is_file()
-        || !Path::new("crates/wt-server/Cargo.toml").is_file()
+        || !Path::new("crates/products/wt/devcontainer-guest-tools/Cargo.toml").is_file()
+        || !Path::new("crates/products/wt/server/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");
     }
@@ -423,7 +423,7 @@ fn install_services(
     )?;
     install_service_unit(
         runner,
-        "wt-agent-git-gateway-gateway",
+        "wt-agent-git-gateway",
         Path::new(GATEWAY_SERVICE_PATH),
         &gateway_service(&user, input, server),
         replace_runtime,
@@ -441,7 +441,7 @@ fn install_services(
     )?;
     for name in [
         "wt-codex-integration-auth.path",
-        "wt-agent-git-gateway-gateway.service",
+        "wt-agent-git-gateway.service",
         "wt-server.service",
     ] {
         runner.run(
@@ -515,7 +515,7 @@ fn service_unit_needs_replacement(
 }
 
 fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt-agent-git-gateway-gateway");
+    let executable = server.install.binary_dir.join("wt-agent-git-gateway");
     let mut command = format!("{} serve", systemd_quote(&executable.display().to_string()));
     let mut credentials = String::new();
     for (kind, provider) in input.agent_git.providers() {
@@ -575,8 +575,8 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
         "[Unit]\n\
 Description=WT control-plane daemon\n\
 Requires=wt-codex-integration-auth.service\n\
-Wants=network-online.target wt-agent-git-gateway-gateway.service wt-codex-integration-auth.path\n\
-After=network-online.target docker.service libvirtd.service wt-agent-git-gateway-gateway.service wt-codex-integration-auth.service\n\
+Wants=network-online.target wt-agent-git-gateway.service wt-codex-integration-auth.path\n\
+After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-integration-auth.service\n\
 \n\
 [Service]\n\
 Type=simple\n\

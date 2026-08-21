@@ -24,8 +24,8 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-sudo systemctl disable --now wt-server.service wt-agent-git-gateway-gateway.service \
-    wt-codex-integration-auth.path 2>/dev/null || true
+sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service \
+    wt-codex-integration-auth.path wt-codex-auth.path 2>/dev/null || true
 
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do
@@ -37,25 +37,36 @@ for domain in "${domains[@]}"; do
 done
 
 if command -v docker >/dev/null; then
-    docker rm -f wt-workload-registry-cache 2>/dev/null || true
+    docker rm -f wt-workload-registry-cache wt-registry-cache 2>/dev/null || true
 fi
 
 sudo rm -f /etc/systemd/system/wt-server.service \
-    /etc/systemd/system/wt-agent-git-gateway-gateway.service \
+    /etc/systemd/system/wt-agent-git-gateway.service \
     /etc/systemd/system/wt-codex-integration-auth.service \
     /etc/systemd/system/wt-codex-integration-auth.path \
-    /usr/local/libexec/wt-codex-integration-auth-share
+    /usr/local/libexec/wt-codex-integration-auth-share \
+    /etc/systemd/system/wt-codex-auth.service \
+    /etc/systemd/system/wt-codex-auth.path \
+    /usr/local/libexec/wt-codex-auth-share
 sudo rm -f \
     /etc/credstore.encrypted/wt-agent-git-gateway-github-api-token \
     /etc/credstore.encrypted/wt-agent-git-gateway-github-ssh-private-key \
     /etc/credstore.encrypted/wt-agent-git-gateway-github-ssh-known-hosts \
     /etc/credstore.encrypted/wt-agent-git-gateway-gitlab-api-token \
     /etc/credstore.encrypted/wt-agent-git-gateway-gitlab-ssh-private-key \
-    /etc/credstore.encrypted/wt-agent-git-gateway-gitlab-ssh-known-hosts
-rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt"
+    /etc/credstore.encrypted/wt-agent-git-gateway-gitlab-ssh-known-hosts \
+    /etc/credstore.encrypted/wt-agent-git-github-api-token \
+    /etc/credstore.encrypted/wt-agent-git-github-ssh-private-key \
+    /etc/credstore.encrypted/wt-agent-git-github-ssh-known-hosts \
+    /etc/credstore.encrypted/wt-agent-git-gitlab-api-token \
+    /etc/credstore.encrypted/wt-agent-git-gitlab-ssh-private-key \
+    /etc/credstore.encrypted/wt-agent-git-gitlab-ssh-known-hosts
+rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt" "$HOME/.wt"
 rm -rf "$HOME/.codex/.wt-auth"
-sudo rm -f /etc/systemd/system/docker.service.d/wt-workload-registry-cache.conf
-sudo rm -f /usr/local/share/ca-certificates/wt-workload-registry-cache.crt
+sudo rm -f /etc/systemd/system/docker.service.d/wt-workload-registry-cache.conf \
+    /etc/systemd/system/docker.service.d/wt-registry-cache.conf
+sudo rm -f /usr/local/share/ca-certificates/wt-workload-registry-cache.crt \
+    /usr/local/share/ca-certificates/wt-registry-cache.crt
 sudo systemctl daemon-reload
 if systemctl list-unit-files docker.service >/dev/null 2>&1; then
     sudo systemctl restart docker.service

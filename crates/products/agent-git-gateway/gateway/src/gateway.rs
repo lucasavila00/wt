@@ -1,10 +1,9 @@
 mod service;
 
 use crate::{
-    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
-    Repository, TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant, Repository,
+    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
-use wt_git_hosting::{self as api, ProviderKind};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -13,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+use wt_git_hosting::{self as api, ProviderKind};
 use wt_git_smart_protocol::{
     repository_refs, serve_git, successful_push_updates, write_packet, GitTarget, PushViolation,
     WritePolicy,

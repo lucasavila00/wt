@@ -1,19 +1,17 @@
 use crate::operations::Operations;
-use wt_workload_registry::{Store, StoreError, StoredInstance};
-use wt_retained_worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateApplication, CreateInstance, ErrorCode, Instance,
     InstanceApplication, InstanceStatus, Operation, Response,
 };
+use wt_retained_worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
-
+use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod lifecycle;
 mod reports;
 #[cfg(test)]
 mod tests;
-
 pub trait AgentGitGateway {
     fn reserve(
         &self,
@@ -23,7 +21,6 @@ pub trait AgentGitGateway {
     ) -> Result<wt_agent_git_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
-
 impl AgentGitGateway for wt_agent_git_gateway::ControlClient {
     fn reserve(
         &self,
@@ -48,7 +45,6 @@ impl AgentGitGateway for wt_agent_git_gateway::ControlClient {
                 .unwrap_or_else(|| "gateway rejected grant".to_owned()))
         }
     }
-
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         let response = self
             .request(&wt_agent_git_gateway::ControlRequest::Revoke {
@@ -64,7 +60,6 @@ impl AgentGitGateway for wt_agent_git_gateway::ControlClient {
         }
     }
 }
-
 pub struct Service<W, G> {
     store: Store,
     worker: W,
@@ -530,7 +525,11 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         }
     }
 
-    fn get(&self, owner: &str, name: &wt_control_protocol::InstanceName) -> Result<Response, ApiError> {
+    fn get(
+        &self,
+        owner: &str,
+        name: &wt_control_protocol::InstanceName,
+    ) -> Result<Response, ApiError> {
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
         self.reconcile(&stored)?;
         let instance = self
@@ -543,7 +542,11 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         })
     }
 
-    fn start(&self, owner: &str, name: &wt_control_protocol::InstanceName) -> Result<Response, ApiError> {
+    fn start(
+        &self,
+        owner: &str,
+        name: &wt_control_protocol::InstanceName,
+    ) -> Result<Response, ApiError> {
         let _operation = self
             .operations
             .try_lock(owner, name)
@@ -604,7 +607,11 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         })
     }
 
-    fn delete(&self, owner: &str, name: &wt_control_protocol::InstanceName) -> Result<Response, ApiError> {
+    fn delete(
+        &self,
+        owner: &str,
+        name: &wt_control_protocol::InstanceName,
+    ) -> Result<Response, ApiError> {
         let _operation = self
             .operations
             .try_lock(owner, name)
@@ -614,7 +621,9 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             wt_workload_registry::StoredApplication::Devcontainer { gateway_grant_id } => {
                 Some(gateway_grant_id)
             }
-            wt_workload_registry::StoredApplication::Host { gateway_grant_id } => gateway_grant_id.as_ref(),
+            wt_workload_registry::StoredApplication::Host { gateway_grant_id } => {
+                gateway_grant_id.as_ref()
+            }
         };
         if let Some(gateway_grant_id) = gateway_grant_id {
             self.gateway

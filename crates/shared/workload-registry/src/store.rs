@@ -1,6 +1,7 @@
 mod reports;
 
 use crate::schema::{devcontainers, disks, guests, hosts, worlds};
+use crate::{Guest, GuestKind, GuestRow, Registry, RegistryError, Resources};
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::sqlite::SqliteConnection;
@@ -10,7 +11,6 @@ use uuid::Uuid;
 use wt_control_protocol::{
     AppSshAccess, Instance, InstanceApplication, InstanceName, InstanceStatus, SshAccess, WorldKind,
 };
-use crate::{Guest, GuestKind, GuestRow, Registry, RegistryError, Resources};
 
 pub struct Store {
     registry: Registry,
@@ -330,8 +330,7 @@ impl Store {
                 ))
                 .execute(connection)?;
             changed_one(changed)?;
-            crate::release_resources(connection, id, disk_usage_bytes)
-                .map_err(map_registry_error)
+            crate::release_resources(connection, id, disk_usage_bytes).map_err(map_registry_error)
         })
     }
 
@@ -447,12 +446,11 @@ impl TryFrom<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)> for
                 owner: row.owner,
                 name: InstanceName::parse(row.name)
                     .map_err(|error| StoreError::InvalidData(error.to_string()))?,
-                status: row
-                    .status
-                    .parse()
-                    .map_err(|error: wt_control_protocol::ParseStatusError| {
+                status: row.status.parse().map_err(
+                    |error: wt_control_protocol::ParseStatusError| {
                         StoreError::InvalidData(error.to_string())
-                    })?,
+                    },
+                )?,
                 guest_ip: row.guest_ip,
                 last_error: row.last_error,
                 vcpus: u32::try_from(guest.resources.vcpus)

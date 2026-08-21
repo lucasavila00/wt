@@ -1,16 +1,16 @@
 //! QEMU guest-agent implementation of the provider-neutral guest transport.
 
 use super::lookup_domain;
+use crate::{
+    validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
+    ProviderId, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
+};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use virt::domain::Domain;
-use crate::{
-    validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
-    ProviderId, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
-};
 
 const OUTPUT_TAIL_LIMIT: usize = 64 * 1024;
 const FILE_READ_SIZE: usize = 48 * 1024;

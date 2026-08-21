@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 use wt_installer_support::cmd;
-use wt_server::ServerConfig;
 use wt_installer_support::{sudo_install, sudo_move, Runner};
+use wt_server::ServerConfig;
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 const STATIC_BINARIES: [&str; 9] = [
-    "wt-agent-git-gateway-gateway",
+    "wt-agent-git-gateway",
     "wt-agent-git-gateway-relay",
     "git-remote-wt-agent",
     "wt-git-hosting",
@@ -42,7 +42,7 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         "build static WT binaries",
     )?;
     for name in [
-        "wt-agent-git-gateway-gateway",
+        "wt-agent-git-gateway",
         "wt-agent-git-gateway-relay",
         "git-remote-wt-agent",
         "wt-git-hosting",
@@ -120,8 +120,8 @@ mod tests {
             Path::new("target/x86_64-unknown-linux-musl/release/wt-agent-git-gateway-relay")
         );
         assert_eq!(
-            release_binary("wt-agent-git-gateway-gateway"),
-            Path::new("target/x86_64-unknown-linux-musl/release/wt-agent-git-gateway-gateway")
+            release_binary("wt-agent-git-gateway"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt-agent-git-gateway")
         );
         assert_eq!(
             release_binary("wt"),

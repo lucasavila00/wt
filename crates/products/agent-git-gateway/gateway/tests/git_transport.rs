@@ -116,7 +116,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
         temp.path(),
         &[
             "clone",
-            "ag::git@local.test:project.git",
+            "wt-agent::git@local.test:project.git",
             checkout.to_str().unwrap(),
         ],
         &relay_socket,
@@ -130,7 +130,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
         temp.path(),
         &[
             "clone",
-            "ag::git@local.test:other.git",
+            "wt-agent::git@local.test:other.git",
             other_checkout.to_str().unwrap(),
         ],
         &relay_socket,

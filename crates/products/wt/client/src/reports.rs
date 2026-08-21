@@ -1,8 +1,8 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
-use wt_control_protocol::{AgentGitReport, ApiRequest, Operation, Response};
 use wt_client::config::ClientConfig;
 use wt_client::transport::{self, ContextError};
+use wt_control_protocol::{AgentGitReport, ApiRequest, Operation, Response};
 
 pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     let result = list_all(config);
@@ -68,7 +68,10 @@ pub fn list_all(config: &ClientConfig) -> ListResult {
                         report,
                     }),
             ),
-            Ok(_) => failures.push(transport::wrong_response(context, "list wt-git-hosting reports")),
+            Ok(_) => failures.push(transport::wrong_response(
+                context,
+                "list wt-git-hosting reports",
+            )),
             Err(error) => failures.push(error),
         }
     }
@@ -83,7 +86,10 @@ pub fn clear_all(config: &ClientConfig) -> ClearResult {
             Ok(Response::AgentGitReportsCleared {
                 count: context_count,
             }) => count += context_count,
-            Ok(_) => failures.push(transport::wrong_response(context, "clear wt-git-hosting reports")),
+            Ok(_) => failures.push(transport::wrong_response(
+                context,
+                "clear wt-git-hosting reports",
+            )),
             Err(error) => failures.push(error),
         }
     }

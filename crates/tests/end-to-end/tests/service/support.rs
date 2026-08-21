@@ -6,12 +6,12 @@ use tempfile::TempDir;
 use uuid::Uuid;
 use wt_control_protocol::{CreateApplication, CreateInstance, InstanceName, WorldKind};
 use wt_libvirt_kvm::WorkerError;
-use wt_server::operations::Operations;
-use wt_server::service::{AgentGitGateway, Service};
-use wt_workload_registry::Store;
 use wt_retained_worlds::{
     GuestAccess, ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker,
 };
+use wt_server::operations::Operations;
+use wt_server::service::{AgentGitGateway, Service};
+use wt_workload_registry::Store;
 
 #[derive(Clone, Default)]
 pub(crate) struct Worker {

@@ -22,7 +22,7 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-sudo systemctl stop wt-server.service wt-agent-git-gateway-gateway.service 2>/dev/null || true
+sudo systemctl stop wt-server.service wt-agent-git-gateway.service 2>/dev/null || true
 
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do

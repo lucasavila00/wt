@@ -24,10 +24,10 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::time::Duration;
 use wt_installer_support::cmd;
-use wt_retained_worlds::devcontainer::PackageVersions;
-use wt_libvirt_kvm::LIBVIRT_URI;
-use wt_server::ServerConfig;
 use wt_installer_support::{require_named_file, require_root_file, Runner};
+use wt_libvirt_kvm::LIBVIRT_URI;
+use wt_retained_worlds::devcontainer::PackageVersions;
+use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";

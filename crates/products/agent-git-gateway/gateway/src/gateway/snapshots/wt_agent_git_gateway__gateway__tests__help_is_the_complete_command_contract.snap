@@ -1,5 +1,5 @@
 ---
-source: crates/wt-agent-git-gateway/src/gateway/tests.rs
+source: crates/products/agent-git-gateway/gateway/src/gateway/tests.rs
 assertion_line: 34
 expression: HELP
 ---

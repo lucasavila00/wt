@@ -11,7 +11,11 @@ fn main() {
 
 fn proxy() -> Result<(), String> {
     let target = wt_devcontainer_guest_tools::app_target()?;
-    let address = format!("{}:{}", target.address, wt_devcontainer_guest_tools::APP_SSH_PORT);
+    let address = format!(
+        "{}:{}",
+        target.address,
+        wt_devcontainer_guest_tools::APP_SSH_PORT
+    );
     let mut incoming = TcpStream::connect(&address)
         .map_err(|error| format!("connect to app SSH at {address}: {error}"))?;
     let mut outgoing = incoming

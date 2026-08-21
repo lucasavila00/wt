@@ -221,7 +221,9 @@ mod tests {
     use crate::config::{Context as ClientContext, ContextKind};
     use std::sync::Mutex;
     use uuid::Uuid;
-    use wt_control_protocol::{AppSshAccess, Instance, InstanceApplication, InstanceName, SshAccess};
+    use wt_control_protocol::{
+        AppSshAccess, Instance, InstanceApplication, InstanceName, SshAccess,
+    };
 
     static HOME_LOCK: Mutex<()> = Mutex::new(());
 

@@ -21,7 +21,7 @@ fn run_hint(repository: &Path, mode: &str) -> Output {
     Command::new("/bin/sh")
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/world/devcontainer/agent-git-hint.sh"
+            "/../../../../assets/world/devcontainer/agent-git-hint.sh"
         ))
         .arg(mode)
         .current_dir(repository)

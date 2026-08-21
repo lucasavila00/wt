@@ -1,6 +1,6 @@
 # ADR 0047: Organize the workspace by product
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-21
 - Amends: [ADR 0026](0026-make-world-kinds-first-class.md),
   [ADR 0041](0041-publish-a-standalone-git-proxy.md)

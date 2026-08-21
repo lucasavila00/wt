@@ -1,6 +1,6 @@
+use crate::{ProviderId, WorkerError};
 use virt::connect::Connect;
 use virt::network::Network;
-use crate::{ProviderId, WorkerError};
 
 use super::{context, lookup_domain};
 

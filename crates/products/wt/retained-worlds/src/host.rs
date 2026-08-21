@@ -1,3 +1,4 @@
+use crate::{GuestAccess, RetainedConfig};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,6 @@ use wt_libvirt_kvm::{
     CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
     NoCloudConfig, ProviderId, RunRequest, WorkerError,
 };
-use crate::{GuestAccess, RetainedConfig};
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";

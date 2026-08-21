@@ -17,7 +17,9 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                     })?,
                     kind: match report.kind {
                         wt_workload_registry::AgentGitReportKind::Bug => AgentGitReportKind::Bug,
-                        wt_workload_registry::AgentGitReportKind::Issue => AgentGitReportKind::Issue,
+                        wt_workload_registry::AgentGitReportKind::Issue => {
+                            AgentGitReportKind::Issue
+                        }
                         wt_workload_registry::AgentGitReportKind::Improvement => {
                             AgentGitReportKind::Improvement
                         }

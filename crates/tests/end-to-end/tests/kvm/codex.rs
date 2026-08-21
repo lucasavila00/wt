@@ -35,7 +35,12 @@ pub(crate) fn assert_server_codex_auth_export() -> String {
     entries.sort();
     assert_eq!(entries, ["auth.json"]);
     run(
-        cmd!("systemctl", "is-active", "--quiet", "wt-codex-integration-auth.path"),
+        cmd!(
+            "systemctl",
+            "is-active",
+            "--quiet",
+            "wt-codex-integration-auth.path"
+        ),
         "verify Codex authentication watcher",
     );
     sha256_file(source)
