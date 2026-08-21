@@ -1,29 +1,25 @@
-# ADR 0049: Serialize Git proxy writes
+# ADR 0049: Serialize Git proxy processes
 
 - Status: Proposed
 - Date: 2026-08-21
 
 ## Context
 
-Git proxy administration rewrites the complete `authorized_keys` file. Concurrent
-writes can lose changes, restore revoked keys, or expose partial files.
+Git proxy commands share configuration, credentials, and `authorized_keys`.
+Concurrent processes can read partial updates or overwrite each other's work.
 
 ## Decision
 
-Each installation owns one stable lock file beside its configuration. Every
-state-changing admin and installer operation holds its exclusive `flock` from
-the first state read through publication.
-The lock file is created once and is never replaced, renamed, or unlinked.
-All mutation paths use the same lock and publication helper.
-Writers create unique temporary files in the destination directory, set final
-ownership and mode, fsync them, rename them over the destination, then fsync
-the directory. Readers do not take the lock.
-Installers publish credentials before configuration. Published credentials remain
-valid for the active configuration until configuration publication succeeds.
-Failure before rename leaves the destination unchanged. Lock acquisition or
-publication failure returns an error and does not continue the operation.
+The installation lock is `/etc/wt-git-proxy.lock`.
+
+`wt-git-proxy` and `wt-git-proxy-installer` take an exclusive `flock` when the
+binary starts. They hold the lock until the process exits. A process waits when
+another process owns the lock.
+
+The lock file stays at a fixed path and is never replaced or removed.
 
 ## Consequences
 
-- Writers execute in one order without lost updates.
-- Readers see a complete version of each file without blocking.
+- Only one Git proxy or installer process runs at a time.
+- Reads and writes cannot overlap another process.
+- Existing file operations need no additional locking.
