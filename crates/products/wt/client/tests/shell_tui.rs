@@ -96,7 +96,7 @@ fn command_palette_opens_the_shared_dev_form_and_escape_cancels() -> Result<()> 
     screen
         .wait_for_text("session: local.existing")?
         .press(Key::Function(5))?
-        .wait_for_text("←/→ worlds")?
+        .wait_for_text("F5: disable navbar")?
         .press(Key::Up)?
         .wait_for_text("World management")?
         .press(Key::Function(1))?
@@ -108,7 +108,7 @@ fn command_palette_opens_the_shared_dev_form_and_escape_cancels() -> Result<()> 
         .wait_for_text("session: local.existing")?
         .wait_for_text_gone("Create development world")?
         .press(Key::Function(5))?
-        .wait_for_text("←/→ worlds")?
+        .wait_for_text("F5: disable navbar")?
         .press(Key::Up)?
         .wait_for_text("Create development world")?
         .wait_for_quiet(Duration::from_millis(100))?;
@@ -168,7 +168,7 @@ fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> 
         .wait_for_text("session: local.new-world")?
         .press(Key::Function(5))?
         .wait_for_text("local.new-world (2/2)")?
-        .wait_for_text("←/→ worlds")?;
+        .wait_for_text("F5: disable navbar")?;
     assert!(fixture.home.path().join("created").exists());
     Ok(())
 }
