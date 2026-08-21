@@ -12,7 +12,13 @@ fn cli_commands_render_complete_json_from_github_responses() {
         (
             "show_mr",
             WtToolsCommand::ShowMr { mr: "7".into() },
-            vec![get("/repos/acme/widget/pulls/7", PULL_REQUEST)],
+            vec![
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get(
+                    "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                    r#"{"total_count":0,"workflow_runs":[]}"#,
+                ),
+            ],
         ),
         (
             "show_mr_for_branch",
@@ -30,6 +36,10 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 get(
                     "/repos/acme/widget/pulls/7",
                     leak(PULL_REQUEST.replace(r#""state":"closed""#, r#""state":"open""#)),
+                ),
+                get(
+                    "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                    r#"{"total_count":0,"workflow_runs":[]}"#,
                 ),
             ],
         ),
@@ -259,6 +269,72 @@ fn cancel_job_reports_githubs_real_command_error() {
 
     insta::assert_snapshot!(error);
     server.join().unwrap().unwrap();
+}
+
+#[test]
+fn wait_timeouts_preserve_the_last_observed_state() {
+    let cases = [
+        (
+            WtToolsCommand::WaitMr {
+                mr: "7".into(),
+                timeout_seconds: Some(0),
+            },
+            get(
+                "/repos/acme/widget/pulls/7",
+                leak(PULL_REQUEST.replace(r#""state":"closed""#, r#""state":"open""#)),
+            ),
+            "mr 7",
+            "open",
+        ),
+        (
+            WtToolsCommand::WaitRun {
+                run: "91".into(),
+                timeout_seconds: Some(0),
+            },
+            get(
+                "/repos/acme/widget/actions/runs/91",
+                leak(
+                    WORKFLOW_RUN
+                        .replace(r#""status":"completed""#, r#""status":"in_progress""#)
+                        .replace(r#""conclusion":"success""#, r#""conclusion":null"#),
+                ),
+            ),
+            "run 91",
+            "in_progress",
+        ),
+        (
+            WtToolsCommand::WaitJob {
+                job: "44".into(),
+                timeout_seconds: Some(0),
+            },
+            get(
+                "/repos/acme/widget/actions/jobs/44",
+                leak(
+                    WORKFLOW_JOB
+                        .replace(r#""status":"completed""#, r#""status":"in_progress""#)
+                        .replace(r#""conclusion":"success""#, r#""conclusion":null"#),
+                ),
+            ),
+            "job 44",
+            "in_progress",
+        ),
+    ];
+
+    for (command, request, resource, last_state) in cases {
+        let (base_url, server) = serve(vec![request]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        assert_eq!(
+            provider
+                .execute_cli_command(&project_scope(), &command)
+                .unwrap(),
+            ProviderCommandOutput::WaitTimeout {
+                resource: resource.to_owned(),
+                last_state: last_state.to_owned(),
+            }
+        );
+        server.join().unwrap().unwrap();
+    }
 }
 
 fn get(path: &'static str, response_body: &'static str) -> ExpectedRequest {
