@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 use support::{Key, Screen};
 
 struct Fixture {
@@ -89,7 +90,8 @@ fn dev_form_is_a_full_screen_terminal_ui() -> Result<()> {
     screen
         .wait_for_text("Create development world")?
         .wait_for_text("Git repository")?
-        .wait_for_text("Tab/Shift-Tab focus")?;
+        .wait_for_text("Tab/Shift-Tab focus")?
+        .wait_for_quiet(Duration::from_millis(50))?;
 
     insta::assert_snapshot!(screen.contents());
     Ok(())
@@ -140,7 +142,8 @@ fn completed_fields_open_review_and_b_returns_to_editing() -> Result<()> {
     complete_dev_fields(&mut screen)?;
     screen
         .wait_for_text("Review")?
-        .wait_for_text("Resources   2 CPU · 4096 MiB RAM · 32 GiB disk")?;
+        .wait_for_text("Resources   2 CPU · 4096 MiB RAM · 32 GiB disk")?
+        .wait_for_quiet(Duration::from_millis(50))?;
     insta::assert_snapshot!(screen.contents());
     screen
         .press(Key::Char('b'))?

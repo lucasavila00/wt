@@ -35,3 +35,25 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --locked
+
+  stress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libvirt-dev openssh-server
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build workspace tests
+        run: cargo test --workspace --locked --no-run
+
+      - name: Run tests under scheduler contention
+        run: |
+          timeout --signal=TERM --kill-after=10s 180s \
+            taskset --cpu-list 0 \
+            cargo test --workspace --locked -- --test-threads=16
