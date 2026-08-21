@@ -15,13 +15,7 @@ fn ci_output_includes_the_trigger_event() {
     insta::assert_snapshot!(
         render_cli_command_output(ProviderCommandOutput::CiRun(run.clone())),
         @r###"
-    Run: 91
-    State: success
-    Name: CI
-    Trigger: pull_request
-    Commit: abc123
-    Ref: wt/fix
-    URL: https://github.test/runs/91
+    {"result":{"data":{"branch":"wt/fix","handle":"91","head":"abc123","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91"},"type":"ci_run"},"version":1}
     "###
     );
     insta::assert_snapshot!(
@@ -30,7 +24,7 @@ fn ci_output_includes_the_trigger_event() {
             jobs: Vec::new(),
         }),
         @r###"
-    run 91 [success] CI trigger=pull_request
+    {"result":{"data":{"jobs":[],"runs":[{"branch":"wt/fix","handle":"91","head":"abc123","name":"CI","state":"success","trigger":"pull_request","url":"https://github.test/runs/91"}]},"type":"ci_runs_and_jobs"},"version":1}
     "###
     );
 }
@@ -54,16 +48,7 @@ fn merge_request_output_includes_the_body() {
     insta::assert_snapshot!(
         render_cli_command_output(ProviderCommandOutput::ChangeRequest(request)),
         @r###"
-    MR: #7
-    State: open
-    Title: Fix login
-    Head: abc123
-    Base: main
-    URL: https://github.test/pull/7
-    Body:
-    First paragraph.
-
-    Second paragraph.
+    {"result":{"data":{"base":"main","body":"First paragraph.\n\nSecond paragraph.","draft":false,"handle":"#7","head":"abc123","jobs":[],"review_state":null,"state":"open","threads":[],"title":"Fix login","url":"https://github.test/pull/7"},"type":"change_request"},"version":1}
     "###
     );
 }

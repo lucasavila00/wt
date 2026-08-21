@@ -23,7 +23,7 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
         .unwrap();
 
     insta::assert_snapshot!(render_cli_command_output(output), @r###"
-    {"result":{"data":{"base":"main","draft":false,"handle":"7","head":"abc123","jobs":[],"review_state":null,"state":"open","threads":[],"title":"Fix login","url":"https://github.test/acme/widget/pull/7"},"type":"change_request"},"version":1}
+    {"result":{"data":{"base":"main","body":"Fixes the login flow.","draft":false,"handle":"7","head":"abc123","jobs":[],"review_state":null,"state":"open","threads":[],"title":"Fix login","url":"https://github.test/acme/widget/pull/7"},"type":"change_request"},"version":1}
     "###);
     server.join().unwrap().unwrap();
 }

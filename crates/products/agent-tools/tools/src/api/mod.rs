@@ -16,9 +16,9 @@ mod http;
 #[cfg(test)]
 mod test_server;
 
-pub use cli::{render_cli_command_output, render_cli_confirmation};
 #[cfg(test)]
 use cli::tail_ci_job_log_at_limit;
+pub use cli::{render_cli_command_output, render_cli_confirmation};
 
 use crate::ProviderKind;
 use anyhow::{bail, Context, Result};
