@@ -1,9 +1,12 @@
 use crate::cmd;
 use crate::config::{Context, ContextKind};
+use serde::Deserialize;
 use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
+use wt_control_protocol::{
+    ApiError, ApiRequest, ApiResponse, CodexSession, Outcome, Response, PROTOCOL_VERSION,
+};
 
 #[derive(Debug)]
 pub struct ContextError {
@@ -82,6 +85,74 @@ pub fn call_outcome(
     context: &Context,
     request: &ApiRequest,
 ) -> std::result::Result<Outcome, ContextError> {
+    let output = call_bytes(context, request)?;
+    let response: ApiResponse = serde_json::from_slice(&output)
+        .map_err(|error| invalid_response(context, error, &output))?;
+    if response.protocol_version != PROTOCOL_VERSION {
+        return Err(protocol_version_error(context, response.protocol_version));
+    }
+    Ok(response.outcome)
+}
+
+pub fn call_codex_sessions(
+    context: &Context,
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    let request = ApiRequest::new(wt_control_protocol::Operation::ListCodexSessions);
+    let output = call_bytes(context, &request)?;
+    decode_codex_sessions(context, &output)
+}
+
+fn decode_codex_sessions(
+    context: &Context,
+    output: &[u8],
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    let response: StrictCodexResponse = serde_json::from_slice(output)
+        .map_err(|error| invalid_response(context, error, output))?;
+    let protocol_version = match &response {
+        StrictCodexResponse::Ok {
+            protocol_version, ..
+        }
+        | StrictCodexResponse::Error {
+            protocol_version, ..
+        } => *protocol_version,
+    };
+    if protocol_version != PROTOCOL_VERSION {
+        return Err(protocol_version_error(context, protocol_version));
+    }
+    match response {
+        StrictCodexResponse::Ok {
+            response: StrictCodexResponseKind::CodexSessions,
+            sessions,
+            ..
+        } => Ok(sessions),
+        StrictCodexResponse::Error { error, .. } => Err(rejection(context, &error)),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
+enum StrictCodexResponse {
+    Ok {
+        protocol_version: u32,
+        response: StrictCodexResponseKind,
+        sessions: Vec<CodexSession>,
+    },
+    Error {
+        protocol_version: u32,
+        error: ApiError,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StrictCodexResponseKind {
+    CodexSessions,
+}
+
+fn call_bytes(
+    context: &Context,
+    request: &ApiRequest,
+) -> std::result::Result<Vec<u8>, ContextError> {
     let mut command = helper_command(context);
     let mut child = command
         .stdin(Stdio::piped())
@@ -142,29 +213,42 @@ pub fn call_outcome(
             server_hint(context),
         ));
     }
-    let response: ApiResponse = serde_json::from_slice(&output.stdout).map_err(|error| {
-        context_error(
-            context,
-            "context helper returned an invalid response",
-            Some(format!(
-                "{error}; response: {}",
-                String::from_utf8_lossy(&output.stdout).trim()
-            )),
-            version_hint(context),
-        )
-    })?;
-    if response.protocol_version != PROTOCOL_VERSION {
-        return Err(context_error(
-            context,
-            format!(
-                "context helper returned protocol version {}; expected {}",
-                response.protocol_version, PROTOCOL_VERSION
-            ),
-            None,
-            version_hint(context),
-        ));
+    Ok(output.stdout)
+}
+
+fn invalid_response(context: &Context, error: serde_json::Error, output: &[u8]) -> ContextError {
+    context_error(
+        context,
+        "context helper returned an invalid response",
+        Some(format!(
+            "{error}; escaped response: {}",
+            bounded_escaped(output)
+        )),
+        version_hint(context),
+    )
+}
+
+fn protocol_version_error(context: &Context, actual: u32) -> ContextError {
+    context_error(
+        context,
+        format!("context helper returned protocol version {actual}; expected {PROTOCOL_VERSION}"),
+        None,
+        version_hint(context),
+    )
+}
+
+fn bounded_escaped(bytes: &[u8]) -> String {
+    let mut escaped = String::new();
+    for character in String::from_utf8_lossy(bytes).chars() {
+        for escaped_character in character.escape_default() {
+            if escaped.len() == 512 {
+                escaped.push('…');
+                return escaped;
+            }
+            escaped.push(escaped_character);
+        }
     }
-    Ok(response.outcome)
+    escaped
 }
 
 fn context_error(
@@ -310,5 +394,24 @@ mod tests {
           unsupported protocol: unsupported protocol version 4; expected 3
           hint: install protocol-compatible `wt` and `wt-server` versions on wt-lab
         "###);
+    }
+
+    #[test]
+    fn codex_response_rejects_unknown_fields_at_every_level() {
+        let context = Context {
+            name: "local".into(),
+            kind: ContextKind::BareMetalLocal,
+        };
+        let valid = br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}"#;
+        assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
+
+        for invalid in [
+            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[],"extra":true}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}"#.as_slice(),
+        ] {
+            let error = decode_codex_sessions(&context, invalid).unwrap_err();
+            assert!(error.to_string().contains("invalid response"));
+            assert!(error.to_string().contains("unknown field `extra`"));
+        }
     }
 }

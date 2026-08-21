@@ -22,11 +22,20 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
-The Control UI's Codex activity is a read-only snapshot loaded when `wt shell`
-starts. It lists rollout-only sessions and every reported world, Byobu pane,
-activity state, and working directory across configured contexts. A failed
-context remains visible as an error row. Restart `wt shell` to refresh the
+The Control UI's Codex activity is a card snapshot loaded when `wt shell`
+starts. `Up` and `Down` select cards, the mouse wheel scrolls them, and `Enter`
+or left click opens the selected live Codex pane. Opening uses a short control
+SSH connection; it does not replace any world's playback connection.
+
+Cards show activity, context, world, Byobu target, session, working directory,
+and report age. Inactive and rollout-only cards explain why they cannot open.
+Malformed context data and failed pane checks remain visible as exact errors;
+WT does not guess another world or pane. Restart `wt shell` to refresh the
 snapshot.
+
+Opening requires worlds provisioned by a WT version containing this feature.
+After upgrading WT, recreate older worlds so their relay records pane markers
+and their focus helper is current.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

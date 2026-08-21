@@ -153,7 +153,7 @@ fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Resu
         if !output.status.success() {
             return Ok(());
         }
-        if output.stdout == format!("{}\n", event.session_id).as_bytes() {
+        if marker_matches(&output.stdout, event.session_id) {
             let status = Command::new("/usr/bin/tmux")
                 .args([
                     "set-option",
@@ -187,4 +187,30 @@ fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Resu
         bail!("could not write Codex session pane marker");
     }
     Ok(())
+}
+
+fn marker_matches(output: &[u8], session_id: uuid::Uuid) -> bool {
+    output == format!("{session_id}\n").as_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clears_only_the_exact_session_marker() {
+        let session_id = uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+        assert!(marker_matches(
+            b"123e4567-e89b-12d3-a456-426614174000\n",
+            session_id
+        ));
+        assert!(!marker_matches(
+            b"223e4567-e89b-12d3-a456-426614174000\n",
+            session_id
+        ));
+        assert!(!marker_matches(
+            b"123e4567-e89b-12d3-a456-426614174000",
+            session_id
+        ));
+    }
 }

@@ -94,6 +94,12 @@ impl SessionSet {
     pub(super) fn all_closed(&self) -> bool {
         self.sessions.iter().all(|session| session.closed)
     }
+
+    pub(super) fn is_open(&self, index: usize) -> bool {
+        self.sessions
+            .get(index)
+            .is_some_and(|session| !session.closed)
+    }
 }
 
 impl Drop for SessionSet {

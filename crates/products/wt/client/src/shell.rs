@@ -12,6 +12,7 @@ use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod codex;
 mod control;
 mod input;
 mod model;
@@ -20,7 +21,6 @@ mod session;
 
 use model::{InputRoute, Mode, ShellModel};
 use session::SessionSet;
-use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
 
@@ -41,16 +41,22 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         .instances
         .iter()
         .filter(|world| ssh::has_alias(world))
-        .map(inventory::ContextInstance::qualified_name)
+        .map(codex::ShellWorld::from_inventory)
         .collect::<Vec<_>>();
     if worlds.is_empty() {
         bail!("wt shell found no worlds with SSH access");
     }
 
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
-    let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
+    let session_names = worlds
+        .iter()
+        .map(|world| world.qualified_name.clone())
+        .collect::<Vec<_>>();
+    let mut sessions = SessionSet::start(&session_names, world_rows(rows), columns)?;
+    let codex_cards = codex::load(config, &worlds);
     let mut model = ShellModel::new(worlds);
-    model.set_codex(load_codex(config));
+    model.set_codex(codex_cards);
+    let focus = codex::FocusWorker::default();
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -62,7 +68,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         return Err(error).context("enable terminal input for wt shell");
     }
 
-    let result = run_loop(&mut terminal, &mut sessions, &mut model, &shutdown);
+    let result = run_loop(&mut terminal, &mut sessions, &mut model, &focus, &shutdown);
     let input_result = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
@@ -71,33 +77,6 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     .context("disable terminal input for wt shell");
     ratatui::restore();
     result.and(input_result)
-}
-
-fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
-    let request = ApiRequest::new(Operation::ListCodexSessions);
-    config
-        .contexts
-        .iter()
-        .map(
-            |context| match wt_client::transport::call(context, &request) {
-                Ok(Response::CodexSessions { sessions }) => {
-                    control::CodexContextSnapshot::Sessions {
-                        context: context.name.clone(),
-                        sessions,
-                    }
-                }
-                Ok(_) => control::CodexContextSnapshot::Failure {
-                    context: context.name.clone(),
-                    message: wt_client::transport::wrong_response(context, "list Codex sessions")
-                        .to_string(),
-                },
-                Err(error) => control::CodexContextSnapshot::Failure {
-                    context: context.name.clone(),
-                    message: error.to_string(),
-                },
-            },
-        )
-        .collect()
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
@@ -113,6 +92,7 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    focus: &codex::FocusWorker,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
@@ -124,6 +104,24 @@ fn run_loop(
                 .backend_mut()
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
+        }
+        while let Some(result) = focus.try_recv() {
+            redraw = true;
+            let route = model
+                .focus_route(&result.target)
+                .map(|(index, _)| index)
+                .filter(|index| sessions.is_open(*index));
+            match result.result {
+                Ok(()) if route.is_some() => {
+                    model.finish_codex_open(&result.target.identity, route, None)
+                }
+                Ok(()) => model.finish_codex_open(
+                    &result.target.identity,
+                    None,
+                    Some("playback SSH/PTTY closed before focus completed".into()),
+                ),
+                Err(error) => model.finish_codex_open(&result.target.identity, None, Some(error)),
+            }
         }
         if redraw {
             let screen = sessions.screen(model.active());
@@ -145,6 +143,7 @@ fn run_loop(
                 event::read().context("read terminal input")?,
                 sessions,
                 model,
+                focus,
                 area,
             )?;
             if model.should_quit() {
@@ -162,15 +161,20 @@ fn dispatch_event(
     event: Event,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    focus: &codex::FocusWorker,
     area: Rect,
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
-            if model.handle_key(key) == InputRoute::World {
-                let screen = sessions.screen(model.active());
-                if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
-                    sessions.write(model.active(), &bytes)?;
+            match model.handle_key(key, area) {
+                InputRoute::World => {
+                    let screen = sessions.screen(model.active());
+                    if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
+                        sessions.write(model.active(), &bytes)?;
+                    }
                 }
+                InputRoute::OpenCodex(target) => start_focus(sessions, model, focus, target),
+                InputRoute::Consumed => {}
             }
             Ok(true)
         }
@@ -192,13 +196,44 @@ fn dispatch_event(
             }
             Ok(false)
         }
-        Event::Mouse(mouse) if model.mode() == Mode::Control => Ok(model.handle_mouse(mouse, area)),
+        Event::Mouse(mouse) if model.mode() == Mode::Control => {
+            let (changed, target) = model.handle_mouse(mouse, area);
+            if let Some(target) = target {
+                start_focus(sessions, model, focus, target);
+            }
+            Ok(changed)
+        }
         Event::Resize(columns, rows) => {
             sessions.resize(world_rows(rows), columns)?;
             Ok(true)
         }
         _ => Ok(false),
     }
+}
+
+fn start_focus(
+    sessions: &SessionSet,
+    model: &mut ShellModel,
+    focus: &codex::FocusWorker,
+    target: control::CodexOpenTarget,
+) {
+    let Some((index, alias)) = model.focus_route(&target) else {
+        model.finish_codex_open(
+            &target.identity,
+            None,
+            Some("no playback world matches the validated context and world ID".into()),
+        );
+        return;
+    };
+    if !sessions.is_open(index) {
+        model.finish_codex_open(
+            &target.identity,
+            None,
+            Some("playback SSH/PTTY is closed".into()),
+        );
+        return;
+    }
+    focus.start(target, alias.to_owned());
 }
 
 fn world_rows(terminal_rows: u16) -> u16 {
