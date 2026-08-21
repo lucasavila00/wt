@@ -301,7 +301,7 @@ fn draw_codex_card(
         return;
     }
 
-    let mut lines = card_lines(card);
+    let lines = card_lines(card);
     let footer = if state.opening() == Some(&card.identity) {
         Span::styled("OPENING…", Style::new().fg(Color::Yellow))
     } else if let Some(reason) = card.disabled_reason() {
@@ -312,8 +312,9 @@ fn draw_codex_card(
     } else {
         Span::styled("Enter or click to open", Style::new().fg(Color::DarkGray))
     };
-    lines.push(Line::from(footer));
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
+    frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
 }
 
 fn card_title(card: &CodexCard) -> (String, Color) {
