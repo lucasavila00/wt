@@ -166,9 +166,28 @@ fn review_output_includes_actionable_commands() {
         }],
     }];
 
-    insta::assert_snapshot!(render_threads(&threads), @r###"
-    T:thread-1 [open] src/login.rs:42
-      reviewer: Handle this error.
-      https://github.test/thread-1
-    "###);
+    insta::assert_snapshot!(
+        serde_json::to_string_pretty(&ProviderCommandOutput::ReviewThreads(threads)).unwrap(),
+        @r###"
+    {
+      "type": "review_threads",
+      "data": [
+        {
+          "handle": "T:thread-1",
+          "resolvable": true,
+          "resolved": false,
+          "path": "src/login.rs",
+          "line": 42,
+          "comments": [
+            {
+              "author": "reviewer",
+              "body": "Handle this error.",
+              "url": "https://github.test/thread-1"
+            }
+          ]
+        }
+      ]
+    }
+    "###
+    );
 }

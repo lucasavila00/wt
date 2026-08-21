@@ -23,14 +23,7 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
         .unwrap();
 
     insta::assert_snapshot!(render_cli_command_output(output), @r###"
-    MR: 8
-    State: opened
-    Title: Fix login
-    Head: abc123
-    Base: main
-    URL: https://gitlab.test/acme/widget/-/merge_requests/8
-    Body:
-    Fixes the login flow.
+    {"result":{"data":{"base":"main","draft":false,"handle":"8","head":"abc123","jobs":[],"review_state":null,"state":"opened","threads":[],"title":"Fix login","url":"https://gitlab.test/acme/widget/-/merge_requests/8"},"type":"change_request"},"version":1}
     "###);
     server.join().unwrap().unwrap();
 }

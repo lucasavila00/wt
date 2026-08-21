@@ -46,6 +46,9 @@ gateway grant's base branch. It fails when there is no match or multiple matches
 The four wt-tools reporting actions store feedback against this authenticated world
 without contacting the Git provider.
 
+Provider operations return one versioned JSON result or error object. Help remains
+plain text.
+
 The provider and project come from this world's gateway grant. Every other
 resource is explicit. IDs must be positive integers. Commit values must be 7 to
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.

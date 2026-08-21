@@ -107,10 +107,10 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
         .concat();
 
     insta::assert_snapshot!(outputs, @r###"
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
-    Recorded wt-tools report for this world.
+    {"result":{"data":"Recorded wt-tools report for this world.","type":"confirmation"},"version":1}
+    {"result":{"data":"Recorded wt-tools report for this world.","type":"confirmation"},"version":1}
+    {"result":{"data":"Recorded wt-tools report for this world.","type":"confirmation"},"version":1}
+    {"result":{"data":"Recorded wt-tools report for this world.","type":"confirmation"},"version":1}
     "###);
     let reports = registry.list_agent_tool_reports("alice").unwrap();
     assert_eq!(reports.len(), 4);

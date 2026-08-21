@@ -147,95 +147,20 @@ impl CliCommand {
 }
 
 pub fn render_cli_command_output(output: ProviderCommandOutput) -> String {
-    match output {
-        ProviderCommandOutput::ChangeRequest(request) => render_change_request(&request),
-        ProviderCommandOutput::ReviewThreads(threads) => render_threads(&threads),
-        ProviderCommandOutput::CiJobs(jobs) => render_jobs(&jobs),
-        ProviderCommandOutput::CiRun(run) => render_run(&run),
-        ProviderCommandOutput::CiRunsAndJobs { runs, jobs } => render_ci(&runs, &jobs),
-        ProviderCommandOutput::CiJob(job) => render_job(&job),
-        ProviderCommandOutput::CiJobLog(log) => tail_ci_job_log(log),
-        ProviderCommandOutput::Confirmation(message) => format!("{message}\n"),
-        ProviderCommandOutput::CurrentStatus(_) => {
-            unreachable!("contextual status is not a public CLI result")
+    let output = match output {
+        ProviderCommandOutput::CiJobLog(log) => {
+            ProviderCommandOutput::CiJobLog(tail_ci_job_log(log))
         }
-    }
-}
-
-fn render_change_request(request: &ChangeRequestStatus) -> String {
-    let mut output = format!(
-        "MR: {}\nState: {}{}\nTitle: {}\nHead: {}\nBase: {}\nURL: {}\n",
-        request.handle,
-        request.state,
-        if request.draft { " (draft)" } else { "" },
-        request.title,
-        request.head,
-        request.base,
-        request.url
-    );
-    match &request.body {
-        Some(body) => output.push_str(&format!("Body:\n{body}\n")),
-        None => output.push_str("Body: unavailable\n"),
-    }
-    output
-}
-
-fn render_run(run: &CiRun) -> String {
+        output => output,
+    };
     format!(
-        "Run: {}\nState: {}\nName: {}\nTrigger: {}\nCommit: {}\nRef: {}\nURL: {}\n",
-        run.handle,
-        run.state,
-        run.name,
-        run.trigger.as_deref().unwrap_or("unknown"),
-        run.head,
-        run.branch.as_deref().unwrap_or("unknown"),
-        run.url.as_deref().unwrap_or("unavailable")
+        "{}\n",
+        serde_json::json!({ "version": 1, "result": output })
     )
 }
 
-fn render_job(job: &CiJob) -> String {
-    format!(
-        "Job: {}\nRun: {}\nState: {}\nName: {}\nURL: {}\n",
-        job.handle,
-        job.run.as_deref().unwrap_or("unknown"),
-        job.state,
-        job.name,
-        job.url.as_deref().unwrap_or("unavailable")
-    )
-}
-
-fn render_ci(runs: &[CiRun], jobs: &[CiJob]) -> String {
-    let mut output = runs
-        .iter()
-        .map(|run| {
-            format!(
-                "run {} [{}] {} trigger={}\n",
-                run.handle,
-                run.state,
-                run.name,
-                run.trigger.as_deref().unwrap_or("unknown")
-            )
-        })
-        .collect::<String>();
-    output.push_str(
-        &jobs
-            .iter()
-            .map(|job| {
-                format!(
-                    "job {} run {} [{}] {}\n",
-                    job.handle,
-                    job.run.as_deref().unwrap_or("unknown"),
-                    job.state,
-                    job.name
-                )
-            })
-            .collect::<String>(),
-    );
-    if output.is_empty() {
-        "No CI resources for the commit.\n".to_owned()
-    } else {
-        output
-    }
+pub fn render_cli_confirmation(message: impl Into<String>) -> String {
+    render_cli_command_output(ProviderCommandOutput::Confirmation(message.into()))
 }
 
 fn tail_ci_job_log(log: String) -> String {
@@ -252,60 +177,6 @@ pub(super) fn tail_ci_job_log_at_limit(log: String, limit: usize) -> String {
         start += 1;
     }
     format!("{CI_JOB_LOG_TRUNCATION_NOTICE}{}", &log[start..])
-}
-
-pub(super) fn render_threads(threads: &[ReviewThread]) -> String {
-    if threads.is_empty() {
-        return "No review threads.\n".to_owned();
-    }
-    let mut output = String::new();
-    for thread in threads {
-        let location = match (&thread.path, thread.line) {
-            (Some(path), Some(line)) => format!(" {path}:{line}"),
-            (Some(path), None) => format!(" {path}"),
-            _ => String::new(),
-        };
-        output.push_str(&format!(
-            "{} [{}]{}\n",
-            thread.handle,
-            if !thread.resolvable {
-                "feedback"
-            } else if thread.resolved {
-                "resolved"
-            } else {
-                "open"
-            },
-            location
-        ));
-        for comment in &thread.comments {
-            output.push_str(&format!("  {}: {}\n", comment.author, comment.body));
-            if let Some(url) = &comment.url {
-                output.push_str(&format!("  {url}\n"));
-            }
-        }
-    }
-    output
-}
-
-fn render_jobs(jobs: &[CiJob]) -> String {
-    if jobs.is_empty() {
-        return "No CI jobs for the current commit.\n".to_owned();
-    }
-    let mut output = jobs
-        .iter()
-        .map(|job| {
-            let url = job
-                .url
-                .as_deref()
-                .map(|url| format!("\n  {url}"))
-                .unwrap_or_default();
-            format!("{} [{}] {}{url}\n", job.handle, job.state, job.name)
-        })
-        .collect::<String>();
-    output.push_str(
-        "\nUse a listed job ID with the `show_job`, `log_job`, or `wait_job` JSON action.\n",
-    );
-    output
 }
 
 fn positive_id(id: u64, kind: &str) -> Result<()> {

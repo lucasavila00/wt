@@ -10,14 +10,23 @@ use wt_agent_tool_gateway::{
 const SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("wt-tools: {error:#}");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let plain_text = matches!(args.as_slice(), [arg] if matches!(arg.as_str(), "help" | "--help" | "-h" | "world-prompt"));
+    if let Err(error) = run(args) {
+        if plain_text {
+            eprintln!("wt-tools: {error:#}");
+        } else {
+            eprintln!("{}", render_error(&format!("{error:#}")));
+        }
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let args = std::env::args().skip(1).collect();
+fn render_error(message: &str) -> serde_json::Value {
+    serde_json::json!({ "version": 1, "error": { "message": message } })
+}
+
+fn run(args: Vec<String>) -> Result<()> {
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(
@@ -122,5 +131,12 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn renders_versioned_json_errors() {
+        insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
+        {"error":{"message":"gateway rejected command"},"version":1}
+        "###);
     }
 }

@@ -16,9 +16,9 @@ mod http;
 #[cfg(test)]
 mod test_server;
 
-pub use cli::render_cli_command_output;
+pub use cli::{render_cli_command_output, render_cli_confirmation};
 #[cfg(test)]
-use cli::{render_threads, tail_ci_job_log_at_limit};
+use cli::tail_ci_job_log_at_limit;
 
 use crate::ProviderKind;
 use anyhow::{bail, Context, Result};
@@ -185,7 +185,7 @@ pub enum ProviderCommand {
     ReopenChangeRequest,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ChangeRequestStatus {
     pub handle: String,
     pub url: String,
@@ -200,7 +200,7 @@ pub struct ChangeRequestStatus {
     pub jobs: Vec<CiJob>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewThread {
     pub handle: ReviewThreadHandle,
     pub resolvable: bool,
@@ -210,14 +210,14 @@ pub struct ReviewThread {
     pub comments: Vec<ReviewComment>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewComment {
     pub author: String,
     pub body: String,
     pub url: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CiJob {
     pub handle: CiJobHandle,
     pub run: Option<String>,
@@ -226,7 +226,7 @@ pub struct CiJob {
     pub url: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CiRun {
     pub handle: String,
     pub name: String,
@@ -278,7 +278,8 @@ impl std::fmt::Display for CiJobHandle {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ProviderCommandOutput {
     CurrentStatus(Option<ChangeRequestStatus>),
     ChangeRequest(ChangeRequestStatus),
