@@ -1,4 +1,4 @@
-.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image
+.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image static
 
 KVM_INSTALL_CONFIG ?= examples/server-config/wt-server.kvm-e2e-install.toml
 
@@ -42,3 +42,12 @@ install-server:
 prepare-image:
 	@test -n "$(CONFIG)" || { echo "usage: make prepare-image CONFIG=PATH" >&2; exit 2; }
 	scripts/prepare-image --config "$(CONFIG)"
+
+static: check-file-lines
+	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \
+		bash -n "$$file"; \
+		shellcheck --shell=sh --severity=warning "$$file"; \
+	done
+	cargo fmt --all --check
+	cargo check --workspace --all-targets --locked
+	cargo clippy --workspace --all-targets --locked -- -D warnings
