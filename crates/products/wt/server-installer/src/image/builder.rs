@@ -2,9 +2,7 @@ mod contract;
 mod provenance;
 
 pub(super) use contract::validate_result_metadata;
-pub(super) use provenance::{
-    image_config_sha, sha_bytes, stage_legacy_publication, stage_publication, staged_input_hashes,
-};
+pub(super) use provenance::{image_config_sha, sha_bytes, stage_publication, staged_input_hashes};
 
 use contract::verify_retained_guest_contract;
 

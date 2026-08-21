@@ -77,7 +77,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     #[test]
-    fn resolves_legacy_pair_without_current_pointer() {
+    fn uses_configured_paths_before_first_generation() {
         let directory = tempfile::tempdir().unwrap();
         let image = directory.path().join("retained.qcow2");
 

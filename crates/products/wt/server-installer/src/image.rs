@@ -97,24 +97,22 @@ pub(crate) fn ensure(
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
     require_clean_publication_state(server)?;
+    let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
+    if !installed.current && (installed.image.exists() || installed.manifest.exists()) {
+        bail!("legacy image layout exists; run make nuke before installing this version");
+    }
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
     match installed_image_state(
         installed.image.exists(),
         installed.manifest.exists(),
         || verify_installed_image(input, server_bytes, &installed.image, &installed.manifest),
     ) {
-        InstalledImageState::Reusable if installed.current => {
+        InstalledImageState::Reusable => {
             println!(
                 "Reusing verified retained golden image: {}",
                 server.image.path.display()
             );
-        }
-        InstalledImageState::Reusable => {
-            println!("Migrating verified retained golden image to generation storage.");
-            let publication = stage_legacy_publication(runner, &server.image.path)?;
-            publication.publish(runner)?;
         }
         InstalledImageState::Missing => {
             build_image(runner, input, server, server_bytes, &source, &byobu)?;

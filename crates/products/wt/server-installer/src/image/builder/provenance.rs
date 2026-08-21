@@ -159,30 +159,6 @@ pub(in crate::image) fn stage_publication(
     )
 }
 
-pub(in crate::image) fn stage_legacy_publication(
-    runner: &impl Runner,
-    image: &Path,
-) -> Result<PendingPublication> {
-    let legacy_manifest = manifest_path(image);
-    let manifest_bytes =
-        fs::read(&legacy_manifest).context("read legacy image provenance manifest")?;
-    stage_generation(
-        runner,
-        image,
-        &manifest_bytes,
-        |generation_image, generation_manifest| {
-            runner.run(
-                cmd!("sudo", "ln", "--", image, generation_image),
-                "link legacy image into first generation",
-            )?;
-            runner.run(
-                cmd!("sudo", "ln", "--", &legacy_manifest, generation_manifest,),
-                "link legacy image manifest into first generation",
-            )
-        },
-    )
-}
-
 fn stage_generation(
     runner: &impl Runner,
     configured_image: &Path,
@@ -405,14 +381,18 @@ mod tests {
         fs::create_dir(&generations).unwrap();
         generation(&generations, "old", b"old image", b"old manifest");
         symlink("retained.qcow2.generations/old", current_path(&image)).unwrap();
-        fs::write(&image, b"new image").unwrap();
-        fs::write(manifest_path(&image), b"new manifest").unwrap();
         let runner = FilesystemRunner {
-            fail_at: Some(4),
+            fail_at: None,
             calls: Cell::new(0),
         };
 
-        assert!(stage_legacy_publication(&runner, &image).is_err());
+        assert!(
+            stage_generation(&runner, &image, b"new manifest", |staged_image, _| {
+                fs::write(staged_image, b"new image")?;
+                bail!("injected failure before manifest staging")
+            })
+            .is_err()
+        );
         assert_eq!(
             read_pair(&image),
             (b"old image".to_vec(), b"old manifest".to_vec())
