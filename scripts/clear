@@ -35,3 +35,10 @@ done
 
 rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
 sudo rm -rf /etc/wt /var/lib/wt/agent-tools /var/lib/libvirt/images/wt
+kvm_gid=$(getent group kvm | cut -d: -f3)
+if [[ -z $kvm_gid ]]; then
+    echo "kvm group not found" >&2
+    exit 1
+fi
+sudo install -d -o "$EUID" -g "$kvm_gid" -m 2770 /var/lib/libvirt/images/wt
+sudo setfacl -m u:libvirt-qemu:--x -- /var/lib/libvirt/images/wt
