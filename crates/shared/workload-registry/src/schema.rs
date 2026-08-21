@@ -8,7 +8,7 @@ diesel::table! {
         tmux_session -> Text,
         pane_id -> Text,
         state -> Text,
-        received_at -> BigInt,
+        received_at_unix_ms -> BigInt,
     }
 }
 

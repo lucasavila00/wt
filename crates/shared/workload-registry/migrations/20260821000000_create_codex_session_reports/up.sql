@@ -5,9 +5,9 @@ CREATE TABLE codex_session_reports (
     tmux_session  TEXT NOT NULL CHECK (tmux_session IN ('wt-app', 'wt-host')),
     pane_id       TEXT NOT NULL CHECK (pane_id GLOB '%[0-9]*'),
     state         TEXT NOT NULL CHECK (state IN ('unknown', 'working', 'needs_attention', 'inactive')),
-    received_at   BIGINT NOT NULL,
+    received_at_unix_ms BIGINT NOT NULL,
     PRIMARY KEY (world_id, session_id)
 );
 
 CREATE INDEX codex_session_reports_session_id_received_at
-    ON codex_session_reports(session_id, received_at DESC);
+    ON codex_session_reports(session_id, received_at_unix_ms DESC);

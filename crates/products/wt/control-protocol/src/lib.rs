@@ -4,7 +4,7 @@ mod codex;
 mod reports;
 mod validation;
 
-pub use codex::{CodexSession, CodexSessionState, CodexSessionTarget};
+pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 
 pub use validation::{
@@ -493,31 +493,50 @@ mod tests {
     fn live_codex_session_has_a_complete_pane_target() {
         let session = CodexSession {
             session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
-            updated_at: 42,
-            state: CodexSessionState::NeedsAttention,
-            cwd: Some("/workspace".into()),
-            target: Some(CodexSessionTarget {
+            rollout_updated_at_unix_ms: Some(40),
+            observations: vec![CodexSessionObservation {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
-                tmux_session: "wt-app".into(),
-                pane_id: "%3".into(),
-            }),
+                cwd: "/workspace".into(),
+                state: CodexSessionState::NeedsAttention,
+                target: ByobuTarget {
+                    tmux_session: "wt-app".into(),
+                    pane_id: "%3".into(),
+                },
+                received_at_unix_ms: 42,
+            }],
         };
 
         insta::assert_snapshot!(serde_json::to_string_pretty(&session).unwrap(), @r###"
         {
           "session_id": "123e4567-e89b-12d3-a456-426614174000",
-          "updated_at": 42,
-          "state": "needs_attention",
-          "cwd": "/workspace",
-          "target": {
-            "world_id": "123e4567-e89b-12d3-a456-426614174001",
-            "world_name": "checkout",
-            "tmux_session": "wt-app",
-            "pane_id": "%3"
-          }
+          "rollout_updated_at_unix_ms": 40,
+          "observations": [
+            {
+              "world_id": "123e4567-e89b-12d3-a456-426614174001",
+              "world_name": "checkout",
+              "cwd": "/workspace",
+              "state": "needs_attention",
+              "target": {
+                "tmux_session": "wt-app",
+                "pane_id": "%3"
+              },
+              "received_at_unix_ms": 42
+            }
+          ]
         }
         "###);
+    }
+
+    #[test]
+    fn codex_session_list_request_has_a_stable_shape() {
+        assert_eq!(
+            serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
+            serde_json::json!({
+                "protocol_version": 3,
+                "operation": "list_codex_sessions"
+            })
+        );
     }
 
     #[test]

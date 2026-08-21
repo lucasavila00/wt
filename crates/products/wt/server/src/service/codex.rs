@@ -8,18 +8,16 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use wt_control_protocol::{
-    ApiError, CodexSession, CodexSessionState, CodexSessionTarget, ErrorCode, InstanceName,
-    Response,
+    ApiError, ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, ErrorCode,
+    InstanceName, Response,
 };
 use wt_retained_worlds::WorldWorker;
 
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
-const LIVE_REPORT_TTL_SECONDS: i64 = 24 * 60 * 60;
-
 #[derive(Clone, Debug)]
 struct Rollout {
     session_id: Uuid,
-    updated_at: i64,
+    updated_at_unix_ms: i64,
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -38,9 +36,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .list_codex_session_reports(owner)
             .map_err(map_store_error)?;
-        let now = unix_time().map_err(|error| ApiError::new(ErrorCode::Internal, error))?;
         Ok(Response::CodexSessions {
-            sessions: merge_sessions(rollouts, reports, now)?,
+            sessions: merge_sessions(rollouts, reports)?,
         })
     }
 }
@@ -48,7 +45,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
 fn merge_sessions(
     rollouts: Vec<Rollout>,
     reports: Vec<wt_workload_registry::CodexSessionReport>,
-    now: i64,
 ) -> Result<Vec<CodexSession>, ApiError> {
     let mut sessions = rollouts
         .into_iter()
@@ -57,56 +53,68 @@ fn merge_sessions(
                 rollout.session_id,
                 CodexSession {
                     session_id: rollout.session_id,
-                    updated_at: rollout.updated_at,
-                    state: CodexSessionState::Unknown,
-                    cwd: None,
-                    target: None,
+                    rollout_updated_at_unix_ms: Some(rollout.updated_at_unix_ms),
+                    observations: Vec::new(),
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut newest_reports = BTreeMap::new();
     for report in reports {
-        newest_reports.entry(report.session_id).or_insert(report);
-    }
-    for (session_id, report) in newest_reports {
-        let session = sessions.entry(session_id).or_insert(CodexSession {
-            session_id,
-            updated_at: report.received_at,
-            state: CodexSessionState::Unknown,
-            cwd: None,
-            target: None,
+        let session = sessions.entry(report.session_id).or_insert(CodexSession {
+            session_id: report.session_id,
+            rollout_updated_at_unix_ms: None,
+            observations: Vec::new(),
         });
-        session.updated_at = session.updated_at.max(report.received_at);
-        session.cwd = Some(report.cwd);
-        if now.saturating_sub(report.received_at) > LIVE_REPORT_TTL_SECONDS {
-            continue;
-        }
-        session.state = match report.state {
-            wt_workload_registry::CodexSessionState::Unknown => CodexSessionState::Unknown,
-            wt_workload_registry::CodexSessionState::Working => CodexSessionState::Working,
-            wt_workload_registry::CodexSessionState::NeedsAttention => {
-                CodexSessionState::NeedsAttention
-            }
-            wt_workload_registry::CodexSessionState::Inactive => CodexSessionState::Inactive,
-        };
-        if session.state != CodexSessionState::Inactive {
-            session.target = Some(CodexSessionTarget {
-                world_id: report.world_id,
-                world_name: InstanceName::parse(report.world_name).map_err(|error| {
-                    ApiError::new(
-                        ErrorCode::Internal,
-                        format!("invalid session world: {error}"),
-                    )
-                })?,
+        session.observations.push(CodexSessionObservation {
+            world_id: report.world_id,
+            world_name: InstanceName::parse(report.world_name).map_err(|error| {
+                ApiError::new(
+                    ErrorCode::Internal,
+                    format!("invalid session world: {error}"),
+                )
+            })?,
+            cwd: report.cwd,
+            state: match report.state {
+                wt_workload_registry::CodexSessionState::Unknown => CodexSessionState::Unknown,
+                wt_workload_registry::CodexSessionState::Working => CodexSessionState::Working,
+                wt_workload_registry::CodexSessionState::NeedsAttention => {
+                    CodexSessionState::NeedsAttention
+                }
+                wt_workload_registry::CodexSessionState::Inactive => CodexSessionState::Inactive,
+            },
+            target: ByobuTarget {
                 tmux_session: report.tmux_session,
                 pane_id: report.pane_id,
-            });
-        }
+            },
+            received_at_unix_ms: report.received_at_unix_ms,
+        });
+    }
+    for session in sessions.values_mut() {
+        session.observations.sort_by(|left, right| {
+            right
+                .received_at_unix_ms
+                .cmp(&left.received_at_unix_ms)
+                .then_with(|| left.world_name.cmp(&right.world_name))
+        });
     }
     let mut sessions = sessions.into_values().collect::<Vec<_>>();
-    sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    sessions.sort_by(|left, right| {
+        session_updated_at(right)
+            .cmp(&session_updated_at(left))
+            .then_with(|| left.session_id.cmp(&right.session_id))
+    });
     Ok(sessions)
+}
+
+fn session_updated_at(session: &CodexSession) -> i64 {
+    session
+        .observations
+        .first()
+        .map(|observation| observation.received_at_unix_ms)
+        .into_iter()
+        .chain(session.rollout_updated_at_unix_ms)
+        .max()
+        .unwrap_or_default()
 }
 
 fn discover_rollouts(root: &Path) -> Result<(Vec<Rollout>, Vec<String>), String> {
@@ -124,7 +132,8 @@ fn discover_rollouts(root: &Path) -> Result<(Vec<Rollout>, Vec<String>), String>
                 rollouts
                     .entry(rollout.session_id)
                     .and_modify(|current: &mut Rollout| {
-                        current.updated_at = current.updated_at.max(rollout.updated_at)
+                        current.updated_at_unix_ms =
+                            current.updated_at_unix_ms.max(rollout.updated_at_unix_ms)
                     })
                     .or_insert(rollout);
             }
@@ -190,19 +199,15 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
         .map_err(|error| error.to_string())?;
     Ok(Some(Rollout {
         session_id,
-        updated_at: unix_time_from(modified)?,
+        updated_at_unix_ms: unix_time_from(modified)?,
     }))
-}
-
-fn unix_time() -> Result<i64, String> {
-    unix_time_from(SystemTime::now())
 }
 
 fn unix_time_from(time: SystemTime) -> Result<i64, String> {
     i64::try_from(
         time.duration_since(UNIX_EPOCH)
             .map_err(|error| error.to_string())?
-            .as_secs(),
+            .as_millis(),
     )
     .map_err(|_| "timestamp is too large".to_owned())
 }
@@ -259,12 +264,12 @@ mod tests {
     }
 
     #[test]
-    fn expired_reports_lose_their_target() {
+    fn reports_keep_the_observed_state_and_complete_target() {
         let session_id = Uuid::new_v4();
         let sessions = merge_sessions(
             vec![Rollout {
                 session_id,
-                updated_at: 1,
+                updated_at_unix_ms: 1,
             }],
             vec![wt_workload_registry::CodexSessionReport {
                 world_id: Uuid::new_v4(),
@@ -274,13 +279,45 @@ mod tests {
                 tmux_session: "wt-app".into(),
                 pane_id: "%1".into(),
                 state: wt_workload_registry::CodexSessionState::Working,
-                received_at: 2,
+                received_at_unix_ms: 2,
             }],
-            2 + LIVE_REPORT_TTL_SECONDS + 1,
         )
         .unwrap();
 
-        assert_eq!(sessions[0].state, CodexSessionState::Unknown);
-        assert_eq!(sessions[0].target, None);
+        assert_eq!(sessions[0].observations.len(), 1);
+        assert_eq!(
+            sessions[0].observations[0].state,
+            CodexSessionState::Working
+        );
+        assert_eq!(sessions[0].observations[0].target.pane_id, "%1");
+    }
+
+    #[test]
+    fn preserves_every_world_observation_for_one_session() {
+        let session_id = Uuid::new_v4();
+        let reports = [("first", "%1", 10), ("second", "%2", 20)]
+            .into_iter()
+            .map(
+                |(world_name, pane_id, received_at_unix_ms)| {
+                    wt_workload_registry::CodexSessionReport {
+                    world_id: Uuid::new_v4(),
+                    world_name: world_name.into(),
+                    session_id,
+                    cwd: "/workspace".into(),
+                    tmux_session: "wt-app".into(),
+                    pane_id: pane_id.into(),
+                    state: wt_workload_registry::CodexSessionState::Working,
+                        received_at_unix_ms,
+                    }
+                },
+            )
+            .collect();
+
+        let sessions = merge_sessions(Vec::new(), reports).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].observations.len(), 2);
+        assert_eq!(sessions[0].observations[0].world_name.as_str(), "second");
+        assert_eq!(sessions[0].observations[1].world_name.as_str(), "first");
     }
 }

@@ -44,7 +44,7 @@ pub struct CodexSessionReport {
     pub tmux_session: String,
     pub pane_id: String,
     pub state: CodexSessionState,
-    pub received_at: i64,
+    pub received_at_unix_ms: i64,
 }
 
 #[derive(Insertable)]
@@ -56,7 +56,7 @@ struct NewCodexSessionReport<'a> {
     tmux_session: &'a str,
     pane_id: &'a str,
     state: &'static str,
-    received_at: i64,
+    received_at_unix_ms: i64,
 }
 
 #[derive(Queryable)]
@@ -68,7 +68,7 @@ struct CodexSessionReportRow {
     tmux_session: String,
     pane_id: String,
     state: String,
-    received_at: i64,
+    received_at_unix_ms: i64,
 }
 
 impl Registry {
@@ -82,11 +82,11 @@ impl Registry {
         state: CodexSessionState,
     ) -> Result<(), RegistryError> {
         validate_report(cwd, tmux_session, pane_id)?;
-        let received_at = i64::try_from(
+        let received_at_unix_ms = i64::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?
-                .as_secs(),
+                .as_millis(),
         )
         .map_err(|_| RegistryError::InvalidData("system time is too large".into()))?;
         let report = NewCodexSessionReport {
@@ -96,7 +96,7 @@ impl Registry {
             tmux_session,
             pane_id,
             state: state.as_str(),
-            received_at,
+            received_at_unix_ms,
         };
         self.read(|connection| {
             diesel::insert_into(codex_session_reports::table)
@@ -111,7 +111,8 @@ impl Registry {
                     codex_session_reports::tmux_session.eq(report.tmux_session),
                     codex_session_reports::pane_id.eq(report.pane_id),
                     codex_session_reports::state.eq(report.state),
-                    codex_session_reports::received_at.eq(report.received_at),
+                    codex_session_reports::received_at_unix_ms
+                        .eq(report.received_at_unix_ms),
                 ))
                 .execute(connection)?;
             Ok(())
@@ -126,7 +127,7 @@ impl Registry {
             codex_session_reports::table
                 .inner_join(worlds::table)
                 .filter(worlds::owner.eq(owner))
-                .order(codex_session_reports::received_at.desc())
+                .order(codex_session_reports::received_at_unix_ms.desc())
                 .select((
                     codex_session_reports::world_id,
                     worlds::name,
@@ -135,7 +136,7 @@ impl Registry {
                     codex_session_reports::tmux_session,
                     codex_session_reports::pane_id,
                     codex_session_reports::state,
-                    codex_session_reports::received_at,
+                    codex_session_reports::received_at_unix_ms,
                 ))
                 .load::<CodexSessionReportRow>(connection)?
                 .into_iter()
@@ -150,7 +151,7 @@ impl Registry {
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         state: CodexSessionState::parse(&row.state)?,
-                        received_at: row.received_at,
+                        received_at_unix_ms: row.received_at_unix_ms,
                     })
                 })
                 .collect()

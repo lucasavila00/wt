@@ -13,21 +13,27 @@ pub enum CodexSessionState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CodexSessionTarget {
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+pub struct ByobuTarget {
     pub tmux_session: String,
     pub pane_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct CodexSessionObservation {
+    pub world_id: Uuid,
+    pub world_name: InstanceName,
+    pub cwd: String,
+    pub state: CodexSessionState,
+    pub target: ByobuTarget,
+    pub received_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CodexSession {
     pub session_id: Uuid,
-    pub updated_at: i64,
-    pub state: CodexSessionState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<CodexSessionTarget>,
+    pub rollout_updated_at_unix_ms: Option<i64>,
+    pub observations: Vec<CodexSessionObservation>,
 }
