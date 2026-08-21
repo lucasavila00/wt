@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,21 +21,33 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut arguments = std::env::args_os().skip(1);
-    let config = match (arguments.next(), arguments.next()) {
-        (Some(flag), Some(path)) if flag == "--config" => PathBuf::from(path),
-        _ => anyhow::bail!("expected --config PATH"),
-    };
-    match arguments.next().as_deref().and_then(|value| value.to_str()) {
-        Some("api") if arguments.next().is_none() => run_api(&config),
-        _ => anyhow::bail!("expected api"),
+    let (config, capacity) = parse_arguments(std::env::args_os().skip(1))?;
+    run_api(&config, &capacity)
+}
+
+fn parse_arguments(arguments: impl Iterator<Item = OsString>) -> Result<(PathBuf, PathBuf)> {
+    let mut arguments = arguments;
+    match (
+        arguments.next(),
+        arguments.next(),
+        arguments.next(),
+        arguments.next(),
+        arguments.next(),
+        arguments.next(),
+    ) {
+        (Some(config_flag), Some(config), Some(capacity_flag), Some(capacity), Some(api), None)
+            if config_flag == "--config" && capacity_flag == "--capacity" && api == "api" =>
+        {
+            Ok((PathBuf::from(config), PathBuf::from(capacity)))
+        }
+        _ => anyhow::bail!("expected --config PATH --capacity PATH api"),
     }
 }
 
-fn run_api(config_path: &Path) -> Result<()> {
+fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
-    let capacity = wt_workload_registry::CapacityConfig::load()
+    let capacity = wt_workload_registry::CapacityConfig::load_from(capacity_path)
         .map_err(anyhow::Error::msg)?
         .limits;
     let server = ServerConfig::load_from(config_path).map_err(anyhow::Error::msg)?;
@@ -79,4 +92,40 @@ fn run_api(config_path: &Path) -> Result<()> {
     serde_json::to_writer(std::io::stdout().lock(), &response)?;
     std::io::stdout().write_all(b"\n")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_required_arguments() {
+        let (config, capacity) = parse_arguments(
+            [
+                "--config",
+                "/tmp/server.toml",
+                "--capacity",
+                "/tmp/capacity.toml",
+                "api",
+            ]
+            .map(OsString::from)
+            .into_iter(),
+        )
+        .unwrap();
+
+        assert_eq!(config, PathBuf::from("/tmp/server.toml"));
+        assert_eq!(capacity, PathBuf::from("/tmp/capacity.toml"));
+    }
+
+    #[test]
+    fn rejects_missing_capacity_argument() {
+        let error = parse_arguments(
+            ["--config", "/tmp/server.toml", "api"]
+                .map(OsString::from)
+                .into_iter(),
+        )
+        .unwrap_err();
+
+        insta::assert_snapshot!(error.to_string(), @"expected --config PATH --capacity PATH api");
+    }
 }
