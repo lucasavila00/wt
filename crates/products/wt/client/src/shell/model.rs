@@ -1,10 +1,12 @@
 use super::control::{
     CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
-use ratatui::layout::Rect;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::text::Span;
 use uuid::Uuid;
 use wt_control_protocol::InstanceName;
+use wt_control_protocol::InstanceStatus;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -18,6 +20,9 @@ pub(super) struct ShellWorld {
     pub(super) name: String,
     pub(super) instance_name: InstanceName,
     pub(super) control_alias: String,
+    pub(super) status: InstanceStatus,
+    pub(super) resources: String,
+    pub(super) detail: String,
 }
 
 #[cfg(test)]
@@ -37,6 +42,9 @@ impl From<&str> for ShellWorld {
             )
             .unwrap(),
             control_alias: format!("{name}-direct"),
+            status: InstanceStatus::Running,
+            resources: "2 CPU · 4G · 1G/32G disk".into(),
+            detail: "-".into(),
         }
     }
 }
@@ -110,6 +118,11 @@ impl ShellModel {
 
     pub(super) fn worlds(&self) -> &[ShellWorld] {
         &self.worlds
+    }
+
+    #[cfg(test)]
+    pub(super) fn worlds_mut(&mut self) -> &mut [ShellWorld] {
+        &mut self.worlds
     }
 
     pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
@@ -207,6 +220,26 @@ impl ShellModel {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
+                    if self.has_worlds()
+                        && self.control.activity() == super::control::Activity::Worlds
+                    {
+                        match key.code {
+                            KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
+                                self.active = self.active.saturating_sub(1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
+                                self.active = (self.active + 1).min(self.worlds.len() - 1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
+                                self.control.close();
+                                self.mode = Mode::World;
+                                return InputRoute::Consumed;
+                            }
+                            _ => {}
+                        }
+                    }
                     if let Some(action) = self.control.handle_key(key, area) {
                         return route(action);
                     }
@@ -221,10 +254,68 @@ impl ShellModel {
         mouse: MouseEvent,
         area: Rect,
     ) -> (bool, Option<InputRoute>) {
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            && mouse.row == area.y
+            && mouse.column >= area.x
+            && mouse.column < area.right()
+            && self.has_worlds()
+            && self.mode != Mode::Control
+        {
+            if self.f5_disabled {
+                self.f5_disabled = false;
+                self.mode = Mode::Switcher;
+            } else if self.mode == Mode::Switcher {
+                let [previous, _, next] = self.world_bar_controls(area);
+                if previous.contains((mouse.column, mouse.row).into()) {
+                    self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
+                } else if next.contains((mouse.column, mouse.row).into()) {
+                    self.active = (self.active + 1) % self.worlds.len();
+                } else {
+                    self.mode = Mode::World;
+                }
+            } else {
+                self.mode = Mode::Switcher;
+            }
+            return (true, Some(InputRoute::Consumed));
+        }
         if self.mode != Mode::Control {
             return (false, None);
         }
         let (changed, action) = self.control.handle_mouse(mouse, area);
+        if !changed
+            && self.has_worlds()
+            && self.control.activity() == super::control::Activity::Worlds
+        {
+            match mouse.kind {
+                crossterm::event::MouseEventKind::ScrollUp => {
+                    self.active = self.active.saturating_sub(3);
+                    return (true, Some(InputRoute::Consumed));
+                }
+                crossterm::event::MouseEventKind::ScrollDown => {
+                    self.active = (self.active + 3).min(self.worlds.len() - 1);
+                    return (true, Some(InputRoute::Consumed));
+                }
+                _ => {}
+            }
+        }
+        if !changed && self.control.activity() == super::control::Activity::Worlds {
+            let Some(index) = super::control::world_card_at_position(
+                area,
+                self.active,
+                self.worlds.len(),
+                mouse.column,
+                mouse.row,
+            ) else {
+                return (changed, action.map(route));
+            };
+            self.active = index;
+            if mouse.kind
+                == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            {
+                self.mode = Mode::World;
+            }
+            return (true, Some(InputRoute::Consumed));
+        }
         (changed, action.map(route))
     }
 
@@ -256,6 +347,34 @@ impl ShellModel {
             self.active = world;
             self.mode = Mode::World;
         }
+    }
+
+    pub(super) fn world_bar_label(&self) -> String {
+        format!(
+            " {} ({}/{})",
+            self.active_world(),
+            self.active + 1,
+            self.world_count()
+        )
+    }
+
+    pub(super) fn world_bar_controls(&self, area: Rect) -> [Rect; 3] {
+        let label_width = u16::try_from(Span::raw(self.world_bar_label()).width().min(24))
+            .expect("world bar label width is bounded");
+        let group_width = label_width.saturating_add(4).min(area.width);
+        let group = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(group_width),
+            Constraint::Fill(1),
+        ])
+        .split(Rect::new(area.x, area.y, area.width, 1))[1];
+        let controls = Layout::horizontal([
+            Constraint::Length(2),
+            Constraint::Length(label_width),
+            Constraint::Length(2),
+        ])
+        .split(group);
+        [controls[0], controls[1], controls[2]]
     }
 }
 
@@ -338,6 +457,20 @@ mod tests {
         let model = ShellModel::new(vec![world("one")]);
 
         assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn world_cards_select_and_open_worlds() {
+        let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
+        model.handle_key(key(KeyCode::Tab), area());
+
+        model.handle_key(key(KeyCode::Down), area());
+        assert_eq!(model.active_world(), "two");
+        assert_eq!(model.mode(), Mode::Control);
+
+        model.handle_key(key(KeyCode::Enter), area());
+        assert_eq!(model.active_world(), "two");
+        assert_eq!(model.mode(), Mode::World);
     }
 
     #[test]
@@ -429,6 +562,31 @@ mod tests {
         assert!(Mode::World.forwards_mouse());
         assert!(Mode::Switcher.forwards_mouse());
         assert!(!Mode::Control.forwards_mouse());
+    }
+
+    #[test]
+    fn clicking_the_world_bar_activates_it_and_clicking_arrows_changes_worlds() {
+        let mut model = model();
+
+        assert!(model.handle_mouse(mouse(0, 0), area()).0);
+        assert_eq!(model.mode(), Mode::Switcher);
+        let [previous, _, _] = model.world_bar_controls(area());
+        model.handle_mouse(mouse(previous.x, previous.y), area());
+        assert_eq!(model.active(), 2);
+        let [_, _, next] = model.world_bar_controls(area());
+        model.handle_mouse(mouse(next.x, next.y), area());
+        assert_eq!(model.active(), 0);
+    }
+
+    #[test]
+    fn clicking_a_disabled_world_bar_restores_the_override() {
+        let mut model = model();
+        model.handle_key(shifted(KeyCode::F(5)), area());
+
+        assert!(model.f5_disabled());
+        assert!(model.handle_mouse(mouse(0, 0), area()).0);
+        assert!(!model.f5_disabled());
+        assert_eq!(model.mode(), Mode::Switcher);
     }
 
     #[test]
@@ -545,5 +703,14 @@ mod tests {
 
     fn area() -> Rect {
         Rect::new(0, 0, 80, 24)
+    }
+
+    fn mouse(column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
     }
 }
