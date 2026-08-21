@@ -20,7 +20,7 @@ impl Mode {
 pub(super) enum InputRoute {
     Consumed,
     World,
-    OpenCodex(CodexOpenTarget),
+    OpenCodex(Box<CodexOpenTarget>),
 }
 
 #[derive(Debug)]
@@ -108,7 +108,7 @@ impl ShellModel {
                     self.mode = Mode::World;
                 } else {
                     if let Some(target) = self.control.handle_key(key, area) {
-                        return InputRoute::OpenCodex(target);
+                        return InputRoute::OpenCodex(Box::new(target));
                     }
                 }
                 InputRoute::Consumed
@@ -160,6 +160,8 @@ impl ShellModel {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
+    use uuid::Uuid;
+    use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
     fn model() -> ShellModel {
         ShellModel::new(vec![
@@ -275,6 +277,64 @@ mod tests {
                 InputRoute::Consumed
             );
             assert!(model.should_quit());
+        }
+    }
+
+    #[test]
+    fn completed_focus_switches_only_from_the_active_codex_view() {
+        let mut model = model_with_open_card();
+        open_codex_activity(&mut model);
+        let InputRoute::OpenCodex(target) = model.handle_key(key(KeyCode::Enter), area()) else {
+            panic!("live card did not produce an open target");
+        };
+        model.finish_codex_open(&target.identity, Some(1), None);
+        assert_eq!(model.active(), 1);
+        assert_eq!(model.mode(), Mode::World);
+
+        let mut canceled = model_with_open_card();
+        open_codex_activity(&mut canceled);
+        let InputRoute::OpenCodex(target) = canceled.handle_key(key(KeyCode::Enter), area()) else {
+            panic!("live card did not produce an open target");
+        };
+        canceled.handle_key(key(KeyCode::F(5)), area());
+        canceled.finish_codex_open(&target.identity, Some(1), None);
+        assert_eq!(canceled.active(), 0);
+        assert_eq!(canceled.mode(), Mode::World);
+    }
+
+    fn model_with_open_card() -> ShellModel {
+        let mut model = model();
+        let session_id = Uuid::from_u128(10);
+        let world_id = Uuid::from_u128(2);
+        let target = ByobuTarget {
+            tmux_session: "wt-host".into(),
+            pane_id: "%1".into(),
+        };
+        model.set_codex(vec![CodexCard {
+            identity: CodexCardIdentity::Observation {
+                context: "local".into(),
+                session_id,
+                world_id,
+                tmux_session: target.tmux_session.clone(),
+                pane_id: target.pane_id.clone(),
+            },
+            context: "local".into(),
+            session_id: Some(session_id),
+            timestamp: Some(1),
+            kind: super::super::control::CodexCardKind::Observation {
+                world_id,
+                world_name: "two".into(),
+                cwd: "/workspace".into(),
+                state: CodexSessionState::Working,
+                target,
+            },
+        }]);
+        model
+    }
+
+    fn open_codex_activity(model: &mut ShellModel) {
+        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::Tab] {
+            model.handle_key(key(code), area());
         }
     }
 

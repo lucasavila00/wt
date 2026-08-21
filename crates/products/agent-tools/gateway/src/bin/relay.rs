@@ -127,11 +127,15 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
         ])
         .output()
         .context("validate Codex Byobu target")?;
-    if !output.status.success()
-        || String::from_utf8_lossy(&output.stdout).trim()
-            != format!("{}:{}", event.tmux_session, event.pane_id)
-    {
-        bail!("Codex Byobu target is not in the active world session");
+    let expected = format!("{}:{}\n", event.tmux_session, event.pane_id);
+    if !output.status.success() || output.stdout != expected.as_bytes() {
+        bail!(
+            "Codex Byobu target validation failed: status {}; expected stdout {}; actual stdout {}; stderr {}",
+            output.status,
+            escaped(expected.as_bytes()),
+            escaped(&output.stdout),
+            escaped(&output.stderr)
+        );
     }
     update_codex_marker(event)?;
     Ok(())
@@ -191,6 +195,14 @@ fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Resu
 
 fn marker_matches(output: &[u8], session_id: uuid::Uuid) -> bool {
     output == format!("{session_id}\n").as_bytes()
+}
+
+fn escaped(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .chars()
+        .flat_map(char::escape_default)
+        .take(256)
+        .collect()
 }
 
 #[cfg(test)]

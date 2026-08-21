@@ -331,8 +331,12 @@ mod tests {
     #[test]
     fn validates_complete_context_before_creating_cards() {
         let world = ShellWorld::test("ars.dev", 1);
-        let cards =
-            validate_context("ars", vec![session(&world, "/workspace")], &[world.clone()]).unwrap();
+        let cards = validate_context(
+            "ars",
+            vec![session(&world, "/workspace")],
+            std::slice::from_ref(&world),
+        )
+        .unwrap();
         assert_eq!(cards.len(), 1);
         assert!(cards[0].open_target().is_some());
 
@@ -349,7 +353,7 @@ mod tests {
         let mut wrong_name = session(&world, "/workspace");
         wrong_name.observations[0].world_name = InstanceName::parse("other").unwrap();
         insta::assert_snapshot!(
-            validate_context("ars", vec![wrong_name], &[world.clone()]).unwrap_err(),
+            validate_context("ars", vec![wrong_name], std::slice::from_ref(&world)).unwrap_err(),
             @"context ars: failed invariant world_name matches inventory world_id; value other"
         );
 
@@ -358,6 +362,28 @@ mod tests {
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_tmux], &[world]).unwrap_err(),
             @"context ars: failed invariant tmux_session matches world kind; value wt-app"
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_sessions_and_negative_timestamps() {
+        let world = ShellWorld::test("ars.dev", 1);
+        let valid = session(&world, "/workspace");
+        insta::assert_snapshot!(
+            validate_context(
+                "ars",
+                vec![valid.clone(), valid.clone()],
+                std::slice::from_ref(&world)
+            )
+            .unwrap_err(),
+            @"context ars: failed invariant unique session_id; value 00000000-0000-0000-0000-00000000000a"
+        );
+
+        let mut negative = valid;
+        negative.observations[0].received_at_unix_ms = -1;
+        insta::assert_snapshot!(
+            validate_context("ars", vec![negative], &[world]).unwrap_err(),
+            @"context ars: failed invariant nonnegative observation timestamp; value 00000000-0000-0000-0000-00000000000a"
         );
     }
 }

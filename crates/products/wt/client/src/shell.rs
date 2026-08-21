@@ -173,7 +173,7 @@ fn dispatch_event(
                         sessions.write(model.active(), &bytes)?;
                     }
                 }
-                InputRoute::OpenCodex(target) => start_focus(sessions, model, focus, target),
+                InputRoute::OpenCodex(target) => start_focus(sessions, model, focus, *target),
                 InputRoute::Consumed => {}
             }
             Ok(true)

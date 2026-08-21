@@ -29,8 +29,11 @@ pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Resu
     let actual = format!("{expected}\n");
     if !output.status.success() || output.stdout != actual.as_bytes() {
         bail!(
-            "Codex Byobu target mismatch: expected {expected}, received {}",
-            escaped(&output.stdout)
+            "Codex Byobu target mismatch: status {}; expected stdout {}; actual stdout {}; stderr {}",
+            output.status,
+            escaped(actual.as_bytes()),
+            escaped(&output.stdout),
+            escaped(&output.stderr)
         );
     }
 

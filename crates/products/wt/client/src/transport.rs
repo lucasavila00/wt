@@ -106,8 +106,8 @@ fn decode_codex_sessions(
     context: &Context,
     output: &[u8],
 ) -> std::result::Result<Vec<CodexSession>, ContextError> {
-    let response: StrictCodexResponse = serde_json::from_slice(output)
-        .map_err(|error| invalid_response(context, error, output))?;
+    let response: StrictCodexResponse =
+        serde_json::from_slice(output).map_err(|error| invalid_response(context, error, output))?;
     let protocol_version = match &response {
         StrictCodexResponse::Ok {
             protocol_version, ..
@@ -408,6 +408,10 @@ mod tests {
         for invalid in [
             br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[],"extra":true}"#.as_slice(),
             br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
             let error = decode_codex_sessions(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));
