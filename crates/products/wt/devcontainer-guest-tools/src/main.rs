@@ -6,7 +6,15 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let status = match wt_devcontainer_guest_tools::pane_command(&target).status() {
+    let pane_id = std::env::var("TMUX_PANE").ok();
+    let mut command = match wt_devcontainer_guest_tools::pane_command(&target, pane_id.as_deref()) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
+    let status = match command.status() {
         Ok(status) => status,
         Err(error) => {
             eprintln!("wt: could not start the devcontainer SSH command: {error}");

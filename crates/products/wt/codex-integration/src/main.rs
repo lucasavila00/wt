@@ -1,5 +1,6 @@
 mod install;
 mod reconcile;
+mod report;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -22,12 +23,20 @@ enum Command {
     Install,
     /// Install WT's exact Codex user configuration.
     InstallConfig,
+    /// Report a WT-managed Codex lifecycle hook.
+    #[command(hide = true)]
+    ReportHook,
     /// Restore the Codex command replaced by `install`.
     Uninstall,
 }
 
 fn main() {
-    if let Err(error) = run(std::env::args_os().collect()) {
+    let args = std::env::args_os().collect::<Vec<_>>();
+    let silent = args.get(1).is_some_and(|value| value == "report-hook");
+    if let Err(error) = run(args) {
+        if silent {
+            return;
+        }
         eprintln!("wt-codex-integration: {error:#}");
         std::process::exit(1);
     }
@@ -54,6 +63,7 @@ fn run(args: Vec<OsString>) -> Result<()> {
             println!("{}", outcome.message());
         }
         Command::InstallConfig => install::install_user_config()?,
+        Command::ReportHook => report::report_hook()?,
         Command::Uninstall => {
             let path = install::uninstall()?;
             println!("Removed Codex trampoline: {}", path.display());

@@ -24,7 +24,8 @@ admission model; its operator process is not shipped yet.
 
 The control plane has no TCP listener. Local and remote API bridges send one
 versioned JSON request over stdio to the protected server socket. Protocol
-version 2 carries tagged world kinds and a common retained-world Git author.
+Protocol version 3 carries tagged world kinds, a common retained-world Git
+author, and context-local Codex session observations.
 
 ## Crates
 
