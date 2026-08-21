@@ -75,7 +75,8 @@ only to the overlays, and keeps them alive until its worlds are deleted.
 
 The production agent Git gateway uses vsock port `18017`. Each harness selects
 a different high port and gives the same value to its server, gateway, and
-world relays. Test sockets, grants, provider fixtures, and server state stay in
-that harness's temporary directory. This lets a KVM run coexist with installed
-WT services and with independent test runs without sharing writable runtime
-resources.
+world relays. Test server and capacity configuration, sockets, grants, provider
+fixtures, and database state stay in that harness's temporary directory. The
+installed golden images are shared read-only inputs; the registry cache and
+Codex authentication integration are shared host prerequisites. Do not run
+installation, image rebuild, or reset workflows while KVM E2E is active.

@@ -27,8 +27,10 @@ on a configured Ubuntu/KVM host with:
 make e2e-tests
 ```
 
-The target first runs the read-only image provenance check. To verify images
-prepared from a different install input, override `KVM_INSTALL_CONFIG`:
+The target first checks the installed Codex authentication and registry-cache
+prerequisites, then runs the read-only image provenance check. It does not read
+installed server or capacity configuration. To verify images prepared from a
+different install input, override `KVM_INSTALL_CONFIG`:
 
 ```text
 make e2e-tests KVM_INSTALL_CONFIG=/path/to/install-input.toml
@@ -56,14 +58,19 @@ chmod 0600 "$fixture_dir/github.token" "$fixture_dir/known_hosts"
 ```
 
 Prepare the host with the test-only install input. The test starts its own
-server and agent Git gateway while leaving installed services, images, and
-worlds alone:
+server and agent Git gateway with temporary server and capacity configuration.
+It uses the installed golden images as read-only inputs and the installed
+registry cache and Codex authentication integration as host prerequisites:
 
 ```bash
 scripts/install-server \
     --config examples/server-config/wt-server.kvm-e2e-install.toml
 make e2e-tests
 ```
+
+After `make clear`, the prerequisites remain installed and `make e2e-tests`
+can run without reinstalling or rebuilding images. Do not run installation,
+image rebuild, `make clear`, or `make nuke` while KVM E2E is active.
 
 The serialized KVM flow creates devcontainer and host worlds together. It runs
 the checked-in host recipe in Byobu with a disposable forwarded agent, checks
