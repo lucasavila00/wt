@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn ci_output_includes_the_trigger_event() {
+    let run = CiRun {
+        handle: "91".to_owned(),
+        name: "CI".to_owned(),
+        state: "success".to_owned(),
+        trigger: Some("pull_request".to_owned()),
+        url: Some("https://github.test/runs/91".to_owned()),
+        head: "abc123".to_owned(),
+        branch: Some("wt/fix".to_owned()),
+    };
+
+    insta::assert_snapshot!(
+        render_cli_command_output(ProviderCommandOutput::CiRun(run.clone())),
+        @r###"
+    Run: 91
+    State: success
+    Name: CI
+    Trigger: pull_request
+    Commit: abc123
+    Ref: wt/fix
+    URL: https://github.test/runs/91
+    "###
+    );
+    insta::assert_snapshot!(
+        render_cli_command_output(ProviderCommandOutput::CiRunsAndJobs {
+            runs: vec![run],
+            jobs: Vec::new(),
+        }),
+        @r###"
+    run 91 [success] CI trigger=pull_request
+    "###
+    );
+}
+
+#[test]
 fn ci_job_logs_keep_only_a_bounded_tail() {
     let output = tail_ci_job_log_at_limit(
         "012345678901234567890123456789αβγδεζηθικλμνξ".to_owned(),

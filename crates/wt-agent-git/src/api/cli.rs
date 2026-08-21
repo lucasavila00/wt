@@ -160,10 +160,11 @@ fn render_change_request(request: &ChangeRequestStatus) -> String {
 
 fn render_run(run: &CiRun) -> String {
     format!(
-        "Run: {}\nState: {}\nName: {}\nCommit: {}\nRef: {}\nURL: {}\n",
+        "Run: {}\nState: {}\nName: {}\nTrigger: {}\nCommit: {}\nRef: {}\nURL: {}\n",
         run.handle,
         run.state,
         run.name,
+        run.trigger.as_deref().unwrap_or("unknown"),
         run.head,
         run.branch.as_deref().unwrap_or("unknown"),
         run.url.as_deref().unwrap_or("unavailable")
@@ -184,7 +185,15 @@ fn render_job(job: &CiJob) -> String {
 fn render_ci(runs: &[CiRun], jobs: &[CiJob]) -> String {
     let mut output = runs
         .iter()
-        .map(|run| format!("run {} [{}] {}\n", run.handle, run.state, run.name))
+        .map(|run| {
+            format!(
+                "run {} [{}] {} trigger={}\n",
+                run.handle,
+                run.state,
+                run.name,
+                run.trigger.as_deref().unwrap_or("unknown")
+            )
+        })
         .collect::<String>();
     output.push_str(
         &jobs
