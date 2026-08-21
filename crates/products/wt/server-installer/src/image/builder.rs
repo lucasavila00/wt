@@ -55,6 +55,13 @@ impl ImageKind {
             Self::Host => "host",
         }
     }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Devcontainer => "Devcontainer",
+            Self::Host => "Host",
+        }
+    }
 }
 
 impl std::fmt::Display for ImageKind {
@@ -162,7 +169,10 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_agent_git = build_dir.join("install-agent-git.sh");
     let mount_codex = build_dir.join("mount-codex.sh");
 
-    println!("Preparing temporary {} KVM build disk...", spec.kind);
+    println!(
+        "Creating {} image-build disk from the verified Ubuntu source image...",
+        spec.kind
+    );
     runner.run(
         cmd!(
             "qemu-img",
@@ -279,10 +289,10 @@ pub(super) fn run_kvm_build<R: Runner>(
         &paths.console,
     )?;
     println!(
-        "{} KVM build guest started; waiting for its recipe to finish and power off (30 minute timeout).",
+        "Building {} golden image in a temporary KVM guest (30-minute timeout)...",
         spec.kind
     );
-    wait_for_shutdown(runner, &mut console_log, spec.name)?;
+    wait_for_shutdown(runner, &mut console_log, spec.name, spec.kind.title())?;
     undefine_build_domain(runner, spec.name)?;
 
     let marker = read_build_file(
@@ -319,11 +329,15 @@ pub(super) fn run_kvm_build<R: Runner>(
             marker
         );
     }
-    println!("Verified {} image build result.", spec.kind);
+    println!("Validated {} image recipe output.", spec.kind);
     Ok(paths)
 }
 
-pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<String> {
+pub(super) fn finalize_reusable_image(
+    runner: &impl Runner,
+    paths: &BuildPaths,
+    kind: ImageKind,
+) -> Result<String> {
     runner.run(
         cmd!(
             "sudo",
@@ -335,7 +349,10 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         ),
         "preserve pinned tmux across image sysprep",
     )?;
-    println!("Sysprepping and sanitizing reusable image...");
+    println!(
+        "Finalizing {} golden image for reuse (sysprep and sanitization)...",
+        kind
+    );
     runner.run(
         cmd!(
             "sudo",

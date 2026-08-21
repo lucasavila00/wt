@@ -13,6 +13,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let mut harness = KvmHarness::new(&mut timings);
     let codex_auth_sha256 = assert_server_codex_auth_export();
     let name = unique_name("git");
+    let codex_session_fixture = CodexSessionFixture::new(&name);
 
     let disks_before_rejection = count_disks(&harness.config.libvirt.worlds_dir);
     for (index, field) in ["ssh_keys", "ssh_deletekeys", "output"]
@@ -68,8 +69,8 @@ fn agent_git_transport_works_without_provider_credentials() {
     );
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
-    let shared_marker = format!("wt-kvm-e2e-{}", created.id.simple());
-    let codex_source = Path::new(wt_server::CODEX_SESSIONS_PATH).join(&shared_marker);
+    let shared_marker = &codex_session_fixture.marker;
+    let codex_source = Path::new(wt_server::CODEX_SESSIONS_PATH).join(shared_marker);
     run_guest(
         &harness,
         &name,
@@ -82,6 +83,7 @@ fn agent_git_transport_works_without_provider_credentials() {
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
              test ! -w /home/wt/.codex/auth.json; \
+             test -w \"$(dirname /home/wt/.codex/sessions/{shared_marker})\"; \
              printf 'from-devcontainer-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
         "write a shared marker through the devcontainer VM",
@@ -101,6 +103,7 @@ fn agent_git_transport_works_without_provider_credentials() {
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
              test ! -w /home/wt/.codex/auth.json; \
+             test -w \"$(dirname /home/wt/.codex/sessions/{shared_marker})\"; \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-server; \
              printf 'from-host-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
@@ -123,6 +126,7 @@ fn agent_git_transport_works_without_provider_credentials() {
              test ! -w /home/wt/.codex/auth.json; \
              test -x /usr/local/bin/wt-codex-integration; test -x /usr/local/bin/.codex.wt-real; \
              cmp /usr/local/bin/codex /usr/local/bin/wt-codex-integration; \
+             test -w \"$(dirname /home/wt/.codex/sessions/{shared_marker})\"; \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm; \
              printf 'from-app\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),

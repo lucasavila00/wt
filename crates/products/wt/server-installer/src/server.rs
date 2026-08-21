@@ -49,7 +49,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     prepare_host(runner, &server)?;
     registry_cache::ensure(runner, &server)?;
 
-    phase("Preparing the golden image");
+    phase("Preparing reusable world images");
     image::ensure(runner, &input, &server, &server_bytes)?;
 
     phase("Building and installing WT binaries");

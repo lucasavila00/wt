@@ -136,6 +136,10 @@ fn console_reader_opens_the_replaced_log() {
 
 #[test]
 fn progress_output_is_phase_based() {
-    let message = progress_message("installing packages", Duration::from_secs(60));
-    insta::assert_snapshot!(message, @"Image build: installing packages (elapsed=60s)");
+    let message = progress_message(
+        "Devcontainer",
+        "installing base operating-system packages",
+        Duration::from_secs(60),
+    );
+    insta::assert_snapshot!(message, @"Devcontainer image build: installing base operating-system packages (elapsed=60s)");
 }

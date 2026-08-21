@@ -76,9 +76,8 @@ scripts/install-client
 ## Checks
 
 ```bash
-cargo fmt --all
 cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+make static
 ```
 
 `cargo test --workspace` skips the ignored real-system KVM test. Run it only on

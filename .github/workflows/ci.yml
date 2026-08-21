@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -19,23 +21,8 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Check Rust file sizes
-        run: make check-file-lines
-
-      - name: Check world shell assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS= read -r file; do
-            bash -n "$file"
-            shellcheck --shell=sh --severity=warning "$file"
-          done < <(rg --files assets/world -g '*.sh' | sort)
-
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Run static analysis
+        run: make static
 
       - name: Run tests
         run: cargo test --workspace --locked

@@ -51,7 +51,7 @@ ensure_directory() {
 ensure_codex_sessions() {
     path=$1
     host_uid=$(id -u)
-    host_gid=$(id -g)
+    guest_gid=1001
     if test -L "$path"; then
         echo "Codex sessions path must not be a symbolic link: $path" >&2
         exit 1
@@ -68,11 +68,16 @@ ensure_codex_sessions() {
         fi
         sudo chmod 0700 "$path"
     else
-        sudo install -d -o "$host_uid" -g "$host_gid" -m 0700 "$path"
+        sudo install -d -o "$host_uid" -g "$guest_gid" -m 2770 "$path"
     fi
-    sudo setfacl -R -P -m "u:$host_uid:rwX,u:1001:rwX,m:rwX" -- "$path"
+
+    # virtiofs does not expose the host ACL to guests. Keep the shared guest
+    # gid in the ordinary mode bits and inherit it for transcript directories.
+    sudo chgrp -R "$guest_gid" -- "$path"
+    sudo setfacl -R -P -m "u:$host_uid:rwX,g::rwX,m::rwX,o::---" -- "$path"
     sudo find -P "$path" -type d -exec \
-        setfacl -m "d:u:$host_uid:rwx,d:u:1001:rwx,d:m:rwx" -- {} +
+        setfacl -m "d:u::rwx,d:u:$host_uid:rwx,d:g::rwx,d:m::rwx,d:o::---" -- {} +
+    sudo find -P "$path" -type d -exec chmod g+s -- {} +
 }
 
 case ${1-} in
