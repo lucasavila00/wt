@@ -24,8 +24,9 @@ While the overlay is open, it captures its navigation keys:
 - `Up` opens the control UI;
 - `F5` closes the overlay, leaving the active world full-screen.
 
-While the overlay is closed, `wt shell` captures only `F5`; the active world
-view forwards arrow keys and all other input unchanged to its Byobu.
+`F6` always closes `wt shell` and is never forwarded to Byobu. While the overlay
+is closed, `wt shell` otherwise captures only `F5`; the active world view
+forwards arrow keys and all other input unchanged to its Byobu.
 
 All open world views remain live while overlays are open and when another world
 is selected. Switching views does not pause or close their Byobu sessions.

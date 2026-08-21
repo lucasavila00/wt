@@ -1,5 +1,8 @@
 use anyhow::{bail, Context as _, Result};
-use crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEventKind,
+};
 use crossterm::execute;
 use std::io::IsTerminal as _;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -44,16 +47,24 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let mut model = ShellModel::new(worlds);
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
-    if let Err(error) = execute!(terminal.backend_mut(), EnableBracketedPaste) {
+    if let Err(error) = execute!(
+        terminal.backend_mut(),
+        EnableBracketedPaste,
+        EnableMouseCapture
+    ) {
         ratatui::restore();
-        return Err(error).context("enable bracketed paste for wt shell");
+        return Err(error).context("enable terminal input for wt shell");
     }
 
     let result = run_loop(&mut terminal, &mut sessions, &mut model, &shutdown);
-    let paste_result = execute!(terminal.backend_mut(), DisableBracketedPaste)
-        .context("disable bracketed paste for wt shell");
+    let input_result = execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        DisableBracketedPaste
+    )
+    .context("disable terminal input for wt shell");
     ratatui::restore();
-    result.and(paste_result)
+    result.and(input_result)
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
@@ -91,6 +102,9 @@ fn run_loop(
                 sessions,
                 model,
             )?;
+            if model.should_quit() {
+                return Ok(());
+            }
             if !event::poll(Duration::ZERO).context("poll pending terminal input")? {
                 break;
             }
@@ -114,6 +128,17 @@ fn dispatch_event(event: Event, sessions: &mut SessionSet, model: &mut ShellMode
             let bracketed = sessions.screen(model.active()).bracketed_paste();
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
+        }
+        Event::Mouse(mouse) if model.mode() == Mode::World => {
+            let screen = sessions.screen(model.active());
+            if let Some(bytes) = input::encode_mouse(
+                mouse,
+                screen.mouse_protocol_mode(),
+                screen.mouse_protocol_encoding(),
+            ) {
+                sessions.write(model.active(), &bytes)?;
+            }
+            Ok(false)
         }
         Event::Resize(columns, rows) => {
             sessions.resize(rows, columns)?;

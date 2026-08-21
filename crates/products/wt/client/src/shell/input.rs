@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use termwiz::input::{KeyCode as TermKeyCode, KeyCodeEncodeModes, KeyboardEncoding, Modifiers};
 
 pub(super) fn encode_key(key: KeyEvent, application_cursor: bool) -> Result<Option<Vec<u8>>> {
@@ -28,6 +28,91 @@ pub(super) fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     } else {
         text.as_bytes().to_vec()
     }
+}
+
+pub(super) fn encode_mouse(
+    event: MouseEvent,
+    mode: vt100::MouseProtocolMode,
+    encoding: vt100::MouseProtocolEncoding,
+) -> Option<Vec<u8>> {
+    use vt100::MouseProtocolMode::{AnyMotion, ButtonMotion, Press, PressRelease};
+
+    let (button, release) = match event.kind {
+        MouseEventKind::Down(button) => (button_code(button), false),
+        MouseEventKind::Up(button) if mode != Press => (button_code(button), true),
+        MouseEventKind::Up(_) | MouseEventKind::Drag(_) | MouseEventKind::Moved => return None,
+        MouseEventKind::ScrollDown
+        | MouseEventKind::ScrollUp
+        | MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight => return None,
+    };
+    if !matches!(mode, Press | PressRelease | ButtonMotion | AnyMotion) {
+        debug_assert_eq!(mode, vt100::MouseProtocolMode::None);
+        return None;
+    }
+    let modifiers = mouse_modifiers(event.modifiers);
+    let button = button + modifiers;
+    Some(match encoding {
+        vt100::MouseProtocolEncoding::Sgr => format!(
+            "\x1b[<{button};{};{}{}",
+            event.column.saturating_add(1),
+            event.row.saturating_add(1),
+            if release { 'm' } else { 'M' }
+        )
+        .into_bytes(),
+        vt100::MouseProtocolEncoding::Default => legacy_mouse(
+            if release { 3 + modifiers } else { button },
+            event.column,
+            event.row,
+            false,
+        ),
+        vt100::MouseProtocolEncoding::Utf8 => legacy_mouse(
+            if release { 3 + modifiers } else { button },
+            event.column,
+            event.row,
+            true,
+        ),
+    })
+}
+
+fn button_code(button: MouseButton) -> u8 {
+    match button {
+        MouseButton::Left => 0,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    }
+}
+
+fn mouse_modifiers(modifiers: KeyModifiers) -> u8 {
+    let mut encoded = 0;
+    if modifiers.contains(KeyModifiers::SHIFT) {
+        encoded |= 4;
+    }
+    if modifiers.intersects(KeyModifiers::ALT | KeyModifiers::META) {
+        encoded |= 8;
+    }
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        encoded |= 16;
+    }
+    encoded
+}
+
+fn legacy_mouse(button: u8, column: u16, row: u16, utf8: bool) -> Vec<u8> {
+    let mut encoded = b"\x1b[M".to_vec();
+    if utf8 {
+        for value in [u32::from(button), u32::from(column) + 1, u32::from(row) + 1] {
+            let character = char::from_u32(32 + value).unwrap_or('\u{fffd}');
+            let mut bytes = [0; 4];
+            encoded.extend_from_slice(character.encode_utf8(&mut bytes).as_bytes());
+        }
+    } else {
+        encoded.extend([32 + button, 32 + coordinate(column), 32 + coordinate(row)]);
+    }
+    encoded
+}
+
+fn coordinate(value: u16) -> u8 {
+    u8::try_from(value.saturating_add(1).min(223)).expect("mouse coordinate is bounded")
 }
 
 fn key_code(code: KeyCode) -> Option<(TermKeyCode, Modifiers)> {
@@ -114,5 +199,65 @@ mod tests {
     fn wraps_bracketed_paste() {
         assert_eq!(encode_paste("hello", true), b"\x1b[200~hello\x1b[201~");
         assert_eq!(encode_paste("hello", false), b"hello");
+    }
+
+    #[test]
+    fn encodes_sgr_clicks_and_ignores_motion() {
+        let down = mouse(MouseEventKind::Down(MouseButton::Left), 4, 2);
+        let up = mouse(MouseEventKind::Up(MouseButton::Left), 4, 2);
+
+        assert_eq!(
+            encode_mouse(
+                down,
+                vt100::MouseProtocolMode::PressRelease,
+                vt100::MouseProtocolEncoding::Sgr,
+            )
+            .unwrap(),
+            b"\x1b[<0;5;3M"
+        );
+        assert_eq!(
+            encode_mouse(
+                up,
+                vt100::MouseProtocolMode::PressRelease,
+                vt100::MouseProtocolEncoding::Sgr,
+            )
+            .unwrap(),
+            b"\x1b[<0;5;3m"
+        );
+        assert_eq!(
+            encode_mouse(
+                mouse(MouseEventKind::Moved, 5, 3),
+                vt100::MouseProtocolMode::AnyMotion,
+                vt100::MouseProtocolEncoding::Sgr,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn sends_only_presses_in_press_mode() {
+        assert!(encode_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Right), 0, 0),
+            vt100::MouseProtocolMode::Press,
+            vt100::MouseProtocolEncoding::Default,
+        )
+        .is_some());
+        assert_eq!(
+            encode_mouse(
+                mouse(MouseEventKind::Up(MouseButton::Right), 0, 0),
+                vt100::MouseProtocolMode::Press,
+                vt100::MouseProtocolEncoding::Default,
+            ),
+            None
+        );
+    }
+
+    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
     }
 }

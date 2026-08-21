@@ -18,6 +18,7 @@ pub(super) struct ShellModel {
     worlds: Vec<String>,
     active: usize,
     mode: Mode,
+    should_quit: bool,
 }
 
 impl ShellModel {
@@ -27,6 +28,7 @@ impl ShellModel {
             worlds,
             active: 0,
             mode: Mode::World,
+            should_quit: false,
         }
     }
 
@@ -38,7 +40,15 @@ impl ShellModel {
         self.active
     }
 
+    pub(super) fn should_quit(&self) -> bool {
+        self.should_quit
+    }
+
     pub(super) fn handle_key(&mut self, key: KeyCode) -> InputRoute {
+        if key == KeyCode::F(6) {
+            self.should_quit = true;
+            return InputRoute::Consumed;
+        }
         match self.mode {
             Mode::World if key == KeyCode::F(5) => {
                 self.mode = Mode::Switcher;
@@ -118,5 +128,16 @@ mod tests {
         model.handle_key(KeyCode::F(5));
 
         assert_eq!(model.mode(), Mode::World);
+    }
+
+    #[test]
+    fn f6_closes_from_every_mode_without_forwarding() {
+        for mode in [Mode::World, Mode::Switcher, Mode::Control] {
+            let mut model = model();
+            model.mode = mode;
+
+            assert_eq!(model.handle_key(KeyCode::F(6)), InputRoute::Consumed);
+            assert!(model.should_quit());
+        }
     }
 }
