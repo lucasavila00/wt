@@ -61,6 +61,7 @@ ssh-key = { version = "0.6.7", features = ["ed25519", "encryption", "getrandom"]
 thiserror = "2.0.18"
 toml = "1.0.3"
 tempfile = "3.27.0"
+typescript-type-def = "0.5.15"
 ureq = { version = "3.4.0", features = ["json"] }
 url = "2.5.8"
 uuid = { version = "1.21.0", features = ["serde", "v4"] }

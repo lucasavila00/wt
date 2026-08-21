@@ -12,6 +12,7 @@ wt-workload-registry = { workspace = true }
 graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+typescript-type-def = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 

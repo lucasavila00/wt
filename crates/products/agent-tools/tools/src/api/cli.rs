@@ -1,6 +1,6 @@
 use super::*;
 
-impl CliCommand {
+impl WtToolsCommand {
     pub fn parse(args: &[String]) -> Result<Self> {
         let [json] = args else {
             bail!("wt-tools expects exactly one JSON command object; run `wt-tools help` for the TypeScript command type");
@@ -21,16 +21,16 @@ impl CliCommand {
             | Self::EditMr { mr, .. }
             | Self::CommentMr { mr, .. }
             | Self::ReplyThread { mr, .. }
-            | Self::SetThread { mr, .. } => positive_id(*mr, "MR")?,
+            | Self::SetThread { mr, .. } => nonempty(mr, "MR ID")?,
             Self::ShowRun { run }
             | Self::ListJobs { run }
             | Self::WaitRun { run, .. }
-            | Self::CancelRun { run } => positive_id(*run, "run")?,
+            | Self::CancelRun { run } => nonempty(run, "run ID")?,
             Self::ShowJob { job }
             | Self::LogJob { job }
             | Self::WaitJob { job, .. }
             | Self::RetryJob { job }
-            | Self::CancelJob { job } => positive_id(*job, "job")?,
+            | Self::CancelJob { job } => nonempty(job, "job ID")?,
             Self::ShowMrForBranch { branch } => nonempty(branch, "branch")?,
             Self::ListCi { commit } => validate_commit(commit)?,
             Self::OpenMr { head, base, .. } => {
@@ -178,11 +178,14 @@ pub(super) fn tail_ci_job_log_at_limit(log: String, limit: usize) -> String {
     format!("{CI_JOB_LOG_TRUNCATION_NOTICE}{}", &log[start..])
 }
 
-fn positive_id(id: u64, kind: &str) -> Result<()> {
+pub(super) fn parse_resource_id(id: &str, kind: &str) -> Result<u64> {
+    let id = id
+        .parse::<u64>()
+        .with_context(|| format!("{kind} ID must be a positive integer string"))?;
     if id == 0 {
         bail!("{kind} ID must be a positive integer");
     }
-    Ok(())
+    Ok(id)
 }
 
 fn nonempty(value: &str, name: &str) -> Result<()> {

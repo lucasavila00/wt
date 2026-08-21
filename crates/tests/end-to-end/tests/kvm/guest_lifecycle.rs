@@ -355,54 +355,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
     );
 
     let help = app_output(&harness, &name, "wt-tools --help", "read wt-tools help");
-    insta::assert_snapshot!(help, @r###"
-    wt-tools reads and changes explicitly identified Git provider resources and records
-    feedback about wt-tools itself. It accepts exactly one JSON command object and
-    rejects unknown fields.
-
-    USAGE:
-    wt-tools '<JSON>'
-
-    TYPESCRIPT COMMAND TYPE:
-    type WtToolsCommand =
-    | { action: "show_mr"; mr: number }
-    | { action: "show_mr_for_branch"; branch: string }
-    | { action: "show_run"; run: number }
-    | { action: "show_job"; job: number }
-    | { action: "list_threads"; mr: number }
-    | { action: "list_ci"; commit: string }
-    | { action: "list_jobs"; run: number }
-    | { action: "log_job"; job: number }
-    | { action: "wait_mr"; mr: number; timeout_seconds?: number }
-    | { action: "wait_run"; run: number; timeout_seconds?: number }
-    | { action: "wait_job"; job: number; timeout_seconds?: number }
-    | { action: "open_mr"; head: string; base: string; draft?: boolean }
-    | { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
-    | { action: "edit_mr"; mr: number; title?: string; body?: string }
-    | { action: "comment_mr"; mr: number; body: string }
-    | { action: "reply_thread"; mr: number; thread: string; body: string }
-    | { action: "set_thread"; mr: number; thread: string; resolved: boolean }
-    | { action: "retry_job"; job: number }
-    | { action: "cancel_job"; job: number }
-    | { action: "cancel_run"; run: number }
-    | { action: "report_wt_tool_bug"; description: string }
-    | { action: "report_wt_tool_issue"; description: string }
-    | { action: "suggest_wt_tool_improvement"; description: string }
-    | { action: "request_wt_tool_feature"; description: string };
-
-    EXAMPLE:
-    wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
-
-    `show_mr_for_branch` returns the single open MR from the named branch to the
-    gateway grant's base branch. It fails when there is no match or multiple matches.
-
-    The four wt-tools reporting actions store feedback against this authenticated world
-    without contacting the Git provider.
-
-    The provider and project come from this world's gateway grant. Every other
-    resource is explicit. IDs must be positive integers. Commit values must be 7 to
-    64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.
-    "###);
+    assert_eq!(help, wt_agent_tool_gateway::wt_tools_help());
 
     run_guest(
         &harness,

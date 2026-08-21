@@ -1,6 +1,6 @@
 ---
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
-expression: HELP
+expression: help()
 ---
 wt-tools reads and changes explicitly identified Git provider resources and records
 feedback about wt-tools itself. It accepts exactly one JSON command object and
@@ -10,31 +10,119 @@ USAGE:
 wt-tools '<JSON>'
 
 TYPESCRIPT COMMAND TYPE:
-type WtToolsCommand =
-| { action: "show_mr"; mr: number }
-| { action: "show_mr_for_branch"; branch: string }
-| { action: "show_run"; run: number }
-| { action: "show_job"; job: number }
-| { action: "list_threads"; mr: number }
-| { action: "list_ci"; commit: string }
-| { action: "list_jobs"; run: number }
-| { action: "log_job"; job: number }
-| { action: "wait_mr"; mr: number; timeout_seconds?: number }
-| { action: "wait_run"; run: number; timeout_seconds?: number }
-| { action: "wait_job"; job: number; timeout_seconds?: number }
-| { action: "open_mr"; head: string; base: string; draft?: boolean }
-| { action: "set_mr"; mr: number; state: "ready" | "draft" | "open" | "closed" }
-| { action: "edit_mr"; mr: number; title?: string; body?: string }
-| { action: "comment_mr"; mr: number; body: string }
-| { action: "reply_thread"; mr: number; thread: string; body: string }
-| { action: "set_thread"; mr: number; thread: string; resolved: boolean }
-| { action: "retry_job"; job: number }
-| { action: "cancel_job"; job: number }
-| { action: "cancel_run"; run: number }
-| { action: "report_wt_tool_bug"; description: string }
-| { action: "report_wt_tool_issue"; description: string }
-| { action: "suggest_wt_tool_improvement"; description: string }
-| { action: "request_wt_tool_feature"; description: string };
+    export type U64 = number;
+    export type ChangeRequestState = ("ready" | "draft" | "open" | "closed");
+    export type ReviewThreadHandle = string;
+    export type WtToolsCommand = (({
+        "action": "show_mr";
+    } & {
+        "mr": string;
+    }) | ({
+        "action": "show_mr_for_branch";
+    } & {
+        "branch": string;
+    }) | ({
+        "action": "show_run";
+    } & {
+        "run": string;
+    }) | ({
+        "action": "show_job";
+    } & {
+        "job": string;
+    }) | ({
+        "action": "list_threads";
+    } & {
+        "mr": string;
+    }) | ({
+        "action": "list_ci";
+    } & {
+        "commit": string;
+    }) | ({
+        "action": "list_jobs";
+    } & {
+        "run": string;
+    }) | ({
+        "action": "log_job";
+    } & {
+        "job": string;
+    }) | ({
+        "action": "wait_mr";
+    } & {
+        "mr": string;
+        "timeout_seconds"?: (U64 | null);
+    }) | ({
+        "action": "wait_run";
+    } & {
+        "run": string;
+        "timeout_seconds"?: (U64 | null);
+    }) | ({
+        "action": "wait_job";
+    } & {
+        "job": string;
+        "timeout_seconds"?: (U64 | null);
+    }) | ({
+        "action": "open_mr";
+    } & {
+        "head": string;
+        "base": string;
+        "draft"?: boolean;
+    }) | ({
+        "action": "set_mr";
+    } & {
+        "mr": string;
+        "state": ChangeRequestState;
+    }) | ({
+        "action": "edit_mr";
+    } & {
+        "mr": string;
+        "title"?: (string | null);
+        "body"?: (string | null);
+    }) | ({
+        "action": "comment_mr";
+    } & {
+        "mr": string;
+        "body": string;
+    }) | ({
+        "action": "reply_thread";
+    } & {
+        "mr": string;
+        "thread": ReviewThreadHandle;
+        "body": string;
+    }) | ({
+        "action": "set_thread";
+    } & {
+        "mr": string;
+        "thread": ReviewThreadHandle;
+        "resolved": boolean;
+    }) | ({
+        "action": "retry_job";
+    } & {
+        "job": string;
+    }) | ({
+        "action": "cancel_job";
+    } & {
+        "job": string;
+    }) | ({
+        "action": "cancel_run";
+    } & {
+        "run": string;
+    }) | ({
+        "action": "report_wt_tool_bug";
+    } & {
+        "description": string;
+    }) | ({
+        "action": "report_wt_tool_issue";
+    } & {
+        "description": string;
+    }) | ({
+        "action": "suggest_wt_tool_improvement";
+    } & {
+        "description": string;
+    }) | ({
+        "action": "request_wt_tool_feature";
+    } & {
+        "description": string;
+    }));
 
 EXAMPLE:
 wt-tools '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
@@ -49,5 +137,5 @@ Provider operations return one JSON result or error object. Help remains
 plain text.
 
 The provider and project come from this world's gateway grant. Every other
-resource is explicit. IDs must be positive integers. Commit values must be 7 to
+resource is explicit. IDs must be positive integer strings. Commit values must be 7 to
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.

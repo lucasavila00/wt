@@ -1,5 +1,5 @@
 use super::*;
-use crate::api::{cli_wait_deadline, wait_for_next_cli_poll};
+use crate::api::{cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll};
 
 impl GitProviderApi for GithubApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
@@ -243,32 +243,35 @@ impl GitProviderApi for GithubApi {
     fn execute_cli_command(
         &self,
         scope: &ProviderProjectScope<'_>,
-        command: &CliCommand,
+        command: &WtToolsCommand,
     ) -> Result<ProviderCommandOutput> {
         match command {
-            CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
-                pull_request_status(self.read_pull_request(scope.project, *mr)?),
-            )),
-            CliCommand::ShowMrForBranch { branch } => Ok(ProviderCommandOutput::ChangeRequest(
+            WtToolsCommand::ShowMr { mr } => {
+                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                    self.read_pull_request(scope.project, parse_resource_id(mr, "MR")?)?,
+                )))
+            }
+            WtToolsCommand::ShowMrForBranch { branch } => Ok(ProviderCommandOutput::ChangeRequest(
                 pull_request_status(self.read_open_pull_request_for_branch(scope.project, branch)?),
             )),
-            CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
-                self.read_workflow_run(scope.project, *run)?,
+            WtToolsCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
+                self.read_workflow_run(scope.project, parse_resource_id(run, "run")?)?,
             ))),
-            CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(ci_job(
-                self.read_workflow_job(scope.project, *job)?,
+            WtToolsCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(ci_job(
+                self.read_workflow_job(scope.project, parse_resource_id(job, "job")?)?,
             ))),
-            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
-                self.read_review_threads(scope.project, *mr)?,
+            WtToolsCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_review_threads(scope.project, parse_resource_id(mr, "MR")?)?,
             )),
-            CliCommand::ListCi { commit } => {
+            WtToolsCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
             }
-            CliCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
-                self.list_run_jobs(scope.project, *run)?,
+            WtToolsCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
+                self.list_run_jobs(scope.project, parse_resource_id(run, "run")?)?,
             )),
-            CliCommand::LogJob { job } => {
+            WtToolsCommand::LogJob { job } => {
+                let job = parse_resource_id(job, "job")?;
                 let project_scope = ProviderCommandScope {
                     project: scope.project,
                     base: "",
@@ -283,12 +286,13 @@ impl GitProviderApi for GithubApi {
                     },
                 )
             }
-            CliCommand::WaitMr {
+            WtToolsCommand::WaitMr {
                 mr,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
-                let initial = self.read_pull_request(scope.project, *mr)?;
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let initial = self.read_pull_request(scope.project, mr_id)?;
                 if matches!(initial.state.as_str(), "closed" | "merged") {
                     return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
                         initial,
@@ -301,7 +305,7 @@ impl GitProviderApi for GithubApi {
                             initial.state
                         );
                     }
-                    let current = self.read_pull_request(scope.project, *mr)?;
+                    let current = self.read_pull_request(scope.project, mr_id)?;
                     if current != initial {
                         return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
                             current,
@@ -309,13 +313,14 @@ impl GitProviderApi for GithubApi {
                     }
                 }
             }
-            CliCommand::WaitRun {
+            WtToolsCommand::WaitRun {
                 run,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
                 loop {
-                    let current = self.read_workflow_run(scope.project, *run)?;
+                    let current =
+                        self.read_workflow_run(scope.project, parse_resource_id(run, "run")?)?;
                     let output = ci_run(current);
                     if ci_terminal(&output.state) {
                         return Ok(ProviderCommandOutput::CiRun(output));
@@ -328,13 +333,14 @@ impl GitProviderApi for GithubApi {
                     }
                 }
             }
-            CliCommand::WaitJob {
+            WtToolsCommand::WaitJob {
                 job,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
                 loop {
-                    let current = self.read_workflow_job(scope.project, *job)?;
+                    let current =
+                        self.read_workflow_job(scope.project, parse_resource_id(job, "job")?)?;
                     let output = ci_job(current);
                     if ci_terminal(&output.state) {
                         return Ok(ProviderCommandOutput::CiJob(output));
@@ -347,7 +353,7 @@ impl GitProviderApi for GithubApi {
                     }
                 }
             }
-            CliCommand::OpenMr { head, base, draft } => {
+            WtToolsCommand::OpenMr { head, base, draft } => {
                 if !head.starts_with(scope.prefix) {
                     bail!("open mr must use a {}* head", scope.prefix);
                 }
@@ -369,8 +375,9 @@ impl GitProviderApi for GithubApi {
                     &ProviderCommand::OpenChangeRequest { draft: *draft },
                 )
             }
-            CliCommand::SetMr { mr, state } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
+            WtToolsCommand::SetMr { mr, state } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
                 match state {
                     ChangeRequestState::Ready => {
@@ -406,11 +413,12 @@ impl GitProviderApi for GithubApi {
                     }
                 }
                 Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
-                    self.read_pull_request(scope.project, *mr)?,
+                    self.read_pull_request(scope.project, mr_id)?,
                 )))
             }
-            CliCommand::EditMr { mr, title, body } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
+            WtToolsCommand::EditMr { mr, title, body } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
                 self.graphql.execute_graphql::<GithubUpdatePullRequest>(
                     self.graphql_path,
@@ -422,11 +430,12 @@ impl GitProviderApi for GithubApi {
                     },
                 )?;
                 Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
-                    self.read_pull_request(scope.project, *mr)?,
+                    self.read_pull_request(scope.project, mr_id)?,
                 )))
             }
-            CliCommand::CommentMr { mr, body } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
+            WtToolsCommand::CommentMr { mr, body } => {
+                let request =
+                    self.read_pull_request(scope.project, parse_resource_id(mr, "MR")?)?;
                 Self::require_writable_pull_request(scope, &request)?;
                 self.graphql
                     .execute_graphql::<GithubAddPullRequestComment>(
@@ -440,10 +449,11 @@ impl GitProviderApi for GithubApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            CliCommand::ReplyThread { mr, thread, body } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
+            WtToolsCommand::ReplyThread { mr, thread, body } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                self.require_review_thread(scope.project, *mr, thread)?;
+                self.require_review_thread(scope.project, mr_id, thread)?;
                 self.graphql.execute_graphql::<GithubReplyToReviewThread>(
                     self.graphql_path,
                     github_reply_to_review_thread::Variables {
@@ -455,14 +465,15 @@ impl GitProviderApi for GithubApi {
                     "Reply added.".to_owned(),
                 ))
             }
-            CliCommand::SetThread {
+            WtToolsCommand::SetThread {
                 mr,
                 thread,
                 resolved,
             } => {
-                let request = self.read_pull_request(scope.project, *mr)?;
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                self.require_review_thread(scope.project, *mr, thread)?;
+                self.require_review_thread(scope.project, mr_id, thread)?;
                 if *resolved {
                     self.graphql.execute_graphql::<GithubResolveReviewThread>(
                         self.graphql_path,
@@ -484,11 +495,12 @@ impl GitProviderApi for GithubApi {
                     "Thread reopened.".to_owned()
                 }))
             }
-            CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
-                let current = self.read_workflow_job(scope.project, *job)?;
+            WtToolsCommand::RetryJob { job } | WtToolsCommand::CancelJob { job } => {
+                let current =
+                    self.read_workflow_job(scope.project, parse_resource_id(job, "job")?)?;
                 let run = self.read_workflow_run(scope.project, current.run_id)?;
                 Self::require_writable_run(scope, &run)?;
-                if matches!(command, CliCommand::CancelJob { .. }) {
+                if matches!(command, WtToolsCommand::CancelJob { .. }) {
                     bail!(
                         "GitHub cannot cancel one job; use a `cancel_run` JSON action for run {}",
                         run.id
@@ -502,8 +514,9 @@ impl GitProviderApi for GithubApi {
                     "Retry requested for job {job} and its dependent jobs."
                 )))
             }
-            CliCommand::CancelRun { run } => {
-                let current = self.read_workflow_run(scope.project, *run)?;
+            WtToolsCommand::CancelRun { run } => {
+                let current =
+                    self.read_workflow_run(scope.project, parse_resource_id(run, "run")?)?;
                 Self::require_writable_run(scope, &current)?;
                 self.rest.post_without_body(&format!(
                     "{}repos/{}/actions/runs/{run}/cancel",
@@ -513,10 +526,10 @@ impl GitProviderApi for GithubApi {
                     "Cancellation requested for run {run}."
                 )))
             }
-            CliCommand::ReportWtToolBug { .. }
-            | CliCommand::ReportWtToolIssue { .. }
-            | CliCommand::SuggestWtToolImprovement { .. }
-            | CliCommand::RequestWtToolFeature { .. } => {
+            WtToolsCommand::ReportWtToolBug { .. }
+            | WtToolsCommand::ReportWtToolIssue { .. }
+            | WtToolsCommand::SuggestWtToolImprovement { .. }
+            | WtToolsCommand::RequestWtToolFeature { .. } => {
                 unreachable!("agent tool reports are handled before provider commands")
             }
         }

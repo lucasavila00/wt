@@ -24,6 +24,7 @@ use crate::ProviderKind;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use typescript_type_def::{write_definition_file, DefinitionFileOptions, TypeDef};
 
 const CI_JOB_LOG_TAIL_LIMIT: usize = 64 * 1024;
 const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
@@ -42,7 +43,7 @@ pub struct ProviderProjectScope<'a> {
     pub prefix: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, TypeDef)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeRequestState {
     Ready,
@@ -51,43 +52,46 @@ pub enum ChangeRequestState {
     Closed,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, TypeDef)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CliCommand {
+pub enum WtToolsCommand {
     ShowMr {
-        mr: u64,
+        mr: String,
     },
     ShowMrForBranch {
         branch: String,
     },
     ShowRun {
-        run: u64,
+        run: String,
     },
     ShowJob {
-        job: u64,
+        job: String,
     },
     ListThreads {
-        mr: u64,
+        mr: String,
     },
     ListCi {
         commit: String,
     },
     ListJobs {
-        run: u64,
+        run: String,
     },
     LogJob {
-        job: u64,
+        job: String,
     },
     WaitMr {
-        mr: u64,
+        mr: String,
+        #[serde(default)]
         timeout_seconds: Option<u64>,
     },
     WaitRun {
-        run: u64,
+        run: String,
+        #[serde(default)]
         timeout_seconds: Option<u64>,
     },
     WaitJob {
-        job: u64,
+        job: String,
+        #[serde(default)]
         timeout_seconds: Option<u64>,
     },
     OpenMr {
@@ -97,36 +101,38 @@ pub enum CliCommand {
         draft: bool,
     },
     SetMr {
-        mr: u64,
+        mr: String,
         state: ChangeRequestState,
     },
     EditMr {
-        mr: u64,
+        mr: String,
+        #[serde(default)]
         title: Option<String>,
+        #[serde(default)]
         body: Option<String>,
     },
     CommentMr {
-        mr: u64,
+        mr: String,
         body: String,
     },
     ReplyThread {
-        mr: u64,
+        mr: String,
         thread: ReviewThreadHandle,
         body: String,
     },
     SetThread {
-        mr: u64,
+        mr: String,
         thread: ReviewThreadHandle,
         resolved: bool,
     },
     RetryJob {
-        job: u64,
+        job: String,
     },
     CancelJob {
-        job: u64,
+        job: String,
     },
     CancelRun {
-        run: u64,
+        run: String,
     },
     ReportWtToolBug {
         description: String,
@@ -140,6 +146,19 @@ pub enum CliCommand {
     RequestWtToolFeature {
         description: String,
     },
+}
+
+pub fn typescript_command_type() -> String {
+    let mut output = Vec::new();
+    write_definition_file::<_, WtToolsCommand>(
+        &mut output,
+        DefinitionFileOptions {
+            header: None,
+            root_namespace: None,
+        },
+    )
+    .expect("TypeScript command type renders");
+    String::from_utf8(output).expect("TypeScript command type is UTF-8")
 }
 
 #[allow(
@@ -238,7 +257,7 @@ pub struct CiRun {
 }
 
 // Every identifier newtype serializes as its underlying scalar.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, TypeDef)]
 #[serde(transparent)]
 pub struct ReviewThreadHandle(String);
 
@@ -304,7 +323,7 @@ pub trait GitProviderApi {
     fn execute_cli_command(
         &self,
         scope: &ProviderProjectScope<'_>,
-        command: &CliCommand,
+        command: &WtToolsCommand,
     ) -> Result<ProviderCommandOutput>;
 }
 
@@ -378,7 +397,7 @@ pub fn execute_cli_provider_command(
     kind: ProviderKind,
     token_file: &Path,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -399,7 +418,7 @@ pub fn execute_cli_provider_command_at_base(
     token_file: &Path,
     base_url: &str,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -417,7 +436,7 @@ fn with_cli_command_context(
     result: Result<ProviderCommandOutput>,
     kind: ProviderKind,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     result.with_context(|| {
         format!(

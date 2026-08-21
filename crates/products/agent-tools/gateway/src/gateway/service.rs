@@ -251,14 +251,14 @@ impl Gateway {
         grant: &GrantRecord,
     ) -> Result<String> {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
-            return Ok(HELP.to_owned());
+            return Ok(wt_tools_help());
         }
         // Setup hook outside the agent-facing JSON API. World builders use this
         // to inject gateway-owned instructions into coding-agent sessions.
         if args == ["world-prompt"] {
             return Ok(world_prompt());
         }
-        let command = api::CliCommand::parse(args)?;
+        let command = api::WtToolsCommand::parse(args)?;
         if let Some((kind, description)) = command.wt_tool_report() {
             let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
             wt_workload_registry::Registry::open(&self.config.database_path)

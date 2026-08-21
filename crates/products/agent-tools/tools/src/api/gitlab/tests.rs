@@ -487,13 +487,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
     let scope = project_scope();
 
     let mr = provider
-        .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 8 })
+        .execute_cli_command(&scope, &WtToolsCommand::ShowMr { mr: "8".into() })
         .unwrap();
     let job = provider
         .execute_cli_command(
             &scope,
-            &CliCommand::WaitJob {
-                job: 45,
+            &WtToolsCommand::WaitJob {
+                job: "45".into(),
                 timeout_seconds: None,
             },
         )
@@ -554,7 +554,10 @@ fn lists_threads_by_merge_request_iid() {
     let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
 
     let output = provider
-        .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 8 })
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ListThreads { mr: "8".into() },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ReviewThreads(threads) = output else {
