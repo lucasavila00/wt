@@ -2,6 +2,7 @@ use super::control::{CodexContextSnapshot, ControlCommand, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 use uuid::Uuid;
+use wt_control_protocol::InstanceName;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -13,6 +14,7 @@ pub(super) struct WorldIdentity {
 pub(super) struct ShellWorld {
     pub(super) identity: WorldIdentity,
     pub(super) name: String,
+    pub(super) instance_name: InstanceName,
 }
 
 #[cfg(test)]
@@ -27,6 +29,10 @@ impl From<&str> for ShellWorld {
                 id: Uuid::new_v4(),
             },
             name: name.into(),
+            instance_name: InstanceName::parse(
+                name.split_once('.').map_or(name, |(_, instance)| instance),
+            )
+            .unwrap(),
         }
     }
 }
@@ -95,6 +101,10 @@ impl ShellModel {
 
     pub(super) fn world_count(&self) -> usize {
         self.worlds.len()
+    }
+
+    pub(super) fn worlds(&self) -> &[ShellWorld] {
+        &self.worlds
     }
 
     pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
@@ -227,6 +237,7 @@ mod tests {
                 id: Uuid::new_v4(),
             },
             name: name.into(),
+            instance_name: InstanceName::parse(name).unwrap(),
         }
     }
 
@@ -387,6 +398,7 @@ mod tests {
                 id,
             },
             name: "local.same".into(),
+            instance_name: InstanceName::parse("same").unwrap(),
         };
         let lab = ShellWorld {
             identity: WorldIdentity {
@@ -394,6 +406,7 @@ mod tests {
                 id,
             },
             name: "lab.same".into(),
+            instance_name: InstanceName::parse("same").unwrap(),
         };
         let model = ShellModel::new(vec![local.clone(), lab.clone()]);
 
