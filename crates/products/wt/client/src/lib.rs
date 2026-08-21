@@ -1,3 +1,4 @@
+mod atomic_file;
 pub mod config;
 pub mod connection;
 pub mod inventory;
