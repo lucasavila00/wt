@@ -142,6 +142,43 @@ fn one_shortcut_can_open_the_shared_host_form() -> Result<()> {
 }
 
 #[test]
+fn shift_f5_disables_and_restores_the_f5_override() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(5))?
+        .wait_for_text("F5: enable navbar")?
+        .press(Key::ShiftFunction(5))?
+        .wait_for_text("F5 disabled")?
+        .wait_for_text("Shift+F5: enable")?
+        .press(Key::Function(5))?
+        .wait_for_text("F5 disabled")?
+        .press(Key::ShiftFunction(5))?
+        .wait_for_text("F5: enable navbar")?
+        .wait_for_text_gone("F5 disabled")?;
+    Ok(())
+}
+
+#[test]
+fn world_form_receives_field_navigation_keys() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("dev")?
+        .press(Key::Enter)?
+        .press(Key::Down)?
+        .type_text("arrow-name")?
+        .press(Key::Enter)?
+        .wait_for_text("git@example.com:team/repository.git")?;
+    Ok(())
+}
+
+#[test]
 fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;

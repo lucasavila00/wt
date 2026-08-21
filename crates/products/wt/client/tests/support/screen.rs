@@ -19,9 +19,12 @@ pub enum Key {
     BackTab,
     Enter,
     Escape,
+    Left,
+    Right,
     Up,
     Down,
     Function(u8),
+    ShiftFunction(u8),
     Ctrl(char),
 }
 
@@ -238,10 +241,14 @@ fn key_bytes(key: Key) -> Result<Vec<u8>> {
         Key::Escape => b"\x1b".to_vec(),
         Key::Up => b"\x1b[A".to_vec(),
         Key::Down => b"\x1b[B".to_vec(),
+        Key::Right => b"\x1b[C".to_vec(),
+        Key::Left => b"\x1b[D".to_vec(),
         Key::Function(1) => b"\x1bOP".to_vec(),
         Key::Function(5) => b"\x1b[15~".to_vec(),
         Key::Function(6) => b"\x1b[17~".to_vec(),
         Key::Function(number) => bail!("unsupported function key F{number}"),
+        Key::ShiftFunction(5) => b"\x1b[15;2~".to_vec(),
+        Key::ShiftFunction(number) => bail!("unsupported shifted function key F{number}"),
         Key::Ctrl(character) if character.is_ascii_alphabetic() => {
             vec![(character.to_ascii_lowercase() as u8) & 0x1f]
         }

@@ -1,7 +1,7 @@
 use super::control::{
     CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
 };
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 use uuid::Uuid;
 
@@ -68,6 +68,7 @@ pub(super) struct ShellModel {
     worlds: Vec<ShellWorld>,
     active: usize,
     mode: Mode,
+    f5_disabled: bool,
     control: ControlState,
     should_quit: bool,
 }
@@ -78,6 +79,7 @@ impl ShellModel {
             worlds,
             active: 0,
             mode: Mode::Control,
+            f5_disabled: false,
             control: ControlState::default(),
             should_quit: false,
         }
@@ -89,6 +91,10 @@ impl ShellModel {
 
     pub(super) fn active(&self) -> usize {
         self.active
+    }
+
+    pub(super) fn f5_disabled(&self) -> bool {
+        self.f5_disabled
     }
 
     pub(super) fn has_worlds(&self) -> bool {
@@ -132,6 +138,7 @@ impl ShellModel {
             .position(|world| Some(&world.identity) == active_identity.as_ref())
             .unwrap_or(0);
         if self.worlds.is_empty() {
+            self.f5_disabled = false;
             self.control.close();
             self.mode = Mode::Control;
         }
@@ -153,6 +160,17 @@ impl ShellModel {
         if key.code == KeyCode::F(6) {
             self.should_quit = true;
             return InputRoute::Consumed;
+        }
+        if key.code == KeyCode::F(5) && key.modifiers == KeyModifiers::SHIFT && self.has_worlds() {
+            self.f5_disabled = !self.f5_disabled;
+            if self.f5_disabled {
+                self.control.close();
+                self.mode = Mode::World;
+            }
+            return InputRoute::Consumed;
+        }
+        if key.code == KeyCode::F(5) && self.f5_disabled {
+            return InputRoute::World;
         }
         match self.mode {
             Mode::World if key.code == KeyCode::F(5) => {
@@ -246,7 +264,6 @@ fn route(action: ControlAction) -> InputRoute {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyModifiers;
     use uuid::Uuid;
     use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
@@ -264,6 +281,10 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn shifted(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::SHIFT)
+    }
+
     #[test]
     fn world_mode_forwards_every_key_except_f5() {
         let mut model = model();
@@ -273,6 +294,33 @@ mod tests {
             InputRoute::World
         );
         assert_eq!(model.active(), 0);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert_eq!(model.mode(), Mode::Switcher);
+    }
+
+    #[test]
+    fn shift_f5_disables_the_override_and_plain_f5_reaches_the_world() {
+        let mut model = model();
+
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert!(model.f5_disabled());
+        assert_eq!(model.mode(), Mode::World);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::World
+        );
+
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert!(!model.f5_disabled());
         assert_eq!(
             model.handle_key(key(KeyCode::F(5)), area()),
             InputRoute::Consumed
@@ -295,6 +343,11 @@ mod tests {
             model.handle_key(key(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert!(!model.f5_disabled());
         assert_eq!(model.mode(), Mode::Control);
     }
 
@@ -465,6 +518,7 @@ mod tests {
         model.reconcile_worlds(Vec::new());
 
         assert!(!model.has_worlds());
+        assert!(!model.f5_disabled());
         assert_eq!(model.mode(), Mode::Control);
     }
 
