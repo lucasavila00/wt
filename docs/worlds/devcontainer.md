@@ -58,7 +58,7 @@ can read every available repository and write only branches under `wt/`.
 Provider keys and tokens do not enter the guest or container.
 
 Configured provider URLs route through the guest relay. Normal Git uses the
-gateway automatically, and `ag-git` selects the repository from the current
+gateway automatically, and `wt-git-hosting` selects the repository from the current
 checkout. The grant is revoked before the world disk is deleted.
 
 ## Requirements

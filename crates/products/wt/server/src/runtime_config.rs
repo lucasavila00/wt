@@ -233,9 +233,9 @@ impl ServerConfig {
     ) -> Result<ProvisionerConfig, String> {
         let bootstrap = self.bootstrap_policy()?;
         Ok(ProvisionerConfig {
-            app_pane_binary: self.install.binary_dir.join("wt-app-pane"),
-            app_info_binary: self.install.binary_dir.join("wt-app-info"),
-            app_proxy_binary: self.install.binary_dir.join("wt-app-proxy"),
+            app_pane_binary: self.install.binary_dir.join("wt-devcontainer-pane"),
+            app_info_binary: self.install.binary_dir.join("wt-devcontainer-info"),
+            app_proxy_binary: self.install.binary_dir.join("wt-devcontainer-ssh-proxy"),
             registry_cache_url,
             registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
             recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
@@ -248,8 +248,8 @@ impl ServerConfig {
         wt_retained_worlds::RetainedConfig {
             agent_git: wt_retained_worlds::AgentGitConfig {
                 relay_binary: self.install.binary_dir.join("wt-agent-git-gateway-relay"),
-                remote_binary: self.install.binary_dir.join("git-remote-ag"),
-                cli_binary: self.install.binary_dir.join("ag-git"),
+                remote_binary: self.install.binary_dir.join("git-remote-wt-agent"),
+                cli_binary: self.install.binary_dir.join("wt-git-hosting"),
                 provider_hosts: self.agent_git_provider_hosts(),
                 vsock_port: self.agent_git.vsock_port,
             },

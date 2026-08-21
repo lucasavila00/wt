@@ -6,12 +6,12 @@ use std::io::Read;
 use std::time::Duration;
 
 #[derive(Clone, Copy)]
-pub(crate) enum ProviderAuthentication {
+pub enum ProviderAuthentication {
     Github,
     Gitlab,
 }
 
-pub(crate) struct ProviderHttpClient {
+pub struct ProviderHttpClient {
     agent: ureq::Agent,
     base: String,
     token: String,
@@ -19,7 +19,7 @@ pub(crate) struct ProviderHttpClient {
 }
 
 impl ProviderHttpClient {
-    pub(crate) fn new(
+    pub fn new(
         base: String,
         token: &str,
         authentication: ProviderAuthentication,
@@ -41,7 +41,7 @@ impl ProviderHttpClient {
         })
     }
 
-    pub(crate) fn execute_graphql<Q>(
+    pub fn execute_graphql<Q>(
         &self,
         path: &str,
         variables: Q::Variables,
@@ -74,7 +74,7 @@ impl ProviderHttpClient {
             .ok_or_else(|| anyhow::anyhow!("provider GraphQL response has no data"))
     }
 
-    pub(crate) fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.get(&url))
@@ -84,7 +84,7 @@ impl ProviderHttpClient {
         decode_json(&body, &url, "JSON")
     }
 
-    pub(crate) fn read_text(&self, path: &str) -> Result<String> {
+    pub fn read_text(&self, path: &str) -> Result<String> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.get(&url))
@@ -93,7 +93,7 @@ impl ProviderHttpClient {
         read_response(response, "GET", &url)
     }
 
-    pub(crate) fn read_optional_text(&self, path: &str) -> Result<Option<String>> {
+    pub fn read_optional_text(&self, path: &str) -> Result<Option<String>> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.get(&url))
@@ -105,7 +105,7 @@ impl ProviderHttpClient {
         read_response(response, "GET", &url).map(Some)
     }
 
-    pub(crate) fn post_without_body(&self, path: &str) -> Result<()> {
+    pub fn post_without_body(&self, path: &str) -> Result<()> {
         let url = self.url(path);
         let response = self
             .authorize(self.agent.post(&url))

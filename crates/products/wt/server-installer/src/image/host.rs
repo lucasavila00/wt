@@ -2,16 +2,16 @@ use super::*;
 use std::collections::BTreeMap;
 
 pub(super) const BUILD_NAME: &str = "wt-host-image-build";
-const HOST_SHELL: &[u8] = include_bytes!("../../../../assets/world/host/shell.sh");
-const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/host/build-image.sh");
-const HOST_PREPARE: &[u8] = include_bytes!("../../../../assets/world/host/prepare.sh");
-const HOST_INSPECT: &[u8] = include_bytes!("../../../../assets/world/host/inspect.sh");
-const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../assets/world/host/cloud-init.sh");
-const HOST_SETUP: &[u8] = include_bytes!("../../../../assets/world/host/setup.sh");
-const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../assets/world/host/defer-init.yaml");
-const HOST_CLOUD_CONFIG: &[u8] = include_bytes!("../../../../assets/world/host/cloud-config.conf");
-const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../assets/world/host/cloud-final.conf");
-const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../assets/world/host/setup.service");
+const HOST_SHELL: &[u8] = include_bytes!("../../../../../../assets/world/host/shell.sh");
+const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../../../assets/world/host/build-image.sh");
+const HOST_PREPARE: &[u8] = include_bytes!("../../../../../../assets/world/host/prepare.sh");
+const HOST_INSPECT: &[u8] = include_bytes!("../../../../../../assets/world/host/inspect.sh");
+const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../../../assets/world/host/cloud-init.sh");
+const HOST_SETUP: &[u8] = include_bytes!("../../../../../../assets/world/host/setup.sh");
+const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../../../assets/world/host/defer-init.yaml");
+const HOST_CLOUD_CONFIG: &[u8] = include_bytes!("../../../../../../assets/world/host/cloud-config.conf");
+const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../../../assets/world/host/cloud-final.conf");
+const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../../../assets/world/host/setup.service");
 const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
     ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),

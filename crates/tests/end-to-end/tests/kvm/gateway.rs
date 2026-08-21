@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use wt_command::cmd;
+use wt_end_to_end_tests::cmd;
 
 pub(crate) fn spawn_gateway(
     temp: &Path,

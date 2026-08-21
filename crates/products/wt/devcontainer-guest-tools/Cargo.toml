@@ -7,16 +7,16 @@ publish.workspace = true
 description = "Guest-side programs injected by wt"
 
 [[bin]]
-name = "wt-app-pane"
+name = "wt-devcontainer-pane"
 path = "src/main.rs"
 
 [[bin]]
-name = "wt-app-proxy"
-path = "src/bin/wt-app-proxy.rs"
+name = "wt-devcontainer-ssh-proxy"
+path = "src/bin/wt-devcontainer-ssh-proxy.rs"
 
 [[bin]]
-name = "wt-app-info"
-path = "src/bin/wt-app-info.rs"
+name = "wt-devcontainer-info"
+path = "src/bin/wt-devcontainer-info.rs"
 
 [dependencies]
 serde = { workspace = true }

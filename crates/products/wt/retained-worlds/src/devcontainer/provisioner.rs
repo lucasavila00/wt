@@ -19,13 +19,13 @@ use crate::{GuestAccess, RetainedConfig};
 use super::devcontainer::APP_SSH_PORT;
 
 const CAPTURE_LIMIT: usize = 1024 * 1024;
-const GUEST_INSTALL: &[u8] = include_bytes!("../../../assets/world/devcontainer/install-guest.sh");
-const SETUP_WORLD: &[u8] = include_bytes!("../../../assets/world/devcontainer/setup-world.sh");
+const GUEST_INSTALL: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/install-guest.sh");
+const SETUP_WORLD: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/setup-world.sh");
 const SETUP_WORLD_ROOT: &[u8] =
-    include_bytes!("../../../assets/world/devcontainer/setup-world-root.sh");
-const APP_SHELL: &[u8] = include_bytes!("../../../assets/world/devcontainer/app-shell.sh");
+    include_bytes!("../../../../../../assets/world/devcontainer/setup-world-root.sh");
+const APP_SHELL: &[u8] = include_bytes!("../../../../../../assets/world/devcontainer/app-shell.sh");
 const AGENT_GIT_HINT: &[u8] =
-    include_bytes!("../../../assets/world/devcontainer/agent-git-hint.sh");
+    include_bytes!("../../../../../../assets/world/devcontainer/agent-git-hint.sh");
 const GUEST_INSTALL_STAGE: &str = "/tmp/wt-install-guest";
 const START_READINESS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -287,7 +287,7 @@ impl WorldProvisioner {
         result?;
         self.config.retained.provision(
             transport,
-            crate::ProvisionSpec {
+            crate::retained::ProvisionSpec {
                 authorized_keys: spec.ssh_authorized_keys,
                 git_user_name: spec.git_user_name,
                 git_user_email: spec.git_user_email,

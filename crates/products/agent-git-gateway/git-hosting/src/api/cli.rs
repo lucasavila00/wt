@@ -1,12 +1,12 @@
 use super::*;
 
 impl CliCommand {
-    pub(crate) fn parse(args: &[String]) -> Result<Self> {
+    pub fn parse(args: &[String]) -> Result<Self> {
         let [json] = args else {
-            bail!("ag-git expects exactly one JSON command object; run `ag-git help` for the TypeScript command type");
+            bail!("wt-git-hosting expects exactly one JSON command object; run `wt-git-hosting help` for the TypeScript command type");
         };
         let command: Self = serde_json::from_str(json).context(
-            "invalid ag-git command JSON; run `ag-git help` for the TypeScript command type",
+            "invalid wt-git-hosting command JSON; run `wt-git-hosting help` for the TypeScript command type",
         )?;
         command.validate()?;
         Ok(command)
@@ -73,10 +73,10 @@ impl CliCommand {
             Self::RetryJob { .. } => "retry the CI job",
             Self::CancelJob { .. } => "cancel the CI job",
             Self::CancelRun { .. } => "cancel the CI run",
-            Self::ReportAgGitBug { .. } => "report an ag-git bug",
-            Self::ReportAgGitIssue { .. } => "report an ag-git issue",
-            Self::SuggestAgGitImprovement { .. } => "suggest an ag-git improvement",
-            Self::RequestAgGitFeature { .. } => "request an ag-git feature",
+            Self::ReportAgGitBug { .. } => "report an wt-git-hosting bug",
+            Self::ReportAgGitIssue { .. } => "report an wt-git-hosting issue",
+            Self::SuggestAgGitImprovement { .. } => "suggest an wt-git-hosting improvement",
+            Self::RequestAgGitFeature { .. } => "request an wt-git-hosting feature",
         }
     }
 
@@ -106,11 +106,11 @@ impl CliCommand {
             Self::ReportAgGitBug { .. }
             | Self::ReportAgGitIssue { .. }
             | Self::SuggestAgGitImprovement { .. }
-            | Self::RequestAgGitFeature { .. } => "ag-git".to_owned(),
+            | Self::RequestAgGitFeature { .. } => "wt-git-hosting".to_owned(),
         }
     }
 
-    pub(crate) fn agent_git_report(&self) -> Option<(wt_workload_registry::AgentGitReportKind, &str)> {
+    pub fn agent_git_report(&self) -> Option<(wt_workload_registry::AgentGitReportKind, &str)> {
         match self {
             Self::ReportAgGitBug { description } => {
                 Some((wt_workload_registry::AgentGitReportKind::Bug, description))
@@ -129,7 +129,7 @@ impl CliCommand {
     }
 }
 
-pub(crate) fn render_cli_command_output(output: ProviderCommandOutput) -> String {
+pub fn render_cli_command_output(output: ProviderCommandOutput) -> String {
     match output {
         ProviderCommandOutput::ChangeRequest(request) => render_change_request(&request),
         ProviderCommandOutput::ReviewThreads(threads) => render_threads(&threads),

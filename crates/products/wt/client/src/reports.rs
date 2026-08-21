@@ -8,7 +8,7 @@ pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     let result = list_all(config);
     if result.failures.len() == config.contexts.len() {
         return Err(super::context_failures(
-            "could not list ag-git reports because every context failed",
+            "could not list wt-git-hosting reports because every context failed",
             &result.failures,
             None,
         ));
@@ -23,13 +23,13 @@ pub fn clear(config: &ClientConfig) -> anyhow::Result<()> {
     let result = clear_all(config);
     if result.failures.len() == config.contexts.len() {
         return Err(super::context_failures(
-            "could not clear ag-git reports because every context failed",
+            "could not clear wt-git-hosting reports because every context failed",
             &result.failures,
             None,
         ));
     }
     println!(
-        "cleared {} ag-git report{}",
+        "cleared {} wt-git-hosting report{}",
         result.count,
         if result.count == 1 { "" } else { "s" }
     );
@@ -68,7 +68,7 @@ pub fn list_all(config: &ClientConfig) -> ListResult {
                         report,
                     }),
             ),
-            Ok(_) => failures.push(transport::wrong_response(context, "list ag-git reports")),
+            Ok(_) => failures.push(transport::wrong_response(context, "list wt-git-hosting reports")),
             Err(error) => failures.push(error),
         }
     }
@@ -83,7 +83,7 @@ pub fn clear_all(config: &ClientConfig) -> ClearResult {
             Ok(Response::AgentGitReportsCleared {
                 count: context_count,
             }) => count += context_count,
-            Ok(_) => failures.push(transport::wrong_response(context, "clear ag-git reports")),
+            Ok(_) => failures.push(transport::wrong_response(context, "clear wt-git-hosting reports")),
             Err(error) => failures.push(error),
         }
     }
@@ -92,7 +92,7 @@ pub fn clear_all(config: &ClientConfig) -> ClearResult {
 
 pub fn format(reports: &[ContextAgentGitReport]) -> String {
     if reports.is_empty() {
-        return "No ag-git reports.\n".to_owned();
+        return "No wt-git-hosting reports.\n".to_owned();
     }
     let mut rows = vec![[
         "CONTEXT".to_owned(),
@@ -177,6 +177,6 @@ mod tests {
 
     #[test]
     fn explains_an_empty_report_list() {
-        insta::assert_snapshot!(format(&[]), @"No ag-git reports.");
+        insta::assert_snapshot!(format(&[]), @"No wt-git-hosting reports.");
     }
 }

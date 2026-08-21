@@ -1,6 +1,6 @@
 use std::path::Path;
-use wt_command::cmd;
-use wt_libvirt_kvm::WorkerError;
+use crate::cmd;
+use crate::WorkerError;
 
 use super::context;
 

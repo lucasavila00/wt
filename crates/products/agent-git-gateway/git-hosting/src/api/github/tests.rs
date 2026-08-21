@@ -210,7 +210,7 @@ fn refuses_truncated_graphql_connections_instead_of_issuing_unsafe_handles() {
 
     assert_eq!(
         error.to_string(),
-        "GitHub returned only the first page of pull requests (1 total); ag-git refuses to continue with incomplete handles or status"
+        "GitHub returned only the first page of pull requests (1 total); wt-git-hosting refuses to continue with incomplete handles or status"
     );
     server.join().unwrap().unwrap();
 }

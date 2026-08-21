@@ -45,7 +45,7 @@ Host local.same-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.same-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.same-host /usr/local/bin/wt-devcontainer-ssh-proxy
 
 Host lab.same-host
   HostName 192.0.2.2
@@ -90,4 +90,4 @@ Host lab.same-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.same-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.same-host /usr/local/bin/wt-devcontainer-ssh-proxy

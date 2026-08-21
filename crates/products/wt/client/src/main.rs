@@ -54,9 +54,9 @@ enum Command {
     Ssh { name: String },
     /// Update managed OpenSSH inventory.
     Sync,
-    /// Show reports submitted about ag-git.
+    /// Show reports submitted about wt-git-hosting.
     Reports,
-    /// Clear reports submitted about ag-git.
+    /// Clear reports submitted about wt-git-hosting.
     ClearReports,
 }
 
@@ -585,7 +585,7 @@ fn instance_detail(item: &ContextInstance) -> String {
         return detail;
     }
     let reports = format!(
-        "{} ag-git report{}; run `wt reports`",
+        "{} wt-git-hosting report{}; run `wt reports`",
         item.agent_git_report_count,
         if item.agent_git_report_count == 1 {
             ""

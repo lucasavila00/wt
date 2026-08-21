@@ -8,8 +8,8 @@ use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
 use wt_server::service::Service;
-use wt_server::store::Store;
-use wt_server::worlds::Workers;
+use wt_workload_registry::Store;
+use wt_retained_worlds::Workers;
 use wt_server::ServerConfig;
 
 fn main() {

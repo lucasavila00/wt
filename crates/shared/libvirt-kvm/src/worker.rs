@@ -21,8 +21,8 @@ use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use virt::network::Network;
-use wt_command::cmd;
-use wt_libvirt_kvm::{
+use crate::cmd;
+use crate::{
     Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId, WorkerError,
 };
 

@@ -93,7 +93,7 @@ struct GitlabReplyToDiscussion;
 )]
 struct GitlabSetDiscussionResolved;
 
-pub(crate) struct GitlabApi {
+pub struct GitlabApi {
     http: ProviderHttpClient,
 }
 

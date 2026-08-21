@@ -78,7 +78,7 @@ fn failed_host_create_is_retained_until_explicit_delete() {
         Store::open(&temp.path().join("instances.db"))
             .unwrap()
             .get("tester", &name),
-        Err(wt_server::store::StoreError::NotFound)
+        Err(wt_workload_registry::StoreError::NotFound)
     ));
 }
 

@@ -27,14 +27,14 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-wt-agent-git-gateway-gateway = { path = "crates/products/agent-git-gateway/gateway" }
-wt-clientent = { path = "crates/products/wt/client" }
+wt-agent-git-gateway = { path = "crates/products/agent-git-gateway/gateway" }
+wt-client = { path = "crates/products/wt/client" }
 wt-control-protocol = { path = "crates/products/wt/control-protocol" }
 wt-git-hosting = { path = "crates/products/agent-git-gateway/git-hosting" }
 wt-git-proxy = { path = "crates/products/git-proxy/service" }
 wt-git-smart-protocol = { path = "crates/shared/git-smart-protocol" }
 wt-installer-support = { path = "crates/shared/installer-support" }
-wt-libvirt-kvm-kvm = { path = "crates/shared/libvirt-kvm" }
+wt-libvirt-kvm = { path = "crates/shared/libvirt-kvm" }
 wt-retained-worlds = { path = "crates/products/wt/retained-worlds" }
 wt-server = { path = "crates/products/wt/server" }
 wt-workload-registry = { path = "crates/shared/workload-registry" }

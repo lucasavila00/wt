@@ -107,7 +107,7 @@ struct GithubResolveReviewThread;
 )]
 struct GithubReopenReviewThread;
 
-pub(crate) struct GithubApi {
+pub struct GithubApi {
     graphql: ProviderHttpClient,
     rest: ProviderHttpClient,
     graphql_path: &'static str,
@@ -292,7 +292,7 @@ fn split_project(project: &str) -> Result<(&str, &str)> {
 fn ensure_complete_connection(name: &str, has_next_page: bool, total_count: i64) -> Result<()> {
     if has_next_page {
         bail!(
-            "GitHub returned only the first page of {name} ({total_count} total); ag-git refuses to continue with incomplete handles or status"
+            "GitHub returned only the first page of {name} ({total_count} total); wt-git-hosting refuses to continue with incomplete handles or status"
         );
     }
     Ok(())
@@ -301,7 +301,7 @@ fn ensure_complete_connection(name: &str, has_next_page: bool, total_count: i64)
 fn ensure_complete_rest_collection(name: &str, total_count: u64, received: usize) -> Result<()> {
     if total_count != received as u64 {
         bail!(
-            "GitHub returned only {received} of {total_count} {name}; ag-git refuses to continue with incomplete CI handles or status"
+            "GitHub returned only {received} of {total_count} {name}; wt-git-hosting refuses to continue with incomplete CI handles or status"
         );
     }
     Ok(())

@@ -47,7 +47,7 @@ Host lab.world-one-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-devcontainer-ssh-proxy
 
 Host world-one-host
   HostName 192.0.2.10
@@ -92,7 +92,7 @@ Host world-one-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-one-host /usr/local/bin/wt-devcontainer-ssh-proxy
 
 Host lab.world-two-host
   HostName 192.0.2.11
@@ -137,7 +137,7 @@ Host lab.world-two-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-devcontainer-ssh-proxy
 
 Host world-two-host
   HostName 192.0.2.11
@@ -182,4 +182,4 @@ Host world-two-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no lab.world-two-host /usr/local/bin/wt-devcontainer-ssh-proxy

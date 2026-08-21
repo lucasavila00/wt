@@ -17,7 +17,7 @@ use wt_control_protocol::{
     ApiRequest, ApiResponse, CreateApplication, CreateInstance, InstanceName, InstanceStatus,
     Operation, Outcome, Response,
 };
-use wt_command::cmd;
+use wt_end_to_end_tests::cmd;
 use wt_server::ServerConfig;
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());

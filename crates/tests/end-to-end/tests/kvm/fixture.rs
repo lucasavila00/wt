@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use wt_command::cmd;
+use wt_end_to_end_tests::cmd;
 
 pub(crate) struct GitFixture {
     pub(crate) repository: PathBuf,
@@ -33,7 +33,7 @@ impl GitFixture {
         .unwrap();
         fs::write(
             seed.join(".devcontainer/Dockerfile"),
-            include_str!("../../../../.devcontainer/Dockerfile"),
+            include_str!("../../../../../.devcontainer/Dockerfile"),
         )
         .unwrap();
         fs::write(

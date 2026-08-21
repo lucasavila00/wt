@@ -3,6 +3,15 @@ use uuid::Uuid;
 use wt_control_protocol::{AppSshAccess, WorldKind};
 use wt_libvirt_kvm::WorkerError;
 
+#[macro_export]
+macro_rules! cmd {
+    ($program:expr $(, $argument:expr)* $(,)?) => {{
+        let mut command = ::std::process::Command::new($program);
+        $(command.arg($argument);)*
+        command
+    }};
+}
+
 pub mod devcontainer;
 pub mod host;
 mod retained;

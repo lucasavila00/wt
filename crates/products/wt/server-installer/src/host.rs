@@ -3,9 +3,9 @@ use std::path::Path;
 use wt_server::ServerConfig;
 use wt_installer_support::Runner;
 
-const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../assets/server/install-host.sh");
+const SERVER_HOST_INSTALL: &[u8] = include_bytes!("../../../../../assets/server/install-host.sh");
 pub(crate) const CODEX_AUTH_SHARE: &[u8] =
-    include_bytes!("../../../assets/server/share-codex-auth.sh");
+    include_bytes!("../../../../../assets/server/share-codex-auth.sh");
 
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let image_dir = config

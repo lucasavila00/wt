@@ -3,7 +3,7 @@ mod provider;
 use super::*;
 
 impl GitlabApi {
-    pub(crate) fn new(host: &str, token: &str) -> Result<Self> {
+    pub fn new(host: &str, token: &str) -> Result<Self> {
         Ok(Self {
             http: ProviderHttpClient::new(
                 format!("https://{host}"),
@@ -13,7 +13,7 @@ impl GitlabApi {
         })
     }
 
-    pub(crate) fn with_base_url(base_url: String, token: &str) -> Result<Self> {
+    pub fn with_base_url(base_url: String, token: &str) -> Result<Self> {
         Ok(Self {
             http: ProviderHttpClient::new(base_url, token, ProviderAuthentication::Gitlab)?,
         })

@@ -3,12 +3,12 @@ source: crates/wt-agent-git-gateway/src/gateway/tests.rs
 assertion_line: 34
 expression: HELP
 ---
-ag-git reads and changes explicitly identified Git provider resources and records
-feedback about ag-git itself. It accepts exactly one JSON command object and
+wt-git-hosting reads and changes explicitly identified Git provider resources and records
+feedback about wt-git-hosting itself. It accepts exactly one JSON command object and
 rejects unknown fields.
 
 USAGE:
-ag-git '<JSON>'
+wt-git-hosting '<JSON>'
 
 TYPESCRIPT COMMAND TYPE:
 type AgGitCommand =
@@ -38,12 +38,12 @@ type AgGitCommand =
 | { action: "request_ag_git_feature"; description: string };
 
 EXAMPLE:
-ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+wt-git-hosting '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
 
 `show_mr_for_branch` returns the single open MR from the named branch to the
 gateway grant's base branch. It fails when there is no match or multiple matches.
 
-The four ag-git reporting actions store feedback against this authenticated world
+The four wt-git-hosting reporting actions store feedback against this authenticated world
 without contacting the Git provider.
 
 The provider and project come from this world's gateway grant. Every other

@@ -58,7 +58,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
                     &proxy_jump,
                 );
                 let app_common = app_ssh.as_ref().map(|app_ssh| format!(
-                    "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-app-proxy\n",
+                    "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-devcontainer-ssh-proxy\n",
                     app_ssh.user,
                     app_ssh.port,
                     qualified,

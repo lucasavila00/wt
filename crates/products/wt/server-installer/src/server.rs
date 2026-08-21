@@ -13,7 +13,7 @@ use std::os::unix::fs::MetadataExt;
 #[cfg(test)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use wt_command::cmd;
+use wt_installer_support::cmd;
 use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
 #[cfg(test)]

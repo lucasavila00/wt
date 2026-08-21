@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
-use wt_command::cmd;
+use crate::cmd;
 
 #[derive(Debug)]
 pub struct ContextError {

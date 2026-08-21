@@ -16,7 +16,7 @@ mod http;
 #[cfg(test)]
 mod test_server;
 
-pub(crate) use cli::render_cli_command_output;
+pub use cli::render_cli_command_output;
 #[cfg(test)]
 use cli::{render_threads, tail_ci_job_log_at_limit};
 
@@ -28,7 +28,7 @@ use std::path::Path;
 const CI_JOB_LOG_TAIL_LIMIT: usize = 64 * 1024;
 const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
 
-pub(crate) struct ProviderCommandScope<'a> {
+pub struct ProviderCommandScope<'a> {
     pub project: &'a str,
     pub base: &'a str,
     pub prefix: &'a str,
@@ -36,7 +36,7 @@ pub(crate) struct ProviderCommandScope<'a> {
     pub head: &'a str,
 }
 
-pub(crate) struct ProviderProjectScope<'a> {
+pub struct ProviderProjectScope<'a> {
     pub host: &'a str,
     pub project: &'a str,
     pub prefix: &'a str,
@@ -44,7 +44,7 @@ pub(crate) struct ProviderProjectScope<'a> {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ChangeRequestState {
+pub enum ChangeRequestState {
     Ready,
     Draft,
     Open,
@@ -53,7 +53,7 @@ pub(crate) enum ChangeRequestState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum CliCommand {
+pub enum CliCommand {
     ShowMr {
         mr: u64,
     },
@@ -144,7 +144,7 @@ pub(crate) enum CliCommand {
     reason = "contextual variants remain for shared provider implementations and private tests"
 )]
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum ProviderCommand {
+pub enum ProviderCommand {
     ReadCurrentStatus,
     OpenChangeRequest {
         draft: bool,
@@ -183,7 +183,7 @@ pub(crate) enum ProviderCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ChangeRequestStatus {
+pub struct ChangeRequestStatus {
     pub handle: String,
     pub url: String,
     pub title: String,
@@ -197,7 +197,7 @@ pub(crate) struct ChangeRequestStatus {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ReviewThread {
+pub struct ReviewThread {
     pub handle: ReviewThreadHandle,
     pub resolvable: bool,
     pub resolved: bool,
@@ -207,14 +207,14 @@ pub(crate) struct ReviewThread {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ReviewComment {
+pub struct ReviewComment {
     pub author: String,
     pub body: String,
     pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CiJob {
+pub struct CiJob {
     pub handle: CiJobHandle,
     pub run: Option<String>,
     pub name: String,
@@ -223,7 +223,7 @@ pub(crate) struct CiJob {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CiRun {
+pub struct CiRun {
     pub handle: String,
     pub name: String,
     pub state: String,
@@ -235,14 +235,14 @@ pub(crate) struct CiRun {
 // Every identifier newtype serializes as its underlying scalar.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct ReviewThreadHandle(String);
+pub struct ReviewThreadHandle(String);
 
 impl ReviewThreadHandle {
-    pub(crate) fn new(value: impl Into<String>) -> Self {
+    pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -255,14 +255,14 @@ impl std::fmt::Display for ReviewThreadHandle {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct CiJobHandle(String);
+pub struct CiJobHandle(String);
 
 impl CiJobHandle {
-    pub(crate) fn new(value: impl Into<String>) -> Self {
+    pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -274,7 +274,7 @@ impl std::fmt::Display for CiJobHandle {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum ProviderCommandOutput {
+pub enum ProviderCommandOutput {
     CurrentStatus(Option<ChangeRequestStatus>),
     ChangeRequest(ChangeRequestStatus),
     ReviewThreads(Vec<ReviewThread>),
@@ -286,7 +286,7 @@ pub(crate) enum ProviderCommandOutput {
     Confirmation(String),
 }
 
-pub(crate) trait GitProviderApi {
+pub trait GitProviderApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()>;
 
     fn execute_command(
@@ -302,7 +302,7 @@ pub(crate) trait GitProviderApi {
     ) -> Result<ProviderCommandOutput>;
 }
 
-pub(crate) fn verify_provider_access(
+pub fn verify_provider_access(
     kind: ProviderKind,
     token_file: &Path,
     host: &str,
@@ -349,7 +349,7 @@ fn wait_for_review_or_ci_change(
     }
 }
 
-pub(crate) fn execute_cli_provider_command(
+pub fn execute_cli_provider_command(
     kind: ProviderKind,
     token_file: &Path,
     scope: &ProviderProjectScope<'_>,
@@ -369,7 +369,7 @@ pub(crate) fn execute_cli_provider_command(
     with_cli_command_context(result, kind, scope, command)
 }
 
-pub(crate) fn execute_cli_provider_command_at_base(
+pub fn execute_cli_provider_command_at_base(
     kind: ProviderKind,
     token_file: &Path,
     base_url: &str,
@@ -396,7 +396,7 @@ fn with_cli_command_context(
 ) -> Result<ProviderCommandOutput> {
     result.with_context(|| {
         format!(
-            "ag-git could not {}\nProvider: {} ({})\nProject: {}\nResource: {}\nCause",
+            "wt-git-hosting could not {}\nProvider: {} ({})\nProject: {}\nResource: {}\nCause",
             command.action(),
             provider_name(kind),
             scope.host,
@@ -430,7 +430,7 @@ fn attributed_comment(scope: &ProviderCommandScope<'_>, body: &str) -> String {
     )
 }
 
-pub(crate) fn attributed_project_comment(scope: &ProviderProjectScope<'_>, body: &str) -> String {
+pub fn attributed_project_comment(scope: &ProviderProjectScope<'_>, body: &str) -> String {
     format!(
         "{body}\n\n— WT world `{}`",
         scope.prefix.trim_end_matches('/')

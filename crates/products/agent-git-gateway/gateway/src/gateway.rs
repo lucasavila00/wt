@@ -1,9 +1,10 @@
 mod service;
 
 use crate::{
-    api, ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
     Repository, TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
+use wt_git_hosting::{self as api, ProviderKind};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -49,12 +50,6 @@ pub struct FixtureApi {
     pub token_file: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProviderKind {
-    GitHub,
-    GitLab,
-}
-
 impl Provider {
     fn host(&self) -> &str {
         match self {
@@ -95,7 +90,7 @@ impl GrantRecord {
 }
 
 fn cli_unavailable() -> String {
-    "ag-git: provider API commands are not available for this project.\nNormal Git fetch, pull, and push are available.\n".to_owned()
+    "wt-git-hosting: provider API commands are not available for this project.\nNormal Git fetch, pull, and push are available.\n".to_owned()
 }
 
 fn valid_host(value: &str) -> bool {
@@ -118,16 +113,16 @@ remote: WT gives you read access to every repository available to this gateway.\
 remote: This Git operation is for project {project}.\n\
 remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
 remote: Every WT world can write branches under {BRANCH_PREFIX}.\n\
-remote: ag-git uses explicit provider resource types and IDs; it does not infer\n\
+remote: wt-git-hosting uses explicit provider resource types and IDs; it does not infer\n\
 remote: resources from the current checkout.\n\
-remote: Run ag-git --help to discover every available command.\n\
+remote: Run wt-git-hosting --help to discover every available command.\n\
 remote:\n"
     )
 }
 
 fn world_prompt() -> String {
     format!(
-        "This environment has ag-git installed for pull or merge request, review, and CI operations; run ag-git help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
+        "This environment has wt-git-hosting installed for pull or merge request, review, and CI operations; run wt-git-hosting help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
     )
 }
 
@@ -261,12 +256,12 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
 }
 
 const HELP: &str = "\
-ag-git reads and changes explicitly identified Git provider resources and records\n\
-feedback about ag-git itself. It accepts exactly one JSON command object and\n\
+wt-git-hosting reads and changes explicitly identified Git provider resources and records\n\
+feedback about wt-git-hosting itself. It accepts exactly one JSON command object and\n\
 rejects unknown fields.\n\
 \n\
 USAGE:\n\
-    ag-git '<JSON>'\n\
+    wt-git-hosting '<JSON>'\n\
 \n\
 TYPESCRIPT COMMAND TYPE:\n\
     type AgGitCommand =\n\
@@ -296,12 +291,12 @@ TYPESCRIPT COMMAND TYPE:\n\
       | { action: \"request_ag_git_feature\"; description: string };\n\
 \n\
 EXAMPLE:\n\
-    ag-git '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
+    wt-git-hosting '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch to the\n\
 gateway grant's base branch. It fails when there is no match or multiple matches.\n\
 \n\
-The four ag-git reporting actions store feedback against this authenticated world\n\
+The four wt-git-hosting reporting actions store feedback against this authenticated world\n\
 without contacting the Git provider.\n\
 \n\
 The provider and project come from this world's gateway grant. Every other\n\

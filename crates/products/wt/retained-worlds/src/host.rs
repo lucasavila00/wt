@@ -138,7 +138,7 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         )?;
         self.retained.provision(
             machine.transport.as_ref(),
-            crate::ProvisionSpec {
+            crate::retained::ProvisionSpec {
                 authorized_keys: &authorized_keys,
                 git_user_name: spec.git_user_name,
                 git_user_email: spec.git_user_email,
@@ -419,6 +419,6 @@ mod tests {
 
     #[test]
     fn default_client_user_data_is_valid() {
-        validate_user_data(include_str!("../../../assets/client/cloud-init.yaml")).unwrap();
+        validate_user_data(include_str!("../../../../../assets/client/cloud-init.yaml")).unwrap();
     }
 }

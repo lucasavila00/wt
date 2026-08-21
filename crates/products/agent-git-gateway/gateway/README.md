@@ -3,7 +3,7 @@
 Scoped Git transport for retained worlds.
 
 The host gateway owns provider credentials and grants. The guest relay carries
-requests over vsock. `git-remote-ag` and `ag-git` expose the allowed Git and
+requests over vsock. `git-remote-wt-agent` and `wt-git-hosting` expose the allowed Git and
 provider operations inside devcontainer and host worlds.
 
 Provider SSH keys and API tokens never enter the guest or container.

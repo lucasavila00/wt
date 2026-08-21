@@ -2456,13 +2456,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
-name = "wt-agent-git"
+name = "wt-agent-git-gateway"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
  "diesel",
- "graphql_client",
  "insta",
  "serde",
  "serde_json",
@@ -2471,25 +2470,13 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
- "wt-git-core",
- "wt-registry",
+ "wt-git-hosting",
+ "wt-git-smart-protocol",
+ "wt-workload-registry",
 ]
 
 [[package]]
-name = "wt-api"
-version = "0.0.0"
-dependencies = [
- "insta",
- "serde",
- "serde_json",
- "ssh-key",
- "thiserror 2.0.18",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "wt-cli"
+name = "wt-client"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2503,12 +2490,11 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-api",
- "wt-command",
+ "wt-control-protocol",
 ]
 
 [[package]]
-name = "wt-codex"
+name = "wt-codex-integration"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2521,40 +2507,80 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-command"
-version = "0.0.0"
-
-[[package]]
-name = "wt-devcontainer"
+name = "wt-control-protocol"
 version = "0.0.0"
 dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "thiserror 2.0.18",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "wt-devcontainer-guest-tools"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "wt-end-to-end-tests"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
  "insta",
  "serde",
  "serde_json",
  "tempfile",
+ "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-api",
- "wt-command",
- "wt-provider",
- "wt-retained",
+ "wt-agent-git-gateway",
+ "wt-client",
+ "wt-control-protocol",
+ "wt-git-proxy",
+ "wt-libvirt-kvm",
+ "wt-retained-worlds",
+ "wt-server",
+ "wt-workload-registry",
 ]
 
 [[package]]
-name = "wt-devcontainer-guest"
+name = "wt-gh-actions-runner"
 version = "0.0.0"
 dependencies = [
- "insta",
+ "base64 0.22.1",
+ "jsonwebtoken",
  "serde",
  "serde_json",
- "wt-command",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 1.1.2+spec-1.1.0",
+ "ureq",
+ "url",
+ "uuid",
+ "wt-libvirt-kvm",
+ "wt-workload-registry",
+ "zeroize",
 ]
 
 [[package]]
-name = "wt-git-core"
+name = "wt-git-hosting"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "graphql_client",
+ "insta",
  "serde",
+ "serde_json",
+ "tempfile",
+ "ureq",
+ "url",
+ "wt-workload-registry",
 ]
 
 [[package]]
@@ -2571,11 +2597,11 @@ dependencies = [
  "ssh-key",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
- "wt-git-core",
+ "wt-git-smart-protocol",
 ]
 
 [[package]]
-name = "wt-git-proxy-setup"
+name = "wt-git-proxy-installer"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2585,71 +2611,33 @@ dependencies = [
  "serde",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
- "wt-command",
  "wt-git-proxy",
- "wt-setup-core",
+ "wt-installer-support",
 ]
 
 [[package]]
-name = "wt-github-ci"
+name = "wt-git-smart-protocol"
 version = "0.0.0"
 dependencies = [
- "base64 0.22.1",
- "jsonwebtoken",
+ "anyhow",
  "serde",
- "serde_json",
+]
+
+[[package]]
+name = "wt-installer-support"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "cliclack",
+ "insta",
+ "nix",
+ "ssh-key",
  "tempfile",
- "thiserror 2.0.18",
- "toml 1.1.2+spec-1.1.0",
- "ureq",
- "url",
- "uuid",
- "wt-libvirt",
- "wt-provider",
- "wt-registry",
  "zeroize",
 ]
 
 [[package]]
-name = "wt-host"
-version = "0.0.0"
-dependencies = [
- "insta",
- "serde_yaml_ng",
- "ssh-key",
- "tempfile",
- "uuid",
- "wt-api",
- "wt-provider",
- "wt-retained",
-]
-
-[[package]]
-name = "wt-integration-tests"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "insta",
- "serde",
- "serde_json",
- "tempfile",
- "toml 1.1.2+spec-1.1.0",
- "uuid",
- "wt-agent-git",
- "wt-api",
- "wt-cli",
- "wt-command",
- "wt-devcontainer",
- "wt-git-proxy",
- "wt-host",
- "wt-libvirt",
- "wt-provider",
- "wt-registry",
- "wt-server",
-]
-
-[[package]]
-name = "wt-libvirt"
+name = "wt-libvirt-kvm"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
@@ -2657,42 +2645,24 @@ dependencies = [
  "quick-xml",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
  "uuid",
  "virt",
- "wt-command",
- "wt-provider",
 ]
 
 [[package]]
-name = "wt-provider"
-version = "0.0.0"
-dependencies = [
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "wt-registry"
-version = "0.0.0"
-dependencies = [
- "diesel",
- "diesel_migrations",
- "libsqlite3-sys",
- "serde",
- "tempfile",
- "thiserror 2.0.18",
- "toml 1.1.2+spec-1.1.0",
- "uuid",
-]
-
-[[package]]
-name = "wt-retained"
+name = "wt-retained-worlds"
 version = "0.0.0"
 dependencies = [
  "insta",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
  "ssh-key",
- "wt-api",
- "wt-provider",
+ "tempfile",
+ "uuid",
+ "wt-control-protocol",
+ "wt-libvirt-kvm",
 ]
 
 [[package]]
@@ -2712,18 +2682,15 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
- "wt-agent-git",
- "wt-api",
- "wt-devcontainer",
- "wt-host",
- "wt-libvirt",
- "wt-provider",
- "wt-registry",
- "wt-retained",
+ "wt-agent-git-gateway",
+ "wt-control-protocol",
+ "wt-libvirt-kvm",
+ "wt-retained-worlds",
+ "wt-workload-registry",
 ]
 
 [[package]]
-name = "wt-server-setup"
+name = "wt-server-installer"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2736,28 +2703,28 @@ dependencies = [
  "ssh-key",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
- "wt-command",
- "wt-devcontainer",
- "wt-libvirt",
- "wt-registry",
- "wt-retained",
+ "wt-installer-support",
+ "wt-libvirt-kvm",
+ "wt-retained-worlds",
  "wt-server",
- "wt-setup-core",
+ "wt-workload-registry",
  "zeroize",
 ]
 
 [[package]]
-name = "wt-setup-core"
+name = "wt-workload-registry"
 version = "0.0.0"
 dependencies = [
- "anyhow",
- "cliclack",
- "insta",
- "nix",
- "ssh-key",
+ "diesel",
+ "diesel_migrations",
+ "libsqlite3-sys",
+ "serde",
+ "serde_json",
  "tempfile",
- "wt-command",
- "zeroize",
+ "thiserror 2.0.18",
+ "toml 1.1.2+spec-1.1.0",
+ "uuid",
+ "wt-control-protocol",
 ]
 
 [[package]]

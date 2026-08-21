@@ -13,7 +13,7 @@ pub(super) struct Paths {
 }
 
 impl Paths {
-    pub(super) fn new(root: &Path, provider_id: &wt_libvirt_kvm::ProviderId) -> Self {
+    pub(super) fn new(root: &Path, provider_id: &crate::ProviderId) -> Self {
         let directory = root.join(provider_id.as_str());
         Self {
             seed: directory.join("seed.img"),
@@ -35,11 +35,11 @@ pub(super) fn network_config() -> &'static str {
 }
 
 pub(super) fn domain_xml(
-    provider_id: &wt_libvirt_kvm::ProviderId,
+    provider_id: &crate::ProviderId,
     paths: &Paths,
     disk_path: &Path,
     config: &MachineConfig,
-    spec: &wt_libvirt_kvm::MachineSpec,
+    spec: &crate::MachineSpec,
     network_enabled: bool,
 ) -> String {
     let disk_path = disk_path.to_string_lossy();
@@ -115,7 +115,7 @@ pub(super) fn domain_xml(
     )
 }
 
-fn mac_address(provider_id: &wt_libvirt_kvm::ProviderId) -> String {
+fn mac_address(provider_id: &crate::ProviderId) -> String {
     let suffix = &provider_id.as_str()[3..];
     format!(
         "52:54:00:{}:{}:{}",
@@ -133,7 +133,7 @@ mod tests {
 
     fn test_domain_xml(codex_mounts: Option<CodexMounts>) -> String {
         let provider_id =
-            wt_libvirt_kvm::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
+            crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
         let paths = Paths::new(Path::new("/var/lib/libvirt/images/wt"), &provider_id);
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
@@ -142,13 +142,13 @@ mod tests {
             boot_timeout: Duration::from_secs(300),
             codex_mounts,
         };
-        let spec = wt_libvirt_kvm::MachineSpec {
+        let spec = crate::MachineSpec {
             provider_id: provider_id.clone(),
             disk_id: uuid::Uuid::nil(),
             memory_mib: 4096,
             vcpus: 4,
             disk_gib: 32,
-            cloud_init: wt_libvirt_kvm::NoCloudConfig::default(),
+            cloud_init: crate::NoCloudConfig::default(),
         };
         domain_xml(
             &provider_id,

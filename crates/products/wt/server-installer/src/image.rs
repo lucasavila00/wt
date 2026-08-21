@@ -23,7 +23,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::time::Duration;
-use wt_command::cmd;
+use wt_installer_support::cmd;
 use wt_retained_worlds::devcontainer::PackageVersions;
 use wt_libvirt_kvm::LIBVIRT_URI;
 use wt_server::ServerConfig;
@@ -32,7 +32,7 @@ use wt_installer_support::{require_named_file, require_root_file, Runner};
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const DEVCONTAINER_IMAGE_BUILD: &[u8] =
-    include_bytes!("../../../assets/world/devcontainer/build-image.sh");
+    include_bytes!("../../../../../assets/world/devcontainer/build-image.sh");
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

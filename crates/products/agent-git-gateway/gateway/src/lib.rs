@@ -1,10 +1,10 @@
-mod api;
 mod gateway;
 mod protocol;
 mod stream;
 mod vsock;
 
-pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind};
+pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider};
+pub use wt_git_hosting::ProviderKind;
 pub use protocol::{
     ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, Repository,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,

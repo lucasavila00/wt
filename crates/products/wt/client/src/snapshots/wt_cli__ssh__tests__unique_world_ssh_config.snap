@@ -45,7 +45,7 @@ Host local.repo-feature-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.repo-feature-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.repo-feature-host /usr/local/bin/wt-devcontainer-ssh-proxy
 
 Host repo-feature-host
   HostName 192.0.2.2
@@ -88,4 +88,4 @@ Host repo-feature-vs
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   SetEnv TERM=xterm-256color
-  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.repo-feature-host /usr/local/bin/wt-app-proxy
+  ProxyCommand ssh -F "[HOME]/.ssh/config" -o Compression=no local.repo-feature-host /usr/local/bin/wt-devcontainer-ssh-proxy

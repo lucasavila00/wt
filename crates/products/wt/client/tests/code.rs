@@ -1,6 +1,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use wt_command::cmd;
+use wt_client::cmd;
 
 fn write_executable(path: &std::path::Path, contents: &str) {
     fs::write(path, contents).unwrap();
@@ -70,7 +70,7 @@ printf '%s\n' '{"container":"abc","workspace":"/workspaces/project with spaces",
     assert!(output.stdout.is_empty());
     assert_eq!(
         fs::read_to_string(temp.path().join("ssh-args")).unwrap(),
-        "--\nars.jsdev-host\n/usr/local/bin/wt-app-info\n"
+        "--\nars.jsdev-host\n/usr/local/bin/wt-devcontainer-info\n"
     );
     assert_eq!(
         fs::read_to_string(temp.path().join("code-args")).unwrap(),

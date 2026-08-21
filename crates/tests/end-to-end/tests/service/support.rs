@@ -8,8 +8,8 @@ use wt_control_protocol::{CreateApplication, CreateInstance, InstanceName, World
 use wt_libvirt_kvm::WorkerError;
 use wt_server::operations::Operations;
 use wt_server::service::{AgentGitGateway, Service};
-use wt_server::store::Store;
-use wt_server::worlds::{
+use wt_workload_registry::Store;
+use wt_retained_worlds::{
     GuestAccess, ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker,
 };
 

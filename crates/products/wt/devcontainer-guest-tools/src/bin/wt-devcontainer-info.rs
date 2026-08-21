@@ -36,5 +36,5 @@ fn main() {
 }
 
 fn usage() -> String {
-    "wt: usage: wt-app-info [user|address|configured-user|verify-user USER]".to_owned()
+    "wt: usage: wt-devcontainer-info [user|address|configured-user|verify-user USER]".to_owned()
 }

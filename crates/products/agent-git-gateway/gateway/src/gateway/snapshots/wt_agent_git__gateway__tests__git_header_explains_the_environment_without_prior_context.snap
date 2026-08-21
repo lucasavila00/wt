@@ -9,7 +9,7 @@ remote: WT gives you read access to every repository available to this gateway.
 remote: This Git operation is for project group/project.
 remote: Use normal Git for commits, fetches, pulls, and pushes.
 remote: Every WT world can write branches under wt/.
-remote: ag-git uses explicit provider resource types and IDs; it does not infer
+remote: wt-git-hosting uses explicit provider resource types and IDs; it does not infer
 remote: resources from the current checkout.
-remote: Run ag-git --help to discover every available command.
+remote: Run wt-git-hosting --help to discover every available command.
 remote:

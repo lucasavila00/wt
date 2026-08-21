@@ -7,8 +7,16 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use wt_command::cmd;
 use zeroize::Zeroizing;
+
+#[macro_export]
+macro_rules! cmd {
+    ($program:expr $(, $argument:expr)* $(,)?) => {{
+        let mut command = ::std::process::Command::new($program);
+        $(command.arg($argument);)*
+        command
+    }};
+}
 
 pub trait Runner {
     fn output(&self, command: Command) -> Result<Output>;

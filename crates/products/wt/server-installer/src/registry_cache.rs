@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_command::cmd;
+use wt_installer_support::cmd;
 use wt_server::ServerConfig;
 use wt_installer_support::Runner;
 

@@ -11,7 +11,7 @@ use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
 use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_workload_registry::Store;
-use wt_server::wt_retained_worlds::Workers;
+use wt_retained_worlds::Workers;
 use wt_server::ServerConfig;
 
 #[derive(Debug, Parser)]

@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Stdio;
-use wt_command::cmd;
+use wt_client::cmd;
 
 #[test]
 fn new_requires_a_terminal_before_contacting_server() {

@@ -6,16 +6,14 @@ license.workspace = true
 publish = false
 
 [dependencies]
-wt-retained-worlds = { workspace = true }
-wt-agent-git-gateway = { path = "../wt-agent-git-gateway" }
-wt-git-proxy = { workspace = true }
+wt-agent-git-gateway = { workspace = true }
+wt-client = { workspace = true }
 wt-control-protocol = { workspace = true }
+wt-git-proxy = { workspace = true }
 wt-libvirt-kvm = { workspace = true }
 wt-retained-worlds = { workspace = true }
-wt-libvirt-kvm = { workspace = true }
-wt-workload-registry = { workspace = true }
 wt-server = { workspace = true }
-wt-client = { path = "../wt-client" }
+wt-workload-registry = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
@@ -31,5 +29,5 @@ path = "src/bin/wt-test-git-proxy.rs"
 [dev-dependencies]
 insta = { workspace = true }
 serde = { workspace = true }
-tempfile = "3.27.0"
+tempfile = { workspace = true }
 toml = { workspace = true }

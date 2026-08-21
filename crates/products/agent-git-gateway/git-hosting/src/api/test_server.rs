@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 
-pub(crate) struct ExpectedRequest {
+pub struct ExpectedRequest {
     pub method: &'static str,
     pub path: &'static str,
     pub required_header: Option<(&'static str, &'static str)>,
@@ -11,18 +11,18 @@ pub(crate) struct ExpectedRequest {
     pub response_body: &'static str,
 }
 
-pub(crate) fn serve(expected: Vec<ExpectedRequest>) -> (String, JoinHandle<Result<(), String>>) {
+pub fn serve(expected: Vec<ExpectedRequest>) -> (String, JoinHandle<Result<(), String>>) {
     serve_with_statuses(expected.into_iter().map(|request| (request, 200)).collect())
 }
 
-pub(crate) fn serve_one_with_status(
+pub fn serve_one_with_status(
     expected: ExpectedRequest,
     status: u16,
 ) -> (String, JoinHandle<Result<(), String>>) {
     serve_with_statuses(vec![(expected, status)])
 }
 
-pub(crate) fn serve_with_statuses(
+pub fn serve_with_statuses(
     expected: Vec<(ExpectedRequest, u16)>,
 ) -> (String, JoinHandle<Result<(), String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture server");

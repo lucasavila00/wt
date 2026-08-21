@@ -92,7 +92,7 @@ fn ls_points_to_ag_git_reports_without_changing_world_status() {
 
     insta::assert_snapshot!(format_instances(&[running]), @r###"
     CONTEXT  NAME   KIND          STATUS   REPO  RESOURCES         DETAIL
-    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 ag-git reports; run `wt reports`
+    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 wt-git-hosting reports; run `wt reports`
     "###);
 }
 

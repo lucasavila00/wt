@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
-use wt_command::cmd;
+use wt_installer_support::cmd;
 use wt_server::ServerConfig;
 use wt_installer_support::{sudo_install, sudo_move, Runner};
 
@@ -8,12 +8,12 @@ const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 const STATIC_BINARIES: [&str; 9] = [
     "wt-agent-git-gateway-gateway",
     "wt-agent-git-gateway-relay",
-    "git-remote-ag",
-    "ag-git",
+    "git-remote-wt-agent",
+    "wt-git-hosting",
     "wt",
-    "wt-app-pane",
-    "wt-app-info",
-    "wt-app-proxy",
+    "wt-devcontainer-pane",
+    "wt-devcontainer-info",
+    "wt-devcontainer-ssh-proxy",
     "wt-codex-integration",
 ];
 
@@ -44,12 +44,12 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
     for name in [
         "wt-agent-git-gateway-gateway",
         "wt-agent-git-gateway-relay",
-        "git-remote-ag",
-        "ag-git",
+        "git-remote-wt-agent",
+        "wt-git-hosting",
         "wt",
-        "wt-app-pane",
-        "wt-app-info",
-        "wt-app-proxy",
+        "wt-devcontainer-pane",
+        "wt-devcontainer-info",
+        "wt-devcontainer-ssh-proxy",
         "wt-codex-integration",
         "wt-server",
     ] {
@@ -108,12 +108,12 @@ mod tests {
     #[test]
     fn all_installed_binaries_except_wt_server_use_the_musl_release_directory() {
         assert_eq!(
-            release_binary("ag-git"),
-            Path::new("target/x86_64-unknown-linux-musl/release/ag-git")
+            release_binary("wt-git-hosting"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt-git-hosting")
         );
         assert_eq!(
-            release_binary("git-remote-ag"),
-            Path::new("target/x86_64-unknown-linux-musl/release/git-remote-ag")
+            release_binary("git-remote-wt-agent"),
+            Path::new("target/x86_64-unknown-linux-musl/release/git-remote-wt-agent")
         );
         assert_eq!(
             release_binary("wt-agent-git-gateway-relay"),
@@ -128,8 +128,8 @@ mod tests {
             Path::new("target/x86_64-unknown-linux-musl/release/wt")
         );
         assert_eq!(
-            release_binary("wt-app-pane"),
-            Path::new("target/x86_64-unknown-linux-musl/release/wt-app-pane")
+            release_binary("wt-devcontainer-pane"),
+            Path::new("target/x86_64-unknown-linux-musl/release/wt-devcontainer-pane")
         );
         assert_eq!(
             release_binary("wt-codex-integration"),
@@ -144,19 +144,19 @@ mod tests {
     #[test]
     fn static_binaries_must_be_free_of_dynamic_glibc_requirements() {
         validate_static_elf(
-            "ag-git",
+            "wt-git-hosting",
             "ELF program headers\n",
             "No version information\n",
         )
         .unwrap();
 
         insta::assert_snapshot!(
-            validate_static_elf("ag-git", "  INTERP 0x000000\n", "").unwrap_err(),
-            @"ag-git is dynamically linked: ELF program interpreter found"
+            validate_static_elf("wt-git-hosting", "  INTERP 0x000000\n", "").unwrap_err(),
+            @"wt-git-hosting is dynamically linked: ELF program interpreter found"
         );
         insta::assert_snapshot!(
-            validate_static_elf("ag-git", "", "Name: GLIBC_2.39\n").unwrap_err(),
-            @"ag-git is dynamically linked: GLIBC symbol requirement found"
+            validate_static_elf("wt-git-hosting", "", "Name: GLIBC_2.39\n").unwrap_err(),
+            @"wt-git-hosting is dynamically linked: GLIBC symbol requirement found"
         );
     }
 }

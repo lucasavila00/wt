@@ -172,7 +172,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     let diagnostics = String::from_utf8_lossy(&published.stderr);
     assert!(diagnostics.contains("This is a WT-managed development environment"));
     assert!(diagnostics.contains("Published branch `wt/fix`"));
-    assert!(diagnostics.contains("ag-git --help"));
+    assert!(diagnostics.contains("wt-git-hosting --help"));
     assert_ref(&upstream, "refs/heads/wt/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();
@@ -251,7 +251,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
 }
 
 fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &Path) -> Process {
-    let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway-gateway"))
+    let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway"))
         .args([
             "serve",
             "--control-socket",
@@ -288,7 +288,7 @@ fn reserve(control: &Path, world_id: &str, source: &str, base: &str) -> ControlR
 }
 
 fn spawn_relay(socket: &Path, grant_file: &Path, transport: &Path) -> Process {
-    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway-relay"))
+    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-relay"))
         .args([
             "--socket",
             socket.to_str().unwrap(),
@@ -314,7 +314,7 @@ fn git(directory: &Path, args: &[&str]) {
 }
 
 fn git_output(directory: &Path, args: &[&str], socket: &Path) -> Output {
-    let helper = PathBuf::from(env!("CARGO_BIN_EXE_git-remote-ag"));
+    let helper = PathBuf::from(env!("CARGO_BIN_EXE_git-remote-wt-agent"));
     let path = format!(
         "{}:{}",
         helper.parent().unwrap().display(),

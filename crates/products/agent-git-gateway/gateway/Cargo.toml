@@ -24,10 +24,10 @@ path = "src/bin/wt-git-hosting.rs"
 
 [dependencies]
 wt-git-smart-protocol = { workspace = true }
+wt-git-hosting = { workspace = true }
 wt-workload-registry = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 socket2 = { workspace = true }

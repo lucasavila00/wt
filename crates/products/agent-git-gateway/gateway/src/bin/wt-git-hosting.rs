@@ -11,7 +11,7 @@ const SOCKET: &str = "/run/wt-agent-git-gateway/gateway.sock";
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("ag-git: {error:#}");
+        eprintln!("wt-git-hosting: {error:#}");
         std::process::exit(1);
     }
 }

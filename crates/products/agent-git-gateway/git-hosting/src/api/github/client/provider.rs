@@ -209,7 +209,7 @@ impl GitProviderApi for GithubApi {
             ProviderCommand::CancelCiJob { job } => {
                 self.require_ci_job(scope, job)?;
                 bail!(
-                    "GitHub cannot cancel one Actions job: its API can only cancel the entire workflow run, including sibling jobs; ag-git refuses to widen `cancel {job}` beyond the selected job"
+                    "GitHub cannot cancel one Actions job: its API can only cancel the entire workflow run, including sibling jobs; wt-git-hosting refuses to widen `cancel {job}` beyond the selected job"
                 )
             }
             ProviderCommand::WaitForReviewOrCiChange => {

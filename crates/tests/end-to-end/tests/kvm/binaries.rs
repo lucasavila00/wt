@@ -1,7 +1,7 @@
 use super::fixture::run;
 use std::fs;
 use std::path::Path;
-use wt_command::cmd;
+use wt_end_to_end_tests::cmd;
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 
@@ -26,11 +26,11 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     for name in [
         "wt-agent-git-gateway-gateway",
         "wt-agent-git-gateway-relay",
-        "wt-app-pane",
-        "wt-app-info",
-        "wt-app-proxy",
-        "git-remote-ag",
-        "ag-git",
+        "wt-devcontainer-pane",
+        "wt-devcontainer-info",
+        "wt-devcontainer-ssh-proxy",
+        "git-remote-wt-agent",
+        "wt-git-hosting",
         "wt-codex-integration",
     ] {
         let source = binaries.join(name);

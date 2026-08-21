@@ -1,6 +1,6 @@
 use std::fs;
 use wt_control_protocol::{InstanceName, InstanceStatus};
-use wt_command::cmd;
+use wt_end_to_end_tests::cmd;
 
 #[path = "kvm/fixture.rs"]
 mod fixture;

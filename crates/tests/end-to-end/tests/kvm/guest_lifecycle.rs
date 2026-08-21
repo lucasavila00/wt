@@ -1,7 +1,7 @@
 use super::*;
 use std::path::Path;
 
-const HOST_DEFAULT_USER_DATA: &str = include_str!("../../../../assets/client/cloud-init.yaml");
+const HOST_DEFAULT_USER_DATA: &str = include_str!("../../../../../assets/client/cloud-init.yaml");
 
 #[test]
 #[ignore = "requires a configured Ubuntu/KVM host"]
@@ -259,8 +259,8 @@ fn agent_git_transport_works_without_provider_credentials() {
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
             "test -x /usr/local/bin/wt-agent-git-gateway-relay; ",
-            "test -x /usr/local/bin/git-remote-ag; ",
-            "test -x /usr/local/bin/ag-git; ",
+            "test -x /usr/local/bin/git-remote-wt-agent; ",
+            "test -x /usr/local/bin/wt-git-hosting; ",
             "systemctl is-active --quiet wt-agent-git-gateway-relay.service; ",
             "test -x /usr/local/bin/wt-host-shell; ",
             "tmux has-session -t wt-host",
@@ -278,7 +278,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "printf 'host gateway\n' >> README.md; ",
             "git commit -am 'host gateway'; ",
             "git push -u origin wt/host-gateway; ",
-            "ag-git --help >/dev/null; ",
+            "wt-git-hosting --help >/dev/null; ",
             "git switch -c outside-host; ",
             "printf 'outside\n' >> README.md; ",
             "git commit -am outside; ",
@@ -344,7 +344,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         "verify automatic Codex session mount",
     );
 
-    let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
+    let help = app_output(&harness, &name, "wt-git-hosting --help", "read wt-git-hosting help");
     assert!(help.contains("explicitly identified Git provider resources"));
     assert!(help.contains("| { action: \"wait_mr\"; mr: number }"));
 
@@ -374,7 +374,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     ensure_success("commit and push through gateway", &output).unwrap();
     let diagnostics = String::from_utf8(output.stderr).unwrap();
     assert!(diagnostics.contains("This is a WT-managed development environment"));
-    assert!(diagnostics.contains("Run ag-git --help"));
+    assert!(diagnostics.contains("Run wt-git-hosting --help"));
     assert_ref(
         &harness.git.repository,
         &format!("refs/heads/{branch}"),
@@ -417,7 +417,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             &harness,
             &name,
             &format!(
-                "ag-git '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
+                "wt-git-hosting '{{\"action\":\"list_ci\",\"commit\":\"{}\"}}'",
                 local.trim()
             ),
             "read explicit CI through provider API fixture",

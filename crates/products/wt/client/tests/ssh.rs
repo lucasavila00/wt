@@ -1,6 +1,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use wt_command::cmd;
+use wt_client::cmd;
 
 fn write_executable(path: &std::path::Path, contents: &str) {
     fs::write(path, contents).unwrap();

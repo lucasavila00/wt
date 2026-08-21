@@ -16,7 +16,7 @@ pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
 pub const AGENT_GIT_HELPER: &str = "/usr/local/libexec/wt-retained-agent-git";
 pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex";
 
-const MOUNT_CODEX: &[u8] = include_bytes!("../../../assets/world/shared/mount-codex.sh");
+const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../assets/world/shared/mount-codex.sh");
 const AGENT_GIT_STAGE: &str = "/tmp/wt-retained-agent-git-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;

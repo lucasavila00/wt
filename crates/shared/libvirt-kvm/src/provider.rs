@@ -1,4 +1,4 @@
-use crate::TransportError;
+use crate::{GuestTransport, TransportError};
 
 use std::fmt;
 use std::io::Write;

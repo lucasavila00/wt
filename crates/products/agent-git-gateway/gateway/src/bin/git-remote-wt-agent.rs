@@ -10,7 +10,7 @@ const SOCKET: &str = "/run/wt-agent-git-gateway/gateway.sock";
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("git-remote-ag: {error:#}");
+        eprintln!("git-remote-wt-agent: {error:#}");
         std::process::exit(1);
     }
 }

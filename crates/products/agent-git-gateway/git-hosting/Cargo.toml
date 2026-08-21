@@ -1,24 +1,21 @@
 [package]
-name = "wt-gh-actions-runner"
+name = "wt-git-hosting"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Ephemeral GitHub Actions runner service for WT"
+description = "GitHub and GitLab operations for WT"
 
 [dependencies]
-wt-libvirt-kvm = { workspace = true }
+anyhow = { workspace = true }
 wt-workload-registry = { workspace = true }
-base64 = { workspace = true }
-jsonwebtoken = { workspace = true }
+graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-toml = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
-uuid = { workspace = true }
-zeroize = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = { workspace = true }
+

@@ -1,6 +1,6 @@
 use virt::connect::Connect;
 use virt::network::Network;
-use wt_libvirt_kvm::{ProviderId, WorkerError};
+use crate::{ProviderId, WorkerError};
 
 use super::{context, lookup_domain};
 

@@ -7,7 +7,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 use virt::domain::Domain;
-use wt_libvirt_kvm::{
+use crate::{
     validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
     ProviderId, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
 };

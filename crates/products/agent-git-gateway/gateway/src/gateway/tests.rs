@@ -125,10 +125,10 @@ fn agent_git_reports_are_stored_for_the_authenticated_world_without_a_provider_a
         .concat();
 
     insta::assert_snapshot!(outputs, @r###"
-    Recorded ag-git report for this world.
-    Recorded ag-git report for this world.
-    Recorded ag-git report for this world.
-    Recorded ag-git report for this world.
+    Recorded wt-git-hosting report for this world.
+    Recorded wt-git-hosting report for this world.
+    Recorded wt-git-hosting report for this world.
+    Recorded wt-git-hosting report for this world.
     "###);
     let reports = registry.list_agent_git_reports("alice").unwrap();
     assert_eq!(reports.len(), 4);
@@ -183,10 +183,10 @@ fn push_messages_cover_publish_delete_and_rejection() {
         @r###"
     Published branch `wt/fix-login`.
     Inspect its open MR with:
-      ag-git '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
-    If that reports no open MR, run `ag-git --help` and open one with an explicit base.
+      wt-git-hosting '{"action":"show_mr_for_branch","branch":"wt/fix-login"}'
+    If that reports no open MR, run `wt-git-hosting --help` and open one with an explicit base.
     Inspect CI with:
-      ag-git '{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+      wt-git-hosting '{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
     "###
     );
     assert_eq!(

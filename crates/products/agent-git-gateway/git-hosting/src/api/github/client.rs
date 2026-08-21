@@ -3,7 +3,7 @@ mod provider;
 use super::*;
 
 impl GithubApi {
-    pub(crate) fn new(host: &str, token: &str) -> Result<Self> {
+    pub fn new(host: &str, token: &str) -> Result<Self> {
         let (base, graphql_path, rest_prefix) = if host == "github.com" {
             ("https://api.github.com".to_owned(), "graphql", "")
         } else {
@@ -17,7 +17,7 @@ impl GithubApi {
         })
     }
 
-    pub(crate) fn with_base_url(base_url: String, token: &str) -> Result<Self> {
+    pub fn with_base_url(base_url: String, token: &str) -> Result<Self> {
         Ok(Self {
             graphql: ProviderHttpClient::new(
                 base_url.clone(),

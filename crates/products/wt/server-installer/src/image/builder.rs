@@ -16,27 +16,27 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use wt_command::cmd;
+use wt_installer_support::cmd;
 use wt_libvirt_kvm::LIBVIRT_URI;
 use wt_server::ServerConfig;
 use wt_installer_support::Runner;
 
 const INSTALL_PACKAGES: &[u8] =
-    include_bytes!("../../../../assets/world/shared/install-packages.sh");
+    include_bytes!("../../../../../../assets/world/shared/install-packages.sh");
 const INSTALL_TERMINAL: &[u8] =
-    include_bytes!("../../../../assets/world/shared/install-terminal.sh");
-const INSTALL_CODEX: &[u8] = include_bytes!("../../../../assets/world/shared/install-codex.sh");
-const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/shared/build-image.sh");
-const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../../assets/world/shared/finalize-image.sh");
-const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
-const BYOBU_COLOR: &[u8] = include_bytes!("../../../../assets/world/shared/byobu-color");
+    include_bytes!("../../../../../../assets/world/shared/install-terminal.sh");
+const INSTALL_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/install-codex.sh");
+const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../../../../assets/world/shared/build-image.sh");
+const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../../../../assets/world/shared/finalize-image.sh");
+const TMUX_CONFIG: &[u8] = include_bytes!("../../../../../../assets/world/shared/tmux.conf");
+const BYOBU_COLOR: &[u8] = include_bytes!("../../../../../../assets/world/shared/byobu-color");
 const CONFIGURE_ACCESS: &[u8] =
-    include_bytes!("../../../../assets/world/shared/configure-access.sh");
+    include_bytes!("../../../../../../assets/world/shared/configure-access.sh");
 const CONFIGURE_GIT_AUTHOR: &[u8] =
-    include_bytes!("../../../../assets/world/shared/configure-git-author.sh");
+    include_bytes!("../../../../../../assets/world/shared/configure-git-author.sh");
 const INSTALL_AGENT_GIT: &[u8] =
-    include_bytes!("../../../../assets/world/shared/install-agent-git.sh");
-const MOUNT_CODEX: &[u8] = include_bytes!("../../../../assets/world/shared/mount-codex.sh");
+    include_bytes!("../../../../../../assets/world/shared/install-agent-git.sh");
+const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
 
 #[derive(Clone, Copy)]

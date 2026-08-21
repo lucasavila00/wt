@@ -281,10 +281,10 @@ impl Gateway {
                 .context("open WT registry")?
                 .insert_agent_git_report(world_id, kind, description)
                 .context("store agent Git report")?;
-            return Ok("Recorded ag-git report for this world.\n".to_owned());
+            return Ok("Recorded wt-git-hosting report for this world.\n".to_owned());
         }
         let repository = repository.context(
-            "ag-git needs a Git checkout with an origin to select a repository for this command",
+            "wt-git-hosting needs a Git checkout with an origin to select a repository for this command",
         )?;
         validate_repository(repository)?;
         let provider = self.provider(&repository.host)?;
@@ -349,7 +349,7 @@ pub(super) fn push_result_message(
         }
         message.push_str(&format!("Published branch `{branch}`.\n"));
         if !provider_api_available {
-            message.push_str("Run `ag-git --help` for explicit provider commands.\n");
+            message.push_str("Run `wt-git-hosting --help` for explicit provider commands.\n");
             continue;
         }
         let show_mr = serde_json::json!({
@@ -361,7 +361,7 @@ pub(super) fn push_result_message(
             "commit": head,
         });
         message.push_str(&format!(
-            "Inspect its open MR with:\n  ag-git '{show_mr}'\nIf that reports no open MR, run `ag-git --help` and open one with an explicit base.\nInspect CI with:\n  ag-git '{list_ci}'\n"
+            "Inspect its open MR with:\n  wt-git-hosting '{show_mr}'\nIf that reports no open MR, run `wt-git-hosting --help` and open one with an explicit base.\nInspect CI with:\n  wt-git-hosting '{list_ci}'\n"
         ));
     }
     Ok(message)

@@ -7,7 +7,7 @@ use wt_control_protocol::{
 };
 use wt_server::operations::Operations;
 use wt_server::service::Service;
-use wt_server::store::{Store, StoredApplication, StoredInstance};
+use wt_workload_registry::{Store, StoredApplication, StoredInstance};
 
 #[path = "service/agent_git_reports.rs"]
 mod agent_git_reports;
@@ -369,7 +369,7 @@ fn failed_create_keeps_registry_until_grant_revocation_succeeds() {
         Store::open(&temp.path().join("instances.db"))
             .unwrap()
             .get("tester", &InstanceName::parse("sample").unwrap()),
-        Err(wt_server::store::StoreError::NotFound)
+        Err(wt_workload_registry::StoreError::NotFound)
     ));
 }
 

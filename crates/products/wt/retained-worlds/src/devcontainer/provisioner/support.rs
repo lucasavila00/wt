@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use wt_command::cmd;
 use wt_libvirt_kvm::WorkerError;
 
 pub(super) fn require_and_read(path: &Path, label: &str) -> Result<Vec<u8>, WorkerError> {

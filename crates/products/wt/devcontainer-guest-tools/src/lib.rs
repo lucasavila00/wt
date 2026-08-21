@@ -1,7 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::process::{Command, ExitStatus, Stdio};
-use wt_command::cmd;
+
+#[macro_export]
+macro_rules! cmd {
+    ($program:expr $(, $argument:expr)* $(,)?) => {{
+        let mut command = ::std::process::Command::new($program);
+        $(command.arg($argument);)*
+        command
+    }};
+}
 
 pub const APP_SSH_PORT: u16 = 2222;
 pub const SESSION_IDENTITY: &str = "/var/lib/wt-app-ssh/session_identity";

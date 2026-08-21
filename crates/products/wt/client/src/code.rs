@@ -50,7 +50,7 @@ pub(super) fn open(config: &ClientConfig, target: &str) -> Result<()> {
 fn discover_app_workspace(qualified: &str) -> Result<String> {
     let host = format!("{qualified}-host");
     let output = Command::new("ssh")
-        .args(["--", &host, "/usr/local/bin/wt-app-info"])
+        .args(["--", &host, "/usr/local/bin/wt-devcontainer-info"])
         .output()
         .with_context(|| format!("start OpenSSH to inspect {qualified}"))?;
     if !output.status.success() {
