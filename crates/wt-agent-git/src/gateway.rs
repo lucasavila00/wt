@@ -278,9 +278,9 @@ TYPESCRIPT COMMAND TYPE:\n\
       | { action: \"list_ci\"; commit: string }\n\
       | { action: \"list_jobs\"; run: number }\n\
       | { action: \"log_job\"; job: number }\n\
-      | { action: \"wait_mr\"; mr: number }\n\
-      | { action: \"wait_run\"; run: number }\n\
-      | { action: \"wait_job\"; job: number }\n\
+      | { action: \"wait_mr\"; mr: number; timeout_seconds?: number }\n\
+      | { action: \"wait_run\"; run: number; timeout_seconds?: number }\n\
+      | { action: \"wait_job\"; job: number; timeout_seconds?: number }\n\
       | { action: \"open_mr\"; head: string; base: string; draft?: boolean }\n\
       | { action: \"set_mr\"; mr: number; state: \"ready\" | \"draft\" | \"open\" | \"closed\" }\n\
       | { action: \"edit_mr\"; mr: number; title?: string; body?: string }\n\

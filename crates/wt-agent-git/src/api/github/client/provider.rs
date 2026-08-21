@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::{cli_wait_deadline, wait_for_next_cli_poll};
 
 impl GitProviderApi for GithubApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
@@ -282,7 +283,11 @@ impl GitProviderApi for GithubApi {
                     },
                 )
             }
-            CliCommand::WaitMr { mr } => {
+            CliCommand::WaitMr {
+                mr,
+                timeout_seconds,
+            } => {
+                let deadline = cli_wait_deadline(*timeout_seconds);
                 let initial = self.read_pull_request(scope.project, *mr)?;
                 if matches!(initial.state.as_str(), "closed" | "merged") {
                     return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
@@ -290,7 +295,12 @@ impl GitProviderApi for GithubApi {
                     )));
                 }
                 loop {
-                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    if !wait_for_next_cli_poll(deadline) {
+                        bail!(
+                            "MR {mr} did not change before the wait timeout; last state: {}",
+                            initial.state
+                        );
+                    }
                     let current = self.read_pull_request(scope.project, *mr)?;
                     if current != initial {
                         return Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
@@ -299,22 +309,44 @@ impl GitProviderApi for GithubApi {
                     }
                 }
             }
-            CliCommand::WaitRun { run } => loop {
-                let current = self.read_workflow_run(scope.project, *run)?;
-                let output = ci_run(current);
-                if ci_terminal(&output.state) {
-                    return Ok(ProviderCommandOutput::CiRun(output));
+            CliCommand::WaitRun {
+                run,
+                timeout_seconds,
+            } => {
+                let deadline = cli_wait_deadline(*timeout_seconds);
+                loop {
+                    let current = self.read_workflow_run(scope.project, *run)?;
+                    let output = ci_run(current);
+                    if ci_terminal(&output.state) {
+                        return Ok(ProviderCommandOutput::CiRun(output));
+                    }
+                    if !wait_for_next_cli_poll(deadline) {
+                        bail!(
+                            "CI run {run} did not finish before the wait timeout; last state: {}",
+                            output.state
+                        );
+                    }
                 }
-                std::thread::sleep(std::time::Duration::from_secs(10));
-            },
-            CliCommand::WaitJob { job } => loop {
-                let current = self.read_workflow_job(scope.project, *job)?;
-                let output = ci_job(current);
-                if ci_terminal(&output.state) {
-                    return Ok(ProviderCommandOutput::CiJob(output));
+            }
+            CliCommand::WaitJob {
+                job,
+                timeout_seconds,
+            } => {
+                let deadline = cli_wait_deadline(*timeout_seconds);
+                loop {
+                    let current = self.read_workflow_job(scope.project, *job)?;
+                    let output = ci_job(current);
+                    if ci_terminal(&output.state) {
+                        return Ok(ProviderCommandOutput::CiJob(output));
+                    }
+                    if !wait_for_next_cli_poll(deadline) {
+                        bail!(
+                            "CI job {job} did not finish before the wait timeout; last state: {}",
+                            output.state
+                        );
+                    }
                 }
-                std::thread::sleep(std::time::Duration::from_secs(10));
-            },
+            }
             CliCommand::OpenMr { head, base, draft } => {
                 if !head.starts_with(scope.prefix) {
                     bail!("open mr must use a {}* head", scope.prefix);

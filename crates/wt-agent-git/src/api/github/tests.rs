@@ -339,7 +339,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 7 })
         .unwrap();
     let job = provider
-        .execute_cli_command(&scope, &CliCommand::WaitJob { job: 44 })
+        .execute_cli_command(
+            &scope,
+            &CliCommand::WaitJob {
+                job: 44,
+                timeout_seconds: None,
+            },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ChangeRequest(mr) = mr else {
