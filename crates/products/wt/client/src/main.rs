@@ -75,7 +75,7 @@ fn run() -> Result<()> {
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
             println!("\nStarting setup: ssh {}.{}", context, instance.name);
-            println!("Direct: ssh {}.{}-vs", context, instance.name);
+            println!("Direct: ssh {}.{}-direct", context, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
             let target = format!("{}.{}", context, instance.name);
@@ -167,9 +167,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     rows.push([
         "CONTEXT".to_owned(),
         "NAME".to_owned(),
-        "KIND".to_owned(),
         "STATUS".to_owned(),
-        "REPO".to_owned(),
         "RESOURCES".to_owned(),
         "DETAIL".to_owned(),
     ]);
@@ -178,15 +176,13 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         [
             item.context.clone(),
             instance.name.to_string(),
-            instance.kind().to_string(),
             instance.status.to_string(),
-            "-".to_owned(),
             inventory::format_resources(instance, item.disk_usage_bytes),
             instance_detail(item),
         ]
     }));
 
-    let mut widths = [0; 6];
+    let mut widths = [0; 4];
     for row in &rows {
         for (width, value) in widths.iter_mut().zip(row) {
             *width = (*width).max(value.chars().count());
@@ -197,20 +193,16 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     for row in rows {
         writeln!(
             output,
-            "{:<context_width$}  {:<name_width$}  {:<kind_width$}  {:<status_width$}  {:<repo_width$}  {:<resources_width$}  {}",
+            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<resources_width$}  {}",
             row[0],
             row[1],
             row[2],
             row[3],
             row[4],
-            row[5],
-            row[6],
             context_width = widths[0],
             name_width = widths[1],
-            kind_width = widths[2],
-            status_width = widths[3],
-            repo_width = widths[4],
-            resources_width = widths[5],
+            status_width = widths[2],
+            resources_width = widths[3],
         )
         .expect("writing to a String cannot fail");
     }

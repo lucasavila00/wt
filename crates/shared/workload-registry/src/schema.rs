@@ -17,20 +17,14 @@ diesel::table! {
     agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
+        kind -> Text,
         description -> Text,
     }
 }
 
 diesel::table! {
-    disks (id) {
+    worlds (id) {
         id -> Text,
-    }
-}
-
-diesel::table! {
-    guests (id) {
-        id -> Text,
-        kind -> Text,
         backend_id -> Text,
         disk_id -> Text,
         vcpus -> BigInt,
@@ -38,12 +32,6 @@ diesel::table! {
         disk_gib -> BigInt,
         compute_reserved -> Bool,
         disk_reserved_gib -> BigInt,
-    }
-}
-
-diesel::table! {
-    worlds (id) {
-        id -> Text,
         owner -> Text,
         name -> Text,
         status -> Text,
@@ -58,15 +46,7 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(guests -> disks (disk_id));
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(codex_session_reports -> worlds (world_id));
-diesel::joinable!(worlds -> guests (id));
 
-diesel::allow_tables_to_appear_in_same_query!(
-    agent_tool_reports,
-    codex_session_reports,
-    disks,
-    guests,
-    worlds
-);
+diesel::allow_tables_to_appear_in_same_query!(agent_tool_reports, codex_session_reports, worlds);

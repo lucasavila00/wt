@@ -640,7 +640,6 @@ dependencies = [
  "fiat-crypto",
  "rustc_version",
  "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -736,7 +735,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid",
- "pem-rfc7468",
  "zeroize",
 ]
 
@@ -892,7 +890,6 @@ version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
 dependencies = [
- "pkcs8",
  "signature",
 ]
 
@@ -904,10 +901,8 @@ checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
- "serde",
  "sha2",
  "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -928,8 +923,6 @@ dependencies = [
  "ff",
  "generic-array",
  "group",
- "hkdf",
- "pem-rfc7468",
  "pkcs8",
  "rand_core",
  "sec1",
@@ -1262,15 +1255,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hkdf"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
-dependencies = [
- "hmac",
-]
-
-[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1527,30 +1511,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "jsonwebtoken"
-version = "11.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "881733cbc631fc9e472e24447ce32a64bedf2da498d6d8570b08edc87de71f65"
-dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
- "getrandom 0.2.17",
- "hmac",
- "js-sys",
- "p256",
- "p384",
- "pem",
- "rand",
- "rsa",
- "serde",
- "serde_json",
- "sha2",
- "signature",
- "simple_asn1",
- "zeroize",
 ]
 
 [[package]]
@@ -2018,16 +1978,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pem"
-version = "3.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
-dependencies = [
- "base64 0.22.1",
- "serde_core",
-]
-
-[[package]]
 name = "pem-rfc7468"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2307,7 +2257,6 @@ version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22f6172bdec972074665ed81ed53b71da00bfc44b65a753cfde883ec4c702a1a"
 dependencies = [
- "libc",
  "rand_chacha",
  "rand_core",
 ]
@@ -2799,18 +2748,6 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
-name = "simple_asn1"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d585997b0ac10be3c5ee635f1bab02d512760d14b7c468801ac8a01d9ae5f1d"
-dependencies = [
- "num-bigint",
- "num-traits",
- "thiserror 2.0.18",
- "time",
-]
 
 [[package]]
 name = "siphasher"
@@ -4039,15 +3976,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-devcontainer-guest-tools"
-version = "0.0.0"
-dependencies = [
- "insta",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "wt-end-to-end-tests"
 version = "0.0.0"
 dependencies = [
@@ -4066,25 +3994,6 @@ dependencies = [
  "wt-retained-worlds",
  "wt-server",
  "wt-workload-registry",
-]
-
-[[package]]
-name = "wt-gh-actions-runner"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "jsonwebtoken",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "toml 1.1.2+spec-1.1.0",
- "ureq",
- "url",
- "uuid",
- "wt-libvirt-kvm",
- "wt-workload-registry",
- "zeroize",
 ]
 
 [[package]]

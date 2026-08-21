@@ -247,7 +247,7 @@ pub(crate) fn capacity_message(context: &str, name: &InstanceName, capacity: &Ca
         CapacityResource::Disk => ("disk", "GiB"),
     };
     format!(
-        "{context} has {} {unit} of {} {unit} world and runner {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.",
+        "{context} has {} {unit} of {} {unit} world {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.",
         capacity.reserved, capacity.total, capacity.requested
     )
 }

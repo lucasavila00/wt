@@ -1,8 +1,7 @@
 use super::*;
 use uuid::Uuid;
 use wt_control_protocol::{
-    Capacity, CapacityResource, Instance, InstanceApplication, InstanceName, InstanceStatus,
-    SshAccess,
+    Capacity, CapacityResource, Instance, InstanceName, InstanceStatus, SshAccess,
 };
 
 fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
@@ -21,7 +20,6 @@ fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
             guest_ip: None,
             last_error: None,
             ssh: None,
-            application: InstanceApplication::Host,
         },
     }
 }
@@ -42,16 +40,16 @@ fn formats_aligned_instance_columns_without_tabs() {
     let output = format_instances(&[provisioning, running]);
 
     insta::assert_snapshot!(output, @r###"
-    CONTEXT     NAME         KIND  STATUS        REPO  RESOURCES              DETAIL
-    local       host-manual  host  provisioning  -     2 CPU · 4G · 32G       -
-    remote-lab  a            host  running       -     2 CPU · 1536MiB · 32G  -
+    CONTEXT     NAME         STATUS        RESOURCES              DETAIL
+    local       host-manual  provisioning  2 CPU · 4G · 32G       -
+    remote-lab  a            running       2 CPU · 1536MiB · 32G  -
     "###);
     assert!(!output.contains('\t'));
 }
 
 #[test]
 fn formats_header_for_empty_inventory() {
-    insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  KIND  STATUS  REPO  RESOURCES  DETAIL");
+    insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  RESOURCES  DETAIL");
 }
 
 #[test]
@@ -60,8 +58,8 @@ fn formats_reconciliation_error_details() {
     failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
     insta::assert_snapshot!(format_instances(&[failed]), @r###"
-    CONTEXT  NAME    KIND  STATUS  REPO  RESOURCES         DETAIL
-    local    broken  host  error   -     2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.broken`
+    CONTEXT  NAME    STATUS  RESOURCES         DETAIL
+    local    broken  error   2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.broken`
     "###);
 }
 
@@ -72,8 +70,8 @@ fn formats_stopped_world_with_recovery_commands() {
     stopped.disk_usage_bytes = Some(1536 * 1024 * 1024);
 
     insta::assert_snapshot!(format_instances(&[stopped]), @r###"
-    CONTEXT  NAME  KIND  STATUS   REPO  RESOURCES               DETAIL
-    ars      mt3   host  stopped  -     2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
+    CONTEXT  NAME  STATUS   RESOURCES               DETAIL
+    ars      mt3   stopped  2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
     "###);
 }
 
@@ -83,8 +81,8 @@ fn ls_points_to_wt_tools_reports_without_changing_world_status() {
     running.agent_tool_report_count = 2;
 
     insta::assert_snapshot!(format_instances(&[running]), @r###"
-    CONTEXT  NAME  KIND  STATUS   REPO  RESOURCES         DETAIL
-    local    work  host  running  -     2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
+    CONTEXT  NAME  STATUS   RESOURCES         DETAIL
+    local    work  running  2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
     "###);
 }
 
@@ -102,7 +100,7 @@ fn explains_memory_capacity() {
             },
         ),
         @r###"
-    ars has 32000 MiB of 32000 MiB world and runner memory reserved; mt3 requests 8000 MiB.
+    ars has 32000 MiB of 32000 MiB world memory reserved; mt3 requests 8000 MiB.
     Free capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.
     "###
     );
@@ -150,40 +148,13 @@ fn parses_agent_tool_report_commands() {
 }
 
 #[test]
-fn parses_interactive_host_creation_with_default_recipe() {
-    let cli = Cli::try_parse_from(["wt", "new", "host"]).unwrap();
-    let Command::New(host::New {
-        kind: Some(host::NewKind::Host(input)),
-        ..
-    }) = cli.command
-    else {
-        panic!("expected host new command")
-    };
-    assert_eq!(input.user_data, None);
-    assert!(Cli::try_parse_from(["wt", "new", "host", "sandbox"]).is_err());
-}
-
-#[test]
-fn parses_host_recipe_override() {
-    let cli = Cli::try_parse_from(["wt", "new", "host", "--user-data", "recipe.yaml"]).unwrap();
-    let Command::New(host::New {
-        kind: Some(host::NewKind::Host(input)),
-        ..
-    }) = cli.command
-    else {
-        panic!("expected host new command")
-    };
-    assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
-}
-
-#[test]
-fn parses_bare_new_as_host_creation() {
-    let cli = Cli::try_parse_from(["wt", "new", "--user-data", "recipe.yaml"]).unwrap();
-    let Command::New(input) = cli.command else {
+fn parses_bare_new_as_world_creation() {
+    let cli = Cli::try_parse_from(["wt", "new"]).unwrap();
+    let Command::New = cli.command else {
         panic!("expected new command")
     };
-    assert!(input.kind.is_none());
-    assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
+    assert!(Cli::try_parse_from(["wt", "new", "host"]).is_err());
+    assert!(Cli::try_parse_from(["wt", "new", "--user-data", "recipe.yaml"]).is_err());
     assert!(Cli::try_parse_from(["wt", "new", "sandbox"]).is_err());
 }
 

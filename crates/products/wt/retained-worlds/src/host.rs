@@ -136,7 +136,9 @@ impl<P: MachineProvider> crate::WorldWorker for CompositeWorker<P> {
         run_prepare(
             machine.transport.as_ref(),
             "user-data",
-            Some(include_bytes!("../../../../../assets/client/cloud-init.yaml")),
+            Some(include_bytes!(
+                "../../../../../assets/client/cloud-init.yaml"
+            )),
             deadline,
             log,
         )?;

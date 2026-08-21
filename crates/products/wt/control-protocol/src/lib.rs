@@ -7,10 +7,7 @@ mod validation;
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 
-pub use validation::{
-    validate_git_branch, validate_ssh_git_source, InstanceName, InvalidGitBranch, InvalidGitSource,
-    InvalidInstanceName,
-};
+pub use validation::{InstanceName, InvalidInstanceName};
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -307,8 +304,7 @@ mod tests {
             "trailing-",
             "has.dot",
             "has_space",
-            "repo-host",
-            "repo-vs",
+            "repo-direct",
         ] {
             assert!(InstanceName::parse(invalid).is_err(), "{invalid}");
         }
@@ -317,30 +313,9 @@ mod tests {
     #[test]
     fn explains_reserved_ssh_alias_suffixes() {
         insta::assert_snapshot!(
-            InstanceName::parse("repo-vs").unwrap_err().to_string(),
-            @"invalid instance name: must not end with the reserved SSH alias suffix -host or -vs"
+            InstanceName::parse("repo-direct").unwrap_err().to_string(),
+            @"invalid instance name: must not end with the reserved SSH alias suffix -direct"
         );
-    }
-
-    #[test]
-    fn validates_only_ssh_git_sources() {
-        for valid in [
-            "git@github.com:example/repo.git",
-            "ssh://git@example.test/repo.git",
-            "ssh://git@example.test:2222/repo.git",
-        ] {
-            assert!(validate_ssh_git_source(valid).is_ok(), "{valid}");
-        }
-        for invalid in [
-            "https://example.test/repo.git",
-            "git://example.test/repo.git",
-            "/tmp/repo.git",
-            "ssh://example.test",
-            "git@:repo.git",
-            "git@example.test:",
-        ] {
-            assert!(validate_ssh_git_source(invalid).is_err(), "{invalid}");
-        }
     }
 
     #[test]
@@ -352,7 +327,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -367,7 +342,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -382,7 +357,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -435,7 +410,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "list_codex_sessions"
             })
         );
@@ -451,7 +426,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 4,
+          "protocol_version": 5,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -477,9 +452,6 @@ mod tests {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
             git_user_name: "Lucas Ávila".to_owned(),
             git_user_email: "lucaxx@gmail.com".to_owned(),
-            application: CreateApplication::Host {
-                user_data: "#cloud-config\nruncmd:\n  - touch /ready\n".to_owned(),
-            },
         }));
         let value = serde_json::to_value(request).unwrap();
         insta::assert_snapshot!(serde_json::to_string_pretty(&value).unwrap(), @r###"
@@ -487,15 +459,13 @@ mod tests {
           "disk_gib": 32,
           "git_user_email": "lucaxx@gmail.com",
           "git_user_name": "Lucas Ávila",
-          "kind": "host",
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 4,
+          "protocol_version": 5,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
-          "user_data": "#cloud-config\nruncmd:\n  - touch /ready\n",
           "vcpus": 2
         }
         "###);
@@ -504,20 +474,16 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "create",
-            "kind": "host",
             "name": "repo-feature",
-            "user_data": "#cloud-config\n",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "create",
-            "kind": "host",
             "name": "repo-feature",
-            "user_data": "#cloud-config\n",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
         }));
@@ -535,9 +501,6 @@ mod tests {
             ssh_authorized_keys: vec![key.to_owned()],
             git_user_name: "Test User".to_owned(),
             git_user_email: "test@example.invalid".to_owned(),
-            application: CreateApplication::Host {
-                user_data: "#cloud-config\n".to_owned(),
-            },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));
         request.vcpus = 0;
@@ -550,7 +513,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "get",
             "name": "Not-Valid"
         }))

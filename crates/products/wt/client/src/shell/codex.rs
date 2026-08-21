@@ -12,7 +12,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
-use wt_control_protocol::{CodexSession, Instance, WorldKind};
+use wt_control_protocol::{CodexSession, Instance};
 
 #[derive(Debug)]
 pub(super) enum CodexContextSnapshot {
@@ -33,6 +33,7 @@ impl ShellWorld {
 
     pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
         let qualified_name = format!("{context}.{}", instance.name);
+        let control_alias = format!("{qualified_name}-direct");
         Self {
             identity: super::model::WorldIdentity {
                 context: context.into(),
@@ -40,8 +41,7 @@ impl ShellWorld {
             },
             name: qualified_name,
             instance_name: instance.name.clone(),
-            kind: WorldKind::Host,
-            control_alias: format!("{qualified_name}-vs"),
+            control_alias,
         }
     }
 
@@ -55,8 +55,7 @@ impl ShellWorld {
             },
             name: name.into(),
             instance_name: wt_control_protocol::InstanceName::parse(world_name).unwrap(),
-            kind: WorldKind::Host,
-            control_alias: format!("{name}-vs"),
+            control_alias: format!("{name}-direct"),
         }
     }
 }
@@ -195,16 +194,7 @@ fn validate_context(
                     observation.world_name.as_str(),
                 ));
             }
-            let expected_tmux = match world.kind {
-                WorldKind::Host => "wt-host",
-                WorldKind::GithubCi => {
-                    return Err(invalid(
-                        context,
-                        "retained world kind",
-                        &world.kind.to_string(),
-                    ))
-                }
-            };
+            let expected_tmux = "wt-host";
             if observation.target.tmux_session != expected_tmux {
                 return Err(invalid(
                     context,

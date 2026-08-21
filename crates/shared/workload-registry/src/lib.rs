@@ -9,18 +9,16 @@ pub use capacity::{
 };
 pub use codex_sessions::{CodexSessionReport, CodexSessionReportInput, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
-pub use store::{Store, StoreError, StoredApplication, StoredInstance};
+pub use store::{Store, StoreError, StoredInstance};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use schema::{disks, guests};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::path::Path;
 use thiserror::Error;
-use uuid::Uuid;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 pub const CAPACITY_CONFIG_PATH: &str = "/etc/wt/capacity.toml";
@@ -80,14 +78,6 @@ impl Resources {
     };
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Guest {
-    pub id: Uuid,
-    pub backend_id: String,
-    pub disk_id: Uuid,
-    pub resources: Resources,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Resource {
     Cpu,
@@ -116,39 +106,6 @@ pub enum RegistryError {
     Migration(String),
     #[error("invalid stored data: {0}")]
     InvalidData(String),
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = guests)]
-struct NewGuest<'a> {
-    id: String,
-    backend_id: &'a str,
-    disk_id: String,
-    vcpus: i64,
-    memory_mib: i64,
-    disk_gib: i64,
-    compute_reserved: bool,
-    disk_reserved_gib: i64,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = disks)]
-struct NewDiskNode {
-    id: String,
-}
-
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = guests)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct GuestRow {
-    pub id: String,
-    pub backend_id: String,
-    pub disk_id: String,
-    pub vcpus: i64,
-    pub memory_mib: i64,
-    pub disk_gib: i64,
-    pub compute_reserved: bool,
-    pub disk_reserved_gib: i64,
 }
 
 impl Registry {
@@ -198,90 +155,6 @@ impl Registry {
     }
 }
 
-pub fn insert_guest(
-    connection: &mut SqliteConnection,
-    guest: &Guest,
-    limit: Resources,
-) -> Result<(), RegistryError> {
-    if guest.resources.vcpus == 0
-        || guest.resources.memory_mib == 0
-        || guest.resources.disk_gib == 0
-    {
-        return Err(RegistryError::ZeroResources);
-    }
-    let reserved = reserved_resources(connection)?;
-    for (resource, reserved, requested, total) in [
-        (
-            Resource::Memory,
-            reserved.memory_mib,
-            guest.resources.memory_mib,
-            limit.memory_mib,
-        ),
-        (
-            Resource::Cpu,
-            reserved.vcpus,
-            guest.resources.vcpus,
-            limit.vcpus,
-        ),
-        (
-            Resource::Disk,
-            reserved.disk_gib,
-            guest.resources.disk_gib,
-            limit.disk_gib,
-        ),
-    ] {
-        if reserved
-            .checked_add(requested)
-            .is_none_or(|sum| sum > total)
-        {
-            return Err(RegistryError::Capacity {
-                resource,
-                total,
-                reserved,
-                requested,
-            });
-        }
-    }
-    let row = NewGuest {
-        id: guest.id.to_string(),
-        backend_id: &guest.backend_id,
-        disk_id: guest.disk_id.to_string(),
-        vcpus: to_i64(guest.resources.vcpus, "vcpus")?,
-        memory_mib: to_i64(guest.resources.memory_mib, "memory_mib")?,
-        disk_gib: to_i64(guest.resources.disk_gib, "disk_gib")?,
-        compute_reserved: true,
-        disk_reserved_gib: to_i64(guest.resources.disk_gib, "disk_reserved_gib")?,
-    };
-    diesel::insert_into(disks::table)
-        .values(NewDiskNode {
-            id: guest.disk_id.to_string(),
-        })
-        .execute(connection)?;
-    diesel::insert_into(guests::table)
-        .values(row)
-        .execute(connection)?;
-    Ok(())
-}
-
-impl TryFrom<GuestRow> for Guest {
-    type Error = RegistryError;
-
-    fn try_from(row: GuestRow) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: Uuid::parse_str(&row.id)
-                .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
-            backend_id: row.backend_id,
-            disk_id: Uuid::parse_str(&row.disk_id)
-                .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
-            resources: Resources {
-                vcpus: to_u64(row.vcpus, "vcpus")?,
-                memory_mib: to_u64(row.memory_mib, "memory_mib")?,
-                disk_gib: to_u64(row.disk_gib, "disk_gib")?,
-            },
-        })
-    }
-}
-
 fn to_i64(value: u64, field: &'static str) -> Result<i64, RegistryError> {
     i64::try_from(value).map_err(|_| RegistryError::InvalidNumber(field))
 }
@@ -293,8 +166,40 @@ fn to_u64(value: i64, field: &'static str) -> Result<u64, RegistryError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::worlds;
+    use uuid::Uuid;
+
+    fn insert_world(registry: &Registry, resources: Resources, limit: Resources) -> Uuid {
+        let id = Uuid::new_v4();
+        registry
+            .immediate_transaction::<_, RegistryError>(|connection| {
+                capacity::ensure_capacity(connection, resources, limit)?;
+                diesel::insert_into(worlds::table)
+                    .values((
+                        worlds::id.eq(id.to_string()),
+                        worlds::backend_id.eq(format!("wt-{}", id.simple())),
+                        worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                        worlds::vcpus.eq(to_i64(resources.vcpus, "vcpus")?),
+                        worlds::memory_mib.eq(to_i64(resources.memory_mib, "memory_mib")?),
+                        worlds::disk_gib.eq(to_i64(resources.disk_gib, "disk_gib")?),
+                        worlds::compute_reserved.eq(true),
+                        worlds::disk_reserved_gib
+                            .eq(to_i64(resources.disk_gib, "disk_reserved_gib")?),
+                        worlds::owner.eq("owner"),
+                        worlds::name.eq(format!("world-{}", id.simple())),
+                        worlds::status.eq("running"),
+                        worlds::setup_fingerprint.eq("fingerprint"),
+                        worlds::ssh_host_keys.eq("[]"),
+                    ))
+                    .execute(connection)?;
+                Ok(())
+            })
+            .unwrap();
+        id
+    }
+
     #[test]
-    fn all_world_kinds_share_atomic_capacity() {
+    fn world_capacity_is_atomic() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("registry.db");
         let first = Registry::open(&path).unwrap();
@@ -304,106 +209,33 @@ mod tests {
             memory_mib: 2048,
             disk_gib: 16,
         };
-        let guest = |kind| Guest {
-            id: Uuid::new_v4(),
-            kind,
-            backend_id: format!("wt-{}", Uuid::new_v4().simple()),
-            disk_id: Uuid::new_v4(),
-            resources: limit,
-        };
-        let world = guest(GuestKind::Host);
-        first
+        insert_world(&first, limit, limit);
+        let error = second
             .immediate_transaction::<_, RegistryError>(|connection| {
-                insert_guest(connection, &world, limit)
+                capacity::ensure_capacity(connection, limit, limit)
             })
-            .unwrap();
-        for kind in [GuestKind::Host, GuestKind::GithubCi] {
-            let candidate = guest(kind);
-            let error = second
-                .immediate_transaction::<_, RegistryError>(|connection| {
-                    insert_guest(connection, &candidate, limit)
-                })
-                .unwrap_err();
-            assert!(matches!(
-                error,
-                RegistryError::Capacity {
-                    resource: Resource::Memory,
-                    total: 2048,
-                    reserved: 2048,
-                    requested: 2048,
-                }
-            ));
-        }
-    }
-
-    #[test]
-    fn runner_release_removes_its_guest_and_reservation() {
-        let temp = tempfile::tempdir().unwrap();
-        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
-        let id = Uuid::new_v4();
-        let disk_id = Uuid::new_v4();
-        let resources = Resources {
-            vcpus: 2,
-            memory_mib: 4096,
-            disk_gib: 32,
-        };
-        let runner = registry
-            .reserve_runner(
-                id,
-                "runner-test",
-                format!("wt-{}", id.simple()),
-                disk_id,
-                resources,
-                resources,
-            )
-            .unwrap();
-        assert_eq!(runner.status, RunnerStatus::Reserved);
-        registry
-            .mark_runner(
-                id,
-                RunnerStatus::CleanupPending,
-                Some(42),
-                Some("runner exited"),
-            )
-            .unwrap();
-        let listed = registry.list_runners().unwrap();
-        assert_eq!(listed[0].status, RunnerStatus::CleanupPending);
-        assert_eq!(listed[0].github_runner_id, Some(42));
-        assert_eq!(listed[0].last_error.as_deref(), Some("runner exited"));
-
-        registry.release_runner(id).unwrap();
-
-        assert!(registry.list_runners().unwrap().is_empty());
-        assert_eq!(
-            registry.read(reserved_resources).unwrap(),
-            Resources {
-                vcpus: 0,
-                memory_mib: 0,
-                disk_gib: 0,
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RegistryError::Capacity {
+                resource: Resource::Memory,
+                total: 2048,
+                reserved: 2048,
+                requested: 2048,
             }
-        );
+        ));
     }
 
     #[test]
-    fn stopped_guest_reserves_only_its_used_disk_space() {
+    fn stopped_world_reserves_only_its_used_disk_space() {
         let temp = tempfile::tempdir().unwrap();
         let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
-        let id = Uuid::new_v4();
         let resources = Resources {
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
         };
-        registry
-            .reserve_runner(
-                id,
-                "runner-test",
-                format!("wt-{}", id.simple()),
-                Uuid::new_v4(),
-                resources,
-                resources,
-            )
-            .unwrap();
+        let id = insert_world(&registry, resources, resources);
 
         registry
             .transaction::<_, RegistryError>(|connection| {

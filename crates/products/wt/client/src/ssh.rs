@@ -47,11 +47,11 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
         let guest_common =
             guest_options(ssh, &qualified, &known_hosts_file, compression, &proxy_jump);
         config.push_str(&format!(
-            "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {qualified}-vs\n{guest_common}"
+            "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {qualified}-direct\n{guest_common}"
         ));
         if unique_name {
             config.push_str(&format!(
-                "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {}-vs\n{guest_common}",
+                "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {}-direct\n{guest_common}",
                 instance.name, instance.name
             ));
         }
@@ -128,7 +128,7 @@ mod tests {
     use crate::config::{Context as ClientContext, ContextKind};
     use std::sync::Mutex;
     use uuid::Uuid;
-    use wt_control_protocol::{Instance, InstanceApplication, InstanceName, SshAccess};
+    use wt_control_protocol::{Instance, InstanceName, SshAccess};
 
     static HOME_LOCK: Mutex<()> = Mutex::new(());
 
@@ -168,7 +168,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
-            application: InstanceApplication::Host,
         };
         let mut replacement_instance = instance.clone();
         replacement_instance.id = Uuid::new_v4();
@@ -233,7 +232,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
-            application: InstanceApplication::Host,
         };
         sync(
             &local_config(),
@@ -275,7 +273,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAAHOST host".into()],
             }),
-            application: InstanceApplication::Host,
         };
         sync(
             &local_config(),
@@ -307,7 +304,7 @@ mod tests {
           RequestTTY force
           RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
 
-        Host local.ubuntu-vs
+        Host local.ubuntu-direct
           HostName 192.0.2.3
           User wt
           Port 22
@@ -335,7 +332,7 @@ mod tests {
           RequestTTY force
           RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
 
-        Host ubuntu-vs
+        Host ubuntu-direct
           HostName 192.0.2.3
           User wt
           Port 22
@@ -376,7 +373,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAAHOST host".into()],
             }),
-            application: InstanceApplication::Host,
         };
 
         sync(
@@ -392,7 +388,7 @@ mod tests {
 
         let config = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(config.contains("Host local.broken\n"));
-        assert!(config.contains("Host local.broken-vs\n"));
+        assert!(config.contains("Host local.broken-direct\n"));
     }
 
     #[test]
@@ -420,7 +416,6 @@ mod tests {
                     port: 22,
                     host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
                 }),
-                application: InstanceApplication::Host,
             },
         };
         let client_config = ClientConfig {
@@ -481,7 +476,6 @@ mod tests {
                     port: 22,
                     host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
                 }),
-                application: InstanceApplication::Host,
             },
         };
         let client_config = ClientConfig {

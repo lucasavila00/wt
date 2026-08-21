@@ -2,7 +2,7 @@ use super::*;
 use crate::{CodexSessionStartSource, CodexSessionStartSourceKind};
 use diesel::prelude::*;
 use wt_git_smart_protocol::{validate_push, PushViolation};
-use wt_workload_registry::schema::{disks, guests, worlds};
+use wt_workload_registry::schema::worlds;
 
 #[test]
 fn parses_supported_sources_without_shell_syntax() {
@@ -313,28 +313,18 @@ fn test_grant() -> GrantRecord {
 
 fn insert_world(registry: &wt_workload_registry::Registry) -> Uuid {
     let id = Uuid::new_v4();
-    let disk_id = Uuid::new_v4();
     registry
         .transaction::<_, wt_workload_registry::RegistryError>(|connection| {
-            diesel::insert_into(disks::table)
-                .values(disks::id.eq(disk_id.to_string()))
-                .execute(connection)?;
-            diesel::insert_into(guests::table)
-                .values((
-                    guests::id.eq(id.to_string()),
-                    guests::kind.eq("host"),
-                    guests::backend_id.eq(format!("wt-{}", id.simple())),
-                    guests::disk_id.eq(disk_id.to_string()),
-                    guests::vcpus.eq(1_i64),
-                    guests::memory_mib.eq(1024_i64),
-                    guests::disk_gib.eq(10_i64),
-                    guests::disk_reserved_gib.eq(10_i64),
-                    guests::compute_reserved.eq(true),
-                ))
-                .execute(connection)?;
             diesel::insert_into(worlds::table)
                 .values((
                     worlds::id.eq(id.to_string()),
+                    worlds::backend_id.eq(format!("wt-{}", id.simple())),
+                    worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                    worlds::vcpus.eq(1_i64),
+                    worlds::memory_mib.eq(1024_i64),
+                    worlds::disk_gib.eq(10_i64),
+                    worlds::disk_reserved_gib.eq(10_i64),
+                    worlds::compute_reserved.eq(true),
                     worlds::owner.eq("alice"),
                     worlds::name.eq("checkout"),
                     worlds::status.eq("running"),

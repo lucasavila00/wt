@@ -11,6 +11,7 @@ use crate::host;
 use crate::install_input::InstallInput;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
+use recipe::PackageVersions;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -24,7 +25,6 @@ use std::time::Duration;
 use wt_installer_support::cmd;
 use wt_installer_support::{require_named_file, require_root_file, Runner};
 use wt_libvirt_kvm::LIBVIRT_URI;
-use recipe::PackageVersions;
 #[cfg(test)]
 use wt_server::image_generation::manifest_path;
 use wt_server::image_generation::resolve;

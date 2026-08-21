@@ -18,11 +18,8 @@ pub use host::{ProvisionSpec, World, WorldInspection};
 pub use retained::*;
 
 pub trait WorldWorker: Clone + Send + Sync + 'static {
-    fn provision(
-        &self,
-        spec: ProvisionSpec<'_>,
-        log: &mut dyn Write,
-    ) -> Result<World, WorkerError>;
+    fn provision(&self, spec: ProvisionSpec<'_>, log: &mut dyn Write)
+        -> Result<World, WorkerError>;
     fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
     fn start(&self, backend_id: &str) -> Result<World, WorkerError>;

@@ -30,10 +30,10 @@ fn palette_filters_selects_and_returns_commands() {
             area(),
         );
     }
-    assert_eq!(state.palette().matches(), vec![ControlCommand::NewHost]);
+    assert_eq!(state.palette().matches(), vec![ControlCommand::NewWorld]);
     assert_eq!(
         state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area()),
-        Some(ControlAction::Command(ControlCommand::NewHost))
+        Some(ControlAction::Command(ControlCommand::NewWorld))
     );
     assert!(!state.palette().is_open());
 }
@@ -48,7 +48,7 @@ fn activity_icons_and_palette_results_are_clickable() {
     let (_, results) = command_palette_layout(control_areas(area).1);
     assert_eq!(
         state.handle_mouse(mouse(results.x, results.y + 1), area),
-        (true, Some(ControlAction::Command(ControlCommand::NewHost)))
+        (true, Some(ControlAction::Command(ControlCommand::NewWorld)))
     );
     assert!(!state.palette().is_open());
     state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area);

@@ -91,7 +91,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         wt_retained_worlds::host::validate_user_data(include_str!(
             "../../../../../assets/client/cloud-init.yaml"
         ))
-            .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
+        .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
         match self.store.get(owner, &request.name) {
@@ -142,7 +142,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             }
         }
         let id = Uuid::new_v4();
-        let grant = self.gateway.reserve(id, None, None);
+        let grant = self.gateway.reserve(id);
         let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
         let disk_id = Uuid::new_v4();
         let backend_id = format!("wt-{}", id.simple());
@@ -269,10 +269,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         ) {
             return Ok(());
         }
-        match self
-            .worker
-            .inspect(&stored.backend_id)
-        {
+        match self.worker.inspect(&stored.backend_id) {
             Ok(WorldInspection::Running(world)) => {
                 self.store
                     .ensure_resources_reserved(stored.instance.id)
@@ -305,14 +302,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     }
 
     fn disk_usage(&self, stored: &StoredInstance) -> Result<u64, ApiError> {
-        self.worker
-            .disk_usage(stored.disk_id)
-            .map_err(|error| {
-                ApiError::new(
-                    ErrorCode::Backend,
-                    format!("read world disk usage: {error}"),
-                )
-            })
+        self.worker.disk_usage(stored.disk_id).map_err(|error| {
+            ApiError::new(
+                ErrorCode::Backend,
+                format!("read world disk usage: {error}"),
+            )
+        })
     }
 
     fn apply_world(&self, stored: &StoredInstance, world: &World) -> Result<(), ApiError> {
@@ -392,15 +387,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         self.store
             .reserve_resources(stored.instance.id, self.capacity_limit)
             .map_err(map_store_error)?;
-        let world = match self
-            .worker
-            .start(&stored.backend_id)
-        {
+        let world = match self.worker.start(&stored.backend_id) {
             Ok(world) => world,
             Err(error) => {
-                if let Ok(WorldInspection::Stopped { reason }) = self
-                    .worker
-                    .inspect(&stored.backend_id)
+                if let Ok(WorldInspection::Stopped { reason }) =
+                    self.worker.inspect(&stored.backend_id)
                 {
                     let disk_usage_bytes = self.disk_usage(&stored)?;
                     self.store
@@ -447,10 +438,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;
-        if let Err(error) =
-            self.worker
-                .destroy(&stored.backend_id, stored.disk_id)
-        {
+        if let Err(error) = self.worker.destroy(&stored.backend_id, stored.disk_id) {
             let message = error.to_string();
             self.store
                 .mark_error(stored.instance.id, &message)

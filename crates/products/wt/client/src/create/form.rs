@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use wt_client::config::ClientConfig;
-use wt_control_protocol::{CreateApplication, InstanceName};
+use wt_control_protocol::InstanceName;
 
 use crate::git_author::GitAuthor;
 
@@ -167,9 +167,7 @@ impl Form {
             height,
         );
         frame.render_widget(
-            Block::new()
-                .borders(Borders::ALL)
-                .title("Create world"),
+            Block::new().borders(Borders::ALL).title("Create world"),
             area,
         );
         let inner = area.inner(Margin::new(2, 1));
@@ -441,7 +439,7 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
     use wt_client::config::{Context, ContextKind};
 
-    fn form(kind: Kind) -> Form {
+    fn form() -> Form {
         Form::new(
             &ClientConfig {
                 contexts: vec![
@@ -455,7 +453,6 @@ mod tests {
                     },
                 ],
             },
-            kind,
             GitAuthor {
                 name: "Test User".into(),
                 email: "test@example.com".into(),
@@ -465,16 +462,9 @@ mod tests {
         .unwrap()
     }
 
-    fn host_kind() -> Kind {
-        Kind::Host(crate::host::Input {
-            user_data: "#cloud-config\n".into(),
-            user_data_path: "/home/test/.config/wt/cloud-init.yaml".into(),
-        })
-    }
-
     #[test]
     fn host_form_validates_and_builds_the_request_input() {
-        let mut form = form(host_kind());
+        let mut form = form();
         form.name = "demo".into();
         form.context = 1;
 
@@ -483,15 +473,12 @@ mod tests {
         assert_eq!(input.context, "lab");
         assert_eq!(input.name.as_str(), "demo");
         assert_eq!(input.vcpus, DEFAULT_VCPUS);
-        assert!(matches!(
-            input.application,
-            CreateApplication::Host { user_data } if user_data == "#cloud-config\n"
-        ));
+        assert_eq!(input.git_user_name, "Test User");
     }
 
     #[test]
     fn invalid_values_stay_in_the_form() {
-        let mut form = form(host_kind());
+        let mut form = form();
         form.focus = 1;
 
         assert!(matches!(
@@ -504,7 +491,7 @@ mod tests {
 
     #[test]
     fn terminal_sequence_reaches_confirmation() {
-        let mut form = form(host_kind());
+        let mut form = form();
         let mut action = Action::None;
         for character in "\nrepo-feature\n\n\n\n\n".chars() {
             let code = if character == '\n' {
@@ -521,7 +508,7 @@ mod tests {
     fn renders_the_editing_form() {
         let backend = TestBackend::new(84, 22);
         let mut terminal = Terminal::new(backend).unwrap();
-        let form = form(host_kind());
+        let form = form();
 
         terminal
             .draw(|frame| form.render(frame, frame.area()))

@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 pub const CODEX_SESSION_PANE_OPTION: &str = "@wt_codex_session_id";
 
 pub fn valid_codex_tmux_session(value: &str) -> bool {
-    matches!(value, "wt-app" | "wt-host")
+    value == "wt-host"
 }
 
 pub fn valid_codex_pane_id(value: &str) -> bool {
@@ -18,16 +18,8 @@ pub fn valid_codex_pane_id(value: &str) -> bool {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
-    Reserve {
-        world_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        base: Option<String>,
-    },
-    Revoke {
-        grant_id: String,
-    },
+    Reserve { world_id: String },
+    Revoke { grant_id: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -122,7 +114,6 @@ mod codex_target_tests {
 
     #[test]
     fn validates_only_wt_byobu_targets() {
-        assert!(valid_codex_tmux_session("wt-app"));
         assert!(valid_codex_tmux_session("wt-host"));
         assert!(!valid_codex_tmux_session("other"));
 

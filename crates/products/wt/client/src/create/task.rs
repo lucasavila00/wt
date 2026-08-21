@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use wt_client::config::ClientConfig;
-use wt_control_protocol::{ApiRequest, CreateInstance, Operation, Outcome, Response, WorldKind};
+use wt_control_protocol::{ApiRequest, CreateInstance, Operation, Outcome, Response};
 
 use super::{capacity_message, Created, Input};
 
@@ -31,7 +31,6 @@ impl Task {
             ssh_authorized_keys: input.ssh_authorized_keys,
             git_user_name: input.git_user_name,
             git_user_email: input.git_user_email,
-            kind: WorldKind::Host,
         };
         let config = config.clone();
         let (event_sender, events) = mpsc::channel();

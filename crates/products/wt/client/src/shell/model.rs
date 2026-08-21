@@ -17,7 +17,6 @@ pub(super) struct ShellWorld {
     pub(super) identity: WorldIdentity,
     pub(super) name: String,
     pub(super) instance_name: InstanceName,
-    pub(super) kind: wt_control_protocol::WorldKind,
     pub(super) control_alias: String,
 }
 
@@ -37,8 +36,7 @@ impl From<&str> for ShellWorld {
                 name.split_once('.').map_or(name, |(_, instance)| instance),
             )
             .unwrap(),
-            kind: wt_control_protocol::WorldKind::Host,
-            control_alias: format!("{name}-vs"),
+            control_alias: format!("{name}-direct"),
         }
     }
 }

@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use wt_git_smart_protocol::{
-    repository_refs, serve_git, successful_push_updates, write_packet, GitTarget, PushViolation,
+    serve_git, successful_push_updates, write_packet, GitTarget, PushViolation,
     WritePolicy,
 };
 use wt_tools::{self as api, ProviderKind};
@@ -218,35 +218,6 @@ fn git_target<'a>(provider: &'a Provider, source: &'a GitSource) -> Result<GitTa
             })
         }
     }
-}
-
-fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Result<()> {
-    let refs = repository_refs(git_target(provider, source)?).with_context(|| {
-        format!(
-            "the gateway SSH key cannot read repository {} on {}",
-            source.path, source.host
-        )
-    })?;
-    let expected = format!("refs/heads/{base}");
-    if !refs.iter().any(|(_, reference)| reference == &expected) {
-        bail!("Git base branch `{base}` does not exist");
-    }
-    if let Provider::Ssh {
-        kind,
-        api_token_file,
-        ..
-    } = provider
-    {
-        api::verify_provider_access(
-            *kind,
-            api_token_file,
-            &source.host,
-            source.path.trim_end_matches(".git"),
-            base,
-        )
-        .context("verify provider API access")?;
-    }
-    Ok(())
 }
 
 const HELP_PREFIX: &str = "\
