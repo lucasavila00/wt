@@ -1,9 +1,22 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use wt_control_protocol::CodexSession;
 
 pub(super) const COMMANDS: [ControlCommand; 2] = [ControlCommand::NewHost, ControlCommand::NewDev];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
+
+#[derive(Debug)]
+pub(super) enum CodexContextSnapshot {
+    Sessions {
+        context: String,
+        sessions: Vec<CodexSession>,
+    },
+    Failure {
+        context: String,
+        message: String,
+    },
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Activity {
@@ -46,6 +59,7 @@ impl ControlCommand {
 pub(super) struct ControlState {
     activity: Activity,
     palette: CommandPalette,
+    codex: Vec<CodexContextSnapshot>,
 }
 
 impl Default for ControlState {
@@ -53,6 +67,7 @@ impl Default for ControlState {
         Self {
             activity: Activity::Worlds,
             palette: CommandPalette::default(),
+            codex: Vec::new(),
         }
     }
 }
@@ -64,6 +79,14 @@ impl ControlState {
 
     pub(super) fn palette(&self) -> &CommandPalette {
         &self.palette
+    }
+
+    pub(super) fn codex(&self) -> &[CodexContextSnapshot] {
+        &self.codex
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>) {
+        self.codex = codex;
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) {
