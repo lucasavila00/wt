@@ -153,9 +153,14 @@ impl WtToolsFeedbackCommand {
 
 pub fn render_cli_command_output(output: ProviderCommandOutput) -> String {
     let output = match output {
-        ProviderCommandOutput::CiJobLog(log) => {
-            ProviderCommandOutput::CiJobLog(tail_ci_job_log(log))
-        }
+        ProviderCommandOutput::CiJobLog { log, truncated } => ProviderCommandOutput::CiJobLog {
+            log: if truncated {
+                format!("{CI_JOB_LOG_TRUNCATION_NOTICE}{log}")
+            } else {
+                log
+            },
+            truncated,
+        },
         output => output,
     };
     let mut message = serde_json::to_string(&output).expect("provider command output serializes");
@@ -167,10 +172,7 @@ pub fn render_cli_confirmation(message: impl Into<String>) -> String {
     render_cli_command_output(ProviderCommandOutput::Confirmation(message.into()))
 }
 
-fn tail_ci_job_log(log: String) -> String {
-    tail_ci_job_log_at_limit(log, CI_JOB_LOG_TAIL_LIMIT)
-}
-
+#[cfg(test)]
 pub(super) fn tail_ci_job_log_at_limit(log: String, limit: usize) -> String {
     if log.len() <= limit {
         return log;

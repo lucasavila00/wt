@@ -36,9 +36,14 @@ fn running_job_log_can_be_read_outside_the_current_commit() {
         )
         .unwrap();
 
-    let ProviderCommandOutput::CiJobLog(output) = output else {
+    let ProviderCommandOutput::CiJobLog {
+        log: output,
+        truncated,
+    } = output
+    else {
         panic!("expected a CI job log")
     };
+    assert!(!truncated);
     insta::assert_snapshot!(output, @r###"
     Job: 94318091035 (Linux)
     State: in_progress
@@ -95,9 +100,14 @@ fn billing_blocked_job_without_log_returns_check_run_diagnostics() {
         )
         .unwrap();
 
-    let ProviderCommandOutput::CiJobLog(output) = output else {
+    let ProviderCommandOutput::CiJobLog {
+        log: output,
+        truncated,
+    } = output
+    else {
         panic!("expected a CI job log")
     };
+    assert!(!truncated);
     insta::assert_snapshot!(output, @r###"
     Job: 95206818032 (checks)
     State: failure
@@ -158,9 +168,14 @@ fn completed_job_without_log_or_annotations_asks_the_user_for_help() {
         )
         .unwrap();
 
-    let ProviderCommandOutput::CiJobLog(output) = output else {
+    let ProviderCommandOutput::CiJobLog {
+        log: output,
+        truncated,
+    } = output
+    else {
         panic!("expected a CI job log")
     };
+    assert!(!truncated);
     insta::assert_snapshot!(output, @r###"
     Job: 44 (checks)
     State: failure
@@ -205,7 +220,10 @@ fn completed_job_log_is_downloaded() {
 
     assert_eq!(
         output,
-        ProviderCommandOutput::CiJobLog("build complete\n".to_owned())
+        ProviderCommandOutput::CiJobLog {
+            log: "build complete\n".to_owned(),
+            truncated: false,
+        }
     );
     server.join().unwrap().unwrap();
 }

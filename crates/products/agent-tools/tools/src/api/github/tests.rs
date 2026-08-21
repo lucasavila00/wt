@@ -326,6 +326,14 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         },
         ExpectedRequest {
             method: "GET",
+            path: "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+            required_header: Some(("authorization", "Bearer fixture-token")),
+            body_contains: None,
+            response_content_type: "application/json",
+            response_body: r#"{"total_count":0,"workflow_runs":[]}"#,
+        },
+        ExpectedRequest {
+            method: "GET",
             path: "/repos/acme/widget/actions/jobs/44",
             required_header: Some(("authorization", "Bearer fixture-token")),
             body_contains: None,

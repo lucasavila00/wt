@@ -1,5 +1,7 @@
 use super::*;
-use crate::api::{cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll};
+use crate::api::{
+    cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll, CI_JOB_LOG_TAIL_LIMIT,
+};
 
 impl GitProviderApi for GitlabApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
@@ -189,12 +191,14 @@ impl GitProviderApi for GitlabApi {
                         "`{job}` is not a numeric GitLab CI job ID; use the job ID from its GitLab CI URL"
                     )
                 })?;
-                Ok(ProviderCommandOutput::CiJobLog(self.http.read_text(
+                let (log, truncated) = self.http.read_text_tail(
                     &format!(
                         "api/v4/projects/{}/jobs/{job_id}/trace",
                         encoded_project(scope.project)
                     ),
-                )?))
+                    CI_JOB_LOG_TAIL_LIMIT,
+                )?;
+                Ok(ProviderCommandOutput::CiJobLog { log, truncated })
             }
             ProviderCommand::RetryCiJob { job } => {
                 self.require_ci_job(scope, job)?;
@@ -256,14 +260,20 @@ impl GitProviderApi for GitlabApi {
     ) -> Result<ProviderCommandOutput> {
         match command {
             WtToolsCommand::ShowMr { mr } => {
-                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                let mut status = merge_request_status(
                     self.read_merge_request(scope.project, parse_resource_id(mr, "MR")?)?,
-                )))
+                );
+                let (_, jobs) = self.list_ci_for_commit(scope.project, &status.head)?;
+                status.jobs = jobs;
+                Ok(ProviderCommandOutput::ChangeRequest(status))
             }
             WtToolsCommand::ShowMrForBranch { branch } => {
-                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                let mut status = merge_request_status(
                     self.read_open_merge_request_for_branch(scope.project, branch)?,
-                )))
+                );
+                let (_, jobs) = self.list_ci_for_commit(scope.project, &status.head)?;
+                status.jobs = jobs;
+                Ok(ProviderCommandOutput::ChangeRequest(status))
             }
             WtToolsCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
                 self.read_pipeline(scope.project, parse_resource_id(run, "run")?)?,
@@ -284,12 +294,14 @@ impl GitProviderApi for GitlabApi {
             )),
             WtToolsCommand::LogJob { job } => {
                 let job = parse_resource_id(job, "job")?;
-                Ok(ProviderCommandOutput::CiJobLog(self.http.read_text(
+                let (log, truncated) = self.http.read_text_tail(
                     &format!(
                         "api/v4/projects/{}/jobs/{job}/trace",
                         encoded_project(scope.project)
                     ),
-                )?))
+                    CI_JOB_LOG_TAIL_LIMIT,
+                )?;
+                Ok(ProviderCommandOutput::CiJobLog { log, truncated })
             }
             WtToolsCommand::WaitMr {
                 mr,
@@ -305,10 +317,10 @@ impl GitProviderApi for GitlabApi {
                 }
                 loop {
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "MR {mr} did not change before the wait timeout; last state: {}",
-                            initial.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("mr {mr}"),
+                            last_state: initial.state,
+                        });
                     }
                     let current = self.read_merge_request(scope.project, mr_id)?;
                     if current != initial {
@@ -331,10 +343,10 @@ impl GitProviderApi for GitlabApi {
                         return Ok(ProviderCommandOutput::CiRun(output));
                     }
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "CI run {run} did not finish before the wait timeout; last state: {}",
-                            output.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("run {run}"),
+                            last_state: output.state,
+                        });
                     }
                 }
             }
@@ -350,10 +362,10 @@ impl GitProviderApi for GitlabApi {
                         return Ok(ProviderCommandOutput::CiJob(output));
                     }
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "CI job {job} did not finish before the wait timeout; last state: {}",
-                            output.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("job {job}"),
+                            last_state: output.state,
+                        });
                     }
                 }
             }

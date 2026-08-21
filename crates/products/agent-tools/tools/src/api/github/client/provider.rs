@@ -1,5 +1,7 @@
 use super::*;
-use crate::api::{cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll};
+use crate::api::{
+    cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll, CI_JOB_LOG_TAIL_LIMIT,
+};
 
 impl GitProviderApi for GithubApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
@@ -181,20 +183,29 @@ impl GitProviderApi for GithubApi {
                     "{}repos/{}/actions/jobs/{}/logs",
                     self.rest_prefix, scope.project, current.handle
                 );
-                match self.rest.read_optional_text(&path)? {
-                    Some(log) => Ok(ProviderCommandOutput::CiJobLog(log)),
-                    None if github_job_log_pending(&current.state) => {
-                        Ok(ProviderCommandOutput::CiJobLog(format!(
-                            "Job: {} ({})\nState: {}\nLog: GitHub has not published live log bytes for this running job.\n",
-                            current.handle, current.name, current.state
-                        )))
+                match self
+                    .rest
+                    .read_optional_text_tail(&path, CI_JOB_LOG_TAIL_LIMIT)?
+                {
+                    Some((log, truncated)) => {
+                        Ok(ProviderCommandOutput::CiJobLog { log, truncated })
                     }
-                    None => Ok(ProviderCommandOutput::CiJobLog(
-                        unavailable_job_log(
+                    None if github_job_log_pending(&current.state) => {
+                        Ok(ProviderCommandOutput::CiJobLog {
+                            log: format!(
+                                "Job: {} ({})\nState: {}\nLog: GitHub has not published live log bytes for this running job.\n",
+                                current.handle, current.name, current.state
+                            ),
+                            truncated: false,
+                        })
+                    }
+                    None => Ok(ProviderCommandOutput::CiJobLog {
+                        log: unavailable_job_log(
                             &current,
                             &self.read_check_run_annotations(scope.project, &current.handle)?,
                         ),
-                    )),
+                        truncated: false,
+                    }),
                 }
             }
             ProviderCommand::RetryCiJob { job } => {
@@ -247,13 +258,21 @@ impl GitProviderApi for GithubApi {
     ) -> Result<ProviderCommandOutput> {
         match command {
             WtToolsCommand::ShowMr { mr } => {
-                Ok(ProviderCommandOutput::ChangeRequest(pull_request_status(
+                let mut status = pull_request_status(
                     self.read_pull_request(scope.project, parse_resource_id(mr, "MR")?)?,
-                )))
+                );
+                let (_, jobs) = self.list_ci_for_commit(scope.project, &status.head)?;
+                status.jobs = jobs;
+                Ok(ProviderCommandOutput::ChangeRequest(status))
             }
-            WtToolsCommand::ShowMrForBranch { branch } => Ok(ProviderCommandOutput::ChangeRequest(
-                pull_request_status(self.read_open_pull_request_for_branch(scope.project, branch)?),
-            )),
+            WtToolsCommand::ShowMrForBranch { branch } => {
+                let mut status = pull_request_status(
+                    self.read_open_pull_request_for_branch(scope.project, branch)?,
+                );
+                let (_, jobs) = self.list_ci_for_commit(scope.project, &status.head)?;
+                status.jobs = jobs;
+                Ok(ProviderCommandOutput::ChangeRequest(status))
+            }
             WtToolsCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(ci_run(
                 self.read_workflow_run(scope.project, parse_resource_id(run, "run")?)?,
             ))),
@@ -300,10 +319,10 @@ impl GitProviderApi for GithubApi {
                 }
                 loop {
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "MR {mr} did not change before the wait timeout; last state: {}",
-                            initial.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("mr {mr}"),
+                            last_state: initial.state,
+                        });
                     }
                     let current = self.read_pull_request(scope.project, mr_id)?;
                     if current != initial {
@@ -326,10 +345,10 @@ impl GitProviderApi for GithubApi {
                         return Ok(ProviderCommandOutput::CiRun(output));
                     }
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "CI run {run} did not finish before the wait timeout; last state: {}",
-                            output.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("run {run}"),
+                            last_state: output.state,
+                        });
                     }
                 }
             }
@@ -346,10 +365,10 @@ impl GitProviderApi for GithubApi {
                         return Ok(ProviderCommandOutput::CiJob(output));
                     }
                     if !wait_for_next_cli_poll(deadline) {
-                        bail!(
-                            "CI job {job} did not finish before the wait timeout; last state: {}",
-                            output.state
-                        );
+                        return Ok(ProviderCommandOutput::WaitTimeout {
+                            resource: format!("job {job}"),
+                            last_state: output.state,
+                        });
                     }
                 }
             }
