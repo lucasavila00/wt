@@ -44,10 +44,6 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         .filter(|world| ssh::has_alias(world))
         .map(inventory::ContextInstance::qualified_name)
         .collect::<Vec<_>>();
-    if worlds.is_empty() {
-        bail!("wt shell found no worlds with SSH access");
-    }
-
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
@@ -143,7 +139,7 @@ fn run_loop(
             )?;
         }
         if redraw {
-            let screen = sessions.screen(model.active());
+            let screen = model.has_worlds().then(|| sessions.screen(model.active()));
             terminal.draw(|frame| {
                 render::draw(
                     frame,

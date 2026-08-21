@@ -33,11 +33,10 @@ pub(super) struct ShellModel {
 
 impl ShellModel {
     pub(super) fn new(worlds: Vec<String>) -> Self {
-        assert!(!worlds.is_empty(), "shell requires at least one world");
         Self {
             worlds,
             active: 0,
-            mode: Mode::World,
+            mode: Mode::Control,
             control: ControlState::default(),
             should_quit: false,
         }
@@ -49,6 +48,10 @@ impl ShellModel {
 
     pub(super) fn active(&self) -> usize {
         self.active
+    }
+
+    pub(super) fn has_worlds(&self) -> bool {
+        !self.worlds.is_empty()
     }
 
     pub(super) fn active_world(&self) -> &str {
@@ -117,7 +120,7 @@ impl ShellModel {
                 _ => InputRoute::World,
             },
             Mode::Control => {
-                if key.code == KeyCode::F(5) {
+                if key.code == KeyCode::F(5) && self.has_worlds() {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
@@ -143,7 +146,9 @@ mod tests {
     use crossterm::event::KeyModifiers;
 
     fn model() -> ShellModel {
-        ShellModel::new(vec!["one".into(), "two".into(), "three".into()])
+        let mut model = ShellModel::new(vec!["one".into(), "two".into(), "three".into()]);
+        model.handle_key(key(KeyCode::F(5)));
+        model
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -158,6 +163,21 @@ mod tests {
         assert_eq!(model.active(), 0);
         assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
         assert_eq!(model.mode(), Mode::Switcher);
+    }
+
+    #[test]
+    fn shell_starts_in_control_mode() {
+        let model = ShellModel::new(vec!["one".into()]);
+
+        assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn empty_shell_stays_in_control_mode_on_f5() {
+        let mut model = ShellModel::new(Vec::new());
+
+        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]

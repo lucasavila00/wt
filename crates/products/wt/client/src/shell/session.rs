@@ -94,7 +94,7 @@ impl SessionSet {
     }
 
     pub(super) fn all_closed(&self) -> bool {
-        self.sessions.iter().all(|session| session.closed)
+        !self.sessions.is_empty() && self.sessions.iter().all(|session| session.closed)
     }
 
     pub(super) fn add_world(&mut self, world: &str, rows: u16, columns: u16) -> Result<()> {
