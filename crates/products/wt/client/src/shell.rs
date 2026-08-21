@@ -6,10 +6,8 @@ use crossterm::event::{
 use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -21,11 +19,13 @@ mod control;
 mod delete;
 mod input;
 mod model;
+mod refresh;
 mod render;
 mod session;
 
 use control::ControlCommand;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
+use refresh::{take_current_snapshot, CodexRefresh, WorldRefresh};
 use session::SessionSet;
 
 const BAR_HEIGHT: u16 = 1;
@@ -96,26 +96,6 @@ fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
         .collect()
 }
 
-struct WorldRefresh {
-    updates: Receiver<WorldSnapshot>,
-    generation: Arc<AtomicU64>,
-    cancelled: Arc<AtomicBool>,
-    stop: Sender<()>,
-    worker: Option<JoinHandle<()>>,
-}
-
-struct WorldSnapshot {
-    generation: u64,
-    instances: Vec<inventory::ContextInstance>,
-}
-
-struct CodexRefresh {
-    updates: Receiver<Vec<codex::CodexContextSnapshot>>,
-    cancelled: Arc<AtomicBool>,
-    stop: Sender<()>,
-    worker: Option<JoinHandle<()>>,
-}
-
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
@@ -128,115 +108,6 @@ struct ControlFlows {
     creation: Option<crate::create::Flow>,
     creation_error: Option<String>,
     deletion: Option<delete::Flow>,
-}
-
-impl WorldRefresh {
-    fn start(config: ClientConfig) -> Self {
-        let (updates_tx, updates) = mpsc::sync_channel(1);
-        let (stop, stop_rx) = mpsc::channel();
-        let generation = Arc::new(AtomicU64::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let worker_generation = Arc::clone(&generation);
-        let worker_cancelled = Arc::clone(&cancelled);
-        let worker = thread::Builder::new()
-            .name("wt-shell-world-refresh".into())
-            .spawn(move || loop {
-                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
-                    break;
-                }
-                let generation = worker_generation.load(Ordering::Relaxed);
-                let report = inventory::list_all_with_timeout(
-                    &config,
-                    CONTEXT_REQUEST_TIMEOUT,
-                    &worker_cancelled,
-                );
-                if worker_cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                if report.failures.is_empty() {
-                    match updates_tx.try_send(WorldSnapshot {
-                        generation,
-                        instances: report.instances,
-                    }) {
-                        Ok(()) | Err(TrySendError::Full(_)) => {}
-                        Err(TrySendError::Disconnected(_)) => break,
-                    }
-                }
-            })
-            .expect("start wt shell world refresh worker");
-        Self {
-            updates,
-            generation,
-            cancelled,
-            stop,
-            worker: Some(worker),
-        }
-    }
-
-    fn invalidate(&self) {
-        self.generation.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl Drop for WorldRefresh {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
-impl CodexRefresh {
-    fn start(config: ClientConfig) -> Self {
-        let (updates_tx, updates) = mpsc::sync_channel(1);
-        let (stop, stop_rx) = mpsc::channel();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let worker_cancelled = Arc::clone(&cancelled);
-        let worker = thread::Builder::new()
-            .name("wt-shell-codex-refresh".into())
-            .spawn(move || loop {
-                let snapshot = codex::load_snapshots(&config, &worker_cancelled);
-                if worker_cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                match updates_tx.try_send(snapshot) {
-                    Ok(()) | Err(TrySendError::Full(_)) => {}
-                    Err(TrySendError::Disconnected(_)) => break,
-                }
-                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
-                    break;
-                }
-            })
-            .expect("start wt shell Codex refresh worker");
-        Self {
-            updates,
-            cancelled,
-            stop,
-            worker: Some(worker),
-        }
-    }
-}
-
-impl Drop for CodexRefresh {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
-fn take_current_snapshot(
-    updates: &Receiver<WorldSnapshot>,
-    generation: u64,
-) -> Option<WorldSnapshot> {
-    updates
-        .try_iter()
-        .last()
-        .filter(|snapshot| snapshot.generation == generation)
 }
 
 fn updated_at() -> String {

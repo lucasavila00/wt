@@ -1,5 +1,7 @@
+use super::refresh::WorldSnapshot;
 use super::*;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use std::sync::mpsc;
 
 #[test]
 fn world_view_reserves_the_top_row() {
