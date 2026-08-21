@@ -4,11 +4,8 @@
 
 ## Decision
 
-Inventory refresh uses one dedicated `std::thread`. Running `list_all` in the UI
-timer path is rejected because one slow local or OpenSSH context would block
-terminal input and rendering.
-
-The refresh thread owns a cloned client configuration. A stop-channel
+Inventory refresh uses one dedicated `std::thread` which owns a cloned client
+configuration. A stop-channel
 `recv_timeout` provides both the five-second cadence and prompt cancellation
 between refreshes. Each iteration performs one `list_all` followed by managed
 SSH synchronization, so refreshes never overlap.
