@@ -28,7 +28,6 @@ fn image_manifest_records_structured_package_versions() {
         golden_sha256: "golden".to_owned(),
         tmux_sha256: "tmux".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
-        devcontainer_cli: wt_retained_worlds::devcontainer::DEVCONTAINER_CLI_VERSION.to_owned(),
     };
 
     let json = serde_json::to_value(manifest).unwrap();

@@ -485,7 +485,7 @@ fn start_control_command(
         ControlCommand::DeleteWorld => {
             flows.deletion = Some(delete::Flow::new(model.worlds().to_vec()));
         }
-        ControlCommand::NewHost | ControlCommand::NewDev => {
+        ControlCommand::NewHost => {
             start_creation(
                 command,
                 config,
@@ -535,7 +535,6 @@ fn start_creation(
     error: &mut Option<String>,
 ) {
     let kind = match command {
-        ControlCommand::NewDev => Ok(crate::create::Kind::Dev),
         ControlCommand::NewHost => crate::host::default_input().map(crate::create::Kind::Host),
         ControlCommand::DeleteWorld => unreachable!("delete is handled separately"),
     };

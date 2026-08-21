@@ -21,19 +21,14 @@ fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
             guest_ip: None,
             last_error: None,
             ssh: None,
-            application: InstanceApplication::Devcontainer {
-                source: "git@example.test:repo.git".to_owned(),
-                git_base: "main".to_owned(),
-                git_prefix: format!("{name}/"),
-                app_ssh: None,
-            },
+            application: InstanceApplication::Host,
         },
     }
 }
 
 #[test]
 fn formats_aligned_instance_columns_without_tabs() {
-    let provisioning = item("local", "jsdev-manual", InstanceStatus::Provisioning);
+    let provisioning = item("local", "host-manual", InstanceStatus::Provisioning);
     let mut running = item("remote-lab", "a", InstanceStatus::Running);
     running.instance.memory_mib = 1536;
     running.instance.guest_ip = Some("192.0.2.10".to_owned());
@@ -47,9 +42,9 @@ fn formats_aligned_instance_columns_without_tabs() {
     let output = format_instances(&[provisioning, running]);
 
     insta::assert_snapshot!(output, @r###"
-    CONTEXT     NAME          KIND          STATUS        REPO  RESOURCES              DETAIL
-    local       jsdev-manual  devcontainer  provisioning  repo  2 CPU · 4G · 32G       -
-    remote-lab  a             devcontainer  running       repo  2 CPU · 1536MiB · 32G  -
+    CONTEXT     NAME         KIND  STATUS        REPO  RESOURCES              DETAIL
+    local       host-manual  host  provisioning  -     2 CPU · 4G · 32G       -
+    remote-lab  a            host  running       -     2 CPU · 1536MiB · 32G  -
     "###);
     assert!(!output.contains('\t'));
 }
@@ -61,12 +56,12 @@ fn formats_header_for_empty_inventory() {
 
 #[test]
 fn formats_reconciliation_error_details() {
-    let mut failed = item("local", "jsdev", InstanceStatus::Error);
+    let mut failed = item("local", "broken", InstanceStatus::Error);
     failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
     insta::assert_snapshot!(format_instances(&[failed]), @r###"
-    CONTEXT  NAME   KIND          STATUS  REPO  RESOURCES         DETAIL
-    local    jsdev  devcontainer  error   repo  2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.jsdev`
+    CONTEXT  NAME    KIND  STATUS  REPO  RESOURCES         DETAIL
+    local    broken  host  error   -     2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.broken`
     "###);
 }
 
@@ -77,19 +72,19 @@ fn formats_stopped_world_with_recovery_commands() {
     stopped.disk_usage_bytes = Some(1536 * 1024 * 1024);
 
     insta::assert_snapshot!(format_instances(&[stopped]), @r###"
-    CONTEXT  NAME  KIND          STATUS   REPO  RESOURCES               DETAIL
-    ars      mt3   devcontainer  stopped  repo  2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
+    CONTEXT  NAME  KIND  STATUS   REPO  RESOURCES               DETAIL
+    ars      mt3   host  stopped  -     2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
     "###);
 }
 
 #[test]
 fn ls_points_to_wt_tools_reports_without_changing_world_status() {
-    let mut running = item("local", "jsdev", InstanceStatus::Running);
+    let mut running = item("local", "work", InstanceStatus::Running);
     running.agent_tool_report_count = 2;
 
     insta::assert_snapshot!(format_instances(&[running]), @r###"
-    CONTEXT  NAME   KIND          STATUS   REPO  RESOURCES         DETAIL
-    local    jsdev  devcontainer  running  repo  2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
+    CONTEXT  NAME  KIND  STATUS   REPO  RESOURCES         DETAIL
+    local    work  host  running  -     2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
     "###);
 }
 
@@ -114,21 +109,12 @@ fn explains_memory_capacity() {
 }
 
 #[test]
-fn parses_code_target() {
-    let cli = Cli::try_parse_from(["wt", "code", "ars.jsdev"]).unwrap();
-    let Command::Code { name } = cli.command else {
-        panic!("expected code command");
-    };
-    assert_eq!(name, "ars.jsdev");
-}
-
-#[test]
 fn parses_ssh_target() {
-    let cli = Cli::try_parse_from(["wt", "ssh", "ars.jsdev"]).unwrap();
+    let cli = Cli::try_parse_from(["wt", "ssh", "ars.work"]).unwrap();
     let Command::Ssh { name } = cli.command else {
         panic!("expected ssh command");
     };
-    assert_eq!(name, "ars.jsdev");
+    assert_eq!(name, "ars.work");
 }
 
 #[test]
@@ -161,18 +147,6 @@ fn parses_agent_tool_report_commands() {
             .command,
         Command::ClearReports
     ));
-}
-
-#[test]
-fn parses_explicit_dev_creation() {
-    assert!(matches!(
-        Cli::try_parse_from(["wt", "new", "dev"]).unwrap().command,
-        Command::New(host::New {
-            kind: Some(host::NewKind::Dev),
-            ..
-        })
-    ));
-    assert!(Cli::try_parse_from(["wt", "new", "git@example.test:repo.git"]).is_err());
 }
 
 #[test]

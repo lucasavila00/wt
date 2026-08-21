@@ -13,20 +13,10 @@ use crate::git_author::GitAuthor;
 const DEFAULT_VCPUS: u32 = 2;
 const DEFAULT_MEMORY_MIB: u64 = 4096;
 const DEFAULT_DISK_GIB: u64 = 32;
-const DEFAULT_BASE: &str = "main";
 const LABEL_WIDTH: usize = 16;
 const HOST_FIELDS: [Field; 5] = [
     Field::Context,
     Field::Name,
-    Field::Vcpus,
-    Field::Memory,
-    Field::Disk,
-];
-const DEV_FIELDS: [Field; 7] = [
-    Field::Context,
-    Field::Name,
-    Field::Source,
-    Field::Base,
     Field::Vcpus,
     Field::Memory,
     Field::Disk,
@@ -62,8 +52,6 @@ enum Stage {
 enum Field {
     Context,
     Name,
-    Source,
-    Base,
     Vcpus,
     Memory,
     Disk,
@@ -75,8 +63,6 @@ pub(crate) struct Form {
     contexts: Vec<String>,
     context: usize,
     name: String,
-    source: String,
-    base: String,
     vcpus: String,
     memory: String,
     disk: String,
@@ -106,8 +92,6 @@ impl Form {
                 .collect(),
             context: 0,
             name: String::new(),
-            source: String::new(),
-            base: String::new(),
             vcpus: String::new(),
             memory: String::new(),
             disk: String::new(),
@@ -278,9 +262,8 @@ impl Form {
 
     fn details(&self) -> String {
         let mut lines = Vec::new();
-        if let Kind::Host(input) = &self.kind {
-            lines.push(format!("Cloud-init  {}", input.user_data_path.display()));
-        }
+        let Kind::Host(input) = &self.kind;
+        lines.push(format!("Cloud-init  {}", input.user_data_path.display()));
         lines.push(format!(
             "Git author  {} <{}>",
             self.author.name, self.author.email
@@ -290,14 +273,8 @@ impl Form {
     }
 
     fn summary(&self) -> String {
-        let application = match &self.kind {
-            Kind::Host(input) => format!("Cloud-init  {}", input.user_data_path.display()),
-            Kind::Dev => format!(
-                "Repository  {}\nBase branch {}",
-                self.source,
-                default_base(&self.base)
-            ),
-        };
+        let Kind::Host(input) = &self.kind;
+        let application = format!("Cloud-init  {}", input.user_data_path.display());
         let mut summary = format!(
             "World       {}\nContext     {}\nKind        {}\n{}\nResources   {} CPU · {} MiB RAM · {} GiB disk\nGit author  {} <{}>\nSSH keys    {}",
             self.name,
@@ -341,14 +318,9 @@ impl Form {
         for field in self.fields() {
             self.validate(*field)?;
         }
-        let application = match &self.kind {
-            Kind::Host(input) => CreateApplication::Host {
-                user_data: input.user_data.clone(),
-            },
-            Kind::Dev => CreateApplication::Devcontainer {
-                source: self.source.clone(),
-                git_base: default_base(&self.base).to_owned(),
-            },
+        let Kind::Host(input) = &self.kind;
+        let application = CreateApplication::Host {
+            user_data: input.user_data.clone(),
         };
         Ok(Input {
             context: self.contexts[self.context].clone(),
@@ -369,10 +341,6 @@ impl Form {
             Field::Name => InstanceName::parse(self.name.clone())
                 .map(|_| ())
                 .map_err(|error| error.to_string()),
-            Field::Source => wt_control_protocol::validate_ssh_git_source(&self.source)
-                .map_err(|error| error.to_string()),
-            Field::Base => wt_control_protocol::validate_git_branch(default_base(&self.base))
-                .map_err(|error| error.to_string()),
             Field::Vcpus => parse_number::<u32>(&self.vcpus, DEFAULT_VCPUS).map(|_| ()),
             Field::Memory => parse_number::<u64>(&self.memory, DEFAULT_MEMORY_MIB).map(|_| ()),
             Field::Disk => parse_number::<u64>(&self.disk, DEFAULT_DISK_GIB).map(|_| ()),
@@ -380,10 +348,7 @@ impl Form {
     }
 
     fn fields(&self) -> &'static [Field] {
-        match self.kind {
-            Kind::Dev => &DEV_FIELDS,
-            Kind::Host(_) => &HOST_FIELDS,
-        }
+        &HOST_FIELDS
     }
 
     fn field(&self) -> Field {
@@ -394,8 +359,6 @@ impl Form {
         match self.field() {
             Field::Context => None,
             Field::Name => Some(&mut self.name),
-            Field::Source => Some(&mut self.source),
-            Field::Base => Some(&mut self.base),
             Field::Vcpus => Some(&mut self.vcpus),
             Field::Memory => Some(&mut self.memory),
             Field::Disk => Some(&mut self.disk),
@@ -406,8 +369,6 @@ impl Form {
         match field {
             Field::Context => format!("‹ {} ›", self.contexts[self.context]),
             Field::Name => hint(&self.name, "my-world"),
-            Field::Source => hint(&self.source, "git@example.com:team/repository.git"),
-            Field::Base => placeholder(&self.base, DEFAULT_BASE),
             Field::Vcpus => placeholder(&self.vcpus, &DEFAULT_VCPUS.to_string()),
             Field::Memory => placeholder(&self.memory, &DEFAULT_MEMORY_MIB.to_string()),
             Field::Disk => placeholder(&self.disk, &DEFAULT_DISK_GIB.to_string()),
@@ -418,8 +379,6 @@ impl Form {
         match field {
             Field::Context => "Context",
             Field::Name => "World name",
-            Field::Source => "Git repository",
-            Field::Base => "Base branch",
             Field::Vcpus => "Virtual CPUs",
             Field::Memory => "RAM (MiB)",
             Field::Disk => "Disk (GiB)",
@@ -447,10 +406,7 @@ impl Form {
     }
 
     fn kind_name(&self) -> &'static str {
-        match self.kind {
-            Kind::Dev => "development",
-            Kind::Host(_) => "host",
-        }
+        "host"
     }
 
     fn fail(&mut self, error: String) -> Action {
@@ -472,14 +428,6 @@ fn hint(value: &str, example: &str) -> String {
         format!("<{example}>")
     } else {
         value.to_owned()
-    }
-}
-
-fn default_base(value: &str) -> &str {
-    if value.is_empty() {
-        DEFAULT_BASE
-    } else {
-        value
     }
 }
 
@@ -537,12 +485,17 @@ mod tests {
         .unwrap()
     }
 
+    fn host_kind() -> Kind {
+        Kind::Host(crate::host::Input {
+            user_data: "#cloud-config\n".into(),
+            user_data_path: "/home/test/.config/wt/cloud-init.yaml".into(),
+        })
+    }
+
     #[test]
-    fn dev_form_validates_and_builds_the_existing_request_input() {
-        let mut form = form(Kind::Dev);
+    fn host_form_validates_and_builds_the_request_input() {
+        let mut form = form(host_kind());
         form.name = "demo".into();
-        form.source = "git@example.com:team/demo.git".into();
-        form.base = "main".into();
         form.context = 1;
 
         let input = form.input().unwrap();
@@ -552,14 +505,13 @@ mod tests {
         assert_eq!(input.vcpus, DEFAULT_VCPUS);
         assert!(matches!(
             input.application,
-            CreateApplication::Devcontainer { source, git_base }
-                if source == "git@example.com:team/demo.git" && git_base == "main"
+            CreateApplication::Host { user_data } if user_data == "#cloud-config\n"
         ));
     }
 
     #[test]
     fn invalid_values_stay_in_the_form() {
-        let mut form = form(Kind::Dev);
+        let mut form = form(host_kind());
         form.focus = 1;
 
         assert!(matches!(
@@ -572,9 +524,9 @@ mod tests {
 
     #[test]
     fn terminal_sequence_reaches_confirmation() {
-        let mut form = form(Kind::Dev);
+        let mut form = form(host_kind());
         let mut action = Action::None;
-        for character in "\nrepo-feature\ngit@example.test:repo.git\nmain\n\n\n\n\n".chars() {
+        for character in "\nrepo-feature\n\n\n\n\n".chars() {
             let code = if character == '\n' {
                 KeyCode::Enter
             } else {
@@ -589,7 +541,7 @@ mod tests {
     fn renders_the_editing_form() {
         let backend = TestBackend::new(84, 22);
         let mut terminal = Terminal::new(backend).unwrap();
-        let form = form(Kind::Dev);
+        let form = form(host_kind());
 
         terminal
             .draw(|frame| form.render(frame, frame.area()))

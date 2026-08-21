@@ -31,7 +31,6 @@ pub struct Registry {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GuestKind {
-    Devcontainer,
     Host,
     GithubCi,
 }
@@ -39,7 +38,6 @@ pub enum GuestKind {
 impl GuestKind {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Devcontainer => "devcontainer",
             Self::Host => "host",
             Self::GithubCi => "github-ci",
         }
@@ -458,7 +456,6 @@ impl TryFrom<GuestRow> for Guest {
 
     fn try_from(row: GuestRow) -> Result<Self, Self::Error> {
         let kind = match row.kind.as_str() {
-            "devcontainer" => GuestKind::Devcontainer,
             "host" => GuestKind::Host,
             "github-ci" => GuestKind::GithubCi,
             value => {
@@ -512,7 +509,7 @@ mod tests {
             disk_id: Uuid::new_v4(),
             resources: limit,
         };
-        let world = guest(GuestKind::Devcontainer);
+        let world = guest(GuestKind::Host);
         first
             .immediate_transaction::<_, RegistryError>(|connection| {
                 insert_guest(connection, &world, limit)

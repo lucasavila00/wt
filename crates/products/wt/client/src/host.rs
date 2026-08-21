@@ -5,8 +5,6 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Subcommand)]
 pub(super) enum NewKind {
-    /// Create a development world from a repository's devcontainer.
-    Dev,
     /// Create a raw Ubuntu world from cloud-init user-data.
     Host(NewHost),
 }
@@ -66,7 +64,6 @@ impl NewHost {
 impl New {
     pub(super) fn into_kind(self) -> Result<crate::create::Kind> {
         match self.kind {
-            Some(NewKind::Dev) => Ok(crate::create::Kind::Dev),
             Some(NewKind::Host(input)) => input.load().map(crate::create::Kind::Host),
             None => NewHost {
                 user_data: self.user_data,

@@ -68,11 +68,6 @@ pub struct CreateInstance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum CreateApplication {
-    Devcontainer {
-        source: String,
-        #[serde(deserialize_with = "deserialize_git_branch")]
-        git_base: String,
-    },
     Host {
         #[serde(deserialize_with = "deserialize_nonempty_string")]
         user_data: String,
@@ -88,7 +83,6 @@ impl CreateInstance {
 impl CreateApplication {
     pub fn kind(&self) -> WorldKind {
         match self {
-            Self::Devcontainer { .. } => WorldKind::Devcontainer,
             Self::Host { .. } => WorldKind::Host,
         }
     }
@@ -124,15 +118,6 @@ where
     if value.is_empty() {
         return Err(serde::de::Error::custom("value must not be empty"));
     }
-    Ok(value)
-}
-
-fn deserialize_git_branch<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    validate_git_branch(&value).map_err(serde::de::Error::custom)?;
     Ok(value)
 }
 
@@ -223,28 +208,13 @@ impl Instance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InstanceApplication {
-    Devcontainer {
-        source: String,
-        git_base: String,
-        git_prefix: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        app_ssh: Option<AppSshAccess>,
-    },
     Host,
 }
 
 impl InstanceApplication {
     pub fn kind(&self) -> WorldKind {
         match self {
-            Self::Devcontainer { .. } => WorldKind::Devcontainer,
             Self::Host => WorldKind::Host,
-        }
-    }
-
-    pub fn app_ssh(&self) -> Option<&AppSshAccess> {
-        match self {
-            Self::Devcontainer { app_ssh, .. } => app_ssh.as_ref(),
-            Self::Host => None,
         }
     }
 }
@@ -252,7 +222,6 @@ impl InstanceApplication {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldKind {
-    Devcontainer,
     Host,
     GithubCi,
 }
@@ -260,7 +229,6 @@ pub enum WorldKind {
 impl fmt::Display for WorldKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::Devcontainer => "devcontainer",
             Self::Host => "host",
             Self::GithubCi => "github-ci",
         })
@@ -271,13 +239,6 @@ impl fmt::Display for WorldKind {
 pub struct SshAccess {
     pub user: String,
     pub host: String,
-    pub port: u16,
-    pub host_keys: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AppSshAccess {
-    pub user: String,
     pub port: u16,
     pub host_keys: Vec<String>,
 }

@@ -4,7 +4,7 @@ set -eu
 . /var/tmp/wt-image-build.env
 
 /bin/sh /var/tmp/wt-install-packages.sh \
-    ca-certificates docker.io docker-buildx docker-compose-v2 git nodejs npm
+    ca-certificates docker.io docker-buildx docker-compose-v2 git
 
 install -d -m 0755 /etc/docker
 printf '{"seccomp-profile":"unconfined"}\n' > /etc/docker/daemon.json
@@ -12,10 +12,6 @@ systemctl enable --now docker.service
 docker info
 docker buildx version
 docker compose version
-
-npm install --global --fetch-retries=10 \
-    "@devcontainers/cli@$DEVCONTAINER_CLI_VERSION"
-test "$(devcontainer --version)" = "$DEVCONTAINER_CLI_VERSION"
 
 install -m 0755 /var/tmp/wt-host-shell /usr/local/bin/wt-host-shell
 install -m 0755 /var/tmp/wt-host-prepare /usr/local/libexec/wt-host-prepare
@@ -36,5 +32,5 @@ systemd-analyze verify /etc/systemd/system/wt-host-setup.service
 
 dpkg-query -W -f='${Package}\t${Version}\n' \
     ca-certificates docker.io docker-buildx docker-compose-v2 git \
-    openssh-server nodejs npm byobu tmux qemu-guest-agent |
+    openssh-server byobu tmux qemu-guest-agent |
     sort > /var/lib/wt-image-packages

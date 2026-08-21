@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_libvirt_kvm::{CodexMounts, MachineConfig};
-use wt_retained_worlds::devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
 pub const DEFAULT_AGENT_TOOL_VSOCK_PORT: u32 = wt_agent_tool_gateway::VSOCK_PORT;
 pub const AGENT_TOOL_VSOCK_PORT_ENV: &str = wt_agent_tool_gateway::VSOCK_PORT_ENV;
@@ -196,7 +195,7 @@ impl ServerConfig {
         Ok(())
     }
 
-    pub fn devcontainer_machine_config(&self) -> MachineConfig {
+    pub fn machine_config(&self) -> MachineConfig {
         MachineConfig {
             image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
@@ -204,34 +203,6 @@ impl ServerConfig {
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             codex_mounts: Some(self.codex_mounts()),
         }
-    }
-
-    pub fn host_machine_config(&self) -> MachineConfig {
-        MachineConfig {
-            image: self.image.path.clone(),
-            worlds_dir: self.libvirt.worlds_dir.clone(),
-            network: self.libvirt.network.clone(),
-            boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-            codex_mounts: Some(self.codex_mounts()),
-        }
-    }
-
-    pub fn provisioner_config(
-        &self,
-        registry_cache_url: String,
-        retained: wt_retained_worlds::RetainedConfig,
-    ) -> Result<ProvisionerConfig, String> {
-        let bootstrap = self.bootstrap_policy()?;
-        Ok(ProvisionerConfig {
-            app_pane_binary: self.install.binary_dir.join("wt-devcontainer-pane"),
-            app_info_binary: self.install.binary_dir.join("wt-devcontainer-info"),
-            app_proxy_binary: self.install.binary_dir.join("wt-devcontainer-ssh-proxy"),
-            registry_cache_url,
-            registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
-            recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
-            bootstrap,
-            retained,
-        })
     }
 
     pub fn retained_config(&self) -> wt_retained_worlds::RetainedConfig {
@@ -355,25 +326,6 @@ impl ServerConfig {
         .collect()
     }
 
-    fn bootstrap_policy(&self) -> Result<BootstrapPolicy, String> {
-        #[derive(Deserialize)]
-        struct RawManifest {
-            packages: PackageVersions,
-            devcontainer_cli: String,
-        }
-        let manifest_path = PathBuf::from(format!("{}.manifest.json", self.image.path.display()));
-        let bytes = std::fs::read(&manifest_path)
-            .map_err(|error| format!("read image manifest {}: {error}", manifest_path.display()))?;
-        let manifest: RawManifest = serde_json::from_slice(&bytes).map_err(|error| {
-            format!("parse image manifest {}: {error}", manifest_path.display())
-        })?;
-        BootstrapPolicy::from_installed_packages(
-            manifest.packages,
-            manifest.devcontainer_cli,
-            wt_libvirt_kvm::MACHINE_BOOTSTRAP_PACKAGES,
-        )
-    }
-
     fn validate_registry_cache(&self) -> Result<(), String> {
         if self.registry_cache.port == 0 || self.registry_cache.max_size_gib == 0 {
             return Err("registry cache port and size must be greater than zero".to_owned());
@@ -469,7 +421,7 @@ binary_dir = "/usr/local/bin"
     fn parse(value: &str) -> Result<(ServerConfig, MachineConfig), String> {
         let config: ServerConfig = toml::from_str(value).map_err(|error| error.to_string())?;
         config.validate()?;
-        let machine = config.devcontainer_machine_config();
+        let machine = config.machine_config();
         Ok((config, machine))
     }
 
@@ -481,7 +433,6 @@ binary_dir = "/usr/local/bin"
             machine.image,
             Path::new("/var/lib/wt/images/retained.qcow2")
         );
-        assert_eq!(config.host_machine_config().image, machine.image);
         assert_eq!(machine.network, "default");
         assert_eq!(
             machine.codex_mounts,

@@ -1,9 +1,0 @@
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: sleep infinity
-    volumes:
-      - /workspace:/workspaces/wt
-      - /home/wt/.claude/projects:/home/wt/.claude/projects

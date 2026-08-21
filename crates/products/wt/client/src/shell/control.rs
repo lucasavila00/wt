@@ -3,9 +3,8 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
-pub(super) const COMMANDS: [ControlCommand; 3] = [
+pub(super) const COMMANDS: [ControlCommand; 2] = [
     ControlCommand::NewHost,
-    ControlCommand::NewDev,
     ControlCommand::DeleteWorld,
 ];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
@@ -162,7 +161,6 @@ impl Activity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ControlCommand {
     NewHost,
-    NewDev,
     DeleteWorld,
 }
 
@@ -176,7 +174,6 @@ impl ControlCommand {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::NewHost => "World: New host",
-            Self::NewDev => "World: New dev",
             Self::DeleteWorld => "World: Delete...",
         }
     }

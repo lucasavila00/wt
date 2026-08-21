@@ -204,7 +204,7 @@ mod tests {
                 diesel::insert_into(guests::table)
                     .values((
                         guests::id.eq(id.to_string()),
-                        guests::kind.eq("devcontainer"),
+                        guests::kind.eq("host"),
                         guests::backend_id.eq(format!("wt-{}", id.simple())),
                         guests::disk_id.eq(disk_id.to_string()),
                         guests::vcpus.eq(1_i64),

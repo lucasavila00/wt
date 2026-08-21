@@ -205,12 +205,7 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
-                application: InstanceApplication::Devcontainer {
-                    source: "git@example.test:repo.git".into(),
-                    git_base: "main".into(),
-                    git_prefix: format!("{name}/"),
-                    app_ssh: None,
-                },
+                application: InstanceApplication::Host,
             },
         }
     }

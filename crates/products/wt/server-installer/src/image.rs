@@ -24,7 +24,7 @@ use std::time::Duration;
 use wt_installer_support::cmd;
 use wt_installer_support::{require_named_file, require_root_file, Runner};
 use wt_libvirt_kvm::LIBVIRT_URI;
-use wt_retained_worlds::devcontainer::PackageVersions;
+use recipe::PackageVersions;
 #[cfg(test)]
 use wt_server::image_generation::manifest_path;
 use wt_server::image_generation::resolve;
@@ -85,7 +85,6 @@ struct ImageManifest {
     golden_sha256: String,
     tmux_sha256: String,
     packages: PackageVersions,
-    devcontainer_cli: String,
 }
 
 pub(crate) fn ensure(
@@ -371,7 +370,6 @@ fn build_image_inner<R: Runner>(
         golden_sha256: sha_file(&paths.prepared)?,
         tmux_sha256,
         packages,
-        devcontainer_cli: recipe.devcontainer_cli_version().to_owned(),
     };
     let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
@@ -404,7 +402,6 @@ pub(crate) fn verify_installed_image(
                 name: BUILD_NAME,
                 recipe: RETAINED_IMAGE_BUILD,
             })
-        || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
         || !is_sha256(&manifest.tmux_sha256)
     {
         bail!("provenance does not match the current source or install input");

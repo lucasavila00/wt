@@ -8,9 +8,8 @@ use std::process::Command as ProcessCommand;
 use wt_client::config::{ClientConfig, Context};
 use wt_client::inventory::{self, ContextInstance};
 use wt_client::transport::ContextError;
-use wt_control_protocol::{ApiRequest, InstanceApplication, Operation, Response, WorldKind};
+use wt_control_protocol::{ApiRequest, Operation, Response};
 
-mod code;
 mod create;
 mod git_author;
 mod host;
@@ -39,8 +38,6 @@ enum Command {
     Start { name: String },
     /// Stop a retained world.
     Stop { name: String },
-    /// Open a world in VS Code Remote-SSH.
-    Code { name: String },
     /// Synchronize SSH aliases and connect to a world.
     Ssh { name: String },
     /// Open the persistent world terminal workspace.
@@ -78,13 +75,8 @@ fn run() -> Result<()> {
                 .ssh
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
-            if instance.kind() == WorldKind::Host {
-                println!("\nStarting setup: ssh {}.{}", context, instance.name);
-                println!("Direct: ssh {}.{}-vs", context, instance.name);
-            } else {
-                println!("\nStarting setup: ssh {}.{}", context, instance.name);
-                println!("Guest host: ssh {}.{}-host", context, instance.name);
-            }
+            println!("\nStarting setup: ssh {}.{}", context, instance.name);
+            println!("Direct: ssh {}.{}-vs", context, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
             let target = format!("{}.{}", context, instance.name);
@@ -159,7 +151,6 @@ fn run() -> Result<()> {
                 context.name, world_name, instance.status
             );
         }
-        Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
         Command::Shell => shell::run(&config)?,
         Command::Sync => {
@@ -190,13 +181,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
             instance.name.to_string(),
             instance.kind().to_string(),
             instance.status.to_string(),
-            match &instance.application {
-                InstanceApplication::Devcontainer { source, .. } => {
-                    wt_client::ssh::repository_name(source).unwrap_or("-")
-                }
-                InstanceApplication::Host => "-",
-            }
-            .to_owned(),
+            "-".to_owned(),
             inventory::format_resources(instance, item.disk_usage_bytes),
             instance_detail(item),
         ]

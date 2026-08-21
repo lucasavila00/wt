@@ -12,7 +12,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
-use wt_control_protocol::{CodexSession, Instance, InstanceApplication, WorldKind};
+use wt_control_protocol::{CodexSession, Instance, WorldKind};
 
 #[derive(Debug)]
 pub(super) enum CodexContextSnapshot {
@@ -33,12 +33,6 @@ impl ShellWorld {
 
     pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
         let qualified_name = format!("{context}.{}", instance.name);
-        let (kind, control_alias) = match instance.application {
-            InstanceApplication::Devcontainer { .. } => {
-                (WorldKind::Devcontainer, format!("{qualified_name}-host"))
-            }
-            InstanceApplication::Host => (WorldKind::Host, format!("{qualified_name}-vs")),
-        };
         Self {
             identity: super::model::WorldIdentity {
                 context: context.into(),
@@ -46,8 +40,8 @@ impl ShellWorld {
             },
             name: qualified_name,
             instance_name: instance.name.clone(),
-            kind,
-            control_alias,
+            kind: WorldKind::Host,
+            control_alias: format!("{qualified_name}-vs"),
         }
     }
 
@@ -202,7 +196,6 @@ fn validate_context(
                 ));
             }
             let expected_tmux = match world.kind {
-                WorldKind::Devcontainer => "wt-app",
                 WorldKind::Host => "wt-host",
                 WorldKind::GithubCi => {
                     return Err(invalid(

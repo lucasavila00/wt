@@ -27,7 +27,6 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug)]
 pub(crate) enum Kind {
-    Dev,
     Host(host::Input),
 }
 

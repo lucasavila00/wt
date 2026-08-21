@@ -5,7 +5,6 @@ members = [
     "crates/products/wt/control-protocol",
     "crates/products/wt/server",
     "crates/products/wt/retained-worlds",
-    "crates/products/wt/devcontainer-guest-tools",
     "crates/products/wt/codex-integration",
     "crates/products/wt/server-installer",
     "crates/products/gh-actions-runner/service",

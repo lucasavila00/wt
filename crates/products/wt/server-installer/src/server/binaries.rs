@@ -5,15 +5,12 @@ use wt_installer_support::{sudo_install, sudo_move, Runner};
 use wt_server::ServerConfig;
 
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
-const STATIC_BINARIES: [&str; 9] = [
+const STATIC_BINARIES: [&str; 6] = [
     "wt-agent-tool-gateway",
     "wt-agent-tool-gateway-relay",
     "git-remote-wt-agent",
     "wt-tools",
     "wt",
-    "wt-devcontainer-pane",
-    "wt-devcontainer-info",
-    "wt-devcontainer-ssh-proxy",
     "wt-codex-integration",
 ];
 
@@ -42,7 +39,6 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
             "-p",
             "wt-client",
             "-p",
-            "wt-devcontainer-guest-tools",
             "-p",
             "wt-codex-integration",
         ),
@@ -54,9 +50,6 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         "git-remote-wt-agent",
         "wt-tools",
         "wt",
-        "wt-devcontainer-pane",
-        "wt-devcontainer-info",
-        "wt-devcontainer-ssh-proxy",
         "wt-codex-integration",
         "wt-server",
     ] {
@@ -133,10 +126,6 @@ mod tests {
         assert_eq!(
             release_binary("wt"),
             Path::new("target/x86_64-unknown-linux-musl/release/wt")
-        );
-        assert_eq!(
-            release_binary("wt-devcontainer-pane"),
-            Path::new("target/x86_64-unknown-linux-musl/release/wt-devcontainer-pane")
         );
         assert_eq!(
             release_binary("wt-codex-integration"),
