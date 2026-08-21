@@ -2,6 +2,7 @@ use super::control::{
     command_palette_layout, control_areas, Activity, CodexContextSnapshot, CommandPalette,
     ACTIVITY_BUTTON_HEIGHT,
 };
+use super::delete;
 use super::model::{Mode, ShellModel};
 use super::world_area;
 use crate::create::Flow;
@@ -15,9 +16,11 @@ use ratatui::Frame;
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     screen: Option<&vt100::Screen>,
+    closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
     creation_error: Option<&str>,
+    deletion: Option<&delete::Flow>,
 ) {
     if model.mode() == Mode::Control {
         if let Some(creation) = creation {
@@ -28,22 +31,43 @@ pub(super) fn draw(
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
+        if let Some(deletion) = deletion {
+            deletion.render(frame, frame.area());
+        }
         return;
     }
     let screen = screen.expect("world mode requires a world screen");
     let world = world_area(frame.area());
     frame.render_widget(TerminalView(screen), world);
     draw_world_bar(frame, model);
+    if let Some(message) = closed_message {
+        draw_closed_session_bar(frame, message);
+    }
     match model.mode() {
-        Mode::World => {
+        Mode::World if closed_message.is_none() => {
             if !screen.hide_cursor() {
                 let (row, column) = screen.cursor_position();
                 frame.set_cursor_position((world.x + column, world.y + row));
             }
         }
-        Mode::Switcher => {}
+        Mode::World | Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
+}
+
+fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
+    let area = frame.area();
+    frame.render_widget(
+        Paragraph::new(format!(" {message} · Space: reconnect "))
+            .alignment(Alignment::Center)
+            .style(
+                Style::new()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
+    );
 }
 
 fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
@@ -119,18 +143,28 @@ fn color(source: vt100::Color) -> Color {
 }
 
 fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
+    let disabled = model.f5_disabled();
     let active = model.mode() == Mode::Switcher;
-    let left_hint = if active {
+    let left_hint = if disabled {
+        " F5 disabled"
+    } else if active {
         " F5: disable navbar"
     } else {
         " F5: enable navbar"
     };
-    let right_hint = if active {
+    let right_hint = if disabled {
+        "Shift+F5: enable F6: close "
+    } else if active {
         "←/→ world ↑ ctrl F6: close "
     } else {
         "F6: close "
     };
-    let style = if active {
+    let style = if disabled {
+        Style::new()
+            .fg(Color::White)
+            .bg(Color::Red)
+            .add_modifier(Modifier::BOLD)
+    } else if active {
         Style::new()
             .fg(Color::Black)
             .bg(Color::White)
@@ -153,10 +187,14 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 "  WT ",
-                Style::new()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                if disabled {
+                    style
+                } else {
+                    Style::new()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                },
             ),
             Span::raw(left_hint),
         ]))
@@ -196,10 +234,19 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
                 "No worlds with SSH access\nCreate a world to get started"
             })
             .alignment(Alignment::Center)
-            .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title(refresh_title("Worlds", model.control().worlds_updated_at())),
+            ),
             rows[0],
         ),
-        Activity::Codex => draw_codex(frame, rows[0], model.control().codex()),
+        Activity::Codex => draw_codex(
+            frame,
+            rows[0],
+            model.control().codex(),
+            model.control().codex_updated_at(),
+        ),
     }
     frame.render_widget(
         Paragraph::new(if model.has_worlds() {
@@ -213,14 +260,31 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     draw_command_palette(frame, content, model.control().palette());
 }
 
-fn draw_codex(frame: &mut Frame<'_>, area: Rect, contexts: &[CodexContextSnapshot]) {
+fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
+    updated_at.map_or_else(
+        || format!("{label} · Updating…"),
+        |updated_at| format!("{label} · Last updated {updated_at}"),
+    )
+}
+
+fn draw_codex(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    contexts: &[CodexContextSnapshot],
+    updated_at: Option<&str>,
+) {
     let block = Block::new()
         .borders(Borders::ALL)
-        .title("Codex sessions · read-only startup snapshot");
+        .title(refresh_title("Codex sessions", updated_at));
     let rows = contexts.iter().flat_map(codex_rows).collect::<Vec<_>>();
     if rows.is_empty() {
+        let message = if updated_at.is_some() {
+            "No Codex sessions\nStart Codex in a world to see its session here"
+        } else {
+            "Loading Codex sessions…"
+        };
         frame.render_widget(
-            Paragraph::new("No Codex sessions\nStart Codex in a world to see its session here")
+            Paragraph::new(message)
                 .alignment(Alignment::Center)
                 .block(block),
             area,
@@ -415,7 +479,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -441,7 +505,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -457,6 +521,56 @@ mod tests {
     }
 
     #[test]
+    fn disabled_f5_override_has_a_red_top_bar() {
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["local.one".into()]);
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(5),
+            crossterm::event::KeyModifiers::SHIFT,
+        ));
+        let parser = parser();
+
+        terminal
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn closed_session_has_a_red_reconnect_bar() {
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["local.one".into()]);
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(5),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let parser = parser();
+
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    Some(parser.screen()),
+                    Some("SSH session ended: Exited with code 255"),
+                    &model,
+                    None,
+                    None,
+                    None,
+                )
+            })
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_closed_session", terminal.backend().buffer());
+        let status = terminal.backend().buffer().cell((0, 5)).unwrap().style();
+        assert_eq!(status.fg, Some(Color::White));
+        assert_eq!(status.bg, Some(Color::Red));
+        assert!(status.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
     fn control_ui_has_activity_scaffolding() {
         let backend = TestBackend::new(64, 12);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -465,7 +579,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -483,7 +597,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -494,66 +608,81 @@ mod tests {
         let backend = TestBackend::new(100, 14);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["ars.dev".into()]);
-        model.set_codex(vec![
-            CodexContextSnapshot::Sessions {
-                context: "ars".into(),
-                sessions: vec![
-                    CodexSession {
-                        session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
-                            .unwrap(),
-                        rollout_updated_at_unix_ms: Some(10),
-                        observations: vec![CodexSessionObservation {
-                            world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
+        model.set_codex(
+            vec![
+                CodexContextSnapshot::Sessions {
+                    context: "ars".into(),
+                    sessions: vec![
+                        CodexSession {
+                            session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
                                 .unwrap(),
-                            world_name: InstanceName::parse("dev").unwrap(),
-                            cwd: "/workspace/wt".into(),
-                            state: CodexSessionState::NeedsAttention,
-                            session_start_source: None,
-                            target: ByobuTarget {
-                                tmux_session: "wt-app".into(),
-                                pane_id: "%1".into(),
-                            },
-                            received_at_unix_ms: 20,
-                        }],
-                    },
-                    CodexSession {
-                        session_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174002")
-                            .unwrap(),
-                        rollout_updated_at_unix_ms: Some(15),
-                        observations: vec![CodexSessionObservation {
-                            world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174003")
+                            rollout_updated_at_unix_ms: Some(10),
+                            observations: vec![CodexSessionObservation {
+                                world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
+                                    .unwrap(),
+                                world_name: InstanceName::parse("dev").unwrap(),
+                                cwd: "/workspace/wt".into(),
+                                state: CodexSessionState::NeedsAttention,
+                                session_start_source: None,
+                                target: ByobuTarget {
+                                    tmux_session: "wt-app".into(),
+                                    pane_id: "%1".into(),
+                                },
+                                received_at_unix_ms: 20,
+                            }],
+                        },
+                        CodexSession {
+                            session_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174002")
                                 .unwrap(),
-                            world_name: InstanceName::parse("compact").unwrap(),
-                            cwd: "/workspace/wt".into(),
-                            state: CodexSessionState::Unknown,
-                            session_start_source: Some("compact".into()),
-                            target: ByobuTarget {
-                                tmux_session: "wt-app".into(),
-                                pane_id: "%2".into(),
-                            },
-                            received_at_unix_ms: 15,
-                        }],
-                    },
-                    CodexSession {
-                        session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
-                            .unwrap(),
-                        rollout_updated_at_unix_ms: Some(30),
-                        observations: vec![],
-                    },
-                ],
-            },
-            CodexContextSnapshot::Failure {
-                context: "lab".into(),
-                message: "context lab could not be queried: SSH failed".into(),
-            },
-        ]);
+                            rollout_updated_at_unix_ms: Some(15),
+                            observations: vec![CodexSessionObservation {
+                                world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174003")
+                                    .unwrap(),
+                                world_name: InstanceName::parse("compact").unwrap(),
+                                cwd: "/workspace/wt".into(),
+                                state: CodexSessionState::Unknown,
+                                session_start_source: Some("compact".into()),
+                                target: ByobuTarget {
+                                    tmux_session: "wt-app".into(),
+                                    pane_id: "%2".into(),
+                                },
+                                received_at_unix_ms: 15,
+                            }],
+                        },
+                        CodexSession {
+                            session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
+                                .unwrap(),
+                            rollout_updated_at_unix_ms: Some(30),
+                            observations: vec![],
+                        },
+                    ],
+                },
+                CodexContextSnapshot::Failure {
+                    context: "lab".into(),
+                    message: "context lab could not be queried: SSH failed".into(),
+                },
+            ],
+            "2026-08-21T20:00:00Z".into(),
+        );
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
+        assert_eq!(
+            refresh_title("Codex sessions", None),
+            "Codex sessions · Updating…"
+        );
+        assert_eq!(
+            refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z")),
+            "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+        );
     }
 
     #[test]
@@ -563,7 +692,7 @@ mod tests {
         let model = ShellModel::new(Vec::new());
 
         terminal
-            .draw(|frame| draw(frame, None, &model, None, None))
+            .draw(|frame| draw(frame, None, None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());

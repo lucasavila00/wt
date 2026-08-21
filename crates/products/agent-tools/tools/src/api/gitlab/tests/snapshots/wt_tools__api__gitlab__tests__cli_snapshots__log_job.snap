@@ -3,6 +3,9 @@ source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
 expression: "serde_json::to_string_pretty(&message).unwrap()"
 ---
 {
-  "data": "build complete\n",
+  "data": {
+    "log": "build complete\n",
+    "truncated": false
+  },
   "type": "ci_job_log"
 }

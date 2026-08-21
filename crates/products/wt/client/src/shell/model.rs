@@ -1,6 +1,41 @@
 use super::control::{CodexContextSnapshot, ControlCommand, ControlState};
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
+use uuid::Uuid;
+use wt_control_protocol::InstanceName;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WorldIdentity {
+    pub(super) context: String,
+    pub(super) id: Uuid,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ShellWorld {
+    pub(super) identity: WorldIdentity,
+    pub(super) name: String,
+    pub(super) instance_name: InstanceName,
+}
+
+#[cfg(test)]
+impl From<&str> for ShellWorld {
+    fn from(name: &str) -> Self {
+        Self {
+            identity: WorldIdentity {
+                context: name
+                    .split_once('.')
+                    .map_or("local", |(context, _)| context)
+                    .into(),
+                id: Uuid::new_v4(),
+            },
+            name: name.into(),
+            instance_name: InstanceName::parse(
+                name.split_once('.').map_or(name, |(_, instance)| instance),
+            )
+            .unwrap(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
@@ -24,19 +59,21 @@ pub(super) enum InputRoute {
 
 #[derive(Debug)]
 pub(super) struct ShellModel {
-    worlds: Vec<String>,
+    worlds: Vec<ShellWorld>,
     active: usize,
     mode: Mode,
+    f5_disabled: bool,
     control: ControlState,
     should_quit: bool,
 }
 
 impl ShellModel {
-    pub(super) fn new(worlds: Vec<String>) -> Self {
+    pub(super) fn new(worlds: Vec<ShellWorld>) -> Self {
         Self {
             worlds,
             active: 0,
             mode: Mode::Control,
+            f5_disabled: false,
             control: ControlState::default(),
             should_quit: false,
         }
@@ -50,24 +87,34 @@ impl ShellModel {
         self.active
     }
 
+    pub(super) fn f5_disabled(&self) -> bool {
+        self.f5_disabled
+    }
+
     pub(super) fn has_worlds(&self) -> bool {
         !self.worlds.is_empty()
     }
 
     pub(super) fn active_world(&self) -> &str {
-        &self.worlds[self.active]
+        &self.worlds[self.active].name
     }
 
     pub(super) fn world_count(&self) -> usize {
         self.worlds.len()
     }
 
-    pub(super) fn world_index(&self, world: &str) -> Option<usize> {
-        self.worlds.iter().position(|candidate| candidate == world)
+    pub(super) fn worlds(&self) -> &[ShellWorld] {
+        &self.worlds
     }
 
-    pub(super) fn activate_world(&mut self, world: String) {
-        self.active = match self.world_index(&world) {
+    pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
+        self.worlds
+            .iter()
+            .position(|world| &world.identity == identity)
+    }
+
+    pub(super) fn activate_world(&mut self, world: ShellWorld) {
+        self.active = match self.world_index(&world.identity) {
             Some(index) => index,
             None => {
                 self.worlds.push(world);
@@ -75,6 +122,24 @@ impl ShellModel {
             }
         };
         self.mode = Mode::World;
+    }
+
+    pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
+        let active_identity = self
+            .worlds
+            .get(self.active)
+            .map(|world| world.identity.clone());
+        self.worlds = worlds;
+        self.active = self
+            .worlds
+            .iter()
+            .position(|world| Some(&world.identity) == active_identity.as_ref())
+            .unwrap_or(0);
+        if self.worlds.is_empty() {
+            self.f5_disabled = false;
+            self.control.close();
+            self.mode = Mode::Control;
+        }
     }
 
     pub(super) fn should_quit(&self) -> bool {
@@ -85,14 +150,29 @@ impl ShellModel {
         &self.control
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>) {
-        self.control.set_codex(codex);
+    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
+        self.control.set_worlds_updated_at(updated_at);
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>, updated_at: String) {
+        self.control.set_codex(codex, updated_at);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> InputRoute {
         if key.code == KeyCode::F(6) {
             self.should_quit = true;
             return InputRoute::Consumed;
+        }
+        if key.code == KeyCode::F(5) && key.modifiers == KeyModifiers::SHIFT && self.has_worlds() {
+            self.f5_disabled = !self.f5_disabled;
+            if self.f5_disabled {
+                self.control.close();
+                self.mode = Mode::World;
+            }
+            return InputRoute::Consumed;
+        }
+        if key.code == KeyCode::F(5) && self.f5_disabled {
+            return InputRoute::World;
         }
         match self.mode {
             Mode::World if key.code == KeyCode::F(5) => {
@@ -143,16 +223,30 @@ impl ShellModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyModifiers;
 
     fn model() -> ShellModel {
-        let mut model = ShellModel::new(vec!["one".into(), "two".into(), "three".into()]);
+        let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::F(5)));
         model
     }
 
+    fn world(name: &str) -> ShellWorld {
+        ShellWorld {
+            identity: WorldIdentity {
+                context: "local".into(),
+                id: Uuid::new_v4(),
+            },
+            name: name.into(),
+            instance_name: InstanceName::parse(name).unwrap(),
+        }
+    }
+
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn shifted(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::SHIFT)
     }
 
     #[test]
@@ -161,6 +255,27 @@ mod tests {
 
         assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::World);
         assert_eq!(model.active(), 0);
+        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(model.mode(), Mode::Switcher);
+    }
+
+    #[test]
+    fn shift_f5_disables_the_override_and_plain_f5_reaches_the_world() {
+        let mut model = model();
+
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5))),
+            InputRoute::Consumed
+        );
+        assert!(model.f5_disabled());
+        assert_eq!(model.mode(), Mode::World);
+        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::World);
+
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5))),
+            InputRoute::Consumed
+        );
+        assert!(!model.f5_disabled());
         assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
         assert_eq!(model.mode(), Mode::Switcher);
     }
@@ -177,6 +292,11 @@ mod tests {
         let mut model = ShellModel::new(Vec::new());
 
         assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5))),
+            InputRoute::Consumed
+        );
+        assert!(!model.f5_disabled());
         assert_eq!(model.mode(), Mode::Control);
     }
 
@@ -243,5 +363,54 @@ mod tests {
             assert_eq!(model.handle_key(key(KeyCode::F(6))), InputRoute::Consumed);
             assert!(model.should_quit());
         }
+    }
+
+    #[test]
+    fn reconciliation_preserves_the_active_world_or_selects_the_first() {
+        let mut model = model();
+        model.active = 1;
+
+        let active = model.worlds[1].clone();
+        model.reconcile_worlds(vec![world("zero"), active, world("four")]);
+        assert_eq!(model.active_world(), "two");
+
+        model.reconcile_worlds(vec![world("four"), world("zero")]);
+        assert_eq!(model.active_world(), "four");
+    }
+
+    #[test]
+    fn reconciliation_opens_control_when_all_worlds_are_removed() {
+        let mut model = model();
+
+        model.reconcile_worlds(Vec::new());
+
+        assert!(!model.has_worlds());
+        assert!(!model.f5_disabled());
+        assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn world_identity_includes_the_context() {
+        let id = Uuid::new_v4();
+        let local = ShellWorld {
+            identity: WorldIdentity {
+                context: "local".into(),
+                id,
+            },
+            name: "local.same".into(),
+            instance_name: InstanceName::parse("same").unwrap(),
+        };
+        let lab = ShellWorld {
+            identity: WorldIdentity {
+                context: "lab".into(),
+                id,
+            },
+            name: "lab.same".into(),
+            instance_name: InstanceName::parse("same").unwrap(),
+        };
+        let model = ShellModel::new(vec![local.clone(), lab.clone()]);
+
+        assert_eq!(model.world_index(&local.identity), Some(0));
+        assert_eq!(model.world_index(&lab.identity), Some(1));
     }
 }

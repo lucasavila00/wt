@@ -24,7 +24,7 @@ Buffer {
         " │                                                                                │ ",
         " │                                                                                │ ",
         " │                                                                                │ ",
-        " │ Tab/Shift-Tab focus · ↑/↓ select · Enter continue · Esc cancel                 │ ",
+        " │ ↑/↓ or Tab/Shift-Tab focus · ←/→ select · Enter continue · Esc cancel          │ ",
         " └────────────────────────────────────────────────────────────────────────────────┘ ",
         "                                                                                    ",
     ],

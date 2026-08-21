@@ -5,11 +5,24 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT navbar; the active world's Byobu uses the remaining
 terminal rows.
 
+The world list and Codex sessions refresh independently in the background. Each
+worker starts its next refresh five seconds after the previous one finishes.
+Worlds created elsewhere are connected automatically, and removed worlds
+disappear. A world refresh that cannot list every configured context leaves the
+last complete list in place.
+
 The dim navbar shows the active world and its position in the world list. `F5`
 enables the navbar controls, `Left` and `Right` change worlds, and `Up` opens the
 Control UI. Press `F5` again to return keyboard control to the world. `F6`
 closes `wt shell` from every view. Other keyboard input is forwarded to the
 active world, including while the navbar is enabled.
+
+If an SSH process exits, its last terminal contents remain visible and a red
+bottom bar reports that the session ended. Press `Space` to reconnect that
+world. Other terminal input is held until the connection is restored.
+
+`Shift+F5` disables WT's `F5` override so `F5` reaches Byobu. A red top bar
+shows that the override is disabled. Press `Shift+F5` again to restore it.
 
 Paste, terminal resize, application cursor mode, bracketed paste, mouse button
 press and release, and vertical and horizontal wheel events are supported.
@@ -26,11 +39,11 @@ the workstation clipboard through `wt shell`.
 between session and world management. `F5` opens the active world when one is
 available.
 
-The Control UI's Codex activity is a read-only snapshot loaded when `wt shell`
-starts. It lists rollout-only sessions and every reported world, Byobu pane,
-activity state, and working directory across configured contexts. A failed
-context remains visible as an error row. Restart `wt shell` to refresh the
-snapshot.
+The Control UI's Codex activity lists rollout-only sessions and every reported
+world, Byobu pane, activity state, and working directory across configured
+contexts. A failed context remains visible as an error row. The Worlds and
+Codex titles show when their latest snapshot was applied in UTC, or `Updating…`
+before the first snapshot arrives.
 
 An unknown observation includes its raw Codex session-start source when one was
 reported, such as `unknown(compact)`.

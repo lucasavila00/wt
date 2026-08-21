@@ -5,7 +5,7 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 100, height: 14 },
     content: [
-        "    │┌Codex sessions · read-only startup snapshot──────────────────────────────────────────────────┐",
+        "    │┌Codex sessions · Last updated 2026-08-21T20:00:00Z───────────────────────────────────────────┐",
         "▌ 󰚩 ││STATE             WORLD                PANE        SESSION    CWD                            │",
         "    ││attention         ars.dev              wt-app:%1   123e4567   /workspace/wt                  │",
         "    ││unknown(compact)  ars.compact          wt-app:%2   223e4567   /workspace/wt                  │",

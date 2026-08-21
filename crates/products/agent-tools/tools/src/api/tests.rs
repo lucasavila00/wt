@@ -61,14 +61,13 @@ fn merge_request_output_includes_the_body() {
 
 #[test]
 fn ci_job_logs_keep_only_a_bounded_tail() {
-    let output = tail_ci_job_log_at_limit(
-        "012345678901234567890123456789αβγδεζηθικλμνξ".to_owned(),
-        48,
-    );
+    let output = render_cli_command_output(ProviderCommandOutput::CiJobLog {
+        log: "last lines\n".to_owned(),
+        truncated: true,
+    });
 
     insta::assert_snapshot!(output, @r###"
-    [earlier CI log output omitted]
-    ηθικλμνξ
+    {"type":"ci_job_log","data":{"log":"[earlier CI log output omitted]\nlast lines\n","truncated":true}}
     "###);
 }
 

@@ -17,11 +17,15 @@ pub enum Key {
     Char(char),
     Tab,
     BackTab,
+    Backspace,
     Enter,
     Escape,
+    Left,
+    Right,
     Up,
     Down,
     Function(u8),
+    ShiftFunction(u8),
     Ctrl(char),
 }
 
@@ -82,6 +86,19 @@ impl Screen {
     pub fn type_text(&mut self, text: &str) -> Result<&mut Self> {
         self.write(text.as_bytes())?;
         self.wait_for_text(text)
+    }
+
+    #[allow(dead_code)]
+    pub fn click(&mut self, column: u16, row: u16) -> Result<&mut Self> {
+        self.write(
+            format!(
+                "\x1b[<0;{};{}M",
+                column.saturating_add(1),
+                row.saturating_add(1)
+            )
+            .as_bytes(),
+        )?;
+        Ok(self)
     }
 
     pub fn wait_for_text(&mut self, text: &str) -> Result<&mut Self> {
@@ -234,14 +251,19 @@ fn key_bytes(key: Key) -> Result<Vec<u8>> {
         Key::Char(character) => character.to_string().into_bytes(),
         Key::Tab => b"\t".to_vec(),
         Key::BackTab => b"\x1b[Z".to_vec(),
+        Key::Backspace => b"\x7f".to_vec(),
         Key::Enter => b"\r".to_vec(),
         Key::Escape => b"\x1b".to_vec(),
         Key::Up => b"\x1b[A".to_vec(),
         Key::Down => b"\x1b[B".to_vec(),
+        Key::Right => b"\x1b[C".to_vec(),
+        Key::Left => b"\x1b[D".to_vec(),
         Key::Function(1) => b"\x1bOP".to_vec(),
         Key::Function(5) => b"\x1b[15~".to_vec(),
         Key::Function(6) => b"\x1b[17~".to_vec(),
         Key::Function(number) => bail!("unsupported function key F{number}"),
+        Key::ShiftFunction(5) => b"\x1b[15;2~".to_vec(),
+        Key::ShiftFunction(number) => bail!("unsupported shifted function key F{number}"),
         Key::Ctrl(character) if character.is_ascii_alphabetic() => {
             vec![(character.to_ascii_lowercase() as u8) & 0x1f]
         }

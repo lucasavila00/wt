@@ -6,30 +6,38 @@ use crossterm::event::{
 use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
 mod control;
+mod delete;
 mod input;
 mod model;
 mod render;
 mod session;
 
 use control::ControlCommand;
-use model::{InputRoute, Mode, ShellModel};
+use model::{InputRoute, Mode, ShellModel, ShellWorld};
 use session::SessionSet;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
+const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("wt shell requires an interactive terminal");
     }
-    let report = inventory::list_all(config);
+    let cancelled = AtomicBool::new(false);
+    let report = inventory::list_all_with_timeout(config, CONTEXT_REQUEST_TIMEOUT, &cancelled);
     if !report.failures.is_empty() {
         return Err(crate::context_failures(
             "wt shell was not started because the complete world list is unavailable",
@@ -38,16 +46,13 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         ));
     }
     ssh::sync(config, &report.instances)?;
-    let worlds = report
-        .instances
-        .iter()
-        .filter(|world| ssh::has_alias(world))
-        .map(inventory::ContextInstance::qualified_name)
-        .collect::<Vec<_>>();
+    let worlds = shell_worlds(&report.instances);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
-    model.set_codex(load_codex(config));
+    model.set_worlds_updated_at(updated_at());
+    let refresh = WorldRefresh::start(config.clone());
+    let codex_refresh = CodexRefresh::start(config.clone());
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -59,7 +64,15 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         return Err(error).context("enable terminal input for wt shell");
     }
 
-    let result = run_loop(&mut terminal, &mut sessions, &mut model, config, &shutdown);
+    let result = run_loop(
+        &mut terminal,
+        &mut sessions,
+        &mut model,
+        config,
+        &refresh,
+        &codex_refresh,
+        &shutdown,
+    );
     let input_result = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
@@ -70,13 +83,175 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     result.and(input_result)
 }
 
-fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
+fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
+    instances
+        .iter()
+        .filter(|world| ssh::has_alias(world))
+        .map(|world| ShellWorld {
+            identity: model::WorldIdentity {
+                context: world.context.clone(),
+                id: world.instance.id,
+            },
+            name: world.qualified_name(),
+            instance_name: world.instance.name.clone(),
+        })
+        .collect()
+}
+
+struct WorldRefresh {
+    updates: Receiver<WorldSnapshot>,
+    generation: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    stop: Sender<()>,
+    worker: Option<JoinHandle<()>>,
+}
+
+struct WorldSnapshot {
+    generation: u64,
+    instances: Vec<inventory::ContextInstance>,
+}
+
+struct CodexRefresh {
+    updates: Receiver<Vec<control::CodexContextSnapshot>>,
+    cancelled: Arc<AtomicBool>,
+    stop: Sender<()>,
+    worker: Option<JoinHandle<()>>,
+}
+
+struct ShellRuntime<'a> {
+    config: &'a ClientConfig,
+    refresh: &'a WorldRefresh,
+}
+
+#[derive(Default)]
+struct ControlFlows {
+    creation: Option<crate::create::Flow>,
+    creation_error: Option<String>,
+    deletion: Option<delete::Flow>,
+}
+
+impl WorldRefresh {
+    fn start(config: ClientConfig) -> Self {
+        let (updates_tx, updates) = mpsc::sync_channel(1);
+        let (stop, stop_rx) = mpsc::channel();
+        let generation = Arc::new(AtomicU64::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_generation = Arc::clone(&generation);
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker = thread::Builder::new()
+            .name("wt-shell-world-refresh".into())
+            .spawn(move || loop {
+                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
+                    break;
+                }
+                let generation = worker_generation.load(Ordering::Relaxed);
+                let report = inventory::list_all_with_timeout(
+                    &config,
+                    CONTEXT_REQUEST_TIMEOUT,
+                    &worker_cancelled,
+                );
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                if report.failures.is_empty() {
+                    match updates_tx.try_send(WorldSnapshot {
+                        generation,
+                        instances: report.instances,
+                    }) {
+                        Ok(()) | Err(TrySendError::Full(_)) => {}
+                        Err(TrySendError::Disconnected(_)) => break,
+                    }
+                }
+            })
+            .expect("start wt shell world refresh worker");
+        Self {
+            updates,
+            generation,
+            cancelled,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn invalidate(&self) {
+        self.generation.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Drop for WorldRefresh {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+impl CodexRefresh {
+    fn start(config: ClientConfig) -> Self {
+        let (updates_tx, updates) = mpsc::sync_channel(1);
+        let (stop, stop_rx) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker = thread::Builder::new()
+            .name("wt-shell-codex-refresh".into())
+            .spawn(move || loop {
+                let snapshot = load_codex(&config, &worker_cancelled);
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                match updates_tx.try_send(snapshot) {
+                    Ok(()) | Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => break,
+                }
+                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
+                    break;
+                }
+            })
+            .expect("start wt shell Codex refresh worker");
+        Self {
+            updates,
+            cancelled,
+            stop,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Drop for CodexRefresh {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn take_current_snapshot(
+    updates: &Receiver<WorldSnapshot>,
+    generation: u64,
+) -> Option<WorldSnapshot> {
+    updates
+        .try_iter()
+        .last()
+        .filter(|snapshot| snapshot.generation == generation)
+}
+
+fn load_codex(config: &ClientConfig, cancelled: &AtomicBool) -> Vec<control::CodexContextSnapshot> {
     let request = ApiRequest::new(Operation::ListCodexSessions);
     config
         .contexts
         .iter()
-        .map(
-            |context| match wt_client::transport::call(context, &request) {
+        .take_while(|_| !cancelled.load(Ordering::Relaxed))
+        .map(|context| {
+            match wt_client::transport::call_with_timeout_until(
+                context,
+                &request,
+                CONTEXT_REQUEST_TIMEOUT,
+                cancelled,
+            ) {
                 Ok(Response::CodexSessions { sessions }) => {
                     control::CodexContextSnapshot::Sessions {
                         context: context.name.clone(),
@@ -92,9 +267,17 @@ fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
                     context: context.name.clone(),
                     message: error.to_string(),
                 },
-            },
-        )
+            }
+        })
         .collect()
+}
+
+fn updated_at() -> String {
+    OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .expect("zero is a valid nanosecond")
+        .format(&Rfc3339)
+        .expect("UTC timestamps support RFC 3339")
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
@@ -111,12 +294,35 @@ fn run_loop(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     config: &ClientConfig,
+    refresh: &WorldRefresh,
+    codex_refresh: &CodexRefresh,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
-    let mut creation = None;
-    let mut creation_error = None;
+    let mut flows = ControlFlows::default();
+    let runtime = ShellRuntime { config, refresh };
     while !shutdown.load(Ordering::Relaxed) {
+        if flows.creation.is_none() && flows.deletion.is_none() {
+            if let Some(snapshot) =
+                take_current_snapshot(&refresh.updates, refresh.generation.load(Ordering::Relaxed))
+            {
+                if ssh::sync(config, &snapshot.instances).is_ok() {
+                    let worlds = shell_worlds(&snapshot.instances);
+                    let area: Rect = terminal
+                        .size()
+                        .context("read wt shell terminal area")?
+                        .into();
+                    sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+                    model.reconcile_worlds(worlds);
+                    model.set_worlds_updated_at(updated_at());
+                    redraw = true;
+                }
+            }
+        }
+        if let Some(codex) = codex_refresh.updates.try_iter().last() {
+            model.set_codex(codex, updated_at());
+            redraw = true;
+        }
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
         for sequence in clipboard_writes {
@@ -125,13 +331,27 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
-        if let Some(action) = creation.as_mut().map(crate::create::Flow::poll) {
+        if let Some(action) = flows.creation.as_mut().map(crate::create::Flow::poll) {
             redraw |= apply_creation_action(
                 action,
-                &mut creation,
-                &mut creation_error,
+                &mut flows.creation,
+                &mut flows.creation_error,
                 sessions,
                 model,
+                refresh,
+                terminal
+                    .size()
+                    .context("read wt shell terminal area")?
+                    .into(),
+            )?;
+        }
+        if let Some(action) = flows.deletion.as_mut().map(delete::Flow::poll) {
+            redraw |= apply_deletion_action(
+                action,
+                &mut flows.deletion,
+                sessions,
+                model,
+                refresh,
                 terminal
                     .size()
                     .context("read wt shell terminal area")?
@@ -140,19 +360,22 @@ fn run_loop(
         }
         if redraw {
             let screen = model.has_worlds().then(|| sessions.screen(model.active()));
+            let closed_message = model
+                .has_worlds()
+                .then(|| sessions.closed_message(model.active()))
+                .flatten();
             terminal.draw(|frame| {
                 render::draw(
                     frame,
                     screen,
+                    closed_message,
                     model,
-                    creation.as_ref(),
-                    creation_error.as_deref(),
+                    flows.creation.as_ref(),
+                    flows.creation_error.as_deref(),
+                    flows.deletion.as_ref(),
                 )
             })?;
             redraw = false;
-        }
-        if sessions.all_closed() {
-            return Ok(());
         }
         if !event::poll(Duration::from_millis(16)).context("poll terminal input")? {
             continue;
@@ -167,9 +390,8 @@ fn run_loop(
                 sessions,
                 model,
                 area,
-                config,
-                &mut creation,
-                &mut creation_error,
+                &runtime,
+                &mut flows,
             )?;
             if model.should_quit() {
                 return Ok(());
@@ -187,34 +409,61 @@ fn dispatch_event(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     area: Rect,
-    config: &ClientConfig,
-    creation: &mut Option<crate::create::Flow>,
-    creation_error: &mut Option<String>,
+    runtime: &ShellRuntime<'_>,
+    flows: &mut ControlFlows,
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
+            if model.mode() != Mode::Control
+                && sessions.closed_message(model.active()).is_some()
+                && key.code == crossterm::event::KeyCode::Char(' ')
+            {
+                sessions.restart(model.active(), world_rows(area.height), area.width);
+                return Ok(true);
+            }
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
-                let _ = model.handle_key(key);
+                if model.handle_key(key) == InputRoute::World {
+                    if sessions.closed_message(model.active()).is_some() {
+                        return Ok(true);
+                    }
+                    let screen = sessions.screen(model.active());
+                    if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
+                        sessions.write(model.active(), &bytes)?;
+                    }
+                }
                 return Ok(true);
             }
             if model.mode() == Mode::Control {
-                if creation_error.is_some()
+                if flows.creation_error.is_some()
                     && matches!(
                         key.code,
                         crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
                     )
                 {
-                    creation_error.take();
+                    flows.creation_error.take();
                     return Ok(true);
                 }
-                if let Some(flow) = creation.as_mut() {
-                    let action = flow.handle_key(key, config);
+                if let Some(flow) = flows.creation.as_mut() {
+                    let action = flow.handle_key(key, runtime.config);
                     let _ = apply_creation_action(
                         action,
-                        creation,
-                        creation_error,
+                        &mut flows.creation,
+                        &mut flows.creation_error,
                         sessions,
                         model,
+                        runtime.refresh,
+                        area,
+                    )?;
+                    return Ok(true);
+                }
+                if let Some(flow) = flows.deletion.as_mut() {
+                    let action = flow.handle_event(&Event::Key(key), area, runtime.config);
+                    let _ = apply_deletion_action(
+                        action,
+                        &mut flows.deletion,
+                        sessions,
+                        model,
+                        runtime.refresh,
                         area,
                     )?;
                     return Ok(true);
@@ -222,30 +471,45 @@ fn dispatch_event(
             }
             match model.handle_key(key) {
                 InputRoute::World => {
+                    if sessions.closed_message(model.active()).is_some() {
+                        return Ok(true);
+                    }
                     let screen = sessions.screen(model.active());
                     if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
                         sessions.write(model.active(), &bytes)?;
                     }
                 }
                 InputRoute::Command(command) => {
-                    start_creation(command, config, creation, creation_error);
+                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
                 }
                 InputRoute::Consumed => {}
             }
             Ok(true)
         }
-        Event::Paste(text) if model.mode() == Mode::Control && creation.is_some() => {
-            if let Some(flow) = creation.as_mut() {
+        Event::Paste(text) if model.mode() == Mode::Control && flows.creation.is_some() => {
+            if let Some(flow) = flows.creation.as_mut() {
+                let _ = flow.handle_paste(&text);
+            }
+            Ok(true)
+        }
+        Event::Paste(text) if model.mode() == Mode::Control && flows.deletion.is_some() => {
+            if let Some(flow) = flows.deletion.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
             Ok(true)
         }
         Event::Paste(text) if model.mode() == Mode::World => {
+            if sessions.closed_message(model.active()).is_some() {
+                return Ok(true);
+            }
             let bracketed = sessions.screen(model.active()).bracketed_paste();
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
         Event::Mouse(mouse) if model.mode().forwards_mouse() => {
+            if sessions.closed_message(model.active()).is_some() {
+                return Ok(false);
+            }
             if let Some(mouse) = world_mouse(mouse, area) {
                 let screen = sessions.screen(model.active());
                 if let Some(bytes) = input::encode_mouse(
@@ -259,9 +523,19 @@ fn dispatch_event(
             Ok(false)
         }
         Event::Mouse(mouse) if model.mode() == Mode::Control => {
-            if creation.is_none() {
+            if let Some(flow) = flows.deletion.as_mut() {
+                let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
+                let _ = apply_deletion_action(
+                    action,
+                    &mut flows.deletion,
+                    sessions,
+                    model,
+                    runtime.refresh,
+                    area,
+                )?;
+            } else if flows.creation.is_none() {
                 if let Some(command) = model.handle_mouse(mouse, area) {
-                    start_creation(command, config, creation, creation_error);
+                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
                 }
             }
             Ok(true)
@@ -273,6 +547,30 @@ fn dispatch_event(
         _ => Ok(false),
     }
 }
+
+fn start_control_command(
+    command: ControlCommand,
+    config: &ClientConfig,
+    refresh: &WorldRefresh,
+    model: &ShellModel,
+    flows: &mut ControlFlows,
+) {
+    match command {
+        ControlCommand::DeleteWorld => {
+            flows.deletion = Some(delete::Flow::new(model.worlds().to_vec()));
+        }
+        ControlCommand::NewHost | ControlCommand::NewDev => {
+            start_creation(
+                command,
+                config,
+                refresh,
+                &mut flows.creation,
+                &mut flows.creation_error,
+            );
+        }
+    }
+}
+
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
@@ -306,15 +604,18 @@ fn world_mouse(
 fn start_creation(
     command: ControlCommand,
     config: &ClientConfig,
+    refresh: &WorldRefresh,
     creation: &mut Option<crate::create::Flow>,
     error: &mut Option<String>,
 ) {
     let kind = match command {
         ControlCommand::NewDev => Ok(crate::create::Kind::Dev),
         ControlCommand::NewHost => crate::host::default_input().map(crate::create::Kind::Host),
+        ControlCommand::DeleteWorld => unreachable!("delete is handled separately"),
     };
     match kind.and_then(|kind| crate::create::prepare(config, kind)) {
         Ok(flow) => {
+            refresh.invalidate();
             *creation = Some(flow);
             *error = None;
         }
@@ -328,6 +629,7 @@ fn apply_creation_action(
     error: &mut Option<String>,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    refresh: &WorldRefresh,
     area: ratatui::layout::Rect,
 ) -> Result<bool> {
     match action {
@@ -343,8 +645,16 @@ fn apply_creation_action(
             Ok(true)
         }
         crate::create::FlowAction::Created(created) => {
-            let world = format!("{}.{}", created.context, created.instance.name);
-            if model.world_index(&world).is_none() {
+            refresh.invalidate();
+            let world = ShellWorld {
+                identity: model::WorldIdentity {
+                    context: created.context.clone(),
+                    id: created.instance.id,
+                },
+                name: format!("{}.{}", created.context, created.instance.name),
+                instance_name: created.instance.name.clone(),
+            };
+            if model.world_index(&world.identity).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
             }
             model.activate_world(world);
@@ -354,33 +664,36 @@ fn apply_creation_action(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
-    #[test]
-    fn world_view_reserves_the_top_row() {
-        assert_eq!(world_rows(24), 23);
-        assert_eq!(world_rows(1), 1);
-        assert_eq!(world_area(Rect::new(0, 0, 80, 24)), Rect::new(0, 1, 80, 23));
-    }
-
-    #[test]
-    fn mouse_input_skips_the_bar_and_is_translated_to_world_rows() {
-        let area = Rect::new(0, 0, 80, 24);
-
-        assert_eq!(world_mouse(mouse(4, 0), area), None);
-        assert_eq!(world_mouse(mouse(4, 1), area).unwrap().row, 0);
-        assert_eq!(world_mouse(mouse(4, 23), area).unwrap().row, 22);
-    }
-
-    fn mouse(column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
+fn apply_deletion_action(
+    action: delete::FlowAction,
+    deletion: &mut Option<delete::Flow>,
+    sessions: &mut SessionSet,
+    model: &mut ShellModel,
+    refresh: &WorldRefresh,
+    area: Rect,
+) -> Result<bool> {
+    match action {
+        delete::FlowAction::None => Ok(false),
+        delete::FlowAction::Changed => Ok(true),
+        delete::FlowAction::Cancel => {
+            deletion.take();
+            Ok(true)
+        }
+        delete::FlowAction::Deleted(identity) => {
+            refresh.invalidate();
+            let worlds = model
+                .worlds()
+                .iter()
+                .filter(|world| world.identity != identity)
+                .cloned()
+                .collect::<Vec<_>>();
+            sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+            model.reconcile_worlds(worlds);
+            deletion.take();
+            Ok(true)
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

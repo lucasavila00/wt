@@ -1,0 +1,40 @@
+use super::*;
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+#[test]
+fn world_view_reserves_the_top_row() {
+    assert_eq!(world_rows(24), 23);
+    assert_eq!(world_rows(1), 1);
+    assert_eq!(world_area(Rect::new(0, 0, 80, 24)), Rect::new(0, 1, 80, 23));
+}
+
+#[test]
+fn mouse_input_skips_the_bar_and_is_translated_to_world_rows() {
+    let area = Rect::new(0, 0, 80, 24);
+
+    assert_eq!(world_mouse(mouse(4, 0), area), None);
+    assert_eq!(world_mouse(mouse(4, 1), area).unwrap().row, 0);
+    assert_eq!(world_mouse(mouse(4, 23), area).unwrap().row, 22);
+}
+
+fn mouse(column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+#[test]
+fn local_mutation_invalidates_an_older_refresh() {
+    let (sender, updates) = mpsc::sync_channel(1);
+    sender
+        .send(WorldSnapshot {
+            generation: 4,
+            instances: Vec::new(),
+        })
+        .unwrap();
+
+    assert!(take_current_snapshot(&updates, 5).is_none());
+}
