@@ -19,9 +19,15 @@ use uuid::Uuid;
 pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ApiRequest {
     pub protocol_version: u32,
+    #[serde(
+        default,
+        rename = "client_commit",
+        skip_serializing,
+        deserialize_with = "reject_client_commit"
+    )]
+    removed_client_commit: bool,
     #[serde(flatten)]
     pub operation: Operation,
 }
@@ -30,13 +36,24 @@ impl ApiRequest {
     pub fn new(operation: Operation) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
+            removed_client_commit: false,
             operation,
         }
     }
 }
 
+fn reject_client_commit<'de, D>(_deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Err(serde::de::Error::unknown_field(
+        "client_commit",
+        &["protocol_version", "operation"],
+    ))
+}
+
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Operation {
     Create(CreateInstance),
     List,
