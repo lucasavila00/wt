@@ -1,5 +1,0 @@
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-tools world-prompt 2>/dev/null || true'''

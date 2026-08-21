@@ -281,8 +281,12 @@ impl RetainedConfig {
             .map_err(WorkerError::from)?;
         run_helper(
             transport,
-            "/usr/local/bin/wt-codex-integration",
-            &["install"],
+            "/usr/bin/env",
+            &[
+                "CODEX_HOME=/home/wt/.codex",
+                "/usr/local/bin/wt-codex-integration",
+                "install",
+            ],
             None,
             deadline,
             log,
