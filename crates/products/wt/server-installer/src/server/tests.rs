@@ -167,7 +167,7 @@ fn config_drift_message_explains_recovery() {
 
     `make clear` destroys every wt-* domain and removes generated runtime state
     (config, worlds, grants, database, and generated SSH inventory). It keeps
-    verified golden images, installed services and credentials, source downloads,
+    the verified golden image, installed services and credentials, source downloads,
     and caches.
     "
     );
@@ -198,8 +198,7 @@ limits = { vcpus = 4, memory_mib = 8192, disk_gib = 128 }
 [image]
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-devcontainer_path = "/var/lib/wt/devcontainer.qcow2"
-host_path = "/var/lib/wt/host.qcow2"
+path = "/var/lib/wt/retained.qcow2"
 build_memory_mib = 1024
 build_vcpus = 1
 build_disk_gib = 8

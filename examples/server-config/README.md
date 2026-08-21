@@ -16,8 +16,8 @@ them and stores encrypted copies for the gateway; worlds never receive them.
 `agent_tools.vsock_port` is the private gateway endpoint shared by the server and
 world relays. Installed services use the configured value. Development and E2E
 processes may override it with `WT_AGENT_TOOL_VSOCK_PORT`.
-The `image` section names separate devcontainer and host images in one
-directory. They cannot use the same file.
+The `image` section names one retained-world image used by devcontainer and
+host worlds.
 Before installation, the server's `wt` user must log in to Codex and own a
 regular, non-symlink `/home/wt/.codex/auth.json`. Codex integration has no
 configuration: every retained world receives the server-backed sessions and

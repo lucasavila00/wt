@@ -57,8 +57,8 @@ printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
     /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
 
-phase "installing $WT_IMAGE_KIND-specific tools"
-/bin/sh /var/tmp/wt-kind-image-build.sh
+phase "installing retained-world tools"
+/bin/sh /var/tmp/wt-retained-image-build.sh
 
 phase "removing image-build dependencies"
 DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
@@ -80,7 +80,7 @@ TERM=ghostty tput colors >/dev/null
 TERM=xterm-ghostty tput colors >/dev/null
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
-    /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-shell
+    /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-*
 printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
     "$WT_IMAGE_KIND" "$WT_UID" "$WT_GID" \
     > /var/lib/wt-image-result

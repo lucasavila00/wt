@@ -6,8 +6,7 @@ expression: text
 version = 1
 
 [image]
-devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
-host_path = "/var/lib/wt/images/host.qcow2"
+path = "/var/lib/wt/images/retained.qcow2"
 
 [libvirt]
 network = "default"

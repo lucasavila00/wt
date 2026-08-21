@@ -1,6 +1,6 @@
 # ADR 0049: Use one image for retained worlds
 
-- Status: Proposed; Date: 2026-08-21
+- Status: Accepted; Date: 2026-08-21
 - Amends: [ADR 0027](0027-build-images-in-kvm.md) and
   [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 

@@ -49,7 +49,7 @@ enum ImageCommand {
         #[arg(long)]
         config: PathBuf,
     },
-    /// Verify installed golden images and provenance without changing the host.
+    /// Verify the installed golden image and provenance without changing the host.
     Verify {
         /// Path to the install input TOML.
         #[arg(long)]

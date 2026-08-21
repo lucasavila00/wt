@@ -50,7 +50,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     prepare_host(runner, &server)?;
     registry_cache::ensure(runner, &server)?;
 
-    phase("Preparing reusable world images");
+    phase("Preparing reusable world image");
     image::ensure(runner, &input, &server, &server_bytes)?;
 
     phase("Building and installing WT binaries");
@@ -83,11 +83,7 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     } else {
         image::ensure(runner, &input, &server, &server_bytes)?;
     }
-    println!(
-        "images ready: {}, {}",
-        server.image.devcontainer_path.display(),
-        server.image.host_path.display()
-    );
+    println!("image ready: {}", server.image.path.display());
     Ok(())
 }
 
@@ -278,7 +274,7 @@ Intentional change: clear WT server state, then reinstall:
 
 `make clear` destroys every wt-* domain and removes generated runtime state
 (config, worlds, grants, database, and generated SSH inventory). It keeps
-verified golden images, installed services and credentials, source downloads,
+the verified golden image, installed services and credentials, source downloads,
 and caches."
     )
 }

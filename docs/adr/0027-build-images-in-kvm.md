@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-14
 - Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
+  and [ADR 0049](0049-use-one-image-for-retained-worlds.md)
 
 ## Context
 

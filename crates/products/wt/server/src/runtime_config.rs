@@ -57,8 +57,7 @@ pub struct AgentToolsProviderConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
-    pub devcontainer_path: PathBuf,
-    pub host_path: PathBuf,
+    pub path: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -110,8 +109,7 @@ impl ServerConfig {
             ));
         }
         for (name, path) in [
-            ("image.devcontainer_path", &self.image.devcontainer_path),
-            ("image.host_path", &self.image.host_path),
+            ("image.path", &self.image.path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
             ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
@@ -129,40 +127,26 @@ impl ServerConfig {
                 ));
             }
         }
-        for (name, path) in [
-            ("image.devcontainer_path", &self.image.devcontainer_path),
-            ("image.host_path", &self.image.host_path),
-        ] {
+        for (name, path) in [("image.path", &self.image.path)] {
             if path.extension().and_then(|value| value.to_str()) != Some("qcow2") {
                 return Err(format!("{name} must end in .qcow2"));
             }
         }
-        let devcontainer_image_dir = self
+        let image_dir = self
             .image
-            .devcontainer_path
+            .path
             .parent()
-            .ok_or_else(|| "image.devcontainer_path must have a parent directory".to_owned())?;
-        let host_image_dir = self
-            .image
-            .host_path
-            .parent()
-            .ok_or_else(|| "image.host_path must have a parent directory".to_owned())?;
-        if self.image.devcontainer_path == self.image.host_path {
-            return Err("devcontainer and host images must use different files".to_owned());
-        }
-        if devcontainer_image_dir != host_image_dir {
-            return Err("devcontainer and host images must use the same directory".to_owned());
-        }
+            .ok_or_else(|| "image.path must have a parent directory".to_owned())?;
         for (left_name, left, right_name, right) in [
             (
                 "image directory",
-                devcontainer_image_dir,
+                image_dir,
                 "libvirt.worlds_dir",
                 self.libvirt.worlds_dir.as_path(),
             ),
             (
                 "image directory",
-                devcontainer_image_dir,
+                image_dir,
                 "install.binary_dir",
                 self.install.binary_dir.as_path(),
             ),
@@ -176,7 +160,7 @@ impl ServerConfig {
                 "registry_cache.state_dir",
                 self.registry_cache.state_dir.as_path(),
                 "image directory",
-                devcontainer_image_dir,
+                image_dir,
             ),
             (
                 "registry_cache.state_dir",
@@ -208,7 +192,7 @@ impl ServerConfig {
 
     pub fn devcontainer_machine_config(&self) -> MachineConfig {
         MachineConfig {
-            image: self.image.devcontainer_path.clone(),
+            image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
@@ -218,7 +202,7 @@ impl ServerConfig {
 
     pub fn host_machine_config(&self) -> MachineConfig {
         MachineConfig {
-            image: self.image.host_path.clone(),
+            image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
@@ -365,10 +349,7 @@ impl ServerConfig {
             packages: PackageVersions,
             devcontainer_cli: String,
         }
-        let manifest_path = PathBuf::from(format!(
-            "{}.manifest.json",
-            self.image.devcontainer_path.display()
-        ));
+        let manifest_path = PathBuf::from(format!("{}.manifest.json", self.image.path.display()));
         let bytes = std::fs::read(&manifest_path)
             .map_err(|error| format!("read image manifest {}: {error}", manifest_path.display()))?;
         let manifest: RawManifest = serde_json::from_slice(&bytes).map_err(|error| {
@@ -449,8 +430,7 @@ mod tests {
 version = 1
 
 [image]
-devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
-host_path = "/var/lib/wt/images/host.qcow2"
+path = "/var/lib/wt/images/retained.qcow2"
 
 [libvirt]
 network = "default"
@@ -486,8 +466,9 @@ binary_dir = "/usr/local/bin"
         assert_eq!(config.agent_tools.vsock_port, DEFAULT_AGENT_TOOL_VSOCK_PORT);
         assert_eq!(
             machine.image,
-            Path::new("/var/lib/wt/images/devcontainer.qcow2")
+            Path::new("/var/lib/wt/images/retained.qcow2")
         );
+        assert_eq!(config.host_machine_config().image, machine.image);
         assert_eq!(machine.network, "default");
         assert_eq!(
             machine.codex_mounts,
@@ -530,17 +511,9 @@ binary_dir = "/usr/local/bin"
         ))
         .is_err());
         assert!(parse(&VALID.replace(
-            "host_path = \"/var/lib/wt/images/host.qcow2\"",
-            "host_path = \"/var/lib/wt/images/host.qcow2\"\nsource_url = \"https://example.com/img\""
+            "path = \"/var/lib/wt/images/retained.qcow2\"",
+            "path = \"/var/lib/wt/images/retained.qcow2\"\nsource_url = \"https://example.com/img\""
         ))
         .is_err());
-        assert_eq!(
-            parse(&VALID.replace(
-                "/var/lib/wt/images/host.qcow2",
-                "/var/lib/wt/images/devcontainer.qcow2"
-            ))
-            .unwrap_err(),
-            "devcontainer and host images must use different files"
-        );
     }
 }
