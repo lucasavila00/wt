@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_libvirt_kvm::{CodexMounts, MachineConfig};
@@ -267,12 +266,6 @@ impl ServerConfig {
             }
         }
         let auth = Path::new(CODEX_AUTH_PATH);
-        let metadata = std::fs::symlink_metadata(auth).map_err(|error| {
-            format!(
-                "inspect Codex authentication file {}: {error}",
-                auth.display()
-            )
-        })?;
         let share = Path::new(CODEX_AUTH_SHARE_DIR);
         let shared_auth = share.join("auth.json");
         let shared_metadata = std::fs::symlink_metadata(&shared_auth).map_err(|error| {
@@ -281,13 +274,25 @@ impl ServerConfig {
                 shared_auth.display()
             )
         })?;
-        if shared_metadata.file_type().is_symlink()
-            || !shared_metadata.is_file()
-            || metadata.dev() != shared_metadata.dev()
-            || metadata.ino() != shared_metadata.ino()
-        {
+        if shared_metadata.file_type().is_symlink() || !shared_metadata.is_file() {
             return Err(format!(
-                "Codex authentication share must be a hard link to {}: {}",
+                "Codex authentication share must contain a regular copy of {}: {}",
+                auth.display(),
+                shared_auth.display()
+            ));
+        }
+        let auth_contents = std::fs::read(auth).map_err(|error| {
+            format!("read Codex authentication file {}: {error}", auth.display())
+        })?;
+        let shared_contents = std::fs::read(&shared_auth).map_err(|error| {
+            format!(
+                "read Codex authentication share {}: {error}",
+                shared_auth.display()
+            )
+        })?;
+        if auth_contents != shared_contents {
+            return Err(format!(
+                "Codex authentication share does not match {}: {}",
                 auth.display(),
                 shared_auth.display()
             ));

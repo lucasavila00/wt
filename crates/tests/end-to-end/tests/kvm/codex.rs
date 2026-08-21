@@ -51,17 +51,17 @@ pub(crate) fn assert_server_codex_auth_export() -> String {
     assert!(source_metadata.file_type().is_file());
     assert!(export_metadata.file_type().is_file());
     assert!(directory_metadata.file_type().is_dir());
-    assert_eq!(
+    assert_ne!(
         (source_metadata.dev(), source_metadata.ino()),
         (export_metadata.dev(), export_metadata.ino())
     );
-    assert_eq!(source_metadata.nlink(), 2);
     assert_eq!(source_metadata.uid(), export_metadata.uid());
     assert_eq!(source_metadata.gid(), 1001);
     assert_eq!(source_metadata.mode() & 0o777, 0o640);
     assert_eq!(directory_metadata.uid(), source_metadata.uid());
     assert_eq!(directory_metadata.gid(), 1001);
     assert_eq!(directory_metadata.mode() & 0o777, 0o750);
+    assert_eq!(sha256_file(source), sha256_file(&export));
 
     let mut entries = fs::read_dir(export_dir)
         .unwrap()
@@ -123,10 +123,8 @@ pub(crate) fn verify_codex_auth_rotation(
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let source_metadata = fs::metadata(auth).unwrap();
-        let export_metadata = fs::metadata(&export).unwrap();
         if source_metadata.ino() != old_server_inode
-            && (source_metadata.dev(), source_metadata.ino())
-                == (export_metadata.dev(), export_metadata.ino())
+            && sha256_file(auth) == sha256_file(&export)
             && source_metadata.gid() == 1001
             && source_metadata.mode() & 0o777 == 0o640
         {

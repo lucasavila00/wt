@@ -46,8 +46,9 @@ does not recover intermediate trampoline or other provisioning transitions;
 a healthy provisioning run normally takes about 5–10 seconds.
 
 If Codex authentication expires, refresh it as the server `wt` user. A systemd
-path unit republishes an atomically replaced `auth.json` to running worlds;
-worlds cannot write the credential back.
+path unit atomically republishes `auth.json` into the live virtiofs share.
+Running worlds receive the replacement automatically; they cannot write the
+credential back.
 
 A world disk cannot be smaller than its image's `build_disk_gib`. The client
 defaults to 32 GiB; a larger build image requires a larger world request.
