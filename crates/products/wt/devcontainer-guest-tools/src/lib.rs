@@ -240,13 +240,21 @@ fn validate_user(user: &str, source: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn pane_command(target: &AppTarget) -> Command {
+pub fn pane_command(target: &AppTarget, pane_id: Option<&str>) -> Result<Command, String> {
     let remote = format!("{}@{}", target.user, target.address);
+    let pane_environment = match pane_id {
+        Some(pane_id) if valid_pane_id(pane_id) => format!(
+            "export WT_BYOBU_SESSION=wt-app WT_BYOBU_PANE={}; ",
+            shell_quote(pane_id)
+        ),
+        Some(_) => return Err("wt: invalid TMUX_PANE for devcontainer shell".to_owned()),
+        None => String::new(),
+    };
     let command = format!(
-        "cd -- {} && exec /bin/bash -l",
-        shell_quote(&target.workspace)
+        "{pane_environment}cd -- {} && exec /bin/bash -l",
+        shell_quote(&target.workspace),
     );
-    cmd!(
+    Ok(cmd!(
         "/usr/bin/ssh",
         "-tt",
         "-A",
@@ -268,7 +276,13 @@ pub fn pane_command(target: &AppTarget) -> Command {
         "LogLevel=ERROR",
         remote,
         command,
-    )
+    ))
+}
+
+fn valid_pane_id(value: &str) -> bool {
+    value.strip_prefix('%').is_some_and(|number| {
+        !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 pub fn pane_failure_diagnostic(status: &ExitStatus) -> Option<String> {
@@ -369,7 +383,7 @@ mod tests {
     #[test]
     fn pane_uses_ssh_instead_of_docker_exec() {
         let target = inspect_target("abc".to_owned(), INSPECT).unwrap();
-        let command = pane_command(&target);
+        let command = pane_command(&target, Some("%12")).unwrap();
         assert_eq!(command.get_program(), "/usr/bin/ssh");
         let args = command
             .get_args()
@@ -377,7 +391,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(args.iter().any(|arg| arg == "-A"));
         assert!(args.iter().any(|arg| arg == "vscode@172.18.0.3"));
+        assert!(args.iter().any(|arg| arg.contains("WT_BYOBU_PANE='%12'")));
         assert!(!args.iter().any(|arg| arg.contains("docker")));
+    }
+
+    #[test]
+    fn pane_rejects_invalid_tmux_identity() {
+        let target = inspect_target("abc".to_owned(), INSPECT).unwrap();
+        assert_eq!(
+            pane_command(&target, Some("other")).unwrap_err(),
+            "wt: invalid TMUX_PANE for devcontainer shell"
+        );
     }
 
     #[test]

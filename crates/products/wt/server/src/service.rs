@@ -1,5 +1,6 @@
 use crate::operations::Operations;
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateApplication, CreateInstance, ErrorCode, Instance,
@@ -8,64 +9,20 @@ use wt_control_protocol::{
 use wt_retained_worlds::{ProvisionSpec, World, WorldApplication, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
+mod codex;
+mod gateway;
 mod lifecycle;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub trait AgentToolGateway {
-    fn reserve(
-        &self,
-        world_id: Uuid,
-        source: Option<&str>,
-        base: Option<&str>,
-    ) -> Result<wt_agent_tool_gateway::Grant, String>;
-    fn revoke(&self, grant_id: &str) -> Result<(), String>;
-}
-impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
-    fn reserve(
-        &self,
-        world_id: Uuid,
-        source: Option<&str>,
-        base: Option<&str>,
-    ) -> Result<wt_agent_tool_gateway::Grant, String> {
-        let response = self
-            .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
-                world_id: world_id.to_string(),
-                source: source.map(str::to_owned),
-                base: base.map(str::to_owned),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            response
-                .grant
-                .ok_or_else(|| "gateway reserve response has no grant".to_owned())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected grant".to_owned()))
-        }
-    }
-    fn revoke(&self, grant_id: &str) -> Result<(), String> {
-        let response = self
-            .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
-                grant_id: grant_id.to_owned(),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            Ok(())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
-        }
-    }
-}
+pub use gateway::AgentToolGateway;
 pub struct Service<W, G> {
     store: Store,
     worker: W,
     gateway: G,
     operations: Operations,
     capacity_limit: Resources,
+    codex_sessions_path: PathBuf,
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -85,6 +42,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 memory_mib: memory_limit_mib,
                 ..Resources::UNLIMITED
             },
+            codex_sessions_path: PathBuf::from(crate::CODEX_SESSIONS_PATH),
         }
     }
 
@@ -101,7 +59,13 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             gateway,
             operations,
             capacity_limit,
+            codex_sessions_path: PathBuf::from(crate::CODEX_SESSIONS_PATH),
         }
+    }
+
+    pub fn with_codex_sessions_path(mut self, path: impl AsRef<Path>) -> Self {
+        self.codex_sessions_path = path.as_ref().to_owned();
+        self
     }
 
     pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
@@ -117,6 +81,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::Delete { name } => self.delete(owner, &name),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
+            Operation::ListCodexSessions => self.list_codex_sessions(owner),
         }
     }
 

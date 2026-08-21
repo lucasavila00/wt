@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 const TIMEOUT: Duration = Duration::from_secs(20);
 const STDERR_LIMIT: usize = 64 * 1024;
+const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 
 pub(crate) struct ReconcileResult {
     pub(crate) already_indexed: usize,
@@ -163,8 +164,16 @@ fn collect_rollouts(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
 
 fn rollout_id(path: &Path) -> Result<Option<String>> {
     let file = File::open(path).with_context(|| format!("open rollout {}", path.display()))?;
-    let mut lines = BufReader::new(file).lines();
-    let line = lines.next().context("rollout is empty")??;
+    let mut line = String::new();
+    BufReader::new(file)
+        .take(MAX_SESSION_META_BYTES + 1)
+        .read_line(&mut line)?;
+    if line.is_empty() {
+        bail!("rollout is empty");
+    }
+    if line.len() as u64 > MAX_SESSION_META_BYTES {
+        bail!("first rollout record is too large");
+    }
     let record: SessionRecord =
         serde_json::from_str(&line).context("first rollout record is not valid JSON")?;
     if record.kind != "session_meta" {

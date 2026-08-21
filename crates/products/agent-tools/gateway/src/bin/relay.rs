@@ -4,15 +4,16 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::process::Command;
 use wt_agent_tool_gateway::{
-    copy_bidirectional, read_json_line, resolve_vsock_port, write_json_line, ClientRequest,
-    TransportRequest, TransportResponse, VsockStream,
+    copy_bidirectional, read_json_line, resolve_vsock_port, write_json_line, ClientOperation,
+    ClientRequest, TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
 };
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway-relay")]
 struct Cli {
-    #[arg(long, default_value = "/run/wt-agent-tool-gateway/gateway.sock")]
+    #[arg(long, default_value = RELAY_SOCKET)]
     socket: PathBuf,
     #[arg(long, default_value = "/var/lib/wt-agent-tool-gateway/grant")]
     grant_file: PathBuf,
@@ -76,6 +77,7 @@ fn handle(
     vsock_port: u32,
 ) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
+    validate_codex_target(&request.operation)?;
     let streams_git = matches!(
         &request.operation,
         wt_agent_tool_gateway::ClientOperation::Git { .. }
@@ -104,4 +106,38 @@ fn handle(
         }
     }
     Ok(())
+}
+
+fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
+    let ClientOperation::CodexSession { event } = operation else {
+        return Ok(());
+    };
+    if !matches!(event.tmux_session.as_str(), "wt-app" | "wt-host")
+        || !valid_pane_id(&event.pane_id)
+    {
+        bail!("invalid Codex Byobu target");
+    }
+    let output = Command::new("/usr/bin/tmux")
+        .args([
+            "display-message",
+            "-p",
+            "-t",
+            &event.pane_id,
+            "#{session_name}:#{pane_id}",
+        ])
+        .output()
+        .context("validate Codex Byobu target")?;
+    if !output.status.success()
+        || String::from_utf8_lossy(&output.stdout).trim()
+            != format!("{}:{}", event.tmux_session, event.pane_id)
+    {
+        bail!("Codex Byobu target is not in the active world session");
+    }
+    Ok(())
+}
+
+fn valid_pane_id(value: &str) -> bool {
+    value.strip_prefix('%').is_some_and(|number| {
+        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }

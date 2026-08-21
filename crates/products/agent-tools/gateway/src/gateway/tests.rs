@@ -158,6 +158,49 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
 }
 
 #[test]
+fn codex_events_upsert_latest_state_for_the_authenticated_world() {
+    let temp = tempfile::tempdir().unwrap();
+    let database_path = temp.path().join("instances.db");
+    let registry = wt_workload_registry::Registry::open(&database_path).unwrap();
+    let world_id = insert_world(&registry);
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path,
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+    let mut grant = test_grant();
+    grant.world_id = world_id.to_string();
+    let session_id = Uuid::new_v4();
+    let mut event = CodexSessionEvent {
+        session_id,
+        cwd: "/workspace".into(),
+        tmux_session: "wt-app".into(),
+        pane_id: "%3".into(),
+        kind: CodexSessionEventKind::UserPromptSubmit,
+    };
+
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+    event.kind = CodexSessionEventKind::Stop;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].world_id, world_id);
+    assert_eq!(reports[0].session_id, session_id);
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::NeedsAttention
+    );
+    assert_eq!(reports[0].tmux_session, "wt-app");
+    assert_eq!(reports[0].pane_id, "%3");
+}
+
+#[test]
 fn push_messages_cover_publish_delete_and_rejection() {
     let command = |new: &str, reference: &str| {
         let payload = format!("{} {new} {reference}\0report-status\n", "0".repeat(40));

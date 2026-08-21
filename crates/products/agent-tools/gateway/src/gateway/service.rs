@@ -84,7 +84,41 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
+            ClientOperation::CodexSession { event } => {
+                let response = match self.store_codex_session_event(&event, &grant) {
+                    Ok(()) => TransportResponse::ok(),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
+                };
+                crate::write_json_line(&mut stream, &response)
+            }
         }
+    }
+
+    pub(super) fn store_codex_session_event(
+        &self,
+        event: &CodexSessionEvent,
+        grant: &GrantRecord,
+    ) -> Result<()> {
+        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+        let state = match event.kind {
+            CodexSessionEventKind::SessionStart => wt_workload_registry::CodexSessionState::Unknown,
+            CodexSessionEventKind::UserPromptSubmit => {
+                wt_workload_registry::CodexSessionState::Working
+            }
+            CodexSessionEventKind::Stop => wt_workload_registry::CodexSessionState::NeedsAttention,
+            CodexSessionEventKind::SessionEnd => wt_workload_registry::CodexSessionState::Inactive,
+        };
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .upsert_codex_session_report(
+                world_id,
+                event.session_id,
+                &event.cwd,
+                &event.tmux_session,
+                &event.pane_id,
+                state,
+            )
+            .context("store Codex session report")
     }
 
     fn reserve(

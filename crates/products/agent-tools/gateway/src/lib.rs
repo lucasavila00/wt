@@ -5,8 +5,8 @@ mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{
-    ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, TransportRequest,
-    TransportResponse, PROTOCOL_VERSION,
+    ClientOperation, ClientRequest, CodexSessionEvent, CodexSessionEventKind, ControlRequest,
+    ControlResponse, Grant, TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line};
 pub use vsock::{VsockListener, VsockStream};
@@ -16,6 +16,7 @@ pub use wt_tools::ProviderKind;
 pub const VSOCK_PORT: u32 = 18017;
 pub const VSOCK_PORT_ENV: &str = "WT_AGENT_TOOL_VSOCK_PORT";
 pub const CONTROL_SOCKET: &str = "/run/wt-agent-tool-gateway/control.sock";
+pub const RELAY_SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
 pub const BRANCH_PREFIX: &str = "wt/";
 
 pub fn resolve_vsock_port(explicit: Option<u32>) -> anyhow::Result<u32> {
