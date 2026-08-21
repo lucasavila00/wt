@@ -10,9 +10,9 @@ pub(crate) const CODEX_AUTH_SHARE: &[u8] =
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     let image_dir = config
         .image
-        .devcontainer_path
+        .path
         .parent()
-        .context("image.devcontainer_path has no parent directory")?;
+        .context("image.path has no parent directory")?;
     let args = [
         "prepare".to_owned(),
         config.libvirt.network.clone(),

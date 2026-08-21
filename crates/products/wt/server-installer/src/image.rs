@@ -1,7 +1,5 @@
 mod builder;
 mod console;
-#[path = "image/host.rs"]
-mod host_image;
 mod recipe;
 
 #[cfg(test)]
@@ -31,8 +29,49 @@ use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
-const DEVCONTAINER_IMAGE_BUILD: &[u8] =
-    include_bytes!("../../../../../assets/world/devcontainer/build-image.sh");
+const RETAINED_IMAGE_BUILD: &[u8] =
+    include_bytes!("../../../../../assets/world/retained/build-image.sh");
+const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
+const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/prepare.sh");
+const HOST_INSPECT: &[u8] = include_bytes!("../../../../../assets/world/host/inspect.sh");
+const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../../assets/world/host/cloud-init.sh");
+const HOST_SETUP: &[u8] = include_bytes!("../../../../../assets/world/host/setup.sh");
+const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../../assets/world/host/defer-init.yaml");
+const HOST_CLOUD_CONFIG: &[u8] =
+    include_bytes!("../../../../../assets/world/host/cloud-config.conf");
+const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../../assets/world/host/cloud-final.conf");
+const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../../assets/world/host/setup.service");
+const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
+    ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
+    ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
+    ("host-inspect", "/var/tmp/wt-host-inspect", HOST_INSPECT),
+    (
+        "host-cloud-init",
+        "/var/tmp/wt-host-cloud-init",
+        HOST_CLOUD_INIT,
+    ),
+    ("host-setup", "/var/tmp/wt-host-setup", HOST_SETUP),
+    (
+        "host-defer-init",
+        "/var/tmp/wt-host-defer-init",
+        HOST_DEFER_INIT,
+    ),
+    (
+        "host-cloud-config",
+        "/var/tmp/wt-host-cloud-config",
+        HOST_CLOUD_CONFIG,
+    ),
+    (
+        "host-cloud-final",
+        "/var/tmp/wt-host-cloud-final",
+        HOST_CLOUD_FINAL,
+    ),
+    (
+        "host-setup-service",
+        "/var/tmp/wt-host-setup-service",
+        HOST_SETUP_SERVICE,
+    ),
+];
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -57,16 +96,14 @@ pub(crate) fn ensure(
     require_clean_publication_state(server)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let manifest_path = manifest_path(&server.image.devcontainer_path);
-    match installed_image_state(
-        server.image.devcontainer_path.exists(),
-        manifest_path.exists(),
-        || verify_installed_image(input, server, server_bytes, &manifest_path),
-    ) {
+    let manifest_path = manifest_path(&server.image.path);
+    match installed_image_state(server.image.path.exists(), manifest_path.exists(), || {
+        verify_installed_image(input, server, server_bytes, &manifest_path)
+    }) {
         InstalledImageState::Reusable => {
             println!(
-                "Reusing verified devcontainer golden image: {}",
-                server.image.devcontainer_path.display()
+                "Reusing verified retained golden image: {}",
+                server.image.path.display()
             );
         }
         InstalledImageState::Missing => {
@@ -81,7 +118,7 @@ pub(crate) fn ensure(
             )?;
         }
         InstalledImageState::Replace(reason) => {
-            println!("Replacing the installed devcontainer golden image: {reason}");
+            println!("Replacing the installed retained golden image: {reason}");
             println!("Existing worlds use independent disks and are unaffected.");
             build_image(
                 runner,
@@ -94,7 +131,7 @@ pub(crate) fn ensure(
             )?;
         }
     }
-    host_image::ensure(runner, input, server, server_bytes, &source, &byobu)
+    Ok(())
 }
 
 pub(crate) fn rebuild(
@@ -108,7 +145,7 @@ pub(crate) fn rebuild(
     require_clean_publication_state(server)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    let manifest = manifest_path(&server.image.devcontainer_path);
+    let manifest = manifest_path(&server.image.path);
     build_image(
         runner,
         input,
@@ -118,7 +155,7 @@ pub(crate) fn rebuild(
         &byobu,
         &manifest,
     )?;
-    host_image::build(runner, input, server, server_bytes, &source, &byobu)
+    Ok(())
 }
 
 pub(crate) fn verify(
@@ -126,18 +163,11 @@ pub(crate) fn verify(
     server: &ServerConfig,
     server_bytes: &[u8],
 ) -> Result<()> {
-    let devcontainer_manifest = manifest_path(&server.image.devcontainer_path);
-    verify_installed_image(input, server, server_bytes, &devcontainer_manifest)?;
+    let manifest = manifest_path(&server.image.path);
+    verify_installed_image(input, server, server_bytes, &manifest)?;
     println!(
-        "Verified devcontainer golden image and provenance: {}",
-        server.image.devcontainer_path.display()
-    );
-
-    let host_manifest = manifest_path(&server.image.host_path);
-    host_image::verify(input, server, server_bytes, &host_manifest)?;
-    println!(
-        "Verified host golden image and provenance: {}",
-        server.image.host_path.display()
+        "Verified retained golden image and provenance: {}",
+        server.image.path.display()
     );
     Ok(())
 }
@@ -213,7 +243,7 @@ fn build_image(
     byobu: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
-    println!("Building devcontainer golden image from verified source inputs.");
+    println!("Building retained golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
 
     if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
@@ -257,10 +287,22 @@ fn build_image_inner<R: Runner>(
     let recipe = ImageRecipe::new();
     let spec = BuildSpec {
         name: BUILD_NAME,
-        kind: ImageKind::Devcontainer,
-        recipe: DEVCONTAINER_IMAGE_BUILD,
+        recipe: RETAINED_IMAGE_BUILD,
     };
-    let paths = run_kvm_build(context, build_dir, &spec, &[])?;
+    let staged_paths = HOST_INPUTS
+        .iter()
+        .map(|(name, _, bytes)| {
+            let path = build_dir.join(name);
+            fs::write(&path, bytes).context("stage retained image input")?;
+            Ok(path)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let extra_inputs = staged_paths
+        .iter()
+        .zip(HOST_INPUTS)
+        .map(|(source, (_, guest_path, _))| StagedInput { source, guest_path })
+        .collect::<Vec<_>>();
+    let paths = run_kvm_build(context, build_dir, &spec, &extra_inputs)?;
     let package_output = runner.text(
         cmd!(
             "sudo",
@@ -277,9 +319,9 @@ fn build_image_inner<R: Runner>(
         .map(|(name, version)| format!("{name}={version}"))
         .collect::<Vec<_>>()
         .join(", ");
-    println!("Validated devcontainer packages: {package_summary}");
+    println!("Validated retained image packages: {package_summary}");
 
-    let tmux_sha256 = finalize_reusable_image(runner, &paths, spec.kind)?;
+    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
     let tmux_version = runner.text(
         cmd!(
             "sudo",
@@ -322,7 +364,7 @@ fn build_image_inner<R: Runner>(
         ),
         "restore image build disk ownership",
     )?;
-    println!("Compacting devcontainer golden image...");
+    println!("Compacting retained golden image...");
     runner.run(
         cmd!(
             "qemu-img",
@@ -340,11 +382,11 @@ fn build_image_inner<R: Runner>(
         "check golden image",
     )?;
 
-    println!("Hashing and publishing devcontainer golden image...");
+    println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
-        inputs: staged_input_hashes(&spec, &[]),
+        inputs: retained_input_hashes(&spec),
         golden_sha256: sha_file(&paths.prepared)?,
         tmux_sha256,
         packages,
@@ -353,15 +395,15 @@ fn build_image_inner<R: Runner>(
     let publication = stage_publication(
         runner,
         &paths.prepared,
-        &server.image.devcontainer_path,
+        &server.image.path,
         manifest_path,
         &manifest,
     )?;
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(
-        "Published devcontainer golden image: {}",
-        server.image.devcontainer_path.display()
+        "Published retained golden image: {}",
+        server.image.path.display()
     );
     Ok(())
 }
@@ -373,12 +415,7 @@ pub(crate) fn verify_installed_image(
     manifest_path: &Path,
 ) -> Result<()> {
     let recipe = ImageRecipe::new();
-    require_named_file(
-        &server.image.devcontainer_path,
-        "libvirt-qemu",
-        "kvm",
-        0o644,
-    )?;
+    require_named_file(&server.image.path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
         &fs::read(manifest_path)
@@ -388,14 +425,10 @@ pub(crate) fn verify_installed_image(
     if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
         || manifest.inputs
-            != staged_input_hashes(
-                &BuildSpec {
-                    name: BUILD_NAME,
-                    kind: ImageKind::Devcontainer,
-                    recipe: DEVCONTAINER_IMAGE_BUILD,
-                },
-                &[],
-            )
+            != retained_input_hashes(&BuildSpec {
+                name: BUILD_NAME,
+                recipe: RETAINED_IMAGE_BUILD,
+            })
         || manifest.devcontainer_cli != recipe.devcontainer_cli_version()
         || !is_sha256(&manifest.tmux_sha256)
     {
@@ -405,10 +438,18 @@ pub(crate) fn verify_installed_image(
         .validate_package_versions(&manifest.packages)
         .context("installed image package provenance differs")?;
     require_sha(
-        &server.image.devcontainer_path,
+        &server.image.path,
         &manifest.golden_sha256,
         "installed golden image",
     )
+}
+
+fn retained_input_hashes(spec: &BuildSpec<'_>) -> BTreeMap<String, String> {
+    let inputs = HOST_INPUTS
+        .iter()
+        .map(|(_, guest_path, bytes)| (*guest_path, *bytes))
+        .collect::<Vec<_>>();
+    staged_input_hashes(spec, &inputs)
 }
 
 #[derive(Debug, Eq, PartialEq)]

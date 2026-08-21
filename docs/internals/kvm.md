@@ -19,29 +19,28 @@ validates the image-owned UID/GID `1001:1001` contract.
 
 ## Images
 
-Retained worlds use two installed images built from the same pinned Ubuntu
-source:
+Retained worlds use one installed image containing Docker, Git, the Dev
+Container CLI, OpenSSH, QEMU guest support, Byobu, tmux, the host setup service,
+and shared terminal assets.
 
-- devcontainer: Docker, Git, Dev Container CLI, Byobu, and tmux;
-- host: upstream Ubuntu plus OpenSSH, QEMU guest agent, Byobu, tmux, and shared
-  terminal assets.
+`wt-server-installer` builds the image from the pinned Ubuntu source through a
+KVM builder. Shared recipes live in `assets/world/shared`; the combined recipe
+lives in `assets/world/retained`. [ADR 0027](../adr/0027-build-images-in-kvm.md)
+records the build contract, as amended by
+[ADR 0049](../adr/0049-use-one-image-for-retained-worlds.md).
 
-`wt-server-installer` builds each image independently through one KVM builder.
-Shared recipes live in `assets/world/shared`; kind recipes live beside their
-kind. [ADR 0027](../adr/0027-build-images-in-kvm.md) records the build contract.
-
-Each image has its own provenance manifest and checksum. Image paths cannot be
-the same file. A world disk cannot be smaller than its template image; the
-provider rejects it before copying and resizing the image. The resulting world
+The image has one provenance manifest and checksum. A world disk cannot be
+smaller than its template image; the provider rejects it before copying and
+resizing the image. The resulting world
 disk has no golden-image backing dependency. Setup may replace stale golden
 images automatically without stopping existing worlds.
 
-The shared image foundation is the same in both retained images: user/group
-`wt:wt` at UID/GID `1001:1001`, home `/home/wt`, and the shared Byobu/tmux
-profile. The image build result is a root-owned `0644` marker with exactly:
+The image foundation owns user/group `wt:wt` at UID/GID `1001:1001`, home
+`/home/wt`, and the shared Byobu/tmux profile. The image build result is a
+root-owned `0644` marker with exactly:
 
 ```text
-kind=KIND
+kind=retained
 status=ready
 wt_uid=1001
 wt_gid=1001
@@ -69,14 +68,14 @@ identity, or partial libvirt state fail closed.
 
 ## Real-system test isolation
 
-The KVM lifecycle test does not mutate installed golden images. Each harness
-creates temporary qcow2 overlays backed by those images, applies branch assets
-only to the overlays, and keeps them alive until its worlds are deleted.
+The KVM lifecycle test does not mutate the installed golden image. Each harness
+creates a temporary qcow2 overlay backed by that image, applies branch assets
+only to the overlay, and keeps it alive until its worlds are deleted.
 
 The production agent tool gateway uses vsock port `18017`. Each harness selects
 a different high port and gives the same value to its server, gateway, and
 world relays. Test server and capacity configuration, sockets, grants, provider
 fixtures, and database state stay in that harness's temporary directory. The
-installed golden images are shared read-only inputs; the registry cache and
+installed golden image is a shared read-only input; the registry cache and
 Codex authentication integration are shared host prerequisites. Do not run
 installation, image rebuild, or reset workflows while KVM E2E is active.

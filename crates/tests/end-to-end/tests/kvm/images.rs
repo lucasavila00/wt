@@ -15,34 +15,21 @@ pub(crate) fn unique_vsock_port() -> u32 {
     }
 }
 
-pub(crate) fn isolated_test_images(
-    workspace: &Path,
-    installed_devcontainer: &Path,
-    installed_host: &Path,
-) -> TempDir {
+pub(crate) fn isolated_test_images(workspace: &Path, installed: &Path) -> TempDir {
     let images = tempfile::Builder::new()
         .prefix("wt-kvm-images-")
         .tempdir_in("/var/tmp")
         .unwrap();
     fs::set_permissions(images.path(), fs::Permissions::from_mode(0o755)).unwrap();
-    let devcontainer = images.path().join("devcontainer.qcow2");
-    let host = images.path().join("host.qcow2");
-    for (installed, isolated) in [
-        (installed_devcontainer, devcontainer.as_path()),
-        (installed_host, host.as_path()),
-    ] {
-        run(
-            cmd!(
-                "qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", installed,
-                isolated,
-            ),
-            "create isolated KVM test image",
-        );
-        fs::set_permissions(isolated, fs::Permissions::from_mode(0o644)).unwrap();
-        let installed_manifest = format!("{}.manifest.json", installed.display());
-        let isolated_manifest = format!("{}.manifest.json", isolated.display());
-        fs::copy(installed_manifest, isolated_manifest).unwrap();
-    }
+    let retained = images.path().join("retained.qcow2");
+    run(
+        cmd!("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", installed, &retained,),
+        "create isolated KVM test image",
+    );
+    fs::set_permissions(&retained, fs::Permissions::from_mode(0o644)).unwrap();
+    let installed_manifest = format!("{}.manifest.json", installed.display());
+    let isolated_manifest = format!("{}.manifest.json", retained.display());
+    fs::copy(installed_manifest, isolated_manifest).unwrap();
     let prepare = workspace.join("assets/world/host/prepare.sh");
     run(
         cmd!(
@@ -51,7 +38,7 @@ pub(crate) fn isolated_test_images(
             "virt-customize",
             "--no-network",
             "-a",
-            &host,
+            &retained,
             "--upload",
             format!("{}:/usr/local/libexec/wt-host-prepare", prepare.display()),
             "--chmod",
@@ -59,6 +46,6 @@ pub(crate) fn isolated_test_images(
         ),
         "install current host prepare asset in isolated test image",
     );
-    fs::set_permissions(&host, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&retained, fs::Permissions::from_mode(0o644)).unwrap();
     images
 }

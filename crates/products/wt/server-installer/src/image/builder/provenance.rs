@@ -9,7 +9,7 @@ pub(in crate::image) fn staged_input_hashes(
     extra_inputs: &[(&str, &[u8])],
 ) -> BTreeMap<String, String> {
     let environment = recipe::BuildEnvironment {
-        kind: spec.kind.as_str(),
+        kind: IMAGE_KIND,
         tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
         byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
         access_sha256: &sha_bytes(CONFIGURE_ACCESS),
@@ -44,7 +44,7 @@ pub(in crate::image) fn staged_input_hashes(
             sha_bytes(SHARED_IMAGE_BUILD),
         ),
         (
-            "/var/tmp/wt-kind-image-build.sh".to_owned(),
+            "/var/tmp/wt-retained-image-build.sh".to_owned(),
             sha_bytes(spec.recipe),
         ),
         ("/var/tmp/wt-tmux.conf".to_owned(), sha_bytes(TMUX_CONFIG)),

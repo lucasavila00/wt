@@ -18,15 +18,13 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, the shared capacity registry, registry cache,
-agent tool gateway, and two retained-world images:
+agent tool gateway, and one retained-world image. The image contains Docker,
+Git, the Dev Container CLI, OpenSSH, QEMU guest support, Byobu, host setup, and
+shared terminal assets. Devcontainer and host provisioning use different parts
+of that common image.
 
-- a devcontainer image with Docker, Git, the Dev Container CLI, and guest tools;
-- a host image with upstream Ubuntu, OpenSSH, QEMU guest support, Byobu, and
-  tmux.
-
-The two image paths must be different files in the same directory. Runtime
-configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and disk
-limits come from `[capacity]` in the install input and are materialized at
+Runtime configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and
+disk limits come from `[capacity]` in the install input and are materialized at
 `/etc/wt/capacity.toml`.
 
 Codex is a required retained-world integration and has no server setting. The
@@ -36,7 +34,7 @@ and the server login read-only. The shared sessions survive world deletion and
 server restart, but are outside world disk quotas and snapshots and need a
 separate backup. Do not open the same conversation in two worlds at once.
 
-Both retained images install Codex. Provisioning installs and activates
+The retained image installs Codex. Provisioning installs and activates
 `wt-codex-integration`, which reconciles shared conversations before starting the real
 Codex CLI. Devcontainer worlds inject both executables and the fixed Codex
 mounts into the primary container automatically. GitHub CI runners receive no
@@ -77,7 +75,7 @@ server is intentionally left empty, remove that workstation's stale
 `~/.ssh/wt` inventory manually.
 
 Use `make clear` for the smaller runtime reset described by the installed
-configuration drift diagnostic. It preserves verified golden images and their
+configuration drift diagnostic. It preserves the verified golden image and its
 provenance manifests so reinstalling unchanged image inputs does not rebuild
 them.
 

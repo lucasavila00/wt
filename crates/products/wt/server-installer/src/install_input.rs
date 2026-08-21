@@ -26,8 +26,7 @@ pub(crate) struct InstallInput {
 pub(crate) struct InstallImageConfig {
     pub source_url: String,
     pub source_sha256: String,
-    pub devcontainer_path: PathBuf,
-    pub host_path: PathBuf,
+    pub path: PathBuf,
     pub build_memory_mib: u64,
     pub build_vcpus: u32,
     pub build_disk_gib: u64,
@@ -114,8 +113,7 @@ impl InstallInput {
         ServerConfig {
             version: self.version,
             image: ImageConfig {
-                devcontainer_path: self.image.devcontainer_path.clone(),
-                host_path: self.image.host_path.clone(),
+                path: self.image.path.clone(),
             },
             libvirt: self.libvirt.clone(),
             registry_cache: self.registry_cache.clone(),
@@ -203,8 +201,7 @@ limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
-host_path = "/var/lib/wt/images/host.qcow2"
+path = "/var/lib/wt/images/retained.qcow2"
 build_memory_mib = 8192
 build_vcpus = 4
 build_disk_gib = 32
@@ -245,8 +242,8 @@ binary_dir = "/usr/local/bin"
         let input = parse(VALID).unwrap();
         let server = input.materialize();
         assert_eq!(
-            server.image.devcontainer_path,
-            PathBuf::from("/var/lib/wt/images/devcontainer.qcow2")
+            server.image.path,
+            PathBuf::from("/var/lib/wt/images/retained.qcow2")
         );
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();
