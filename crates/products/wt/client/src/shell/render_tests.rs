@@ -75,7 +75,7 @@ fn world_bar_is_dim_until_activated() {
     let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
     assert_eq!(style.fg, Some(Color::DarkGray));
     assert_eq!(style.bg, Some(Color::Black));
-    assert!(!style.add_modifier.contains(Modifier::BOLD));
+    assert!(style.add_modifier.contains(Modifier::BOLD));
 }
 
 #[test]

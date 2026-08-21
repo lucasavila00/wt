@@ -385,6 +385,10 @@ fn dispatch_event(
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
+        Event::Mouse(mouse) if model.mode().forwards_mouse() && mouse.row == area.y => {
+            let (changed, _) = model.handle_mouse(mouse, area);
+            Ok(changed)
+        }
         Event::Mouse(mouse) if model.mode().forwards_mouse() => {
             if sessions.closed_message(model.active()).is_some() {
                 return Ok(false);
