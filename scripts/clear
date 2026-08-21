@@ -34,5 +34,4 @@ for domain in "${domains[@]}"; do
 done
 
 rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
-sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/wt/agent-git \
-    /var/lib/libvirt/images/wt
+sudo rm -rf /etc/wt /var/lib/wt/agent-git /var/lib/libvirt/images/wt

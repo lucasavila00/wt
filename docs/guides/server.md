@@ -80,7 +80,9 @@ server is intentionally left empty, remove that workstation's stale
 `~/.ssh/wt` inventory manually.
 
 Use `make clear` for the smaller runtime reset described by the installed
-configuration drift diagnostic.
+configuration drift diagnostic. It preserves verified golden images and their
+provenance manifests so reinstalling unchanged image inputs does not rebuild
+them.
 
 Golden-image rebuilds do not migrate retained worlds. Existing world disks are
 independent of their golden image and keep their current guest user, terminal

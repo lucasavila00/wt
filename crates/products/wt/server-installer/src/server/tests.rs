@@ -166,8 +166,9 @@ fn config_drift_message_explains_recovery() {
       scripts/install-server --config ./server.toml
 
     `make clear` destroys every wt-* domain and removes generated runtime state
-    (config, golden image, worlds, grants, database, and generated SSH inventory).
-    It keeps installed services and credentials, source downloads, and caches.
+    (config, worlds, grants, database, and generated SSH inventory). It keeps
+    verified golden images, installed services and credentials, source downloads,
+    and caches.
     "
     );
 }
