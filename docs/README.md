@@ -16,7 +16,8 @@ registry code, but no operator service or image installer yet.
 - [Development and setup](../DEVELOPMENT.md)
 - [World contracts](./worlds/README.md): [devcontainer](./worlds/devcontainer.md),
   [host](./worlds/host.md), and [GitHub CI](./worlds/github-ci.md)
-- [Client and SSH](./guides/client.md) and [server operations](./guides/server.md)
+- [Client and SSH](./guides/client.md), [terminal workspace](./guides/shell.md),
+  and [server operations](./guides/server.md)
 
 ## Work on WT
 
