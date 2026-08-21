@@ -76,12 +76,15 @@ scripts/install-client
 ## Checks
 
 ```bash
-cargo test --workspace
+scripts/cargo test --workspace
 make static
 ```
 
-`cargo test --workspace` skips the ignored real-system KVM test. Run it only on
-a configured Ubuntu/KVM host:
+`scripts/cargo` defaults Cargo build jobs and Rust test threads to half the
+available CPUs. Set `CARGO_BUILD_JOBS` or `RUST_TEST_THREADS` to override it.
+
+`scripts/cargo test --workspace` skips the ignored real-system KVM test. Run it
+only on a configured Ubuntu/KVM host:
 
 ```bash
 make e2e-tests

@@ -552,6 +552,8 @@ mod tests {
             },
             name: name.into(),
             instance_name: InstanceName::parse(instance).unwrap(),
+            kind: wt_control_protocol::WorldKind::Host,
+            control_alias: format!("{name}-vs"),
         }
     }
 

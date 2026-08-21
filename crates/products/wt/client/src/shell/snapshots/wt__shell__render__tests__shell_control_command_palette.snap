@@ -20,7 +20,7 @@ Buffer {
         "    ││                                                         │",
         "    ││                                                         │",
         "    │└─────────────────────────────────────────────────────────┘",
-        "    │[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]  ",
+        "    │[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Black, underline: Reset, modifier: NONE,

@@ -39,11 +39,21 @@ the workstation clipboard through `wt shell`.
 between session and world management. `F5` opens the active world when one is
 available.
 
-The Control UI's Codex activity lists rollout-only sessions and every reported
-world, Byobu pane, activity state, and working directory across configured
-contexts. A failed context remains visible as an error row. The Worlds and
-Codex titles show when their latest snapshot was applied in UTC, or `Updating…`
-before the first snapshot arrives.
+The Codex activity refreshes cards in the background. `Up` and `Down` select
+cards, the mouse wheel scrolls them, and `Enter` or left click opens the
+selected live Codex pane. Opening uses a short control SSH connection; it does
+not replace any world's playback connection.
+
+Cards show activity, context, world, Byobu target, session, working directory,
+and report age. Inactive and rollout-only cards explain why they cannot open.
+Malformed context data and failed pane checks remain visible as exact errors;
+WT does not guess another world or pane. The Worlds and Codex titles show when
+their latest snapshot was applied in UTC, or `Updating…` before the first
+snapshot arrives.
+
+Opening requires worlds provisioned by a WT version containing this feature.
+After upgrading WT, recreate older worlds so their relay records pane markers
+and their focus helper is current.
 
 An unknown observation includes its raw Codex session-start source when one was
 reported, such as `unknown(compact)`.

@@ -1,4 +1,6 @@
-use super::control::{CodexContextSnapshot, ControlCommand, ControlState};
+use super::control::{
+    CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 use uuid::Uuid;
@@ -15,6 +17,8 @@ pub(super) struct ShellWorld {
     pub(super) identity: WorldIdentity,
     pub(super) name: String,
     pub(super) instance_name: InstanceName,
+    pub(super) kind: wt_control_protocol::WorldKind,
+    pub(super) control_alias: String,
 }
 
 #[cfg(test)]
@@ -33,6 +37,8 @@ impl From<&str> for ShellWorld {
                 name.split_once('.').map_or(name, |(_, instance)| instance),
             )
             .unwrap(),
+            kind: wt_control_protocol::WorldKind::Host,
+            control_alias: format!("{name}-vs"),
         }
     }
 }
@@ -50,10 +56,11 @@ impl Mode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum InputRoute {
     Consumed,
     World,
+    OpenCodex(Box<CodexOpenTarget>),
     Command(ControlCommand),
 }
 
@@ -154,11 +161,20 @@ impl ShellModel {
         self.control.set_worlds_updated_at(updated_at);
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>, updated_at: String) {
-        self.control.set_codex(codex, updated_at);
+    pub(super) fn set_codex(
+        &mut self,
+        codex: Vec<CodexCard>,
+        updated_at: String,
+        area: Rect,
+    ) -> bool {
+        self.control.set_codex(codex, updated_at, area)
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyEvent) -> InputRoute {
+    pub(super) fn resize(&mut self, area: Rect) {
+        self.control.resize(area);
+    }
+
+    pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
         if key.code == KeyCode::F(6) {
             self.should_quit = true;
             return InputRoute::Consumed;
@@ -204,8 +220,8 @@ impl ShellModel {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
-                    if let Some(command) = self.control.handle_key(key) {
-                        return InputRoute::Command(command);
+                    if let Some(action) = self.control.handle_key(key, area) {
+                        return route(action);
                     }
                 }
                 InputRoute::Consumed
@@ -213,32 +229,70 @@ impl ShellModel {
         }
     }
 
-    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> Option<ControlCommand> {
-        (self.mode == Mode::Control)
-            .then(|| self.control.handle_mouse(mouse, area))
-            .flatten()
+    pub(super) fn handle_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        area: Rect,
+    ) -> (bool, Option<InputRoute>) {
+        if self.mode != Mode::Control {
+            return (false, None);
+        }
+        let (changed, action) = self.control.handle_mouse(mouse, area);
+        (changed, action.map(route))
+    }
+
+    pub(super) fn focus_route(&self, target: &CodexOpenTarget) -> Option<(usize, &str)> {
+        self.worlds
+            .iter()
+            .enumerate()
+            .find(|(_, world)| {
+                world.identity.context == target.context && world.identity.id == target.world_id
+            })
+            .map(|(index, world)| (index, world.control_alias.as_str()))
+    }
+
+    pub(super) fn finish_codex_open(
+        &mut self,
+        identity: &CodexCardIdentity,
+        world: Option<usize>,
+        error: Option<String>,
+    ) {
+        let accepted = self.control.finish_open(identity, error.clone());
+        if accepted
+            && self.mode == Mode::Control
+            && self.control.activity() == super::control::Activity::Codex
+            && error.is_none()
+        {
+            let Some(world) = world else {
+                return;
+            };
+            self.active = world;
+            self.mode = Mode::World;
+        }
+    }
+}
+
+fn route(action: ControlAction) -> InputRoute {
+    match action {
+        ControlAction::Command(command) => InputRoute::Command(command),
+        ControlAction::OpenCodex(target) => InputRoute::OpenCodex(target),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+    use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
     fn model() -> ShellModel {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
-        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::F(5)), area());
         model
     }
 
     fn world(name: &str) -> ShellWorld {
-        ShellWorld {
-            identity: WorldIdentity {
-                context: "local".into(),
-                id: Uuid::new_v4(),
-            },
-            name: name.into(),
-            instance_name: InstanceName::parse(name).unwrap(),
-        }
+        ShellWorld::test(name, Uuid::new_v4().as_u128())
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -253,9 +307,15 @@ mod tests {
     fn world_mode_forwards_every_key_except_f5() {
         let mut model = model();
 
-        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::World);
+        assert_eq!(
+            model.handle_key(key(KeyCode::Left), area()),
+            InputRoute::World
+        );
         assert_eq!(model.active(), 0);
-        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
@@ -264,25 +324,31 @@ mod tests {
         let mut model = model();
 
         assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5))),
+            model.handle_key(shifted(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
         assert!(model.f5_disabled());
         assert_eq!(model.mode(), Mode::World);
-        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::World);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::World
+        );
 
         assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5))),
+            model.handle_key(shifted(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
         assert!(!model.f5_disabled());
-        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
     #[test]
     fn shell_starts_in_control_mode() {
-        let model = ShellModel::new(vec!["one".into()]);
+        let model = ShellModel::new(vec![world("one")]);
 
         assert_eq!(model.mode(), Mode::Control);
     }
@@ -291,9 +357,12 @@ mod tests {
     fn empty_shell_stays_in_control_mode_on_f5() {
         let mut model = ShellModel::new(Vec::new());
 
-        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
         assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5))),
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert_eq!(
+            model.handle_key(shifted(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
         assert!(!model.f5_disabled());
@@ -303,12 +372,21 @@ mod tests {
     #[test]
     fn switcher_cycles_worlds_without_leaving_the_bar() {
         let mut model = model();
-        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::F(5)), area());
 
-        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::Left), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.active(), 2);
-        assert_eq!(model.handle_key(key(KeyCode::Right)), InputRoute::Consumed);
-        assert_eq!(model.handle_key(key(KeyCode::Right)), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::Right), area()),
+            InputRoute::Consumed
+        );
+        assert_eq!(
+            model.handle_key(key(KeyCode::Right), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.active(), 1);
         assert_eq!(model.mode(), Mode::Switcher);
     }
@@ -316,24 +394,36 @@ mod tests {
     #[test]
     fn switcher_forwards_unadvertised_keys_to_the_world() {
         let mut model = model();
-        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::F(5)), area());
 
-        assert_eq!(model.handle_key(key(KeyCode::Char('x'))), InputRoute::World);
+        assert_eq!(
+            model.handle_key(key(KeyCode::Char('x')), area()),
+            InputRoute::World
+        );
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
     #[test]
     fn up_opens_control_and_f5_closes_it() {
         let mut model = model();
-        model.handle_key(key(KeyCode::F(5)));
-        assert_eq!(model.handle_key(key(KeyCode::Up)), InputRoute::Consumed);
+        model.handle_key(key(KeyCode::F(5)), area());
+        assert_eq!(
+            model.handle_key(key(KeyCode::Up), area()),
+            InputRoute::Consumed
+        );
 
         assert_eq!(model.mode(), Mode::Control);
-        assert_eq!(model.handle_key(key(KeyCode::Left)), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::Left), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.active(), 0);
-        model.handle_key(key(KeyCode::F(1)));
+        model.handle_key(key(KeyCode::F(1)), area());
         assert!(model.control().palette().is_open());
-        assert_eq!(model.handle_key(key(KeyCode::F(5))), InputRoute::Consumed);
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
         assert_eq!(model.mode(), Mode::World);
         assert!(!model.control().palette().is_open());
     }
@@ -341,8 +431,8 @@ mod tests {
     #[test]
     fn f5_closes_the_switcher() {
         let mut model = model();
-        model.handle_key(key(KeyCode::F(5)));
-        model.handle_key(key(KeyCode::F(5)));
+        model.handle_key(key(KeyCode::F(5)), area());
+        model.handle_key(key(KeyCode::F(5)), area());
 
         assert_eq!(model.mode(), Mode::World);
     }
@@ -360,8 +450,74 @@ mod tests {
             let mut model = model();
             model.mode = mode;
 
-            assert_eq!(model.handle_key(key(KeyCode::F(6))), InputRoute::Consumed);
+            assert_eq!(
+                model.handle_key(key(KeyCode::F(6)), area()),
+                InputRoute::Consumed
+            );
             assert!(model.should_quit());
+        }
+    }
+
+    #[test]
+    fn completed_focus_switches_only_from_the_active_codex_view() {
+        let mut model = model_with_open_card();
+        open_codex_activity(&mut model);
+        let InputRoute::OpenCodex(target) = model.handle_key(key(KeyCode::Enter), area()) else {
+            panic!("live card did not produce an open target");
+        };
+        model.finish_codex_open(&target.identity, Some(1), None);
+        assert_eq!(model.active(), 1);
+        assert_eq!(model.mode(), Mode::World);
+
+        let mut canceled = model_with_open_card();
+        open_codex_activity(&mut canceled);
+        let InputRoute::OpenCodex(target) = canceled.handle_key(key(KeyCode::Enter), area()) else {
+            panic!("live card did not produce an open target");
+        };
+        canceled.handle_key(key(KeyCode::F(5)), area());
+        canceled.finish_codex_open(&target.identity, Some(1), None);
+        assert_eq!(canceled.active(), 0);
+        assert_eq!(canceled.mode(), Mode::World);
+    }
+
+    fn model_with_open_card() -> ShellModel {
+        let mut model = model();
+        let session_id = Uuid::from_u128(10);
+        let world_id = Uuid::from_u128(2);
+        let target = ByobuTarget {
+            tmux_session: "wt-host".into(),
+            pane_id: "%1".into(),
+        };
+        model.set_codex(
+            vec![CodexCard {
+                identity: CodexCardIdentity::Observation {
+                    context: "local".into(),
+                    session_id,
+                    world_id,
+                    tmux_session: target.tmux_session.clone(),
+                    pane_id: target.pane_id.clone(),
+                },
+                context: "local".into(),
+                session_id: Some(session_id),
+                timestamp: Some(1),
+                kind: super::super::control::CodexCardKind::Observation {
+                    world_id,
+                    world_name: "two".into(),
+                    cwd: "/workspace".into(),
+                    state: CodexSessionState::Working,
+                    session_start_source: None,
+                    target,
+                },
+            }],
+            "2026-08-21T20:00:00Z".into(),
+            area(),
+        );
+        model
+    }
+
+    fn open_codex_activity(model: &mut ShellModel) {
+        for code in [KeyCode::F(5), KeyCode::Up] {
+            model.handle_key(key(code), area());
         }
     }
 
@@ -392,25 +548,15 @@ mod tests {
     #[test]
     fn world_identity_includes_the_context() {
         let id = Uuid::new_v4();
-        let local = ShellWorld {
-            identity: WorldIdentity {
-                context: "local".into(),
-                id,
-            },
-            name: "local.same".into(),
-            instance_name: InstanceName::parse("same").unwrap(),
-        };
-        let lab = ShellWorld {
-            identity: WorldIdentity {
-                context: "lab".into(),
-                id,
-            },
-            name: "lab.same".into(),
-            instance_name: InstanceName::parse("same").unwrap(),
-        };
+        let local = ShellWorld::test("local.same", id.as_u128());
+        let lab = ShellWorld::test("lab.same", id.as_u128());
         let model = ShellModel::new(vec![local.clone(), lab.clone()]);
 
         assert_eq!(model.world_index(&local.identity), Some(0));
         assert_eq!(model.world_index(&lab.identity), Some(1));
+    }
+
+    fn area() -> Rect {
+        Rect::new(0, 0, 80, 24)
     }
 }

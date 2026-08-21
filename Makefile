@@ -26,7 +26,7 @@ check-file-lines:
 	test -z "$$failed"; }
 
 check-snapshot-lines:
-	cargo run --quiet -p wt-repository-checks -- snapshot-lines
+	scripts/cargo run --quiet -p wt-repository-checks -- snapshot-lines
 
 clear:
 	scripts/clear
@@ -42,11 +42,11 @@ e2e-tests:
 		printf '\nKVM E2E host prerequisites are missing. Install them with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}
-	@cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
+	@scripts/cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
 		printf '\nImage verification failed. Rebuild the E2E images with:\n  make prepare-image CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}
-	cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
+	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
 
 install-client:
 	scripts/install-client
@@ -64,7 +64,7 @@ prepare-image:
 	scripts/prepare-image --config "$(CONFIG)"
 
 shell:
-	cargo run -p wt-client -- shell
+	scripts/cargo run -p wt-client -- shell
 
 check-typescript:
 	npm run check:typescript
@@ -74,6 +74,6 @@ static: check-crate-readmes check-file-lines check-snapshot-lines check-typescri
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \
 	done
-	cargo fmt --all --check
-	cargo check --workspace --all-targets --locked
-	cargo clippy --workspace --all-targets --locked -- -D warnings
+	scripts/cargo fmt --all --check
+	scripts/cargo check --workspace --all-targets --locked
+	scripts/cargo clippy --workspace --all-targets --locked -- -D warnings

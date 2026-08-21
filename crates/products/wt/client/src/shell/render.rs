@@ -1,6 +1,6 @@
 use super::control::{
-    command_palette_layout, control_areas, Activity, CodexContextSnapshot, CommandPalette,
-    ACTIVITY_BUTTON_HEIGHT,
+    codex_card_rects, command_palette_layout, control_areas, control_content_areas, Activity,
+    CodexCard, CodexCardKind, CommandPalette, ControlState, ACTIVITY_BUTTON_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
@@ -10,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 pub(super) fn draw(
@@ -225,7 +225,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     frame.render_widget(Block::new().style(Style::new().bg(Color::Black)), area);
     let (activity_bar, content) = control_areas(area);
     draw_activity_bar(frame, activity_bar, model.control().activity());
-    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(content);
+    let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => frame.render_widget(
             Paragraph::new(if model.has_worlds() {
@@ -239,23 +239,23 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
                     .borders(Borders::ALL)
                     .title(refresh_title("Worlds", model.control().worlds_updated_at())),
             ),
-            rows[0],
+            body,
         ),
-        Activity::Codex => draw_codex(
-            frame,
-            rows[0],
-            model.control().codex(),
-            model.control().codex_updated_at(),
-        ),
+        Activity::Codex => draw_codex(frame, body, model.control()),
     }
+    let hint = match (model.control().activity(), model.has_worlds()) {
+        (Activity::Worlds, true) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]",
+        (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
+        (Activity::Codex, true) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+        }
+        (Activity::Codex, false) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+        }
+    };
     frame.render_widget(
-        Paragraph::new(if model.has_worlds() {
-            "[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]"
-        } else {
-            "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]"
-        })
-        .style(Style::new().fg(Color::DarkGray)),
-        rows[1],
+        Paragraph::new(hint).style(Style::new().fg(Color::DarkGray)),
+        footer,
     );
     draw_command_palette(frame, content, model.control().palette());
 }
@@ -267,107 +267,177 @@ fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
     )
 }
 
-fn draw_codex(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    contexts: &[CodexContextSnapshot],
-    updated_at: Option<&str>,
-) {
+fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     let block = Block::new()
         .borders(Borders::ALL)
-        .title(refresh_title("Codex sessions", updated_at));
-    let rows = contexts.iter().flat_map(codex_rows).collect::<Vec<_>>();
-    if rows.is_empty() {
-        let message = if updated_at.is_some() {
+        .title(refresh_title("Codex sessions", state.codex_updated_at()));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if state.codex().is_empty() {
+        let message = if state.codex_updated_at().is_some() {
             "No Codex sessions\nStart Codex in a world to see its session here"
         } else {
             "Loading Codex sessions…"
         };
+        frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), inner);
+        return;
+    }
+    for (index, rect) in codex_card_rects(frame.area(), state.codex_offset(), state.codex().len()) {
+        let card = &state.codex()[index];
+        draw_codex_card(
+            frame,
+            rect,
+            card,
+            state,
+            state.selected() == Some(&card.identity),
+        );
+    }
+}
+
+fn draw_codex_card(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    card: &CodexCard,
+    state: &ControlState,
+    selected: bool,
+) {
+    let (title, title_color) = card_title(card);
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_style(Style::new().fg(if selected {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        }))
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::new().fg(title_color).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if let Some(error) = state.open_error(&card.identity) {
         frame.render_widget(
-            Paragraph::new(message)
-                .alignment(Alignment::Center)
-                .block(block),
-            area,
+            Paragraph::new(Line::styled(error, Style::new().fg(Color::Red)))
+                .wrap(Wrap { trim: false }),
+            inner,
         );
         return;
     }
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(17),
-            Constraint::Length(20),
-            Constraint::Length(11),
-            Constraint::Length(10),
-            Constraint::Min(8),
-        ],
-    )
-    .column_spacing(1)
-    .header(
-        Row::new(["STATE", "WORLD", "PANE", "SESSION", "CWD"])
-            .style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-    )
-    .block(block);
-    frame.render_widget(table, area);
+
+    let lines = card_lines(card);
+    let footer = if state.opening() == Some(&card.identity) {
+        Span::styled("OPENING…", Style::new().fg(Color::Yellow))
+    } else if let Some(reason) = card.disabled_reason() {
+        Span::styled(
+            format!("Unavailable: {reason}"),
+            Style::new().fg(Color::DarkGray),
+        )
+    } else {
+        Span::styled("Enter or click to open", Style::new().fg(Color::DarkGray))
+    };
+    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
+    frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
 }
 
-fn codex_rows(context: &CodexContextSnapshot) -> Vec<Row<'static>> {
-    match context {
-        CodexContextSnapshot::Failure { context, message } => vec![Row::new([
-            "error".to_owned(),
-            context.clone(),
-            "-".to_owned(),
-            "-".to_owned(),
-            message.lines().next().unwrap_or_default().to_owned(),
-        ])
-        .style(Style::new().fg(Color::Red))],
-        CodexContextSnapshot::Sessions { context, sessions } => sessions
-            .iter()
-            .flat_map(|session| {
-                let session_id = session.session_id.to_string()[..8].to_owned();
-                if session.observations.is_empty() {
-                    return vec![Row::new([
-                        "catalog".to_owned(),
-                        context.clone(),
-                        "-".to_owned(),
-                        session_id,
-                        "-".to_owned(),
-                    ])];
+fn card_title(card: &CodexCard) -> (String, Color) {
+    let suffix = card
+        .timestamp
+        .map(relative_age)
+        .map_or_else(String::new, |age| format!(" · {age}"));
+    match &card.kind {
+        CodexCardKind::Observation {
+            state,
+            session_start_source,
+            ..
+        } => {
+            let (icon, label, color) = match state {
+                wt_control_protocol::CodexSessionState::NeedsAttention => {
+                    ("󰚩", "NEEDS ATTENTION".into(), Color::Yellow)
                 }
-                session
-                    .observations
-                    .iter()
-                    .map(|observation| {
-                        Row::new([
-                            codex_state(
-                                observation.state,
-                                observation.session_start_source.as_deref(),
-                            ),
-                            format!("{context}.{}", observation.world_name),
-                            format!(
-                                "{}:{}",
-                                observation.target.tmux_session, observation.target.pane_id
-                            ),
-                            session_id.clone(),
-                            observation.cwd.clone(),
-                        ])
-                    })
-                    .collect()
-            })
-            .collect(),
+                wt_control_protocol::CodexSessionState::Working => {
+                    ("󰔟", "WORKING".into(), Color::Green)
+                }
+                wt_control_protocol::CodexSessionState::Unknown => (
+                    "󰋗",
+                    session_start_source
+                        .as_ref()
+                        .map_or_else(|| "UNKNOWN".into(), |source| format!("UNKNOWN ({source})")),
+                    Color::Gray,
+                ),
+                wt_control_protocol::CodexSessionState::Inactive => {
+                    ("󰅖", "INACTIVE".into(), Color::DarkGray)
+                }
+            };
+            (format!("{icon} {label}{suffix}"), color)
+        }
+        CodexCardKind::RolloutOnly => (format!("󰈙 ROLLOUT ONLY{suffix}"), Color::DarkGray),
+        CodexCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
 
-fn codex_state(
-    state: wt_control_protocol::CodexSessionState,
-    session_start_source: Option<&str>,
-) -> String {
-    match state {
-        wt_control_protocol::CodexSessionState::Unknown => session_start_source
-            .map(|source| format!("unknown({source})"))
-            .unwrap_or_else(|| "unknown".into()),
-        wt_control_protocol::CodexSessionState::Working => "working".into(),
-        wt_control_protocol::CodexSessionState::NeedsAttention => "attention".into(),
-        wt_control_protocol::CodexSessionState::Inactive => "inactive".into(),
+fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
+    let short_session = card
+        .session_id
+        .map(|session| session.to_string()[..8].to_owned());
+    match &card.kind {
+        CodexCardKind::Observation {
+            world_name,
+            cwd,
+            target,
+            ..
+        } => vec![
+            Line::from(format!(
+                "{}.{} · {}:{} · session {}",
+                card.context,
+                world_name,
+                target.tmux_session,
+                target.pane_id,
+                short_session.expect("observation card has session ID")
+            )),
+            Line::from(cwd.clone()),
+        ],
+        CodexCardKind::RolloutOnly => vec![
+            Line::from(format!(
+                "{} · session {}",
+                card.context,
+                short_session.expect("rollout card has session ID")
+            )),
+            Line::from("Durable rollout; no live WT pane was reported"),
+        ],
+        CodexCardKind::ContextError { message } => vec![
+            Line::from(format!("Context {}", card.context)),
+            Line::styled(message.clone(), Style::new().fg(Color::Red)),
+        ],
+    }
+}
+
+fn relative_age(timestamp: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(timestamp);
+    let (future, milliseconds) = if timestamp > now {
+        (true, timestamp - now)
+    } else {
+        (false, now - timestamp)
+    };
+    let seconds = milliseconds / 1000;
+    let value = if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 60 * 60 {
+        format!("{}m", seconds / 60)
+    } else if seconds < 24 * 60 * 60 {
+        format!("{}h", seconds / (60 * 60))
+    } else {
+        format!("{}d", seconds / (24 * 60 * 60))
+    };
+    if future {
+        format!("in {value}")
+    } else {
+        format!("{value} ago")
     }
 }
 
@@ -446,255 +516,5 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::shell::control::CodexContextSnapshot;
-    use crossterm::event::KeyCode;
-    use ratatui::layout::Position;
-    use ratatui::{backend::TestBackend, Terminal};
-    use uuid::Uuid;
-    use wt_control_protocol::{
-        ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, InstanceName,
-    };
-
-    fn parser() -> vt100::Parser {
-        let mut parser = vt100::Parser::new(6, 80, 0);
-        parser.process(b"world output\r\n\x1b[31mred\x1b[0m");
-        parser
-    }
-
-    #[test]
-    fn switcher_activates_the_world_bar() {
-        let backend = TestBackend::new(80, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(5),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(5),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
-        let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
-        assert_eq!(brand.fg, Some(Color::Black));
-        assert_eq!(brand.bg, Some(Color::Cyan));
-        assert!(brand.add_modifier.contains(Modifier::BOLD));
-        let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-        assert_eq!(style.fg, Some(Color::Black));
-        assert_eq!(style.bg, Some(Color::White));
-        assert!(style.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn world_bar_is_dim_until_activated() {
-        let backend = TestBackend::new(80, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(5),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
-        insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
-        let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
-        assert_eq!(brand.fg, Some(Color::Black));
-        assert_eq!(brand.bg, Some(Color::Cyan));
-        assert!(brand.add_modifier.contains(Modifier::BOLD));
-        let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-        assert_eq!(style.fg, Some(Color::DarkGray));
-        assert_eq!(style.bg, Some(Color::Black));
-        assert!(!style.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn disabled_f5_override_has_a_red_top_bar() {
-        let backend = TestBackend::new(80, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["local.one".into()]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(5),
-            crossterm::event::KeyModifiers::SHIFT,
-        ));
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
-    }
-
-    #[test]
-    fn closed_session_has_a_red_reconnect_bar() {
-        let backend = TestBackend::new(80, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["local.one".into()]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(5),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let parser = parser();
-
-        terminal
-            .draw(|frame| {
-                draw(
-                    frame,
-                    Some(parser.screen()),
-                    Some("SSH session ended: Exited with code 255"),
-                    &model,
-                    None,
-                    None,
-                    None,
-                )
-            })
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_closed_session", terminal.backend().buffer());
-        let status = terminal.backend().buffer().cell((0, 5)).unwrap().style();
-        assert_eq!(status.fg, Some(Color::White));
-        assert_eq!(status.bg, Some(Color::Red));
-        assert!(status.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn control_ui_has_activity_scaffolding() {
-        let backend = TestBackend::new(64, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let model = ShellModel::new(vec!["local.one".into()]);
-        assert_eq!(model.mode(), Mode::Control);
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
-    }
-
-    #[test]
-    fn control_ui_opens_the_command_palette() {
-        let backend = TestBackend::new(64, 16);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["local.one".into()]);
-        model.handle_key(crossterm::event::KeyEvent::new(
-            KeyCode::F(1),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
-    }
-
-    #[test]
-    fn control_ui_shows_read_only_codex_sessions() {
-        let backend = TestBackend::new(100, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = ShellModel::new(vec!["ars.dev".into()]);
-        model.set_codex(
-            vec![
-                CodexContextSnapshot::Sessions {
-                    context: "ars".into(),
-                    sessions: vec![
-                        CodexSession {
-                            session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
-                                .unwrap(),
-                            rollout_updated_at_unix_ms: Some(10),
-                            observations: vec![CodexSessionObservation {
-                                world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
-                                    .unwrap(),
-                                world_name: InstanceName::parse("dev").unwrap(),
-                                cwd: "/workspace/wt".into(),
-                                state: CodexSessionState::NeedsAttention,
-                                session_start_source: None,
-                                target: ByobuTarget {
-                                    tmux_session: "wt-app".into(),
-                                    pane_id: "%1".into(),
-                                },
-                                received_at_unix_ms: 20,
-                            }],
-                        },
-                        CodexSession {
-                            session_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174002")
-                                .unwrap(),
-                            rollout_updated_at_unix_ms: Some(15),
-                            observations: vec![CodexSessionObservation {
-                                world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174003")
-                                    .unwrap(),
-                                world_name: InstanceName::parse("compact").unwrap(),
-                                cwd: "/workspace/wt".into(),
-                                state: CodexSessionState::Unknown,
-                                session_start_source: Some("compact".into()),
-                                target: ByobuTarget {
-                                    tmux_session: "wt-app".into(),
-                                    pane_id: "%2".into(),
-                                },
-                                received_at_unix_ms: 15,
-                            }],
-                        },
-                        CodexSession {
-                            session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
-                                .unwrap(),
-                            rollout_updated_at_unix_ms: Some(30),
-                            observations: vec![],
-                        },
-                    ],
-                },
-                CodexContextSnapshot::Failure {
-                    context: "lab".into(),
-                    message: "context lab could not be queried: SSH failed".into(),
-                },
-            ],
-            "2026-08-21T20:00:00Z".into(),
-        );
-        let parser = parser();
-
-        terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
-    }
-
-    #[test]
-    fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
-        assert_eq!(
-            refresh_title("Codex sessions", None),
-            "Codex sessions · Updating…"
-        );
-        assert_eq!(
-            refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z")),
-            "Codex sessions · Last updated 2026-08-21T20:00:00Z"
-        );
-    }
-
-    #[test]
-    fn empty_shell_renders_the_control_ui() {
-        let backend = TestBackend::new(64, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let model = ShellModel::new(Vec::new());
-
-        terminal
-            .draw(|frame| draw(frame, None, None, &model, None, None, None))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
-    }
-}
+#[path = "render_tests.rs"]
+mod tests;

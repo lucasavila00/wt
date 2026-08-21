@@ -6,8 +6,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::Command;
 use wt_agent_tool_gateway::{
-    copy_bidirectional, read_json_line, resolve_vsock_port, write_json_line, ClientOperation,
-    ClientRequest, TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
+    copy_bidirectional, read_json_line, resolve_vsock_port, valid_codex_pane_id,
+    valid_codex_tmux_session, write_json_line, ClientOperation, ClientRequest,
+    CodexSessionEventKind, TransportRequest, TransportResponse, VsockStream,
+    CODEX_SESSION_PANE_OPTION, RELAY_SOCKET,
 };
 
 #[derive(Debug, Parser)]
@@ -78,6 +80,10 @@ fn handle(
 ) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
     validate_codex_target(&request.operation)?;
+    let codex_event = match &request.operation {
+        ClientOperation::CodexSession { event } => Some(event.clone()),
+        _ => None,
+    };
     let streams_git = matches!(
         &request.operation,
         wt_agent_tool_gateway::ClientOperation::Git { .. }
@@ -92,6 +98,11 @@ fn handle(
             .with_context(|| format!("connect to gateway {}", path.display()))?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
+        if response.ok {
+            if let Some(event) = &codex_event {
+                update_codex_marker(event)?;
+            }
+        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -100,6 +111,11 @@ fn handle(
         let mut gateway = VsockStream::connect(2, vsock_port).context("connect to host gateway")?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
+        if response.ok {
+            if let Some(event) = &codex_event {
+                update_codex_marker(event)?;
+            }
+        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -112,9 +128,7 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
     let ClientOperation::CodexSession { event } = operation else {
         return Ok(());
     };
-    if !matches!(event.tmux_session.as_str(), "wt-app" | "wt-host")
-        || !valid_pane_id(&event.pane_id)
-    {
+    if !valid_codex_tmux_session(&event.tmux_session) || !valid_codex_pane_id(&event.pane_id) {
         bail!("invalid Codex Byobu target");
     }
     let output = Command::new("/usr/bin/tmux")
@@ -127,17 +141,91 @@ fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
         ])
         .output()
         .context("validate Codex Byobu target")?;
-    if !output.status.success()
-        || String::from_utf8_lossy(&output.stdout).trim()
-            != format!("{}:{}", event.tmux_session, event.pane_id)
-    {
-        bail!("Codex Byobu target is not in the active world session");
+    let expected = format!("{}:{}\n", event.tmux_session, event.pane_id);
+    if !output.status.success() || output.stdout != expected.as_bytes() {
+        bail!(
+            "Codex Byobu target validation failed: status {}; expected stdout {}; actual stdout {}; stderr {}",
+            output.status,
+            escaped(expected.as_bytes()),
+            escaped(&output.stdout),
+            escaped(&output.stderr)
+        );
     }
     Ok(())
 }
 
-fn valid_pane_id(value: &str) -> bool {
-    value.strip_prefix('%').is_some_and(|number| {
-        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
-    })
+fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Result<()> {
+    if event.kind == CodexSessionEventKind::SessionEnd {
+        let (condition, clear) = clear_marker_command(event);
+        let status = Command::new("/usr/bin/tmux")
+            .args(["if-shell", "-F", "-t", &event.pane_id, &condition, &clear])
+            .status()
+            .context("clear matching Codex session pane marker")?;
+        if !status.success() {
+            bail!("could not clear matching Codex session pane marker");
+        }
+        return Ok(());
+    }
+
+    let status = Command::new("/usr/bin/tmux")
+        .args([
+            "set-option",
+            "-p",
+            "-t",
+            &event.pane_id,
+            CODEX_SESSION_PANE_OPTION,
+            &event.session_id.to_string(),
+        ])
+        .status()
+        .context("write Codex session pane marker")?;
+    if !status.success() {
+        bail!("could not write Codex session pane marker");
+    }
+    Ok(())
+}
+
+fn clear_marker_command(event: &wt_agent_tool_gateway::CodexSessionEvent) -> (String, String) {
+    (
+        format!(
+            "#{{==:#{{{CODEX_SESSION_PANE_OPTION}}},{}}}",
+            event.session_id
+        ),
+        format!(
+            "set-option -p -u -t {} {CODEX_SESSION_PANE_OPTION}",
+            event.pane_id
+        ),
+    )
+}
+
+fn escaped(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .chars()
+        .flat_map(char::escape_default)
+        .take(256)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clears_the_marker_with_one_conditional_tmux_command() {
+        let event = wt_agent_tool_gateway::CodexSessionEvent {
+            session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            cwd: "/workspace".into(),
+            tmux_session: "wt-app".into(),
+            pane_id: "%1".into(),
+            kind: CodexSessionEventKind::SessionEnd,
+            session_start_source: None,
+        };
+
+        assert_eq!(
+            clear_marker_command(&event),
+            (
+                "#{==:#{@wt_codex_session_id},123e4567-e89b-12d3-a456-426614174000}".into(),
+                "set-option -p -u -t %1 @wt_codex_session_id".into(),
+            )
+        );
+    }
 }

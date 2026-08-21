@@ -6,27 +6,27 @@ use crossterm::event::{
 use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod codex;
 mod control;
 mod delete;
 mod input;
 mod model;
+mod refresh;
 mod render;
 mod session;
 
 use control::ControlCommand;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
+use refresh::{take_current_snapshot, CodexRefresh, WorldRefresh};
 use session::SessionSet;
-use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -51,8 +51,15 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     model.set_worlds_updated_at(updated_at());
+    let focus = codex::FocusWorker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
+    let runtime = ShellRuntime {
+        config,
+        refresh: &refresh,
+        codex_refresh: &codex_refresh,
+        focus: &focus,
+    };
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -68,9 +75,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        config,
-        &refresh,
-        &codex_refresh,
+        &runtime,
         &shutdown,
     );
     let input_result = execute!(
@@ -87,40 +92,15 @@ fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
     instances
         .iter()
         .filter(|world| ssh::has_alias(world))
-        .map(|world| ShellWorld {
-            identity: model::WorldIdentity {
-                context: world.context.clone(),
-                id: world.instance.id,
-            },
-            name: world.qualified_name(),
-            instance_name: world.instance.name.clone(),
-        })
+        .map(codex::ShellWorld::from_inventory)
         .collect()
-}
-
-struct WorldRefresh {
-    updates: Receiver<WorldSnapshot>,
-    generation: Arc<AtomicU64>,
-    cancelled: Arc<AtomicBool>,
-    stop: Sender<()>,
-    worker: Option<JoinHandle<()>>,
-}
-
-struct WorldSnapshot {
-    generation: u64,
-    instances: Vec<inventory::ContextInstance>,
-}
-
-struct CodexRefresh {
-    updates: Receiver<Vec<control::CodexContextSnapshot>>,
-    cancelled: Arc<AtomicBool>,
-    stop: Sender<()>,
-    worker: Option<JoinHandle<()>>,
 }
 
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
+    codex_refresh: &'a CodexRefresh,
+    focus: &'a codex::FocusWorker,
 }
 
 #[derive(Default)]
@@ -130,148 +110,6 @@ struct ControlFlows {
     deletion: Option<delete::Flow>,
 }
 
-impl WorldRefresh {
-    fn start(config: ClientConfig) -> Self {
-        let (updates_tx, updates) = mpsc::sync_channel(1);
-        let (stop, stop_rx) = mpsc::channel();
-        let generation = Arc::new(AtomicU64::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let worker_generation = Arc::clone(&generation);
-        let worker_cancelled = Arc::clone(&cancelled);
-        let worker = thread::Builder::new()
-            .name("wt-shell-world-refresh".into())
-            .spawn(move || loop {
-                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
-                    break;
-                }
-                let generation = worker_generation.load(Ordering::Relaxed);
-                let report = inventory::list_all_with_timeout(
-                    &config,
-                    CONTEXT_REQUEST_TIMEOUT,
-                    &worker_cancelled,
-                );
-                if worker_cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                if report.failures.is_empty() {
-                    match updates_tx.try_send(WorldSnapshot {
-                        generation,
-                        instances: report.instances,
-                    }) {
-                        Ok(()) | Err(TrySendError::Full(_)) => {}
-                        Err(TrySendError::Disconnected(_)) => break,
-                    }
-                }
-            })
-            .expect("start wt shell world refresh worker");
-        Self {
-            updates,
-            generation,
-            cancelled,
-            stop,
-            worker: Some(worker),
-        }
-    }
-
-    fn invalidate(&self) {
-        self.generation.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl Drop for WorldRefresh {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
-impl CodexRefresh {
-    fn start(config: ClientConfig) -> Self {
-        let (updates_tx, updates) = mpsc::sync_channel(1);
-        let (stop, stop_rx) = mpsc::channel();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let worker_cancelled = Arc::clone(&cancelled);
-        let worker = thread::Builder::new()
-            .name("wt-shell-codex-refresh".into())
-            .spawn(move || loop {
-                let snapshot = load_codex(&config, &worker_cancelled);
-                if worker_cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                match updates_tx.try_send(snapshot) {
-                    Ok(()) | Err(TrySendError::Full(_)) => {}
-                    Err(TrySendError::Disconnected(_)) => break,
-                }
-                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
-                    break;
-                }
-            })
-            .expect("start wt shell Codex refresh worker");
-        Self {
-            updates,
-            cancelled,
-            stop,
-            worker: Some(worker),
-        }
-    }
-}
-
-impl Drop for CodexRefresh {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
-fn take_current_snapshot(
-    updates: &Receiver<WorldSnapshot>,
-    generation: u64,
-) -> Option<WorldSnapshot> {
-    updates
-        .try_iter()
-        .last()
-        .filter(|snapshot| snapshot.generation == generation)
-}
-
-fn load_codex(config: &ClientConfig, cancelled: &AtomicBool) -> Vec<control::CodexContextSnapshot> {
-    let request = ApiRequest::new(Operation::ListCodexSessions);
-    config
-        .contexts
-        .iter()
-        .take_while(|_| !cancelled.load(Ordering::Relaxed))
-        .map(|context| {
-            match wt_client::transport::call_with_timeout_until(
-                context,
-                &request,
-                CONTEXT_REQUEST_TIMEOUT,
-                cancelled,
-            ) {
-                Ok(Response::CodexSessions { sessions }) => {
-                    control::CodexContextSnapshot::Sessions {
-                        context: context.name.clone(),
-                        sessions,
-                    }
-                }
-                Ok(_) => control::CodexContextSnapshot::Failure {
-                    context: context.name.clone(),
-                    message: wt_client::transport::wrong_response(context, "list Codex sessions")
-                        .to_string(),
-                },
-                Err(error) => control::CodexContextSnapshot::Failure {
-                    context: context.name.clone(),
-                    message: error.to_string(),
-                },
-            }
-        })
-        .collect()
-}
-
 fn updated_at() -> String {
     OffsetDateTime::now_utc()
         .replace_nanosecond(0)
@@ -279,7 +117,6 @@ fn updated_at() -> String {
         .format(&Rfc3339)
         .expect("UTC timestamps support RFC 3339")
 }
-
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
     let shutdown = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown))
@@ -293,20 +130,26 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    config: &ClientConfig,
-    refresh: &WorldRefresh,
-    codex_refresh: &CodexRefresh,
+    runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut flows = ControlFlows::default();
-    let runtime = ShellRuntime { config, refresh };
     while !shutdown.load(Ordering::Relaxed) {
+        let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
+        redraw |= output_changed;
+        for sequence in clipboard_writes {
+            terminal
+                .backend_mut()
+                .write_all(&sequence)
+                .context("relay world clipboard write")?;
+        }
         if flows.creation.is_none() && flows.deletion.is_none() {
-            if let Some(snapshot) =
-                take_current_snapshot(&refresh.updates, refresh.generation.load(Ordering::Relaxed))
-            {
-                if ssh::sync(config, &snapshot.instances).is_ok() {
+            if let Some(snapshot) = take_current_snapshot(
+                &runtime.refresh.updates,
+                runtime.refresh.generation.load(Ordering::Relaxed),
+            ) {
+                if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);
                     let area: Rect = terminal
                         .size()
@@ -319,17 +162,50 @@ fn run_loop(
                 }
             }
         }
-        if let Some(codex) = codex_refresh.updates.try_iter().last() {
-            model.set_codex(codex, updated_at());
-            redraw = true;
+        if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
+            let live_worlds = model
+                .worlds()
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| sessions.is_open(*index))
+                .map(|(_, world)| world.clone())
+                .collect::<Vec<_>>();
+            let area = terminal
+                .size()
+                .context("read wt shell terminal area")?
+                .into();
+            redraw |= model.set_codex(codex::cards(snapshot, &live_worlds), updated_at(), area);
         }
-        let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
-        redraw |= output_changed;
-        for sequence in clipboard_writes {
-            terminal
-                .backend_mut()
-                .write_all(&sequence)
-                .context("relay world clipboard write")?;
+        while let Some(result) = runtime.focus.try_recv() {
+            redraw = true;
+            match result.result {
+                Ok(()) => match model.focus_route(&result.target) {
+                    Some((index, _)) if sessions.is_open(index) => {
+                        model.finish_codex_open(&result.target.identity, Some(index), None)
+                    }
+                    Some(_) => model.finish_codex_open(
+                        &result.target.identity,
+                        None,
+                        Some(codex_open_error(
+                            &result.target,
+                            "playback SSH/PTTY closed before focus completed",
+                        )),
+                    ),
+                    None => model.finish_codex_open(
+                        &result.target.identity,
+                        None,
+                        Some(codex_open_error(
+                            &result.target,
+                            "no playback world matches context and world_id",
+                        )),
+                    ),
+                },
+                Err(error) => model.finish_codex_open(
+                    &result.target.identity,
+                    None,
+                    Some(codex_open_error(&result.target, &error)),
+                ),
+            }
         }
         if let Some(action) = flows.creation.as_mut().map(crate::create::Flow::poll) {
             redraw |= apply_creation_action(
@@ -338,7 +214,7 @@ fn run_loop(
                 &mut flows.creation_error,
                 sessions,
                 model,
-                refresh,
+                runtime.refresh,
                 terminal
                     .size()
                     .context("read wt shell terminal area")?
@@ -351,7 +227,7 @@ fn run_loop(
                 &mut flows.deletion,
                 sessions,
                 model,
-                refresh,
+                runtime.refresh,
                 terminal
                     .size()
                     .context("read wt shell terminal area")?
@@ -390,7 +266,7 @@ fn run_loop(
                 sessions,
                 model,
                 area,
-                &runtime,
+                runtime,
                 &mut flows,
             )?;
             if model.should_quit() {
@@ -422,7 +298,7 @@ fn dispatch_event(
                 return Ok(true);
             }
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
-                if model.handle_key(key) == InputRoute::World {
+                if model.handle_key(key, area) == InputRoute::World {
                     if sessions.closed_message(model.active()).is_some() {
                         return Ok(true);
                     }
@@ -469,7 +345,7 @@ fn dispatch_event(
                     return Ok(true);
                 }
             }
-            match model.handle_key(key) {
+            match model.handle_key(key, area) {
                 InputRoute::World => {
                     if sessions.closed_message(model.active()).is_some() {
                         return Ok(true);
@@ -481,6 +357,9 @@ fn dispatch_event(
                 }
                 InputRoute::Command(command) => {
                     start_control_command(command, runtime.config, runtime.refresh, model, flows);
+                }
+                InputRoute::OpenCodex(target) => {
+                    start_focus(sessions, model, runtime.focus, *target)
                 }
                 InputRoute::Consumed => {}
             }
@@ -534,18 +413,65 @@ fn dispatch_event(
                     area,
                 )?;
             } else if flows.creation.is_none() {
-                if let Some(command) = model.handle_mouse(mouse, area) {
-                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
+                let (changed, route) = model.handle_mouse(mouse, area);
+                match route {
+                    Some(InputRoute::Command(command)) => start_control_command(
+                        command,
+                        runtime.config,
+                        runtime.refresh,
+                        model,
+                        flows,
+                    ),
+                    Some(InputRoute::OpenCodex(target)) => {
+                        start_focus(sessions, model, runtime.focus, *target)
+                    }
+                    Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
+                return Ok(changed);
             }
             Ok(true)
         }
         Event::Resize(columns, rows) => {
             sessions.resize(world_rows(rows), columns)?;
+            model.resize(Rect::new(0, 0, columns, rows));
             Ok(true)
         }
         _ => Ok(false),
     }
+}
+fn start_focus(
+    sessions: &SessionSet,
+    model: &mut ShellModel,
+    focus: &codex::FocusWorker,
+    target: control::CodexOpenTarget,
+) {
+    let Some((index, alias)) = model.focus_route(&target) else {
+        model.finish_codex_open(
+            &target.identity,
+            None,
+            Some(codex_open_error(
+                &target,
+                "no playback world matches context and world_id",
+            )),
+        );
+        return;
+    };
+    if !sessions.is_open(index) {
+        model.finish_codex_open(
+            &target.identity,
+            None,
+            Some(codex_open_error(&target, "playback SSH/PTTY is closed")),
+        );
+        return;
+    }
+    focus.start(target, alias.to_owned());
+}
+
+fn codex_open_error(target: &control::CodexOpenTarget, check: &str) -> String {
+    format!(
+        "context {}; world_id {}; session {}; target {}:{}; failed check: {check}",
+        target.context, target.world_id, target.session_id, target.tmux_session, target.pane_id,
+    )
 }
 
 fn start_control_command(
@@ -645,15 +571,8 @@ fn apply_creation_action(
             Ok(true)
         }
         crate::create::FlowAction::Created(created) => {
+            let world = codex::ShellWorld::from_instance(&created.context, &created.instance);
             refresh.invalidate();
-            let world = ShellWorld {
-                identity: model::WorldIdentity {
-                    context: created.context.clone(),
-                    id: created.instance.id,
-                },
-                name: format!("{}.{}", created.context, created.instance.name),
-                instance_name: created.instance.name.clone(),
-            };
             if model.world_index(&world.identity).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
             }

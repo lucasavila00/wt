@@ -19,12 +19,19 @@ const STATIC_BINARIES: [&str; 9] = [
 
 pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     runner.run(
-        cmd!("cargo", "build", "--quiet", "--release", "-p", "wt-server",),
+        cmd!(
+            "scripts/cargo",
+            "build",
+            "--quiet",
+            "--release",
+            "-p",
+            "wt-server",
+        ),
         "build native wt-server",
     )?;
     runner.run(
         cmd!(
-            "cargo",
+            "scripts/cargo",
             "build",
             "--quiet",
             "--release",

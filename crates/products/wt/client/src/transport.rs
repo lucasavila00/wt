@@ -1,5 +1,6 @@
 use crate::cmd;
 use crate::config::{Context, ContextKind};
+use serde::Deserialize;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt as _;
@@ -8,7 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
-use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
+use wt_control_protocol::{
+    ApiError, ApiRequest, ApiResponse, CodexSession, Outcome, Response, PROTOCOL_VERSION,
+};
 
 #[derive(Debug)]
 pub struct ContextError {
@@ -116,6 +119,75 @@ fn call_outcome_inner(
     request: &ApiRequest,
     timeout: Option<(Duration, &AtomicBool)>,
 ) -> std::result::Result<Outcome, ContextError> {
+    let output = call_bytes_inner(context, request, timeout)?;
+    let response: ApiResponse = serde_json::from_slice(&output)
+        .map_err(|error| invalid_response(context, error, &output))?;
+    if response.protocol_version != PROTOCOL_VERSION {
+        return Err(protocol_version_error(context, response.protocol_version));
+    }
+    Ok(response.outcome)
+}
+
+pub fn call_codex_sessions_with_timeout_until(
+    context: &Context,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    let request = ApiRequest::new(wt_control_protocol::Operation::ListCodexSessions);
+    let output = call_bytes_inner(context, &request, Some((timeout, cancelled)))?;
+    decode_codex_sessions(context, &output)
+}
+
+fn decode_codex_sessions(
+    context: &Context,
+    output: &[u8],
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    let response: StrictCodexResponse =
+        serde_json::from_slice(output).map_err(|error| invalid_response(context, error, output))?;
+    let protocol_version = match &response {
+        StrictCodexResponse::Ok {
+            protocol_version, ..
+        }
+        | StrictCodexResponse::Error {
+            protocol_version, ..
+        } => *protocol_version,
+    };
+    if protocol_version != PROTOCOL_VERSION {
+        return Err(protocol_version_error(context, protocol_version));
+    }
+    match response {
+        StrictCodexResponse::Ok {
+            response: StrictCodexResponseKind::CodexSessions { sessions },
+            ..
+        } => Ok(sessions),
+        StrictCodexResponse::Error { error, .. } => Err(rejection(context, &error)),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
+enum StrictCodexResponse {
+    Ok {
+        protocol_version: u32,
+        response: StrictCodexResponseKind,
+    },
+    Error {
+        protocol_version: u32,
+        error: ApiError,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "response", rename_all = "snake_case", deny_unknown_fields)]
+enum StrictCodexResponseKind {
+    CodexSessions { sessions: Vec<CodexSession> },
+}
+
+fn call_bytes_inner(
+    context: &Context,
+    request: &ApiRequest,
+    timeout: Option<(Duration, &AtomicBool)>,
+) -> std::result::Result<Vec<u8>, ContextError> {
     let mut command = helper_command(context);
     if timeout.is_some() {
         command.process_group(0);
@@ -183,29 +255,42 @@ fn call_outcome_inner(
             server_hint(context),
         ));
     }
-    let response: ApiResponse = serde_json::from_slice(&output.stdout).map_err(|error| {
-        context_error(
-            context,
-            "context helper returned an invalid response",
-            Some(format!(
-                "{error}; response: {}",
-                String::from_utf8_lossy(&output.stdout).trim()
-            )),
-            version_hint(context),
-        )
-    })?;
-    if response.protocol_version != PROTOCOL_VERSION {
-        return Err(context_error(
-            context,
-            format!(
-                "context helper returned protocol version {}; expected {}",
-                response.protocol_version, PROTOCOL_VERSION
-            ),
-            None,
-            version_hint(context),
-        ));
+    Ok(output.stdout)
+}
+
+fn invalid_response(context: &Context, error: serde_json::Error, output: &[u8]) -> ContextError {
+    context_error(
+        context,
+        "context helper returned an invalid response",
+        Some(format!(
+            "{error}; escaped response: {}",
+            bounded_escaped(output)
+        )),
+        version_hint(context),
+    )
+}
+
+fn protocol_version_error(context: &Context, actual: u32) -> ContextError {
+    context_error(
+        context,
+        format!("context helper returned protocol version {actual}; expected {PROTOCOL_VERSION}"),
+        None,
+        version_hint(context),
+    )
+}
+
+fn bounded_escaped(bytes: &[u8]) -> String {
+    let mut escaped = String::new();
+    for character in String::from_utf8_lossy(bytes).chars() {
+        for escaped_character in character.escape_default() {
+            if escaped.len() == 512 {
+                escaped.push('…');
+                return escaped;
+            }
+            escaped.push(escaped_character);
+        }
     }
-    Ok(response.outcome)
+    escaped
 }
 
 fn wait_with_output(
@@ -266,6 +351,14 @@ fn wait_with_output(
         stdout: stdout.expect("completed stdout reader returned bytes"),
         stderr: stderr.expect("completed stderr reader returned bytes"),
     })
+}
+
+pub fn wait_with_output_timeout(
+    child: std::process::Child,
+    timeout: Duration,
+) -> std::io::Result<Output> {
+    let cancelled = AtomicBool::new(false);
+    wait_with_output(child, Some((timeout, &cancelled)))
 }
 
 fn drain_pipe<R: Read + Send + 'static>(
@@ -456,6 +549,30 @@ mod tests {
     }
 
     #[test]
+    fn codex_response_rejects_unknown_fields_at_every_level() {
+        let context = Context {
+            name: "local".into(),
+            kind: ContextKind::BareMetalLocal,
+        };
+        let valid = br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
+        assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
+
+        for invalid in [
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+        ] {
+            let error = decode_codex_sessions(&context, invalid).unwrap_err();
+            assert!(error.to_string().contains("invalid response"));
+            assert!(error.to_string().contains("unknown field `extra`"));
+        }
+    }
+
+    #[test]
     fn timed_wait_returns_completed_output() {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "printf ready"]);
@@ -478,14 +595,10 @@ mod tests {
         command.args(["-c", "sleep 10 &"]);
         command.stdout(Stdio::piped());
         command.process_group(0);
-        let cancelled = AtomicBool::new(false);
         let started = Instant::now();
 
-        let error = wait_with_output(
-            command.spawn().unwrap(),
-            Some((Duration::from_millis(50), &cancelled)),
-        )
-        .unwrap_err();
+        let error = wait_with_output_timeout(command.spawn().unwrap(), Duration::from_millis(50))
+            .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(2));

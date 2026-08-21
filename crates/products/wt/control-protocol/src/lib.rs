@@ -328,6 +328,7 @@ impl FromStr for InstanceStatus {
 pub struct ParseStatusError(String);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
@@ -354,6 +355,7 @@ impl ApiError {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Capacity {
     pub resource: CapacityResource,
     pub total: u64,

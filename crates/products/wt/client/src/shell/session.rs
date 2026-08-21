@@ -131,6 +131,12 @@ impl SessionSet {
         Ok(())
     }
 
+    pub(super) fn is_open(&self, index: usize) -> bool {
+        self.sessions
+            .get(index)
+            .is_some_and(|session| session.closed_message.is_none())
+    }
+
     pub(super) fn reconcile(
         &mut self,
         worlds: &[ShellWorld],
