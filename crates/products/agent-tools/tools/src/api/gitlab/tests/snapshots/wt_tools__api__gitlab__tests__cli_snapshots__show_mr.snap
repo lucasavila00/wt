@@ -6,6 +6,7 @@ expression: "serde_json::to_string_pretty(&message).unwrap()"
   "data": {
     "base": "main",
     "body": "Fixes the login flow.",
+    "conflict_state": "conflicting",
     "draft": false,
     "handle": "8",
     "head": "abc123",

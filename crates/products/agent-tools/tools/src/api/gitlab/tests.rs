@@ -487,13 +487,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
     let scope = project_scope();
 
     let mr = provider
-        .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 8 })
+        .execute_cli_command(&scope, &WtToolsCommand::ShowMr { mr: "8".into() })
         .unwrap();
     let job = provider
         .execute_cli_command(
             &scope,
-            &CliCommand::WaitJob {
-                job: 45,
+            &WtToolsCommand::WaitJob {
+                job: "45".into(),
                 timeout_seconds: None,
             },
         )
@@ -554,7 +554,10 @@ fn lists_threads_by_merge_request_iid() {
     let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
 
     let output = provider
-        .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 8 })
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ListThreads { mr: "8".into() },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ReviewThreads(threads) = output else {
@@ -581,6 +584,8 @@ fn write_scope_comes_from_provider_resource_metadata() {
         target_branch: "main".to_owned(),
         source_project_id: Some(12),
         target_project_id: Some(12),
+        has_conflicts: false,
+        detailed_merge_status: Some("mergeable".to_owned()),
     };
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
     request.source_branch = "wt/fix".to_owned();
@@ -659,4 +664,20 @@ fn project_scope() -> ProviderProjectScope<'static> {
         project: "acme/widget",
         prefix: "wt/",
     }
+}
+
+#[test]
+fn gitlab_mergeability_distinguishes_pending_clean_and_conflicting() {
+    assert_eq!(
+        gitlab_conflict_state(false, Some("checking")),
+        ConflictState::Pending
+    );
+    assert_eq!(
+        gitlab_conflict_state(false, Some("mergeable")),
+        ConflictState::Clean
+    );
+    assert_eq!(
+        gitlab_conflict_state(true, Some("conflict")),
+        ConflictState::Conflicting
+    );
 }

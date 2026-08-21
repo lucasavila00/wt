@@ -31,7 +31,7 @@ fn push_scope_allows_only_prefixed_heads() {
 
 #[test]
 fn help_is_the_complete_command_contract() {
-    insta::assert_snapshot!(HELP);
+    insta::assert_snapshot!(wt_tools_help());
 }
 
 #[test]

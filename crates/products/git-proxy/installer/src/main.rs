@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use wt_git_proxy::{ProviderConfig, ProxyConfig};
+use wt_git_proxy::{ProcessLock, ProviderConfig, ProxyConfig, LOCK_PATH};
 use wt_installer_support::cmd;
 use wt_installer_support::{
     expand_home, prepare_ssh_credentials, sudo_install_owned, temporary_credential,
@@ -121,6 +121,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    let _lock = ProcessLock::acquire(Path::new(LOCK_PATH))?;
     let runner = SystemRunner;
     match Cli::parse().command {
         SetupCommand::Validate { config } => {

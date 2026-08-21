@@ -42,104 +42,16 @@ pub struct ProviderProjectScope<'a> {
     pub prefix: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ChangeRequestState {
-    Ready,
-    Draft,
-    Open,
-    Closed,
-}
+include!(concat!(env!("OUT_DIR"), "/wt_tools_command.rs"));
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CliCommand {
-    ShowMr {
-        mr: u64,
-    },
-    ShowMrForBranch {
-        branch: String,
-    },
-    ShowRun {
-        run: u64,
-    },
-    ShowJob {
-        job: u64,
-    },
-    ListThreads {
-        mr: u64,
-    },
-    ListCi {
-        commit: String,
-    },
-    ListJobs {
-        run: u64,
-    },
-    LogJob {
-        job: u64,
-    },
-    WaitMr {
-        mr: u64,
-        timeout_seconds: Option<u64>,
-    },
-    WaitRun {
-        run: u64,
-        timeout_seconds: Option<u64>,
-    },
-    WaitJob {
-        job: u64,
-        timeout_seconds: Option<u64>,
-    },
-    OpenMr {
-        head: String,
-        base: String,
-        #[serde(default)]
-        draft: bool,
-    },
-    SetMr {
-        mr: u64,
-        state: ChangeRequestState,
-    },
-    EditMr {
-        mr: u64,
-        title: Option<String>,
-        body: Option<String>,
-    },
-    CommentMr {
-        mr: u64,
-        body: String,
-    },
-    ReplyThread {
-        mr: u64,
-        thread: ReviewThreadHandle,
-        body: String,
-    },
-    SetThread {
-        mr: u64,
-        thread: ReviewThreadHandle,
-        resolved: bool,
-    },
-    RetryJob {
-        job: u64,
-    },
-    CancelJob {
-        job: u64,
-    },
-    CancelRun {
-        run: u64,
-    },
-    ReportWtToolBug {
-        description: String,
-    },
-    ReportWtToolIssue {
-        description: String,
-    },
-    SuggestWtToolImprovement {
-        description: String,
-    },
-    RequestWtToolFeature {
-        description: String,
-    },
+pub const TYPESCRIPT_COMMAND_TYPE: &str = include_str!("wt-tools-command.ts");
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictState {
+    Pending,
+    Clean,
+    Conflicting,
 }
 
 #[allow(
@@ -195,6 +107,8 @@ pub struct ChangeRequestStatus {
     pub draft: bool,
     pub head: String,
     pub base: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_state: Option<ConflictState>,
     pub review_state: Option<String>,
     pub threads: Vec<ReviewThread>,
     pub jobs: Vec<CiJob>,
@@ -304,7 +218,7 @@ pub trait GitProviderApi {
     fn execute_cli_command(
         &self,
         scope: &ProviderProjectScope<'_>,
-        command: &CliCommand,
+        command: &WtToolsCommand,
     ) -> Result<ProviderCommandOutput>;
 }
 
@@ -378,7 +292,7 @@ pub fn execute_cli_provider_command(
     kind: ProviderKind,
     token_file: &Path,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -399,7 +313,7 @@ pub fn execute_cli_provider_command_at_base(
     token_file: &Path,
     base_url: &str,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -417,7 +331,7 @@ fn with_cli_command_context(
     result: Result<ProviderCommandOutput>,
     kind: ProviderKind,
     scope: &ProviderProjectScope<'_>,
-    command: &CliCommand,
+    command: &WtToolsCommand,
 ) -> Result<ProviderCommandOutput> {
     result.with_context(|| {
         format!(

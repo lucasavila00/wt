@@ -1,0 +1,12 @@
+{
+  "name": "wt",
+  "private": true,
+  "workspaces": ["crates/products/agent-tools/tools/typescript"],
+  "scripts": {
+    "check:typescript": "npm run check --workspaces"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "typescript": "5.9.2"
+  }
+}

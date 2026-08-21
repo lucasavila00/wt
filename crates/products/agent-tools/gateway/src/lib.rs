@@ -3,7 +3,7 @@ mod protocol;
 mod stream;
 mod vsock;
 
-pub use gateway::{FixtureApi, Gateway, GatewayConfig, Provider};
+pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{
     ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, Repository,
     TransportRequest, TransportResponse, PROTOCOL_VERSION,

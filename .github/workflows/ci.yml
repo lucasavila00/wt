@@ -21,6 +21,15 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
       - name: Run static analysis
         run: make static
 

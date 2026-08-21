@@ -27,6 +27,7 @@ proxy_group=git-proxy
 proxy_home=/var/lib/wt-git-proxy
 config_dir=/etc/wt-git-proxy
 config_path=$config_dir/config.toml
+lock_path=/etc/wt-git-proxy.lock
 binary_path=/usr/local/bin/wt-git-proxy
 sshd_config=/etc/ssh/sshd_config.d/wt-git-proxy.conf
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -91,6 +92,9 @@ if readelf --program-headers --wide "$setup_binary" | grep -q INTERP ||
 fi
 
 show_phase "Validating the install input"
+sudo touch "$lock_path"
+sudo chown root:root "$lock_path"
+sudo chmod 0644 "$lock_path"
 "$setup_binary" validate --config "$config"
 
 show_phase "Configuring the proxy account"

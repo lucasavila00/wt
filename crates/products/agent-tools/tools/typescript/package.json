@@ -1,0 +1,7 @@
+{
+  "name": "@wt/tools-contract",
+  "private": true,
+  "scripts": {
+    "check": "tsc --project tsconfig.json && prettier --check ../src/api/wt-tools-command.ts"
+  }
+}
