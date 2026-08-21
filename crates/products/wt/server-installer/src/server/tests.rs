@@ -205,11 +205,6 @@ build_disk_gib = 8
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/wt/worlds"
-[registry_cache]
-state_dir = "/var/lib/wt/cache"
-port = 3128
-max_size_gib = 1
-registries = ["docker.io"]
 [agent_tools.github]
 host = "github.com"
 api_token_file = "/tmp/github.token"
@@ -234,7 +229,7 @@ binary_dir = "/opt/wt bin"
     Description=WT control-plane daemon
     Requires=wt-codex-integration-auth.service
     Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path
-    After=network-online.target docker.service libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service
+    After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service
 
     [Service]
     Type=simple

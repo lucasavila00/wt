@@ -9,7 +9,6 @@ description = "Shared retained-world guest contracts and operations for wt"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml_ng = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
 ssh-key = { workspace = true }

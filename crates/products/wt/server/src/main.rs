@@ -63,7 +63,7 @@ fn run_server() -> Result<()> {
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server_config.retained_config();
-    let host_worker = wt_retained_worlds::host::CompositeWorker::new(
+    let host_worker = wt_retained_worlds::host::Worker::new(
         provider,
         Duration::from_secs(server_config.guest.recipe_timeout_seconds),
         retained,
@@ -89,7 +89,7 @@ fn run_server() -> Result<()> {
 fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
-    worker: &wt_retained_worlds::host::CompositeWorker<LibvirtProvider>,
+    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
     gateway: &wt_agent_tool_gateway::ControlClient,
     owner: &str,
     capacity_limit: wt_workload_registry::Resources,

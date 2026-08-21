@@ -82,12 +82,11 @@ ensure_codex_sessions() {
 
 case ${1-} in
     prepare)
-        test "$#" -eq 6 || exit 2
+        test "$#" -eq 5 || exit 2
         network=$2
         image_dir=$3
         binary_dir=$4
         worlds_dir=$5
-        registry_dir=$6
 
         # shellcheck source=/dev/null
         . /etc/os-release
@@ -100,7 +99,7 @@ case ${1-} in
             echo 'KVM is required: /dev/kvm must be a readable and writable character device' >&2
             exit 1
         }
-        for group in kvm libvirt docker; do
+        for group in kvm libvirt; do
             active_group "$group" || {
                 echo "group $group is not active; log out, log back in, and rerun" >&2
                 exit 1
@@ -124,7 +123,6 @@ case ${1-} in
         ensure_directory 0 0 755 "$binary_dir"
         ensure_directory "$(id -u)" "$(id -g)" 700 /run/wt-image-build
         ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
-        ensure_directory 0 0 755 "$registry_dir"
         ensure_codex_sessions /home/wt/.codex/sessions
         ensure_qemu_acl "$worlds_dir"
         ;;
@@ -133,7 +131,7 @@ case ${1-} in
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR REGISTRY_DIR|acl PATH}' >&2
+        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
         exit 2
         ;;
 esac

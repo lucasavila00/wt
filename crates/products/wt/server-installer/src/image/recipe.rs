@@ -3,16 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) type PackageVersions = BTreeMap<String, String>;
 
-const IMAGE_PACKAGES: &[&str] = &[
-    "ca-certificates",
-    "docker.io",
-    "docker-buildx",
-    "docker-compose-v2",
-    "git",
-    "openssh-server",
-    "byobu",
-    "tmux",
-];
+const IMAGE_PACKAGES: &[&str] = &["ca-certificates", "git", "openssh-server", "byobu", "tmux"];
 
 struct PackageSet {
     names: Vec<&'static str>,
@@ -289,7 +280,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
         assert_eq!(packages["tmux"], "1:2.3-4");
-        assert_eq!(packages.len(), 9);
+        assert_eq!(packages.len(), 6);
     }
 
     #[test]
@@ -300,7 +291,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
             .unwrap();
         assert!(packages.contains_key("byobu"));
         assert!(packages.contains_key("tmux"));
-        assert_eq!(packages.len(), 9);
+        assert_eq!(packages.len(), 6);
     }
 
     #[test]

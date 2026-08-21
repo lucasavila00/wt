@@ -88,10 +88,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
         wt_control_protocol::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
-        wt_retained_worlds::host::validate_user_data(include_str!(
-            "../../../../../assets/client/cloud-init.yaml"
-        ))
-        .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
         match self.store.get(owner, &request.name) {
@@ -189,17 +185,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         };
         let result = self.worker.provision(spec, &mut std::io::stderr());
         match result {
-            Ok(world) => {
-                if world.setup_complete {
-                    self.store
-                        .mark_host_running(id, world.access.guest_ip(), world.access.ssh())
-                        .map_err(map_store_error)?
-                } else {
-                    self.store
-                        .mark_setup(id, world.access.guest_ip(), world.access.ssh())
-                        .map_err(map_store_error)?
-                }
-            }
+            Ok(world) => self
+                .store
+                .mark_host_running(id, world.access.guest_ip(), world.access.ssh())
+                .map_err(map_store_error)?,
             Err(error) => {
                 let provisioning_error = error.to_string();
                 if let Err(store_error) = self.store.mark_error(id, &provisioning_error) {
@@ -322,23 +311,13 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 .mark_error(stored.instance.id, "SSH host identity changed")
                 .map_err(map_store_error);
         }
-        if world.setup_complete {
-            self.store
-                .mark_host_running(
-                    stored.instance.id,
-                    world.access.guest_ip(),
-                    world.access.ssh(),
-                )
-                .map_err(map_store_error)
-        } else {
-            self.store
-                .mark_setup(
-                    stored.instance.id,
-                    world.access.guest_ip(),
-                    world.access.ssh(),
-                )
-                .map_err(map_store_error)
-        }
+        self.store
+            .mark_host_running(
+                stored.instance.id,
+                world.access.guest_ip(),
+                world.access.ssh(),
+            )
+            .map_err(map_store_error)
     }
 
     fn get(

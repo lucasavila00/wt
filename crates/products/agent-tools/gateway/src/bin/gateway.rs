@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
@@ -12,32 +12,24 @@ use wt_agent_tool_gateway::{
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway")]
 struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    Serve {
-        #[arg(long, default_value = CONTROL_SOCKET)]
-        control_socket: PathBuf,
-        #[arg(long, default_value = "/var/lib/wt/agent-tools/state.json")]
-        state_file: PathBuf,
-        #[arg(long)]
-        database_path: Option<PathBuf>,
-        #[arg(long, value_parser = parse_local_provider)]
-        local_provider: Vec<(String, PathBuf)>,
-        #[arg(long, value_parser = parse_ssh_provider)]
-        github_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
-        #[arg(long, value_parser = parse_ssh_provider)]
-        gitlab_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
-        #[arg(long)]
-        transport_socket: Option<PathBuf>,
-        #[arg(long)]
-        vsock_port: Option<u32>,
-        #[arg(long)]
-        no_vsock: bool,
-    },
+    #[arg(long, default_value = CONTROL_SOCKET)]
+    control_socket: PathBuf,
+    #[arg(long, default_value = "/var/lib/wt/agent-tools/state.json")]
+    state_file: PathBuf,
+    #[arg(long)]
+    database_path: Option<PathBuf>,
+    #[arg(long, value_parser = parse_local_provider)]
+    local_provider: Vec<(String, PathBuf)>,
+    #[arg(long, value_parser = parse_ssh_provider)]
+    github_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
+    #[arg(long, value_parser = parse_ssh_provider)]
+    gitlab_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
+    #[arg(long)]
+    transport_socket: Option<PathBuf>,
+    #[arg(long)]
+    vsock_port: Option<u32>,
+    #[arg(long)]
+    no_vsock: bool,
 }
 
 fn main() {
@@ -48,7 +40,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let Command::Serve {
+    let Cli {
         control_socket,
         state_file,
         database_path,
@@ -58,7 +50,7 @@ fn run() -> Result<()> {
         transport_socket,
         vsock_port,
         no_vsock,
-    } = Cli::parse().command;
+    } = Cli::parse();
     let vsock_port = resolve_vsock_port(vsock_port)?;
     let database_path = match database_path {
         Some(path) => path,

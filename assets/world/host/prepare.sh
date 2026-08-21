@@ -3,8 +3,6 @@ set -eu
 
 . /usr/local/share/wt-retained-contract
 
-state=/var/lib/wt-host
-
 service_diagnostics() {
     systemctl status --no-pager --full "$1" >&2 || true
     journalctl --no-pager -u "$1" -n 100 >&2 || true
@@ -41,17 +39,6 @@ case "${1:-}" in
         fi
         runuser --user "$WT_USER" -- sudo --non-interactive true
         ;;
-    user-data)
-        install -d -m 0711 -o root -g root "$state"
-        temporary=$state/user-data.wt-new
-        cat > "$temporary"
-        chown root:root "$temporary"
-        chmod 0600 "$temporary"
-        mv -f "$temporary" "$state/user-data"
-        : > /var/log/cloud-init-output.log
-        chown root:root /var/log/cloud-init-output.log
-        chmod 0644 /var/log/cloud-init-output.log
-        ;;
     remove-key)
         key=$(cat)
         file=$WT_HOME/.ssh/authorized_keys
@@ -63,7 +50,7 @@ case "${1:-}" in
         sync
         ;;
     *)
-        echo "usage: wt-host-prepare wait|access-policy|user-data|remove-key" >&2
+        echo "usage: wt-host-prepare wait|access-policy|remove-key" >&2
         exit 2
         ;;
 esac

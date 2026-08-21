@@ -7,13 +7,11 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
-    NoCloudConfig, ProviderId, RunRequest, WorkerError,
+    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, NoCloudConfig,
+    ProviderId, RunRequest, WorkerError,
 };
 
-const CAPTURE_LIMIT: usize = 1024 * 1024;
 const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
-const INSPECT: &str = "/usr/local/libexec/wt-host-inspect";
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -30,7 +28,6 @@ pub struct ProvisionSpec<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct World {
     pub access: GuestAccess,
-    pub setup_complete: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -40,45 +37,14 @@ pub enum WorldInspection {
     Stopped { reason: Option<String> },
 }
 
-pub fn validate_user_data(user_data: &str) -> Result<(), String> {
-    let mut document: serde_yaml_ng::Value = serde_yaml_ng::from_str(user_data)
-        .map_err(|error| format!("cloud-init user-data is invalid YAML: {error}"))?;
-    if document.is_null() {
-        return Ok(());
-    }
-    document
-        .apply_merge()
-        .map_err(|error| format!("cloud-init user-data has an invalid YAML merge: {error}"))?;
-    let Some(mapping) = document.as_mapping() else {
-        return Err("cloud-init user-data must be a YAML mapping".to_owned());
-    };
-    for field in [
-        "cloud_config_modules",
-        "cloud_final_modules",
-        "cloud_init_modules",
-        "merge_how",
-        "merge_type",
-        "output",
-        "ssh_deletekeys",
-        "ssh_keys",
-    ] {
-        if mapping.contains_key(serde_yaml_ng::Value::String(field.to_owned())) {
-            return Err(format!(
-                "cloud-init user-data cannot set top-level {field}; WT owns host identity, setup stages, and output"
-            ));
-        }
-    }
-    Ok(())
-}
-
 #[derive(Clone)]
-pub struct CompositeWorker<P> {
+pub struct Worker<P> {
     provider: P,
     readiness_timeout: Duration,
     retained: RetainedConfig,
 }
 
-impl<P> CompositeWorker<P> {
+impl<P> Worker<P> {
     pub fn new(
         provider: P,
         readiness_timeout: Duration,
@@ -93,7 +59,7 @@ impl<P> CompositeWorker<P> {
     }
 }
 
-impl<P: MachineProvider> crate::WorldWorker for CompositeWorker<P> {
+impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
     fn provision(
         &self,
         spec: ProvisionSpec<'_>,
@@ -130,15 +96,6 @@ impl<P: MachineProvider> crate::WorldWorker for CompositeWorker<P> {
                 git_user_email: spec.git_user_email,
                 git_grant: spec.git_grant,
             },
-            deadline,
-            log,
-        )?;
-        run_prepare(
-            machine.transport.as_ref(),
-            "user-data",
-            Some(include_bytes!(
-                "../../../../../assets/client/cloud-init.yaml"
-            )),
             deadline,
             log,
         )?;
@@ -246,45 +203,10 @@ fn inspect_machine(
     _log: &mut dyn Write,
 ) -> Result<World, WorkerError> {
     let deadline = Instant::now() + timeout;
-    let setup = machine.transport.capture(&CaptureRequest {
-        executable: INSPECT,
-        args: &[],
-        stdin: None,
-        deadline,
-        stdout_limit: CAPTURE_LIMIT,
-        stderr_limit: CAPTURE_LIMIT,
-    })?;
-    if setup.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "inspect host setup: exit code {}: {}",
-            setup.exit_code,
-            String::from_utf8_lossy(&setup.stderr).trim()
-        )));
-    }
-    let setup = String::from_utf8(setup.stdout).map_err(|error| {
-        WorkerError::new(format!("inspect host setup returned non-UTF-8: {error}"))
-    })?;
-    let (state, detail) = setup.split_once('\n').unwrap_or((&setup, ""));
-    let setup_complete = match state.trim() {
-        "setup" => false,
-        "complete" => true,
-        "error" => {
-            return Err(WorkerError::new(format!(
-                "host cloud-init failed: {}",
-                detail.trim()
-            )))
-        }
-        other => {
-            return Err(WorkerError::new(format!(
-                "inspect host setup returned unknown state {other:?}"
-            )))
-        }
-    };
     let host_keys = crate::read_host_keys(machine.transport.as_ref(), deadline)?;
     crate::verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
     Ok(World {
         access: GuestAccess::from_guest_ip(machine.guest_ip.clone(), host_keys),
-        setup_complete,
     })
 }
 
@@ -363,50 +285,4 @@ fn verify_login(
         )));
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn user_data_cannot_override_host_setup() {
-        assert!(validate_user_data(
-            "#cloud-config\nwrite_files:\n  - content: 'ssh_keys: allowed as text'\n"
-        )
-        .is_ok());
-        for field in [
-            "cloud_config_modules",
-            "cloud_final_modules",
-            "cloud_init_modules",
-            "merge_how",
-            "merge_type",
-            "output",
-            "ssh_deletekeys",
-            "ssh_keys",
-        ] {
-            let error =
-                validate_user_data(&format!("#cloud-config\n{field}: value\n")).unwrap_err();
-            assert_eq!(
-                error,
-                format!(
-                    "cloud-init user-data cannot set top-level {field}; WT owns host identity, setup stages, and output"
-                )
-            );
-        }
-        insta::assert_snapshot!(
-            validate_user_data("#cloud-config\nsettings: &settings\n  ssh_keys: value\n<<: *settings\n")
-                .unwrap_err(),
-            @"cloud-init user-data cannot set top-level ssh_keys; WT owns host identity, setup stages, and output"
-        );
-        insta::assert_snapshot!(
-            validate_user_data("#cloud-config\ninvalid: [\n").unwrap_err(),
-            @"cloud-init user-data is invalid YAML: did not find expected node content at line 3 column 1, while parsing a flow node"
-        );
-    }
-
-    #[test]
-    fn default_client_user_data_is_valid() {
-        validate_user_data(include_str!("../../../../../assets/client/cloud-init.yaml")).unwrap();
-    }
 }

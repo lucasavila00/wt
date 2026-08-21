@@ -19,7 +19,6 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
         image_dir.display().to_string(),
         config.install.binary_dir.display().to_string(),
         config.libvirt.worlds_dir.display().to_string(),
-        config.registry_cache.state_dir.display().to_string(),
     ];
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     runner.run_script(CODEX_AUTH_SHARE, &[], "prepare Codex authentication share")?;

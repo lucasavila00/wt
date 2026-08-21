@@ -39,7 +39,6 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
             "-p",
             "wt-client",
             "-p",
-            "-p",
             "wt-codex-integration",
         ),
         "build static WT binaries",

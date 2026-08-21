@@ -17,19 +17,9 @@ pub struct ServerConfig {
     pub version: u32,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
-    pub registry_cache: RegistryCacheConfig,
     pub agent_tools: AgentToolsConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RegistryCacheConfig {
-    pub state_dir: PathBuf,
-    pub port: u16,
-    pub max_size_gib: u64,
-    pub registries: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -116,7 +106,6 @@ impl ServerConfig {
         for (name, path) in [
             ("image.path", &self.image.path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
-            ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
         ] {
             if !path.is_absolute() {
@@ -161,24 +150,6 @@ impl ServerConfig {
                 "install.binary_dir",
                 self.install.binary_dir.as_path(),
             ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "image directory",
-                image_dir,
-            ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "libvirt.worlds_dir",
-                self.libvirt.worlds_dir.as_path(),
-            ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "install.binary_dir",
-                self.install.binary_dir.as_path(),
-            ),
         ] {
             if left.starts_with(right) || right.starts_with(left) {
                 return Err(format!("{left_name} and {right_name} must not overlap"));
@@ -187,7 +158,6 @@ impl ServerConfig {
         if self.libvirt.network.trim().is_empty() {
             return Err("libvirt.network must not be empty".to_owned());
         }
-        self.validate_registry_cache()?;
         self.validate_agent_tools()?;
         if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
@@ -326,24 +296,6 @@ impl ServerConfig {
         .collect()
     }
 
-    fn validate_registry_cache(&self) -> Result<(), String> {
-        if self.registry_cache.port == 0 || self.registry_cache.max_size_gib == 0 {
-            return Err("registry cache port and size must be greater than zero".to_owned());
-        }
-        if self.registry_cache.registries.is_empty() {
-            return Err("registry_cache.registries must not be empty".to_owned());
-        }
-        let mut registries = std::collections::BTreeSet::new();
-        for registry in &self.registry_cache.registries {
-            if !valid_registry_host(registry) || !registries.insert(registry.as_str()) {
-                return Err(format!(
-                    "invalid or duplicate registry cache host: {registry}"
-                ));
-            }
-        }
-        Ok(())
-    }
-
     fn validate_agent_tools(&self) -> Result<(), String> {
         if self.agent_tools.vsock_port == 0 || self.agent_tools.vsock_port == u32::MAX {
             return Err("agent_tools.vsock_port must be a concrete nonzero port".to_owned());
@@ -376,16 +328,6 @@ fn valid_git_host(value: &str) -> bool {
         })
 }
 
-fn valid_registry_host(value: &str) -> bool {
-    !value.is_empty()
-        && value == value.to_ascii_lowercase()
-        && !value.starts_with('.')
-        && !value.ends_with('.')
-        && value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b':')
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,12 +342,6 @@ path = "/var/lib/wt/images/retained.qcow2"
 [libvirt]
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
-
-[registry_cache]
-state_dir = "/var/lib/wt/registry-cache"
-port = 3128
-max_size_gib = 64
-registries = ["docker.io", "mcr.microsoft.com"]
 
 [agent_tools.github]
 host = "github.com"
@@ -482,8 +418,8 @@ binary_dir = "/usr/local/bin"
         ))
         .is_err());
         assert!(parse(&VALID.replace(
-            "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
-            "registries = [\"docker.io\", \"mcr.microsoft.com\"]\npreload_images = [\"redis:7-alpine\"]"
+            "[agent_tools.github]",
+            "[agent_tools]\nunknown = true\n\n[agent_tools.github]"
         ))
         .is_err());
     }

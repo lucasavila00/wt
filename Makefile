@@ -36,9 +36,7 @@ nuke:
 
 e2e-tests:
 	@test -f /home/wt/.codex/.wt-auth/auth.json \
-		&& systemctl is-active --quiet wt-codex-integration-auth.path \
-		&& test -f /var/lib/wt/registry-cache/ca/ca.crt \
-		&& test "$$(docker inspect --format '{{.State.Running}}' wt-workload-registry-cache 2>/dev/null)" = true || { \
+		&& systemctl is-active --quiet wt-codex-integration-auth.path || { \
 		printf '\nKVM E2E host prerequisites are missing. Install them with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}

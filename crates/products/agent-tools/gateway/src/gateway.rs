@@ -14,8 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use wt_git_smart_protocol::{
-    serve_git, successful_push_updates, write_packet, GitTarget, PushViolation,
-    WritePolicy,
+    serve_git, successful_push_updates, write_packet, GitTarget, PushViolation, WritePolicy,
 };
 use wt_tools::{self as api, ProviderKind};
 

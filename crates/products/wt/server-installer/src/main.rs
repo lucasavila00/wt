@@ -1,7 +1,6 @@
 mod host;
 mod image;
 mod install_input;
-mod registry_cache;
 mod server;
 
 use anyhow::{Context, Result};

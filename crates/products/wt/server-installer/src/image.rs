@@ -36,44 +36,9 @@ const RETAINED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../assets/world/retained/build-image.sh");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
 const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/prepare.sh");
-const HOST_INSPECT: &[u8] = include_bytes!("../../../../../assets/world/host/inspect.sh");
-const HOST_CLOUD_INIT: &[u8] = include_bytes!("../../../../../assets/world/host/cloud-init.sh");
-const HOST_SETUP: &[u8] = include_bytes!("../../../../../assets/world/host/setup.sh");
-const HOST_DEFER_INIT: &[u8] = include_bytes!("../../../../../assets/world/host/defer-init.yaml");
-const HOST_CLOUD_CONFIG: &[u8] =
-    include_bytes!("../../../../../assets/world/host/cloud-config.conf");
-const HOST_CLOUD_FINAL: &[u8] = include_bytes!("../../../../../assets/world/host/cloud-final.conf");
-const HOST_SETUP_SERVICE: &[u8] = include_bytes!("../../../../../assets/world/host/setup.service");
 const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
     ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
-    ("host-inspect", "/var/tmp/wt-host-inspect", HOST_INSPECT),
-    (
-        "host-cloud-init",
-        "/var/tmp/wt-host-cloud-init",
-        HOST_CLOUD_INIT,
-    ),
-    ("host-setup", "/var/tmp/wt-host-setup", HOST_SETUP),
-    (
-        "host-defer-init",
-        "/var/tmp/wt-host-defer-init",
-        HOST_DEFER_INIT,
-    ),
-    (
-        "host-cloud-config",
-        "/var/tmp/wt-host-cloud-config",
-        HOST_CLOUD_CONFIG,
-    ),
-    (
-        "host-cloud-final",
-        "/var/tmp/wt-host-cloud-final",
-        HOST_CLOUD_FINAL,
-    ),
-    (
-        "host-setup-service",
-        "/var/tmp/wt-host-setup-service",
-        HOST_SETUP_SERVICE,
-    ),
 ];
 
 #[derive(Debug, Deserialize, Serialize)]
