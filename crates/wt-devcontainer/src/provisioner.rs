@@ -180,18 +180,6 @@ impl WorldProvisioner {
         }
     }
 
-    pub(crate) fn mount_shared_folders_for(
-        &self,
-        machine: &Machine,
-        log: &mut dyn Write,
-    ) -> Result<(), WorkerError> {
-        self.config.retained.mount_shared_folders(
-            machine.transport.as_ref(),
-            Instant::now() + self.config.recipe_timeout,
-            log,
-        )
-    }
-
     fn bootstrap(
         &self,
         transport: &dyn GuestTransport,

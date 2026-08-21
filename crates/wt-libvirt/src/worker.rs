@@ -12,23 +12,23 @@ use network::{domain_ip, network_address};
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use virt::connect::Connect;
 use virt::domain::Domain;
-use virt::domain_snapshot::DomainSnapshot;
 use virt::error::ErrorNumber;
 use virt::network::Network;
 use wt_command::cmd;
 use wt_provider::{
-    CaptureRequest, ForkError, ForkMachineSpec, GuestTransport, Machine, MachineInspection,
-    MachineProvider, MachineSpec, ProviderId, RunRequest, WorkerError,
+    Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId, WorkerError,
 };
 
 const GUEST_AGENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const GUEST_IP_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 struct LibvirtConnection(Connect);
 
@@ -220,28 +220,21 @@ impl LibvirtProvider {
         }
     }
 
-    fn remove_disks(&self, disk_ids: &[uuid::Uuid]) -> Result<(), WorkerError> {
-        let mut errors = Vec::new();
-        for disk_id in disk_ids {
-            let path = world::disk_path(&self.config.worlds_dir, *disk_id);
-            if let Err(error) = fs::remove_file(&path) {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    errors.push(format!("remove {}: {error}", path.display()));
-                }
-            }
-        }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(WorkerError::new(errors.join("; ")))
+    fn remove_disk(&self, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
+        let path = world::disk_path(&self.config.worlds_dir, disk_id);
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(context(&format!("remove {}", path.display()), error)),
         }
     }
 
-    fn cleanup(
-        &self,
-        provider_id: &ProviderId,
-        disk_ids: &[uuid::Uuid],
-    ) -> Result<(), WorkerError> {
+    fn allocated_disk_bytes(&self, disk_id: uuid::Uuid) -> Result<u64, WorkerError> {
+        let path = world::disk_path(&self.config.worlds_dir, disk_id);
+        allocated_bytes(&path)
+    }
+
+    fn cleanup(&self, provider_id: &ProviderId, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
         let mut errors = Vec::new();
         if let Err(error) = self.remove_domain(provider_id) {
             errors.push(error.to_string());
@@ -249,7 +242,7 @@ impl LibvirtProvider {
         if let Err(error) = self.remove_files(provider_id) {
             errors.push(error.to_string());
         }
-        if let Err(error) = self.remove_disks(disk_ids) {
+        if let Err(error) = self.remove_disk(disk_id) {
             errors.push(error.to_string());
         }
         if errors.is_empty() {
@@ -293,139 +286,15 @@ impl LibvirtProvider {
             .map_err(|error| context("write machine progress", error))?;
         Ok(self.machine(&spec.provider_id, guest_ip))
     }
-
-    fn fork_inner(
-        &self,
-        spec: &ForkMachineSpec,
-        progress: &mut dyn Write,
-    ) -> Result<Machine, ForkError> {
-        if spec.source_provider_id == spec.machine.provider_id
-            || spec.source_disk_id == spec.source_head_disk_id
-            || spec.source_disk_id == spec.machine.disk_id
-            || spec.source_head_disk_id == spec.machine.disk_id
-        {
-            return Err(ForkError::before_pivot(WorkerError::new(
-                "fork machine and disk identities must be distinct",
-            )));
-        }
-        let source_disk = world::disk_path(&self.config.worlds_dir, spec.source_disk_id);
-        let source_head = world::disk_path(&self.config.worlds_dir, spec.source_head_disk_id);
-        let fork_head = world::disk_path(&self.config.worlds_dir, spec.machine.disk_id);
-        require_file(&source_disk, "source disk node").map_err(ForkError::before_pivot)?;
-        let source = lookup_domain(&spec.source_provider_id).map_err(ForkError::before_pivot)?;
-        if !source
-            .is_active()
-            .map_err(|error| ForkError::before_pivot(context("check source domain state", error)))?
-        {
-            return Err(ForkError::before_pivot(WorkerError::new(
-                "source libvirt machine is stopped",
-            )));
-        }
-        let running_containers =
-            running_containers(&spec.source_provider_id, self.config.boot_timeout)
-                .map_err(ForkError::before_pivot)?;
-        let source_xml = source
-            .get_xml_desc(0)
-            .map_err(|error| ForkError::before_pivot(context("read source domain XML", error)))?;
-        let source_path = source_disk.to_string_lossy();
-        if !source_xml.contains(&format!("file='{source_path}'"))
-            && !source_xml.contains(&format!("file=\"{source_path}\""))
-        {
-            return Err(ForkError::before_pivot(WorkerError::new(
-                "source domain does not use its registered disk head",
-            )));
-        }
-
-        writeln!(
-            progress,
-            "Quiescing and pivoting source {}...",
-            spec.source_provider_id
-        )
-        .map_err(|error| ForkError::before_pivot(context("write fork progress", error)))?;
-        create_overlay(&source_disk, &source_head).map_err(ForkError::before_pivot)?;
-        let source_head_text = source_head.to_string_lossy();
-        let escaped = quick_xml::escape::escape(source_head_text.as_ref());
-        let snapshot_xml = format!(
-            "<domainsnapshot><memory snapshot='no'/><disks><disk name='vda' snapshot='external' type='file'><driver type='qcow2'/><source file='{escaped}'/></disk><disk name='sda' snapshot='no'/></disks></domainsnapshot>"
-        );
-        let flags = virt::sys::VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY
-            | virt::sys::VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA
-            | virt::sys::VIR_DOMAIN_SNAPSHOT_CREATE_REUSE_EXT
-            | virt::sys::VIR_DOMAIN_SNAPSHOT_CREATE_QUIESCE
-            | virt::sys::VIR_DOMAIN_SNAPSHOT_CREATE_ATOMIC;
-        let pivot = DomainSnapshot::create_xml(&source, &snapshot_xml, flags)
-            .map(|_| ())
-            .map_err(|error| context("quiesce and pivot source disk", error));
-        let thaw = ensure_thawed(&source);
-        if let Err(primary) = pivot {
-            let _ = fs::remove_file(&source_head);
-            return Err(ForkError::before_pivot(match thaw {
-                Ok(()) => primary,
-                Err(thaw) => {
-                    WorkerError::new(format!("{primary}; source thaw also failed: {thaw}"))
-                }
-            }));
-        }
-        thaw.map_err(ForkError::after_pivot)?;
-        let result = (|| {
-            writeln!(
-                progress,
-                "Booting fork {} without network access...",
-                spec.machine.provider_id
-            )
-            .map_err(|error| context("write fork progress", error))?;
-            create_overlay(&source_disk, &fork_head)?;
-            self.start_domain(&spec.machine, &fork_head, false)?;
-            self.wait_for_agent(&spec.machine.provider_id)?;
-            let machine = self.machine(&spec.machine.provider_id, String::new());
-            replace_machine_identities(&machine, progress, self.config.boot_timeout)?;
-            let domain = lookup_domain(&spec.machine.provider_id)?;
-            let interface = world::interface_xml(&spec.machine.provider_id, &self.config);
-            domain
-                .attach_device_flags(
-                    &interface,
-                    virt::sys::VIR_DOMAIN_DEVICE_MODIFY_LIVE
-                        | virt::sys::VIR_DOMAIN_DEVICE_MODIFY_CONFIG,
-                )
-                .map_err(|error| context("attach fork network", error))?;
-            writeln!(progress, "Waiting for fork DHCP...")
-                .map_err(|error| context("write fork progress", error))?;
-            let guest_ip = self.wait_for_ip(&spec.machine.provider_id)?;
-            restart_containers(
-                &machine,
-                &running_containers,
-                progress,
-                self.config.boot_timeout,
-            )?;
-            writeln!(progress, "Fork transport ready at {guest_ip}.")
-                .map_err(|error| context("write fork progress", error))?;
-            Ok(self.machine(&spec.machine.provider_id, guest_ip))
-        })();
-        result.map_err(ForkError::after_pivot)
-    }
 }
 
-fn create_overlay(
-    backing: &std::path::Path,
-    destination: &std::path::Path,
-) -> Result<(), WorkerError> {
-    run(
-        cmd!(
-            "qemu-img",
-            "create",
-            "-q",
-            "-f",
-            "qcow2",
-            "-F",
-            "qcow2",
-            "-b",
-            backing,
-            destination,
-        ),
-        "create copy-on-write disk head",
-    )?;
-    fs::set_permissions(destination, fs::Permissions::from_mode(0o660))
-        .map_err(|error| context("set copy-on-write disk permissions", error))
+fn allocated_bytes(path: &std::path::Path) -> Result<u64, WorkerError> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| context(&format!("inspect {}", path.display()), error))?;
+    metadata
+        .blocks()
+        .checked_mul(512)
+        .ok_or_else(|| WorkerError::new(format!("allocated size is too large: {}", path.display())))
 }
 
 fn copy_image_command(source: &std::path::Path, destination: &std::path::Path) -> Command {
@@ -442,159 +311,6 @@ fn copy_image_command(source: &std::path::Path, destination: &std::path::Path) -
 
 fn resize_disk_command(disk: &std::path::Path, disk_gib: u64) -> Command {
     cmd!("qemu-img", "resize", "-q", disk, format!("{disk_gib}G"))
-}
-
-fn ensure_thawed(domain: &Domain) -> Result<(), WorkerError> {
-    let mut last_error = None;
-    for _ in 0..3 {
-        match domain.qemu_agent_command(r#"{"execute":"guest-fsfreeze-status"}"#, 5, 0) {
-            Ok(response) => match serde_json::from_str::<serde_json::Value>(&response) {
-                Ok(response) if response["return"].as_str() == Some("thawed") => return Ok(()),
-                Ok(_) => {}
-                Err(error) => {
-                    last_error = Some(context("decode source filesystem freeze status", error));
-                }
-            },
-            Err(error) => {
-                last_error = Some(context("read source filesystem freeze status", error));
-            }
-        }
-        if let Err(error) = domain.qemu_agent_command(r#"{"execute":"guest-fsfreeze-thaw"}"#, 30, 0)
-        {
-            last_error = Some(context("thaw source filesystems", error));
-        }
-    }
-    Err(last_error.unwrap_or_else(|| WorkerError::new("source filesystems remained frozen")))
-}
-
-fn replace_machine_identities(
-    machine: &Machine,
-    progress: &mut dyn Write,
-    timeout: Duration,
-) -> Result<(), WorkerError> {
-    const SCRIPT: &str = r#"set -eu
-name=$1
-hostnamectl set-hostname "$name"
-rm -f /var/lib/dbus/machine-id
-truncate -s 0 /etc/machine-id
-systemd-machine-id-setup
-ln -sfn /etc/machine-id /var/lib/dbus/machine-id
-rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
-ssh-keygen -A
-if test -d /var/lib/wt-app-ssh; then
-    old_session=$(cat /var/lib/wt-app-ssh/session_identity.pub)
-    rm -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub
-    rm -f /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub /var/lib/wt-app-ssh/known_hosts
-    ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/public/ssh_host_ed25519_key
-    ssh-keygen -q -t ed25519 -N '' -f /var/lib/wt-app-ssh/session_identity
-    chown wt:wt /var/lib/wt-app-ssh/session_identity /var/lib/wt-app-ssh/session_identity.pub
-    chmod 0600 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key /var/lib/wt-app-ssh/session_identity
-    chmod 0644 /var/lib/wt-app-ssh/public/ssh_host_ed25519_key.pub /var/lib/wt-app-ssh/session_identity.pub
-    new_session=$(cat /var/lib/wt-app-ssh/session_identity.pub)
-    for keys in /var/lib/wt-app-ssh/public/authorized_keys/*; do
-        test -f "$keys" || continue
-        grep -Fvx "$old_session" "$keys" > "$keys.new" || true
-        printf '%s\n' "$new_session" >> "$keys.new"
-        chmod 0644 "$keys.new"
-        mv "$keys.new" "$keys"
-    done
-fi
-systemctl restart ssh.service
-"#;
-    writeln!(progress, "Replacing fork machine and SSH identities...")
-        .map_err(|error| context("write fork progress", error))?;
-    let result = machine.transport.run(
-        &RunRequest {
-            executable: "/bin/sh",
-            args: &["-c", SCRIPT, "wt-fork", machine.provider_id.as_str()],
-            stdin: None,
-            deadline: Instant::now() + timeout,
-        },
-        progress,
-    )?;
-    if result.exit_code == 0 {
-        Ok(())
-    } else {
-        Err(WorkerError::new(format!(
-            "replace fork identities: exit code {}: {}",
-            result.exit_code,
-            String::from_utf8_lossy(&result.diagnostic_tail).trim()
-        )))
-    }
-}
-
-fn running_containers(
-    provider_id: &ProviderId,
-    timeout: Duration,
-) -> Result<Vec<String>, WorkerError> {
-    let transport = guest_agent::QemuGuestTransport::new(provider_id.clone());
-    let output = transport.capture(&CaptureRequest {
-        executable: "/usr/bin/docker",
-        args: &["ps", "--quiet", "--no-trunc"],
-        stdin: None,
-        deadline: Instant::now() + timeout,
-        stdout_limit: 1024 * 1024,
-        stderr_limit: 64 * 1024,
-    })?;
-    if output.exit_code != 0 {
-        return Err(WorkerError::new(format!(
-            "list running source containers: exit code {}: {}",
-            output.exit_code,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    output
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let id = std::str::from_utf8(line)
-                .map_err(|error| context("decode running source container ID", error))?;
-            if id.len() != 64
-                || !id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            {
-                return Err(WorkerError::new("Docker returned an invalid container ID"));
-            }
-            Ok(id.to_owned())
-        })
-        .collect()
-}
-
-fn restart_containers(
-    machine: &Machine,
-    container_ids: &[String],
-    progress: &mut dyn Write,
-    timeout: Duration,
-) -> Result<(), WorkerError> {
-    if container_ids.is_empty() {
-        return Err(WorkerError::new(
-            "source world has no running Docker containers",
-        ));
-    }
-    writeln!(progress, "Restarting fork containers...")
-        .map_err(|error| context("write fork progress", error))?;
-    let mut args = vec!["restart"];
-    args.extend(container_ids.iter().map(String::as_str));
-    let result = machine.transport.run(
-        &RunRequest {
-            executable: "/usr/bin/docker",
-            args: &args,
-            stdin: None,
-            deadline: Instant::now() + timeout,
-        },
-        progress,
-    )?;
-    if result.exit_code == 0 {
-        Ok(())
-    } else {
-        Err(WorkerError::new(format!(
-            "restart fork containers: exit code {}: {}",
-            result.exit_code,
-            String::from_utf8_lossy(&result.diagnostic_tail).trim()
-        )))
-    }
 }
 
 fn shutdown_reason(reason: i32) -> Option<&'static str> {

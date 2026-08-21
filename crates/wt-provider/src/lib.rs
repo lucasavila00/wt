@@ -72,14 +72,6 @@ impl Default for NoCloudConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ForkMachineSpec {
-    pub source_provider_id: ProviderId,
-    pub source_disk_id: Uuid,
-    pub source_head_disk_id: Uuid,
-    pub machine: MachineSpec,
-}
-
 #[derive(Clone)]
 pub struct Machine {
     pub provider_id: ProviderId,
@@ -107,37 +99,11 @@ impl fmt::Debug for Machine {
 
 pub trait MachineProvider: Clone + Send + Sync + 'static {
     fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError>;
-    fn fork(&self, spec: &ForkMachineSpec, progress: &mut dyn Write) -> Result<Machine, ForkError>;
     fn inspect(&self, provider_id: &ProviderId) -> Result<MachineInspection, WorkerError>;
     fn start(&self, provider_id: &ProviderId) -> Result<Machine, WorkerError>;
-    fn delete(&self, provider_id: &ProviderId, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("{error}")]
-pub struct ForkError {
-    error: WorkerError,
-    source_pivoted: bool,
-}
-
-impl ForkError {
-    pub fn before_pivot(error: WorkerError) -> Self {
-        Self {
-            error,
-            source_pivoted: false,
-        }
-    }
-
-    pub fn after_pivot(error: WorkerError) -> Self {
-        Self {
-            error,
-            source_pivoted: true,
-        }
-    }
-
-    pub fn source_pivoted(&self) -> bool {
-        self.source_pivoted
-    }
+    fn stop(&self, provider_id: &ProviderId) -> Result<(), WorkerError>;
+    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
+    fn delete(&self, provider_id: &ProviderId, disk_id: Uuid) -> Result<(), WorkerError>;
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

@@ -9,8 +9,7 @@ use std::io::Write;
 use uuid::Uuid;
 use wt_api::{AppSshAccess, InstanceName};
 use wt_provider::{
-    ForkError, ForkMachineSpec, MachineInspection, MachineProvider, MachineSpec, NoCloudConfig,
-    ProviderId, WorkerError,
+    MachineInspection, MachineProvider, MachineSpec, NoCloudConfig, ProviderId, WorkerError,
 };
 use wt_retained::GuestAccess;
 
@@ -33,18 +32,6 @@ pub struct ProvisionSpec<'a> {
     pub ssh_authorized_keys: &'a [String],
 }
 
-#[derive(Clone, Debug)]
-pub struct ForkSpec<'a> {
-    pub source_backend_id: &'a str,
-    pub source_disk_id: Uuid,
-    pub source_head_disk_id: Uuid,
-    pub backend_id: &'a str,
-    pub disk_id: Uuid,
-    pub memory_mib: u64,
-    pub vcpus: u32,
-    pub disk_gib: u64,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct World {
     pub access: GuestAccess,
@@ -64,10 +51,11 @@ pub trait WorldWorker {
         spec: &ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<World, WorkerError>;
-    fn fork(&self, spec: &ForkSpec<'_>, log: &mut dyn Write) -> Result<World, ForkError>;
-    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
+    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
     fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
+    fn stop(&self, backend_id: &str) -> Result<(), WorkerError>;
+    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
 }
 
 #[derive(Clone)]
@@ -106,36 +94,9 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         self.provisioner.provision(&machine, spec, log)
     }
 
-    fn fork(&self, spec: &ForkSpec<'_>, log: &mut dyn Write) -> Result<World, ForkError> {
-        let machine = self.provider.fork(
-            &ForkMachineSpec {
-                source_provider_id: ProviderId::parse(spec.source_backend_id)
-                    .map_err(ForkError::before_pivot)?,
-                source_disk_id: spec.source_disk_id,
-                source_head_disk_id: spec.source_head_disk_id,
-                machine: MachineSpec {
-                    provider_id: ProviderId::parse(spec.backend_id)
-                        .map_err(ForkError::before_pivot)?,
-                    disk_id: spec.disk_id,
-                    memory_mib: spec.memory_mib,
-                    vcpus: spec.vcpus,
-                    disk_gib: spec.disk_gib,
-                    cloud_init: NoCloudConfig::default(),
-                },
-            },
-            log,
-        )?;
-        self.provisioner
-            .mount_shared_folders_for(&machine, log)
-            .map_err(ForkError::after_pivot)?;
-        self.provisioner
-            .inspect(&machine)
-            .map_err(ForkError::after_pivot)
-    }
-
-    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
+    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
         self.provider
-            .delete(&ProviderId::parse(backend_id)?, disk_ids)
+            .delete(&ProviderId::parse(backend_id)?, disk_id)
     }
 
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError> {
@@ -152,6 +113,14 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
     fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
         self.provisioner.start(&machine)
+    }
+
+    fn stop(&self, backend_id: &str) -> Result<(), WorkerError> {
+        self.provider.stop(&ProviderId::parse(backend_id)?)
+    }
+
+    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError> {
+        self.provider.disk_usage(disk_id)
     }
 }
 
@@ -186,14 +155,6 @@ mod tests {
             })
         }
 
-        fn fork(
-            &self,
-            _spec: &ForkMachineSpec,
-            _progress: &mut dyn Write,
-        ) -> Result<Machine, ForkError> {
-            unreachable!()
-        }
-
         fn inspect(&self, _provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
             unreachable!()
         }
@@ -202,7 +163,15 @@ mod tests {
             unreachable!()
         }
 
-        fn delete(&self, _provider_id: &ProviderId, _disk_ids: &[Uuid]) -> Result<(), WorkerError> {
+        fn stop(&self, _provider_id: &ProviderId) -> Result<(), WorkerError> {
+            unreachable!()
+        }
+
+        fn disk_usage(&self, _disk_id: Uuid) -> Result<u64, WorkerError> {
+            unreachable!()
+        }
+
+        fn delete(&self, _provider_id: &ProviderId, _disk_id: Uuid) -> Result<(), WorkerError> {
             self.deletes.fetch_add(1, Ordering::SeqCst);
             if self.cleanup_fails {
                 Err(WorkerError::new("injected cleanup failure"))

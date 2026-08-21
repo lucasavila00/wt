@@ -60,7 +60,12 @@ pub fn call(
 pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
     let hint = match error.code {
         wt_api::ErrorCode::Capacity => {
-            "free guest capacity with `wt ls` and `wt rm CONTEXT.WORLD`, then retry".to_owned()
+            match error.capacity.as_ref().map(|capacity| capacity.resource) {
+                Some(wt_api::CapacityResource::Cpu | wt_api::CapacityResource::Memory) => {
+                    "free guest capacity with `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`, then retry".to_owned()
+                }
+                _ => "free guest capacity with `wt rm CONTEXT.WORLD`, then retry".to_owned(),
+            }
         }
         wt_api::ErrorCode::UnsupportedProtocol => version_hint(context),
         _ => server_hint(context),

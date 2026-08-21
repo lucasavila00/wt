@@ -116,17 +116,6 @@ pub(super) fn domain_xml(
     )
 }
 
-pub(super) fn interface_xml(
-    provider_id: &wt_provider::ProviderId,
-    config: &MachineConfig,
-) -> String {
-    let network = quick_xml::escape::escape(&config.network);
-    let mac = mac_address(provider_id);
-    format!(
-        "<interface type='network'><mac address='{mac}'/><source network='{network}'/><model type='virtio'/></interface>"
-    )
-}
-
 fn mac_address(provider_id: &wt_provider::ProviderId) -> String {
     let suffix = &provider_id.as_str()[3..];
     format!(

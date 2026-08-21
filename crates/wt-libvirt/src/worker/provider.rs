@@ -5,7 +5,7 @@ impl MachineProvider for LibvirtProvider {
         match self.create_inner(spec, progress) {
             Ok(machine) => Ok(machine),
             Err(primary) => {
-                if let Err(cleanup) = self.cleanup(&spec.provider_id, &[spec.disk_id]) {
+                if let Err(cleanup) = self.cleanup(&spec.provider_id, spec.disk_id) {
                     Err(WorkerError::new(format!(
                         "{primary} (cleanup also failed: {cleanup})"
                     )))
@@ -14,10 +14,6 @@ impl MachineProvider for LibvirtProvider {
                 }
             }
         }
-    }
-
-    fn fork(&self, spec: &ForkMachineSpec, progress: &mut dyn Write) -> Result<Machine, ForkError> {
-        self.fork_inner(spec, progress)
     }
 
     fn inspect(&self, provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
@@ -97,7 +93,39 @@ impl MachineProvider for LibvirtProvider {
         Ok(self.machine(provider_id, guest_ip))
     }
 
-    fn delete(&self, provider_id: &ProviderId, disk_ids: &[uuid::Uuid]) -> Result<(), WorkerError> {
-        self.cleanup(provider_id, disk_ids)
+    fn stop(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+        let domain = lookup_domain(provider_id)?;
+        if !domain
+            .is_active()
+            .map_err(|error| context("check domain state", error))?
+        {
+            return Ok(());
+        }
+        domain
+            .shutdown_flags(virt::sys::VIR_DOMAIN_SHUTDOWN_GUEST_AGENT)
+            .map_err(|error| context("request guest shutdown", error))?;
+        let deadline = std::time::Instant::now() + self.config.boot_timeout;
+        loop {
+            if !domain
+                .is_active()
+                .map_err(|error| context("check domain shutdown state", error))?
+            {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(WorkerError::new(format!(
+                    "timed out waiting for domain {provider_id} to shut down"
+                )));
+            }
+            std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
+        }
+    }
+
+    fn disk_usage(&self, disk_id: uuid::Uuid) -> Result<u64, WorkerError> {
+        self.allocated_disk_bytes(disk_id)
+    }
+
+    fn delete(&self, provider_id: &ProviderId, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
+        self.cleanup(provider_id, disk_id)
     }
 }

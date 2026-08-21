@@ -1,17 +1,17 @@
-CREATE TABLE disk_nodes (
-    id        TEXT PRIMARY KEY NOT NULL,
-    parent_id TEXT REFERENCES disk_nodes(id),
-    immutable BOOLEAN NOT NULL
+CREATE TABLE disks (
+    id TEXT PRIMARY KEY NOT NULL
 );
 
 CREATE TABLE guests (
     id           TEXT PRIMARY KEY NOT NULL,
     kind         TEXT NOT NULL CHECK (kind IN ('devcontainer', 'host', 'github-ci')),
     backend_id   TEXT NOT NULL UNIQUE,
-    head_disk_id TEXT NOT NULL UNIQUE REFERENCES disk_nodes(id),
+    disk_id      TEXT NOT NULL UNIQUE REFERENCES disks(id),
     vcpus        BIGINT NOT NULL CHECK (vcpus > 0),
     memory_mib   BIGINT NOT NULL CHECK (memory_mib > 0),
-    disk_gib     BIGINT NOT NULL CHECK (disk_gib > 0)
+    disk_gib     BIGINT NOT NULL CHECK (disk_gib > 0),
+    compute_reserved BOOLEAN NOT NULL,
+    disk_reserved_gib BIGINT NOT NULL CHECK (disk_reserved_gib >= 0)
 );
 
 CREATE TABLE worlds (

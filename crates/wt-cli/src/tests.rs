@@ -12,6 +12,7 @@ fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
     ContextInstance {
         context: context.to_owned(),
         agent_git_report_count: 0,
+        disk_usage_bytes: None,
         instance: Instance {
             id: Uuid::new_v4(),
             name: InstanceName::parse(name).unwrap(),
@@ -76,10 +77,11 @@ fn formats_reconciliation_error_details() {
 fn formats_stopped_world_with_recovery_commands() {
     let mut stopped = item("ars", "mt3", InstanceStatus::Stopped);
     stopped.instance.last_error = Some("guest stopped (crashed)".to_owned());
+    stopped.disk_usage_bytes = Some(1536 * 1024 * 1024);
 
     insta::assert_snapshot!(format_instances(&[stopped]), @r###"
-    CONTEXT  NAME  KIND          STATUS   REPO  RESOURCES         DETAIL
-    ars      mt3   devcontainer  stopped  repo  2 CPU · 4G · 32G  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
+    CONTEXT  NAME  KIND          STATUS   REPO  RESOURCES               DETAIL
+    ars      mt3   devcontainer  stopped  repo  2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
     "###);
 }
 
@@ -109,7 +111,7 @@ fn explains_memory_capacity() {
         ),
         @r###"
     ars has 32000 MiB of 32000 MiB world and runner memory reserved; mt3 requests 8000 MiB.
-    Free capacity with `wt ls` and `wt rm CONTEXT.WORLD`.
+    Free capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.
     "###
     );
 }
@@ -137,6 +139,15 @@ fn parses_start_target() {
     let cli = Cli::try_parse_from(["wt", "start", "ars.mt3"]).unwrap();
     let Command::Start { name } = cli.command else {
         panic!("expected start command");
+    };
+    assert_eq!(name, "ars.mt3");
+}
+
+#[test]
+fn parses_stop_target() {
+    let cli = Cli::try_parse_from(["wt", "stop", "ars.mt3"]).unwrap();
+    let Command::Stop { name } = cli.command else {
+        panic!("expected stop command");
     };
     assert_eq!(name, "ars.mt3");
 }

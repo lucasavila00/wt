@@ -1,4 +1,4 @@
-use super::{copy_image_command, resize_disk_command, shutdown_reason};
+use super::{allocated_bytes, copy_image_command, resize_disk_command, shutdown_reason};
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -35,4 +35,21 @@ fn initial_world_disk_is_an_independent_copy() {
         "48G",
     ]
     "###);
+}
+
+#[test]
+fn disk_usage_reports_allocated_blocks_not_virtual_length() {
+    use std::io::{Seek, Write};
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sparse.qcow2");
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.set_len(1024 * 1024 * 1024).unwrap();
+    file.rewind().unwrap();
+    file.write_all(&[1; 4096]).unwrap();
+    file.sync_all().unwrap();
+
+    let usage = allocated_bytes(&path).unwrap();
+    assert!(usage >= 4096);
+    assert!(usage < 1024 * 1024 * 1024);
 }

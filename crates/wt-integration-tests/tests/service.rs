@@ -2,8 +2,8 @@ use std::sync::{atomic::Ordering, mpsc, Arc, Condvar, Mutex};
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_api::{
-    Capacity, CapacityResource, CreateApplication, ForkInstance, Instance, InstanceApplication,
-    InstanceName, InstanceStatus, Operation, Response,
+    Capacity, CapacityResource, CreateApplication, Instance, InstanceApplication, InstanceName,
+    InstanceStatus, Operation, Response,
 };
 use wt_server::operations::Operations;
 use wt_server::service::Service;
@@ -13,6 +13,8 @@ use wt_server::store::{Store, StoredApplication, StoredInstance};
 mod agent_git_reports;
 #[path = "service/host_failure.rs"]
 mod host_failure;
+#[path = "service/stop.rs"]
+mod stop;
 #[path = "service/support.rs"]
 mod support;
 use support::{create, create_host, service, Gateway, UnavailableGateway, Worker};
@@ -174,48 +176,6 @@ fn list_reconciles_completed_setup_to_running() {
     assert_eq!(instances[0].memory_mib, 1024);
     assert_eq!(instances[0].disk_gib, 8);
     assert!(instances[0].application.app_ssh().is_some());
-}
-
-#[test]
-fn stopped_world_can_be_started() {
-    let temp = TempDir::new().unwrap();
-    service(&temp, Worker::default())
-        .execute("tester", Operation::Create(create("sample")))
-        .unwrap();
-    let stopped_worker = Worker {
-        stopped: true,
-        ..Worker::default()
-    };
-    let Response::Instances { instances, .. } = service(&temp, stopped_worker)
-        .execute("tester", Operation::List)
-        .unwrap()
-    else {
-        panic!()
-    };
-    assert_eq!(instances[0].status, InstanceStatus::Stopped);
-    assert_eq!(
-        instances[0].last_error.as_deref(),
-        Some("guest stopped (crashed)")
-    );
-
-    let worker = Worker {
-        stopped: true,
-        ..Worker::default()
-    };
-    let starts = worker.starts.clone();
-    let Response::Instance { instance } = service(&temp, worker)
-        .execute(
-            "tester",
-            Operation::Start {
-                name: InstanceName::parse("sample").unwrap(),
-            },
-        )
-        .unwrap()
-    else {
-        panic!()
-    };
-    assert_eq!(instance.status, InstanceStatus::Setup);
-    assert_eq!(starts.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -411,22 +371,6 @@ fn failed_create_keeps_registry_until_grant_revocation_succeeds() {
             .get("tester", &InstanceName::parse("sample").unwrap()),
         Err(wt_server::store::StoreError::NotFound)
     ));
-}
-
-#[test]
-fn fork_is_unavailable_for_every_world() {
-    let temp = TempDir::new().unwrap();
-    let error = service(&temp, Worker::default())
-        .execute(
-            "tester",
-            Operation::Fork(ForkInstance {
-                source: InstanceName::parse("source").unwrap(),
-                name: InstanceName::parse("fork").unwrap(),
-            }),
-        )
-        .unwrap_err();
-    assert_eq!(error.code, wt_api::ErrorCode::InvalidRequest);
-    assert_eq!(error.message, "worlds cannot be forked");
 }
 
 #[test]
@@ -662,7 +606,7 @@ fn startup_recovery_marks_provisioning_as_error() {
                 },
             },
             backend_id: format!("wt-{}", id.simple()),
-            head_disk_id: Uuid::new_v4(),
+            disk_id: Uuid::new_v4(),
             setup_fingerprint: "test".into(),
             application: StoredApplication::Devcontainer {
                 gateway_grant_id: "grant-test".into(),

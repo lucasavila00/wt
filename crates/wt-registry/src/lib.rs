@@ -1,13 +1,17 @@
+mod capacity;
 mod reports;
 pub mod schema;
 
+pub use capacity::{
+    ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
+};
 pub use reports::{AgentGitReport, AgentGitReportKind};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use schema::{disk_nodes, guests, runners};
+use schema::{disks, guests, runners};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::path::Path;
@@ -94,7 +98,7 @@ pub struct Guest {
     pub id: Uuid,
     pub kind: GuestKind,
     pub backend_id: String,
-    pub head_disk_id: Uuid,
+    pub disk_id: Uuid,
     pub resources: Resources,
 }
 
@@ -174,18 +178,18 @@ struct NewGuest<'a> {
     id: String,
     kind: &'static str,
     backend_id: &'a str,
-    head_disk_id: String,
+    disk_id: String,
     vcpus: i64,
     memory_mib: i64,
     disk_gib: i64,
+    compute_reserved: bool,
+    disk_reserved_gib: i64,
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = disk_nodes)]
+#[diesel(table_name = disks)]
 struct NewDiskNode {
     id: String,
-    parent_id: Option<String>,
-    immutable: bool,
 }
 
 #[derive(Insertable)]
@@ -203,10 +207,12 @@ pub struct GuestRow {
     pub id: String,
     pub kind: String,
     pub backend_id: String,
-    pub head_disk_id: String,
+    pub disk_id: String,
     pub vcpus: i64,
     pub memory_mib: i64,
     pub disk_gib: i64,
+    pub compute_reserved: bool,
+    pub disk_reserved_gib: i64,
 }
 
 #[derive(Queryable, Selectable)]
@@ -218,16 +224,6 @@ struct RunnerRow {
     status: String,
     github_runner_id: Option<i64>,
     last_error: Option<String>,
-}
-
-#[derive(QueryableByName)]
-struct ResourceSum {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    vcpus: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    memory_mib: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    disk_gib: i64,
 }
 
 impl Registry {
@@ -325,27 +321,22 @@ pub fn insert_guest(
         id: guest.id.to_string(),
         kind: guest.kind.as_str(),
         backend_id: &guest.backend_id,
-        head_disk_id: guest.head_disk_id.to_string(),
+        disk_id: guest.disk_id.to_string(),
         vcpus: to_i64(guest.resources.vcpus, "vcpus")?,
         memory_mib: to_i64(guest.resources.memory_mib, "memory_mib")?,
         disk_gib: to_i64(guest.resources.disk_gib, "disk_gib")?,
+        compute_reserved: true,
+        disk_reserved_gib: to_i64(guest.resources.disk_gib, "disk_reserved_gib")?,
     };
+    diesel::insert_into(disks::table)
+        .values(NewDiskNode {
+            id: guest.disk_id.to_string(),
+        })
+        .execute(connection)?;
     diesel::insert_into(guests::table)
         .values(row)
         .execute(connection)?;
     Ok(())
-}
-
-pub fn reserved_resources(connection: &mut SqliteConnection) -> Result<Resources, RegistryError> {
-    let sum = diesel::sql_query(
-        "SELECT COALESCE(SUM(vcpus), 0) AS vcpus, COALESCE(SUM(memory_mib), 0) AS memory_mib, COALESCE(SUM(disk_gib), 0) AS disk_gib FROM guests",
-    )
-    .get_result::<ResourceSum>(connection)?;
-    Ok(Resources {
-        vcpus: to_u64(sum.vcpus, "vcpus")?,
-        memory_mib: to_u64(sum.memory_mib, "memory_mib")?,
-        disk_gib: to_u64(sum.disk_gib, "disk_gib")?,
-    })
 }
 
 impl Registry {
@@ -359,18 +350,11 @@ impl Registry {
         limit: Resources,
     ) -> Result<Runner, RegistryError> {
         self.immediate_transaction(|connection| {
-            diesel::insert_into(disk_nodes::table)
-                .values(NewDiskNode {
-                    id: disk_id.to_string(),
-                    parent_id: None,
-                    immutable: false,
-                })
-                .execute(connection)?;
             let guest = Guest {
                 id,
                 kind: GuestKind::GithubCi,
                 backend_id,
-                head_disk_id: disk_id,
+                disk_id,
                 resources,
             };
             insert_guest(connection, &guest, limit)?;
@@ -432,15 +416,15 @@ impl Registry {
 
     pub fn release_runner(&self, id: Uuid) -> Result<(), RegistryError> {
         self.transaction(|connection| {
-            let head_disk_id = guests::table
+            let disk_id = guests::table
                 .find(id.to_string())
                 .filter(guests::kind.eq(GuestKind::GithubCi.as_str()))
-                .select(guests::head_disk_id)
+                .select(guests::disk_id)
                 .first::<String>(connection)
                 .optional()?
                 .ok_or_else(|| RegistryError::InvalidData("runner not found".into()))?;
             diesel::delete(guests::table.find(id.to_string())).execute(connection)?;
-            diesel::delete(disk_nodes::table.find(head_disk_id)).execute(connection)?;
+            diesel::delete(disks::table.find(disk_id)).execute(connection)?;
             Ok(())
         })
     }
@@ -484,7 +468,7 @@ impl TryFrom<GuestRow> for Guest {
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             kind,
             backend_id: row.backend_id,
-            head_disk_id: Uuid::parse_str(&row.head_disk_id)
+            disk_id: Uuid::parse_str(&row.disk_id)
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             resources: Resources {
                 vcpus: to_u64(row.vcpus, "vcpus")?,
@@ -506,8 +490,6 @@ fn to_u64(value: i64, field: &'static str) -> Result<u64, RegistryError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::disk_nodes;
-
     #[test]
     fn all_world_kinds_share_atomic_capacity() {
         let temp = tempfile::tempdir().unwrap();
@@ -523,19 +505,12 @@ mod tests {
             id: Uuid::new_v4(),
             kind,
             backend_id: format!("wt-{}", Uuid::new_v4().simple()),
-            head_disk_id: Uuid::new_v4(),
+            disk_id: Uuid::new_v4(),
             resources: limit,
         };
         let world = guest(GuestKind::Devcontainer);
         first
             .immediate_transaction::<_, RegistryError>(|connection| {
-                diesel::insert_into(disk_nodes::table)
-                    .values((
-                        disk_nodes::id.eq(world.head_disk_id.to_string()),
-                        disk_nodes::parent_id.eq(None::<String>),
-                        disk_nodes::immutable.eq(false),
-                    ))
-                    .execute(connection)?;
                 insert_guest(connection, &world, limit)
             })
             .unwrap();
@@ -604,6 +579,49 @@ mod tests {
                 disk_gib: 0,
             }
         );
+    }
+
+    #[test]
+    fn stopped_guest_reserves_only_its_used_disk_space() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
+        let id = Uuid::new_v4();
+        let resources = Resources {
+            vcpus: 2,
+            memory_mib: 4096,
+            disk_gib: 32,
+        };
+        registry
+            .reserve_runner(
+                id,
+                "runner-test",
+                format!("wt-{}", id.simple()),
+                Uuid::new_v4(),
+                resources,
+                resources,
+            )
+            .unwrap();
+
+        registry
+            .transaction::<_, RegistryError>(|connection| {
+                release_resources(connection, id, 1536 * 1024 * 1024)
+            })
+            .unwrap();
+        assert_eq!(
+            registry.read(reserved_resources).unwrap(),
+            Resources {
+                vcpus: 0,
+                memory_mib: 0,
+                disk_gib: 2,
+            }
+        );
+
+        registry
+            .immediate_transaction::<_, RegistryError>(|connection| {
+                reserve_resources(connection, id, resources)
+            })
+            .unwrap();
+        assert_eq!(registry.read(reserved_resources).unwrap(), resources);
     }
 
     #[test]

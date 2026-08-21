@@ -38,19 +38,13 @@ impl ApiRequest {
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Operation {
     Create(CreateInstance),
-    Fork(ForkInstance),
     List,
     Get { name: InstanceName },
     Start { name: InstanceName },
+    Stop { name: InstanceName },
     Delete { name: InstanceName },
     ListAgentGitReports,
     ClearAgentGitReports,
-}
-
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ForkInstance {
-    pub source: InstanceName,
-    pub name: InstanceName,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -179,6 +173,8 @@ pub enum Response {
     },
     Instances {
         instances: Vec<Instance>,
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        disk_usage_bytes: std::collections::BTreeMap<Uuid, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         agent_git_report_counts: std::collections::BTreeMap<Uuid, u64>,
     },
@@ -478,6 +474,21 @@ mod tests {
             serde_json::json!({
                 "protocol_version": 2,
                 "operation": "start",
+                "name": "repo-feature"
+            })
+        );
+    }
+
+    #[test]
+    fn stop_request_has_stable_shape() {
+        let request = ApiRequest::new(Operation::Stop {
+            name: InstanceName::parse("repo-feature").unwrap(),
+        });
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 2,
+                "operation": "stop",
                 "name": "repo-feature"
             })
         );

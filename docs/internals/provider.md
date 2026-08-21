@@ -4,7 +4,7 @@
 contracts:
 
 - `MachineSpec`, resources, disk identity, and `NoCloudConfig`;
-- create, fork, inspect, start, and delete operations;
+- create, inspect, start, stop, disk usage, and delete operations;
 - bounded guest command, capture, and file-write transport.
 
 `wt-libvirt` implements those contracts with libvirt/KVM and the QEMU guest

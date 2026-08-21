@@ -42,7 +42,7 @@ support and one virtiofs filesystem device per folder. Escape source paths in
 the same way as disk and network values.
 
 The same machine configuration is used for host and devcontainer worlds, so
-both kinds receive the devices. Forked worlds receive them too. GitHub CI
+both kinds receive the devices. GitHub CI
 machines do not use the retained-world server configuration and receive none.
 
 ## Mounting inside the VM

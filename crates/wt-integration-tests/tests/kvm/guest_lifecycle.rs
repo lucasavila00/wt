@@ -13,7 +13,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let mut harness = KvmHarness::new(&mut timings);
     let name = unique_name("git");
 
-    let disks_before_rejection = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    let disks_before_rejection = count_disks(&harness.config.libvirt.worlds_dir);
     for (index, field) in ["ssh_keys", "ssh_deletekeys", "output"]
         .into_iter()
         .enumerate()
@@ -31,7 +31,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         );
     }
     assert_eq!(
-        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        count_disks(&harness.config.libvirt.worlds_dir),
         disks_before_rejection
     );
     assert!(harness.sync_inventory().is_empty());
@@ -409,18 +409,11 @@ fn agent_git_transport_works_without_provider_credentials() {
         "sync",
         "flush host state before KVM restart",
     );
-    let stopped = timings.run("stop and reconcile world", || {
-        harness.stop(&running);
-        harness
-            .sync_inventory()
-            .into_iter()
-            .find(|instance| instance.name == name)
-            .unwrap()
-    });
+    let stopped = timings.run("stop world", || harness.shutdown(&name));
     assert_eq!(stopped.status, InstanceStatus::Stopped);
     assert_eq!(
         stopped.last_error.as_deref(),
-        Some("guest stopped (destroyed)")
+        Some("guest stopped (requested)")
     );
 
     let restarted = timings.run("restart world", || harness.start(&name));
@@ -511,7 +504,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     harness.assert_grant_is_revoked(host_token);
 
     let broken_name = unique_name("host-cloud-init-failure");
-    let disks_before = count_disk_nodes(&harness.config.libvirt.worlds_dir);
+    let disks_before = count_disks(&harness.config.libvirt.worlds_dir);
     let broken = timings.run("prepare failing host world", || {
         harness.create_host(
             &broken_name,
@@ -545,7 +538,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         "cloud-init output was not preserved in order:\n{progress}"
     );
     assert_eq!(
-        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        count_disks(&harness.config.libvirt.worlds_dir),
         disks_before + 1
     );
     assert_eq!(failed.status, InstanceStatus::Error);
@@ -567,7 +560,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let _ = broken_setup.wait();
     harness.delete(&broken_name);
     assert_eq!(
-        count_disk_nodes(&harness.config.libvirt.worlds_dir),
+        count_disks(&harness.config.libvirt.worlds_dir),
         disks_before
     );
 

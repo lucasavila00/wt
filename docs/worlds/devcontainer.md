@@ -78,5 +78,5 @@ checkout. The grant is revoked before the world disk is deleted.
 - App images use Ubuntu 24.04 or newer, or Debian 13 or newer, with `apt`.
 - Repository and devcontainer code are trusted inside their world.
 
-Stopping preserves the writable disk. `wt start NAME` boots the guest, restores
-its containers, and verifies guest and app SSH identity.
+`wt stop NAME` shuts down the guest and preserves its disk. `wt start NAME`
+boots it, restores its containers, and verifies guest and app SSH identity.

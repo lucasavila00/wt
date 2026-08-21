@@ -1,6 +1,7 @@
 # KVM and NoCloud
 
-`wt-libvirt` owns machine creation, inspection, start, and deletion. It creates
+`wt-libvirt` owns machine creation, inspection, start, stop, disk usage, and
+deletion. It creates
 independent qcow2 world disks, libvirt domains, NoCloud seed images, network
 identity, and QEMU guest-agent transport.
 

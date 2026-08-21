@@ -304,6 +304,7 @@ mod tests {
             &[ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance,
             }],
         )
@@ -318,6 +319,7 @@ mod tests {
             &[ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance: replacement_instance,
             }],
         )
@@ -368,6 +370,7 @@ mod tests {
             &[ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance,
             }],
         )
@@ -409,6 +412,7 @@ mod tests {
             &[ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance,
             }],
         )
@@ -510,6 +514,7 @@ mod tests {
             &[ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance,
             }],
         )
@@ -528,6 +533,7 @@ mod tests {
         let instance = |id, context: &str| ContextInstance {
             context: context.into(),
             agent_git_report_count: 0,
+            disk_usage_bytes: None,
             instance: Instance {
                 id,
                 name: InstanceName::parse("same").unwrap(),
@@ -597,6 +603,7 @@ mod tests {
         let instance = |name: &str, host: &str| ContextInstance {
             context: "lab".into(),
             agent_git_report_count: 0,
+            disk_usage_bytes: None,
             instance: Instance {
                 id: Uuid::new_v4(),
                 name: InstanceName::parse(name).unwrap(),
