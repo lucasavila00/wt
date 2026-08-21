@@ -1,11 +1,11 @@
 ---
-source: crates/products/wt/client/src/shell/render.rs
+source: crates/products/wt/client/src/shell/render_tests.rs
 expression: terminal.backend().buffer()
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 6 },
     content: [
-        "  WT  F5: enable navbar         local.one (1/2)                     F6: close ",
+        "  WT  F5: enable navbar      ←  local.one (1/2) →                   F6: close ",
         "world output                                                                    ",
         "red                                                                             ",
         "                                                                                ",
@@ -14,7 +14,7 @@ Buffer {
     ],
     styles: [
         x: 0, y: 0, fg: Black, bg: Cyan, underline: Reset, modifier: BOLD,
-        x: 6, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 6, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: BOLD,
         x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 2, fg: Indexed(1), bg: Reset, underline: Reset, modifier: NONE,
         x: 3, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

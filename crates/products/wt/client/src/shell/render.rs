@@ -155,7 +155,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     let right_hint = if disabled {
         "Shift+F5: enable F6: close "
     } else if active {
-        "←/→ world ↑ ctrl F6: close "
+        "↑ ctrl F6: close "
     } else {
         "F6: close "
     };
@@ -170,19 +170,20 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
             .bg(Color::White)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::new().fg(Color::DarkGray).bg(Color::Black)
+        Style::new()
+            .fg(Color::DarkGray)
+            .bg(Color::Black)
+            .add_modifier(Modifier::BOLD)
     };
-    let areas = Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Length(24),
-        Constraint::Fill(1),
-    ])
-    .split(Rect::new(
-        frame.area().x,
-        frame.area().y,
-        frame.area().width,
+    let bar = Rect::new(frame.area().x, frame.area().y, frame.area().width, 1);
+    let [previous, world, next] = model.world_bar_controls(bar);
+    let left = Rect::new(bar.x, bar.y, previous.x.saturating_sub(bar.x), 1);
+    let right = Rect::new(
+        next.right(),
+        bar.y,
+        bar.right().saturating_sub(next.right()),
         1,
-    ));
+    );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -199,24 +200,21 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
             Span::raw(left_hint),
         ]))
         .style(style),
-        areas[0],
+        left,
     );
+    frame.render_widget(Paragraph::new("← ").style(style), previous);
     frame.render_widget(
-        Paragraph::new(format!(
-            " {} ({}/{})",
-            model.active_world(),
-            model.active() + 1,
-            model.world_count()
-        ))
-        .alignment(Alignment::Center)
-        .style(style),
-        areas[1],
+        Paragraph::new(model.world_bar_label())
+            .alignment(Alignment::Center)
+            .style(style),
+        world,
     );
+    frame.render_widget(Paragraph::new(" →").style(style), next);
     frame.render_widget(
         Paragraph::new(right_hint)
             .alignment(Alignment::Right)
             .style(style),
-        areas[2],
+        right,
     );
 }
 
