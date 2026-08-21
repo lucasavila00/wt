@@ -1,8 +1,6 @@
 use anyhow::{Context as _, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use termwiz::input::{
-    KeyCode as TermKeyCode, KeyCodeEncodeModes, KeyboardEncoding, Modifiers,
-};
+use termwiz::input::{KeyCode as TermKeyCode, KeyCodeEncodeModes, KeyboardEncoding, Modifiers};
 
 pub(super) fn encode_key(key: KeyEvent, application_cursor: bool) -> Result<Option<Vec<u8>>> {
     let Some((code, implied)) = key_code(key.code) else {

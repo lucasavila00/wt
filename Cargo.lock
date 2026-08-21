@@ -3990,6 +3990,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "signal-hook",
  "ssh-key",
  "tempfile",
  "termwiz",

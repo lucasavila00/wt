@@ -2,7 +2,7 @@ use super::model::{Mode, ShellModel};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget as _};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellModel) {

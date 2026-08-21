@@ -1,0 +1,19 @@
+---
+source: crates/products/wt/client/src/shell/render.rs
+expression: terminal.backend().buffer()
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 48, height: 6 },
+    content: [
+        "┌──────────────────────────────────────────────┐",
+        "│        ←/→ world  ↑ control  F5 close        │",
+        "│               local.one  (1/2)               │",
+        "└──────────────────────────────────────────────┘",
+        "                                                ",
+        "                                                ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 0, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}
