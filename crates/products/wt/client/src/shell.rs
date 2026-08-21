@@ -4,6 +4,7 @@ use crossterm::event::{
     Event, KeyEventKind,
 };
 use crossterm::execute;
+use ratatui::layout::Rect;
 use std::io::IsTerminal as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,6 +20,8 @@ mod session;
 
 use model::{InputRoute, Mode, ShellModel};
 use session::SessionSet;
+
+const BAR_HEIGHT: u16 = 1;
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
@@ -44,7 +47,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     }
 
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
-    let mut sessions = SessionSet::start(&worlds, rows, columns)?;
+    let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
@@ -123,7 +126,7 @@ fn dispatch_event(
     event: Event,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    area: ratatui::layout::Rect,
+    area: Rect,
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
@@ -141,21 +144,84 @@ fn dispatch_event(
             Ok(true)
         }
         Event::Mouse(mouse) if model.mode().forwards_mouse() => {
-            let screen = sessions.screen(model.active());
-            if let Some(bytes) = input::encode_mouse(
-                mouse,
-                screen.mouse_protocol_mode(),
-                screen.mouse_protocol_encoding(),
-            ) {
-                sessions.write(model.active(), &bytes)?;
+            if let Some(mouse) = world_mouse(mouse, area) {
+                let screen = sessions.screen(model.active());
+                if let Some(bytes) = input::encode_mouse(
+                    mouse,
+                    screen.mouse_protocol_mode(),
+                    screen.mouse_protocol_encoding(),
+                ) {
+                    sessions.write(model.active(), &bytes)?;
+                }
             }
             Ok(false)
         }
         Event::Mouse(mouse) if model.mode() == Mode::Control => Ok(model.handle_mouse(mouse, area)),
         Event::Resize(columns, rows) => {
-            sessions.resize(rows, columns)?;
+            sessions.resize(world_rows(rows), columns)?;
             Ok(true)
         }
         _ => Ok(false),
+    }
+}
+
+fn world_rows(terminal_rows: u16) -> u16 {
+    terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
+}
+
+fn world_area(area: Rect) -> Rect {
+    Rect::new(
+        area.x,
+        area.y.saturating_add(BAR_HEIGHT),
+        area.width,
+        area.height.saturating_sub(BAR_HEIGHT),
+    )
+}
+
+fn world_mouse(
+    mut mouse: crossterm::event::MouseEvent,
+    area: Rect,
+) -> Option<crossterm::event::MouseEvent> {
+    let world = world_area(area);
+    if mouse.column < world.x
+        || mouse.column >= world.x.saturating_add(world.width)
+        || mouse.row < world.y
+        || mouse.row >= world.y.saturating_add(world.height)
+    {
+        return None;
+    }
+    mouse.column -= world.x;
+    mouse.row -= world.y;
+    Some(mouse)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    #[test]
+    fn world_view_reserves_the_top_row() {
+        assert_eq!(world_rows(24), 23);
+        assert_eq!(world_rows(1), 1);
+        assert_eq!(world_area(Rect::new(0, 0, 80, 24)), Rect::new(0, 1, 80, 23));
+    }
+
+    #[test]
+    fn mouse_input_skips_the_bar_and_is_translated_to_world_rows() {
+        let area = Rect::new(0, 0, 80, 24);
+
+        assert_eq!(world_mouse(mouse(4, 0), area), None);
+        assert_eq!(world_mouse(mouse(4, 1), area).unwrap().row, 0);
+        assert_eq!(world_mouse(mouse(4, 23), area).unwrap().row, 22);
+    }
+
+    fn mouse(column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
     }
 }

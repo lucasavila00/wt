@@ -2,6 +2,7 @@ use super::control::{
     command_palette_layout, control_areas, Activity, CommandPalette, ACTIVITY_BUTTON_HEIGHT,
 };
 use super::model::{Mode, ShellModel};
+use super::world_area;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -13,15 +14,17 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
         draw_control(frame, model);
         return;
     }
-    frame.render_widget(TerminalView(screen), frame.area());
+    let world = world_area(frame.area());
+    frame.render_widget(TerminalView(screen), world);
+    draw_world_bar(frame, model);
     match model.mode() {
         Mode::World => {
             if !screen.hide_cursor() {
                 let (row, column) = screen.cursor_position();
-                frame.set_cursor_position((column, row));
+                frame.set_cursor_position((world.x + column, world.y + row));
             }
         }
-        Mode::Switcher => draw_switcher(frame, model),
+        Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
 }
@@ -74,17 +77,36 @@ fn color(source: vt100::Color) -> Color {
     }
 }
 
-fn draw_switcher(frame: &mut Frame<'_>, model: &ShellModel) {
-    draw_overlay(
-        frame,
-        52,
-        4,
+fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
+    let active = model.mode() == Mode::Switcher;
+    let text = if active {
         format!(
-            "←/→ worlds   ↑ control   F5 close   F6 quit\n {}  ({}/{})",
+            " {} ({}/{})   ←/→ worlds   ↑ control   F5 close   F6 quit",
             model.active_world(),
             model.active() + 1,
             model.world_count()
-        ),
+        )
+    } else {
+        format!(
+            " {} ({}/{})   F5 worlds   F6 quit",
+            model.active_world(),
+            model.active() + 1,
+            model.world_count()
+        )
+    };
+    let style = if active {
+        Style::new()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().fg(Color::DarkGray).bg(Color::Black)
+    };
+    frame.render_widget(
+        Paragraph::new(text)
+            .alignment(Alignment::Center)
+            .style(style),
+        Rect::new(frame.area().x, frame.area().y, frame.area().width, 1),
     );
 }
 
@@ -186,32 +208,11 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
     );
 }
 
-fn draw_overlay(frame: &mut Frame<'_>, width: u16, height: u16, text: String) {
-    let outer = frame.area();
-    let area = Rect::new(
-        outer.x + outer.width.saturating_sub(width) / 2,
-        outer.y,
-        width.min(outer.width),
-        height.min(outer.height),
-    );
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .style(Style::new().fg(Color::White).bg(Color::Black))
-            .block(
-                Block::new()
-                    .borders(Borders::ALL)
-                    .style(Style::new().fg(Color::White).bg(Color::Black)),
-            ),
-        area,
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crossterm::event::KeyCode;
+    use ratatui::layout::Position;
     use ratatui::{backend::TestBackend, Terminal};
 
     fn parser() -> vt100::Parser {
@@ -221,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn switcher_is_drawn_over_the_live_world() {
+    fn switcher_activates_the_world_bar() {
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
@@ -235,7 +236,30 @@ mod tests {
             .draw(|frame| draw(frame, parser.screen(), &model))
             .unwrap();
 
-        insta::assert_debug_snapshot!("shell_switcher_over_world", terminal.backend().buffer());
+        insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
+        let style = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        assert_eq!(style.fg, Some(Color::Black));
+        assert_eq!(style.bg, Some(Color::White));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn world_bar_is_dim_until_activated() {
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
+        let parser = parser();
+
+        terminal
+            .draw(|frame| draw(frame, parser.screen(), &model))
+            .unwrap();
+
+        assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
+        insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
+        let style = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+        assert_eq!(style.bg, Some(Color::Black));
+        assert!(!style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
