@@ -273,10 +273,19 @@ resource is explicit. IDs must be positive integer strings. Commit values must b
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.\n";
 
 pub fn wt_tools_help() -> String {
-    let command_type = api::typescript_command_type()
+    let command_type = api::TYPESCRIPT_COMMAND_TYPE
         .trim_end()
-        .replace('\n', "\n    ");
-    format!("{HELP_PREFIX}    {}\n{HELP_SUFFIX}", command_type)
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("    {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
 }
 
 #[cfg(test)]

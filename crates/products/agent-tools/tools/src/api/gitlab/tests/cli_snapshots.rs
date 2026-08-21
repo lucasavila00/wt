@@ -90,7 +90,7 @@ fn cli_commands_render_provider_results_as_json() {
             "reply_thread",
             WtToolsCommand::ReplyThread {
                 mr: "8".into(),
-                thread: ReviewThreadHandle::new("gid://gitlab/Discussion/thread-8"),
+                thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 body: "Fixed.".to_owned(),
             },
         ),
@@ -98,7 +98,7 @@ fn cli_commands_render_provider_results_as_json() {
             "set_thread",
             WtToolsCommand::SetThread {
                 mr: "8".into(),
-                thread: ReviewThreadHandle::new("gid://gitlab/Discussion/thread-8"),
+                thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 resolved: true,
             },
         ),

@@ -1,0 +1,135 @@
+---
+source: crates/products/agent-tools/tools/tests/typegen.rs
+expression: "codegen::generate(\"wt-tools-command.ts\", CONTRACT.to_owned()).unwrap()"
+---
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+pub enum ChangeRequestState {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "draft")]
+    Draft,
+    #[serde(rename = "open")]
+    Open,
+    #[serde(rename = "closed")]
+    Closed,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "action", deny_unknown_fields)]
+pub enum WtToolsCommand {
+    #[serde(rename = "show_mr")]
+    ShowMr {
+        mr: String,
+    },
+    #[serde(rename = "show_mr_for_branch")]
+    ShowMrForBranch {
+        branch: String,
+    },
+    #[serde(rename = "show_run")]
+    ShowRun {
+        run: String,
+    },
+    #[serde(rename = "show_job")]
+    ShowJob {
+        job: String,
+    },
+    #[serde(rename = "list_threads")]
+    ListThreads {
+        mr: String,
+    },
+    #[serde(rename = "list_ci")]
+    ListCi {
+        commit: String,
+    },
+    #[serde(rename = "list_jobs")]
+    ListJobs {
+        run: String,
+    },
+    #[serde(rename = "log_job")]
+    LogJob {
+        job: String,
+    },
+    #[serde(rename = "wait_mr")]
+    WaitMr {
+        mr: String,
+        #[serde(default)]
+        timeout_seconds: Option<u64>,
+    },
+    #[serde(rename = "wait_run")]
+    WaitRun {
+        run: String,
+        #[serde(default)]
+        timeout_seconds: Option<u64>,
+    },
+    #[serde(rename = "wait_job")]
+    WaitJob {
+        job: String,
+        #[serde(default)]
+        timeout_seconds: Option<u64>,
+    },
+    #[serde(rename = "open_mr")]
+    OpenMr {
+        head: String,
+        base: String,
+        #[serde(default)]
+        draft: bool,
+    },
+    #[serde(rename = "set_mr")]
+    SetMr {
+        mr: String,
+        state: ChangeRequestState,
+    },
+    #[serde(rename = "edit_mr")]
+    EditMr {
+        mr: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        body: Option<String>,
+    },
+    #[serde(rename = "comment_mr")]
+    CommentMr {
+        mr: String,
+        body: String,
+    },
+    #[serde(rename = "reply_thread")]
+    ReplyThread {
+        mr: String,
+        thread: String,
+        body: String,
+    },
+    #[serde(rename = "set_thread")]
+    SetThread {
+        mr: String,
+        thread: String,
+        resolved: bool,
+    },
+    #[serde(rename = "retry_job")]
+    RetryJob {
+        job: String,
+    },
+    #[serde(rename = "cancel_job")]
+    CancelJob {
+        job: String,
+    },
+    #[serde(rename = "cancel_run")]
+    CancelRun {
+        run: String,
+    },
+    #[serde(rename = "report_wt_tool_bug")]
+    ReportWtToolBug {
+        description: String,
+    },
+    #[serde(rename = "report_wt_tool_issue")]
+    ReportWtToolIssue {
+        description: String,
+    },
+    #[serde(rename = "suggest_wt_tool_improvement")]
+    SuggestWtToolImprovement {
+        description: String,
+    },
+    #[serde(rename = "request_wt_tool_feature")]
+    RequestWtToolFeature {
+        description: String,
+    },
+}

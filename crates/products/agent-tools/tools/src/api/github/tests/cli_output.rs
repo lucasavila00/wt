@@ -172,7 +172,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
             "reply_thread",
             WtToolsCommand::ReplyThread {
                 mr: "7".into(),
-                thread: ReviewThreadHandle::new("thread-7"),
+                thread: "thread-7".to_owned(),
                 body: "Done".to_owned(),
             },
             vec![
@@ -188,7 +188,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
             "set_thread",
             WtToolsCommand::SetThread {
                 mr: "7".into(),
-                thread: ReviewThreadHandle::new("thread-7"),
+                thread: "thread-7".to_owned(),
                 resolved: true,
             },
             vec![

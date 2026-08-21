@@ -463,11 +463,12 @@ impl GitProviderApi for GitlabApi {
                 ))
             }
             WtToolsCommand::ReplyThread { mr, thread, body } => {
+                let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
                 let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
-                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
                     "api/graphql",
                     gitlab_reply_to_discussion::Variables {
@@ -493,11 +494,12 @@ impl GitProviderApi for GitlabApi {
                 thread,
                 resolved,
             } => {
+                let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
                 let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
-                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
                     gitlab_set_discussion_resolved::Variables {

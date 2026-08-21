@@ -24,7 +24,6 @@ use crate::ProviderKind;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use typescript_type_def::{write_definition_file, DefinitionFileOptions, TypeDef};
 
 const CI_JOB_LOG_TAIL_LIMIT: usize = 64 * 1024;
 const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
@@ -43,123 +42,9 @@ pub struct ProviderProjectScope<'a> {
     pub prefix: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, TypeDef)]
-#[serde(rename_all = "snake_case")]
-pub enum ChangeRequestState {
-    Ready,
-    Draft,
-    Open,
-    Closed,
-}
+include!(concat!(env!("OUT_DIR"), "/wt_tools_command.rs"));
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, TypeDef)]
-#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-pub enum WtToolsCommand {
-    ShowMr {
-        mr: String,
-    },
-    ShowMrForBranch {
-        branch: String,
-    },
-    ShowRun {
-        run: String,
-    },
-    ShowJob {
-        job: String,
-    },
-    ListThreads {
-        mr: String,
-    },
-    ListCi {
-        commit: String,
-    },
-    ListJobs {
-        run: String,
-    },
-    LogJob {
-        job: String,
-    },
-    WaitMr {
-        mr: String,
-        #[serde(default)]
-        timeout_seconds: Option<u64>,
-    },
-    WaitRun {
-        run: String,
-        #[serde(default)]
-        timeout_seconds: Option<u64>,
-    },
-    WaitJob {
-        job: String,
-        #[serde(default)]
-        timeout_seconds: Option<u64>,
-    },
-    OpenMr {
-        head: String,
-        base: String,
-        #[serde(default)]
-        draft: bool,
-    },
-    SetMr {
-        mr: String,
-        state: ChangeRequestState,
-    },
-    EditMr {
-        mr: String,
-        #[serde(default)]
-        title: Option<String>,
-        #[serde(default)]
-        body: Option<String>,
-    },
-    CommentMr {
-        mr: String,
-        body: String,
-    },
-    ReplyThread {
-        mr: String,
-        thread: ReviewThreadHandle,
-        body: String,
-    },
-    SetThread {
-        mr: String,
-        thread: ReviewThreadHandle,
-        resolved: bool,
-    },
-    RetryJob {
-        job: String,
-    },
-    CancelJob {
-        job: String,
-    },
-    CancelRun {
-        run: String,
-    },
-    ReportWtToolBug {
-        description: String,
-    },
-    ReportWtToolIssue {
-        description: String,
-    },
-    SuggestWtToolImprovement {
-        description: String,
-    },
-    RequestWtToolFeature {
-        description: String,
-    },
-}
-
-pub fn typescript_command_type() -> String {
-    let mut output = Vec::new();
-    write_definition_file::<_, WtToolsCommand>(
-        &mut output,
-        DefinitionFileOptions {
-            header: None,
-            root_namespace: None,
-        },
-    )
-    .expect("TypeScript command type renders");
-    String::from_utf8(output).expect("TypeScript command type is UTF-8")
-}
+pub const TYPESCRIPT_COMMAND_TYPE: &str = include_str!("wt-tools-command.ts");
 
 #[allow(
     dead_code,
@@ -257,7 +142,7 @@ pub struct CiRun {
 }
 
 // Every identifier newtype serializes as its underlying scalar.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, TypeDef)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ReviewThreadHandle(String);
 

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn generated_typescript_is_the_complete_command_contract() {
-    insta::assert_snapshot!(typescript_command_type());
+    insta::assert_snapshot!(TYPESCRIPT_COMMAND_TYPE);
 }
 
 #[test]

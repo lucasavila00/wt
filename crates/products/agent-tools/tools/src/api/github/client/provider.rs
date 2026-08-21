@@ -450,10 +450,11 @@ impl GitProviderApi for GithubApi {
                 ))
             }
             WtToolsCommand::ReplyThread { mr, thread, body } => {
+                let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                self.require_review_thread(scope.project, mr_id, thread)?;
+                self.require_review_thread(scope.project, mr_id, &thread)?;
                 self.graphql.execute_graphql::<GithubReplyToReviewThread>(
                     self.graphql_path,
                     github_reply_to_review_thread::Variables {
@@ -470,10 +471,11 @@ impl GitProviderApi for GithubApi {
                 thread,
                 resolved,
             } => {
+                let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request)?;
-                self.require_review_thread(scope.project, mr_id, thread)?;
+                self.require_review_thread(scope.project, mr_id, &thread)?;
                 if *resolved {
                     self.graphql.execute_graphql::<GithubResolveReviewThread>(
                         self.graphql_path,

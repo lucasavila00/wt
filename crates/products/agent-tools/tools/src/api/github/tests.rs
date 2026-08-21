@@ -440,7 +440,7 @@ fn refuses_a_thread_handle_from_another_pull_request() {
             &project_scope(),
             &WtToolsCommand::ReplyThread {
                 mr: "7".into(),
-                thread: ReviewThreadHandle::new("thread-from-another-mr"),
+                thread: "thread-from-another-mr".to_owned(),
                 body: "No".to_owned(),
             },
         )

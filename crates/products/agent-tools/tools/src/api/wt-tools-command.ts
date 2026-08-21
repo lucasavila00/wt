@@ -1,7 +1,3 @@
----
-source: crates/products/agent-tools/tools/src/api/tests.rs
-expression: TYPESCRIPT_COMMAND_TYPE
----
 /** State transition accepted by the set_mr command. */
 export type ChangeRequestState = "ready" | "draft" | "open" | "closed";
 

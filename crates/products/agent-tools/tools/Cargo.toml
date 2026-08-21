@@ -12,10 +12,17 @@ wt-workload-registry = { workspace = true }
 graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-typescript-type-def = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 
+[build-dependencies]
+swc_common = { workspace = true }
+swc_ecma_ast = { workspace = true }
+swc_ecma_parser = { workspace = true, features = ["typescript"] }
+
 [dev-dependencies]
 insta = { workspace = true }
+swc_common = { workspace = true }
+swc_ecma_ast = { workspace = true }
+swc_ecma_parser = { workspace = true, features = ["typescript"] }
 tempfile = { workspace = true }

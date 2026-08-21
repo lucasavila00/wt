@@ -1,0 +1,5 @@
+---
+source: crates/products/agent-tools/tools/tests/typegen.rs
+expression: "codegen::generate(\"contract.ts\", source.to_owned()).unwrap_err()"
+---
+contract.ts: generic type alias `Value` is unsupported
