@@ -1,10 +1,11 @@
 use crate::cmd;
 use crate::config::{Context, ContextKind};
 use std::fmt::Write as _;
-use std::io::{Read as _, Write};
+use std::io::{Read, Write};
 use std::os::unix::process::CommandExt as _;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
@@ -116,7 +117,9 @@ fn call_outcome_inner(
     timeout: Option<(Duration, &AtomicBool)>,
 ) -> std::result::Result<Outcome, ContextError> {
     let mut command = helper_command(context);
-    command.process_group(0);
+    if timeout.is_some() {
+        command.process_group(0);
+    }
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -213,60 +216,97 @@ fn wait_with_output(
         return child.wait_with_output();
     };
 
-    let stdout = drain_pipe(child.stdout.take());
-    let stderr = drain_pipe(child.stderr.take());
+    let (stdout_rx, stdout_reader) = drain_pipe(child.stdout.take());
+    let (stderr_rx, stderr_reader) = drain_pipe(child.stderr.take());
     let deadline = Instant::now() + timeout;
-    let mut interrupted = None;
+    let mut stdout = None;
+    let mut stderr = None;
     let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
+        if let Err(error) =
+            poll_pipe(&stdout_rx, &mut stdout).and_then(|()| poll_pipe(&stderr_rx, &mut stderr))
+        {
+            kill_and_reap(&mut child);
+            return Err(error);
         }
-        if cancelled.load(Ordering::Relaxed) {
-            interrupted = Some((std::io::ErrorKind::Interrupted, "context helper cancelled"));
+        if stdout.is_some() && stderr.is_some() {
+            match child.try_wait() {
+                Ok(Some(exit_status)) => {
+                    break exit_status;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    kill_and_reap(&mut child);
+                    return Err(error);
+                }
+            }
+        }
+        let interrupted = if cancelled.load(Ordering::Relaxed) {
+            Some((std::io::ErrorKind::Interrupted, "context helper cancelled"))
         } else if Instant::now() >= deadline {
-            interrupted = Some((std::io::ErrorKind::TimedOut, "context helper timed out"));
+            Some((std::io::ErrorKind::TimedOut, "context helper timed out"))
+        } else {
+            None
+        };
+        if let Some((kind, message)) = interrupted {
+            kill_and_reap(&mut child);
+            return Err(std::io::Error::new(kind, message));
         }
-        if interrupted.is_some() {
-            kill_process_group(&mut child);
-            break child.wait()?;
-        }
-        thread::sleep(Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())));
+        thread::sleep(
+            Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())),
+        );
     };
-    let stdout = join_pipe(stdout)?;
-    let stderr = join_pipe(stderr)?;
-    if let Some((kind, message)) = interrupted {
-        return Err(std::io::Error::new(kind, message));
-    }
+    stdout_reader
+        .join()
+        .map_err(|_| std::io::Error::other("context helper stdout reader panicked"))?;
+    stderr_reader
+        .join()
+        .map_err(|_| std::io::Error::other("context helper stderr reader panicked"))?;
     Ok(Output {
         status,
-        stdout,
-        stderr,
+        stdout: stdout.expect("completed stdout reader returned bytes"),
+        stderr: stderr.expect("completed stderr reader returned bytes"),
     })
 }
 
-fn drain_pipe<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<std::io::Result<Vec<u8>>> {
-    thread::spawn(move || {
+fn drain_pipe<R: Read + Send + 'static>(
+    pipe: Option<R>,
+) -> (Receiver<std::io::Result<Vec<u8>>>, thread::JoinHandle<()>) {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let reader = thread::spawn(move || {
         let mut bytes = Vec::new();
-        if let Some(mut pipe) = pipe {
-            pipe.read_to_end(&mut bytes)?;
+        let result = match pipe {
+            Some(mut pipe) => pipe.read_to_end(&mut bytes).map(|_| bytes),
+            None => Ok(bytes),
+        };
+        let _ = sender.send(result);
+    });
+    (receiver, reader)
+}
+
+fn poll_pipe(
+    receiver: &Receiver<std::io::Result<Vec<u8>>>,
+    output: &mut Option<Vec<u8>>,
+) -> std::io::Result<()> {
+    if output.is_none() {
+        match receiver.try_recv() {
+            Ok(result) => *output = Some(result?),
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                return Err(std::io::Error::other(
+                    "context helper output reader stopped without returning output",
+                ));
+            }
         }
-        Ok(bytes)
-    })
+    }
+    Ok(())
 }
 
-fn join_pipe(
-    reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
-) -> std::io::Result<Vec<u8>> {
-    reader
-        .join()
-        .map_err(|_| std::io::Error::other("context helper output reader panicked"))?
-}
-
-fn kill_process_group(child: &mut std::process::Child) {
+fn kill_and_reap(child: &mut std::process::Child) {
     let pid = nix::unistd::Pid::from_raw(child.id().cast_signed());
     if nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL).is_err() {
         let _ = child.kill();
     }
+    let _ = child.wait();
 }
 
 fn context_error(
@@ -420,9 +460,14 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "printf ready"]);
         command.stdout(Stdio::piped());
+        command.process_group(0);
+        let cancelled = AtomicBool::new(false);
 
-        let output =
-            wait_with_output(command.spawn().unwrap(), Some(Duration::from_millis(500))).unwrap();
+        let output = wait_with_output(
+            command.spawn().unwrap(),
+            Some((Duration::from_millis(500), &cancelled)),
+        )
+        .unwrap();
 
         assert_eq!(output.stdout, b"ready");
     }
@@ -430,13 +475,36 @@ mod tests {
     #[test]
     fn timed_wait_kills_a_slow_helper() {
         let mut command = Command::new("/bin/sh");
-        command.args(["-c", "sleep 10"]);
+        command.args(["-c", "sleep 10 &"]);
+        command.stdout(Stdio::piped());
+        command.process_group(0);
+        let cancelled = AtomicBool::new(false);
         let started = Instant::now();
 
-        let error = wait_with_output(command.spawn().unwrap(), Some(Duration::from_millis(50)))
-            .unwrap_err();
+        let error = wait_with_output(
+            command.spawn().unwrap(),
+            Some((Duration::from_millis(50), &cancelled)),
+        )
+        .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn timed_wait_cancels_a_slow_helper() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "sleep 10 & wait"]);
+        command.stdout(Stdio::piped());
+        command.process_group(0);
+        let cancelled = AtomicBool::new(true);
+
+        let error = wait_with_output(
+            command.spawn().unwrap(),
+            Some((Duration::from_secs(10), &cancelled)),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
     }
 }

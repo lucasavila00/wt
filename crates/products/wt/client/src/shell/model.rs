@@ -20,7 +20,10 @@ impl From<&str> for ShellWorld {
     fn from(name: &str) -> Self {
         Self {
             identity: WorldIdentity {
-                context: name.split_once('.').map_or("local", |(context, _)| context).into(),
+                context: name
+                    .split_once('.')
+                    .map_or("local", |(context, _)| context)
+                    .into(),
                 id: Uuid::new_v4(),
             },
             name: name.into(),
@@ -321,5 +324,28 @@ mod tests {
 
         assert!(!model.has_worlds());
         assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn world_identity_includes_the_context() {
+        let id = Uuid::new_v4();
+        let local = ShellWorld {
+            identity: WorldIdentity {
+                context: "local".into(),
+                id,
+            },
+            name: "local.same".into(),
+        };
+        let lab = ShellWorld {
+            identity: WorldIdentity {
+                context: "lab".into(),
+                id,
+            },
+            name: "lab.same".into(),
+        };
+        let model = ShellModel::new(vec![local.clone(), lab.clone()]);
+
+        assert_eq!(model.world_index(&local.identity), Some(0));
+        assert_eq!(model.world_index(&lab.identity), Some(1));
     }
 }
