@@ -210,10 +210,19 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
                 "No worlds with SSH access\nCreate a world to get started"
             })
             .alignment(Alignment::Center)
-            .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title(refresh_title("Worlds", model.control().worlds_updated_at())),
+            ),
             rows[0],
         ),
-        Activity::Codex => draw_codex(frame, rows[0], model.control().codex()),
+        Activity::Codex => draw_codex(
+            frame,
+            rows[0],
+            model.control().codex(),
+            model.control().codex_updated_at(),
+        ),
     }
     frame.render_widget(
         Paragraph::new(if model.has_worlds() {
@@ -227,14 +236,31 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     draw_command_palette(frame, content, model.control().palette());
 }
 
-fn draw_codex(frame: &mut Frame<'_>, area: Rect, contexts: &[CodexContextSnapshot]) {
+fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
+    updated_at.map_or_else(
+        || format!("{label} · Updating…"),
+        |updated_at| format!("{label} · Last updated {updated_at}"),
+    )
+}
+
+fn draw_codex(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    contexts: &[CodexContextSnapshot],
+    updated_at: Option<&str>,
+) {
     let block = Block::new()
         .borders(Borders::ALL)
-        .title("Codex sessions · read-only startup snapshot");
+        .title(refresh_title("Codex sessions", updated_at));
     let rows = contexts.iter().flat_map(codex_rows).collect::<Vec<_>>();
     if rows.is_empty() {
+        let message = if updated_at.is_some() {
+            "No Codex sessions\nStart Codex in a world to see its session here"
+        } else {
+            "Loading Codex sessions…"
+        };
         frame.render_widget(
-            Paragraph::new("No Codex sessions\nStart Codex in a world to see its session here")
+            Paragraph::new(message)
                 .alignment(Alignment::Center)
                 .block(block),
             area,
@@ -518,40 +544,43 @@ mod tests {
         let backend = TestBackend::new(100, 14);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["ars.dev".into()]);
-        model.set_codex(vec![
-            CodexContextSnapshot::Sessions {
-                context: "ars".into(),
-                sessions: vec![
-                    CodexSession {
-                        session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
-                            .unwrap(),
-                        rollout_updated_at_unix_ms: Some(10),
-                        observations: vec![CodexSessionObservation {
-                            world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
+        model.set_codex(
+            vec![
+                CodexContextSnapshot::Sessions {
+                    context: "ars".into(),
+                    sessions: vec![
+                        CodexSession {
+                            session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
                                 .unwrap(),
-                            world_name: InstanceName::parse("dev").unwrap(),
-                            cwd: "/workspace/wt".into(),
-                            state: CodexSessionState::NeedsAttention,
-                            target: ByobuTarget {
-                                tmux_session: "wt-app".into(),
-                                pane_id: "%1".into(),
-                            },
-                            received_at_unix_ms: 20,
-                        }],
-                    },
-                    CodexSession {
-                        session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
-                            .unwrap(),
-                        rollout_updated_at_unix_ms: Some(30),
-                        observations: vec![],
-                    },
-                ],
-            },
-            CodexContextSnapshot::Failure {
-                context: "lab".into(),
-                message: "context lab could not be queried: SSH failed".into(),
-            },
-        ]);
+                            rollout_updated_at_unix_ms: Some(10),
+                            observations: vec![CodexSessionObservation {
+                                world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
+                                    .unwrap(),
+                                world_name: InstanceName::parse("dev").unwrap(),
+                                cwd: "/workspace/wt".into(),
+                                state: CodexSessionState::NeedsAttention,
+                                target: ByobuTarget {
+                                    tmux_session: "wt-app".into(),
+                                    pane_id: "%1".into(),
+                                },
+                                received_at_unix_ms: 20,
+                            }],
+                        },
+                        CodexSession {
+                            session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
+                                .unwrap(),
+                            rollout_updated_at_unix_ms: Some(30),
+                            observations: vec![],
+                        },
+                    ],
+                },
+                CodexContextSnapshot::Failure {
+                    context: "lab".into(),
+                    message: "context lab could not be queried: SSH failed".into(),
+                },
+            ],
+            "2026-08-21T20:00:00Z".into(),
+        );
         let parser = parser();
 
         terminal
@@ -559,6 +588,18 @@ mod tests {
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
+        assert_eq!(
+            refresh_title("Codex sessions", None),
+            "Codex sessions · Updating…"
+        );
+        assert_eq!(
+            refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z")),
+            "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+        );
     }
 
     #[test]

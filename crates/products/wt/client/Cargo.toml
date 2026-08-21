@@ -25,6 +25,7 @@ signal-hook = { workspace = true }
 tempfile = "3.27.0"
 termwiz = { workspace = true }
 toml = { workspace = true }
+time = { workspace = true }
 vt100 = { workspace = true }
 uuid = { workspace = true }
 
