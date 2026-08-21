@@ -7,7 +7,7 @@ mod store;
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
-pub use codex_sessions::{CodexSessionReport, CodexSessionState};
+pub use codex_sessions::{CodexSessionReport, CodexSessionReportInput, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{Store, StoreError, StoredApplication, StoredInstance};
 

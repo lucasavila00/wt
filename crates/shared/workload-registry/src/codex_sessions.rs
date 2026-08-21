@@ -44,7 +44,18 @@ pub struct CodexSessionReport {
     pub tmux_session: String,
     pub pane_id: String,
     pub state: CodexSessionState,
+    pub session_start_source: Option<String>,
     pub received_at_unix_ms: i64,
+}
+
+pub struct CodexSessionReportInput<'a> {
+    pub world_id: Uuid,
+    pub session_id: Uuid,
+    pub cwd: &'a str,
+    pub tmux_session: &'a str,
+    pub pane_id: &'a str,
+    pub state: CodexSessionState,
+    pub session_start_source: Option<&'a str>,
 }
 
 #[derive(Insertable)]
@@ -56,6 +67,7 @@ struct NewCodexSessionReport<'a> {
     tmux_session: &'a str,
     pane_id: &'a str,
     state: &'static str,
+    session_start_source: Option<&'a str>,
     received_at_unix_ms: i64,
 }
 
@@ -68,20 +80,21 @@ struct CodexSessionReportRow {
     tmux_session: String,
     pane_id: String,
     state: String,
+    session_start_source: Option<String>,
     received_at_unix_ms: i64,
 }
 
 impl Registry {
     pub fn upsert_codex_session_report(
         &self,
-        world_id: Uuid,
-        session_id: Uuid,
-        cwd: &str,
-        tmux_session: &str,
-        pane_id: &str,
-        state: CodexSessionState,
+        input: CodexSessionReportInput<'_>,
     ) -> Result<(), RegistryError> {
-        validate_report(cwd, tmux_session, pane_id)?;
+        validate_report(
+            input.cwd,
+            input.tmux_session,
+            input.pane_id,
+            input.session_start_source,
+        )?;
         let received_at_unix_ms = i64::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -90,12 +103,13 @@ impl Registry {
         )
         .map_err(|_| RegistryError::InvalidData("system time is too large".into()))?;
         let report = NewCodexSessionReport {
-            world_id: world_id.to_string(),
-            session_id: session_id.to_string(),
-            cwd,
-            tmux_session,
-            pane_id,
-            state: state.as_str(),
+            world_id: input.world_id.to_string(),
+            session_id: input.session_id.to_string(),
+            cwd: input.cwd,
+            tmux_session: input.tmux_session,
+            pane_id: input.pane_id,
+            state: input.state.as_str(),
+            session_start_source: input.session_start_source,
             received_at_unix_ms,
         };
         self.read(|connection| {
@@ -111,6 +125,7 @@ impl Registry {
                     codex_session_reports::tmux_session.eq(report.tmux_session),
                     codex_session_reports::pane_id.eq(report.pane_id),
                     codex_session_reports::state.eq(report.state),
+                    codex_session_reports::session_start_source.eq(report.session_start_source),
                     codex_session_reports::received_at_unix_ms.eq(report.received_at_unix_ms),
                 ))
                 .execute(connection)?;
@@ -135,6 +150,7 @@ impl Registry {
                     codex_session_reports::tmux_session,
                     codex_session_reports::pane_id,
                     codex_session_reports::state,
+                    codex_session_reports::session_start_source,
                     codex_session_reports::received_at_unix_ms,
                 ))
                 .load::<CodexSessionReportRow>(connection)?
@@ -150,6 +166,7 @@ impl Registry {
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         state: CodexSessionState::parse(&row.state)?,
+                        session_start_source: row.session_start_source,
                         received_at_unix_ms: row.received_at_unix_ms,
                     })
                 })
@@ -158,7 +175,12 @@ impl Registry {
     }
 }
 
-fn validate_report(cwd: &str, tmux_session: &str, pane_id: &str) -> Result<(), RegistryError> {
+fn validate_report(
+    cwd: &str,
+    tmux_session: &str,
+    pane_id: &str,
+    session_start_source: Option<&str>,
+) -> Result<(), RegistryError> {
     if !cwd.starts_with('/') || cwd.len() > 4096 {
         return Err(RegistryError::InvalidData(
             "invalid Codex session working directory".into(),
@@ -174,6 +196,17 @@ fn validate_report(cwd: &str, tmux_session: &str, pane_id: &str) -> Result<(), R
     }) {
         return Err(RegistryError::InvalidData(
             "invalid Codex session pane ID".into(),
+        ));
+    }
+    if session_start_source.is_some_and(|source| {
+        source.is_empty()
+            || source.len() > 64
+            || !source
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    }) {
+        return Err(RegistryError::InvalidData(
+            "invalid Codex session start source".into(),
         ));
     }
     Ok(())

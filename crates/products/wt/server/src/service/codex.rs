@@ -82,6 +82,7 @@ fn merge_sessions(
                 }
                 wt_workload_registry::CodexSessionState::Inactive => CodexSessionState::Inactive,
             },
+            session_start_source: report.session_start_source,
             target: ByobuTarget {
                 tmux_session: report.tmux_session,
                 pane_id: report.pane_id,
@@ -279,6 +280,7 @@ mod tests {
                 tmux_session: "wt-app".into(),
                 pane_id: "%1".into(),
                 state: wt_workload_registry::CodexSessionState::Working,
+                session_start_source: None,
                 received_at_unix_ms: 2,
             }],
         )
@@ -306,6 +308,7 @@ mod tests {
                     tmux_session: "wt-app".into(),
                     pane_id: pane_id.into(),
                     state: wt_workload_registry::CodexSessionState::Working,
+                    session_start_source: None,
                     received_at_unix_ms,
                 }
             })

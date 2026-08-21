@@ -45,6 +45,9 @@ contexts. A failed context remains visible as an error row. The Worlds and
 Codex titles show when their latest snapshot was applied in UTC, or `Updating…`
 before the first snapshot arrives.
 
+An unknown observation includes its raw Codex session-start source when one was
+reported, such as `unknown(compact)`.
+
 Known terminal-compatibility gaps are TODOs to fix:
 
 - TODO: Forward mouse drag, position, and hover/motion events when the active
