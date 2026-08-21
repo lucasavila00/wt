@@ -319,7 +319,12 @@ fn dispatch_event(
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
-                let _ = model.handle_key(key);
+                if model.handle_key(key) == InputRoute::World {
+                    let screen = sessions.screen(model.active());
+                    if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
+                        sessions.write(model.active(), &bytes)?;
+                    }
+                }
                 return Ok(true);
             }
             if model.mode() == Mode::Control {

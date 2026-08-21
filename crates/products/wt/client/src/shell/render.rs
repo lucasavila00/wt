@@ -119,18 +119,28 @@ fn color(source: vt100::Color) -> Color {
 }
 
 fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
+    let disabled = model.f5_disabled();
     let active = model.mode() == Mode::Switcher;
-    let left_hint = if active {
+    let left_hint = if disabled {
+        " F5 disabled"
+    } else if active {
         " F5: disable navbar"
     } else {
         " F5: enable navbar"
     };
-    let right_hint = if active {
+    let right_hint = if disabled {
+        "Shift+F5: enable F6: close "
+    } else if active {
         "←/→ world ↑ ctrl F6: close "
     } else {
         "F6: close "
     };
-    let style = if active {
+    let style = if disabled {
+        Style::new()
+            .fg(Color::White)
+            .bg(Color::Red)
+            .add_modifier(Modifier::BOLD)
+    } else if active {
         Style::new()
             .fg(Color::Black)
             .bg(Color::White)
@@ -153,10 +163,14 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 "  WT ",
-                Style::new()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                if disabled {
+                    style
+                } else {
+                    Style::new()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                },
             ),
             Span::raw(left_hint),
         ]))
@@ -446,6 +460,24 @@ mod tests {
         assert_eq!(style.fg, Some(Color::DarkGray));
         assert_eq!(style.bg, Some(Color::Black));
         assert!(!style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn disabled_f5_override_has_a_red_top_bar() {
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["local.one".into()]);
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(5),
+            crossterm::event::KeyModifiers::SHIFT,
+        ));
+        let parser = parser();
+
+        terminal
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
     }
 
     #[test]
