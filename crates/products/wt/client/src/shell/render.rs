@@ -81,14 +81,14 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     let active = model.mode() == Mode::Switcher;
     let text = if active {
         format!(
-            " {} ({}/{})   ←/→ worlds   ↑ control   F5 close   F6 quit",
+            "{} ({}/{})   ←/→ worlds   ↑ control   F5   F6 quit",
             model.active_world(),
             model.active() + 1,
             model.world_count()
         )
     } else {
         format!(
-            " {} ({}/{})   F5 worlds   F6 quit",
+            "{} ({}/{})   F5   F6 quit",
             model.active_world(),
             model.active() + 1,
             model.world_count()
@@ -102,11 +102,26 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     } else {
         Style::new().fg(Color::DarkGray).bg(Color::Black)
     };
+    let areas = Layout::horizontal([Constraint::Length(8), Constraint::Min(0)]).split(Rect::new(
+        frame.area().x,
+        frame.area().y,
+        frame.area().width,
+        1,
+    ));
+    frame.render_widget(
+        Paragraph::new("  WT").style(
+            Style::new()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        areas[0],
+    );
     frame.render_widget(
         Paragraph::new(text)
             .alignment(Alignment::Center)
             .style(style),
-        Rect::new(frame.area().x, frame.area().y, frame.area().width, 1),
+        areas[1],
     );
 }
 
@@ -237,7 +252,11 @@ mod tests {
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
-        let style = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        assert_eq!(brand.fg, Some(Color::Black));
+        assert_eq!(brand.bg, Some(Color::Cyan));
+        assert!(brand.add_modifier.contains(Modifier::BOLD));
+        let style = terminal.backend().buffer().cell((8, 0)).unwrap().style();
         assert_eq!(style.fg, Some(Color::Black));
         assert_eq!(style.bg, Some(Color::White));
         assert!(style.add_modifier.contains(Modifier::BOLD));
@@ -256,7 +275,11 @@ mod tests {
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
         insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
-        let style = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
+        assert_eq!(brand.fg, Some(Color::Black));
+        assert_eq!(brand.bg, Some(Color::Cyan));
+        assert!(brand.add_modifier.contains(Modifier::BOLD));
+        let style = terminal.backend().buffer().cell((8, 0)).unwrap().style();
         assert_eq!(style.fg, Some(Color::DarkGray));
         assert_eq!(style.bg, Some(Color::Black));
         assert!(!style.add_modifier.contains(Modifier::BOLD));

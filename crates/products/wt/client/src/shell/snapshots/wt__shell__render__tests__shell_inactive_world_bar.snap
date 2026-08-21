@@ -5,7 +5,7 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 6 },
     content: [
-        "                      local.one (1/2)   F5 worlds   F6 quit                    ",
+        "  WT                        local.one (1/2)   F5   F6 quit                     ",
         "world output                                                                    ",
         "red                                                                             ",
         "                                                                                ",
@@ -13,7 +13,8 @@ Buffer {
         "                                                                                ",
     ],
     styles: [
-        x: 0, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
+        x: 0, y: 0, fg: Black, bg: Cyan, underline: Reset, modifier: BOLD,
+        x: 8, y: 0, fg: DarkGray, bg: Black, underline: Reset, modifier: NONE,
         x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 2, fg: Indexed(1), bg: Reset, underline: Reset, modifier: NONE,
         x: 3, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
