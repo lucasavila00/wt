@@ -26,12 +26,15 @@ While the overlay is open, it captures its navigation keys:
 
 `F6` always closes `wt shell` and is never forwarded to Byobu. While the overlay
 is closed, `wt shell` otherwise captures only `F5`; the active world view
-forwards arrow keys and all other input unchanged to its Byobu.
+forwards keyboard and paste input to its Byobu. Mouse clicks are also forwarded;
+other mouse events are ignored.
 
-All open world views remain live while overlays are open and when another world
-is selected. Switching views does not pause or close their Byobu sessions.
+`wt shell` keeps one OpenSSH process, local PTY, and terminal buffer per open
+world. All remain live in the background. Switching changes only the visible
+buffer and input target; it never reconnects or detaches.
 
 `wt shell` owns the overlay and cross-world navigation. Each world's Byobu owns
 its sessions and terminal behavior.
 
-The contents and actions of the control menu are deferred.
+The initial control UI contains only `CONTORL UI`; its contents and actions are
+deferred. `F5` closes it.
