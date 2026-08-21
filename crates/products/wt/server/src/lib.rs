@@ -7,9 +7,8 @@ pub mod service;
 
 pub use runtime_config::{
     AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV,
-    CODEX_AUTH_PATH, CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_TOOL_VSOCK_PORT,
-    SERVER_CONFIG_PATH,
+    ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV, CODEX_AUTH_PATH,
+    CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_TOOL_VSOCK_PORT, SERVER_CONFIG_PATH,
 };
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
@@ -53,7 +52,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 5; expected 4"
+            @"unsupported protocol version 6; expected 5"
         );
     }
 }

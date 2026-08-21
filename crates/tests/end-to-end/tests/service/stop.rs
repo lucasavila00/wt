@@ -38,7 +38,7 @@ fn stopped_world_can_be_started() {
     else {
         panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Setup);
+    assert_eq!(instance.status, InstanceStatus::Running);
     assert_eq!(starts.load(Ordering::SeqCst), 1);
 }
 

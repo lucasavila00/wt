@@ -1,8 +1,0 @@
-{
-  "name": "wt",
-  "dockerComposeFile": "compose.yaml",
-  "service": "app",
-  "workspaceFolder": "/workspaces/wt",
-  "remoteUser": "wt",
-  "onCreateCommand": "sudo chown -R wt:wt /workspaces"
-}

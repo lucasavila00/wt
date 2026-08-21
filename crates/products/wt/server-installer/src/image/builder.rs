@@ -7,7 +7,6 @@ pub(super) use provenance::{image_config_sha, sha_bytes, stage_publication, stag
 use contract::verify_retained_guest_contract;
 
 use super::console::{wait_for_shutdown, ConsoleLog};
-use super::recipe::ImageRecipe;
 use super::{recipe, sibling_temporary, BUILD_NAME};
 use crate::install_input::InstallInput;
 use anyhow::{bail, Context, Result};
@@ -41,6 +40,7 @@ const CONFIGURE_GIT_AUTHOR: &[u8] =
 const INSTALL_AGENT_TOOLS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-agent-tools.sh");
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
+const NETWORK_CONFIG: &[u8] = b"network:\n  version: 2\n  ethernets:\n    primary:\n      match:\n        name: \"en*\"\n      dhcp4: true\n      dhcp-identifier: mac\n";
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
 pub(super) const IMAGE_KIND: &str = "retained";
 
@@ -126,9 +126,7 @@ pub(super) fn run_kvm_build<R: Runner>(
         console: build_dir.join("console.log"),
         prepared: build_dir.join("golden.qcow2"),
     };
-    let seed = build_dir.join("seed.img");
-    let user_data = build_dir.join("user-data");
-    let meta_data = build_dir.join("meta-data");
+    let network_config = build_dir.join("network.yaml");
     let environment = build_dir.join("build.env");
     let install_packages = build_dir.join("install-packages.sh");
     let install_terminal = build_dir.join("install-terminal.sh");
@@ -142,30 +140,29 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_agent_tools = build_dir.join("install-agent-tools.sh");
     let mount_codex = build_dir.join("mount-codex.sh");
 
-    println!(
-        "Creating {} image-build disk from the verified Ubuntu source image...",
-        IMAGE_KIND
-    );
+    println!("Creating expanded {IMAGE_KIND} image-build disk...");
     runner.run(
         cmd!(
             "qemu-img",
-            "convert",
-            "-p",
-            "-O",
+            "create",
+            "-q",
+            "-f",
             "qcow2",
-            context.source,
-            &paths.disk
-        ),
-        "copy source image",
-    )?;
-    runner.run(
-        cmd!(
-            "qemu-img",
-            "resize",
             &paths.disk,
             format!("{}G", input.image.build_disk_gib),
         ),
-        "resize image build disk",
+        "create image build disk",
+    )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-resize",
+            "--expand",
+            "/dev/sda1",
+            context.source,
+            &paths.disk,
+        ),
+        "copy and expand source image",
     )?;
 
     fs::write(
@@ -195,6 +192,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_agent_tools, INSTALL_AGENT_TOOLS)
         .context("write shared agent tool setup")?;
     fs::write(&mount_codex, MOUNT_CODEX).context("write Codex mount setup")?;
+    fs::write(&network_config, NETWORK_CONFIG).context("write image network configuration")?;
 
     let mut customize = Command::new("sudo");
     customize.arg("virt-customize").arg("-a").arg(&paths.disk);
@@ -227,6 +225,7 @@ pub(super) fn run_kvm_build<R: Runner>(
             "/var/tmp/wt-retained-agent-tools",
         ),
         (mount_codex.as_path(), "/var/tmp/wt-retained-mount-codex"),
+        (network_config.as_path(), "/etc/netplan/50-wt.yaml"),
     ] {
         customize
             .arg("--upload")
@@ -237,22 +236,14 @@ pub(super) fn run_kvm_build<R: Runner>(
             .arg("--upload")
             .arg(format!("{}:{}", input.source.display(), input.guest_path));
     }
+    customize
+        .arg("--delete")
+        .arg("/etc/netplan/50-cloud-init.yaml")
+        .arg("--touch")
+        .arg("/etc/cloud/cloud-init.disabled")
+        .arg("--firstboot-command")
+        .arg("/bin/sh /var/tmp/wt-image-build.sh");
     runner.run(customize, "stage image build inputs")?;
-
-    fs::write(&user_data, ImageRecipe::new().cloud_config())
-        .context("write image cloud-init user-data")?;
-    fs::write(
-        &meta_data,
-        format!(
-            "instance-id: {}\nlocal-hostname: {}\n",
-            spec.name, spec.name
-        ),
-    )
-    .context("write image cloud-init meta-data")?;
-    runner.run(
-        cmd!("cloud-localds", &seed, &user_data, &meta_data),
-        "create image build seed",
-    )?;
     fs::File::create_new(&paths.console).context("create image build console log")?;
     fs::set_permissions(&paths.console, fs::Permissions::from_mode(0o660))
         .context("set image build console log permissions")?;
@@ -262,7 +253,6 @@ pub(super) fn run_kvm_build<R: Runner>(
         server,
         spec.name,
         &paths.disk,
-        &seed,
         &paths.console,
     )?;
     println!(
@@ -377,15 +367,10 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     if !machine_id.is_empty() {
         bail!("reusable image machine identity was not cleared");
     }
-    for path in [
-        "/var/lib/cloud/instance",
-        "/var/lib/cloud/instances",
-        "/var/lib/cloud/seed",
-        "/etc/netplan/50-cloud-init.yaml",
-    ] {
+    for path in ["/usr/bin/cloud-init", "/etc/cloud", "/var/lib/cloud"] {
         let output = runner.output(cmd!("sudo", "virt-ls", "-a", &paths.disk, path))?;
         if output.status.success() {
-            bail!("reusable image retained cloud-init state at {path}");
+            bail!("reusable image retained removed bootstrap state at {path}");
         }
     }
     let ssh_files = runner.text(
@@ -433,7 +418,6 @@ fn start_kvm_build_guest(
     server: &ServerConfig,
     name: &str,
     disk: &Path,
-    seed: &Path,
     console: &Path,
 ) -> Result<ConsoleLog> {
     runner.run(
@@ -456,8 +440,6 @@ fn start_kvm_build_guest(
             "uefi",
             "--disk",
             format!("path={},format=qcow2,bus=virtio", disk.display()),
-            "--disk",
-            format!("path={},device=cdrom", seed.display()),
             "--network",
             format!("network={},model=virtio", server.libvirt.network),
             "--serial",

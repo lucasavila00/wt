@@ -10,9 +10,7 @@ exec 9>"$state/host-shell.lock"
 flock 9
 if ! "$tmux" has-session -t wt-host 2>/dev/null; then
     attempt=1
-    command=/bin/bash
-    test -e /var/lib/wt-host/complete || command=/usr/local/bin/wt-host-setup
-    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-host "$command"; do
+    while ! "$byobu" -f /usr/local/share/wt-tmux.conf new-session -d -s wt-host /bin/bash; do
         "$tmux" has-session -t wt-host 2>/dev/null && break
         if test "$attempt" -ge 3; then
             echo "wt: failed to start the Byobu session after $attempt attempts" >&2

@@ -1,92 +1,43 @@
 # Server operations
 
 WT servers run Ubuntu 24.04 amd64 with KVM. Install as the normal `wt` user,
-never as root.
-
-Log in to Codex as that user before installing WT. Installation requires
-`/home/wt/.codex/auth.json` to be a regular, non-symlink file owned by `wt`:
-
-```text
-codex
-```
-
-Copy and edit the install input:
+never as root. Log in to Codex as that user before installation; the installer
+requires a regular, user-owned `/home/wt/.codex/auth.json`.
 
 ```text
 cp examples/server-config/wt-server.development.toml ./server.toml
 scripts/install-server --config ./server.toml
 ```
 
-The installer prepares libvirt, the shared capacity registry, registry cache,
-agent tool gateway, and one retained-world image. The image contains Docker,
-Git, the Dev Container CLI, OpenSSH, QEMU guest support, Byobu, host setup, and
-shared terminal assets. Devcontainer and host provisioning use different parts
-of that common image.
+The installer prepares libvirt, capacity state, the agent tool gateway, and a
+verified retained-world golden image. The final image contains Git, OpenSSH,
+QEMU guest support, Byobu, tmux, Codex, and WT's host helpers.
 
-Runtime configuration is written to `/etc/wt/server.toml`. Shared CPU, RAM, and
-disk limits come from `[capacity]` in the install input and are materialized at
-`/etc/wt/capacity.toml`.
+Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
+limits are materialized at `/etc/wt/capacity.toml`.
 
-Codex is a required retained-world integration and has no server setting. The
-installer creates `/home/wt/.codex/sessions` and a WT-managed auth export. Every
-retained host and devcontainer world receives the sessions directory read-write
-and the server login read-only. The shared sessions survive world deletion and
-server restart, but are outside world disk quotas and snapshots and need a
-separate backup. Do not open the same conversation in two worlds at once.
+The installer creates the server-backed Codex sessions directory and a
+read-only authentication export. Running worlds receive both through virtiofs.
+Shared sessions are outside world disk quotas and need a separate backup. Do
+not open one conversation in two worlds simultaneously.
 
-The retained image installs Codex. Provisioning installs and activates
-`wt-codex-integration`, which reconciles shared conversations before starting the real
-Codex CLI. Devcontainer worlds inject both executables and the fixed Codex
-mounts into the primary container automatically. GitHub CI runners receive no
-server Codex data.
+Refresh expired Codex authentication as the server `wt` user. A systemd path
+unit atomically republishes `auth.json`; running worlds receive the replacement
+automatically and cannot write it back.
 
-Retained-world provisioning is not resumable. If it is interrupted or fails,
-remove that world and retry creation from the retained image. WT deliberately
-does not recover intermediate trampoline or other provisioning transitions;
-a healthy provisioning run normally takes about 5–10 seconds.
+Provisioning is not resumable. Remove a failed world and recreate it from the
+golden image. A world disk cannot be smaller than the image build disk.
 
-If Codex authentication expires, refresh it as the server `wt` user. A systemd
-path unit atomically republishes `auth.json` into the live virtiofs share.
-Running worlds receive the replacement automatically; they cannot write the
-credential back.
-
-A world disk cannot be smaller than its image's `build_disk_gib`. The client
-defaults to 32 GiB; a larger build image requires a larger world request.
-
-The current server install requires at least one agent tool provider. Its token,
-SSH private key, and trusted host keys stay in encrypted systemd credentials.
-Host recipes never receive them. Tests use local fake provider services and
-keys, not developer credentials.
-
-All installed WT executables are static musl binaries except `wt-server`.
-The server is native to Ubuntu 24.04 because it links `libvirt.so`; setup
-installs and validates that host dependency. Installation rejects a designated
-static artifact if it contains a dynamic interpreter or GLIBC requirement.
+Provider tokens, SSH private keys, and trusted host keys remain in encrypted
+systemd credentials. Worlds receive scoped grants, never provider credentials.
 
 ## Reset
 
-To remove all WT runtime state, run from the repository root:
+`make clear` removes runtime state while preserving verified golden images.
+`make nuke` removes the complete WT installation state, including worlds,
+images, services, generated configuration, grants, registry, and encrypted
+credentials. Neither command removes source credentials or installed host
+packages and binaries.
 
-```text
-make nuke
-```
-
-On the standard installation this stops WT services, destroys every `wt-*` KVM
-domain, and removes installed configuration, images, worlds, grants, the SQLite
-registry, and the server user's generated inventory. No standard WT runtime
-state is preserved. Source credentials and installed packages/binaries remain.
-
-Run `wt sync` on each workstation after the server is installed again. If the
-server is intentionally left empty, remove that workstation's stale
-`~/.ssh/wt` inventory manually.
-
-Use `make clear` for the smaller runtime reset described by the installed
-configuration drift diagnostic. It preserves the verified golden image and its
-provenance manifests so reinstalling unchanged image inputs does not rebuild
-them.
-
-Golden-image rebuilds do not migrate retained worlds. Existing world disks are
-independent of their golden image and keep their current guest user, terminal
-configuration, and runtime state. Recreate affected worlds after adopting a
-changed shared image foundation; use `make nuke` when the complete installation
-reset described above is required.
+Golden-image rebuilds affect only new worlds. Existing disks are independent
+and retain their current contents until recreated.

@@ -16,20 +16,14 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 instance: Box::new(stored.instance),
             });
         }
-        if !matches!(
-            stored.instance.status,
-            InstanceStatus::Setup | InstanceStatus::Running
-        ) {
+        if stored.instance.status != InstanceStatus::Running {
             return Err(ApiError::new(
                 ErrorCode::Conflict,
-                format!(
-                    "world is {}; expected setup or running",
-                    stored.instance.status
-                ),
+                format!("world is {}; expected running", stored.instance.status),
             ));
         }
         self.worker
-            .stop(stored.instance.kind(), &stored.backend_id)
+            .stop(&stored.backend_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("stop world: {error}")))?;
         let disk_usage_bytes = self.disk_usage(&stored)?;
         self.store

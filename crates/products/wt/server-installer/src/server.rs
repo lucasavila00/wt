@@ -6,7 +6,6 @@ use crate::install_input::{
     serialize_capacity_config, serialize_server_config, AgentToolsProviderInstallConfig,
     InstallInput,
 };
-use crate::registry_cache;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use std::fs;
@@ -46,9 +45,8 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     let prompt = TerminalPassphrasePrompt::new(ssh_key_passphrase_context);
     let credentials = prepare_agent_tools_credentials(runner, &prompt, &input)?;
 
-    phase("Preparing host state and caches");
+    phase("Preparing host state");
     prepare_host(runner, &server)?;
-    registry_cache::ensure(runner, &server)?;
 
     phase("Preparing reusable world image");
     image::ensure(runner, &input, &server, &server_bytes)?;
@@ -77,7 +75,6 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     prepare_host(runner, &server)?;
-    registry_cache::ensure(runner, &server)?;
     if rebuild {
         image::rebuild(runner, &input, &server, &server_bytes)?;
     } else {
@@ -215,7 +212,6 @@ fn require_server_user() -> Result<()> {
 fn require_workspace() -> Result<()> {
     if !Path::new("Cargo.toml").is_file()
         || !Path::new("crates/products/wt/client/Cargo.toml").is_file()
-        || !Path::new("crates/products/wt/devcontainer-guest-tools/Cargo.toml").is_file()
         || !Path::new("crates/products/wt/server/Cargo.toml").is_file()
     {
         bail!("run from the root of a wt source checkout");
@@ -514,7 +510,7 @@ fn service_unit_needs_replacement(
 
 fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
     let executable = server.install.binary_dir.join("wt-agent-tool-gateway");
-    let mut command = format!("{} serve", systemd_quote(&executable.display().to_string()));
+    let mut command = systemd_quote(&executable.display().to_string());
     let mut credentials = String::new();
     for (kind, provider) in input.agent_tools.providers() {
         let token = format!("%d/{kind}-api-token");
@@ -574,7 +570,7 @@ fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
 Description=WT control-plane daemon\n\
 Requires=wt-codex-integration-auth.service\n\
 Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path\n\
-After=network-online.target docker.service libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service\n\
+After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service\n\
 \n\
 [Service]\n\
 Type=simple\n\

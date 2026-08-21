@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn parses_supported_hook_payloads() {
         let payload: HookPayload = serde_json::from_str(
-            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/workspace","hook_event_name":"Stop","extra":"ignored"}"#,
+            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/home/wt/project","hook_event_name":"Stop","extra":"ignored"}"#,
         )
         .unwrap();
 
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn preserves_and_parses_session_start_source() {
         let payload: HookPayload = serde_json::from_str(
-            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/workspace","hook_event_name":"SessionStart","source":"compact"}"#,
+            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/home/wt/project","hook_event_name":"SessionStart","source":"compact"}"#,
         )
         .unwrap();
 

@@ -35,9 +35,9 @@ printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
 
 /usr/bin/tmux -V > /var/lib/wt-tmux-version
 sha256sum /usr/bin/tmux | cut -d ' ' -f 1 > /var/lib/wt-tmux-sha256
-cloud-init clean --logs --seed --configs network
-rm -rf /var/lib/cloud/instance /var/lib/cloud/instances
-rm -f /etc/netplan/50-cloud-init.yaml /var/lib/wt-image-result \
+rm -rf /etc/cloud /var/lib/cloud /run/cloud-init
+rm -f /etc/netplan/50-cloud-init.yaml /var/log/cloud-init.log \
+    /var/log/cloud-init-output.log /var/lib/wt-image-result \
     /var/tmp/wt-*.sh /var/tmp/wt-image-build.env /var/tmp/wt-tmux \
     /var/tmp/wt-host-shell /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color \
     /var/tmp/wt-retained-access /var/tmp/wt-retained-git-author \

@@ -5,8 +5,6 @@ use std::path::Path;
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
-use wt_retained_worlds::devcontainer::{CompositeWorker, WorldProvisioner};
-use wt_retained_worlds::Workers;
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
 use wt_server::operations::Operations;
@@ -62,31 +60,16 @@ fn run_server() -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
-    let provider = LibvirtProvider::new(server_config.devcontainer_machine_config())
-        .map_err(anyhow::Error::msg)?;
-    let host_provider =
-        LibvirtProvider::new(server_config.host_machine_config()).map_err(anyhow::Error::msg)?;
-    let registry_cache_url = format!(
-        "http://{}:{}",
-        provider
-            .network_bridge_address()
-            .map_err(anyhow::Error::msg)?,
-        server_config.registry_cache.port
-    );
+    let provider =
+        LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server_config.retained_config();
-    let provisioner = WorldProvisioner::new(
-        server_config
-            .provisioner_config(registry_cache_url, retained.clone())
-            .map_err(anyhow::Error::msg)?,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let host_worker = wt_retained_worlds::host::CompositeWorker::new(
-        host_provider,
-        Duration::from_secs(server_config.guest.recipe_timeout_seconds),
+    let host_worker = wt_retained_worlds::host::Worker::new(
+        provider,
+        Duration::from_secs(server_config.guest.readiness_timeout_seconds),
         retained,
     )
     .map_err(anyhow::Error::msg)?;
-    let worker = Workers::new(CompositeWorker::new(provider, provisioner), host_worker);
+    let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let owner = process_user()?;
 
@@ -106,10 +89,7 @@ fn run_server() -> Result<()> {
 fn handle_daemon_request(
     state: &StateConfig,
     operations: &Operations,
-    worker: &Workers<
-        CompositeWorker<LibvirtProvider>,
-        wt_retained_worlds::host::CompositeWorker<LibvirtProvider>,
-    >,
+    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
     gateway: &wt_agent_tool_gateway::ControlClient,
     owner: &str,
     capacity_limit: wt_workload_registry::Resources,

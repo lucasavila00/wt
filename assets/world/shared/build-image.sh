@@ -1,6 +1,15 @@
 #!/bin/sh
 set -eu
 
+shutdown() {
+    status=$?
+    trap - EXIT
+    sync
+    systemctl poweroff || true
+    exit "$status"
+}
+trap shutdown EXIT
+
 . /var/tmp/wt-image-build.env
 
 phase() {
@@ -63,12 +72,16 @@ phase "installing retained-world tools"
 phase "removing image-build dependencies"
 DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
     bison build-essential curl libevent-dev libncurses-dev pkg-config
+DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    cloud-init cloud-initramfs-copymods cloud-initramfs-dyn-netconf
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y
 apt-get clean
 ! command -v cc
 ! command -v gcc
 ! command -v g++
 ! command -v make
 ! command -v curl
+! command -v cloud-init
 
 phase "validating installed terminal tools"
 test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"

@@ -8,12 +8,10 @@ use std::process::Command as ProcessCommand;
 use wt_client::config::{ClientConfig, Context};
 use wt_client::inventory::{self, ContextInstance};
 use wt_client::transport::ContextError;
-use wt_control_protocol::{ApiRequest, InstanceApplication, Operation, Response, WorldKind};
+use wt_control_protocol::{ApiRequest, Operation, Response};
 
-mod code;
 mod create;
 mod git_author;
-mod host;
 mod reports;
 mod shell;
 
@@ -30,7 +28,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a world.
-    New(host::New),
+    New,
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -39,8 +37,6 @@ enum Command {
     Start { name: String },
     /// Stop a retained world.
     Stop { name: String },
-    /// Open a world in VS Code Remote-SSH.
-    Code { name: String },
     /// Synchronize SSH aliases and connect to a world.
     Ssh { name: String },
     /// Open the persistent world terminal workspace.
@@ -63,8 +59,8 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New(command) => {
-            let created = create::run(&config, command.into_kind()?)?;
+        Command::New => {
+            let created = create::run(&config)?;
             let context = created.context;
             let instance = created.instance;
             println!(
@@ -78,13 +74,8 @@ fn run() -> Result<()> {
                 .ssh
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
-            if instance.kind() == WorldKind::Host {
-                println!("\nStarting setup: ssh {}.{}", context, instance.name);
-                println!("Direct: ssh {}.{}-vs", context, instance.name);
-            } else {
-                println!("\nStarting setup: ssh {}.{}", context, instance.name);
-                println!("Guest host: ssh {}.{}-host", context, instance.name);
-            }
+            println!("\nOpening: ssh {}.{}", context, instance.name);
+            println!("Direct: ssh {}.{}-direct", context, instance.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
             let target = format!("{}.{}", context, instance.name);
@@ -159,7 +150,6 @@ fn run() -> Result<()> {
                 context.name, world_name, instance.status
             );
         }
-        Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
         Command::Shell => shell::run(&config)?,
         Command::Sync => {
@@ -177,9 +167,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     rows.push([
         "CONTEXT".to_owned(),
         "NAME".to_owned(),
-        "KIND".to_owned(),
         "STATUS".to_owned(),
-        "REPO".to_owned(),
         "RESOURCES".to_owned(),
         "DETAIL".to_owned(),
     ]);
@@ -188,21 +176,13 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         [
             item.context.clone(),
             instance.name.to_string(),
-            instance.kind().to_string(),
             instance.status.to_string(),
-            match &instance.application {
-                InstanceApplication::Devcontainer { source, .. } => {
-                    wt_client::ssh::repository_name(source).unwrap_or("-")
-                }
-                InstanceApplication::Host => "-",
-            }
-            .to_owned(),
             inventory::format_resources(instance, item.disk_usage_bytes),
             instance_detail(item),
         ]
     }));
 
-    let mut widths = [0; 6];
+    let mut widths = [0; 4];
     for row in &rows {
         for (width, value) in widths.iter_mut().zip(row) {
             *width = (*width).max(value.chars().count());
@@ -213,20 +193,16 @@ fn format_instances(instances: &[ContextInstance]) -> String {
     for row in rows {
         writeln!(
             output,
-            "{:<context_width$}  {:<name_width$}  {:<kind_width$}  {:<status_width$}  {:<repo_width$}  {:<resources_width$}  {}",
+            "{:<context_width$}  {:<name_width$}  {:<status_width$}  {:<resources_width$}  {}",
             row[0],
             row[1],
             row[2],
             row[3],
             row[4],
-            row[5],
-            row[6],
             context_width = widths[0],
             name_width = widths[1],
-            kind_width = widths[2],
-            status_width = widths[3],
-            repo_width = widths[4],
-            resources_width = widths[5],
+            status_width = widths[2],
+            resources_width = widths[3],
         )
         .expect("writing to a String cannot fail");
     }

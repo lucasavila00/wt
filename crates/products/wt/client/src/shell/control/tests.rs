@@ -24,16 +24,16 @@ fn f1_and_one_open_the_command_palette() {
 fn palette_filters_selects_and_returns_commands() {
     let mut state = ControlState::default();
     state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area());
-    for character in "dev".chars() {
+    for character in "new".chars() {
         state.handle_key(
             KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
             area(),
         );
     }
-    assert_eq!(state.palette().matches(), vec![ControlCommand::NewDev]);
+    assert_eq!(state.palette().matches(), vec![ControlCommand::NewWorld]);
     assert_eq!(
         state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area()),
-        Some(ControlAction::Command(ControlCommand::NewDev))
+        Some(ControlAction::Command(ControlCommand::NewWorld))
     );
     assert!(!state.palette().is_open());
 }
@@ -47,8 +47,8 @@ fn activity_icons_and_palette_results_are_clickable() {
     state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area);
     let (_, results) = command_palette_layout(control_areas(area).1);
     assert_eq!(
-        state.handle_mouse(mouse(results.x, results.y + 1), area),
-        (true, Some(ControlAction::Command(ControlCommand::NewDev)))
+        state.handle_mouse(mouse(results.x, results.y), area),
+        (true, Some(ControlAction::Command(ControlCommand::NewWorld)))
     );
     assert!(!state.palette().is_open());
     state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area);
@@ -205,7 +205,7 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
         kind: CodexCardKind::Observation {
             world_id,
             world_name: "dev".into(),
-            cwd: "/workspace".into(),
+            cwd: "/home/wt/project".into(),
             state: CodexSessionState::Working,
             session_start_source: None,
             target: ByobuTarget {

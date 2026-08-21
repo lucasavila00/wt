@@ -1,16 +1,14 @@
 mod reports;
 
-use crate::schema::{devcontainers, disks, guests, hosts, worlds};
-use crate::{Guest, GuestKind, GuestRow, Registry, RegistryError, Resources};
+use crate::schema::worlds;
+use crate::{Registry, RegistryError, Resources};
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::sqlite::SqliteConnection;
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
-use wt_control_protocol::{
-    AppSshAccess, Instance, InstanceApplication, InstanceName, InstanceStatus, SshAccess, WorldKind,
-};
+use wt_control_protocol::{Instance, InstanceName, InstanceStatus, SshAccess};
 
 pub struct Store {
     registry: Registry,
@@ -22,13 +20,7 @@ pub struct StoredInstance {
     pub backend_id: String,
     pub disk_id: Uuid,
     pub setup_fingerprint: String,
-    pub application: StoredApplication,
-}
-
-#[derive(Clone, Debug)]
-pub enum StoredApplication {
-    Devcontainer { gateway_grant_id: String },
-    Host { gateway_grant_id: Option<String> },
+    pub gateway_grant_id: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -56,28 +48,18 @@ pub enum StoreError {
 #[diesel(table_name = worlds)]
 struct NewWorld<'a> {
     id: String,
+    backend_id: &'a str,
+    disk_id: String,
+    vcpus: i64,
+    memory_mib: i64,
+    disk_gib: i64,
+    compute_reserved: bool,
+    disk_reserved_gib: i64,
     owner: &'a str,
     name: &'a str,
     status: String,
     setup_fingerprint: &'a str,
     ssh_host_keys: &'static str,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = devcontainers)]
-struct NewDevcontainer<'a> {
-    id: String,
-    source: &'a str,
-    git_base: &'a str,
-    git_prefix: &'a str,
-    gateway_grant_id: &'a str,
-    app_ssh_host_keys: &'static str,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = hosts)]
-struct NewHost<'a> {
-    id: String,
     gateway_grant_id: Option<&'a str>,
 }
 
@@ -86,6 +68,11 @@ struct NewHost<'a> {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct WorldRow {
     id: String,
+    backend_id: String,
+    disk_id: String,
+    vcpus: i64,
+    memory_mib: i64,
+    disk_gib: i64,
     owner: String,
     name: String,
     status: String,
@@ -96,27 +83,6 @@ struct WorldRow {
     ssh_host: Option<String>,
     ssh_port: Option<i32>,
     ssh_host_keys: String,
-}
-
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = devcontainers)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct DevcontainerRow {
-    id: String,
-    source: String,
-    git_base: String,
-    git_prefix: String,
-    gateway_grant_id: String,
-    app_ssh_user: Option<String>,
-    app_ssh_port: Option<i32>,
-    app_ssh_host_keys: String,
-}
-
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = hosts)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct HostRow {
-    id: String,
     gateway_grant_id: Option<String>,
 }
 
@@ -172,19 +138,11 @@ impl Store {
 
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
         self.registry.read(|connection| {
-            guests::table
-                .inner_join(worlds::table)
-                .left_outer_join(devcontainers::table.on(devcontainers::id.eq(worlds::id)))
-                .left_outer_join(hosts::table.on(hosts::id.eq(worlds::id)))
+            worlds::table
                 .filter(worlds::owner.eq(owner))
                 .filter(worlds::name.eq(name.as_str()))
-                .select((
-                    GuestRow::as_select(),
-                    WorldRow::as_select(),
-                    Option::<DevcontainerRow>::as_select(),
-                    Option::<HostRow>::as_select(),
-                ))
-                .first::<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)>(connection)
+                .select(WorldRow::as_select())
+                .first::<WorldRow>(connection)
                 .optional()?
                 .ok_or(StoreError::NotFound)?
                 .try_into()
@@ -193,19 +151,11 @@ impl Store {
 
     pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
         self.registry.read(|connection| {
-            guests::table
-                .inner_join(worlds::table)
-                .left_outer_join(devcontainers::table.on(devcontainers::id.eq(worlds::id)))
-                .left_outer_join(hosts::table.on(hosts::id.eq(worlds::id)))
+            worlds::table
                 .filter(worlds::owner.eq(owner))
                 .order(worlds::name)
-                .select((
-                    GuestRow::as_select(),
-                    WorldRow::as_select(),
-                    Option::<DevcontainerRow>::as_select(),
-                    Option::<HostRow>::as_select(),
-                ))
-                .load::<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)>(connection)?
+                .select(WorldRow::as_select())
+                .load::<WorldRow>(connection)?
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect()
@@ -227,60 +177,6 @@ impl Store {
             ))
             .execute(connection)?;
             Ok(())
-        })
-    }
-
-    pub fn mark_setup(&self, id: Uuid, guest_ip: &str, ssh: &SshAccess) -> Result<(), StoreError> {
-        let host_keys = serde_json::to_string(&ssh.host_keys)
-            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        self.registry.read(|connection| {
-            let changed = diesel::update(worlds::table.find(id.to_string()))
-                .set((
-                    worlds::status.eq(InstanceStatus::Setup.to_string()),
-                    worlds::guest_ip.eq(guest_ip),
-                    worlds::last_error.eq(None::<String>),
-                    worlds::ssh_user.eq(&ssh.user),
-                    worlds::ssh_host.eq(&ssh.host),
-                    worlds::ssh_port.eq(i32::from(ssh.port)),
-                    worlds::ssh_host_keys.eq(host_keys),
-                ))
-                .execute(connection)?;
-            changed_one(changed)
-        })
-    }
-
-    pub fn mark_running(
-        &self,
-        id: Uuid,
-        guest_ip: &str,
-        ssh: &SshAccess,
-        app_ssh: &AppSshAccess,
-    ) -> Result<(), StoreError> {
-        let host_keys = serde_json::to_string(&ssh.host_keys)
-            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let app_host_keys = serde_json::to_string(&app_ssh.host_keys)
-            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        self.registry.transaction(|connection| {
-            let changed = diesel::update(worlds::table.find(id.to_string()))
-                .set((
-                    worlds::status.eq(InstanceStatus::Running.to_string()),
-                    worlds::guest_ip.eq(guest_ip),
-                    worlds::last_error.eq(None::<String>),
-                    worlds::ssh_user.eq(&ssh.user),
-                    worlds::ssh_host.eq(&ssh.host),
-                    worlds::ssh_port.eq(i32::from(ssh.port)),
-                    worlds::ssh_host_keys.eq(host_keys),
-                ))
-                .execute(connection)?;
-            changed_one(changed)?;
-            let changed = diesel::update(devcontainers::table.find(id.to_string()))
-                .set((
-                    devcontainers::app_ssh_user.eq(&app_ssh.user),
-                    devcontainers::app_ssh_port.eq(i32::from(app_ssh.port)),
-                    devcontainers::app_ssh_host_keys.eq(app_host_keys),
-                ))
-                .execute(connection)?;
-            changed_one(changed)
         })
     }
 
@@ -366,37 +262,25 @@ impl Store {
     pub fn delete(&self, id: Uuid, disk_id: Uuid) -> Result<(), StoreError> {
         self.registry.transaction(|connection| {
             let changed = diesel::delete(
-                guests::table
+                worlds::table
                     .find(id.to_string())
-                    .filter(guests::disk_id.eq(disk_id.to_string())),
+                    .filter(worlds::disk_id.eq(disk_id.to_string())),
             )
             .execute(connection)?;
-            changed_one(changed)?;
-            let changed =
-                diesel::delete(disks::table.find(disk_id.to_string())).execute(connection)?;
             changed_one(changed)?;
             Ok(())
         })
     }
 }
 
-impl TryFrom<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)> for StoredInstance {
+impl TryFrom<WorldRow> for StoredInstance {
     type Error = StoreError;
 
-    fn try_from(
-        (guest_row, row, devcontainer, host): (
-            GuestRow,
-            WorldRow,
-            Option<DevcontainerRow>,
-            Option<HostRow>,
-        ),
-    ) -> Result<Self, Self::Error> {
-        let guest: Guest = guest_row.try_into().map_err(map_registry_error)?;
-        if guest.id.to_string() != row.id {
-            return Err(StoreError::InvalidData(
-                "world is linked to an invalid guest".into(),
-            ));
-        }
+    fn try_from(row: WorldRow) -> Result<Self, Self::Error> {
+        let id =
+            Uuid::parse_str(&row.id).map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let disk_id = Uuid::parse_str(&row.disk_id)
+            .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let ssh = match row.ssh_user {
             Some(user) => Some(SshAccess {
                 user,
@@ -406,43 +290,9 @@ impl TryFrom<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)> for
             }),
             None => None,
         };
-        let (application, stored_application) = match (guest.kind, devcontainer, host) {
-            (GuestKind::Devcontainer, Some(row), None) if row.id == guest.id.to_string() => {
-                let app_ssh = match row.app_ssh_user {
-                    Some(user) => Some(AppSshAccess {
-                        user,
-                        port: to_u16(required(row.app_ssh_port, "app_ssh_port")?, "app_ssh_port")?,
-                        host_keys: parse_keys(&row.app_ssh_host_keys)?,
-                    }),
-                    None => None,
-                };
-                (
-                    InstanceApplication::Devcontainer {
-                        source: row.source,
-                        git_base: row.git_base,
-                        git_prefix: row.git_prefix,
-                        app_ssh,
-                    },
-                    StoredApplication::Devcontainer {
-                        gateway_grant_id: row.gateway_grant_id,
-                    },
-                )
-            }
-            (GuestKind::Host, None, Some(row)) if row.id == guest.id.to_string() => (
-                InstanceApplication::Host,
-                StoredApplication::Host {
-                    gateway_grant_id: row.gateway_grant_id,
-                },
-            ),
-            _ => {
-                return Err(StoreError::InvalidData(
-                    "world kind and application record do not match".into(),
-                ))
-            }
-        };
         Ok(Self {
             instance: Instance {
-                id: guest.id,
+                id,
                 owner: row.owner,
                 name: InstanceName::parse(row.name)
                     .map_err(|error| StoreError::InvalidData(error.to_string()))?,
@@ -453,17 +303,19 @@ impl TryFrom<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)> for
                 )?,
                 guest_ip: row.guest_ip,
                 last_error: row.last_error,
-                vcpus: u32::try_from(guest.resources.vcpus)
-                    .map_err(|_| invalid_number("vcpus", guest.resources.vcpus))?,
-                memory_mib: guest.resources.memory_mib,
-                disk_gib: guest.resources.disk_gib,
+                vcpus: u32::try_from(
+                    crate::to_u64(row.vcpus, "vcpus").map_err(map_registry_error)?,
+                )
+                .map_err(|_| invalid_number("vcpus", row.vcpus))?,
+                memory_mib: crate::to_u64(row.memory_mib, "memory_mib")
+                    .map_err(map_registry_error)?,
+                disk_gib: crate::to_u64(row.disk_gib, "disk_gib").map_err(map_registry_error)?,
                 ssh,
-                application,
             },
-            backend_id: guest.backend_id,
-            disk_id: guest.disk_id,
+            backend_id: row.backend_id,
+            disk_id,
             setup_fingerprint: row.setup_fingerprint,
-            application: stored_application,
+            gateway_grant_id: row.gateway_grant_id,
         })
     }
 }
@@ -474,76 +326,36 @@ fn insert_world(
     limit: Resources,
 ) -> Result<(), StoreError> {
     let instance = &stored.instance;
-    crate::insert_guest(
-        connection,
-        &Guest {
-            id: instance.id,
-            kind: match instance.kind() {
-                WorldKind::Devcontainer => GuestKind::Devcontainer,
-                WorldKind::Host => GuestKind::Host,
-                WorldKind::GithubCi => {
-                    return Err(StoreError::InvalidData(
-                        "github-ci worlds are not retained by wt-server".into(),
-                    ))
-                }
-            },
-            backend_id: stored.backend_id.clone(),
-            disk_id: stored.disk_id,
-            resources: Resources {
-                vcpus: instance.vcpus.into(),
-                memory_mib: instance.memory_mib,
-                disk_gib: instance.disk_gib,
-            },
-        },
-        limit,
-    )
-    .map_err(map_registry_error)?;
+    let resources = Resources {
+        vcpus: instance.vcpus.into(),
+        memory_mib: instance.memory_mib,
+        disk_gib: instance.disk_gib,
+    };
+    crate::capacity::ensure_capacity(connection, resources, limit).map_err(map_registry_error)?;
     let row = NewWorld {
         id: instance.id.to_string(),
+        backend_id: &stored.backend_id,
+        disk_id: stored.disk_id.to_string(),
+        vcpus: crate::to_i64(resources.vcpus, "vcpus").map_err(map_registry_error)?,
+        memory_mib: crate::to_i64(resources.memory_mib, "memory_mib")
+            .map_err(map_registry_error)?,
+        disk_gib: crate::to_i64(resources.disk_gib, "disk_gib").map_err(map_registry_error)?,
+        compute_reserved: true,
+        disk_reserved_gib: crate::to_i64(resources.disk_gib, "disk_reserved_gib")
+            .map_err(map_registry_error)?,
         owner: &instance.owner,
         name: instance.name.as_str(),
         status: instance.status.to_string(),
         setup_fingerprint: &stored.setup_fingerprint,
         ssh_host_keys: "[]",
+        gateway_grant_id: stored.gateway_grant_id.as_deref(),
     };
     insert_result(
         diesel::insert_into(worlds::table)
             .values(row)
             .execute(connection),
     )?;
-    match (&instance.application, &stored.application) {
-        (
-            InstanceApplication::Devcontainer {
-                source,
-                git_base,
-                git_prefix,
-                ..
-            },
-            StoredApplication::Devcontainer { gateway_grant_id },
-        ) => insert_result(
-            diesel::insert_into(devcontainers::table)
-                .values(NewDevcontainer {
-                    id: instance.id.to_string(),
-                    source,
-                    git_base,
-                    git_prefix,
-                    gateway_grant_id,
-                    app_ssh_host_keys: "[]",
-                })
-                .execute(connection),
-        ),
-        (InstanceApplication::Host, StoredApplication::Host { gateway_grant_id }) => insert_result(
-            diesel::insert_into(hosts::table)
-                .values(NewHost {
-                    id: instance.id.to_string(),
-                    gateway_grant_id: gateway_grant_id.as_deref(),
-                })
-                .execute(connection),
-        ),
-        _ => Err(StoreError::InvalidData(
-            "instance and stored application kinds do not match".into(),
-        )),
-    }
+    Ok(())
 }
 
 fn map_registry_error(error: RegistryError) -> StoreError {

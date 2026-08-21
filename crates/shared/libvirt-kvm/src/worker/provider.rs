@@ -35,21 +35,6 @@ impl MachineProvider for LibvirtProvider {
                 provider_id
             ))),
             (Some(domain), true) => {
-                let paths = world::Paths::new(&self.config.worlds_dir, provider_id);
-                if [
-                    &paths.seed,
-                    &paths.user_data,
-                    &paths.vendor_data,
-                    &paths.meta_data,
-                    &paths.network_config,
-                ]
-                .into_iter()
-                .any(|path| !path.is_file())
-                {
-                    return Err(WorkerError::new(format!(
-                        "partial libvirt machine {provider_id}: required machine files are missing"
-                    )));
-                }
                 if !domain
                     .is_active()
                     .map_err(|error| context("check domain state", error))?

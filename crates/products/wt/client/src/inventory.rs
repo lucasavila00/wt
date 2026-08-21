@@ -187,7 +187,7 @@ pub fn name_counts(inventory: &[ContextInstance]) -> HashMap<&str, usize> {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use wt_control_protocol::{InstanceApplication, InstanceStatus};
+    use wt_control_protocol::InstanceStatus;
 
     fn item(context: &str, name: &str) -> ContextInstance {
         ContextInstance {
@@ -205,12 +205,6 @@ mod tests {
                 guest_ip: None,
                 last_error: None,
                 ssh: None,
-                application: InstanceApplication::Devcontainer {
-                    source: "git@example.test:repo.git".into(),
-                    git_base: "main".into(),
-                    git_prefix: format!("{name}/"),
-                    app_ssh: None,
-                },
             },
         }
     }

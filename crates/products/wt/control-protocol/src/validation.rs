@@ -49,64 +49,6 @@ pub struct InvalidInstanceName {
     reason: &'static str,
 }
 
-pub fn validate_ssh_git_source(value: &str) -> Result<(), InvalidGitSource> {
-    if value.is_empty()
-        || value
-            .bytes()
-            .any(|byte| byte.is_ascii_whitespace() || byte == 0)
-    {
-        return Err(InvalidGitSource);
-    }
-    if let Some(rest) = value.strip_prefix("ssh://") {
-        let Some((authority, path)) = rest.split_once('/') else {
-            return Err(InvalidGitSource);
-        };
-        if !authority.is_empty() && !path.is_empty() {
-            return Ok(());
-        }
-        return Err(InvalidGitSource);
-    }
-    let Some((authority, path)) = value.split_once(':') else {
-        return Err(InvalidGitSource);
-    };
-    let Some((user, host)) = authority.split_once('@') else {
-        return Err(InvalidGitSource);
-    };
-    if user.is_empty() || host.is_empty() || host.contains('@') || path.is_empty() {
-        return Err(InvalidGitSource);
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("source must be an ssh:// or user@host:path Git URL")]
-pub struct InvalidGitSource;
-
-pub fn validate_git_branch(value: &str) -> Result<(), InvalidGitBranch> {
-    if value.is_empty()
-        || value == "@"
-        || value.starts_with('.')
-        || value.starts_with('/')
-        || value.ends_with('.')
-        || value.ends_with('/')
-        || value.contains("..")
-        || value.contains("@{")
-        || value.contains("//")
-        || value.split('/').any(|part| part.ends_with(".lock"))
-        || value.bytes().any(|byte| {
-            byte.is_ascii_control()
-                || matches!(byte, b' ' | b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
-        })
-    {
-        return Err(InvalidGitBranch);
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("invalid Git branch name")]
-pub struct InvalidGitBranch;
-
 fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
     if value.is_empty() || value.len() > 63 {
         return Err(InvalidInstanceName {
@@ -133,9 +75,9 @@ fn validate_instance_name(value: &str) -> Result<(), InvalidInstanceName> {
             reason: "only lowercase letters, digits, and hyphens are allowed",
         });
     }
-    if value.ends_with("-host") || value.ends_with("-vs") {
+    if value.ends_with("-direct") {
         return Err(InvalidInstanceName {
-            reason: "must not end with the reserved SSH alias suffix -host or -vs",
+            reason: "must not end with the reserved SSH alias suffix -direct",
         });
     }
     Ok(())

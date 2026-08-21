@@ -75,29 +75,12 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     wait_for(&control);
     wait_for(&transport);
 
-    let response = reserve(
-        &control,
-        "unconfigured",
-        "git@other.test:project.git",
-        "main",
-    );
-    assert!(!response.ok);
-    assert!(response.error.unwrap().contains("is not configured"));
-    let response = reserve(
-        &control,
-        "missing-base",
-        "git@local.test:project.git",
-        "missing",
-    );
-    assert!(!response.ok);
-    assert!(response.error.unwrap().contains("does not exist"));
-
-    let response = reserve(&control, "world-1", "git@local.test:project.git", "main");
+    let response = reserve(&control, "world-1");
     assert!(response.ok, "{:?}", response.error);
     let grant = response.grant.unwrap();
-    let retry = reserve(&control, "world-1", "git@local.test:project.git", "main");
+    let retry = reserve(&control, "world-1");
     assert_eq!(retry.grant.as_ref(), Some(&grant));
-    let response = reserve(&control, "world-2", "git@local.test:project.git", "main");
+    let response = reserve(&control, "world-2");
     assert!(response.ok, "{:?}", response.error);
     let second_grant = response.grant.unwrap();
     let grant_file = temp.path().join("grant");
@@ -244,7 +227,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
         &["fetch", "origin"],
         &second_relay_socket,
     ));
-    let replacement = reserve(&control, "world-3", "git@local.test:project.git", "main");
+    let replacement = reserve(&control, "world-3");
     assert!(replacement.ok, "{:?}", replacement.error);
     assert_ne!(replacement.grant.unwrap().token, original_token);
     drop(gateway);
@@ -253,7 +236,6 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
 fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &Path) -> Process {
     let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway"))
         .args([
-            "serve",
             "--control-socket",
             control.to_str().unwrap(),
             "--transport-socket",
@@ -273,14 +255,12 @@ fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &
     Process(Some(child))
 }
 
-fn reserve(control: &Path, world_id: &str, source: &str, base: &str) -> ControlResponse {
+fn reserve(control: &Path, world_id: &str) -> ControlResponse {
     let mut stream = UnixStream::connect(control).unwrap();
     write_json_line(
         &mut stream,
         &ControlRequest::Reserve {
             world_id: world_id.to_owned(),
-            source: Some(source.to_owned()),
-            base: Some(base.to_owned()),
         },
     )
     .unwrap();

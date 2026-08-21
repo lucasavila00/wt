@@ -3,10 +3,8 @@
 These shell and configuration files are installed or run on real machines.
 
 - `server`: physical WT server setup;
-- `client`: workstation defaults installed with the WT client;
-- `world/shared`: machine and terminal setup used by more than one world kind;
-- `world/devcontainer`: repository and devcontainer behavior;
-- `world/host`: raw Ubuntu host behavior.
+- `world/shared`: golden-image machine and terminal setup;
+- `world/host`: retained host behavior.
 
-GitHub CI has no installed assets yet. Rust owns typed validation and lifecycle
-decisions; these files own whole-machine shell procedures.
+Rust owns typed validation and lifecycle decisions; these files own
+whole-machine shell procedures.

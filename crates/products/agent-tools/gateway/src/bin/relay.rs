@@ -213,8 +213,8 @@ mod tests {
     fn clears_the_marker_with_one_conditional_tmux_command() {
         let event = wt_agent_tool_gateway::CodexSessionEvent {
             session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
-            cwd: "/workspace".into(),
-            tmux_session: "wt-app".into(),
+            cwd: "/home/wt/project".into(),
+            tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
             kind: CodexSessionEventKind::SessionEnd,
             session_start_source: None,

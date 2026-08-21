@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use wt_libvirt_kvm::{CodexMounts, MachineConfig};
-use wt_retained_worlds::devcontainer::{BootstrapPolicy, PackageVersions, ProvisionerConfig};
 
 pub const DEFAULT_AGENT_TOOL_VSOCK_PORT: u32 = wt_agent_tool_gateway::VSOCK_PORT;
 pub const AGENT_TOOL_VSOCK_PORT_ENV: &str = wt_agent_tool_gateway::VSOCK_PORT_ENV;
@@ -18,19 +17,9 @@ pub struct ServerConfig {
     pub version: u32,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
-    pub registry_cache: RegistryCacheConfig,
     pub agent_tools: AgentToolsConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RegistryCacheConfig {
-    pub state_dir: PathBuf,
-    pub port: u16,
-    pub max_size_gib: u64,
-    pub registries: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -70,7 +59,7 @@ pub struct ServerLibvirtConfig {
 #[serde(deny_unknown_fields)]
 pub struct GuestConfig {
     pub boot_timeout_seconds: u64,
-    pub recipe_timeout_seconds: u64,
+    pub readiness_timeout_seconds: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -117,7 +106,6 @@ impl ServerConfig {
         for (name, path) in [
             ("image.path", &self.image.path),
             ("libvirt.worlds_dir", &self.libvirt.worlds_dir),
-            ("registry_cache.state_dir", &self.registry_cache.state_dir),
             ("install.binary_dir", &self.install.binary_dir),
         ] {
             if !path.is_absolute() {
@@ -162,24 +150,6 @@ impl ServerConfig {
                 "install.binary_dir",
                 self.install.binary_dir.as_path(),
             ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "image directory",
-                image_dir,
-            ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "libvirt.worlds_dir",
-                self.libvirt.worlds_dir.as_path(),
-            ),
-            (
-                "registry_cache.state_dir",
-                self.registry_cache.state_dir.as_path(),
-                "install.binary_dir",
-                self.install.binary_dir.as_path(),
-            ),
         ] {
             if left.starts_with(right) || right.starts_with(left) {
                 return Err(format!("{left_name} and {right_name} must not overlap"));
@@ -188,15 +158,14 @@ impl ServerConfig {
         if self.libvirt.network.trim().is_empty() {
             return Err("libvirt.network must not be empty".to_owned());
         }
-        self.validate_registry_cache()?;
         self.validate_agent_tools()?;
-        if self.guest.boot_timeout_seconds == 0 || self.guest.recipe_timeout_seconds == 0 {
+        if self.guest.boot_timeout_seconds == 0 || self.guest.readiness_timeout_seconds == 0 {
             return Err("guest timeout values must be greater than zero".to_owned());
         }
         Ok(())
     }
 
-    pub fn devcontainer_machine_config(&self) -> MachineConfig {
+    pub fn machine_config(&self) -> MachineConfig {
         MachineConfig {
             image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
@@ -204,34 +173,6 @@ impl ServerConfig {
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             codex_mounts: Some(self.codex_mounts()),
         }
-    }
-
-    pub fn host_machine_config(&self) -> MachineConfig {
-        MachineConfig {
-            image: self.image.path.clone(),
-            worlds_dir: self.libvirt.worlds_dir.clone(),
-            network: self.libvirt.network.clone(),
-            boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-            codex_mounts: Some(self.codex_mounts()),
-        }
-    }
-
-    pub fn provisioner_config(
-        &self,
-        registry_cache_url: String,
-        retained: wt_retained_worlds::RetainedConfig,
-    ) -> Result<ProvisionerConfig, String> {
-        let bootstrap = self.bootstrap_policy()?;
-        Ok(ProvisionerConfig {
-            app_pane_binary: self.install.binary_dir.join("wt-devcontainer-pane"),
-            app_info_binary: self.install.binary_dir.join("wt-devcontainer-info"),
-            app_proxy_binary: self.install.binary_dir.join("wt-devcontainer-ssh-proxy"),
-            registry_cache_url,
-            registry_cache_ca_file: self.registry_cache.state_dir.join("ca/ca.crt"),
-            recipe_timeout: Duration::from_secs(self.guest.recipe_timeout_seconds),
-            bootstrap,
-            retained,
-        })
     }
 
     pub fn retained_config(&self) -> wt_retained_worlds::RetainedConfig {
@@ -355,43 +296,6 @@ impl ServerConfig {
         .collect()
     }
 
-    fn bootstrap_policy(&self) -> Result<BootstrapPolicy, String> {
-        #[derive(Deserialize)]
-        struct RawManifest {
-            packages: PackageVersions,
-            devcontainer_cli: String,
-        }
-        let manifest_path = PathBuf::from(format!("{}.manifest.json", self.image.path.display()));
-        let bytes = std::fs::read(&manifest_path)
-            .map_err(|error| format!("read image manifest {}: {error}", manifest_path.display()))?;
-        let manifest: RawManifest = serde_json::from_slice(&bytes).map_err(|error| {
-            format!("parse image manifest {}: {error}", manifest_path.display())
-        })?;
-        BootstrapPolicy::from_installed_packages(
-            manifest.packages,
-            manifest.devcontainer_cli,
-            wt_libvirt_kvm::MACHINE_BOOTSTRAP_PACKAGES,
-        )
-    }
-
-    fn validate_registry_cache(&self) -> Result<(), String> {
-        if self.registry_cache.port == 0 || self.registry_cache.max_size_gib == 0 {
-            return Err("registry cache port and size must be greater than zero".to_owned());
-        }
-        if self.registry_cache.registries.is_empty() {
-            return Err("registry_cache.registries must not be empty".to_owned());
-        }
-        let mut registries = std::collections::BTreeSet::new();
-        for registry in &self.registry_cache.registries {
-            if !valid_registry_host(registry) || !registries.insert(registry.as_str()) {
-                return Err(format!(
-                    "invalid or duplicate registry cache host: {registry}"
-                ));
-            }
-        }
-        Ok(())
-    }
-
     fn validate_agent_tools(&self) -> Result<(), String> {
         if self.agent_tools.vsock_port == 0 || self.agent_tools.vsock_port == u32::MAX {
             return Err("agent_tools.vsock_port must be a concrete nonzero port".to_owned());
@@ -424,16 +328,6 @@ fn valid_git_host(value: &str) -> bool {
         })
 }
 
-fn valid_registry_host(value: &str) -> bool {
-    !value.is_empty()
-        && value == value.to_ascii_lowercase()
-        && !value.starts_with('.')
-        && !value.ends_with('.')
-        && value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b':')
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,18 +343,12 @@ path = "/var/lib/wt/images/retained.qcow2"
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
 
-[registry_cache]
-state_dir = "/var/lib/wt/registry-cache"
-port = 3128
-max_size_gib = 64
-registries = ["docker.io", "mcr.microsoft.com"]
-
 [agent_tools.github]
 host = "github.com"
 
 [guest]
 boot_timeout_seconds = 300
-recipe_timeout_seconds = 900
+readiness_timeout_seconds = 900
 
 [install]
 binary_dir = "/usr/local/bin"
@@ -469,7 +357,7 @@ binary_dir = "/usr/local/bin"
     fn parse(value: &str) -> Result<(ServerConfig, MachineConfig), String> {
         let config: ServerConfig = toml::from_str(value).map_err(|error| error.to_string())?;
         config.validate()?;
-        let machine = config.devcontainer_machine_config();
+        let machine = config.machine_config();
         Ok((config, machine))
     }
 
@@ -481,7 +369,6 @@ binary_dir = "/usr/local/bin"
             machine.image,
             Path::new("/var/lib/wt/images/retained.qcow2")
         );
-        assert_eq!(config.host_machine_config().image, machine.image);
         assert_eq!(machine.network, "default");
         assert_eq!(
             machine.codex_mounts,
@@ -524,15 +411,15 @@ binary_dir = "/usr/local/bin"
 
     #[test]
     fn missing_and_unknown_fields_fail() {
-        assert!(parse(&VALID.replace("recipe_timeout_seconds = 900\n", "")).is_err());
+        assert!(parse(&VALID.replace("readiness_timeout_seconds = 900\n", "")).is_err());
         assert!(parse(&VALID.replace(
-            "recipe_timeout_seconds = 900",
-            "recipe_timeout_seconds = 900\nfallback = true"
+            "readiness_timeout_seconds = 900",
+            "readiness_timeout_seconds = 900\nfallback = true"
         ))
         .is_err());
         assert!(parse(&VALID.replace(
-            "registries = [\"docker.io\", \"mcr.microsoft.com\"]",
-            "registries = [\"docker.io\", \"mcr.microsoft.com\"]\npreload_images = [\"redis:7-alpine\"]"
+            "[agent_tools.github]",
+            "[agent_tools]\nunknown = true\n\n[agent_tools.github]"
         ))
         .is_err());
     }
@@ -543,11 +430,11 @@ binary_dir = "/usr/local/bin"
         assert!(parse(&VALID.replace("/usr/local/bin", "/")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/usr/../bin")).is_err());
         assert!(parse(&VALID.replace("/usr/local/bin", "/var/lib/wt")).is_err());
-        assert!(parse(
-            &VALID.replace("recipe_timeout_seconds = 900", "recipe_timeout_seconds = 0")
-        )
+        assert!(parse(&VALID.replace(
+            "readiness_timeout_seconds = 900",
+            "readiness_timeout_seconds = 0"
+        ))
         .is_err());
-        assert!(parse(&VALID.replace("max_size_gib = 64", "max_size_gib = 0")).is_err());
         assert!(parse(&VALID.replace(
             "[agent_tools.github]",
             "[agent_tools]\nvsock_port = 0\n\n[agent_tools.github]"

@@ -28,7 +28,6 @@ fn image_manifest_records_structured_package_versions() {
         golden_sha256: "golden".to_owned(),
         tmux_sha256: "tmux".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
-        devcontainer_cli: wt_retained_worlds::devcontainer::DEVCONTAINER_CLI_VERSION.to_owned(),
     };
 
     let json = serde_json::to_value(manifest).unwrap();
@@ -48,14 +47,7 @@ fn retained_manifest_tracks_host_assets() {
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(paths, @r###"
-    /var/tmp/wt-host-cloud-config
-    /var/tmp/wt-host-cloud-final
-    /var/tmp/wt-host-cloud-init
-    /var/tmp/wt-host-defer-init
-    /var/tmp/wt-host-inspect
     /var/tmp/wt-host-prepare
-    /var/tmp/wt-host-setup
-    /var/tmp/wt-host-setup-service
     /var/tmp/wt-host-shell
     "###);
 }
@@ -140,7 +132,7 @@ fn shell_trace_is_not_a_phase_marker() {
     let mut pending = Vec::new();
     assert!(extract_phase_markers(
         &mut pending,
-        b"[  1.0] cloud-init: + echo WT_IMAGE_PHASE=installing packages\n"
+        b"[  1.0] bootstrap: + echo WT_IMAGE_PHASE=installing packages\n"
     )
     .is_empty());
 }

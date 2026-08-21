@@ -6,11 +6,11 @@ The `wt` client.
 
 - Local and OpenSSH server contexts.
 - World naming and cross-context resolution.
-- `new`, `ls`, `start`, `code`, `rm`, and `sync`.
+- `new`, `ls`, `start`, `stop`, `ssh`, `shell`, `rm`, and `sync`.
 - Managed OpenSSH config and known hosts.
-- Kind-specific SSH aliases with pinned host identities.
+- Managed SSH aliases with pinned host identities.
 
-The client does not run libvirt, Docker, or provisioning.
+The client does not run libvirt or provisioning.
 
 ## Install
 

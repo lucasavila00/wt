@@ -12,7 +12,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
-use wt_control_protocol::{CodexSession, Instance, InstanceApplication, WorldKind};
+use wt_control_protocol::{CodexSession, Instance};
 
 #[derive(Debug)]
 pub(super) enum CodexContextSnapshot {
@@ -33,12 +33,7 @@ impl ShellWorld {
 
     pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
         let qualified_name = format!("{context}.{}", instance.name);
-        let (kind, control_alias) = match instance.application {
-            InstanceApplication::Devcontainer { .. } => {
-                (WorldKind::Devcontainer, format!("{qualified_name}-host"))
-            }
-            InstanceApplication::Host => (WorldKind::Host, format!("{qualified_name}-vs")),
-        };
+        let control_alias = format!("{qualified_name}-direct");
         Self {
             identity: super::model::WorldIdentity {
                 context: context.into(),
@@ -46,7 +41,6 @@ impl ShellWorld {
             },
             name: qualified_name,
             instance_name: instance.name.clone(),
-            kind,
             control_alias,
         }
     }
@@ -61,8 +55,7 @@ impl ShellWorld {
             },
             name: name.into(),
             instance_name: wt_control_protocol::InstanceName::parse(world_name).unwrap(),
-            kind: WorldKind::Host,
-            control_alias: format!("{name}-vs"),
+            control_alias: format!("{name}-direct"),
         }
     }
 }
@@ -201,17 +194,7 @@ fn validate_context(
                     observation.world_name.as_str(),
                 ));
             }
-            let expected_tmux = match world.kind {
-                WorldKind::Devcontainer => "wt-app",
-                WorldKind::Host => "wt-host",
-                WorldKind::GithubCi => {
-                    return Err(invalid(
-                        context,
-                        "retained world kind",
-                        &world.kind.to_string(),
-                    ))
-                }
-            };
+            let expected_tmux = "wt-host";
             if observation.target.tmux_session != expected_tmux {
                 return Err(invalid(
                     context,
@@ -389,7 +372,7 @@ mod tests {
         let world = ShellWorld::test("ars.dev", 1);
         let cards = validate_context(
             "ars",
-            vec![session(&world, "/workspace")],
+            vec![session(&world, "/home/wt/project")],
             std::slice::from_ref(&world),
         )
         .unwrap();
@@ -406,25 +389,25 @@ mod tests {
     #[test]
     fn rejects_world_name_and_kind_mismatches() {
         let world = ShellWorld::test("ars.dev", 1);
-        let mut wrong_name = session(&world, "/workspace");
+        let mut wrong_name = session(&world, "/home/wt/project");
         wrong_name.observations[0].world_name = InstanceName::parse("other").unwrap();
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_name], std::slice::from_ref(&world)).unwrap_err(),
             @"context ars: failed invariant world_name matches inventory world_id; value other"
         );
 
-        let mut wrong_tmux = session(&world, "/workspace");
-        wrong_tmux.observations[0].target.tmux_session = "wt-app".into();
+        let mut wrong_tmux = session(&world, "/home/wt/project");
+        wrong_tmux.observations[0].target.tmux_session = "other".into();
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_tmux], &[world]).unwrap_err(),
-            @"context ars: failed invariant tmux_session matches world kind; value wt-app"
+            @"context ars: failed invariant tmux_session matches world kind; value other"
         );
     }
 
     #[test]
     fn rejects_duplicate_sessions_and_negative_timestamps() {
         let world = ShellWorld::test("ars.dev", 1);
-        let valid = session(&world, "/workspace");
+        let valid = session(&world, "/home/wt/project");
         insta::assert_snapshot!(
             validate_context(
                 "ars",

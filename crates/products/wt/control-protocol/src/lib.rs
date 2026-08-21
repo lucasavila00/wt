@@ -7,10 +7,7 @@ mod validation;
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 
-pub use validation::{
-    validate_git_branch, validate_ssh_git_source, InstanceName, InvalidGitBranch, InvalidGitSource,
-    InvalidInstanceName,
-};
+pub use validation::{InstanceName, InvalidInstanceName};
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -18,7 +15,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -61,37 +58,6 @@ pub struct CreateInstance {
     pub git_user_name: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     pub git_user_email: String,
-    #[serde(flatten)]
-    pub application: CreateApplication,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum CreateApplication {
-    Devcontainer {
-        source: String,
-        #[serde(deserialize_with = "deserialize_git_branch")]
-        git_base: String,
-    },
-    Host {
-        #[serde(deserialize_with = "deserialize_nonempty_string")]
-        user_data: String,
-    },
-}
-
-impl CreateInstance {
-    pub fn kind(&self) -> WorldKind {
-        self.application.kind()
-    }
-}
-
-impl CreateApplication {
-    pub fn kind(&self) -> WorldKind {
-        match self {
-            Self::Devcontainer { .. } => WorldKind::Devcontainer,
-            Self::Host { .. } => WorldKind::Host,
-        }
-    }
 }
 
 pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
@@ -124,15 +90,6 @@ where
     if value.is_empty() {
         return Err(serde::de::Error::custom("value must not be empty"));
     }
-    Ok(value)
-}
-
-fn deserialize_git_branch<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    validate_git_branch(&value).map_err(serde::de::Error::custom)?;
     Ok(value)
 }
 
@@ -210,61 +167,6 @@ pub struct Instance {
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshAccess>,
-    #[serde(flatten)]
-    pub application: InstanceApplication,
-}
-
-impl Instance {
-    pub fn kind(&self) -> WorldKind {
-        self.application.kind()
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum InstanceApplication {
-    Devcontainer {
-        source: String,
-        git_base: String,
-        git_prefix: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        app_ssh: Option<AppSshAccess>,
-    },
-    Host,
-}
-
-impl InstanceApplication {
-    pub fn kind(&self) -> WorldKind {
-        match self {
-            Self::Devcontainer { .. } => WorldKind::Devcontainer,
-            Self::Host => WorldKind::Host,
-        }
-    }
-
-    pub fn app_ssh(&self) -> Option<&AppSshAccess> {
-        match self {
-            Self::Devcontainer { app_ssh, .. } => app_ssh.as_ref(),
-            Self::Host => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WorldKind {
-    Devcontainer,
-    Host,
-    GithubCi,
-}
-
-impl fmt::Display for WorldKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Devcontainer => "devcontainer",
-            Self::Host => "host",
-            Self::GithubCi => "github-ci",
-        })
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -275,18 +177,10 @@ pub struct SshAccess {
     pub host_keys: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AppSshAccess {
-    pub user: String,
-    pub port: u16,
-    pub host_keys: Vec<String>,
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstanceStatus {
     Provisioning,
-    Setup,
     Running,
     Stopped,
     Destroying,
@@ -297,7 +191,6 @@ impl fmt::Display for InstanceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Provisioning => "provisioning",
-            Self::Setup => "setup",
             Self::Running => "running",
             Self::Stopped => "stopped",
             Self::Destroying => "destroying",
@@ -313,7 +206,6 @@ impl FromStr for InstanceStatus {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "provisioning" => Ok(Self::Provisioning),
-            "setup" => Ok(Self::Setup),
             "running" => Ok(Self::Running),
             "stopped" => Ok(Self::Stopped),
             "destroying" => Ok(Self::Destroying),
@@ -409,8 +301,7 @@ mod tests {
             "trailing-",
             "has.dot",
             "has_space",
-            "repo-host",
-            "repo-vs",
+            "repo-direct",
         ] {
             assert!(InstanceName::parse(invalid).is_err(), "{invalid}");
         }
@@ -419,30 +310,9 @@ mod tests {
     #[test]
     fn explains_reserved_ssh_alias_suffixes() {
         insta::assert_snapshot!(
-            InstanceName::parse("repo-vs").unwrap_err().to_string(),
-            @"invalid instance name: must not end with the reserved SSH alias suffix -host or -vs"
+            InstanceName::parse("repo-direct").unwrap_err().to_string(),
+            @"invalid instance name: must not end with the reserved SSH alias suffix -direct"
         );
-    }
-
-    #[test]
-    fn validates_only_ssh_git_sources() {
-        for valid in [
-            "git@github.com:example/repo.git",
-            "ssh://git@example.test/repo.git",
-            "ssh://git@example.test:2222/repo.git",
-        ] {
-            assert!(validate_ssh_git_source(valid).is_ok(), "{valid}");
-        }
-        for invalid in [
-            "https://example.test/repo.git",
-            "git://example.test/repo.git",
-            "/tmp/repo.git",
-            "ssh://example.test",
-            "git@:repo.git",
-            "git@example.test:",
-        ] {
-            assert!(validate_ssh_git_source(invalid).is_err(), "{invalid}");
-        }
     }
 
     #[test]
@@ -454,7 +324,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -469,7 +339,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -484,7 +354,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -499,11 +369,11 @@ mod tests {
             observations: vec![CodexSessionObservation {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
-                cwd: "/workspace".into(),
+                cwd: "/home/wt/project".into(),
                 state: CodexSessionState::Unknown,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
-                    tmux_session: "wt-app".into(),
+                    tmux_session: "wt-host".into(),
                     pane_id: "%3".into(),
                 },
                 received_at_unix_ms: 42,
@@ -518,11 +388,11 @@ mod tests {
             {
               "world_id": "123e4567-e89b-12d3-a456-426614174001",
               "world_name": "checkout",
-              "cwd": "/workspace",
+              "cwd": "/home/wt/project",
               "state": "unknown",
               "session_start_source": "compact",
               "target": {
-                "tmux_session": "wt-app",
+                "tmux_session": "wt-host",
                 "pane_id": "%3"
               },
               "received_at_unix_ms": 42
@@ -537,7 +407,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 4,
+                "protocol_version": 5,
                 "operation": "list_codex_sessions"
             })
         );
@@ -553,7 +423,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 4,
+          "protocol_version": 5,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -570,40 +440,6 @@ mod tests {
     }
 
     #[test]
-    fn create_request_has_setup_shape() {
-        let request = ApiRequest::new(Operation::Create(CreateInstance {
-            name: InstanceName::parse("repo-feature").unwrap(),
-            vcpus: 2,
-            memory_mib: 4096,
-            disk_gib: 32,
-            ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
-            git_user_name: "Lucas Ávila".to_owned(),
-            git_user_email: "lucaxx@gmail.com".to_owned(),
-            application: CreateApplication::Devcontainer {
-                source: "git@github.com:example/repo.git".to_owned(),
-                git_base: "devcontainer".to_owned(),
-            },
-        }));
-        assert_eq!(
-            serde_json::to_value(request).unwrap(),
-            serde_json::json!({
-                "protocol_version": 4,
-                "operation": "create",
-                "kind": "devcontainer",
-                "name": "repo-feature",
-                "source": "git@github.com:example/repo.git",
-                "git_base": "devcontainer",
-                "git_user_name": "Lucas Ávila",
-                "git_user_email": "lucaxx@gmail.com",
-                "vcpus": 2,
-                "memory_mib": 4096,
-                "disk_gib": 32,
-                "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"]
-            })
-        );
-    }
-
-    #[test]
     fn host_create_request_has_tagged_shape() {
         let request = ApiRequest::new(Operation::Create(CreateInstance {
             name: InstanceName::parse("build-world").unwrap(),
@@ -613,9 +449,6 @@ mod tests {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example".to_owned()],
             git_user_name: "Lucas Ávila".to_owned(),
             git_user_email: "lucaxx@gmail.com".to_owned(),
-            application: CreateApplication::Host {
-                user_data: "#cloud-config\nruncmd:\n  - touch /ready\n".to_owned(),
-            },
         }));
         let value = serde_json::to_value(request).unwrap();
         insta::assert_snapshot!(serde_json::to_string_pretty(&value).unwrap(), @r###"
@@ -623,15 +456,13 @@ mod tests {
           "disk_gib": 32,
           "git_user_email": "lucaxx@gmail.com",
           "git_user_name": "Lucas Ávila",
-          "kind": "host",
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 4,
+          "protocol_version": 5,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
-          "user_data": "#cloud-config\nruncmd:\n  - touch /ready\n",
           "vcpus": 2
         }
         "###);
@@ -640,22 +471,16 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "create",
-            "kind": "devcontainer",
             "name": "repo-feature",
-            "source": "git@github.com:example/repo.git",
-            "git_base": "main",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "create",
-            "kind": "devcontainer",
             "name": "repo-feature",
-            "source": "git@github.com:example/repo.git",
-            "git_base": "main",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
         }));
@@ -673,10 +498,6 @@ mod tests {
             ssh_authorized_keys: vec![key.to_owned()],
             git_user_name: "Test User".to_owned(),
             git_user_email: "test@example.invalid".to_owned(),
-            application: CreateApplication::Devcontainer {
-                source: "git@example.test:repo.git".to_owned(),
-                git_base: "main".to_owned(),
-            },
         };
         assert_eq!(validate_create_resources(&request), Ok(()));
         request.vcpus = 0;
@@ -689,7 +510,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 4,
+            "protocol_version": 5,
             "operation": "get",
             "name": "Not-Valid"
         }))

@@ -42,11 +42,7 @@ impl Gateway {
 
     pub fn control(&self, request: ControlRequest) -> Result<ControlResponse> {
         match request {
-            ControlRequest::Reserve {
-                world_id,
-                source,
-                base,
-            } => self.reserve(&world_id, source.as_deref(), base.as_deref()),
+            ControlRequest::Reserve { world_id } => self.reserve(&world_id),
             ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
         }
     }
@@ -125,13 +121,8 @@ impl Gateway {
             .context("store Codex session report")
     }
 
-    fn reserve(
-        &self,
-        world_id: &str,
-        source: Option<&str>,
-        base: Option<&str>,
-    ) -> Result<ControlResponse> {
-        if world_id.is_empty() || source.is_some() != base.is_some() {
+    fn reserve(&self, world_id: &str) -> Result<ControlResponse> {
+        if world_id.is_empty() {
             bail!("invalid gateway grant scope");
         }
         {
@@ -149,13 +140,6 @@ impl Gateway {
                     token: existing.token.clone(),
                 })));
             }
-        }
-        if let (Some(source), Some(base)) = (source, base) {
-            if base.is_empty() {
-                bail!("invalid gateway repository check");
-            }
-            let parsed = parse_source(source)?;
-            verify_repository(self.provider(&parsed.host)?, &parsed, base)?;
         }
         let mut state = self
             .state

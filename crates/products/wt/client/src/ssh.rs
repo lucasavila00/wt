@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use wt_control_protocol::{InstanceApplication, InstanceStatus};
+use wt_control_protocol::InstanceStatus;
 
 pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
@@ -43,69 +43,20 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
         };
         let known_hosts_file = ssh_quote(&known_hosts_path);
         let unique_name = counts.get(instance.name.as_str()) == Some(&1);
-        let (guest_alias, app_keys) = match &instance.application {
-            InstanceApplication::Devcontainer {
-                source, app_ssh, ..
-            } => {
-                let title = world_title(&qualified, source);
-                let app_shell = format!("BYOBU_ALT_TITLE='{}' /usr/local/bin/wt-app-shell", title);
-                let host_key_alias = format!("{qualified}-host");
-                let guest_common = guest_options(
-                    ssh,
-                    &host_key_alias,
-                    &known_hosts_file,
-                    compression,
-                    &proxy_jump,
-                );
-                let app_common = app_ssh.as_ref().map(|app_ssh| format!(
-                    "  HostName wt-app\n  User {}\n  Port {}\n  HostKeyAlias {}-vs\n  UserKnownHostsFile {}\n  StrictHostKeyChecking yes\n  Compression {compression}\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n  SetEnv TERM=xterm-256color\n  ProxyCommand ssh -F {} -o Compression=no {}-host /usr/local/bin/wt-devcontainer-ssh-proxy\n",
-                    app_ssh.user,
-                    app_ssh.port,
-                    qualified,
-                    known_hosts_file,
-                    ssh_quote(&main_config_path),
-                    qualified,
-                ));
-                config.push_str(&format!("\nHost {qualified}-host\n{guest_common}\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n"));
-                if let Some(app_common) = &app_common {
-                    config.push_str(&format!("\nHost {qualified}-vs\n{app_common}"));
-                }
-                if unique_name {
-                    config.push_str(&format!("\nHost {}-host\n{guest_common}\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {app_shell}\n", instance.name, instance.name));
-                    if let Some(app_common) = &app_common {
-                        config.push_str(&format!("\nHost {}-vs\n{app_common}", instance.name));
-                    }
-                }
-                (
-                    host_key_alias,
-                    app_ssh
-                        .iter()
-                        .flat_map(|ssh| &ssh.host_keys)
-                        .collect::<Vec<_>>(),
-                )
-            }
-            InstanceApplication::Host => {
-                let host_shell =
-                    format!("BYOBU_ALT_TITLE='{qualified}' /usr/local/bin/wt-host-shell");
-                let guest_common =
-                    guest_options(ssh, &qualified, &known_hosts_file, compression, &proxy_jump);
-                config.push_str(&format!(
-                    "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {qualified}-vs\n{guest_common}"
-                ));
-                if unique_name {
-                    config.push_str(&format!(
-                        "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {}-vs\n{guest_common}",
-                        instance.name, instance.name
-                    ));
-                }
-                (qualified.clone(), Vec::new())
-            }
-        };
-        for key in &ssh.host_keys {
-            append_known_host(&mut known_hosts, &guest_alias, key, instance)?;
+        let host_shell = format!("BYOBU_ALT_TITLE='{qualified}' /usr/local/bin/wt-host-shell");
+        let guest_common =
+            guest_options(ssh, &qualified, &known_hosts_file, compression, &proxy_jump);
+        config.push_str(&format!(
+            "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {qualified}-direct\n{guest_common}"
+        ));
+        if unique_name {
+            config.push_str(&format!(
+                "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {}-direct\n{guest_common}",
+                instance.name, instance.name
+            ));
         }
-        for key in app_keys {
-            append_known_host(&mut known_hosts, &format!("{qualified}-vs"), key, instance)?;
+        for key in &ssh.host_keys {
+            append_known_host(&mut known_hosts, &qualified, key, instance)?;
         }
     }
     ssh_config::ensure_managed_include(&main_config_path).with_context(|| {
@@ -122,10 +73,8 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
 pub fn has_alias(item: &ContextInstance) -> bool {
     matches!(
         item.instance.status,
-        InstanceStatus::Setup | InstanceStatus::Running | InstanceStatus::Error
+        InstanceStatus::Running | InstanceStatus::Error
     ) && item.instance.ssh.is_some()
-        && (item.instance.status != InstanceStatus::Error
-            || matches!(item.instance.application, InstanceApplication::Host))
 }
 
 fn guest_options(
@@ -157,28 +106,6 @@ fn append_known_host(
     Ok(())
 }
 
-fn world_title(qualified: &str, source: &str) -> String {
-    match repository_name(source) {
-        Some(repository) => format!("{qualified} - {repository}"),
-        None => qualified.to_owned(),
-    }
-}
-
-pub fn repository_name(source: &str) -> Option<&str> {
-    let path = if let Some(rest) = source.strip_prefix("ssh://") {
-        rest.split_once('/')?.1
-    } else {
-        source.split_once(':')?.1
-    };
-    let repository = path.trim_end_matches('/').rsplit('/').next()?;
-    let repository = repository.strip_suffix(".git").unwrap_or(repository);
-    (!repository.is_empty()
-        && repository
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')))
-    .then_some(repository)
-}
-
 fn ensure_directory(path: &Path) -> Result<()> {
     fs::create_dir_all(path).with_context(|| format!("create {}", path.display()))?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
@@ -201,9 +128,7 @@ mod tests {
     use crate::config::{Context as ClientContext, ContextKind};
     use std::sync::Mutex;
     use uuid::Uuid;
-    use wt_control_protocol::{
-        AppSshAccess, Instance, InstanceApplication, InstanceName, SshAccess,
-    };
+    use wt_control_protocol::{Instance, InstanceName, SshAccess};
 
     static HOME_LOCK: Mutex<()> = Mutex::new(());
 
@@ -219,27 +144,6 @@ mod tests {
     fn normalize_home(contents: &str, home: &Path) -> String {
         contents.replace(&home.display().to_string(), "[HOME]")
     }
-    #[test]
-    fn titles_use_the_qualified_world_and_repository_name() {
-        assert_eq!(
-            world_title("ars.wt2", "git@example.test:group/repo.git"),
-            "ars.wt2 - repo"
-        );
-        assert_eq!(
-            world_title("ars.wt2", "ssh://git@example.test/group/repo"),
-            "ars.wt2 - repo"
-        );
-    }
-
-    #[test]
-    fn titles_omit_unsafe_or_missing_repository_names() {
-        assert_eq!(
-            world_title("ars.wt2", "git@example.test:group/repo+unsafe.git"),
-            "ars.wt2"
-        );
-        assert_eq!(world_title("ars.wt2", "ssh://git@example.test/"), "ars.wt2");
-    }
-
     #[test]
     fn sync_bootstraps_main_config_and_removes_stale_worlds() {
         let _lock = HOME_LOCK.lock().unwrap();
@@ -264,16 +168,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
-            application: InstanceApplication::Devcontainer {
-                source: "git@example.test:repo.git".into(),
-                git_base: "main".into(),
-                git_prefix: "repo-feature/".into(),
-                app_ssh: Some(AppSshAccess {
-                    user: "vscode".into(),
-                    port: 2222,
-                    host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
-                }),
-            },
         };
         let mut replacement_instance = instance.clone();
         replacement_instance.id = Uuid::new_v4();
@@ -308,8 +202,7 @@ mod tests {
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
         insta::assert_snapshot!(known_hosts, @r###"
         # Generated by wt sync. Do not edit.
-        local.repo-feature-host ssh-ed25519 AAAAREPLACEMENT
-        local.repo-feature-vs ssh-ed25519 AAAAAPPLICATION
+        local.repo-feature ssh-ed25519 AAAAREPLACEMENT
         "###);
         sync(&client_config, &[]).unwrap();
         let main = fs::read_to_string(temp.path().join(".ssh/config")).unwrap();
@@ -319,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_world_has_no_app_alias_or_agent_forwarding() {
+    fn setup_world_has_host_aliases_without_agent_forwarding() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
@@ -327,7 +220,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: InstanceName::parse("repo-feature").unwrap(),
             owner: "lucas".into(),
-            status: InstanceStatus::Setup,
+            status: InstanceStatus::Running,
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
@@ -339,12 +232,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
             }),
-            application: InstanceApplication::Devcontainer {
-                source: "git@example.test:repo.git".into(),
-                git_base: "main".into(),
-                git_prefix: "repo-feature/".into(),
-                app_ssh: None,
-            },
         };
         sync(
             &local_config(),
@@ -386,7 +273,6 @@ mod tests {
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAAHOST host".into()],
             }),
-            application: InstanceApplication::Host,
         };
         sync(
             &local_config(),
@@ -418,7 +304,7 @@ mod tests {
           RequestTTY force
           RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
 
-        Host local.ubuntu-vs
+        Host local.ubuntu-direct
           HostName 192.0.2.3
           User wt
           Port 22
@@ -446,7 +332,7 @@ mod tests {
           RequestTTY force
           RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
 
-        Host ubuntu-vs
+        Host ubuntu-direct
           HostName 192.0.2.3
           User wt
           Port 22
@@ -463,7 +349,6 @@ mod tests {
         # Generated by wt sync. Do not edit.
         local.ubuntu ssh-ed25519 AAAAHOST
         "###);
-        assert!(!config.contains("ubuntu-host"));
     }
 
     #[test]
@@ -480,14 +365,13 @@ mod tests {
             memory_mib: 4096,
             disk_gib: 32,
             guest_ip: Some("192.0.2.4".into()),
-            last_error: Some("host cloud-init failed".into()),
+            last_error: Some("host preparation failed".into()),
             ssh: Some(SshAccess {
                 user: "wt".into(),
                 host: "192.0.2.4".into(),
                 port: 22,
                 host_keys: vec!["ssh-ed25519 AAAAHOST host".into()],
             }),
-            application: InstanceApplication::Host,
         };
 
         sync(
@@ -503,7 +387,7 @@ mod tests {
 
         let config = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         assert!(config.contains("Host local.broken\n"));
-        assert!(config.contains("Host local.broken-vs\n"));
+        assert!(config.contains("Host local.broken-direct\n"));
     }
 
     #[test]
@@ -531,16 +415,6 @@ mod tests {
                     port: 22,
                     host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
                 }),
-                application: InstanceApplication::Devcontainer {
-                    source: "git@example.test:repo.git".into(),
-                    git_base: "main".into(),
-                    git_prefix: "same/".into(),
-                    app_ssh: Some(AppSshAccess {
-                        user: "vscode".into(),
-                        port: 2222,
-                        host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
-                    }),
-                },
             },
         };
         let client_config = ClientConfig {
@@ -601,16 +475,6 @@ mod tests {
                     port: 22,
                     host_keys: vec!["ssh-ed25519 AAAATEST guest".into()],
                 }),
-                application: InstanceApplication::Devcontainer {
-                    source: "git@example.test:repo.git".into(),
-                    git_base: "main".into(),
-                    git_prefix: format!("{name}/"),
-                    app_ssh: Some(AppSshAccess {
-                        user: "vscode".into(),
-                        port: 2222,
-                        host_keys: vec!["ssh-ed25519 AAAAAPPLICATION app".into()],
-                    }),
-                },
             },
         };
         let client_config = ClientConfig {
@@ -650,7 +514,7 @@ mod tests {
             "hostname 192.0.2.10",
             "user wt",
             "port 22",
-            "hostkeyalias lab.world-one-host",
+            "hostkeyalias lab.world-one",
             "proxyjump wt-server",
         ] {
             assert!(evaluated.lines().any(|line| line == expected), "{expected}");

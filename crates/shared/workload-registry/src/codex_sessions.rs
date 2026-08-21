@@ -186,7 +186,7 @@ fn validate_report(
             "invalid Codex session working directory".into(),
         ));
     }
-    if !matches!(tmux_session, "wt-app" | "wt-host") {
+    if tmux_session != "wt-host" {
         return Err(RegistryError::InvalidData(
             "invalid Codex session tmux session".into(),
         ));

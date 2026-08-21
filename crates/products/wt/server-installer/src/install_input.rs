@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use wt_installer_support::expand_home;
 use wt_server::{
     AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    RegistryCacheConfig, ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_TOOL_VSOCK_PORT,
+    ServerConfig, ServerLibvirtConfig, DEFAULT_AGENT_TOOL_VSOCK_PORT,
 };
 
 /// Install input for `wt-server-installer --config`.
@@ -15,7 +15,6 @@ pub(crate) struct InstallInput {
     pub capacity: wt_workload_registry::CapacityConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
-    pub registry_cache: RegistryCacheConfig,
     pub agent_tools: AgentToolsInstallConfig,
     pub guest: GuestConfig,
     pub install: InstallConfig,
@@ -116,7 +115,6 @@ impl InstallInput {
                 path: self.image.path.clone(),
             },
             libvirt: self.libvirt.clone(),
-            registry_cache: self.registry_cache.clone(),
             agent_tools: AgentToolsConfig {
                 vsock_port: self.agent_tools.vsock_port,
                 github: self
@@ -210,12 +208,6 @@ build_disk_gib = 32
 network = "default"
 worlds_dir = "/var/lib/libvirt/images/wt"
 
-[registry_cache]
-state_dir = "/var/lib/wt/registry-cache"
-port = 3128
-max_size_gib = 64
-registries = ["docker.io"]
-
 [agent_tools.github]
 host = "github.com"
 api_token_file = "/tmp/github.token"
@@ -225,7 +217,7 @@ ssh_known_hosts_file = "/tmp/known_hosts"
 
 [guest]
 boot_timeout_seconds = 300
-recipe_timeout_seconds = 900
+readiness_timeout_seconds = 900
 
 [install]
 binary_dir = "/usr/local/bin"

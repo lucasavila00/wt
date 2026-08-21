@@ -1,6 +1,5 @@
 ---
 source: crates/shared/libvirt-kvm/src/worker/world.rs
-assertion_line: 182
 expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"/home/wt/.codex/sessions & rollouts\"), auth:\n    PathBuf::from(\"/home/wt/.codex/.wt-auth\"),\n}))"
 ---
 <domain type='kvm'>
@@ -26,12 +25,6 @@ expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"
       <driver name='qemu' type='qcow2'/>
       <source file='/var/lib/libvirt/images/wt/disks/world &amp; head.qcow2'/>
       <target dev='vda' bus='virtio'/>
-    </disk>
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='/var/lib/libvirt/images/wt/wt-0123456789abcdef0123456789abcdef/seed.img'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
     </disk>
     <interface type='network'>
       <mac address='52:54:00:01:23:45'/>

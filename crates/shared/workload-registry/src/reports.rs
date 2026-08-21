@@ -143,7 +143,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{disks, guests, worlds};
+    use crate::schema::worlds;
 
     #[test]
     fn reports_are_attributed_counted_and_cleared_by_owner() {
@@ -195,28 +195,18 @@ mod tests {
 
     fn insert_world(registry: &Registry, owner: &str, name: &str) -> Uuid {
         let id = Uuid::new_v4();
-        let disk_id = Uuid::new_v4();
         registry
             .transaction::<_, RegistryError>(|connection| {
-                diesel::insert_into(disks::table)
-                    .values(disks::id.eq(disk_id.to_string()))
-                    .execute(connection)?;
-                diesel::insert_into(guests::table)
-                    .values((
-                        guests::id.eq(id.to_string()),
-                        guests::kind.eq("devcontainer"),
-                        guests::backend_id.eq(format!("wt-{}", id.simple())),
-                        guests::disk_id.eq(disk_id.to_string()),
-                        guests::vcpus.eq(1_i64),
-                        guests::memory_mib.eq(1024_i64),
-                        guests::disk_gib.eq(10_i64),
-                        guests::compute_reserved.eq(true),
-                        guests::disk_reserved_gib.eq(10_i64),
-                    ))
-                    .execute(connection)?;
                 diesel::insert_into(worlds::table)
                     .values((
                         worlds::id.eq(id.to_string()),
+                        worlds::backend_id.eq(format!("wt-{}", id.simple())),
+                        worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                        worlds::vcpus.eq(1_i64),
+                        worlds::memory_mib.eq(1024_i64),
+                        worlds::disk_gib.eq(10_i64),
+                        worlds::compute_reserved.eq(true),
+                        worlds::disk_reserved_gib.eq(10_i64),
                         worlds::owner.eq(owner),
                         worlds::name.eq(name),
                         worlds::status.eq("running"),
