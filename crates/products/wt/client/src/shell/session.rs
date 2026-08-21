@@ -32,13 +32,18 @@ impl SessionSet {
         Ok(set)
     }
 
-    pub(super) fn drain_output(&mut self) -> bool {
+    pub(super) fn drain_output(&mut self, active: usize) -> (bool, Vec<Vec<u8>>) {
         let mut changed = false;
+        let mut clipboard_writes = Vec::new();
         let events = self.events.as_ref().expect("session event receiver exists");
         while let Ok(event) = events.try_recv() {
             changed = true;
             match event {
                 SessionEvent::Output { index, bytes } => {
+                    let writes = self.sessions[index].clipboard.process(&bytes);
+                    if index == active {
+                        clipboard_writes.extend(writes);
+                    }
                     self.sessions[index].parser.process(&bytes);
                 }
                 SessionEvent::Closed { index, error } => {
@@ -50,7 +55,7 @@ impl SessionSet {
                 }
             }
         }
-        changed
+        (changed, clipboard_writes)
     }
 
     pub(super) fn screen(&self, index: usize) -> &vt100::Screen {
@@ -105,6 +110,7 @@ struct WorldSession {
     master: Option<Box<dyn MasterPty + Send>>,
     child: Option<Box<dyn Child + Send + Sync>>,
     reader: Option<JoinHandle<()>>,
+    clipboard: ClipboardRelay,
     closed: bool,
 }
 
@@ -157,9 +163,77 @@ impl WorldSession {
             master: Some(pair.master),
             child: Some(child),
             reader: Some(reader),
+            clipboard: ClipboardRelay::default(),
             closed: false,
         })
     }
+}
+
+#[derive(Default)]
+struct ClipboardRelay {
+    sequence: Vec<u8>,
+    state: ClipboardRelayState,
+}
+
+#[derive(Default)]
+enum ClipboardRelayState {
+    #[default]
+    Ground,
+    Escape,
+    Osc,
+}
+
+impl ClipboardRelay {
+    fn process(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
+        let mut writes = Vec::new();
+        for &byte in bytes {
+            match self.state {
+                ClipboardRelayState::Ground if byte == b'\x1b' => {
+                    self.sequence.push(byte);
+                    self.state = ClipboardRelayState::Escape;
+                }
+                ClipboardRelayState::Ground => {}
+                ClipboardRelayState::Escape if byte == b']' => {
+                    self.sequence.push(byte);
+                    self.state = ClipboardRelayState::Osc;
+                }
+                ClipboardRelayState::Escape if byte == b'\x1b' => {
+                    self.sequence.clear();
+                    self.sequence.push(byte);
+                }
+                ClipboardRelayState::Escape => {
+                    self.sequence.clear();
+                    self.state = ClipboardRelayState::Ground;
+                }
+                ClipboardRelayState::Osc => {
+                    self.sequence.push(byte);
+                    let terminated = byte == b'\x07'
+                        || (byte == b'\\'
+                            && self.sequence.get(self.sequence.len().saturating_sub(2))
+                                == Some(&b'\x1b'));
+                    if terminated {
+                        if is_clipboard_write(&self.sequence) {
+                            writes.push(std::mem::take(&mut self.sequence));
+                        } else {
+                            self.sequence.clear();
+                        }
+                        self.state = ClipboardRelayState::Ground;
+                    }
+                }
+            }
+        }
+        writes
+    }
+}
+
+fn is_clipboard_write(sequence: &[u8]) -> bool {
+    let Some(body) = sequence.strip_prefix(b"\x1b]52;") else {
+        return false;
+    };
+    let Some(separator) = body.iter().position(|byte| *byte == b';') else {
+        return false;
+    };
+    !body[separator + 1..].starts_with(b"?")
 }
 
 impl Drop for WorldSession {
@@ -254,6 +328,36 @@ mod tests {
         insta::assert_snapshot!(sessions.screen(1).contents(), @"readyhidden");
     }
 
+    #[test]
+    fn relays_clipboard_writes_only_from_the_active_session() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let mut sessions = SessionSet {
+            sessions: vec![
+                fake_session(0, "one", &sender),
+                fake_session(1, "two", &sender),
+            ],
+            events: Some(events),
+        };
+        wait_for(&mut sessions, 0, "ready");
+        wait_for(&mut sessions, 1, "ready");
+        let sequence = b"\x1b]52;c;Y29weQ==\x1b\\";
+
+        sender
+            .send(SessionEvent::Output {
+                index: 1,
+                bytes: sequence.to_vec(),
+            })
+            .unwrap();
+        assert!(sessions.drain_output(0).1.is_empty());
+        sender
+            .send(SessionEvent::Output {
+                index: 0,
+                bytes: sequence.to_vec(),
+            })
+            .unwrap();
+        assert_eq!(sessions.drain_output(0).1, vec![sequence.to_vec()]);
+    }
+
     fn fake_session(index: usize, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", r"stty -echo; printf '\033[2J\033[Hready'; cat"]);
@@ -263,7 +367,7 @@ mod tests {
     fn wait_for(sessions: &mut SessionSet, index: usize, expected: &str) {
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            sessions.drain_output();
+            sessions.drain_output(index);
             if sessions.screen(index).contents() == expected {
                 return;
             }
@@ -273,5 +377,28 @@ mod tests {
             "session did not render {expected:?}; rendered {:?}",
             sessions.screen(index).contents()
         );
+    }
+
+    #[test]
+    fn relays_complete_osc52_writes_across_output_chunks() {
+        let mut relay = ClipboardRelay::default();
+
+        assert!(relay.process(b"before\x1b]52;c;Y29").is_empty());
+        assert_eq!(
+            relay.process(b"weQ==\x1b\\after"),
+            vec![b"\x1b]52;c;Y29weQ==\x1b\\".to_vec()]
+        );
+        assert_eq!(
+            relay.process(b"\x1b]52;c;Y29weQ==\x07"),
+            vec![b"\x1b]52;c;Y29weQ==\x07".to_vec()]
+        );
+    }
+
+    #[test]
+    fn does_not_relay_other_osc_sequences_or_clipboard_reads() {
+        let mut relay = ClipboardRelay::default();
+
+        assert!(relay.process(b"\x1b]2;window title\x07").is_empty());
+        assert!(relay.process(b"\x1b]52;c;?\x1b\\").is_empty());
     }
 }

@@ -33,6 +33,7 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | `wt stop NAME` | retained | Shut down the guest and keep its disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
 | `wt ssh NAME` | retained | Sync managed aliases and connect to Byobu |
+| `wt shell` | retained | Open all accessible worlds in one [terminal workspace](./shell.md) |
 | `wt rm NAME` | retained | Destroy the world |
 | `wt sync` | retained | Rewrite managed SSH inventory |
 
