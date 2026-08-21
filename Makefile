@@ -63,6 +63,9 @@ prepare-image:
 	@test -n "$(CONFIG)" || { echo "usage: make prepare-image CONFIG=PATH" >&2; exit 2; }
 	scripts/prepare-image --config "$(CONFIG)"
 
+shell:
+	cargo run -p wt-client -- shell
+
 check-typescript:
 	npm run check:typescript
 
