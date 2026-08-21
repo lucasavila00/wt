@@ -263,25 +263,15 @@ impl ControlState {
             .filter(|selected| codex.iter().any(|card| &card.identity == *selected))
             .cloned()
             .or_else(|| codex.first().map(|card| card.identity.clone()));
-        let selected_index = selected
-            .as_ref()
-            .and_then(|selected| codex.iter().position(|card| &card.identity == selected));
-        let visible = codex_visible_cards(area).max(1);
-        let mut offset = self.codex_offset.min(codex.len().saturating_sub(visible));
-        if let Some(selected) = selected_index {
-            if selected < offset {
-                offset = selected;
-            } else if selected >= offset.saturating_add(visible) {
-                offset = selected + 1 - visible;
-            }
-        } else {
-            offset = 0;
-        }
         self.codex = codex;
         self.selected = selected;
-        self.codex_offset = offset;
+        self.keep_codex_selection_visible(area);
         self.codex_updated_at = Some(updated_at);
         true
+    }
+
+    pub(super) fn resize(&mut self, area: Rect) {
+        self.keep_codex_selection_visible(area);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
@@ -417,6 +407,26 @@ impl ControlState {
             .min(self.codex.len().saturating_sub(1));
         self.selected = Some(self.codex[selected].identity.clone());
         let visible = codex_visible_cards(area).max(1);
+        if selected < self.codex_offset {
+            self.codex_offset = selected;
+        } else if selected >= self.codex_offset.saturating_add(visible) {
+            self.codex_offset = selected + 1 - visible;
+        }
+    }
+
+    fn keep_codex_selection_visible(&mut self, area: Rect) {
+        let visible = codex_visible_cards(area).max(1);
+        self.codex_offset = self
+            .codex_offset
+            .min(self.codex.len().saturating_sub(visible));
+        let Some(selected) = self.selected.as_ref().and_then(|selected| {
+            self.codex
+                .iter()
+                .position(|card| &card.identity == selected)
+        }) else {
+            self.codex_offset = 0;
+            return;
+        };
         if selected < self.codex_offset {
             self.codex_offset = selected;
         } else if selected >= self.codex_offset.saturating_add(visible) {

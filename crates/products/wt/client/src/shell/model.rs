@@ -169,6 +169,10 @@ impl ShellModel {
         self.control.set_codex(codex, updated_at, area)
     }
 
+    pub(super) fn resize(&mut self, area: Rect) {
+        self.control.resize(area);
+    }
+
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
         if key.code == KeyCode::F(6) {
             self.should_quit = true;

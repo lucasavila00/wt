@@ -167,6 +167,26 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
     assert_eq!(state.codex_offset(), 2);
 }
 
+#[test]
+fn resize_keeps_the_selected_card_in_its_viewport() {
+    let mut state = ControlState::default();
+    let tall = Rect::new(0, 0, 64, 40);
+    state.set_codex(
+        (1..=6)
+            .map(|index| live_card(index, &format!("%{index}")))
+            .collect(),
+        "2026-08-21T20:00:00Z".into(),
+        tall,
+    );
+    for _ in 0..5 {
+        state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), tall);
+    }
+    assert_eq!(state.codex_offset(), 0);
+
+    state.resize(Rect::new(0, 0, 64, 10));
+    assert_eq!(state.codex_offset(), 4);
+}
+
 fn live_card(index: u128, pane_id: &str) -> CodexCard {
     let session_id = Uuid::from_u128(index);
     let world_id = Uuid::from_u128(100 + index);

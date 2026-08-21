@@ -497,6 +497,7 @@ fn dispatch_event(
         }
         Event::Resize(columns, rows) => {
             sessions.resize(world_rows(rows), columns)?;
+            model.resize(Rect::new(0, 0, columns, rows));
             Ok(true)
         }
         _ => Ok(false),
