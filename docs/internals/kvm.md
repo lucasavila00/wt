@@ -66,6 +66,11 @@ The kind lifecycle then defines readiness:
 Stopped retained guests keep their disk and identity. Missing files, mismatched
 identity, or partial libvirt state fail closed.
 
+This restart behavior applies only to an already provisioned world. Initial
+retained-world provisioning has no resume path: interruption or failure leaves
+a failed world to remove, and retry creates a new disk from the retained image.
+WT never continues from partial provisioning state.
+
 ## Real-system test isolation
 
 The KVM lifecycle test does not mutate the installed golden image. Each harness

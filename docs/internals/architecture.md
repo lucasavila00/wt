@@ -54,6 +54,11 @@ Codex session and authentication mounts. One retained provisioning operation
 applies that complete contract for both kinds; kind crates retain only their
 application-specific setup.
 
+Retained-world provisioning is intentionally restart-only. WT does not resume
+an interrupted sequence or repair its partial guest state. Remove a failed
+world and create it again from the retained image; a healthy provisioning run
+normally takes about 5–10 seconds.
+
 ## State
 
 - Client contexts: `~/.wt/config.toml`

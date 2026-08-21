@@ -40,6 +40,11 @@ Codex CLI. Devcontainer worlds inject both executables and the fixed Codex
 mounts into the primary container automatically. GitHub CI runners receive no
 server Codex data.
 
+Retained-world provisioning is not resumable. If it is interrupted or fails,
+remove that world and retry creation from the retained image. WT deliberately
+does not recover intermediate trampoline or other provisioning transitions;
+a healthy provisioning run normally takes about 5–10 seconds.
+
 If Codex authentication expires, refresh it as the server `wt` user. A systemd
 path unit republishes an atomically replaced `auth.json` to running worlds;
 worlds cannot write the credential back.
