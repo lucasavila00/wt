@@ -258,6 +258,14 @@ fn run_loop(
     let mut creation = None;
     let mut creation_error = None;
     while !shutdown.load(Ordering::Relaxed) {
+        let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
+        redraw |= output_changed;
+        for sequence in clipboard_writes {
+            terminal
+                .backend_mut()
+                .write_all(&sequence)
+                .context("relay world clipboard write")?;
+        }
         if creation.is_none() {
             if let Some(snapshot) = take_current_snapshot(
                 &runtime.refresh.updates,
@@ -277,33 +285,48 @@ fn run_loop(
             }
         }
         if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
-            model.set_codex(codex::cards(snapshot, model.worlds()), updated_at());
-            redraw = true;
-        }
-        let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
-        redraw |= output_changed;
-        for sequence in clipboard_writes {
-            terminal
-                .backend_mut()
-                .write_all(&sequence)
-                .context("relay world clipboard write")?;
+            let live_worlds = model
+                .worlds()
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| sessions.is_open(*index))
+                .map(|(_, world)| world.clone())
+                .collect::<Vec<_>>();
+            let area = terminal
+                .size()
+                .context("read wt shell terminal area")?
+                .into();
+            redraw |= model.set_codex(codex::cards(snapshot, &live_worlds), updated_at(), area);
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
-            let route = model
-                .focus_route(&result.target)
-                .map(|(index, _)| index)
-                .filter(|index| sessions.is_open(*index));
             match result.result {
-                Ok(()) if route.is_some() => {
-                    model.finish_codex_open(&result.target.identity, route, None)
-                }
-                Ok(()) => model.finish_codex_open(
+                Ok(()) => match model.focus_route(&result.target) {
+                    Some((index, _)) if sessions.is_open(index) => {
+                        model.finish_codex_open(&result.target.identity, Some(index), None)
+                    }
+                    Some(_) => model.finish_codex_open(
+                        &result.target.identity,
+                        None,
+                        Some(codex_open_error(
+                            &result.target,
+                            "playback SSH/PTTY closed before focus completed",
+                        )),
+                    ),
+                    None => model.finish_codex_open(
+                        &result.target.identity,
+                        None,
+                        Some(codex_open_error(
+                            &result.target,
+                            "no playback world matches context and world_id",
+                        )),
+                    ),
+                },
+                Err(error) => model.finish_codex_open(
                     &result.target.identity,
                     None,
-                    Some("playback SSH/PTTY closed before focus completed".into()),
+                    Some(codex_open_error(&result.target, &error)),
                 ),
-                Err(error) => model.finish_codex_open(&result.target.identity, None, Some(error)),
             }
         }
         if let Some(action) = creation.as_mut().map(crate::create::Flow::poll) {
@@ -489,7 +512,10 @@ fn start_focus(
         model.finish_codex_open(
             &target.identity,
             None,
-            Some("no playback world matches the validated context and world ID".into()),
+            Some(codex_open_error(
+                &target,
+                "no playback world matches context and world_id",
+            )),
         );
         return;
     };
@@ -497,11 +523,18 @@ fn start_focus(
         model.finish_codex_open(
             &target.identity,
             None,
-            Some("playback SSH/PTTY is closed".into()),
+            Some(codex_open_error(&target, "playback SSH/PTTY is closed")),
         );
         return;
     }
     focus.start(target, alias.to_owned());
+}
+
+fn codex_open_error(target: &control::CodexOpenTarget, check: &str) -> String {
+    format!(
+        "context {}; world_id {}; session {}; target {}:{}; failed check: {check}",
+        target.context, target.world_id, target.session_id, target.tmux_session, target.pane_id,
+    )
 }
 
 fn world_rows(terminal_rows: u16) -> u16 {

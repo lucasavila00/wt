@@ -292,11 +292,18 @@ fn draw_codex_card(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    if let Some(error) = state.open_error(&card.identity) {
+        frame.render_widget(
+            Paragraph::new(Line::styled(error, Style::new().fg(Color::Red)))
+                .wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
+
     let mut lines = card_lines(card);
     let footer = if state.opening() == Some(&card.identity) {
         Span::styled("OPENING…", Style::new().fg(Color::Yellow))
-    } else if let Some(error) = state.open_error(&card.identity) {
-        Span::styled(format!("ERROR: {error}"), Style::new().fg(Color::Red))
     } else if let Some(reason) = card.disabled_reason() {
         Span::styled(
             format!("Unavailable: {reason}"),
@@ -641,6 +648,7 @@ mod tests {
                 CodexCard::context_error("lab", "context lab: SSH failed".into()),
             ],
             "2026-08-21T20:00:00Z".into(),
+            Rect::new(0, 0, 100, 22),
         );
         let parser = parser();
 

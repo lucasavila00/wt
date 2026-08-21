@@ -248,17 +248,40 @@ impl ControlState {
             .map(|(_, message)| message.as_str())
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>, updated_at: String) {
+    pub(super) fn set_codex(
+        &mut self,
+        codex: Vec<CodexCard>,
+        updated_at: String,
+        area: Rect,
+    ) -> bool {
+        if self.opening.is_some() {
+            return false;
+        }
         let selected = self
             .selected
             .as_ref()
             .filter(|selected| codex.iter().any(|card| &card.identity == *selected))
             .cloned()
             .or_else(|| codex.first().map(|card| card.identity.clone()));
+        let selected_index = selected
+            .as_ref()
+            .and_then(|selected| codex.iter().position(|card| &card.identity == selected));
+        let visible = codex_visible_cards(area).max(1);
+        let mut offset = self.codex_offset.min(codex.len().saturating_sub(visible));
+        if let Some(selected) = selected_index {
+            if selected < offset {
+                offset = selected;
+            } else if selected >= offset.saturating_add(visible) {
+                offset = selected + 1 - visible;
+            }
+        } else {
+            offset = 0;
+        }
         self.codex = codex;
         self.selected = selected;
-        self.codex_offset = 0;
+        self.codex_offset = offset;
         self.codex_updated_at = Some(updated_at);
+        true
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
@@ -322,6 +345,9 @@ impl ControlState {
             return (true, None);
         }
         if self.activity == Activity::Codex {
+            if self.opening.is_some() {
+                return (true, None);
+            }
             if let Some(index) = codex_card_at_position(
                 area,
                 self.codex_offset,
@@ -374,7 +400,7 @@ impl ControlState {
     }
 
     fn move_codex(&mut self, delta: isize, area: Rect) {
-        if self.codex.is_empty() {
+        if self.codex.is_empty() || self.opening.is_some() {
             return;
         }
         let current = self

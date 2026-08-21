@@ -2,10 +2,12 @@ use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarge
 pub(super) use super::model::ShellWorld;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
+use std::os::unix::process::CommandExt as _;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+use std::time::Duration;
 #[cfg(test)]
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
@@ -313,12 +315,15 @@ impl FocusWorker {
 }
 
 fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
-    let output = Command::new("ssh")
+    let mut command = Command::new("ssh");
+    command
         .args([
             "-o",
             "ConnectTimeout=5",
             "-o",
             "ConnectionAttempts=1",
+            "-o",
+            "BatchMode=yes",
             "--",
             alias,
             "/usr/local/bin/wt-codex-integration",
@@ -328,8 +333,14 @@ fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
             &target.pane_id,
         ])
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    let child = command
+        .spawn()
         .map_err(|error| anyhow::anyhow!("start Codex focus helper: {error}"))?;
+    let output = wt_client::transport::wait_with_output_timeout(child, Duration::from_secs(15))
+        .map_err(|error| anyhow::anyhow!("wait for Codex focus helper: {error}"))?;
     let expected = format!(
         "{}:{}:{}:0\n",
         target.tmux_session, target.pane_id, target.session_id

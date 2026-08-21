@@ -128,26 +128,13 @@ fn call_outcome_inner(
     Ok(response.outcome)
 }
 
-pub fn call_codex_sessions(
-    context: &Context,
-) -> std::result::Result<Vec<CodexSession>, ContextError> {
-    call_codex_sessions_inner(context, None)
-}
-
 pub fn call_codex_sessions_with_timeout_until(
     context: &Context,
     timeout: Duration,
     cancelled: &AtomicBool,
 ) -> std::result::Result<Vec<CodexSession>, ContextError> {
-    call_codex_sessions_inner(context, Some((timeout, cancelled)))
-}
-
-fn call_codex_sessions_inner(
-    context: &Context,
-    timeout: Option<(Duration, &AtomicBool)>,
-) -> std::result::Result<Vec<CodexSession>, ContextError> {
     let request = ApiRequest::new(wt_control_protocol::Operation::ListCodexSessions);
-    let output = call_bytes_inner(context, &request, timeout)?;
+    let output = call_bytes_inner(context, &request, Some((timeout, cancelled)))?;
     decode_codex_sessions(context, &output)
 }
 
@@ -364,6 +351,14 @@ fn wait_with_output(
         stdout: stdout.expect("completed stdout reader returned bytes"),
         stderr: stderr.expect("completed stderr reader returned bytes"),
     })
+}
+
+pub fn wait_with_output_timeout(
+    child: std::process::Child,
+    timeout: Duration,
+) -> std::io::Result<Output> {
+    let cancelled = AtomicBool::new(false);
+    wait_with_output(child, Some((timeout, &cancelled)))
 }
 
 fn drain_pipe<R: Read + Send + 'static>(
@@ -600,14 +595,10 @@ mod tests {
         command.args(["-c", "sleep 10 &"]);
         command.stdout(Stdio::piped());
         command.process_group(0);
-        let cancelled = AtomicBool::new(false);
         let started = Instant::now();
 
-        let error = wait_with_output(
-            command.spawn().unwrap(),
-            Some((Duration::from_millis(50), &cancelled)),
-        )
-        .unwrap_err();
+        let error = wait_with_output_timeout(command.spawn().unwrap(), Duration::from_millis(50))
+            .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(2));

@@ -66,6 +66,7 @@ fn card_navigation_opens_only_the_selected_live_location() {
             CodexCard::rollout_only("ars", Uuid::from_u128(2), 2),
         ],
         "2026-08-21T20:00:00Z".into(),
+        area(),
     );
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert!(state
@@ -91,6 +92,7 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
     state.set_codex(
         vec![live_card(1, "%1"), live_card(2, "%2")],
         "2026-08-21T20:00:00Z".into(),
+        area(),
     );
     let second = codex_card_rects(area(), 0, 2)[1].1;
     let (changed, action) = state.handle_mouse(mouse(second.x + 1, second.y + 1), area());
@@ -117,11 +119,52 @@ fn snapshot_times_track_the_last_applied_snapshot() {
 
     state.set_worlds_updated_at("2026-08-21T20:00:00Z".into());
     state.set_worlds_updated_at("2026-08-21T20:00:05Z".into());
-    state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into());
-    state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into());
+    state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into(), area());
+    state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into(), area());
 
     assert_eq!(state.worlds_updated_at(), Some("2026-08-21T20:00:05Z"));
     assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:06Z"));
+}
+
+#[test]
+fn refresh_and_navigation_do_not_hide_an_opening_card() {
+    let mut state = ControlState::default();
+    state.set_codex(
+        vec![live_card(1, "%1"), live_card(2, "%2")],
+        "2026-08-21T20:00:00Z".into(),
+        area(),
+    );
+    let Some(ControlAction::OpenCodex(target)) =
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
+    else {
+        panic!("live card did not produce an open target");
+    };
+
+    assert!(!state.set_codex(Vec::new(), "2026-08-21T20:00:05Z".into(), area()));
+    state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    assert_eq!(state.selected(), Some(&target.identity));
+    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:00Z"));
+
+    assert!(state.finish_open(&target.identity, Some("failed".into())));
+    assert_eq!(state.open_error(&target.identity), Some("failed"));
+}
+
+#[test]
+fn refresh_keeps_the_selected_card_in_its_viewport() {
+    let mut state = ControlState::default();
+    let cards = (1..=6)
+        .map(|index| live_card(index, &format!("%{index}")))
+        .collect::<Vec<_>>();
+    state.set_codex(cards.clone(), "2026-08-21T20:00:00Z".into(), area());
+    for _ in 0..5 {
+        state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    }
+    let selected = state.selected().cloned();
+    assert_eq!(state.codex_offset(), 2);
+
+    assert!(state.set_codex(cards, "2026-08-21T20:00:05Z".into(), area()));
+    assert_eq!(state.selected(), selected.as_ref());
+    assert_eq!(state.codex_offset(), 2);
 }
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {

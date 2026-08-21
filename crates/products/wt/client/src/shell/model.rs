@@ -160,8 +160,13 @@ impl ShellModel {
         self.control.set_worlds_updated_at(updated_at);
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>, updated_at: String) {
-        self.control.set_codex(codex, updated_at);
+    pub(super) fn set_codex(
+        &mut self,
+        codex: Vec<CodexCard>,
+        updated_at: String,
+        area: Rect,
+    ) -> bool {
+        self.control.set_codex(codex, updated_at, area)
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
@@ -499,6 +504,7 @@ mod tests {
                 },
             }],
             "2026-08-21T20:00:00Z".into(),
+            area(),
         );
         model
     }
