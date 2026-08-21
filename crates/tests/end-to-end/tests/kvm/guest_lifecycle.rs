@@ -677,52 +677,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
         disks_before
     );
 
-    let interrupted_name = unique_name("host-interrupted");
-    let interrupted = harness.create_host(
-        &interrupted_name,
-        concat!(
-            "#cloud-config\n",
-            "runcmd:\n",
-            "  - |\n",
-            "    echo attempt >> /var/lib/wt-host-attempts\n",
-            "    echo 'interrupt host setup now'\n",
-            "    sleep 300\n",
-        ),
-    );
-    assert_eq!(interrupted.status, InstanceStatus::Setup);
-    harness.sync_inventory();
-    let mut interrupted_setup = spawn_host_byobu(&harness, &interrupted_name);
-    wait_for_live_host_output(
-        &harness,
-        &interrupted_name,
-        &mut interrupted_setup,
-        "interrupt host setup now",
-    );
-    run_host(
-        &harness,
-        &interrupted_name,
-        "sudo systemctl kill --kill-whom=main --signal=KILL wt-host-setup.service",
-        "interrupt host setup service",
-    );
-    let interrupted_error = wait_for_host_status(
-        &harness,
-        &interrupted_name,
-        &mut interrupted_setup,
-        InstanceStatus::Error,
-    );
-    insta::assert_snapshot!(
-        interrupted_error.last_error.as_deref().unwrap(),
-        @"guest reconciliation: host cloud-init failed: host cloud-init was interrupted"
-    );
-    run_host(
-        &harness,
-        &interrupted_name,
-        "test \"$(sudo -n cat /var/lib/wt-host-attempts | wc -l)\" = 1",
-        "verify interrupted host setup ran once",
-    );
-    let _ = interrupted_setup.kill();
-    let _ = interrupted_setup.wait();
-    harness.delete(&interrupted_name);
+    assert_interrupted_host_setup_is_reported(&mut harness);
 }
 
 fn assert_ref(repository: &Path, reference: &str, exists: bool) {
