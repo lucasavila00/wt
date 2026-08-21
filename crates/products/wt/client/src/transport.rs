@@ -131,8 +131,23 @@ fn call_outcome_inner(
 pub fn call_codex_sessions(
     context: &Context,
 ) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    call_codex_sessions_inner(context, None)
+}
+
+pub fn call_codex_sessions_with_timeout_until(
+    context: &Context,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
+    call_codex_sessions_inner(context, Some((timeout, cancelled)))
+}
+
+fn call_codex_sessions_inner(
+    context: &Context,
+    timeout: Option<(Duration, &AtomicBool)>,
+) -> std::result::Result<Vec<CodexSession>, ContextError> {
     let request = ApiRequest::new(wt_control_protocol::Operation::ListCodexSessions);
-    let output = call_bytes_inner(context, &request, None)?;
+    let output = call_bytes_inner(context, &request, timeout)?;
     decode_codex_sessions(context, &output)
 }
 

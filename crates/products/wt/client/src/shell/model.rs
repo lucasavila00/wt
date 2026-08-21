@@ -109,6 +109,10 @@ impl ShellModel {
         self.worlds.len()
     }
 
+    pub(super) fn worlds(&self) -> &[ShellWorld] {
+        &self.worlds
+    }
+
     pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
         self.worlds
             .iter()
@@ -152,8 +156,12 @@ impl ShellModel {
         &self.control
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>) {
-        self.control.set_codex(codex);
+    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
+        self.control.set_worlds_updated_at(updated_at);
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>, updated_at: String) {
+        self.control.set_codex(codex, updated_at);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
@@ -470,25 +478,28 @@ mod tests {
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
         };
-        model.set_codex(vec![CodexCard {
-            identity: CodexCardIdentity::Observation {
+        model.set_codex(
+            vec![CodexCard {
+                identity: CodexCardIdentity::Observation {
+                    context: "local".into(),
+                    session_id,
+                    world_id,
+                    tmux_session: target.tmux_session.clone(),
+                    pane_id: target.pane_id.clone(),
+                },
                 context: "local".into(),
-                session_id,
-                world_id,
-                tmux_session: target.tmux_session.clone(),
-                pane_id: target.pane_id.clone(),
-            },
-            context: "local".into(),
-            session_id: Some(session_id),
-            timestamp: Some(1),
-            kind: super::super::control::CodexCardKind::Observation {
-                world_id,
-                world_name: "two".into(),
-                cwd: "/workspace".into(),
-                state: CodexSessionState::Working,
-                target,
-            },
-        }]);
+                session_id: Some(session_id),
+                timestamp: Some(1),
+                kind: super::super::control::CodexCardKind::Observation {
+                    world_id,
+                    world_name: "two".into(),
+                    cwd: "/workspace".into(),
+                    state: CodexSessionState::Working,
+                    target,
+                },
+            }],
+            "2026-08-21T20:00:00Z".into(),
+        );
         model
     }
 

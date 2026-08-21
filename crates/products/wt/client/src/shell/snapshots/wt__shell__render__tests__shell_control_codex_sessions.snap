@@ -1,11 +1,12 @@
 ---
 source: crates/products/wt/client/src/shell/render.rs
+assertion_line: 558
 expression: terminal.backend().buffer()
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 100, height: 22 },
     content: [
-        "    │┌Codex sessions · startup snapshot────────────────────────────────────────────────────────────┐",
+        "    │┌Codex sessions · Last updated 2026-08-21T20:00:00Z───────────────────────────────────────────┐",
         "▌ 󰚩 ││┌ 󰚩 NEEDS ATTENTION · 0s ago ───────────────────────────────────────────────────────────────┐│",
         "    │││ars.dev · wt-app:%1 · session 123e4567                                                     ││",
         "    │││/workspace/wt                                                                              ││",

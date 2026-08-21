@@ -210,7 +210,11 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
                 "No worlds with SSH access\nCreate a world to get started"
             })
             .alignment(Alignment::Center)
-            .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title(refresh_title("Worlds", model.control().worlds_updated_at())),
+            ),
             body,
         ),
         Activity::Codex => draw_codex(frame, body, model.control()),
@@ -232,19 +236,26 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     draw_command_palette(frame, content, model.control().palette());
 }
 
+fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
+    updated_at.map_or_else(
+        || format!("{label} · Updating…"),
+        |updated_at| format!("{label} · Last updated {updated_at}"),
+    )
+}
+
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    frame.render_widget(
-        Block::new()
-            .borders(Borders::ALL)
-            .title("Codex sessions · startup snapshot"),
-        area,
-    );
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(refresh_title("Codex sessions", state.codex_updated_at()));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     if state.codex().is_empty() {
-        frame.render_widget(
-            Paragraph::new("No Codex sessions\nStart Codex in a world to see its session here")
-                .alignment(Alignment::Center),
-            area.inner(Margin::new(1, 1)),
-        );
+        let message = if state.codex_updated_at().is_some() {
+            "No Codex sessions\nStart Codex in a world to see its session here"
+        } else {
+            "Loading Codex sessions…"
+        };
+        frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), inner);
         return;
     }
     for (index, rect) in codex_card_rects(frame.area(), state.codex_offset(), state.codex().len()) {
@@ -601,33 +612,36 @@ mod tests {
             tmux_session: "wt-app".into(),
             pane_id: "%1".into(),
         };
-        model.set_codex(vec![
-            CodexCard {
-                identity: CodexCardIdentity::Observation {
+        model.set_codex(
+            vec![
+                CodexCard {
+                    identity: CodexCardIdentity::Observation {
+                        context: "ars".into(),
+                        session_id,
+                        world_id,
+                        tmux_session: target.tmux_session.clone(),
+                        pane_id: target.pane_id.clone(),
+                    },
                     context: "ars".into(),
-                    session_id,
-                    world_id,
-                    tmux_session: target.tmux_session.clone(),
-                    pane_id: target.pane_id.clone(),
+                    session_id: Some(session_id),
+                    timestamp: Some(now_ms()),
+                    kind: CodexCardKind::Observation {
+                        world_id,
+                        world_name: "dev".into(),
+                        cwd: "/workspace/wt".into(),
+                        state: CodexSessionState::NeedsAttention,
+                        target,
+                    },
                 },
-                context: "ars".into(),
-                session_id: Some(session_id),
-                timestamp: Some(now_ms()),
-                kind: CodexCardKind::Observation {
-                    world_id,
-                    world_name: "dev".into(),
-                    cwd: "/workspace/wt".into(),
-                    state: CodexSessionState::NeedsAttention,
-                    target,
-                },
-            },
-            CodexCard::rollout_only(
-                "ars",
-                Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000").unwrap(),
-                now_ms(),
-            ),
-            CodexCard::context_error("lab", "context lab: SSH failed".into()),
-        ]);
+                CodexCard::rollout_only(
+                    "ars",
+                    Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000").unwrap(),
+                    now_ms(),
+                ),
+                CodexCard::context_error("lab", "context lab: SSH failed".into()),
+            ],
+            "2026-08-21T20:00:00Z".into(),
+        );
         let parser = parser();
 
         terminal
@@ -635,6 +649,18 @@ mod tests {
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
+        assert_eq!(
+            refresh_title("Codex sessions", None),
+            "Codex sessions · Updating…"
+        );
+        assert_eq!(
+            refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z")),
+            "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+        );
     }
 
     #[test]

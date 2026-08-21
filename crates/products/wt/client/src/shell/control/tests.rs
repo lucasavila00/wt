@@ -60,10 +60,13 @@ fn activity_icons_and_palette_results_are_clickable() {
 fn card_navigation_opens_only_the_selected_live_location() {
     let mut state = ControlState::default();
     let first = live_card(1, "%1");
-    state.set_codex(vec![
-        first.clone(),
-        CodexCard::rollout_only("ars", Uuid::from_u128(2), 2),
-    ]);
+    state.set_codex(
+        vec![
+            first.clone(),
+            CodexCard::rollout_only("ars", Uuid::from_u128(2), 2),
+        ],
+        "2026-08-21T20:00:00Z".into(),
+    );
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert!(state
         .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
@@ -85,7 +88,10 @@ fn card_navigation_opens_only_the_selected_live_location() {
 #[test]
 fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
     let mut state = ControlState::default();
-    state.set_codex(vec![live_card(1, "%1"), live_card(2, "%2")]);
+    state.set_codex(
+        vec![live_card(1, "%1"), live_card(2, "%2")],
+        "2026-08-21T20:00:00Z".into(),
+    );
     let second = codex_card_rects(area(), 0, 2)[1].1;
     let (changed, action) = state.handle_mouse(mouse(second.x + 1, second.y + 1), area());
     assert!(changed);
@@ -103,6 +109,19 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
     };
     assert!(state.handle_mouse(scroll, area()).0);
     assert_eq!(state.selected(), Some(&state.codex()[0].identity));
+}
+
+#[test]
+fn snapshot_times_track_the_last_applied_snapshot() {
+    let mut state = ControlState::default();
+
+    state.set_worlds_updated_at("2026-08-21T20:00:00Z".into());
+    state.set_worlds_updated_at("2026-08-21T20:00:05Z".into());
+    state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into());
+    state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into());
+
+    assert_eq!(state.worlds_updated_at(), Some("2026-08-21T20:00:05Z"));
+    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:06Z"));
 }
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {

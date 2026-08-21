@@ -5,10 +5,11 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT navbar; the active world's Byobu uses the remaining
 terminal rows.
 
-The world list refreshes in the background every five seconds. Worlds created
-elsewhere are connected automatically, and removed worlds disappear. A refresh
-that cannot list every configured context leaves the last complete list in
-place.
+The world list and Codex sessions refresh independently in the background. Each
+worker starts its next refresh five seconds after the previous one finishes.
+Worlds created elsewhere are connected automatically, and removed worlds
+disappear. A world refresh that cannot list every configured context leaves the
+last complete list in place.
 
 The dim navbar shows the active world and its position in the world list. `F5`
 enables the navbar controls, `Left` and `Right` change worlds, and `Up` opens the
@@ -34,16 +35,17 @@ the workstation clipboard through `wt shell`.
 between session and world management. `F5` opens the active world when one is
 available.
 
-The Codex activity is a card snapshot loaded when `wt shell` starts. `Up` and
-`Down` select cards, the mouse wheel scrolls them, and `Enter` or left click
-opens the selected live Codex pane. Opening uses a short control SSH connection;
-it does not replace any world's playback connection.
+The Codex activity refreshes cards in the background. `Up` and `Down` select
+cards, the mouse wheel scrolls them, and `Enter` or left click opens the
+selected live Codex pane. Opening uses a short control SSH connection; it does
+not replace any world's playback connection.
 
 Cards show activity, context, world, Byobu target, session, working directory,
 and report age. Inactive and rollout-only cards explain why they cannot open.
 Malformed context data and failed pane checks remain visible as exact errors;
-WT does not guess another world or pane. Restart `wt shell` to refresh the
-snapshot.
+WT does not guess another world or pane. The Worlds and Codex titles show when
+their latest snapshot was applied in UTC, or `Updating…` before the first
+snapshot arrives.
 
 Opening requires worlds provisioned by a WT version containing this feature.
 After upgrading WT, recreate older worlds so their relay records pane markers

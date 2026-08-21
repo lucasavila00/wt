@@ -3,6 +3,7 @@ pub(super) use super::model::ShellWorld;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 #[cfg(test)]
@@ -10,6 +11,18 @@ use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
 use wt_control_protocol::{CodexSession, Instance, InstanceApplication, WorldKind};
+
+#[derive(Debug)]
+pub(super) enum CodexContextSnapshot {
+    Sessions {
+        context: String,
+        sessions: Vec<CodexSession>,
+    },
+    Failure {
+        context: String,
+        message: String,
+    },
+}
 
 impl ShellWorld {
     pub(super) fn from_inventory(item: &ContextInstance) -> Self {
@@ -52,18 +65,46 @@ impl ShellWorld {
     }
 }
 
-pub(super) fn load(config: &ClientConfig, worlds: &[ShellWorld]) -> Vec<CodexCard> {
+pub(super) fn load_snapshots(
+    config: &ClientConfig,
+    cancelled: &AtomicBool,
+) -> Vec<CodexContextSnapshot> {
+    config
+        .contexts
+        .iter()
+        .take_while(|_| !cancelled.load(Ordering::Relaxed))
+        .map(|context| {
+            match wt_client::transport::call_codex_sessions_with_timeout_until(
+                context,
+                super::CONTEXT_REQUEST_TIMEOUT,
+                cancelled,
+            ) {
+                Ok(sessions) => CodexContextSnapshot::Sessions {
+                    context: context.name.clone(),
+                    sessions,
+                },
+                Err(error) => CodexContextSnapshot::Failure {
+                    context: context.name.clone(),
+                    message: bounded_escaped(error.to_string().as_bytes()),
+                },
+            }
+        })
+        .collect()
+}
+
+pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld]) -> Vec<CodexCard> {
     let mut cards = Vec::new();
-    for context in &config.contexts {
-        match wt_client::transport::call_codex_sessions(context) {
-            Ok(sessions) => match validate_context(&context.name, sessions, worlds) {
-                Ok(mut context_cards) => cards.append(&mut context_cards),
-                Err(message) => cards.push(CodexCard::context_error(&context.name, message)),
-            },
-            Err(error) => cards.push(CodexCard::context_error(
-                &context.name,
-                bounded_escaped(error.to_string().as_bytes()),
-            )),
+    for snapshot in snapshots {
+        match snapshot {
+            CodexContextSnapshot::Sessions { context, sessions } => {
+                match validate_context(&context, sessions, worlds) {
+                    Ok(mut context_cards) => cards.append(&mut context_cards),
+                    Err(message) => cards.push(CodexCard::context_error(&context, message)),
+                }
+            }
+            CodexContextSnapshot::Failure { context, message } => {
+                cards.push(CodexCard::context_error(&context, message));
+            }
         }
     }
     cards.sort_by(|left, right| {

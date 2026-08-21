@@ -1,13 +1,14 @@
 ---
 source: crates/products/wt/client/src/shell/render.rs
+assertion_line: 489
 expression: terminal.backend().buffer()
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 64, height: 12 },
     content: [
-        "    │┌Codex sessions · startup snapshot────────────────────────┐",
-        "▌ 󰚩 ││                    No Codex sessions                    │",
-        "    ││     Start Codex in a world to see its session here      │",
+        "    │┌Codex sessions · Updating…───────────────────────────────┐",
+        "▌ 󰚩 ││                 Loading Codex sessions…                 │",
+        "    ││                                                         │",
         "    ││                                                         │",
         "   ││                                                         │",
         "    ││                                                         │",

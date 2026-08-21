@@ -184,6 +184,8 @@ pub(super) struct ControlState {
     codex_offset: usize,
     opening: Option<CodexCardIdentity>,
     open_error: Option<(CodexCardIdentity, String)>,
+    worlds_updated_at: Option<String>,
+    codex_updated_at: Option<String>,
 }
 
 impl Default for ControlState {
@@ -196,6 +198,8 @@ impl Default for ControlState {
             codex_offset: 0,
             opening: None,
             open_error: None,
+            worlds_updated_at: None,
+            codex_updated_at: None,
         }
     }
 }
@@ -217,6 +221,18 @@ impl ControlState {
         self.selected.as_ref()
     }
 
+    pub(super) fn worlds_updated_at(&self) -> Option<&str> {
+        self.worlds_updated_at.as_deref()
+    }
+
+    pub(super) fn codex_updated_at(&self) -> Option<&str> {
+        self.codex_updated_at.as_deref()
+    }
+
+    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
+        self.worlds_updated_at = Some(updated_at);
+    }
+
     pub(super) fn codex_offset(&self) -> usize {
         self.codex_offset
     }
@@ -232,7 +248,7 @@ impl ControlState {
             .map(|(_, message)| message.as_str())
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>) {
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexCard>, updated_at: String) {
         let selected = self
             .selected
             .as_ref()
@@ -242,6 +258,7 @@ impl ControlState {
         self.codex = codex;
         self.selected = selected;
         self.codex_offset = 0;
+        self.codex_updated_at = Some(updated_at);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
