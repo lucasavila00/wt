@@ -187,6 +187,7 @@ pub(crate) struct ChangeRequestStatus {
     pub handle: String,
     pub url: String,
     pub title: String,
+    pub body: Option<String>,
     pub state: String,
     pub draft: bool,
     pub head: String,
