@@ -6,6 +6,7 @@ use super::world_area;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
@@ -79,20 +80,15 @@ fn color(source: vt100::Color) -> Color {
 
 fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     let active = model.mode() == Mode::Switcher;
-    let text = if active {
-        format!(
-            "{} ({}/{})   ←/→ worlds   ↑ control   F5   F6 quit",
-            model.active_world(),
-            model.active() + 1,
-            model.world_count()
-        )
+    let left_hint = if active {
+        " F5: disable navbar"
     } else {
-        format!(
-            "{} ({}/{})   F5   F6 quit",
-            model.active_world(),
-            model.active() + 1,
-            model.world_count()
-        )
+        " F5: enable navbar"
+    };
+    let right_hint = if active {
+        "←/→ world ↑ ctrl F6: close "
+    } else {
+        "F6: close "
     };
     let style = if active {
         Style::new()
@@ -102,26 +98,47 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     } else {
         Style::new().fg(Color::DarkGray).bg(Color::Black)
     };
-    let areas = Layout::horizontal([Constraint::Length(8), Constraint::Min(0)]).split(Rect::new(
+    let areas = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(24),
+        Constraint::Fill(1),
+    ])
+    .split(Rect::new(
         frame.area().x,
         frame.area().y,
         frame.area().width,
         1,
     ));
     frame.render_widget(
-        Paragraph::new("  WT").style(
-            Style::new()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  WT ",
+                Style::new()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(left_hint),
+        ]))
+        .style(style),
         areas[0],
     );
     frame.render_widget(
-        Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .style(style),
+        Paragraph::new(format!(
+            " {} ({}/{})",
+            model.active_world(),
+            model.active() + 1,
+            model.world_count()
+        ))
+        .alignment(Alignment::Center)
+        .style(style),
         areas[1],
+    );
+    frame.render_widget(
+        Paragraph::new(right_hint)
+            .alignment(Alignment::Right)
+            .style(style),
+        areas[2],
     );
 }
 
@@ -256,7 +273,7 @@ mod tests {
         assert_eq!(brand.fg, Some(Color::Black));
         assert_eq!(brand.bg, Some(Color::Cyan));
         assert!(brand.add_modifier.contains(Modifier::BOLD));
-        let style = terminal.backend().buffer().cell((8, 0)).unwrap().style();
+        let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
         assert_eq!(style.fg, Some(Color::Black));
         assert_eq!(style.bg, Some(Color::White));
         assert!(style.add_modifier.contains(Modifier::BOLD));
@@ -279,7 +296,7 @@ mod tests {
         assert_eq!(brand.fg, Some(Color::Black));
         assert_eq!(brand.bg, Some(Color::Cyan));
         assert!(brand.add_modifier.contains(Modifier::BOLD));
-        let style = terminal.backend().buffer().cell((8, 0)).unwrap().style();
+        let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
         assert_eq!(style.fg, Some(Color::DarkGray));
         assert_eq!(style.bg, Some(Color::Black));
         assert!(!style.add_modifier.contains(Modifier::BOLD));
