@@ -1,9 +1,19 @@
-.PHONY: bootstrap-server-user check-file-lines clear e2e-tests install-client install-git-server install-server nuke prepare-image static
+.PHONY: $(MAKECMDGOALS)
 
 KVM_INSTALL_CONFIG ?= examples/server-config/wt-server.kvm-e2e-install.toml
 
 bootstrap-server-user:
 	scripts/bootstrap-server-user
+
+check-crate-readmes:
+	@rg --files crates -g 'Cargo.toml' | { failed=; while IFS= read -r manifest; do \
+		crate=$${manifest%/Cargo.toml}; \
+		if [ ! -f "$$crate/README.md" ]; then \
+			printf '%s has no README.md\n' "$$crate"; \
+			failed=1; \
+		fi; \
+	done; \
+	test -z "$$failed"; }
 
 check-file-lines:
 	@rg --files -g '*.rs' | { failed=; while IFS= read -r file; do \
@@ -43,7 +53,7 @@ prepare-image:
 	@test -n "$(CONFIG)" || { echo "usage: make prepare-image CONFIG=PATH" >&2; exit 2; }
 	scripts/prepare-image --config "$(CONFIG)"
 
-static: check-file-lines
+static: check-crate-readmes check-file-lines
 	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \
