@@ -37,10 +37,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a world.
-    New {
-        #[command(subcommand)]
-        kind: Option<host::NewKind>,
-    },
+    New(host::New),
     /// List worlds across every configured context.
     Ls,
     /// Remove a world.
@@ -73,15 +70,8 @@ fn main() {
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
-        Command::New { kind } => {
-            let (application, name) = match kind {
-                None => (CreateKind::Devcontainer, None),
-                Some(host::NewKind::Host(input)) => {
-                    let input = input.load()?;
-                    let name = input.name.clone();
-                    (CreateKind::Host(input), Some(name))
-                }
-            };
+        Command::New(command) => {
+            let (application, name) = command.into_kind()?;
             let input = prompt_create(&config, application, name)?;
             let context = config
                 .context(&input.context)

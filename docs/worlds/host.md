@@ -11,6 +11,8 @@ Put a non-empty cloud-init user-data file at
 wt new host NAME
 ```
 
+`wt new NAME` is an alias for `wt new host NAME`.
+
 WT honors `XDG_CONFIG_HOME` when it is set. For a one-off recipe, override the
 default with `wt new host NAME --user-data ./host.yaml`. The client installer
 creates a thin recipe with Diffo when the default file is missing and does not

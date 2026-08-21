@@ -3,7 +3,7 @@
 A devcontainer world is a retained development environment for one repository
 and base branch.
 
-`wt new` asks for the context, name, Git source, base branch, resources, and
+`wt new dev` asks for the context, name, Git source, base branch, resources, and
 confirmation. It creates an Ubuntu guest, checks out the repository at
 `/workspace`, and starts its devcontainer recipe. The repository remains the
 environment contract.
