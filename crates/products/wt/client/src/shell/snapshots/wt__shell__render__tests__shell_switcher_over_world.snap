@@ -6,7 +6,7 @@ Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 6 },
     content: [
         "world output  ┌──────────────────────────────────────────────────┐              ",
-        "red           │         ←/→ worlds   ↑ control   F5 close        │              ",
+        "red           │    ←/→ worlds   ↑ control   F5 close   F6 quit   │              ",
         "              │                 local.one  (1/2)                │              ",
         "              └──────────────────────────────────────────────────┘              ",
         "                                                                                ",
