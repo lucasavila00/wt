@@ -27,7 +27,7 @@ While the overlay is open, it captures its navigation keys:
 `F6` always closes `wt shell` and is never forwarded to Byobu. While the overlay
 is closed, `wt shell` otherwise captures only `F5`; the active world view
 forwards keyboard and paste input to its Byobu. Mouse clicks are also forwarded;
-other mouse events are ignored.
+mouse wheel events are forwarded and mouse motion is ignored.
 
 `wt shell` keeps one OpenSSH process, local PTY, and terminal buffer per open
 world. All remain live in the background. Switching changes only the visible
