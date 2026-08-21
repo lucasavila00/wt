@@ -110,14 +110,18 @@ impl Gateway {
         };
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
-            .upsert_codex_session_report(
+            .upsert_codex_session_report(wt_workload_registry::CodexSessionReportInput {
                 world_id,
-                event.session_id,
-                &event.cwd,
-                &event.tmux_session,
-                &event.pane_id,
+                session_id: event.session_id,
+                cwd: &event.cwd,
+                tmux_session: &event.tmux_session,
+                pane_id: &event.pane_id,
                 state,
-            )
+                session_start_source: event
+                    .session_start_source
+                    .as_ref()
+                    .map(|source| source.raw.as_str()),
+            })
             .context("store Codex session report")
     }
 

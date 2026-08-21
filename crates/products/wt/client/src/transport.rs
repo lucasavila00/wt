@@ -539,11 +539,11 @@ mod tests {
         };
         let error = ApiError::new(
             wt_control_protocol::ErrorCode::UnsupportedProtocol,
-            "unsupported protocol version 4; expected 3",
+            "unsupported protocol version 5; expected 4",
         );
         insta::assert_snapshot!(rejection(&context, &error).diagnostic("error"), @r###"
         error: context lab could not be queried: server rejected the request
-          unsupported protocol: unsupported protocol version 4; expected 3
+          unsupported protocol: unsupported protocol version 5; expected 4
           hint: install protocol-compatible `wt` and `wt-server` versions on wt-lab
         "###);
     }
@@ -554,17 +554,17 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
+        let valid = br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
         assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":4,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
             let error = decode_codex_sessions(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));

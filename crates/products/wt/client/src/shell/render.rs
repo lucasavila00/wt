@@ -347,15 +347,27 @@ fn card_title(card: &CodexCard) -> (String, Color) {
         .map(relative_age)
         .map_or_else(String::new, |age| format!(" · {age}"));
     match &card.kind {
-        CodexCardKind::Observation { state, .. } => {
+        CodexCardKind::Observation {
+            state,
+            session_start_source,
+            ..
+        } => {
             let (icon, label, color) = match state {
                 wt_control_protocol::CodexSessionState::NeedsAttention => {
-                    ("󰚩", "NEEDS ATTENTION", Color::Yellow)
+                    ("󰚩", "NEEDS ATTENTION".into(), Color::Yellow)
                 }
-                wt_control_protocol::CodexSessionState::Working => ("󰔟", "WORKING", Color::Green),
-                wt_control_protocol::CodexSessionState::Unknown => ("󰋗", "UNKNOWN", Color::Gray),
+                wt_control_protocol::CodexSessionState::Working => {
+                    ("󰔟", "WORKING".into(), Color::Green)
+                }
+                wt_control_protocol::CodexSessionState::Unknown => (
+                    "󰋗",
+                    session_start_source
+                        .as_ref()
+                        .map_or_else(|| "UNKNOWN".into(), |source| format!("UNKNOWN ({source})")),
+                    Color::Gray,
+                ),
                 wt_control_protocol::CodexSessionState::Inactive => {
-                    ("󰅖", "INACTIVE", Color::DarkGray)
+                    ("󰅖", "INACTIVE".into(), Color::DarkGray)
                 }
             };
             (format!("{icon} {label}{suffix}"), color)

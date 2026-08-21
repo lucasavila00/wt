@@ -32,13 +32,15 @@ installs hooks for these events:
 
 | Codex hook | State |
 | --- | --- |
-| `SessionStart` | `unknown` |
+| `SessionStart` | `unknown` (with its raw start source) |
 | `UserPromptSubmit` | `working` |
 | `Stop` | `needs_attention` |
 | `SessionEnd` | `inactive` |
 
 Every hook reports `session_id`, `cwd`, `tmux_session`, and `%N` `pane_id`.
 The Byobu target is required and verified before forwarding.
+WT parses known session-start sources while preserving the raw value. The shell
+renders that value with an unknown state, for example `unknown(compact)`.
 
 Use the existing authenticated guest relay and vsock path. Its grant supplies
 `world_id`; the hook cannot choose it. Hooks are short-timeout and fail-open.
@@ -47,7 +49,7 @@ Store the latest observation per `(world_id, session_id)`:
 
 ```text
 session_id, world_id, cwd, state,
-tmux_session, pane_id, received_at_unix_ms
+session_start_source, tmux_session, pane_id, received_at_unix_ms
 ```
 
 Receipt time is required because hooks provide no heartbeat. World deletion

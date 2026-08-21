@@ -243,6 +243,7 @@ fn validate_context(
                     world_name: world.instance_name.to_string(),
                     cwd: observation.cwd,
                     state: observation.state,
+                    session_start_source: observation.session_start_source,
                     target: observation.target,
                 },
             });
@@ -373,6 +374,7 @@ mod tests {
                 world_name: world.instance_name.clone(),
                 cwd: cwd.into(),
                 state: CodexSessionState::NeedsAttention,
+                session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
                     pane_id: "%1".into(),

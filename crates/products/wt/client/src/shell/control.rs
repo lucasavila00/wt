@@ -47,6 +47,7 @@ pub(super) enum CodexCardKind {
         world_name: String,
         cwd: String,
         state: CodexSessionState,
+        session_start_source: Option<String>,
         target: ByobuTarget,
     },
     RolloutOnly,

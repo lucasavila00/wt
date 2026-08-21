@@ -25,6 +25,8 @@ pub struct CodexSessionObservation {
     pub world_name: InstanceName,
     pub cwd: String,
     pub state: CodexSessionState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_start_source: Option<String>,
     pub target: ByobuTarget,
     pub received_at_unix_ms: i64,
 }

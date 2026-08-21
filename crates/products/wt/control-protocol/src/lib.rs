@@ -18,7 +18,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 4,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -469,7 +469,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 4,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 4,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -500,7 +500,8 @@ mod tests {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
                 cwd: "/workspace".into(),
-                state: CodexSessionState::NeedsAttention,
+                state: CodexSessionState::Unknown,
+                session_start_source: Some("compact".into()),
                 target: ByobuTarget {
                     tmux_session: "wt-app".into(),
                     pane_id: "%3".into(),
@@ -518,7 +519,8 @@ mod tests {
               "world_id": "123e4567-e89b-12d3-a456-426614174001",
               "world_name": "checkout",
               "cwd": "/workspace",
-              "state": "needs_attention",
+              "state": "unknown",
+              "session_start_source": "compact",
               "target": {
                 "tmux_session": "wt-app",
                 "pane_id": "%3"
@@ -535,7 +537,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 4,
                 "operation": "list_codex_sessions"
             })
         );
@@ -551,7 +553,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 3,
+          "protocol_version": 4,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -585,7 +587,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 3,
+                "protocol_version": 4,
                 "operation": "create",
                 "kind": "devcontainer",
                 "name": "repo-feature",
@@ -625,7 +627,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 3,
+          "protocol_version": 4,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -638,7 +640,7 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 3,
+            "protocol_version": 4,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -648,7 +650,7 @@ mod tests {
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 3,
+            "protocol_version": 4,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -687,7 +689,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 3,
+            "protocol_version": 4,
             "operation": "get",
             "name": "Not-Valid"
         }))

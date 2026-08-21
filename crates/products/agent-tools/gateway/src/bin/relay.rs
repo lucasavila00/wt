@@ -217,6 +217,7 @@ mod tests {
             tmux_session: "wt-app".into(),
             pane_id: "%1".into(),
             kind: CodexSessionEventKind::SessionEnd,
+            session_start_source: None,
         };
 
         assert_eq!(

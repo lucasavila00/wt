@@ -55,6 +55,9 @@ Opening requires worlds provisioned by a WT version containing this feature.
 After upgrading WT, recreate older worlds so their relay records pane markers
 and their focus helper is current.
 
+An unknown observation includes its raw Codex session-start source when one was
+reported, such as `unknown(compact)`.
+
 Known terminal-compatibility gaps are TODOs to fix:
 
 - TODO: Forward mouse drag, position, and hover/motion events when the active

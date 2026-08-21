@@ -207,6 +207,7 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
             world_name: "dev".into(),
             cwd: "/workspace".into(),
             state: CodexSessionState::Working,
+            session_start_source: None,
             target: ByobuTarget {
                 tmux_session: "wt-host".into(),
                 pane_id: pane_id.into(),

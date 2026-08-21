@@ -505,6 +505,7 @@ mod tests {
                     world_name: "two".into(),
                     cwd: "/workspace".into(),
                     state: CodexSessionState::Working,
+                    session_start_source: None,
                     target,
                 },
             }],
