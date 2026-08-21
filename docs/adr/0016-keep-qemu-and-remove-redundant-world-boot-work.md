@@ -21,7 +21,7 @@ Those checks observe state; they do not own guest configuration.
 ## Decision
 
 Make the validated golden image the only owner of machine prerequisites.
-`wt-server-setup` installs `qemu-guest-agent`, enables its service, records its
+`wt-server-installer` installs `qemu-guest-agent`, enables its service, records its
 version in the image manifest, and rejects image drift.
 
 Use the per-world NoCloud seed only for instance identity and network
@@ -42,7 +42,7 @@ milliseconds instead of polling both every two seconds.
 
 Machine dependencies have one owner and one validation boundary. Changing a
 machine prerequisite requires rebuilding the golden image through
-`wt-server-setup`.
+`wt-server-installer`.
 
 The libvirt provider can rely on the validated image instead of mutating the
 guest during every boot. Images without the required manifest or package remain

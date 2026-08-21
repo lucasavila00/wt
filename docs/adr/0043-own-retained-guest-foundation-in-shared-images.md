@@ -38,7 +38,7 @@ devcontainer world may layer its application command on top of it and publishes
 that kind-specific profile separately; it does not redefine the shared
 terminal settings.
 
-The typed `wt-retained` crate owns the corresponding guest constants and one
+The typed `wt-retained-worlds` crate owns the corresponding guest constants and one
 provisioning operation for guest access, Git author transfer, agent Git, and
 Codex mounts. Both retained kind workers call that complete operation.
 The image installs its helpers at
@@ -48,10 +48,9 @@ The image installs its helpers at
 `/usr/local/libexec/wt-retained-mount-codex`.
 
 Git author name and email are common retained-world create fields rather than a
-devcontainer-only application detail. This incompatible request change uses
-protocol version 2 and has no compatibility path. Devcontainer repository setup
-also records the author in the checkout so the application container receives
-it with the repository.
+devcontainer-only application detail. They are carried by protocol version 2.
+Devcontainer repository setup also records the author in the checkout so the
+application container receives it with the repository.
 
 The reusable image leaves guest SSH disabled and without reusable host keys.
 Retained provisioning uses the shared access helper to install `wt`'s
@@ -82,9 +81,7 @@ injects them into the primary devcontainer.
   shared foundation.
 - A malformed or incompatible image fails during build or provisioning instead
   of receiving kind-specific fallback behavior.
-- Replacing a golden image does not rewrite existing world disks. Existing
-  worlds are not migrated to this contract; recreate them when adopting an
-  image-foundation change. Use the documented reset procedure when a complete
-  installation reset is required.
+- Replacing a golden image does not rewrite existing world disks. Worlds that
+  need a new image-foundation contract must be recreated.
 - Changes to shared user or terminal behavior invalidate image provenance and
   require fresh images for newly created worlds.

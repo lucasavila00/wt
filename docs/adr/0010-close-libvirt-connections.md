@@ -9,7 +9,7 @@ Repeated world operations eventually make `wt-server` unable to connect to
 libvirt with `Failed to create socket: Too many open files`. Once this happens,
 creation fails and reconciliation marks otherwise running worlds as errors.
 
-`wt-libvirt` opens a new `virt::connect::Connect` for lifecycle and inspection
+`wt-libvirt-kvm` opens a new `virt::connect::Connect` for lifecycle and inspection
 operations. In `virt` 0.4.3, `Connect` does not implement `Drop`; callers must
 call `Connect::close` themselves. WT does not do so, including in the repeated
 inspection performed by `wt ls`, and therefore leaks a libvirt socket from the
@@ -21,7 +21,7 @@ normal number of worlds does not require an unusually high descriptor limit.
 ## Decision
 
 Own every opened libvirt connection through a private RAII type in
-`wt-libvirt`. Its destructor calls `Connect::close`, so success, error, and
+`wt-libvirt-kvm`. Its destructor calls `Connect::close`, so success, error, and
 early-return paths all release WT's connection reference.
 
 Use that owner at every `Connect::open` site. Keep domain and network handles
