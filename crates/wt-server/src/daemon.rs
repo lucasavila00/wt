@@ -137,6 +137,7 @@ mod tests {
                 assert!(matches!(request.operation, Operation::List));
                 ApiResponse::ok(Response::Instances {
                     instances: vec![],
+                    disk_usage_bytes: Default::default(),
                     agent_git_report_counts: Default::default(),
                 })
             })

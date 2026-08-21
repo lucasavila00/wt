@@ -9,6 +9,7 @@ use wt_api::{
 };
 use wt_registry::Resources;
 
+mod lifecycle;
 mod reports;
 #[cfg(test)]
 mod tests;
@@ -114,13 +115,10 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         }
         match operation {
             Operation::Create(request) => self.create(owner, request),
-            Operation::Fork(_) => Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "worlds cannot be forked",
-            )),
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
             Operation::Start { name } => self.start(owner, &name),
+            Operation::Stop { name } => self.stop(owner, &name),
             Operation::Delete { name } => self.delete(owner, &name),
             Operation::ListAgentGitReports => self.list_agent_git_reports(owner),
             Operation::ClearAgentGitReports => self.clear_agent_git_reports(owner),
@@ -239,7 +237,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 application,
             },
             backend_id,
-            head_disk_id: disk_id,
+            disk_id,
             setup_fingerprint,
             application: stored_application,
         };
@@ -354,12 +352,12 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                     })
                     .and_then(|()| {
                         self.worker
-                            .destroy(kind, &stored.backend_id, &[disk_id])
+                            .destroy(kind, &stored.backend_id, disk_id)
                             .map_err(|error| format!("world cleanup failed: {error}"))
                     })
                     .and_then(|()| {
                         self.store
-                            .delete(id, &[disk_id])
+                            .delete(id, disk_id)
                             .map_err(|error| format!("registry cleanup failed: {error}"))
                     });
                 if let Err(cleanup) = cleanup {
@@ -393,19 +391,20 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         for instance in &stored {
             self.reconcile(instance)?;
         }
-        let instances = self
-            .store
-            .list(owner)
-            .map_err(map_store_error)?
-            .into_iter()
-            .map(|stored| stored.instance)
-            .collect();
+        let stored = self.store.list(owner).map_err(map_store_error)?;
+        let mut disk_usage_bytes = std::collections::BTreeMap::new();
+        for world in &stored {
+            let usage = self.disk_usage(world)?;
+            disk_usage_bytes.insert(world.instance.id, usage);
+        }
+        let instances = stored.into_iter().map(|stored| stored.instance).collect();
         let agent_git_report_counts = self
             .store
             .agent_git_report_counts(owner)
             .map_err(map_store_error)?;
         Ok(Response::Instances {
             instances,
+            disk_usage_bytes,
             agent_git_report_counts,
         })
     }
@@ -421,11 +420,22 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             .worker
             .inspect(stored.instance.kind(), &stored.backend_id)
         {
-            Ok(WorldInspection::Running(world)) => self.apply_world(stored, &world)?,
-            Ok(WorldInspection::Stopped { reason }) => self
-                .store
-                .mark_stopped(stored.instance.id, &stopped_message(reason.as_deref()))
-                .map_err(map_store_error)?,
+            Ok(WorldInspection::Running(world)) => {
+                self.store
+                    .ensure_resources_reserved(stored.instance.id)
+                    .map_err(map_store_error)?;
+                self.apply_world(stored, &world)?
+            }
+            Ok(WorldInspection::Stopped { reason }) => {
+                let disk_usage_bytes = self.disk_usage(stored)?;
+                self.store
+                    .mark_stopped(
+                        stored.instance.id,
+                        &stopped_message(reason.as_deref()),
+                        disk_usage_bytes,
+                    )
+                    .map_err(map_store_error)?
+            }
             Ok(WorldInspection::Missing) => self
                 .store
                 .mark_error(stored.instance.id, "guest domain is missing")
@@ -439,6 +449,17 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 .map_err(map_store_error)?,
         }
         Ok(())
+    }
+
+    fn disk_usage(&self, stored: &StoredInstance) -> Result<u64, ApiError> {
+        self.worker
+            .disk_usage(stored.instance.kind(), stored.disk_id)
+            .map_err(|error| {
+                ApiError::new(
+                    ErrorCode::Backend,
+                    format!("read world disk usage: {error}"),
+                )
+            })
     }
 
     fn apply_world(&self, stored: &StoredInstance, world: &World) -> Result<(), ApiError> {
@@ -544,37 +565,34 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
                 format!("world is {}; expected stopped", stored.instance.status),
             ));
         }
-        let reserved = self.store.reserved_resources().map_err(map_store_error)?;
-        for (resource, reserved, total) in [
-            (
-                CapacityResource::Cpu,
-                reserved.vcpus,
-                self.capacity_limit.vcpus,
-            ),
-            (
-                CapacityResource::Memory,
-                reserved.memory_mib,
-                self.capacity_limit.memory_mib,
-            ),
-            (
-                CapacityResource::Disk,
-                reserved.disk_gib,
-                self.capacity_limit.disk_gib,
-            ),
-        ] {
-            if reserved > total {
-                return Err(ApiError::capacity(Capacity {
-                    resource,
-                    total,
-                    reserved,
-                    requested: 0,
-                }));
-            }
-        }
-        let world = self
+        self.store
+            .reserve_resources(stored.instance.id, self.capacity_limit)
+            .map_err(map_store_error)?;
+        let world = match self
             .worker
             .start(stored.instance.kind(), &stored.backend_id)
-            .map_err(|error| ApiError::new(ErrorCode::Backend, format!("start world: {error}")))?;
+        {
+            Ok(world) => world,
+            Err(error) => {
+                if let Ok(WorldInspection::Stopped { reason }) = self
+                    .worker
+                    .inspect(stored.instance.kind(), &stored.backend_id)
+                {
+                    let disk_usage_bytes = self.disk_usage(&stored)?;
+                    self.store
+                        .mark_stopped(
+                            stored.instance.id,
+                            &stopped_message(reason.as_deref()),
+                            disk_usage_bytes,
+                        )
+                        .map_err(map_store_error)?;
+                }
+                return Err(ApiError::new(
+                    ErrorCode::Backend,
+                    format!("start world: {error}"),
+                ));
+            }
+        };
         self.apply_world(&stored, &world)?;
         let instance = self
             .store
@@ -606,13 +624,9 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
         self.store
             .mark_destroying(stored.instance.id)
             .map_err(map_store_error)?;
-        let garbage = self
-            .store
-            .garbage_for_delete(stored.instance.id)
-            .map_err(map_store_error)?;
         if let Err(error) =
             self.worker
-                .destroy(stored.instance.kind(), &stored.backend_id, &garbage)
+                .destroy(stored.instance.kind(), &stored.backend_id, stored.disk_id)
         {
             let message = error.to_string();
             self.store
@@ -621,7 +635,7 @@ impl<W: WorldWorker, G: AgentGitGateway> Service<W, G> {
             return Err(ApiError::new(ErrorCode::Backend, message));
         }
         self.store
-            .delete(stored.instance.id, &garbage)
+            .delete(stored.instance.id, stored.disk_id)
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
     }

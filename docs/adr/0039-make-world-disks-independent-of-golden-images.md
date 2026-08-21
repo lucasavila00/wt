@@ -14,8 +14,7 @@ blocked by those worlds.
 ## Decision
 
 Treat golden images as templates, not runtime dependencies. Creating a world
-copies and resizes the golden image into an independent qcow2 disk. Forks may
-still use copy-on-write heads within that world's disk graph.
+copies and resizes the golden image into an independent qcow2 disk.
 
 When an installed golden image is missing, invalid, or stale, server setup
 builds and publishes its replacement automatically. Publication remains staged:

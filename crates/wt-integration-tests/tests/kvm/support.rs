@@ -29,7 +29,7 @@ pub(crate) struct KvmHarness {
     pub(crate) config: ServerConfig,
     pub(crate) server_config_path: PathBuf,
     pub(crate) guest_public_key: String,
-    pub(crate) initial_disk_nodes: usize,
+    pub(crate) initial_disks: usize,
     _images: TempDir,
     api_fixture: Option<JoinHandle<Result<(), String>>>,
 }
@@ -66,7 +66,7 @@ impl KvmHarness {
         config.image.devcontainer_path = images.path().join("devcontainer.qcow2");
         config.image.host_path = images.path().join("host.qcow2");
         config.install.binary_dir = binary_dir;
-        let initial_disk_nodes = count_disk_nodes(&config.libvirt.worlds_dir);
+        let initial_disks = count_disks(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
         });
@@ -108,7 +108,7 @@ impl KvmHarness {
             config,
             server_config_path,
             guest_public_key,
-            initial_disk_nodes,
+            initial_disks,
             _images: images,
             api_fixture: None,
         }
@@ -207,6 +207,17 @@ impl KvmHarness {
             ),
             "stop KVM world",
         );
+    }
+
+    pub(crate) fn shutdown(&self, name: &InstanceName) -> wt_api::Instance {
+        let Response::Instance { instance } = call_api(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::Stop { name: name.clone() },
+        ) else {
+            panic!("expected instance response");
+        };
+        *instance
     }
 
     pub(crate) fn start(&self, name: &InstanceName) -> wt_api::Instance {
@@ -330,11 +341,11 @@ impl Drop for KvmHarness {
                 eprintln!("KVM cleanup: delete {}: {error}", world.name);
             }
         }
-        let remaining = count_disk_nodes(&self.config.libvirt.worlds_dir);
-        if remaining != self.initial_disk_nodes {
+        let remaining = count_disks(&self.config.libvirt.worlds_dir);
+        if remaining != self.initial_disks {
             eprintln!(
                 "KVM cleanup: disk-node count is {remaining}, expected {}",
-                self.initial_disk_nodes
+                self.initial_disks
             );
         }
         let _ = self.gateway.kill();
@@ -423,7 +434,7 @@ fn guest_setup_log(home: &Path, name: &InstanceName) -> String {
     }
 }
 
-pub(crate) fn count_disk_nodes(worlds_dir: &Path) -> usize {
+pub(crate) fn count_disks(worlds_dir: &Path) -> usize {
     let entries = match fs::read_dir(worlds_dir.join("disks")) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return 0,
@@ -450,6 +461,7 @@ pub(crate) fn sync_inventory(instances: &[wt_api::Instance]) -> Result<(), Strin
             .map(|instance| wt_cli::inventory::ContextInstance {
                 context: "local".into(),
                 agent_git_report_count: 0,
+                disk_usage_bytes: None,
                 instance,
             })
             .collect::<Vec<_>>(),

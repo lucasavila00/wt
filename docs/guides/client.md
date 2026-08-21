@@ -27,15 +27,18 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 |---------|-------|--------|
 | `wt new` | devcontainer | Interactively create and enter setup |
 | `wt new host NAME` | host | Prepare the guest, then run the default cloud-init recipe in Byobu |
-| `wt ls` | retained | List kind, status, resources, and repository when present |
+| `wt ls` | retained | List kind, status, resources, disk use, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
+| `wt stop NAME` | retained | Shut down the guest and keep its disk |
 | `wt code NAME` | devcontainer | Open the live app workspace in VS Code |
 | `wt ssh NAME` | retained | Sync managed aliases and connect to Byobu |
 | `wt rm NAME` | retained | Destroy the world |
 | `wt sync` | retained | Rewrite managed SSH inventory |
 
-There is no `wt stop`. Shut a guest down from inside it, then use `wt start` to
-resume it.
+Each world has a disk file on the server. While it is running, `1.5G/32G disk`
+means the file uses 1.5 GB of real disk space now and can grow to 32 GB. A
+stopped world shows only `1.5G disk`. `wt stop` keeps the file; `wt rm` deletes
+it.
 
 New retained worlds require at least one valid regular `~/.ssh/*.pub` file.
 Private keys are never sent to the server.
@@ -76,5 +79,5 @@ aliases do not enable SSH-agent forwarding. A developer can opt into native
 OpenSSH forwarding for one direct connection with `ssh -A CONTEXT.NAME-vs`;
 that unrestricted credential path bypasses gateway policy.
 
-`wt new`, `wt ls`, `wt start`, `wt rm`, and `wt ssh` synchronize automatically.
+`wt new`, `wt ls`, `wt start`, `wt stop`, `wt rm`, and `wt ssh` synchronize automatically.
 Run `wt sync` on another workstation after changing worlds elsewhere.

@@ -1,11 +1,9 @@
-mod disk;
 mod reports;
 
-use crate::schema::{devcontainers, disk_nodes, guests, hosts, worlds};
+use crate::schema::{devcontainers, disks, guests, hosts, worlds};
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::sqlite::SqliteConnection;
-use disk::{garbage_for_delete, insert_disk};
 use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
@@ -22,7 +20,7 @@ pub struct Store {
 pub struct StoredInstance {
     pub instance: Instance,
     pub backend_id: String,
-    pub head_disk_id: Uuid,
+    pub disk_id: Uuid,
     pub setup_fingerprint: String,
     pub application: StoredApplication,
 }
@@ -130,10 +128,8 @@ impl Store {
     }
 
     pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
-        self.registry.transaction(|connection| {
-            insert_disk(connection, stored.head_disk_id, None, false)?;
-            insert_world(connection, stored, Resources::UNLIMITED)
-        })
+        self.registry
+            .transaction(|connection| insert_world(connection, stored, Resources::UNLIMITED))
     }
 
     pub fn insert_with_memory_limit(
@@ -142,7 +138,6 @@ impl Store {
         total_mib: u64,
     ) -> Result<(), StoreError> {
         self.registry.immediate_transaction(|connection| {
-            insert_disk(connection, stored.head_disk_id, None, false)?;
             insert_world(
                 connection,
                 stored,
@@ -159,99 +154,20 @@ impl Store {
         stored: &StoredInstance,
         limit: Resources,
     ) -> Result<(), StoreError> {
-        self.registry.immediate_transaction(|connection| {
-            insert_disk(connection, stored.head_disk_id, None, false)?;
-            insert_world(connection, stored, limit)
-        })
-    }
-
-    pub fn reserved_resources(&self) -> Result<Resources, StoreError> {
-        self.registry.read(|connection| {
-            wt_registry::reserved_resources(connection).map_err(map_registry_error)
-        })
-    }
-
-    pub fn reserved_memory_mib(&self) -> Result<u64, StoreError> {
-        self.registry.read(|connection| {
-            wt_registry::reserved_resources(connection)
-                .map(|resources| resources.memory_mib)
-                .map_err(map_registry_error)
-        })
-    }
-
-    pub fn reserve_fork(
-        &self,
-        source_id: Uuid,
-        expected_source_disk_id: Uuid,
-        source_head_disk_id: Uuid,
-        fork: &StoredInstance,
-    ) -> Result<(), StoreError> {
-        self.registry.transaction(|connection| {
-            let changed = diesel::update(
-                disk_nodes::table
-                    .find(expected_source_disk_id.to_string())
-                    .filter(disk_nodes::immutable.eq(false)),
-            )
-            .set(disk_nodes::immutable.eq(true))
-            .execute(connection)?;
-            changed_one(changed)?;
-            insert_disk(
-                connection,
-                source_head_disk_id,
-                Some(expected_source_disk_id),
-                false,
-            )?;
-            insert_disk(
-                connection,
-                fork.head_disk_id,
-                Some(expected_source_disk_id),
-                false,
-            )?;
-            let changed = diesel::update(
-                guests::table
-                    .find(source_id.to_string())
-                    .filter(guests::head_disk_id.eq(expected_source_disk_id.to_string())),
-            )
-            .set(guests::head_disk_id.eq(source_head_disk_id.to_string()))
-            .execute(connection)?;
-            changed_one(changed)?;
-            insert_world(connection, fork, Resources::UNLIMITED)
-        })
-    }
-
-    pub fn discard_fork(
-        &self,
-        source_id: Uuid,
-        source_disk_id: Uuid,
-        source_head_disk_id: Uuid,
-        fork_id: Uuid,
-        fork_disk_id: Uuid,
-        source_pivoted: bool,
-    ) -> Result<Vec<Uuid>, StoreError> {
-        self.registry.transaction(|connection| {
-            diesel::delete(guests::table.find(fork_id.to_string())).execute(connection)?;
-            diesel::delete(disk_nodes::table.find(fork_disk_id.to_string())).execute(connection)?;
-            let mut removed = vec![fork_disk_id];
-            if !source_pivoted {
-                let changed = diesel::update(guests::table.find(source_id.to_string()))
-                    .set(guests::head_disk_id.eq(source_disk_id.to_string()))
-                    .execute(connection)?;
-                changed_one(changed)?;
-                diesel::delete(disk_nodes::table.find(source_head_disk_id.to_string()))
-                    .execute(connection)?;
-                let changed = diesel::update(disk_nodes::table.find(source_disk_id.to_string()))
-                    .set(disk_nodes::immutable.eq(false))
-                    .execute(connection)?;
-                changed_one(changed)?;
-                removed.push(source_head_disk_id);
-            }
-            Ok(removed)
-        })
-    }
-
-    pub fn garbage_for_delete(&self, id: Uuid) -> Result<Vec<Uuid>, StoreError> {
         self.registry
-            .read(|connection| garbage_for_delete(connection, id))
+            .immediate_transaction(|connection| insert_world(connection, stored, limit))
+    }
+
+    pub fn reserve_resources(&self, id: Uuid, limit: Resources) -> Result<(), StoreError> {
+        self.registry.immediate_transaction(|connection| {
+            wt_registry::reserve_resources(connection, id, limit).map_err(map_registry_error)
+        })
+    }
+
+    pub fn ensure_resources_reserved(&self, id: Uuid) -> Result<(), StoreError> {
+        self.registry.transaction(|connection| {
+            wt_registry::ensure_resources_reserved(connection, id).map_err(map_registry_error)
+        })
     }
 
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
@@ -400,8 +316,23 @@ impl Store {
         self.update_state(id, InstanceStatus::Error, None, Some(message))
     }
 
-    pub fn mark_stopped(&self, id: Uuid, message: &str) -> Result<(), StoreError> {
-        self.update_state(id, InstanceStatus::Stopped, None, Some(message))
+    pub fn mark_stopped(
+        &self,
+        id: Uuid,
+        message: &str,
+        disk_usage_bytes: u64,
+    ) -> Result<(), StoreError> {
+        self.registry.transaction(|connection| {
+            let changed = diesel::update(worlds::table.find(id.to_string()))
+                .set((
+                    worlds::status.eq(InstanceStatus::Stopped.to_string()),
+                    worlds::last_error.eq(message),
+                ))
+                .execute(connection)?;
+            changed_one(changed)?;
+            wt_registry::release_resources(connection, id, disk_usage_bytes)
+                .map_err(map_registry_error)
+        })
     }
 
     fn update_state(
@@ -433,20 +364,18 @@ impl Store {
         })
     }
 
-    pub fn delete(&self, id: Uuid, garbage: &[Uuid]) -> Result<(), StoreError> {
+    pub fn delete(&self, id: Uuid, disk_id: Uuid) -> Result<(), StoreError> {
         self.registry.transaction(|connection| {
-            if garbage_for_delete(connection, id)? != garbage {
-                return Err(StoreError::InvalidData(
-                    "disk graph changed while deleting world".into(),
-                ));
-            }
-            let changed = diesel::delete(guests::table.find(id.to_string())).execute(connection)?;
+            let changed = diesel::delete(
+                guests::table
+                    .find(id.to_string())
+                    .filter(guests::disk_id.eq(disk_id.to_string())),
+            )
+            .execute(connection)?;
             changed_one(changed)?;
-            for disk_id in garbage {
-                let changed = diesel::delete(disk_nodes::table.find(disk_id.to_string()))
-                    .execute(connection)?;
-                changed_one(changed)?;
-            }
+            let changed =
+                diesel::delete(disks::table.find(disk_id.to_string())).execute(connection)?;
+            changed_one(changed)?;
             Ok(())
         })
     }
@@ -534,7 +463,7 @@ impl TryFrom<(GuestRow, WorldRow, Option<DevcontainerRow>, Option<HostRow>)> for
                 application,
             },
             backend_id: guest.backend_id,
-            head_disk_id: guest.head_disk_id,
+            disk_id: guest.disk_id,
             setup_fingerprint: row.setup_fingerprint,
             application: stored_application,
         })
@@ -561,7 +490,7 @@ fn insert_world(
                 }
             },
             backend_id: stored.backend_id.clone(),
-            head_disk_id: stored.head_disk_id,
+            disk_id: stored.disk_id,
             resources: Resources {
                 vcpus: instance.vcpus.into(),
                 memory_mib: instance.memory_mib,

@@ -23,7 +23,7 @@ Store every managed application guest in one `guests` table. Temporary image
 build guests are not application state. A guest row owns:
 
 - its kind: `devcontainer`, `host`, or `github-ci`;
-- its libvirt and head-disk identities; and
+- its libvirt and disk identities; and
 - its CPU, memory, and disk reservation.
 
 Keep lifecycle-specific data in one-to-one subtype tables:
@@ -32,9 +32,9 @@ Keep lifecycle-specific data in one-to-one subtype tables:
 - `devcontainers` stores repository, Git grant, and app SSH data;
 - host worlds need no subtype beyond `worlds`;
 - `runners` stores CI status and GitHub runner identity; and
-- `disk_nodes` remains the shared copy-on-write disk graph.
+- `disks` stores one independent disk identity per guest.
 
-Creation inserts the disk node, guest, and required subtype rows in one
+Creation inserts the disk, guest, and required subtype rows in one
 immediate SQLite transaction. Admission sums `guests` in that transaction, so
 separate owners cannot over-admit each other.
 

@@ -46,6 +46,8 @@ enum Command {
     Rm { name: String },
     /// Start a stopped world.
     Start { name: String },
+    /// Stop a retained world.
+    Stop { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },
     /// Synchronize SSH aliases and connect to a world.
@@ -177,6 +179,23 @@ fn run() -> Result<()> {
                 context.name, world_name, instance.status
             );
         }
+        Command::Stop { name } => {
+            let (context, world_name) = resolve_operation_target(&config, &name)?;
+            let response = wt_cli::transport::call(
+                context,
+                &ApiRequest::new(Operation::Stop {
+                    name: world_name.clone(),
+                }),
+            )?;
+            let Response::Instance { instance } = response else {
+                bail!("helper returned the wrong response to stop");
+            };
+            warn_if_sync_skipped(&config)?;
+            println!(
+                "stopped {}.{} ({})",
+                context.name, world_name, instance.status
+            );
+        }
         Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_cli::connection::ssh(&config, &name)?,
         Command::Sync => {
@@ -254,7 +273,7 @@ fn capacity_message(context: &str, name: &wt_api::InstanceName, capacity: &Capac
         CapacityResource::Disk => ("disk", "GiB"),
     };
     format!(
-        "{context} has {} {unit} of {} {unit} world and runner {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt rm CONTEXT.WORLD`.",
+        "{context} has {} {unit} of {} {unit} world and runner {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.",
         capacity.reserved, capacity.total, capacity.requested
     )
 }
@@ -512,7 +531,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
                 InstanceApplication::Host => "-",
             }
             .to_owned(),
-            format_resources(instance.vcpus, instance.memory_mib, instance.disk_gib),
+            inventory::format_resources(instance, item.disk_usage_bytes),
             instance_detail(item),
         ]
     }));
@@ -579,15 +598,6 @@ fn instance_detail(item: &ContextInstance) -> String {
     } else {
         format!("{detail}; {reports}")
     }
-}
-
-fn format_resources(vcpus: u32, memory_mib: u64, disk_gib: u64) -> String {
-    let memory = if memory_mib.is_multiple_of(1024) {
-        format!("{}G", memory_mib / 1024)
-    } else {
-        format!("{memory_mib}MiB")
-    };
-    format!("{vcpus} CPU · {memory} · {disk_gib}G")
 }
 
 fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Context> {

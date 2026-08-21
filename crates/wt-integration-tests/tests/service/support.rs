@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Condvar, Mutex,
 };
 use tempfile::TempDir;
@@ -19,6 +19,7 @@ pub(crate) struct Worker {
     pub(crate) destroys: Arc<AtomicUsize>,
     pub(crate) inspections: Arc<AtomicUsize>,
     pub(crate) starts: Arc<AtomicUsize>,
+    pub(crate) stops: Arc<AtomicUsize>,
     pub(crate) destroyed_disks: Arc<Mutex<Vec<Vec<Uuid>>>>,
     pub(crate) host_user_data: Arc<Mutex<Vec<String>>>,
     pub(crate) host_git_grants: Arc<Mutex<Vec<String>>>,
@@ -30,6 +31,9 @@ pub(crate) struct Worker {
     pub(crate) provision_error: bool,
     pub(crate) host_setup_error: bool,
     pub(crate) stopped: bool,
+    pub(crate) is_stopped: Arc<AtomicBool>,
+    pub(crate) stop_error: bool,
+    pub(crate) disk_usage_bytes: u64,
 }
 
 #[derive(Clone, Default)]
@@ -115,10 +119,10 @@ impl WorldWorker for Worker {
         &self,
         _kind: WorldKind,
         _backend_id: &str,
-        disk_ids: &[Uuid],
+        disk_id: Uuid,
     ) -> Result<(), WorkerError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
-        self.destroyed_disks.lock().unwrap().push(disk_ids.to_vec());
+        self.destroyed_disks.lock().unwrap().push(vec![disk_id]);
         Ok(())
     }
 
@@ -132,7 +136,7 @@ impl WorldWorker for Worker {
         if self.missing {
             return Ok(WorldInspection::Missing);
         }
-        if self.stopped {
+        if self.stopped || self.is_stopped.load(Ordering::SeqCst) {
             return Ok(WorldInspection::Stopped {
                 reason: Some("crashed".into()),
             });
@@ -155,7 +159,22 @@ impl WorldWorker for Worker {
 
     fn start(&self, kind: WorldKind, _backend_id: &str) -> Result<World, WorkerError> {
         self.starts.fetch_add(1, Ordering::SeqCst);
+        self.is_stopped.store(false, Ordering::SeqCst);
         Ok(world(kind, self.complete))
+    }
+
+    fn stop(&self, _kind: WorldKind, _backend_id: &str) -> Result<(), WorkerError> {
+        self.stops.fetch_add(1, Ordering::SeqCst);
+        if self.stop_error {
+            Err(WorkerError::new("shutdown timed out"))
+        } else {
+            self.is_stopped.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn disk_usage(&self, _kind: WorldKind, _disk_id: Uuid) -> Result<u64, WorkerError> {
+        Ok(self.disk_usage_bytes)
     }
 }
 

@@ -1,6 +1,6 @@
 # ADR 0045: Stop retained worlds
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-20
 - Amends: [ADR 0020](0020-reserve-world-memory-before-starting-guests.md),
   [ADR 0024](0024-use-a-shared-guest-registry.md)
@@ -26,10 +26,10 @@ A stopped world keeps its disk, machine definition, metadata, SSH identities,
 Git grant, and shared-folder data. It does not keep RAM or live processes. QEMU,
 guest networking, SSH, and virtiofs processes stop with the guest.
 
-Stopped worlds continue to reserve disk capacity, but release their CPU and
-memory reservations after shutdown is confirmed. `wt start` atomically reserves
-CPU and memory before booting the world. If capacity is unavailable, the world
-stays stopped.
+Stopped worlds release CPU and memory and count only the disk space they
+actually use. `wt start` atomically reserves CPU, memory, and the disk's full
+capacity before booting the world. If capacity is unavailable, the world stays
+stopped.
 
 Use the existing `stopped` state and record that the stop was requested. Do not
 add a `paused` state.
@@ -46,6 +46,6 @@ completion.
 
 - Idle worlds use storage but no guest CPU or memory.
 - More worlds can be retained than can run at once.
-- Starting a stopped world can fail when compute capacity is full.
+- Starting a stopped world can fail when CPU, memory, or disk capacity is full.
 - Suspension and managed save are unnecessary because WT does not preserve RAM
   or live process state.

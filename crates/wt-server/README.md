@@ -9,9 +9,9 @@ request and response between stdio and the daemon.
 
 ## Owns
 
-- Create, list, get, start, and delete operations for retained worlds.
+- Create, list, get, start, stop, and delete operations for retained worlds.
 - Typed dispatch to devcontainer and host lifecycles.
-- Shared SQLite guest, capacity, and copy-on-write disk-graph registry.
+- Shared SQLite guest, capacity, and disk registry.
 - In-memory coordination of concurrent world operations.
 - Reconciliation after worker failure.
 - Rejection of GitHub CI worlds, whose operator service is not shipped yet.

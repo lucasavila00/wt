@@ -40,14 +40,11 @@ pub enum WorldInspection {
 pub trait WorldWorker: Clone + Send + Sync + 'static {
     fn provision(&self, spec: ProvisionSpec<'_>, log: &mut dyn Write)
         -> Result<World, WorkerError>;
-    fn destroy(
-        &self,
-        kind: WorldKind,
-        backend_id: &str,
-        disk_ids: &[Uuid],
-    ) -> Result<(), WorkerError>;
+    fn destroy(&self, kind: WorldKind, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
     fn inspect(&self, kind: WorldKind, backend_id: &str) -> Result<WorldInspection, WorkerError>;
     fn start(&self, kind: WorldKind, backend_id: &str) -> Result<World, WorkerError>;
+    fn stop(&self, kind: WorldKind, backend_id: &str) -> Result<(), WorkerError>;
+    fn disk_usage(&self, kind: WorldKind, disk_id: Uuid) -> Result<u64, WorkerError>;
 }
 
 #[derive(Clone)]
@@ -80,15 +77,10 @@ where
         }
     }
 
-    fn destroy(
-        &self,
-        kind: WorldKind,
-        backend_id: &str,
-        disk_ids: &[Uuid],
-    ) -> Result<(), WorkerError> {
+    fn destroy(&self, kind: WorldKind, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
         match kind {
-            WorldKind::Devcontainer => self.devcontainer.destroy(backend_id, disk_ids),
-            WorldKind::Host => self.host.destroy(backend_id, disk_ids),
+            WorldKind::Devcontainer => self.devcontainer.destroy(backend_id, disk_id),
+            WorldKind::Host => self.host.destroy(backend_id, disk_id),
             WorldKind::GithubCi => Err(WorkerError::new(
                 "github-ci worlds are not owned by wt-server",
             )),
@@ -112,6 +104,26 @@ where
         match kind {
             WorldKind::Devcontainer => self.devcontainer.start(backend_id).map(World::from),
             WorldKind::Host => self.host.start(backend_id).map(World::from),
+            WorldKind::GithubCi => Err(WorkerError::new(
+                "github-ci worlds are not owned by wt-server",
+            )),
+        }
+    }
+
+    fn stop(&self, kind: WorldKind, backend_id: &str) -> Result<(), WorkerError> {
+        match kind {
+            WorldKind::Devcontainer => self.devcontainer.stop(backend_id),
+            WorldKind::Host => self.host.stop(backend_id),
+            WorldKind::GithubCi => Err(WorkerError::new(
+                "github-ci worlds are not owned by wt-server",
+            )),
+        }
+    }
+
+    fn disk_usage(&self, kind: WorldKind, disk_id: Uuid) -> Result<u64, WorkerError> {
+        match kind {
+            WorldKind::Devcontainer => self.devcontainer.disk_usage(disk_id),
+            WorldKind::Host => self.host.disk_usage(disk_id),
             WorldKind::GithubCi => Err(WorkerError::new(
                 "github-ci worlds are not owned by wt-server",
             )),

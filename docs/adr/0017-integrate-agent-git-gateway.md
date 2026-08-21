@@ -231,6 +231,3 @@ Comments use the gateway's provider identity and include the world name.
 requests intact. Other devcontainer worlds retain access to the shared
 namespace. Creating or recreating one gets a new token without reserving a
 prefix.
-
-`wt fork` is unavailable for a devcontainer world because it would copy the
-world's token.

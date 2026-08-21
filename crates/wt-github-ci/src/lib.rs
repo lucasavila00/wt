@@ -271,7 +271,7 @@ impl<P: MachineProvider> RunnerBackend for LibvirtRunnerBackend<P> {
             .create(
                 &MachineSpec {
                     provider_id,
-                    disk_id: runner.guest.head_disk_id,
+                    disk_id: runner.guest.disk_id,
                     memory_mib: runner.guest.resources.memory_mib,
                     vcpus: u32::try_from(runner.guest.resources.vcpus)
                         .map_err(|_| "runner vcpus exceed u32".to_owned())?,
@@ -308,7 +308,7 @@ impl<P: MachineProvider> RunnerBackend for LibvirtRunnerBackend<P> {
         self.provider
             .delete(
                 &ProviderId::parse(&runner.guest.backend_id).map_err(|error| error.to_string())?,
-                &[runner.guest.head_disk_id],
+                runner.guest.disk_id,
             )
             .map_err(|error| error.to_string())
     }

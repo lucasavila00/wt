@@ -47,9 +47,11 @@ pub trait WorldWorker {
         spec: &ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<World, WorkerError>;
-    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError>;
+    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
     fn start(&self, backend_id: &str) -> Result<World, WorkerError>;
+    fn stop(&self, backend_id: &str) -> Result<(), WorkerError>;
+    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
 }
 
 pub fn validate_user_data(user_data: &str) -> Result<(), String> {
@@ -168,9 +170,9 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
         Ok(world)
     }
 
-    fn destroy(&self, backend_id: &str, disk_ids: &[Uuid]) -> Result<(), WorkerError> {
+    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
         self.provider
-            .delete(&ProviderId::parse(backend_id)?, disk_ids)
+            .delete(&ProviderId::parse(backend_id)?, disk_id)
     }
 
     fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError> {
@@ -192,6 +194,14 @@ impl<P: MachineProvider> WorldWorker for CompositeWorker<P> {
             &mut std::io::sink(),
         )?;
         inspect_machine(&machine, self.readiness_timeout, &mut std::io::sink())
+    }
+
+    fn stop(&self, backend_id: &str) -> Result<(), WorkerError> {
+        self.provider.stop(&ProviderId::parse(backend_id)?)
+    }
+
+    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError> {
+        self.provider.disk_usage(disk_id)
     }
 }
 

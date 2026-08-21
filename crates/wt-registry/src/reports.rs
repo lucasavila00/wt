@@ -143,7 +143,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{disk_nodes, guests, worlds};
+    use crate::schema::{disks, guests, worlds};
 
     #[test]
     fn reports_are_attributed_counted_and_cleared_by_owner() {
@@ -195,22 +195,20 @@ mod tests {
         let disk_id = Uuid::new_v4();
         registry
             .transaction::<_, RegistryError>(|connection| {
-                diesel::insert_into(disk_nodes::table)
-                    .values((
-                        disk_nodes::id.eq(disk_id.to_string()),
-                        disk_nodes::parent_id.eq(None::<String>),
-                        disk_nodes::immutable.eq(false),
-                    ))
+                diesel::insert_into(disks::table)
+                    .values(disks::id.eq(disk_id.to_string()))
                     .execute(connection)?;
                 diesel::insert_into(guests::table)
                     .values((
                         guests::id.eq(id.to_string()),
                         guests::kind.eq("devcontainer"),
                         guests::backend_id.eq(format!("wt-{}", id.simple())),
-                        guests::head_disk_id.eq(disk_id.to_string()),
+                        guests::disk_id.eq(disk_id.to_string()),
                         guests::vcpus.eq(1_i64),
                         guests::memory_mib.eq(1024_i64),
                         guests::disk_gib.eq(10_i64),
+                        guests::compute_reserved.eq(true),
+                        guests::disk_reserved_gib.eq(10_i64),
                     ))
                     .execute(connection)?;
                 diesel::insert_into(worlds::table)

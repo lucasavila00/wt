@@ -37,7 +37,6 @@ milliseconds instead of polling both every two seconds.
 - Image construction enables the guest-agent service.
 - The generated per-world cloud config contains no package or service actions.
 - Real KVM creation reaches the guest agent and DHCP using the validated image.
-- Real KVM forks reach the guest agent and DHCP after booting a new disk head.
 
 ## Consequences
 

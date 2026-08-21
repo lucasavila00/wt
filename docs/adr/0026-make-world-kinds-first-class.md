@@ -69,7 +69,7 @@ World names cannot end in `-host` or `-vs`; those suffixes are reserved for SSH
 aliases.
 
 A `github-ci` world uses the single-job lifecycle in `wt-github-ci`. It cannot
-be restarted, forked, reused, or accessed interactively. The operator service
+be restarted, reused, or accessed interactively. The operator service
 and image installer remain follow-up work under ADR 0023.
 
 ## Ownership

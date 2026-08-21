@@ -9,6 +9,7 @@ pub struct ContextInstance {
     pub context: String,
     pub instance: Instance,
     pub agent_git_report_count: u64,
+    pub disk_usage_bytes: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -20,6 +21,47 @@ pub struct InventoryReport {
 impl ContextInstance {
     pub fn qualified_name(&self) -> String {
         format!("{}.{}", self.context, self.instance.name)
+    }
+}
+
+pub fn format_resources(instance: &Instance, disk_usage_bytes: Option<u64>) -> String {
+    let memory = if instance.memory_mib.is_multiple_of(1024) {
+        format!("{}G", instance.memory_mib / 1024)
+    } else {
+        format!("{}MiB", instance.memory_mib)
+    };
+    let disk = disk_usage_bytes.map_or_else(
+        || format!("{}G", instance.disk_gib),
+        |bytes| {
+            let usage = format_disk_usage(bytes);
+            if instance.status == wt_api::InstanceStatus::Stopped {
+                format!("{usage} disk")
+            } else {
+                format!("{usage}/{}G disk", instance.disk_gib)
+            }
+        },
+    );
+    format!("{} CPU · {memory} · {disk}", instance.vcpus)
+}
+
+fn format_disk_usage(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+    if bytes == 0 {
+        return "0B".to_owned();
+    }
+    if bytes >= GIB {
+        let tenths = (u128::from(bytes) * 10).div_ceil(u128::from(GIB));
+        if tenths.is_multiple_of(10) {
+            format!("{}G", tenths / 10)
+        } else {
+            format!("{}.{}G", tenths / 10, tenths % 10)
+        }
+    } else if bytes >= MIB {
+        format!("{}M", bytes.div_ceil(MIB))
+    } else {
+        format!("{}K", bytes.div_ceil(KIB))
     }
 }
 
@@ -36,6 +78,7 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
         };
         let Response::Instances {
             instances,
+            disk_usage_bytes,
             agent_git_report_counts,
         } = response
         else {
@@ -47,10 +90,12 @@ pub fn list_all(config: &ClientConfig) -> InventoryReport {
                 .get(&instance.id)
                 .copied()
                 .unwrap_or_default();
+            let disk_usage_bytes = disk_usage_bytes.get(&instance.id).copied();
             ContextInstance {
                 context: context.name.clone(),
                 instance,
                 agent_git_report_count,
+                disk_usage_bytes,
             }
         }));
     }
@@ -122,6 +167,7 @@ mod tests {
         ContextInstance {
             context: context.into(),
             agent_git_report_count: 0,
+            disk_usage_bytes: None,
             instance: Instance {
                 id: Uuid::new_v4(),
                 name: InstanceName::parse(name).unwrap(),

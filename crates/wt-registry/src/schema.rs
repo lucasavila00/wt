@@ -23,10 +23,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    disk_nodes (id) {
+    disks (id) {
         id -> Text,
-        parent_id -> Nullable<Text>,
-        immutable -> Bool,
     }
 }
 
@@ -35,10 +33,12 @@ diesel::table! {
         id -> Text,
         kind -> Text,
         backend_id -> Text,
-        head_disk_id -> Text,
+        disk_id -> Text,
         vcpus -> BigInt,
         memory_mib -> BigInt,
         disk_gib -> BigInt,
+        compute_reserved -> Bool,
+        disk_reserved_gib -> BigInt,
     }
 }
 
@@ -75,7 +75,7 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(guests -> disk_nodes (head_disk_id));
+diesel::joinable!(guests -> disks (disk_id));
 diesel::joinable!(agent_git_reports -> worlds (world_id));
 diesel::joinable!(devcontainers -> worlds (id));
 diesel::joinable!(hosts -> worlds (id));
@@ -85,7 +85,7 @@ diesel::joinable!(worlds -> guests (id));
 diesel::allow_tables_to_appear_in_same_query!(
     agent_git_reports,
     devcontainers,
-    disk_nodes,
+    disks,
     guests,
     hosts,
     runners,
