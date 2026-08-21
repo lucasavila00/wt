@@ -23,7 +23,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const CI_JOB_LOG_TAIL_LIMIT: usize = 8 * 1024;
+const CI_JOB_LOG_TAIL_LIMIT: usize = 1024 * 1024;
 const CI_JOB_LOG_TRUNCATION_NOTICE: &str = "[earlier CI log output omitted]\n";
 
 pub struct ProviderCommandScope<'a> {
