@@ -1,10 +1,10 @@
+use crate::atomic_file;
 use crate::config::{validate_ssh_host, ClientConfig, ContextKind};
 use crate::inventory::{name_counts, ContextInstance};
 use crate::ssh_config;
 use anyhow::{bail, Context, Result};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use wt_control_protocol::{InstanceApplication, InstanceStatus};
 
@@ -114,8 +114,8 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
             main_config_path.display()
         )
     })?;
-    atomic_write(&config_path, config.as_bytes())?;
-    atomic_write(&known_hosts_path, known_hosts.as_bytes())?;
+    atomic_file::replace(&config_path, config.as_bytes())?;
+    atomic_file::replace(&known_hosts_path, known_hosts.as_bytes())?;
     Ok(config_path)
 }
 
@@ -185,26 +185,6 @@ fn ensure_directory(path: &Path) -> Result<()> {
         .with_context(|| format!("set permissions on {}", path.display()))
 }
 
-fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
-    let temporary = path.with_extension("wt-new");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temporary)
-        .with_context(|| format!("create {}", temporary.display()))?;
-    let result = (|| {
-        file.write_all(contents)?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        Ok::<_, std::io::Error>(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.with_context(|| format!("atomically update {}", path.display()))
-}
-
 fn ssh_quote(path: &Path) -> String {
     format!(
         "\"{}\"",
@@ -239,7 +219,6 @@ mod tests {
     fn normalize_home(contents: &str, home: &Path) -> String {
         contents.replace(&home.display().to_string(), "[HOME]")
     }
-
     #[test]
     fn titles_use_the_qualified_world_and_repository_name() {
         assert_eq!(
