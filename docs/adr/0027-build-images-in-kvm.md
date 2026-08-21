@@ -32,9 +32,8 @@ other.
 Shared machine and terminal provisioning has one implementation. In particular,
 one shared recipe creates the fixed `wt` image user and installs and validates
 Byobu, tmux, terminfo, and terminal settings for both kinds. Kind recipes
-contain only their application contract:
-the devcontainer stack or the host additions from
-[ADR 0026](0026-make-world-kinds-first-class.md).
+contain only their application contract: the devcontainer stack or the host
+additions.
 Devcontainer-specific tmux settings source the shared configuration instead of
 copying it. The real KVM test compares the active terminal settings in both
 world kinds.
@@ -79,9 +78,8 @@ Retained contract packages other than pinned artifacts resolve from the Ubuntu
 repositories at build time. Their exact versions are recorded and validated;
 two fresh builds are not promised to be byte-identical.
 
-Image replacement does not migrate existing retained-world disks. Existing
-worlds keep their independent guest users and terminal state; recreate worlds
-when a changed shared image foundation is required.
+Existing worlds keep their independent guest users and terminal state. Recreate
+worlds when a changed shared image foundation is required.
 
 Scripts write `WT_IMAGE_PHASE=TEXT` lines to the serial console. Setup prints a
 heartbeat with the last phase at least once per minute. Package and download

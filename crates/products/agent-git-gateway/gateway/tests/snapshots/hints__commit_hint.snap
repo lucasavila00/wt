@@ -1,5 +1,5 @@
 ---
-source: crates/wt-agent-git-gateway/tests/hints.rs
+source: crates/products/agent-git-gateway/gateway/tests/hints.rs
 expression: "stderr(run_hint(temp.path(), \"commit\"))"
 ---
 WT: This is a WT-managed development environment for a coding agent.

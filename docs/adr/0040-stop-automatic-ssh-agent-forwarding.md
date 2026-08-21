@@ -2,9 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-16
-- Amends: [ADR 0017](0017-integrate-agent-git-gateway.md),
-  [ADR 0026](0026-make-world-kinds-first-class.md), and
-  [ADR 0037](0037-give-host-worlds-broad-agent-git-access.md)
 
 ## Context
 
@@ -43,10 +40,6 @@ it across another SSH hop.
 
 SSH TCP forwarding with `-L`, `-R`, or `-D` is separate from authentication-agent
 forwarding and remains available.
-
-Existing aliases stop forwarding automatically after a client sync. Existing
-host worlds must be recreated to remove their guest-side stable-socket
-machinery.
 
 ## Consequences
 

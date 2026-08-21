@@ -2,7 +2,6 @@
 
 - Status: Proposed
 - Date: 2026-08-14
-- Amended by: [ADR 0026](0026-make-world-kinds-first-class.md)
 
 ## Context
 
@@ -22,18 +21,18 @@ providers.
 
 ## Decision
 
-Add an optional `wt-runner` service, separate from retained-world lifecycle and
-the `wt` client. The shared `guests`, `worlds`, and `runners` registry foundation
-is already present. Installing that schema over an older server requires
-`make nuke`; it has no migration.
+Add an optional `wt-gh-actions-runner` service, separate from retained-world
+lifecycle and the `wt` client. The shared `guests`, `worlds`, and `runners`
+registry foundation is already present.
 
-`wt-runner` will own one configured GitHub Actions runner scale set, GitHub App
+`wt-gh-actions-runner` will own one configured GitHub Actions runner scale set, GitHub App
 authentication, just-in-time runner configuration, and the one-job lifecycle.
-It uses `wt-libvirt` for machines and a capacity registry shared with
-`wt-server`. WT implements the GitHub scale-set protocol directly; it does not
-embed Actions Runner Controller, Kubernetes, or another runner manager.
+It uses `wt-libvirt-kvm` for machines and `wt-workload-registry` for capacity
+shared with `wt-server`. WT implements the GitHub scale-set protocol directly;
+it does not embed Actions Runner Controller, Kubernetes, or another runner
+manager.
 
-For each requested runner, `wt-runner` will:
+For each requested runner, `wt-gh-actions-runner` will:
 
 1. Reserve CPU, memory, and disk capacity.
 2. Create an independent disk from a dedicated runner image.
@@ -43,7 +42,7 @@ For each requested runner, `wt-runner` will:
 6. Preserve diagnostics, destroy the guest and disk, and release capacity.
 
 Cleanup will run after success, failure, cancellation, timeout, or loss of the
-runner process. On startup, `wt-runner` will destroy recorded runner guests and
+runner process. On startup, `wt-gh-actions-runner` will destroy recorded runner guests and
 overlays before accepting work. It will never resume a job or reuse a runner
 disk. Failed cleanup will keep its reservation until reconciliation succeeds.
 
@@ -51,7 +50,7 @@ The runner image will contain Ubuntu 24.04, the official GitHub Actions runner,
 Docker Engine, and QEMU guest support. It will contain no checkout,
 devcontainer, Byobu session, SSH access, or agent Git gateway grant.
 
-`wt-server-setup` will own the runner image, strict runtime configuration,
+`wt-server-installer` will own the runner image, strict runtime configuration,
 systemd service, dedicated libvirt network and firewall policy, log retention,
 and encrypted GitHub App credential.
 

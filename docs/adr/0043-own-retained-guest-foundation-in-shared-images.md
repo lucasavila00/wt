@@ -3,7 +3,6 @@
 - Status: Accepted
 - Date: 2026-08-20
 - Amends: [ADR 0012](0012-separate-image-packages-from-world-configuration.md),
-  [ADR 0026](0026-make-world-kinds-first-class.md),
   [ADR 0027](0027-build-images-in-kvm.md),
   [ADR 0039](0039-make-world-disks-independent-of-golden-images.md),
   [ADR 0041](0041-use-protocol-versions-for-client-server-compatibility.md)

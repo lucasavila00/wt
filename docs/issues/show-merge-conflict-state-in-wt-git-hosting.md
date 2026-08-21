@@ -1,8 +1,8 @@
-# Show merge conflict state in ag-git
+# Show merge conflict state in wt-git-hosting
 
-`ag-git show_mr` and `show_mr_for_branch` show the merge request's title,
-state, head, base, and URL, but not whether the head can merge cleanly into the
-base branch.
+The `show_mr` and `show_mr_for_branch` JSON actions show the merge request's
+title, state, head, base, and URL, but not whether the head can merge cleanly
+into the base branch.
 
 An agent therefore has to fetch and merge the base branch locally to discover
 conflicts. That is useful before updating or handing off a pull request, but it

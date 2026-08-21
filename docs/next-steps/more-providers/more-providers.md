@@ -30,7 +30,6 @@ The existing machine-provider and world-provisioner boundaries are described in
 |-------|------|
 | `wt-libvirt-kvm` | Current machine and guest transport contracts plus KVM implementation |
 | `wt-retained-worlds` | Bootstrap, provisioning, and retained-world lifecycle |
-| `wt-libvirt-kvm` | KVM lifecycle and QEMU guest-agent transport |
 | `wt-static-ssh` | Existing-machine claim and pinned OpenSSH transport |
 
 Transport is a behavior contract, not always SSH. Shared provisioning never

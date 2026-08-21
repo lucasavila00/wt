@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-18
-- Related: [ADR 0017](0017-integrate-agent-git-gateway.md)
 
 ## Context
 

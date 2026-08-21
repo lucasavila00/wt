@@ -23,10 +23,6 @@ current use. Starting one reacquires its full configured capacity.
 
 ## Schema changes
 
-Migrations and generated schema are owned by `crates/shared/workload-registry`. Migrations
-are embedded in the binaries. Normally, add a migration there and commit its
-generated schema with it.
-
-ADR 0026 replaces the initial schema in place. There is no migration from the
-older database: run `make nuke` before installing this version. The wire
-protocol is version 2.
+Migrations and generated schema are owned by `crates/shared/workload-registry`.
+Migrations are embedded in the binaries. Normally, add a migration there and
+commit its generated schema with it.

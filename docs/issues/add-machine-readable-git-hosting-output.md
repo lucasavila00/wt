@@ -1,6 +1,7 @@
-# Add machine-readable ag-git output
+# Add machine-readable wt-git-hosting output
 
-ag-git accepts typed JSON command objects but returns only human-formatted text.
+`wt-git-hosting` accepts typed JSON command objects but returns only
+human-formatted text.
 Agents must parse positional lines such as `run 123 [queued] CI` to recover
 resource IDs and states.
 
