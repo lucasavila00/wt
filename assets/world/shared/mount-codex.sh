@@ -20,7 +20,9 @@ elif ! test -d "$sessions"; then
     echo "Codex sessions path is not a directory: $sessions" >&2
     exit 1
 fi
-install -d -m 0700 -o root -g root "$auth_mount"
+if ! findmnt --noheadings --mountpoint "$auth_mount" >/dev/null; then
+    install -d -m 0700 -o root -g root "$auth_mount"
+fi
 
 sessions_entry="wt-codex-sessions $(escape_fstab_path "$sessions") virtiofs rw,nosuid,nodev 0 0"
 auth_entry="wt-codex-auth $(escape_fstab_path "$auth_mount") virtiofs ro,nosuid,nodev,noexec 0 0"
