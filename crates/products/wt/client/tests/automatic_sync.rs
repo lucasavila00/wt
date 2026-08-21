@@ -27,7 +27,7 @@ fn new_requires_a_terminal_before_contacting_server() {
     )))
     .unwrap();
 
-    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "new")
+    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "new", "dev")
         .env("HOME", temp.path())
         .env("PATH", path)
         .output()
@@ -118,7 +118,7 @@ esac
     let mut created = cmd!(
         "script",
         "-qfec",
-        format!("{} new", env!("CARGO_BIN_EXE_wt")),
+        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
         "/dev/null"
     )
     .env("HOME", temp.path())
@@ -256,7 +256,7 @@ esac
     let mut created = cmd!(
         "script",
         "-qfec",
-        format!("{} new", env!("CARGO_BIN_EXE_wt")),
+        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
         "/dev/null"
     )
     .env("HOME", temp.path())
@@ -351,7 +351,7 @@ esac
     let mut created = cmd!(
         "script",
         "-qfec",
-        format!("{} new", env!("CARGO_BIN_EXE_wt")),
+        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
         "/dev/null"
     )
     .env("HOME", temp.path())

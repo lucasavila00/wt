@@ -8,11 +8,13 @@ Put a non-empty cloud-init user-data file at
 `~/.config/wt/cloud-init.yaml`, then create a named host:
 
 ```text
-wt new host NAME
+wt new host
 ```
 
+`wt new` is an alias for `wt new host`. Both forms prompt for the world name.
+
 WT honors `XDG_CONFIG_HOME` when it is set. For a one-off recipe, override the
-default with `wt new host NAME --user-data ./host.yaml`. The client installer
+default with `wt new host --user-data ./host.yaml`. The client installer
 creates a thin recipe with Diffo when the default file is missing and does not
 overwrite an existing file. It does not install Rust/Cargo or clone a project.
 

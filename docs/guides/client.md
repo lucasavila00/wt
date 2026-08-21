@@ -25,8 +25,9 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 
 | Command | Kinds | Result |
 |---------|-------|--------|
-| `wt new` | devcontainer | Interactively create and enter setup |
-| `wt new host NAME` | host | Prepare the guest, then run the default cloud-init recipe in Byobu |
+| `wt new dev` | devcontainer | Interactively create and enter setup |
+| `wt new host` | host | Interactively create a host and enter its cloud-init setup in Byobu |
+| `wt new` | host | Alias for `wt new host` |
 | `wt ls` | retained | List kind, status, resources, disk use, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
 | `wt stop NAME` | retained | Shut down the guest and keep its disk |
@@ -51,8 +52,9 @@ installs no Rust/Cargo toolchain or project checkout. The installer never
 replaces an existing recipe.
 
 WT does not resume failed world provisioning, including a partially installed
-Codex trampoline. Remove the failed world with `wt rm`, then run `wt new` again;
-the replacement starts from the retained image instead of repairing the disk.
+Codex trampoline. Remove the failed world with `wt rm`, then run the matching
+`wt new` command again; the replacement starts from the retained image instead
+of repairing the disk.
 
 Host setup does not receive the workstation SSH agent. Configured provider Git
 operations use the gateway.

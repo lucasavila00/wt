@@ -5,21 +5,30 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Subcommand)]
 pub(super) enum NewKind {
+    /// Create a development world from a repository's devcontainer.
+    Dev,
     /// Create a raw Ubuntu world from cloud-init user-data.
     Host(NewHost),
 }
 
 #[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(super) struct New {
+    #[command(subcommand)]
+    pub(super) kind: Option<NewKind>,
+    /// Override the default cloud-init user-data file.
+    #[arg(long, value_name = "FILE")]
+    pub(super) user_data: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 pub(super) struct NewHost {
-    /// Name of the world to create.
-    pub(super) name: wt_control_protocol::InstanceName,
     /// Override the default cloud-init user-data file.
     #[arg(long, value_name = "FILE")]
     pub(super) user_data: Option<PathBuf>,
 }
 
 pub(super) struct Input {
-    pub(super) name: wt_control_protocol::InstanceName,
     pub(super) user_data: String,
     pub(super) user_data_path: PathBuf,
 }
@@ -47,10 +56,23 @@ impl NewHost {
             read_user_data(&user_data_path)?
         };
         Ok(Input {
-            name: self.name,
             user_data,
             user_data_path,
         })
+    }
+}
+
+impl New {
+    pub(super) fn into_kind(self) -> Result<super::CreateKind> {
+        match self.kind {
+            Some(NewKind::Dev) => Ok(super::CreateKind::Devcontainer),
+            Some(NewKind::Host(input)) => input.load().map(super::CreateKind::Host),
+            None => NewHost {
+                user_data: self.user_data,
+            }
+            .load()
+            .map(super::CreateKind::Host),
+        }
     }
 }
 
