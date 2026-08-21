@@ -14,23 +14,28 @@ enum SessionEvent {
 
 pub(super) struct SessionSet {
     sessions: Vec<WorldSession>,
-    events: Receiver<SessionEvent>,
+    events: Option<Receiver<SessionEvent>>,
 }
 
 impl SessionSet {
     pub(super) fn start(worlds: &[String], rows: u16, columns: u16) -> Result<Self> {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
-        let sessions = worlds
-            .iter()
-            .enumerate()
-            .map(|(index, world)| WorldSession::start_ssh(index, world, rows, columns, &sender))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Self { sessions, events })
+        let mut set = Self {
+            sessions: Vec::with_capacity(worlds.len()),
+            events: Some(events),
+        };
+        for (index, world) in worlds.iter().enumerate() {
+            set.sessions.push(WorldSession::start_ssh(
+                index, world, rows, columns, &sender,
+            )?);
+        }
+        Ok(set)
     }
 
     pub(super) fn drain_output(&mut self) -> bool {
         let mut changed = false;
-        while let Ok(event) = self.events.try_recv() {
+        let events = self.events.as_ref().expect("session event receiver exists");
+        while let Ok(event) = events.try_recv() {
             changed = true;
             match event {
                 SessionEvent::Output { index, bytes } => {
@@ -83,6 +88,13 @@ impl SessionSet {
 
     pub(super) fn all_closed(&self) -> bool {
         self.sessions.iter().all(|session| session.closed)
+    }
+}
+
+impl Drop for SessionSet {
+    fn drop(&mut self) {
+        self.events.take();
+        self.sessions.clear();
     }
 }
 
@@ -187,6 +199,10 @@ fn read_output(
                     return;
                 }
             }
+            Err(error) if is_pty_eof(&error) => {
+                let _ = sender.send(SessionEvent::Closed { index, error: None });
+                return;
+            }
             Err(error) => {
                 let _ = sender.send(SessionEvent::Closed {
                     index,
@@ -198,11 +214,64 @@ fn read_output(
     }
 }
 
+fn is_pty_eof(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::UnexpectedEof
+        || error.kind() == std::io::ErrorKind::BrokenPipe
+        || error.raw_os_error() == Some(nix::errno::Errno::EIO as i32)
+}
+
 fn pty_size(rows: u16, columns: u16) -> PtySize {
     PtySize {
         rows,
         cols: columns,
         pixel_width: 0,
         pixel_height: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn hidden_sessions_keep_running_and_parsing_output() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let mut sessions = SessionSet {
+            sessions: vec![
+                fake_session(0, "one", &sender),
+                fake_session(1, "two", &sender),
+            ],
+            events: Some(events),
+        };
+        wait_for(&mut sessions, 0, "ready");
+        wait_for(&mut sessions, 1, "ready");
+
+        sessions.write(1, b"hidden\r").unwrap();
+        wait_for(&mut sessions, 1, "readyhidden");
+
+        insta::assert_snapshot!(sessions.screen(0).contents(), @"ready");
+        insta::assert_snapshot!(sessions.screen(1).contents(), @"readyhidden");
+    }
+
+    fn fake_session(index: usize, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.args(["-c", r"stty -echo; printf '\033[2J\033[Hready'; cat"]);
+        WorldSession::start(index, name, command, 4, 20, sender).unwrap()
+    }
+
+    fn wait_for(sessions: &mut SessionSet, index: usize, expected: &str) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            sessions.drain_output();
+            if sessions.screen(index).contents() == expected {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!(
+            "session did not render {expected:?}; rendered {:?}",
+            sessions.screen(index).contents()
+        );
     }
 }

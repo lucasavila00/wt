@@ -38,14 +38,6 @@ impl ShellModel {
         self.active
     }
 
-    pub(super) fn active_world(&self) -> &str {
-        &self.worlds[self.active]
-    }
-
-    pub(super) fn worlds(&self) -> &[String] {
-        &self.worlds
-    }
-
     pub(super) fn handle_key(&mut self, key: KeyCode) -> InputRoute {
         match self.mode {
             Mode::World if key == KeyCode::F(5) => {
@@ -88,7 +80,7 @@ mod tests {
         let mut model = model();
 
         assert_eq!(model.handle_key(KeyCode::Left), InputRoute::World);
-        assert_eq!(model.active_world(), "one");
+        assert_eq!(model.active(), 0);
         assert_eq!(model.handle_key(KeyCode::F(5)), InputRoute::Consumed);
         assert_eq!(model.mode(), Mode::Switcher);
     }
@@ -99,10 +91,10 @@ mod tests {
         model.handle_key(KeyCode::F(5));
 
         model.handle_key(KeyCode::Left);
-        assert_eq!(model.active_world(), "three");
+        assert_eq!(model.active(), 2);
         model.handle_key(KeyCode::Right);
         model.handle_key(KeyCode::Right);
-        assert_eq!(model.active_world(), "two");
+        assert_eq!(model.active(), 1);
         assert_eq!(model.mode(), Mode::Switcher);
     }
 
@@ -114,7 +106,7 @@ mod tests {
 
         assert_eq!(model.mode(), Mode::Control);
         assert_eq!(model.handle_key(KeyCode::Left), InputRoute::Consumed);
-        assert_eq!(model.active_world(), "one");
+        assert_eq!(model.active(), 0);
         model.handle_key(KeyCode::F(5));
         assert_eq!(model.mode(), Mode::World);
     }

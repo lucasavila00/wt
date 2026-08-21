@@ -14,7 +14,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
                 frame.set_cursor_position((column, row));
             }
         }
-        Mode::Switcher => draw_switcher(frame, model),
+        Mode::Switcher => draw_switcher(frame),
         Mode::Control => draw_control(frame),
     }
 }
@@ -67,14 +67,8 @@ fn color(source: vt100::Color) -> Color {
     }
 }
 
-fn draw_switcher(frame: &mut Frame<'_>, model: &ShellModel) {
-    let label = format!(
-        "←/→ world  ↑ control  F5 close\n{}  ({}/{})",
-        model.active_world(),
-        model.active() + 1,
-        model.worlds().len()
-    );
-    draw_overlay(frame, 48, 4, label);
+fn draw_switcher(frame: &mut Frame<'_>) {
+    draw_overlay(frame, 42, 3, "←/→ worlds   ↑ control   F5 close".to_owned());
 }
 
 fn draw_control(frame: &mut Frame<'_>) {
@@ -110,14 +104,14 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
 
     fn parser() -> vt100::Parser {
-        let mut parser = vt100::Parser::new(6, 48, 0);
+        let mut parser = vt100::Parser::new(6, 80, 0);
         parser.process(b"world output\r\n\x1b[31mred\x1b[0m");
         parser
     }
 
     #[test]
     fn switcher_is_drawn_over_the_live_world() {
-        let backend = TestBackend::new(48, 6);
+        let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into(), "local.two".into()]);
         model.handle_key(KeyCode::F(5));
@@ -132,7 +126,7 @@ mod tests {
 
     #[test]
     fn control_ui_is_only_the_placeholder() {
-        let backend = TestBackend::new(48, 6);
+        let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into()]);
         model.handle_key(KeyCode::F(5));

@@ -44,8 +44,10 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let mut model = ShellModel::new(worlds);
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
-    execute!(terminal.backend_mut(), EnableBracketedPaste)
-        .context("enable bracketed paste for wt shell")?;
+    if let Err(error) = execute!(terminal.backend_mut(), EnableBracketedPaste) {
+        ratatui::restore();
+        return Err(error).context("enable bracketed paste for wt shell");
+    }
 
     let result = run_loop(&mut terminal, &mut sessions, &mut model, &shutdown);
     let paste_result = execute!(terminal.backend_mut(), DisableBracketedPaste)
