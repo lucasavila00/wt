@@ -10,7 +10,6 @@ pub(in crate::image) fn staged_input_hashes(
 ) -> BTreeMap<String, String> {
     let environment = recipe::BuildEnvironment {
         kind: spec.kind.as_str(),
-        recipe_version: spec.recipe_version,
         tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
         byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
         access_sha256: &sha_bytes(CONFIGURE_ACCESS),

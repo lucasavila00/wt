@@ -22,8 +22,6 @@ fn sha_validation_detects_drift() {
 #[test]
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
-        version: IMAGE_MANIFEST_VERSION,
-        recipe_version: recipe::RECIPE_VERSION,
         source_sha256: "source".to_owned(),
         config_sha256: "config".to_owned(),
         inputs: BTreeMap::new(),
@@ -34,8 +32,6 @@ fn image_manifest_records_structured_package_versions() {
     };
 
     let json = serde_json::to_value(manifest).unwrap();
-    assert_eq!(json["version"], 2);
-    assert_eq!(json["recipe_version"], 1);
     assert_eq!(json["packages"]["tmux"], "3.4-1");
 }
 

@@ -2508,6 +2508,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-codex"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "insta",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "wt-command"
 version = "0.0.0"
 

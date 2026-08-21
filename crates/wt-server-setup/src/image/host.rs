@@ -43,13 +43,9 @@ const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
         HOST_SETUP_SERVICE,
     ),
 ];
-pub(super) const RECIPE_VERSION: u32 = 1;
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
-    version: u32,
-    recipe_version: u32,
     source_sha256: String,
     config_sha256: String,
     inputs: BTreeMap<String, String>,
@@ -143,7 +139,6 @@ fn build_inner<R: Runner>(
     let spec = BuildSpec {
         name: BUILD_NAME,
         kind: ImageKind::Host,
-        recipe_version: RECIPE_VERSION,
         recipe: HOST_IMAGE_BUILD,
     };
     let extra_inputs = staged_paths
@@ -211,8 +206,6 @@ fn build_inner<R: Runner>(
     )?;
 
     let manifest = Manifest {
-        version: IMAGE_MANIFEST_VERSION,
-        recipe_version: RECIPE_VERSION,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
         inputs: host_input_hashes(&spec),
@@ -275,15 +268,12 @@ pub(super) fn verify(
     require_named_file(&server.image.host_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: Manifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
-    if manifest.version != IMAGE_MANIFEST_VERSION
-        || manifest.recipe_version != RECIPE_VERSION
-        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
+    if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
         || manifest.inputs
             != host_input_hashes(&BuildSpec {
                 name: BUILD_NAME,
                 kind: ImageKind::Host,
-                recipe_version: RECIPE_VERSION,
                 recipe: HOST_IMAGE_BUILD,
             })
         || manifest.byobu != recipe::BYOBU_VERSION

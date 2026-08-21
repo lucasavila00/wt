@@ -47,7 +47,6 @@ impl GitFixture {
     volumes:
       - /workspace:/workspaces/wt
       - /home/wt/.codex/sessions:/home/wt/.codex/sessions
-      - /home/wt/.claude/projects:/home/wt/.claude/projects
 "#,
         )
         .unwrap();

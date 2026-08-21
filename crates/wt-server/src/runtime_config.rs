@@ -260,18 +260,28 @@ impl ServerConfig {
                 provider_hosts: self.agent_git_provider_hosts(),
                 vsock_port: self.agent_git.vsock_port,
             },
+            wt_codex_binary: self.install.binary_dir.join("wt-codex"),
             shared_folders: self.guest_shared_folders(),
         }
     }
 
     pub fn validate_shared_folder_sources(&self) -> Result<(), String> {
         for (index, folder) in self.shared_folders.iter().enumerate() {
-            let metadata = std::fs::metadata(&folder.source).map_err(|error| {
-                format!(
-                    "inspect shared_folders[{index}].source {}: {error}",
-                    folder.source.display()
-                )
-            })?;
+            let metadata = match std::fs::metadata(&folder.source) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return Err(format!(
+                        "shared_folders[{index}].source does not exist: {}. Create this directory before starting wt-server.",
+                        folder.source.display()
+                    ));
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "inspect shared_folders[{index}].source {}: {error}",
+                        folder.source.display()
+                    ));
+                }
+            };
             if !metadata.is_dir() {
                 return Err(format!(
                     "shared_folders[{index}].source is not a directory: {}",
@@ -520,12 +530,12 @@ binary_dir = "/usr/local/bin"
     fn shared_folders_are_valid_and_receive_stable_tags() {
         let shared = r#"
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
 
 [[shared_folders]]
-source = "/var/lib/wt/shared/claude-projects"
-target = ".claude/projects"
+source = "/var/lib/wt/shared/notes"
+target = "notes"
 
 "#;
         let (config, machine) =
@@ -534,11 +544,11 @@ target = ".claude/projects"
             machine.shared_folders,
             vec![
                 LibvirtSharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/codex-sessions"),
+                    source: PathBuf::from("/home/wt/.codex/sessions"),
                     tag: "wt-shared-0".to_owned(),
                 },
                 LibvirtSharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/claude-projects"),
+                    source: PathBuf::from("/var/lib/wt/shared/notes"),
                     tag: "wt-shared-1".to_owned(),
                 },
             ]
@@ -552,7 +562,7 @@ target = ".claude/projects"
                 },
                 SharedFolderMount {
                     tag: "wt-shared-1".to_owned(),
-                    target: PathBuf::from(".claude/projects"),
+                    target: PathBuf::from("notes"),
                 },
             ]
         );
@@ -609,7 +619,7 @@ target = ".claude/projects"
             .unwrap_err()
             .replace(&temp.path().display().to_string(), "[TEMP]");
         insta::assert_snapshot!(error, @r###"
-        inspect shared_folders[0].source [TEMP]/missing: No such file or directory (os error 2)
+        shared_folders[0].source does not exist: [TEMP]/missing. Create this directory before starting wt-server.
         "###);
         config.shared_folders[0].source = file.clone();
         assert_eq!(

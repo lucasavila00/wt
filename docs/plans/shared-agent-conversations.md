@@ -2,8 +2,8 @@
 
 ## Goal
 
-Keep Codex and Claude Code conversations after a world is deleted, and make
-them available in every retained world on the same WT server.
+Keep Codex conversations after a world is deleted, and make them available in
+every retained world on the same WT server.
 
 WT will share folders between the server and the world VM. It will not change
 devcontainer recipes. A repository that wants the folders inside its container
@@ -15,12 +15,8 @@ Add an optional top-level list to the server configuration:
 
 ```toml
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
-
-[[shared_folders]]
-source = "/var/lib/wt/shared/claude-projects"
-target = ".claude/projects"
 ```
 
 `source` is an absolute directory on the WT server. `target` is relative to
@@ -31,7 +27,7 @@ relative paths without `..`. Reject duplicate sources and targets. Shared
 folders must not overlap WT images, world disks, the registry cache, or the
 installed binaries.
 
-Put both entries in the development and KVM example configurations. The server
+Put the entry in the development and KVM example configurations. The server
 installer creates missing source directories. Runtime startup fails clearly if
 a configured source is missing or is not a directory.
 
@@ -79,7 +75,6 @@ The shared folders are available on the VM at:
 
 ```text
 /home/wt/.codex/sessions
-/home/wt/.claude/projects
 ```
 
 A repository owner using Docker Compose can expose them to a container with
@@ -90,7 +85,6 @@ services:
   app:
     volumes:
       - /home/wt/.codex/sessions:/home/vscode/.codex/sessions
-      - /home/wt/.claude/projects:/home/vscode/.claude/projects
 ```
 
 The repository owns container-user permissions. WT only guarantees the VM
@@ -106,7 +100,7 @@ paths and does not assume that every devcontainer uses `/home/vscode`.
 - `wt-host` and `wt-devcontainer`: install, mount, and verify the VM paths using
   the same guest-side procedure.
 - `assets/world/shared`: hold the mount procedure used by both world images.
-- `examples/server-config`: enable the Codex and Claude folders by default.
+- `examples/server-config`: enable the Codex folder by default.
 - World and server docs: explain the VM paths and the user-owned Docker Compose
   bind mounts.
 

@@ -201,12 +201,8 @@ mod tests {
 version = 1
 
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
-
-[[shared_folders]]
-source = "/var/lib/wt/shared/claude-projects"
-target = ".claude/projects"
 
 [capacity]
 version = 1

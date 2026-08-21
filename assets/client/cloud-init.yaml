@@ -16,5 +16,6 @@ write_files:
       runuser --user wt -- env HOME=/home/wt sh -c \
         'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'
       ln -sf /home/wt/.local/bin/codex /usr/local/bin/codex
+      wt-codex install
 runcmd:
   - [/usr/local/sbin/wt-default-host-tools]

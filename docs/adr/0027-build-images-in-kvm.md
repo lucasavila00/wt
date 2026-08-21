@@ -53,25 +53,23 @@ network. Package installation retries transient apt or DNS failures. The whole
 build is bounded by 30 minutes.
 
 The recipe writes `/var/lib/wt-image-result` as root mode `0644` only after all
-installation and validation succeeds. It contains exactly these five fields:
+installation and validation succeeds. It contains exactly these four fields:
 
 ```text
 kind=KIND
 status=ready
-recipe_version=1
 wt_uid=1001
 wt_gid=1001
 ```
 
-The compatibility field stays at `1`; the marker also records the fixed image
-user contract. Staged-input hashes detect recipe drift. Setup requires the
-exact marker before treating guest shutdown as success. It then runs
+The marker records the fixed image user contract. Staged-input hashes detect
+recipe drift. Setup requires the exact marker before treating guest shutdown as success. It then runs
 `cloud-init clean` offline, removes cached seed and generated network state,
 clears machine identity and SSH host keys, and revalidates the cleaned state
 plus required package versions and asset checksums.
 
-The installed manifest records the base-image SHA, recipe version, install
-configuration digest, and SHA-256 of every staged script, configuration file,
+The installed manifest records the base-image SHA, install configuration
+digest, and SHA-256 of every staged script, configuration file,
 and pinned artifact. It also records retained Ubuntu package versions and the
 finalized image SHA-256. Build-only packages are removed before acceptance. A
 changed input cannot reuse an old image, and the manifest cannot validate a

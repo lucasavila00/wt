@@ -45,7 +45,6 @@ at:
 
 ```text
 /home/wt/.codex/sessions
-/home/wt/.claude/projects
 ```
 
 WT does not inject them into the devcontainer. A repository using Docker
@@ -57,7 +56,6 @@ services:
   app:
     volumes:
       - /home/wt/.codex/sessions:/home/vscode/.codex/sessions
-      - /home/wt/.claude/projects:/home/vscode/.claude/projects
 ```
 
 The repository owns the container target paths and permissions; WT does not

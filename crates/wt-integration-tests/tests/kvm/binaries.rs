@@ -15,6 +15,8 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
         "wt-agent-git",
         "-p",
         "wt-devcontainer-guest",
+        "-p",
+        "wt-codex",
     );
     build.current_dir(workspace);
     run(build, "build static KVM test binaries");
@@ -29,6 +31,7 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
         "wt-app-proxy",
         "git-remote-ag",
         "ag-git",
+        "wt-codex",
     ] {
         let source = binaries.join(name);
         assert_static(&source, name);

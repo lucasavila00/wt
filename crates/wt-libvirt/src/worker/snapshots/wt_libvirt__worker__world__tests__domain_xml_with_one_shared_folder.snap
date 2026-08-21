@@ -1,6 +1,6 @@
 ---
 source: crates/wt-libvirt/src/worker/world.rs
-expression: "test_domain_xml(vec![SharedFolder\n{\n    source: PathBuf::from(\"/var/lib/wt/shared/codex-sessions\"), tag:\n    \"wt-shared-0\".to_owned(),\n}])"
+expression: "test_domain_xml(vec![SharedFolder\n{\n    source: PathBuf::from(\"/home/wt/.codex/sessions\"), tag:\n    \"wt-shared-0\".to_owned(),\n}])"
 ---
 <domain type='kvm'>
   <name>wt-0123456789abcdef0123456789abcdef</name>
@@ -39,7 +39,7 @@ expression: "test_domain_xml(vec![SharedFolder\n{\n    source: PathBuf::from(\"/
     </interface>
     <filesystem type='mount' accessmode='passthrough'>
       <driver type='virtiofs'/>
-      <source dir='/var/lib/wt/shared/codex-sessions'/>
+      <source dir='/home/wt/.codex/sessions'/>
       <target dir='wt-shared-0'/>
     </filesystem>
     <channel type='unix'>

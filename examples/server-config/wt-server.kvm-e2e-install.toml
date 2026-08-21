@@ -7,10 +7,6 @@ version = 1
 source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
 
-[[shared_folders]]
-source = "/home/wt/.claude/projects"
-target = ".claude/projects"
-
 [capacity]
 version = 1
 limits = { vcpus = 16, memory_mib = 32768, disk_gib = 1024 }

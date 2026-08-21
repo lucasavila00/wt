@@ -8,19 +8,18 @@
 > The Codex discovery claim in this ADR is incomplete. Sharing
 > `~/.codex/sessions` preserves rollout files, but an already-running Codex
 > process does not add them to its local session index or show them in its
-> picker. [ADR 0044](0044-reconcile-shared-codex-sessions.md) proposes the
+> picker. [ADR 0044](0044-reconcile-shared-codex-sessions.md) defines the
 > required Codex-owned reconciliation step. Do not share or edit Codex's
 > SQLite state to work around this limitation.
 
 ## Context
 
-Deleting a world currently deletes its Codex and Claude Code conversations.
-We want those conversations to survive and appear in every retained world on
-the same WT server.
+Deleting a world currently deletes its Codex conversations. We want those
+conversations to survive and appear in every retained world on the same WT
+server.
 
-WT needs to keep `~/.codex/sessions` and `~/.claude/projects` in sync across
-retained worlds. Everything else in the Codex and Claude Code folders stays
-local to each world.
+WT needs to keep `~/.codex/sessions` in sync across retained worlds. Everything
+else in the Codex folder stays local to each world.
 
 ## Decision
 
@@ -29,21 +28,21 @@ world:
 
 ```toml
 [[shared_folders]]
-source = "/var/lib/wt/shared/codex-sessions"
+source = "/home/wt/.codex/sessions"
 target = ".codex/sessions"
 ```
 
 `source` is a folder on the WT server. `target` is a path inside the world
 user's home. WT makes the same server folder appear there in every VM. The VM
 mount uses virtiofs. The retained image foundation gives the `wt` user and
-group UID/GID `1001:1001` in every VM, and the server creates shared sources
-with that ownership so the mount has the same access contract.
+group UID/GID `1001:1001` in every VM. Server setup grants both that UID and the
+installing server user access to shared sources with POSIX ACLs.
 
 A devcontainer does not receive the folder automatically. Its repository can
 add a normal bind mount from the VM path to the container user's home.
 
-Configure one folder for `.codex/sessions` and another for `.claude/projects`.
-Do not share the rest of either agent's home directory.
+Configure one folder for `.codex/sessions`. Do not share the rest of the Codex
+home directory.
 
 Only use a conversation in one world at a time. Two worlds writing to the same
 conversation file could damage it. CI worlds do not receive these folders.

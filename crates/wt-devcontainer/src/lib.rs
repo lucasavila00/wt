@@ -246,6 +246,7 @@ mod tests {
             "agent-git-relay",
             "agent-git-remote",
             "agent-git-cli",
+            "wt-codex",
             "ca.crt",
         ] {
             fs::write(temp.path().join(name), name).unwrap();
@@ -284,6 +285,7 @@ mod tests {
                     provider_hosts: vec!["example.test".to_owned()],
                     vsock_port: 18017,
                 },
+                wt_codex_binary: temp.path().join("wt-codex"),
                 shared_folders: Vec::new(),
             },
         })

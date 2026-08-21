@@ -42,7 +42,6 @@ profile. The image build result is a root-owned `0644` marker with exactly:
 ```text
 kind=KIND
 status=ready
-recipe_version=1
 wt_uid=1001
 wt_gid=1001
 ```

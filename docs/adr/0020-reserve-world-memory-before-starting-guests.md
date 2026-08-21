@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-13
+- Amended by: [ADR 0045](0045-stop-retained-worlds.md)
 
 ## Context
 

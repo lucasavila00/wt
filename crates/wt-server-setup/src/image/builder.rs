@@ -62,7 +62,6 @@ impl std::fmt::Display for ImageKind {
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
     pub(super) kind: ImageKind,
-    pub(super) recipe_version: u32,
     pub(super) recipe: &'a [u8],
 }
 
@@ -185,7 +184,6 @@ pub(super) fn run_kvm_build<R: Runner>(
         &environment,
         recipe::BuildEnvironment {
             kind: spec.kind.as_str(),
-            recipe_version: spec.recipe_version,
             tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
             byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
@@ -305,9 +303,8 @@ pub(super) fn run_kvm_build<R: Runner>(
     )?;
     validate_result_metadata(&marker_metadata)?;
     let expected = format!(
-        "kind={}\nstatus=ready\nrecipe_version={}\nwt_uid={}\nwt_gid={}\n",
+        "kind={}\nstatus=ready\nwt_uid={}\nwt_gid={}\n",
         spec.kind.as_str(),
-        spec.recipe_version,
         wt_retained::GUEST_UID,
         wt_retained::GUEST_GID,
     );

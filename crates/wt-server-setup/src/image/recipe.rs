@@ -1,7 +1,6 @@
 use anyhow::{Error, Result};
 use wt_devcontainer::{PackageSet, PackageVersions, DEVCONTAINER_CLI_VERSION};
 
-pub(super) const RECIPE_VERSION: u32 = 1;
 pub(super) const BYOBU_VERSION: &str = "7.15-0ubuntu1";
 pub(super) const BYOBU_DEB: &str = "byobu_7.15-0ubuntu1_all.deb";
 pub(super) const BYOBU_SHA256: &str =
@@ -69,7 +68,6 @@ power_state:
 
 pub(super) struct BuildEnvironment<'a> {
     pub(super) kind: &'a str,
-    pub(super) recipe_version: u32,
     pub(super) tmux_config_sha256: &'a str,
     pub(super) byobu_color_sha256: &'a str,
     pub(super) access_sha256: &'a str,
@@ -81,9 +79,8 @@ pub(super) struct BuildEnvironment<'a> {
 impl BuildEnvironment<'_> {
     pub(super) fn render(&self) -> String {
         format!(
-        "WT_IMAGE_KIND='{}'\nWT_IMAGE_RECIPE_VERSION='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_GIT_SHA256='{}'\nMOUNT_FOLDERS_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_GIT_SHA256='{}'\nMOUNT_FOLDERS_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
         self.kind,
-        self.recipe_version,
         wt_retained::GUEST_USER,
         wt_retained::GUEST_UID,
         wt_retained::GUEST_GID,
@@ -151,7 +148,6 @@ power_state:
         insta::assert_snapshot!(
             BuildEnvironment {
                 kind: "host",
-                recipe_version: 7,
                 tmux_config_sha256: "tmux-config-sha",
                 byobu_color_sha256: "byobu-color-sha",
                 access_sha256: "access-sha",
@@ -162,7 +158,6 @@ power_state:
             .render(),
             @r###"
 WT_IMAGE_KIND='host'
-WT_IMAGE_RECIPE_VERSION='7'
 WT_USER='wt'
 WT_UID='1001'
 WT_GID='1001'
