@@ -22,17 +22,20 @@ pub(super) fn draw(
     creation_error: Option<&str>,
     deletion: Option<&delete::Flow>,
 ) {
+    if let Some(creation) = creation.filter(|flow| flow.blocks_input()) {
+        creation.render(frame, frame.area());
+        return;
+    }
     if model.mode() == Mode::Control {
-        if let Some(creation) = creation {
-            creation.render(frame, frame.area());
-            return;
-        }
         draw_control(frame, model);
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
         if let Some(deletion) = deletion {
             deletion.render(frame, frame.area());
+        }
+        if let Some(creation) = creation {
+            creation.render_progress(frame, frame.area());
         }
         return;
     }
@@ -42,6 +45,9 @@ pub(super) fn draw(
     draw_world_bar(frame, model);
     if let Some(message) = closed_message {
         draw_closed_session_bar(frame, message);
+    }
+    if let Some(creation) = creation {
+        creation.render_progress(frame, frame.area());
     }
     match model.mode() {
         Mode::World if closed_message.is_none() => {

@@ -7,6 +7,7 @@ use wt_control_protocol::{ApiRequest, CreateInstance, Operation, Outcome, Respon
 use super::{capacity_message, Created, Input};
 
 pub(super) enum TaskEvent {
+    Progress(String),
     Capacity(String),
     Finished(Result<Box<Created>, String>),
 }
@@ -75,9 +76,12 @@ fn run(
     retries: &Receiver<bool>,
 ) {
     loop {
-        let outcome = match wt_client::transport::call_outcome(
+        let outcome = match wt_client::transport::call_outcome_with_progress(
             &context,
             &ApiRequest::new(Operation::Create(request.clone())),
+            |message| {
+                let _ = events.send(TaskEvent::Progress(message));
+            },
         ) {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -100,6 +104,9 @@ fn run(
                     return;
                 };
                 let instance = *instance;
+                let _ = events.send(TaskEvent::Progress(
+                    "World created; opening SSH access".into(),
+                ));
                 if let Err(error) = crate::sync_complete_inventory(&config).with_context(|| {
                     format!(
                         "world {}.{} was created, but SSH was not opened\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",

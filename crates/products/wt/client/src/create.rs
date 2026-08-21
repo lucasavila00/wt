@@ -1,5 +1,5 @@
 use anyhow::{bail, Context as _, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Style};
@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::io::IsTerminal as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wt_client::config::ClientConfig;
 use wt_control_protocol::{Capacity, CapacityResource, Instance, InstanceName};
 
@@ -42,7 +42,11 @@ pub(crate) enum FlowAction {
 #[derive(Debug)]
 enum Phase {
     Form,
-    Creating,
+    Creating {
+        world: String,
+        started: Instant,
+        status: String,
+    },
     Capacity(String),
     Failed(String),
 }
@@ -51,6 +55,7 @@ pub(crate) struct Flow {
     form: Form,
     phase: Phase,
     task: Option<Task>,
+    world: Option<String>,
 }
 
 impl Flow {
@@ -59,6 +64,7 @@ impl Flow {
             form,
             phase: Phase::Form,
             task: None,
+            world: None,
         }
     }
 
@@ -67,31 +73,37 @@ impl Flow {
             Phase::Form => match self.form.handle_key(key) {
                 FormAction::None => FlowAction::None,
                 FormAction::Cancel => FlowAction::Cancel,
-                FormAction::Submit(input) => match Task::start(config, input) {
-                    Ok(task) => {
-                        self.task = Some(task);
-                        self.phase = Phase::Creating;
-                        FlowAction::None
+                FormAction::Submit(input) => {
+                    let world = format!("{}.{}", input.context, input.name);
+                    match Task::start(config, input) {
+                        Ok(task) => {
+                            self.task = Some(task);
+                            self.world = Some(world.clone());
+                            self.phase = Phase::Creating {
+                                world,
+                                started: Instant::now(),
+                                status: "WT is provisioning the guest".into(),
+                            };
+                            FlowAction::Changed
+                        }
+                        Err(error) => {
+                            self.phase = Phase::Failed(format!("{error:#}"));
+                            FlowAction::Changed
+                        }
                     }
-                    Err(error) => {
-                        self.phase = Phase::Failed(format!("{error:#}"));
-                        FlowAction::None
-                    }
-                },
-            },
-            Phase::Creating => {
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    FlowAction::Cancel
-                } else {
-                    FlowAction::None
                 }
-            }
+            },
+            Phase::Creating { .. } => FlowAction::None,
             Phase::Capacity(_) => match key.code {
                 KeyCode::Enter => {
                     if let Some(task) = &self.task {
                         task.retry(true);
                     }
-                    self.phase = Phase::Creating;
+                    self.phase = Phase::Creating {
+                        world: self.world.clone().unwrap_or_else(|| "world".into()),
+                        started: Instant::now(),
+                        status: "WT is retrying world creation".into(),
+                    };
                     FlowAction::None
                 }
                 KeyCode::Esc => {
@@ -124,6 +136,15 @@ impl Flow {
             return FlowAction::None;
         };
         match event {
+            TaskEvent::Progress(status) => {
+                if let Phase::Creating {
+                    status: current, ..
+                } = &mut self.phase
+                {
+                    *current = status;
+                }
+                FlowAction::Changed
+            }
             TaskEvent::Capacity(message) => {
                 self.phase = Phase::Capacity(message);
                 FlowAction::Changed
@@ -141,7 +162,10 @@ impl Flow {
         self.form.render(frame, area);
         let (title, message, help) = match &self.phase {
             Phase::Form => return,
-            Phase::Creating => ("Creating world", "Contacting WT…", "Ctrl-C cancel view"),
+            Phase::Creating { .. } => {
+                self.render_progress(frame, area);
+                return;
+            }
             Phase::Capacity(message) => (
                 "World capacity is full",
                 message.as_str(),
@@ -154,6 +178,40 @@ impl Flow {
             ),
         };
         render_status(frame, area, title, message, help);
+    }
+
+    pub(crate) fn blocks_input(&self) -> bool {
+        !matches!(self.phase, Phase::Creating { .. })
+    }
+
+    pub(crate) fn render_progress(&self, frame: &mut ratatui::Frame<'_>, outer: Rect) {
+        let Phase::Creating {
+            world,
+            started,
+            status,
+        } = &self.phase
+        else {
+            return;
+        };
+        let elapsed_duration = started.elapsed();
+        let elapsed = elapsed_duration.as_secs();
+        let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            [(elapsed_duration.as_millis() as usize / 100) % 10];
+        let width = 50.min(outer.width);
+        let height = 5.min(outer.height);
+        let area = Rect::new(
+            outer.right().saturating_sub(width),
+            outer.bottom().saturating_sub(height),
+            width,
+            height,
+        );
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            Paragraph::new(format!("{spinner} {world}\n{status} · {elapsed}s elapsed"))
+                .wrap(Wrap { trim: false })
+                .block(Block::new().borders(Borders::ALL).title("Creating world")),
+            area,
+        );
     }
 }
 

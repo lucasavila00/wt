@@ -4,8 +4,9 @@ Owner-scoped control-plane daemon for one KVM server.
 
 Systemd runs `wt-server serve` as the installed server user. It listens only on
 the mode-`0600` Unix socket `/run/wt/server.sock`. `wt` invokes `wt-server api`
-locally or through OpenSSH; that command bridges one protocol version 5 JSON
-request and response between stdio and the daemon.
+locally or through OpenSSH; that command bridges one protocol version 6 JSON
+request, line-delimited progress events, and a final response between stdio and
+the daemon.
 
 ## Owns
 

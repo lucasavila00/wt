@@ -47,6 +47,11 @@ case "$request" in
   *'"operation":"list"'*)
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
     ;;
+  *'"operation":"create"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"event":"progress","message":"Waiting for the guest transport..."}'
+    sleep 2
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"error","error":{"code":"backend","message":"fixture stopped creation"}}'
+    ;;
   *) exit 2 ;;
 esac
 "#
@@ -93,6 +98,30 @@ fn command_palette_opens_the_world_form_and_escape_cancels() -> Result<()> {
         .press(Key::Escape)?
         .wait_for_text("No Codex sessions")?
         .wait_for_text_gone("Create world")?;
+    Ok(())
+}
+
+#[test]
+fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("new")?
+        .press(Key::Enter)?
+        .wait_for_text("Create world")?
+        .press(Key::Enter)?
+        .type_text("background")?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .wait_for_text("Review")?
+        .press(Key::Enter)?
+        .wait_for_text("Waiting for the guest transport...")?
+        .wait_for_text("local.background")?
+        .wait_for_text("No Codex sessions")?;
     Ok(())
 }
 

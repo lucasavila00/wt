@@ -144,7 +144,7 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
-        if flows.creation.is_none() && flows.deletion.is_none() {
+        if flows.deletion.is_none() {
             if let Some(snapshot) = take_current_snapshot(
                 &runtime.refresh.updates,
                 runtime.refresh.generation.load(Ordering::Relaxed),
@@ -221,6 +221,10 @@ fn run_loop(
                     .into(),
             )?;
         }
+        redraw |= flows
+            .creation
+            .as_ref()
+            .is_some_and(|flow| !flow.blocks_input());
         if let Some(action) = flows.deletion.as_mut().map(delete::Flow::poll) {
             redraw |= apply_deletion_action(
                 action,
@@ -297,6 +301,19 @@ fn dispatch_event(
                 sessions.restart(model.active(), world_rows(area.height), area.width);
                 return Ok(true);
             }
+            if let Some(flow) = flows.creation.as_mut().filter(|flow| flow.blocks_input()) {
+                let action = flow.handle_key(key, runtime.config);
+                let _ = apply_creation_action(
+                    action,
+                    &mut flows.creation,
+                    &mut flows.creation_error,
+                    sessions,
+                    model,
+                    runtime.refresh,
+                    area,
+                )?;
+                return Ok(true);
+            }
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
                 if model.handle_key(key, area) == InputRoute::World {
                     if sessions.closed_message(model.active()).is_some() {
@@ -317,19 +334,6 @@ fn dispatch_event(
                     )
                 {
                     flows.creation_error.take();
-                    return Ok(true);
-                }
-                if let Some(flow) = flows.creation.as_mut() {
-                    let action = flow.handle_key(key, runtime.config);
-                    let _ = apply_creation_action(
-                        action,
-                        &mut flows.creation,
-                        &mut flows.creation_error,
-                        sessions,
-                        model,
-                        runtime.refresh,
-                        area,
-                    )?;
                     return Ok(true);
                 }
                 if let Some(flow) = flows.deletion.as_mut() {
@@ -365,7 +369,13 @@ fn dispatch_event(
             }
             Ok(true)
         }
-        Event::Paste(text) if model.mode() == Mode::Control && flows.creation.is_some() => {
+        Event::Paste(text)
+            if model.mode() == Mode::Control
+                && flows
+                    .creation
+                    .as_ref()
+                    .is_some_and(|flow| flow.blocks_input()) =>
+        {
             if let Some(flow) = flows.creation.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
@@ -486,6 +496,9 @@ fn start_control_command(
             flows.deletion = Some(delete::Flow::new(model.worlds().to_vec()));
         }
         ControlCommand::NewWorld => {
+            if flows.creation.is_some() {
+                return;
+            }
             start_creation(
                 command,
                 config,
@@ -574,8 +587,10 @@ fn apply_creation_action(
             refresh.invalidate();
             if model.world_index(&world.identity).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
+                let mut worlds = model.worlds().to_vec();
+                worlds.push(world);
+                model.reconcile_worlds(worlds);
             }
-            model.activate_world(world);
             creation.take();
             Ok(true)
         }

@@ -118,17 +118,6 @@ impl ShellModel {
             .position(|world| &world.identity == identity)
     }
 
-    pub(super) fn activate_world(&mut self, world: ShellWorld) {
-        self.active = match self.world_index(&world.identity) {
-            Some(index) => index,
-            None => {
-                self.worlds.push(world);
-                self.worlds.len() - 1
-            }
-        };
-        self.mode = Mode::World;
-    }
-
     pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
         let active_identity = self
             .worlds

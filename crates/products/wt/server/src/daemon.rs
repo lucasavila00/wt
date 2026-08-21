@@ -6,7 +6,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
+use wt_control_protocol::{ApiError, ApiProgress, ApiRequest, ApiResponse, ErrorCode};
 
 pub const CONTROL_SOCKET_PATH: &str = "/run/wt/server.sock";
 
@@ -42,7 +42,7 @@ fn daemon_connection_error(socket_path: &Path, error: std::io::Error) -> anyhow:
 
 pub fn serve(
     socket_path: &Path,
-    handler: impl Fn(ApiRequest) -> ApiResponse + Send + Sync + 'static,
+    handler: impl Fn(ApiRequest, &mut dyn Write) -> ApiResponse + Send + Sync + 'static,
 ) -> Result<()> {
     prepare_socket_path(socket_path)?;
     let listener = UnixListener::bind(socket_path)
@@ -68,14 +68,17 @@ pub fn serve(
 
 fn handle_stream(
     mut stream: UnixStream,
-    handler: &(impl Fn(ApiRequest) -> ApiResponse + ?Sized),
+    handler: &(impl Fn(ApiRequest, &mut dyn Write) -> ApiResponse + ?Sized),
 ) -> Result<()> {
     let mut request = Vec::new();
     stream
         .read_to_end(&mut request)
         .context("read API request")?;
     let response = match serde_json::from_slice::<ApiRequest>(&request) {
-        Ok(request) => handler(request),
+        Ok(request) => {
+            let mut progress = ProgressWriter::new(&mut stream);
+            handler(request, &mut progress)
+        }
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,
             format!("invalid JSON request: {error}"),
@@ -84,6 +87,49 @@ fn handle_stream(
     serde_json::to_writer(&mut stream, &response).context("encode API response")?;
     stream.write_all(b"\n").context("finish API response")?;
     Ok(())
+}
+
+struct ProgressWriter<'a> {
+    output: &'a mut dyn Write,
+    pending: Vec<u8>,
+}
+
+impl<'a> ProgressWriter<'a> {
+    fn new(output: &'a mut dyn Write) -> Self {
+        Self {
+            output,
+            pending: Vec::new(),
+        }
+    }
+
+    fn emit(&mut self, line: &[u8]) -> std::io::Result<()> {
+        let message = String::from_utf8_lossy(line).trim().to_owned();
+        if message.is_empty() {
+            return Ok(());
+        }
+        serde_json::to_writer(&mut self.output, &ApiProgress::new(message))?;
+        self.output.write_all(b"\n")?;
+        self.output.flush()
+    }
+}
+
+impl Write for ProgressWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.pending.extend_from_slice(bytes);
+        while let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
+            let line = self.pending.drain(..=end).collect::<Vec<_>>();
+            self.emit(&line)?;
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if !self.pending.is_empty() {
+            let line = std::mem::take(&mut self.pending);
+            self.emit(&line)?;
+        }
+        self.output.flush()
+    }
 }
 
 fn prepare_socket_path(path: &Path) -> Result<()> {
@@ -127,13 +173,14 @@ impl Drop for SocketGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
     use wt_control_protocol::{ApiRequest, ApiResponse, Operation, Response};
 
     #[test]
     fn one_connection_carries_one_request_and_response() {
         let (client, server) = UnixStream::pair().unwrap();
         let thread = std::thread::spawn(move || {
-            handle_stream(server, &|request| {
+            handle_stream(server, &|request, _| {
                 assert!(matches!(request.operation, Operation::List));
                 ApiResponse::ok(Response::Instances {
                     instances: vec![],
@@ -160,7 +207,7 @@ mod tests {
     fn invalid_json_returns_a_protocol_error() {
         let (mut client, server) = UnixStream::pair().unwrap();
         let thread = std::thread::spawn(move || {
-            handle_stream(server, &|_| unreachable!()).unwrap();
+            handle_stream(server, &|_, _| unreachable!()).unwrap();
         });
         client.write_all(b"not-json").unwrap();
         client.shutdown(std::net::Shutdown::Write).unwrap();
@@ -168,6 +215,43 @@ mod tests {
         assert!(matches!(
             response.outcome,
             wt_control_protocol::Outcome::Error { error } if error.code == ErrorCode::InvalidRequest
+        ));
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn progress_precedes_the_final_response() {
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let thread = std::thread::spawn(move || {
+            handle_stream(server, &|_, progress| {
+                writeln!(progress, "Waiting for the guest transport...").unwrap();
+                ApiResponse::ok(Response::Instances {
+                    instances: vec![],
+                    disk_usage_bytes: Default::default(),
+                    agent_tool_report_counts: Default::default(),
+                })
+            })
+            .unwrap();
+        });
+        serde_json::to_writer(&mut client, &ApiRequest::new(Operation::List)).unwrap();
+        client.shutdown(std::net::Shutdown::Write).unwrap();
+        let lines = BufReader::new(client)
+            .lines()
+            .collect::<std::io::Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(lines.len(), 2);
+        let progress: ApiProgress = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(
+            progress.event,
+            wt_control_protocol::ProgressEvent::Progress {
+                message: "Waiting for the guest transport...".into()
+            }
+        );
+        let response: ApiResponse = serde_json::from_str(&lines[1]).unwrap();
+        assert!(matches!(
+            response.outcome,
+            wt_control_protocol::Outcome::Ok { .. }
         ));
         thread.join().unwrap();
     }

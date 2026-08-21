@@ -15,7 +15,29 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ApiProgress {
+    pub protocol_version: u32,
+    #[serde(flatten)]
+    pub event: ProgressEvent,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ProgressEvent {
+    Progress { message: String },
+}
+
+impl ApiProgress {
+    pub fn new(message: String) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            event: ProgressEvent::Progress { message },
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -324,7 +346,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -339,7 +361,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -354,7 +376,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -407,7 +429,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "list_codex_sessions"
             })
         );
@@ -423,7 +445,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 5,
+          "protocol_version": 6,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -459,7 +481,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 5,
+          "protocol_version": 6,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -471,14 +493,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -510,11 +532,22 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "get",
             "name": "Not-Valid"
         }))
         .unwrap_err();
         insta::assert_snapshot!(error.to_string(), @"invalid instance name: must start with a lowercase letter or digit");
+    }
+
+    #[test]
+    fn progress_is_a_line_delimited_wire_event() {
+        insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
+        {
+          "protocol_version": 6,
+          "event": "progress",
+          "message": "Waiting for the guest transport..."
+        }
+        "###);
     }
 }
