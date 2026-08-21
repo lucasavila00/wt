@@ -40,6 +40,7 @@ pub(crate) struct Created {
 #[derive(Clone, Debug)]
 pub(crate) enum FlowAction {
     None,
+    Changed,
     Cancel,
     Created(Created),
     Failed(String),
@@ -132,13 +133,13 @@ impl Flow {
         match event {
             TaskEvent::Capacity(message) => {
                 self.phase = Phase::Capacity(message);
-                FlowAction::None
+                FlowAction::Changed
             }
             TaskEvent::Finished(Ok(created)) => FlowAction::Created(created),
             TaskEvent::Finished(Err(error)) => {
                 self.phase = Phase::Failed(error);
                 self.task = None;
-                FlowAction::None
+                FlowAction::Changed
             }
         }
     }
@@ -195,6 +196,7 @@ fn run_loop(
             FlowAction::Failed(error) => bail!(error),
             FlowAction::Cancel => bail!("creation cancelled"),
             FlowAction::None => {}
+            FlowAction::Changed => {}
         }
         terminal.draw(|frame| flow.render(frame, frame.area()))?;
         if !event::poll(INPUT_POLL).context("poll world creation input")? {
@@ -209,6 +211,7 @@ fn run_loop(
         };
         match action {
             FlowAction::None => {}
+            FlowAction::Changed => {}
             FlowAction::Cancel => bail!("creation cancelled"),
             FlowAction::Created(created) => return Ok(created),
             FlowAction::Failed(error) => bail!(error),

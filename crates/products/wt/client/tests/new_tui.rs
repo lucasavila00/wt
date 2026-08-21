@@ -33,13 +33,11 @@ impl Fixture {
             "#cloud-config\n",
         )
         .unwrap();
-        let key = home.path().join(".ssh/id_ed25519");
-        assert!(std::process::Command::new("ssh-keygen")
-            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
-            .arg(&key)
-            .status()
-            .unwrap()
-            .success());
+        fs::write(
+            home.path().join(".ssh/id_ed25519.pub"),
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH4Ma5yVqds1tDCNyJzHbbXZdD/RvXWz10hkWHFWhNpw\n",
+        )
+        .unwrap();
         let bin = home.path().join("bin");
         fs::create_dir(&bin).unwrap();
         let server = bin.join("wt-server");

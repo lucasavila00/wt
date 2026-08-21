@@ -26,7 +26,8 @@ does not duplicate creation rules.
 
 `Tab` and `Shift-Tab` move focus, selector arrows change options, and `Enter`
 advances or confirms. `Escape` cancels. While the form is active it owns these
-keys before activity navigation. `F5` and `F6` retain their `wt shell` meanings.
+keys before activity navigation. `F5` only toggles the shell control layer and
+does not cancel the form; reopening it restores the form state. `F6` exits.
 
 Confirmation produces the existing typed `CreateInstance` request. In
 `wt shell`, creation runs outside the render/input loop and reports progress and

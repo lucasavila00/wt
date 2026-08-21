@@ -3,6 +3,7 @@ use super::control::{
 };
 use super::model::{Mode, ShellModel};
 use super::world_area;
+use crate::create::Flow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -10,9 +11,22 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellModel) {
+pub(super) fn draw(
+    frame: &mut Frame<'_>,
+    screen: &vt100::Screen,
+    model: &ShellModel,
+    creation: Option<&Flow>,
+    creation_error: Option<&str>,
+) {
     if model.mode() == Mode::Control {
+        if let Some(creation) = creation {
+            creation.render(frame, frame.area());
+            return;
+        }
         draw_control(frame, model);
+        if let Some(error) = creation_error {
+            draw_creation_error(frame, error);
+        }
         return;
     }
     let world = world_area(frame.area());
@@ -28,6 +42,30 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
         Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
+}
+
+fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
+    let outer = frame.area();
+    let width = 70.min(outer.width);
+    let height = 12.min(outer.height);
+    let area = Rect::new(
+        outer.x + outer.width.saturating_sub(width) / 2,
+        outer.y + outer.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(error)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title("World creation unavailable")
+                    .title_bottom(" Enter/Esc close "),
+            ),
+        area,
+    );
 }
 
 struct TerminalView<'a>(&'a vt100::Screen);
@@ -265,7 +303,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, parser.screen(), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -287,7 +325,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, parser.screen(), &model, None, None))
             .unwrap();
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -316,7 +354,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, parser.screen(), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -336,7 +374,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, parser.screen(), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());

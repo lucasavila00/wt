@@ -77,6 +77,10 @@ impl New {
     }
 }
 
+pub(crate) fn default_input() -> Result<Input> {
+    NewHost { user_data: None }.load()
+}
+
 fn read_user_data(path: &Path) -> Result<String> {
     let user_data = std::fs::read_to_string(path)
         .with_context(|| format!("read cloud-init user-data {}", path.display()))?;

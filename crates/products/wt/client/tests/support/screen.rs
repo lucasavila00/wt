@@ -119,6 +119,7 @@ impl Screen {
         }
     }
 
+    #[allow(dead_code)]
     pub fn wait_for_exit(&mut self, expected_code: u32) -> Result<&mut Self> {
         let deadline = Instant::now() + TIMEOUT;
         loop {
@@ -145,6 +146,32 @@ impl Screen {
 
     pub fn contents(&self) -> String {
         self.parser.screen().contents()
+    }
+
+    #[allow(dead_code)]
+    pub fn wait_for_quiet(&mut self, interval: Duration) -> Result<&mut Self> {
+        let deadline = Instant::now() + TIMEOUT;
+        let mut quiet_until = Instant::now() + interval;
+        loop {
+            let now = Instant::now();
+            if now >= quiet_until {
+                return Ok(self);
+            }
+            if now >= deadline {
+                bail!("wt terminal output did not become quiet within ten seconds");
+            }
+            match self
+                .output
+                .recv_timeout(quiet_until.saturating_duration_since(now))
+            {
+                Ok(bytes) => {
+                    self.parser.process(&bytes);
+                    quiet_until = Instant::now() + interval;
+                }
+                Err(RecvTimeoutError::Timeout) => return Ok(self),
+                Err(RecvTimeoutError::Disconnected) => bail!("wt PTY output stopped"),
+            }
+        }
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<()> {
