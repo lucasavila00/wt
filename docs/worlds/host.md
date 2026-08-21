@@ -31,7 +31,8 @@ because it owns those parts of setup.
 Success changes the world from `setup` to `running`. A setup failure changes it
 to `error` and keeps both SSH aliases. Earlier provisioning failures have no SSH
 alias. Every failed host remains visible in `wt ls` and removable with `wt rm`.
-WT never reruns a failed recipe.
+WT never reruns a failed recipe or resumes partial provisioning. Remove the
+failed host and create it again from the retained image.
 
 The regular alias attaches to a persistent Byobu session. The `-vs` alias is
 the same guest SSH endpoint with no forced command:

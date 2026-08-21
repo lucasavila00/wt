@@ -18,3 +18,8 @@ restores the saved command.
 
 `install-config` installs only the user configuration, for environments where
 the trampoline is already provided by the host.
+
+WT runs `install` only as part of initial retained-world provisioning. That
+provisioning flow does not resume or repair an interrupted trampoline
+transition; remove the failed world and create it again from the retained
+image.

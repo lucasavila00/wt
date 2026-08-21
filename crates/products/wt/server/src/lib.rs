@@ -1,5 +1,6 @@
 pub mod config;
 pub mod daemon;
+pub mod image_generation;
 pub mod operations;
 pub mod runtime_config;
 pub mod service;

@@ -82,8 +82,15 @@ pub struct InstallConfig {
 
 impl ServerConfig {
     pub fn load() -> Result<Self, String> {
-        let config = Self::load_from(Path::new(SERVER_CONFIG_PATH))?;
+        let config = Self::load_runtime_from(Path::new(SERVER_CONFIG_PATH))?;
         config.validate_codex_sources()?;
+        Ok(config)
+    }
+
+    pub fn load_runtime_from(path: &Path) -> Result<Self, String> {
+        let mut config = Self::load_from(path)?;
+        let generation = crate::image_generation::resolve(&config.image.path)?;
+        config.image.path = generation.image;
         Ok(config)
     }
 
@@ -425,6 +432,7 @@ fn valid_registry_host(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::symlink;
 
     const VALID: &str = r#"
 version = 1
@@ -477,6 +485,36 @@ binary_dir = "/usr/local/bin"
                 auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
             })
         );
+    }
+
+    #[test]
+    fn runtime_load_pins_one_image_generation() {
+        let directory = tempfile::tempdir().unwrap();
+        let image = directory.path().join("retained.qcow2");
+        let generations = crate::image_generation::generations_path(&image);
+        let first = generations.join("first");
+        let second = generations.join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        let current = crate::image_generation::current_path(&image);
+        symlink("retained.qcow2.generations/first", &current).unwrap();
+        let config_path = directory.path().join("server.toml");
+        std::fs::write(
+            &config_path,
+            VALID.replace(
+                "/var/lib/wt/images/retained.qcow2",
+                &image.display().to_string(),
+            ),
+        )
+        .unwrap();
+
+        let pinned = ServerConfig::load_runtime_from(&config_path).unwrap();
+        std::fs::remove_file(&current).unwrap();
+        symlink("retained.qcow2.generations/second", &current).unwrap();
+        let refreshed = ServerConfig::load_runtime_from(&config_path).unwrap();
+
+        assert_eq!(pinned.image.path, first.join("retained.qcow2"));
+        assert_eq!(refreshed.image.path, second.join("retained.qcow2"));
     }
 
     #[test]

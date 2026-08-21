@@ -50,7 +50,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let capacity = wt_workload_registry::CapacityConfig::load_from(capacity_path)
         .map_err(anyhow::Error::msg)?
         .limits;
-    let server = ServerConfig::load_from(config_path).map_err(anyhow::Error::msg)?;
+    let server = ServerConfig::load_runtime_from(config_path).map_err(anyhow::Error::msg)?;
     let provider =
         LibvirtProvider::new(server.devcontainer_machine_config()).map_err(anyhow::Error::msg)?;
     let host_provider =

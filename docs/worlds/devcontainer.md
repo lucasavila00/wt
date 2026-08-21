@@ -38,6 +38,10 @@ The first `ssh CONTEXT.NAME` completes setup. It clones the repository, starts
 the recipe, and leaves its output in Byobu and the guest setup log. Later
 connections attach to the same session.
 
+Failure during initial provisioning is not resumable. Remove the failed world
+with `wt rm` and create it again; WT starts with a fresh disk from the retained
+image and does not repair or continue the partial provisioning sequence.
+
 ## Codex
 
 WT installs Codex and `wt-codex-integration` in the retained image and automatically
