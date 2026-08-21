@@ -260,6 +260,7 @@ impl GithubApi {
             handle: format!("#{}", node.number),
             url: node.url.0,
             title: node.title,
+            body: None,
             state: format!("{:?}", node.state).to_ascii_lowercase(),
             draft: node.is_draft,
             head: node.head_ref_oid.0,

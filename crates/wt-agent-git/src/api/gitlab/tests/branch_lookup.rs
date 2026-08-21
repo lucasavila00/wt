@@ -9,7 +9,7 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
         required_header: Some(("private-token", "fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
-        response_body: r#"[{"iid":8,"title":"Fix login","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main"}]"#,
+        response_body: r#"[{"iid":8,"title":"Fix login","description":"Fixes the login flow.","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main"}]"#,
     }]);
     let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
 
@@ -29,6 +29,8 @@ fn shows_the_open_merge_request_for_an_explicit_branch() {
     Head: abc123
     Base: main
     URL: https://gitlab.test/acme/widget/-/merge_requests/8
+    Body:
+    Fixes the login flow.
     "###);
     server.join().unwrap().unwrap();
 }

@@ -9,7 +9,7 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
         required_header: Some(("authorization", "Bearer fixture-token")),
         body_contains: None,
         response_content_type: "application/json",
-        response_body: r#"[{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}]"#,
+        response_body: r#"[{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}]"#,
     }]);
     let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
 
@@ -29,6 +29,8 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
     Head: abc123
     Base: main
     URL: https://github.test/acme/widget/pull/7
+    Body:
+    Fixes the login flow.
     "###);
     server.join().unwrap().unwrap();
 }

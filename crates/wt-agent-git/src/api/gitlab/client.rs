@@ -136,6 +136,7 @@ impl GitlabApi {
             handle: format!("!{merge_request_number}"),
             url,
             title: node.title,
+            body: None,
             state: format!("{:?}", node.state).to_ascii_lowercase(),
             draft: node.draft,
             head: node.diff_head_sha.unwrap_or_else(|| scope.head.to_owned()),

@@ -146,7 +146,7 @@ pub(crate) fn render_cli_command_output(output: ProviderCommandOutput) -> String
 }
 
 fn render_change_request(request: &ChangeRequestStatus) -> String {
-    format!(
+    let mut output = format!(
         "MR: {}\nState: {}{}\nTitle: {}\nHead: {}\nBase: {}\nURL: {}\n",
         request.handle,
         request.state,
@@ -155,7 +155,12 @@ fn render_change_request(request: &ChangeRequestStatus) -> String {
         request.head,
         request.base,
         request.url
-    )
+    );
+    match &request.body {
+        Some(body) => output.push_str(&format!("Body:\n{body}\n")),
+        None => output.push_str("Body: unavailable\n"),
+    }
+    output
 }
 
 fn render_run(run: &CiRun) -> String {
