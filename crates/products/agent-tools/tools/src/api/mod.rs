@@ -218,7 +218,7 @@ pub trait GitProviderApi {
     fn execute_cli_command(
         &self,
         scope: &ProviderProjectScope<'_>,
-        command: &WtToolsCommand,
+        command: &GitHostingCommand,
     ) -> Result<ProviderCommandOutput>;
 }
 
@@ -292,7 +292,7 @@ pub fn execute_cli_provider_command(
     kind: ProviderKind,
     token_file: &Path,
     scope: &ProviderProjectScope<'_>,
-    command: &WtToolsCommand,
+    command: &GitHostingCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -313,7 +313,7 @@ pub fn execute_cli_provider_command_at_base(
     token_file: &Path,
     base_url: &str,
     scope: &ProviderProjectScope<'_>,
-    command: &WtToolsCommand,
+    command: &GitHostingCommand,
 ) -> Result<ProviderCommandOutput> {
     let result = (|| {
         let token = read_provider_token(token_file)?;
@@ -331,11 +331,11 @@ fn with_cli_command_context(
     result: Result<ProviderCommandOutput>,
     kind: ProviderKind,
     scope: &ProviderProjectScope<'_>,
-    command: &WtToolsCommand,
+    command: &GitHostingCommand,
 ) -> Result<ProviderCommandOutput> {
     result.with_context(|| {
         format!(
-            "wt-tools could not {}\nProvider: {} ({})\nProject: {}\nResource: {}\nCause",
+            "wt-tools could not {}\nProvider: {} ({})\nRepository: {}\nResource: {}\nCause",
             command.action(),
             provider_name(kind),
             scope.host,
@@ -355,7 +355,7 @@ fn read_provider_token(token_file: &Path) -> Result<String> {
     Ok(token.to_owned())
 }
 
-fn provider_name(kind: ProviderKind) -> &'static str {
+pub fn provider_name(kind: ProviderKind) -> &'static str {
     match kind {
         ProviderKind::GitHub => "GitHub",
         ProviderKind::GitLab => "GitLab",

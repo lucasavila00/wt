@@ -74,7 +74,7 @@ fn ci_job_logs_keep_only_a_bounded_tail() {
 
 #[test]
 fn command_parser_accepts_only_valid_json_objects() {
-    for json in [
+    let provider_commands = [
         r#"{"action":"show_mr","mr":"7"}"#,
         r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#,
         r#"{"action":"show_run","run":"91"}"#,
@@ -95,37 +95,51 @@ fn command_parser_accepts_only_valid_json_objects() {
         r#"{"action":"retry_job","job":"44"}"#,
         r#"{"action":"cancel_job","job":"44"}"#,
         r#"{"action":"cancel_run","run":"91"}"#,
+    ];
+    for command in provider_commands {
+        let json = format!(
+            r#"{{"target":{{"provider":"github","repository":"acme/widget"}},"command":{command}}}"#
+        );
+        WtToolsCommand::parse(&[json]).unwrap();
+    }
+    for command in [
         r#"{"action":"report_wt_tool_bug","description":"build failed"}"#,
         r#"{"action":"report_wt_tool_issue","description":"output is unclear"}"#,
         r#"{"action":"suggest_wt_tool_improvement","description":"show progress"}"#,
         r#"{"action":"request_wt_tool_feature","description":"add search"}"#,
     ] {
-        WtToolsCommand::parse(&[json.to_owned()]).unwrap();
+        WtToolsCommand::parse(&[format!(r#"{{"command":{command}}}"#)]).unwrap();
     }
+    let targeted = |command: &str| {
+        format!(
+            r#"{{"target":{{"provider":"github","repository":"acme/widget"}},"command":{command}}}"#
+        )
+    };
+    let parsed_command = |command: &str| match WtToolsCommand::parse(&[targeted(command)]).unwrap()
+    {
+        WtToolsCommand::GitHosting { command, .. } => command,
+        WtToolsCommand::Feedback { .. } => panic!("expected Git hosting command"),
+    };
     assert_eq!(
-        WtToolsCommand::parse(&[r#"{"action":"wait_job","job":"42"}"#.into()]).unwrap(),
-        WtToolsCommand::WaitJob {
+        parsed_command(r#"{"action":"wait_job","job":"42"}"#),
+        GitHostingCommand::WaitJob {
             job: "42".into(),
             timeout_seconds: None,
         }
     );
-    assert!(WtToolsCommand::parse(&[
-        r#"{"action":"wait_run","run":"91","timeout_seconds":0}"#.into()
-    ])
+    assert!(WtToolsCommand::parse(&[targeted(
+        r#"{"action":"wait_run","run":"91","timeout_seconds":0}"#
+    )])
     .is_err());
     assert_eq!(
-        WtToolsCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])
-            .unwrap(),
-        WtToolsCommand::ShowMrForBranch {
+        parsed_command(r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#),
+        GitHostingCommand::ShowMrForBranch {
             branch: "wt/fix".to_owned(),
         }
     );
     assert_eq!(
-        WtToolsCommand::parse(&[
-            r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":true}"#.into()
-        ])
-        .unwrap(),
-        WtToolsCommand::OpenMr {
+        parsed_command(r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":true}"#,),
+        GitHostingCommand::OpenMr {
             head: "wt/fix".to_owned(),
             base: "main".to_owned(),
             draft: true,
@@ -133,16 +147,21 @@ fn command_parser_accepts_only_valid_json_objects() {
     );
     assert!(WtToolsCommand::parse(&[]).is_err());
     assert!(WtToolsCommand::parse(&["show".into(), "mr".into(), "7".into()]).is_err());
-    assert!(WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":""}"#.into()]).is_err());
-    assert!(WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":7}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[targeted(r#"{"action":"show_mr","mr":""}"#)]).is_err());
+    assert!(WtToolsCommand::parse(&[targeted(r#"{"action":"show_mr","mr":7}"#)]).is_err());
     assert!(
-        WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":"7","extra":true}"#.into()]).is_err()
+        WtToolsCommand::parse(&[targeted(r#"{"action":"show_mr","mr":"7","extra":true}"#)])
+            .is_err()
     );
-    assert!(WtToolsCommand::parse(&[r#"{"action":"edit_mr","mr":"7"}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[targeted(r#"{"action":"edit_mr","mr":"7"}"#)]).is_err());
     assert!(WtToolsCommand::parse(&[
-        r#"{"action":"report_wt_tool_bug","description":"  "}"#.into()
+        r#"{"command":{"action":"report_wt_tool_bug","description":"  "}}"#.into()
     ])
     .is_err());
+    assert!(
+        WtToolsCommand::parse(&[r#"{"command":{"action":"show_mr","mr":"7"}}"#.into()]).is_err()
+    );
+    assert!(WtToolsCommand::parse(&[r#"{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"report_wt_tool_bug","description":"bad"}}"#.into()]).is_err());
 }
 
 #[test]

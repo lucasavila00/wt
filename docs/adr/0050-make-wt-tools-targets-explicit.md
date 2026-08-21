@@ -1,14 +1,14 @@
 # ADR 0050: Make wt-tools targets explicit
 
-- Status: Proposed; Date: 2026-08-21
+- Status: Accepted; Date: 2026-08-21
 
 ## Decision
 
-Every provider operation requires `provider` (`github` or `gitlab`) and `repository` in its JSON object; feedback operations remain target-free.
+Every provider operation requires a `target` and `command`; feedback operations omit `target`.
 
 ```text
-wt-tools '{"provider":"github","repository":"acme/widget","action":"show_mr","mr":7}'
-wt-tools '{"provider":"gitlab","repository":"acme/widget","action":"list_ci","commit":"abc1234"}'
+wt-tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr","mr":"7"}}'
+wt-tools '{"target":{"provider":"gitlab","repository":"acme/widget"},"command":{"action":"list_ci","commit":"abc1234"}}'
 ```
 
 `wt-tools` will stop reading `remote.origin.url`. The gateway will validate the

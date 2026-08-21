@@ -15,8 +15,15 @@ pub enum ChangeRequestState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GitHostingTarget {
+        pub provider: ProviderKind,
+        pub repository: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "action", deny_unknown_fields)]
-pub enum WtToolsCommand {
+pub enum GitHostingCommand {
     #[serde(rename = "show_mr")]
     ShowMr {
         mr: String,
@@ -116,6 +123,11 @@ pub enum WtToolsCommand {
     CancelRun {
         run: String,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "action", deny_unknown_fields)]
+pub enum WtToolsFeedbackCommand {
     #[serde(rename = "report_wt_tool_bug")]
     ReportWtToolBug {
         description: String,
@@ -131,5 +143,17 @@ pub enum WtToolsCommand {
     #[serde(rename = "request_wt_tool_feature")]
     RequestWtToolFeature {
         description: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum WtToolsCommand {
+    GitHosting {
+        target: GitHostingTarget,
+        command: GitHostingCommand,
+    },
+    Feedback {
+        command: WtToolsFeedbackCommand,
     },
 }

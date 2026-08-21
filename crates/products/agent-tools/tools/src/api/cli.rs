@@ -5,17 +5,25 @@ impl WtToolsCommand {
         let [json] = args else {
             bail!("wt-tools expects exactly one JSON command object; run `wt-tools help` for the TypeScript command type");
         };
-        let command: Self = serde_json::from_str(json).context(
+        let parsed: Self = serde_json::from_str(json).context(
             "invalid wt-tools command JSON; run `wt-tools help` for the TypeScript command type",
         )?;
-        command.validate()?;
-        Ok(command)
+        match &parsed {
+            Self::GitHosting { target, command } => {
+                nonempty(&target.repository, "repository")?;
+                command.validate()?;
+            }
+            Self::Feedback { command } => command.validate()?,
+        }
+        Ok(parsed)
     }
+}
 
+impl GitHostingCommand {
     fn validate(&self) -> Result<()> {
         match self {
-            Self::ShowMr { mr }
-            | Self::ListThreads { mr }
+            Self::ShowMr { mr, .. }
+            | Self::ListThreads { mr, .. }
             | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
@@ -36,12 +44,6 @@ impl WtToolsCommand {
             Self::OpenMr { head, base, .. } => {
                 nonempty(head, "head")?;
                 nonempty(base, "base")?;
-            }
-            Self::ReportWtToolBug { description }
-            | Self::ReportWtToolIssue { description }
-            | Self::SuggestWtToolImprovement { description }
-            | Self::RequestWtToolFeature { description } => {
-                nonempty(description.trim(), "description")?
             }
         }
         if let Self::EditMr { title, body, .. } = self {
@@ -87,18 +89,14 @@ impl WtToolsCommand {
             Self::RetryJob { .. } => "retry the CI job",
             Self::CancelJob { .. } => "cancel the CI job",
             Self::CancelRun { .. } => "cancel the CI run",
-            Self::ReportWtToolBug { .. } => "report a wt-tools bug",
-            Self::ReportWtToolIssue { .. } => "report a wt-tools issue",
-            Self::SuggestWtToolImprovement { .. } => "suggest a wt-tools improvement",
-            Self::RequestWtToolFeature { .. } => "request a wt-tools feature",
         }
     }
 
     pub(super) fn resource(&self) -> String {
         match self {
-            Self::ShowMrForBranch { branch } => format!("mr for branch {branch}"),
-            Self::ShowMr { mr }
-            | Self::ListThreads { mr }
+            Self::ShowMrForBranch { branch, .. } => format!("mr for branch {branch}"),
+            Self::ShowMr { mr, .. }
+            | Self::ListThreads { mr, .. }
             | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
@@ -106,42 +104,49 @@ impl WtToolsCommand {
             Self::ReplyThread { mr, thread, .. } | Self::SetThread { mr, thread, .. } => {
                 format!("thread {thread} in mr {mr}")
             }
-            Self::ShowRun { run }
-            | Self::ListJobs { run }
+            Self::ShowRun { run, .. }
+            | Self::ListJobs { run, .. }
             | Self::WaitRun { run, .. }
-            | Self::CancelRun { run } => format!("run {run}"),
-            Self::ShowJob { job }
-            | Self::LogJob { job }
+            | Self::CancelRun { run, .. } => format!("run {run}"),
+            Self::ShowJob { job, .. }
+            | Self::LogJob { job, .. }
             | Self::WaitJob { job, .. }
-            | Self::RetryJob { job }
-            | Self::CancelJob { job } => format!("job {job}"),
-            Self::ListCi { commit } => format!("commit {commit}"),
+            | Self::RetryJob { job, .. }
+            | Self::CancelJob { job, .. } => format!("job {job}"),
+            Self::ListCi { commit, .. } => format!("commit {commit}"),
             Self::OpenMr { head, base, .. } => format!("mr {head} -> {base}"),
-            Self::ReportWtToolBug { .. }
-            | Self::ReportWtToolIssue { .. }
-            | Self::SuggestWtToolImprovement { .. }
-            | Self::RequestWtToolFeature { .. } => "wt-tools".to_owned(),
         }
     }
+}
 
-    pub fn wt_tool_report(&self) -> Option<(wt_workload_registry::AgentToolReportKind, &str)> {
+impl WtToolsFeedbackCommand {
+    fn validate(&self) -> Result<()> {
+        let description = match self {
+            Self::ReportWtToolBug { description }
+            | Self::ReportWtToolIssue { description }
+            | Self::SuggestWtToolImprovement { description }
+            | Self::RequestWtToolFeature { description } => description,
+        };
+        nonempty(description.trim(), "description")
+    }
+
+    pub fn wt_tool_report(&self) -> (wt_workload_registry::AgentToolReportKind, &str) {
         match self {
             Self::ReportWtToolBug { description } => {
-                Some((wt_workload_registry::AgentToolReportKind::Bug, description))
+                (wt_workload_registry::AgentToolReportKind::Bug, description)
             }
-            Self::ReportWtToolIssue { description } => Some((
+            Self::ReportWtToolIssue { description } => (
                 wt_workload_registry::AgentToolReportKind::Issue,
                 description,
-            )),
-            Self::SuggestWtToolImprovement { description } => Some((
+            ),
+            Self::SuggestWtToolImprovement { description } => (
                 wt_workload_registry::AgentToolReportKind::Improvement,
                 description,
-            )),
-            Self::RequestWtToolFeature { description } => Some((
+            ),
+            Self::RequestWtToolFeature { description } => (
                 wt_workload_registry::AgentToolReportKind::FeatureRequest,
                 description,
-            )),
-            _ => None,
+            ),
         }
     }
 }

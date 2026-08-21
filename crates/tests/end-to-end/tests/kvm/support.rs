@@ -314,12 +314,7 @@ impl KvmHarness {
             &TransportRequest {
                 protocol_version: PROTOCOL_VERSION,
                 token,
-                operation: ClientOperation::Cli {
-                    args: Vec::new(),
-                    repository: None,
-                    branch: None,
-                    head: None,
-                },
+                operation: ClientOperation::Cli { args: Vec::new() },
             },
         )
         .unwrap();

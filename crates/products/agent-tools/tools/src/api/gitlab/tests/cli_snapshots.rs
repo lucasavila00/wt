@@ -209,10 +209,6 @@ fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
                 r#"{"data":{"discussionToggleResolve":{"errors":[],"discussion":{"id":"gid://gitlab/Discussion/thread-8","resolved":true}}}}"#,
             ),
         ],
-        WtToolsCommand::ReportWtToolBug { .. }
-        | WtToolsCommand::ReportWtToolIssue { .. }
-        | WtToolsCommand::SuggestWtToolImprovement { .. }
-        | WtToolsCommand::RequestWtToolFeature { .. } => unreachable!("not covered by this provider snapshot test"),
     }
 }
 

@@ -528,12 +528,6 @@ impl GitProviderApi for GithubApi {
                     "Cancellation requested for run {run}."
                 )))
             }
-            WtToolsCommand::ReportWtToolBug { .. }
-            | WtToolsCommand::ReportWtToolIssue { .. }
-            | WtToolsCommand::SuggestWtToolImprovement { .. }
-            | WtToolsCommand::RequestWtToolFeature { .. } => {
-                unreachable!("agent tool reports are handled before provider commands")
-            }
         }
     }
 }

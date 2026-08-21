@@ -5,8 +5,8 @@ mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{
-    ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, Repository,
-    TransportRequest, TransportResponse, PROTOCOL_VERSION,
+    ClientOperation, ClientRequest, ControlRequest, ControlResponse, Grant, TransportRequest,
+    TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line};
 pub use vsock::{VsockListener, VsockStream};

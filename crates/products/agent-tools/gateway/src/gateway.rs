@@ -1,7 +1,7 @@
 mod service;
 
 use crate::{
-    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant, Repository,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
     TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
@@ -54,6 +54,13 @@ impl Provider {
     fn host(&self) -> &str {
         match self {
             Self::Ssh { host, .. } | Self::Local { host, .. } => host,
+        }
+    }
+
+    fn api_kind(&self) -> Option<ProviderKind> {
+        match self {
+            Self::Ssh { kind, .. } => Some(*kind),
+            Self::Local { api, .. } => api.as_ref().map(|api| api.kind),
         }
     }
 }
@@ -115,17 +122,14 @@ fn world_prompt() -> String {
     )
 }
 
-fn validate_repository(repository: &Repository) -> Result<()> {
-    if !valid_host(&repository.host)
-        || repository.project.is_empty()
-        || repository.project.starts_with('/')
-        || repository.project.ends_with(".git")
+fn validate_repository(repository: &str) -> Result<()> {
+    if repository.is_empty()
+        || repository.starts_with('/')
+        || repository.ends_with(".git")
         || repository
-            .project
             .split('/')
             .any(|part| part.is_empty() || part == "." || part == "..")
         || !repository
-            .project
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
     {
@@ -257,19 +261,19 @@ TYPESCRIPT COMMAND TYPE:\n";
 const HELP_SUFFIX: &str = "\
 \n\
 EXAMPLE:\n\
-    wt-tools '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
+    wt-tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
 \n\
-`show_mr_for_branch` returns the single open MR from the named branch to the\n\
-gateway grant's base branch. It fails when there is no match or multiple matches.\n\
+`show_mr_for_branch` returns the single open MR from the named branch in the target\n\
+repository. It fails when there is no match or multiple matches.\n\
 \n\
-The four wt-tools reporting actions store feedback against this authenticated world\n\
+The four wt-tools feedback actions omit `target` and store feedback against this world\n\
 without contacting the Git provider.\n\
 \n\
 Provider operations return one JSON result or error object. Help remains\n\
 plain text.\n\
 \n\
-The provider and project come from this world's gateway grant. Every other\n\
-resource is explicit. IDs must be positive integer strings. Commit values must be 7 to\n\
+The target selects one installer-configured provider and an explicit repository.\n\
+IDs must be positive integers. Commit values must be 7 to\n\
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.\n";
 
 pub fn wt_tools_help() -> String {
