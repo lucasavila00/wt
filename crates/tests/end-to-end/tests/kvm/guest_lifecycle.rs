@@ -257,7 +257,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "git --version; curl --version; codex --version; command -v diffo; ",
             "test \"$(readlink /usr/local/bin/codex)\" = /usr/local/bin/wt-codex-integration; ",
             "test \"$(readlink /usr/local/bin/.codex.wt-real)\" = /home/wt/.local/bin/codex; ",
-            "sudo -n wt-codex-integration remove; ",
+            "sudo -n wt-codex-integration uninstall; ",
             "test \"$(readlink /usr/local/bin/codex)\" = /home/wt/.local/bin/codex; ",
             "sudo -n wt-codex-integration install; ",
             "test ! -e /workspace; ",
