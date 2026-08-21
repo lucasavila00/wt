@@ -5,14 +5,13 @@
 
 ## Context
 
-World creation finishes when the guest SSH endpoint is ready, but installation
-starts only when a user connects to the managed `NAME` alias. `wt new`
-currently prints a suggested SSH command and exits. This leaves an unnecessary
-manual step between creating a world and observing its installation.
+World creation returns after the host is running and its SSH endpoint is ready.
+`wt new` currently prints a suggested SSH command and exits. This leaves an
+unnecessary manual step between creating a world and entering its persistent
+terminal workspace.
 
-The SSH connection needs the workstation's terminal and SSH agent. It also
-owns the interactive Byobu session in which installation runs and survives
-later disconnects.
+The SSH connection owns the interactive Byobu workspace, which survives later
+disconnects.
 
 ## Decision
 
@@ -44,12 +43,11 @@ handling without providing lifecycle value.
 
 ## Consequences
 
-- Creating a world immediately enters its setup session and displays installer
-  progress.
+- Creating a world immediately enters its Byobu workspace.
 - Exiting or disconnecting from SSH ends the original `wt new` invocation with
   OpenSSH's status.
 - Users can reconnect through the same managed alias; Byobu continues to own
-  persistent installation and application sessions.
+  the persistent terminal workspace.
 - Callers cannot use successful `wt new` completion as a boundary before the
   interactive SSH session ends. This is consistent with `wt new` being an
   interactive-only command.
@@ -58,8 +56,8 @@ handling without providing lifecycle value.
 
 ### Print the SSH command and return
 
-Rejected because it requires a second manual command before installation can
-start.
+Rejected because it requires a second manual command before the user can enter
+the world.
 
 ### Spawn SSH and wait
 

@@ -6,7 +6,7 @@ use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
     Operation, Response,
 };
-use wt_retained_worlds::{ProvisionSpec, World, WorldInspection, WorldWorker};
+use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod codex;
@@ -185,9 +185,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         };
         let result = self.worker.provision(spec, &mut std::io::stderr());
         match result {
-            Ok(world) => self
+            Ok(access) => self
                 .store
-                .mark_host_running(id, world.access.guest_ip(), world.access.ssh())
+                .mark_host_running(id, access.guest_ip(), access.ssh())
                 .map_err(map_store_error)?,
             Err(error) => {
                 let provisioning_error = error.to_string();
@@ -299,12 +299,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 
-    fn apply_world(&self, stored: &StoredInstance, world: &World) -> Result<(), ApiError> {
+    fn apply_world(&self, stored: &StoredInstance, access: &GuestAccess) -> Result<(), ApiError> {
         let same_guest_identity = stored
             .instance
             .ssh
             .as_ref()
-            .is_some_and(|ssh| ssh.host_keys == world.access.ssh().host_keys);
+            .is_some_and(|ssh| ssh.host_keys == access.ssh().host_keys);
         if !same_guest_identity {
             return self
                 .store
@@ -312,11 +312,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 .map_err(map_store_error);
         }
         self.store
-            .mark_host_running(
-                stored.instance.id,
-                world.access.guest_ip(),
-                world.access.ssh(),
-            )
+            .mark_host_running(stored.instance.id, access.guest_ip(), access.ssh())
             .map_err(map_store_error)
     }
 

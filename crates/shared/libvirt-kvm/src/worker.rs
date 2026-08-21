@@ -141,10 +141,9 @@ impl LibvirtProvider {
         disk: &std::path::Path,
         network_enabled: bool,
     ) -> Result<(), WorkerError> {
-        let paths = world::Paths::new(&self.config.worlds_dir, &spec.provider_id);
-        fs::create_dir(&paths.directory)
-            .map_err(|error| context("create machine directory", error))?;
-        prepare_qemu_file_access(&paths, disk)?;
+        let directory = self.config.worlds_dir.join(spec.provider_id.as_str());
+        fs::create_dir(&directory).map_err(|error| context("create machine directory", error))?;
+        prepare_qemu_file_access(&directory, disk)?;
         let xml = world::domain_xml(&spec.provider_id, disk, &self.config, spec, network_enabled);
         let connection = LibvirtConnection::open()?;
         let domain = Domain::define_xml(&connection, &xml)
@@ -309,15 +308,11 @@ fn require_file(path: &std::path::Path, label: &str) -> Result<(), WorkerError> 
 }
 
 fn prepare_qemu_file_access(
-    paths: &world::Paths,
+    directory: &std::path::Path,
     disk: &std::path::Path,
 ) -> Result<(), WorkerError> {
     for (path, mode, action) in [
-        (
-            paths.directory.as_path(),
-            0o2770,
-            "set machine directory permissions",
-        ),
+        (directory, 0o2770, "set machine directory permissions"),
         (disk, 0o660, "set world disk permissions"),
     ] {
         fs::set_permissions(path, fs::Permissions::from_mode(mode))

@@ -3,17 +3,6 @@
 use crate::MachineConfig;
 use std::path::{Path, PathBuf};
 
-pub(super) struct Paths {
-    pub(super) directory: PathBuf,
-}
-
-impl Paths {
-    pub(super) fn new(root: &Path, provider_id: &crate::ProviderId) -> Self {
-        let directory = root.join(provider_id.as_str());
-        Self { directory }
-    }
-}
-
 pub(super) fn disk_path(root: &Path, disk_id: uuid::Uuid) -> PathBuf {
     root.join("disks").join(format!("{disk_id}.qcow2"))
 }

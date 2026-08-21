@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_world_has_host_aliases_without_agent_forwarding() {
+    fn running_world_has_host_aliases_without_agent_forwarding() {
         let _lock = HOME_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
@@ -245,11 +245,11 @@ mod tests {
         .unwrap();
         let managed = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
         insta::assert_snapshot!(
-            "setup_world_ssh_config",
+            "running_world_ssh_config",
             normalize_home(&managed, temp.path())
         );
         let known_hosts = fs::read_to_string(temp.path().join(".ssh/wt/known_hosts")).unwrap();
-        insta::assert_snapshot!("setup_world_known_hosts", known_hosts);
+        insta::assert_snapshot!("running_world_known_hosts", known_hosts);
     }
 
     #[test]

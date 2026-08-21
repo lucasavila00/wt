@@ -25,15 +25,10 @@ pub struct ProvisionSpec<'a> {
     pub git_user_email: &'a str,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct World {
-    pub access: GuestAccess,
-}
-
 #[derive(Clone, Debug)]
 pub enum WorldInspection {
     Missing,
-    Running(World),
+    Running(GuestAccess),
     Stopped { reason: Option<String> },
 }
 
@@ -64,7 +59,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         &self,
         spec: ProvisionSpec<'_>,
         log: &mut dyn Write,
-    ) -> Result<World, WorkerError> {
+    ) -> Result<GuestAccess, WorkerError> {
         let readiness_key = ReadinessKey::generate()?;
         let mut authorized_keys = spec.ssh_authorized_keys.to_vec();
         authorized_keys.push(readiness_key.public_key.clone());
@@ -98,9 +93,9 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             deadline,
             log,
         )?;
-        let world = inspect_machine(&machine, self.readiness_timeout, log)?;
+        let access = inspect_machine(&machine, self.readiness_timeout, log)?;
         verify_login(
-            world.access.ssh(),
+            access.ssh(),
             readiness_key.private_key(),
             readiness_key.path(),
         )?;
@@ -111,7 +106,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             Instant::now() + self.readiness_timeout,
             log,
         )?;
-        Ok(world)
+        Ok(access)
     }
 
     fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
@@ -130,7 +125,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         }
     }
 
-    fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
+    fn start(&self, backend_id: &str) -> Result<GuestAccess, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
         run_prepare(
             machine.transport.as_ref(),
@@ -207,13 +202,14 @@ fn inspect_machine(
     machine: &Machine,
     timeout: Duration,
     _log: &mut dyn Write,
-) -> Result<World, WorkerError> {
+) -> Result<GuestAccess, WorkerError> {
     let deadline = Instant::now() + timeout;
     let host_keys = crate::read_host_keys(machine.transport.as_ref(), deadline)?;
     crate::verify_guest_ssh(&machine.guest_ip, &host_keys, deadline)?;
-    Ok(World {
-        access: GuestAccess::from_guest_ip(machine.guest_ip.clone(), host_keys),
-    })
+    Ok(GuestAccess::from_guest_ip(
+        machine.guest_ip.clone(),
+        host_keys,
+    ))
 }
 
 fn run_prepare(

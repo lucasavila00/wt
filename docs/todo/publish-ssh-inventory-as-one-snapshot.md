@@ -2,7 +2,7 @@
 
 The WT client atomically replaces `~/.ssh/wt/config` and
 `~/.ssh/wt/known_hosts` independently. Concurrent `wt sync`, `wt ssh`, or
-`wt code` calls can interleave the two replacements and leave config from one
+`wt shell` calls can interleave the two replacements and leave config from one
 inventory with host keys from another.
 
 The mixed snapshot can cause strict host-key failures or make aliases refer to

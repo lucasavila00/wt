@@ -6,7 +6,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 use wt_control_protocol::{CreateInstance, InstanceName};
 use wt_libvirt_kvm::WorkerError;
-use wt_retained_worlds::{GuestAccess, ProvisionSpec, World, WorldInspection, WorldWorker};
+use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_server::operations::Operations;
 use wt_server::service::{AgentToolGateway, Service};
 use wt_workload_registry::Store;
@@ -70,7 +70,7 @@ impl WorldWorker for Worker {
         &self,
         spec: ProvisionSpec<'_>,
         _log: &mut dyn std::io::Write,
-    ) -> Result<World, WorkerError> {
+    ) -> Result<GuestAccess, WorkerError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
         if let Some(gate) = &self.provision_gate {
             let (ready, wake) = &**gate;
@@ -107,7 +107,7 @@ impl WorldWorker for Worker {
         }
         let mut inspected = world();
         if self.changed_guest_identity {
-            inspected.access = GuestAccess::from_guest_ip(
+            inspected = GuestAccess::from_guest_ip(
                 "192.0.2.2",
                 vec!["ssh-ed25519 AAAACHANGED guest".into()],
             );
@@ -115,7 +115,7 @@ impl WorldWorker for Worker {
         Ok(WorldInspection::Running(inspected))
     }
 
-    fn start(&self, _backend_id: &str) -> Result<World, WorkerError> {
+    fn start(&self, _backend_id: &str) -> Result<GuestAccess, WorkerError> {
         self.starts.fetch_add(1, Ordering::SeqCst);
         self.is_stopped.store(false, Ordering::SeqCst);
         Ok(world())
@@ -136,10 +136,8 @@ impl WorldWorker for Worker {
     }
 }
 
-fn world() -> World {
-    World {
-        access: GuestAccess::from_guest_ip("192.0.2.2", vec!["ssh-ed25519 AAAATEST guest".into()]),
-    }
+fn world() -> GuestAccess {
+    GuestAccess::from_guest_ip("192.0.2.2", vec!["ssh-ed25519 AAAATEST guest".into()])
 }
 
 pub(crate) fn create(name: &str) -> CreateInstance {
