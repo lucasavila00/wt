@@ -87,6 +87,19 @@ impl Screen {
         self.wait_for_text(text)
     }
 
+    #[allow(dead_code)]
+    pub fn click(&mut self, column: u16, row: u16) -> Result<&mut Self> {
+        self.write(
+            format!(
+                "\x1b[<0;{};{}M",
+                column.saturating_add(1),
+                row.saturating_add(1)
+            )
+            .as_bytes(),
+        )?;
+        Ok(self)
+    }
+
     pub fn wait_for_text(&mut self, text: &str) -> Result<&mut Self> {
         let deadline = Instant::now() + TIMEOUT;
         loop {

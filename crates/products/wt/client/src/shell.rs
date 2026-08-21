@@ -17,6 +17,7 @@ use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
 mod control;
+mod delete;
 mod input;
 mod model;
 mod render;
@@ -92,6 +93,7 @@ fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
                 id: world.instance.id,
             },
             name: world.qualified_name(),
+            instance_name: world.instance.name.clone(),
         })
         .collect()
 }
@@ -119,6 +121,13 @@ struct CodexRefresh {
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
+}
+
+#[derive(Default)]
+struct ControlFlows {
+    creation: Option<crate::create::Flow>,
+    creation_error: Option<String>,
+    deletion: Option<delete::Flow>,
 }
 
 impl WorldRefresh {
@@ -290,11 +299,10 @@ fn run_loop(
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
-    let mut creation = None;
-    let mut creation_error = None;
+    let mut flows = ControlFlows::default();
     let runtime = ShellRuntime { config, refresh };
     while !shutdown.load(Ordering::Relaxed) {
-        if creation.is_none() {
+        if flows.creation.is_none() && flows.deletion.is_none() {
             if let Some(snapshot) =
                 take_current_snapshot(&refresh.updates, refresh.generation.load(Ordering::Relaxed))
             {
@@ -323,11 +331,24 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
-        if let Some(action) = creation.as_mut().map(crate::create::Flow::poll) {
+        if let Some(action) = flows.creation.as_mut().map(crate::create::Flow::poll) {
             redraw |= apply_creation_action(
                 action,
-                &mut creation,
-                &mut creation_error,
+                &mut flows.creation,
+                &mut flows.creation_error,
+                sessions,
+                model,
+                refresh,
+                terminal
+                    .size()
+                    .context("read wt shell terminal area")?
+                    .into(),
+            )?;
+        }
+        if let Some(action) = flows.deletion.as_mut().map(delete::Flow::poll) {
+            redraw |= apply_deletion_action(
+                action,
+                &mut flows.deletion,
                 sessions,
                 model,
                 refresh,
@@ -344,8 +365,9 @@ fn run_loop(
                     frame,
                     screen,
                     model,
-                    creation.as_ref(),
-                    creation_error.as_deref(),
+                    flows.creation.as_ref(),
+                    flows.creation_error.as_deref(),
+                    flows.deletion.as_ref(),
                 )
             })?;
             redraw = false;
@@ -364,8 +386,7 @@ fn run_loop(
                 model,
                 area,
                 &runtime,
-                &mut creation,
-                &mut creation_error,
+                &mut flows,
             )?;
             if model.should_quit() {
                 return Ok(());
@@ -384,8 +405,7 @@ fn dispatch_event(
     model: &mut ShellModel,
     area: Rect,
     runtime: &ShellRuntime<'_>,
-    creation: &mut Option<crate::create::Flow>,
-    creation_error: &mut Option<String>,
+    flows: &mut ControlFlows,
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
@@ -399,21 +419,33 @@ fn dispatch_event(
                 return Ok(true);
             }
             if model.mode() == Mode::Control {
-                if creation_error.is_some()
+                if flows.creation_error.is_some()
                     && matches!(
                         key.code,
                         crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
                     )
                 {
-                    creation_error.take();
+                    flows.creation_error.take();
                     return Ok(true);
                 }
-                if let Some(flow) = creation.as_mut() {
+                if let Some(flow) = flows.creation.as_mut() {
                     let action = flow.handle_key(key, runtime.config);
                     let _ = apply_creation_action(
                         action,
-                        creation,
-                        creation_error,
+                        &mut flows.creation,
+                        &mut flows.creation_error,
+                        sessions,
+                        model,
+                        runtime.refresh,
+                        area,
+                    )?;
+                    return Ok(true);
+                }
+                if let Some(flow) = flows.deletion.as_mut() {
+                    let action = flow.handle_event(&Event::Key(key), area, runtime.config);
+                    let _ = apply_deletion_action(
+                        action,
+                        &mut flows.deletion,
                         sessions,
                         model,
                         runtime.refresh,
@@ -430,20 +462,20 @@ fn dispatch_event(
                     }
                 }
                 InputRoute::Command(command) => {
-                    start_creation(
-                        command,
-                        runtime.config,
-                        runtime.refresh,
-                        creation,
-                        creation_error,
-                    );
+                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
                 }
                 InputRoute::Consumed => {}
             }
             Ok(true)
         }
-        Event::Paste(text) if model.mode() == Mode::Control && creation.is_some() => {
-            if let Some(flow) = creation.as_mut() {
+        Event::Paste(text) if model.mode() == Mode::Control && flows.creation.is_some() => {
+            if let Some(flow) = flows.creation.as_mut() {
+                let _ = flow.handle_paste(&text);
+            }
+            Ok(true)
+        }
+        Event::Paste(text) if model.mode() == Mode::Control && flows.deletion.is_some() => {
+            if let Some(flow) = flows.deletion.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
             Ok(true)
@@ -467,15 +499,19 @@ fn dispatch_event(
             Ok(false)
         }
         Event::Mouse(mouse) if model.mode() == Mode::Control => {
-            if creation.is_none() {
+            if let Some(flow) = flows.deletion.as_mut() {
+                let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
+                let _ = apply_deletion_action(
+                    action,
+                    &mut flows.deletion,
+                    sessions,
+                    model,
+                    runtime.refresh,
+                    area,
+                )?;
+            } else if flows.creation.is_none() {
                 if let Some(command) = model.handle_mouse(mouse, area) {
-                    start_creation(
-                        command,
-                        runtime.config,
-                        runtime.refresh,
-                        creation,
-                        creation_error,
-                    );
+                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
                 }
             }
             Ok(true)
@@ -487,6 +523,30 @@ fn dispatch_event(
         _ => Ok(false),
     }
 }
+
+fn start_control_command(
+    command: ControlCommand,
+    config: &ClientConfig,
+    refresh: &WorldRefresh,
+    model: &ShellModel,
+    flows: &mut ControlFlows,
+) {
+    match command {
+        ControlCommand::DeleteWorld => {
+            flows.deletion = Some(delete::Flow::new(model.worlds().to_vec()));
+        }
+        ControlCommand::NewHost | ControlCommand::NewDev => {
+            start_creation(
+                command,
+                config,
+                refresh,
+                &mut flows.creation,
+                &mut flows.creation_error,
+            );
+        }
+    }
+}
+
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
@@ -527,6 +587,7 @@ fn start_creation(
     let kind = match command {
         ControlCommand::NewDev => Ok(crate::create::Kind::Dev),
         ControlCommand::NewHost => crate::host::default_input().map(crate::create::Kind::Host),
+        ControlCommand::DeleteWorld => unreachable!("delete is handled separately"),
     };
     match kind.and_then(|kind| crate::create::prepare(config, kind)) {
         Ok(flow) => {
@@ -567,6 +628,7 @@ fn apply_creation_action(
                     id: created.instance.id,
                 },
                 name: format!("{}.{}", created.context, created.instance.name),
+                instance_name: created.instance.name.clone(),
             };
             if model.world_index(&world.identity).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
@@ -578,46 +640,36 @@ fn apply_creation_action(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
-    #[test]
-    fn world_view_reserves_the_top_row() {
-        assert_eq!(world_rows(24), 23);
-        assert_eq!(world_rows(1), 1);
-        assert_eq!(world_area(Rect::new(0, 0, 80, 24)), Rect::new(0, 1, 80, 23));
-    }
-
-    #[test]
-    fn mouse_input_skips_the_bar_and_is_translated_to_world_rows() {
-        let area = Rect::new(0, 0, 80, 24);
-
-        assert_eq!(world_mouse(mouse(4, 0), area), None);
-        assert_eq!(world_mouse(mouse(4, 1), area).unwrap().row, 0);
-        assert_eq!(world_mouse(mouse(4, 23), area).unwrap().row, 22);
-    }
-
-    fn mouse(column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
+fn apply_deletion_action(
+    action: delete::FlowAction,
+    deletion: &mut Option<delete::Flow>,
+    sessions: &mut SessionSet,
+    model: &mut ShellModel,
+    refresh: &WorldRefresh,
+    area: Rect,
+) -> Result<bool> {
+    match action {
+        delete::FlowAction::None => Ok(false),
+        delete::FlowAction::Changed => Ok(true),
+        delete::FlowAction::Cancel => {
+            deletion.take();
+            Ok(true)
+        }
+        delete::FlowAction::Deleted(identity) => {
+            refresh.invalidate();
+            let worlds = model
+                .worlds()
+                .iter()
+                .filter(|world| world.identity != identity)
+                .cloned()
+                .collect::<Vec<_>>();
+            sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+            model.reconcile_worlds(worlds);
+            deletion.take();
+            Ok(true)
         }
     }
-
-    #[test]
-    fn local_mutation_invalidates_an_older_refresh() {
-        let (sender, updates) = mpsc::sync_channel(1);
-        sender
-            .send(WorldSnapshot {
-                generation: 4,
-                instances: Vec::new(),
-            })
-            .unwrap();
-
-        assert!(take_current_snapshot(&updates, 5).is_none());
-    }
 }
+
+#[cfg(test)]
+mod tests;
