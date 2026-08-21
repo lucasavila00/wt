@@ -1,0 +1,29 @@
+---
+source: crates/products/wt/client/tests/new_tui.rs
+expression: screen.contents()
+---
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+         ┌Create development world────────────────────────────────────────────────────────┐         
+         │ › Context         ‹ local ›                                                    │         
+         │   World name      <my-world>                                                   │         
+         │   Git repository  <git@example.com:team/repository.git>                        │         
+         │   Base branch     main (default)                                               │         
+         │   Virtual CPUs    2 (default)                                                  │         
+         │   RAM (MiB)       4096 (default)                                               │         
+         │   Disk (GiB)      32 (default)                                                 │         
+         │                                                                                │         
+         │ Git author  Test User <test@example.test>                                      │         
+         │ SSH keys    1 discovered                                                       │         
+         │                                                                                │         
+         │                                                                                │         
+         │                                                                                │         
+         │                                                                                │         
+         │                                                                                │         
+         │                                                                                │         
+         │                                                                                │         
+         │ Tab/Shift-Tab focus · ↑/↓ select · Enter continue · Esc cancel                 │         
+         └────────────────────────────────────────────────────────────────────────────────┘

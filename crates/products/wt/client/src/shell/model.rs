@@ -1,4 +1,4 @@
-use super::control::{CodexContextSnapshot, ControlState};
+use super::control::{CodexContextSnapshot, ControlCommand, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
@@ -19,6 +19,7 @@ impl Mode {
 pub(super) enum InputRoute {
     Consumed,
     World,
+    Command(ControlCommand),
 }
 
 #[derive(Debug)]
@@ -56,6 +57,21 @@ impl ShellModel {
 
     pub(super) fn world_count(&self) -> usize {
         self.worlds.len()
+    }
+
+    pub(super) fn world_index(&self, world: &str) -> Option<usize> {
+        self.worlds.iter().position(|candidate| candidate == world)
+    }
+
+    pub(super) fn activate_world(&mut self, world: String) {
+        self.active = match self.world_index(&world) {
+            Some(index) => index,
+            None => {
+                self.worlds.push(world);
+                self.worlds.len() - 1
+            }
+        };
+        self.mode = Mode::World;
     }
 
     pub(super) fn should_quit(&self) -> bool {
@@ -105,15 +121,19 @@ impl ShellModel {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
-                    self.control.handle_key(key);
+                    if let Some(command) = self.control.handle_key(key) {
+                        return InputRoute::Command(command);
+                    }
                 }
                 InputRoute::Consumed
             }
         }
     }
 
-    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
-        self.mode == Mode::Control && self.control.handle_mouse(mouse, area)
+    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> Option<ControlCommand> {
+        (self.mode == Mode::Control)
+            .then(|| self.control.handle_mouse(mouse, area))
+            .flatten()
     }
 }
 

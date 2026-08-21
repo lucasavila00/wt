@@ -46,13 +46,6 @@ impl ControlCommand {
             Self::NewDev => "World: New dev",
         }
     }
-
-    fn execute(self) {
-        match self {
-            Self::NewHost => {}
-            Self::NewDev => {}
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -89,44 +82,39 @@ impl ControlState {
         self.codex = codex;
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyEvent) {
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Option<ControlCommand> {
         if self.palette.is_open() {
-            if let Some(command) = self.palette.handle_key(key) {
-                command.execute();
-            }
-            return;
+            return self.palette.handle_key(key);
         }
         if key.modifiers != KeyModifiers::NONE {
-            return;
+            return None;
         }
         match key.code {
             KeyCode::Tab => self.activity = self.activity.next(),
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             _ => {}
         }
+        None
     }
 
-    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
+    pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) -> Option<ControlCommand> {
         if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
-            return false;
+            return None;
         }
         if self.palette.is_open() {
             let (_, results) = command_palette_layout(control_areas(area).1);
             if results.contains((mouse.column, mouse.row).into()) {
                 let index = usize::from(mouse.row.saturating_sub(results.y));
                 if index < self.palette.matches().len() {
-                    if let Some(command) = self.palette.execute(index) {
-                        command.execute();
-                    }
+                    return self.palette.execute(index);
                 }
             }
-            return true;
+            return None;
         }
         if let Some(activity) = activity_at_position(area, mouse.column, mouse.row) {
             self.activity = activity;
-            return true;
         }
-        false
+        None
     }
 
     pub(super) fn close(&mut self) {
@@ -279,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn palette_filters_selects_and_executes_no_op_commands() {
+    fn palette_filters_selects_and_returns_commands() {
         let mut state = ControlState::default();
         state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
         for character in "dev".chars() {
@@ -287,7 +275,10 @@ mod tests {
         }
 
         assert_eq!(state.palette().matches(), vec![ControlCommand::NewDev]);
-        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(ControlCommand::NewDev)
+        );
         assert!(!state.palette().is_open());
     }
 
@@ -296,15 +287,21 @@ mod tests {
         let mut state = ControlState::default();
         let area = Rect::new(0, 0, 64, 16);
 
-        assert!(state.handle_mouse(mouse(1, 4), area));
+        assert_eq!(state.handle_mouse(mouse(1, 4), area), None);
         assert_eq!(state.activity(), Activity::Codex);
         state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
         let (_, results) = command_palette_layout(control_areas(area).1);
-        assert!(state.handle_mouse(mouse(results.x, results.y + 1), area));
+        assert_eq!(
+            state.handle_mouse(mouse(results.x, results.y + 1), area),
+            Some(ControlCommand::NewDev)
+        );
         assert!(!state.palette().is_open());
 
         state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
-        assert!(state.handle_mouse(mouse(results.x, results.y + 3), area));
+        assert_eq!(
+            state.handle_mouse(mouse(results.x, results.y + 3), area),
+            None
+        );
         assert!(state.palette().is_open());
     }
 

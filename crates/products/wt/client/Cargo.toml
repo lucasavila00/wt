@@ -14,7 +14,6 @@ path = "src/main.rs"
 wt-control-protocol = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-cliclack = { workspace = true }
 crossterm = { workspace = true }
 nix = { workspace = true }
 portable-pty = { workspace = true }

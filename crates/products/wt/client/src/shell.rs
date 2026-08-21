@@ -18,6 +18,7 @@ mod model;
 mod render;
 mod session;
 
+use control::ControlCommand;
 use model::{InputRoute, Mode, ShellModel};
 use session::SessionSet;
 use wt_control_protocol::{ApiRequest, Operation, Response};
@@ -62,7 +63,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         return Err(error).context("enable terminal input for wt shell");
     }
 
-    let result = run_loop(&mut terminal, &mut sessions, &mut model, &shutdown);
+    let result = run_loop(&mut terminal, &mut sessions, &mut model, config, &shutdown);
     let input_result = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
@@ -113,9 +114,12 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    config: &ClientConfig,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
+    let mut creation = None;
+    let mut creation_error = None;
     while !shutdown.load(Ordering::Relaxed) {
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
@@ -125,9 +129,30 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
+        if let Some(action) = creation.as_mut().map(crate::create::Flow::poll) {
+            redraw |= apply_creation_action(
+                action,
+                &mut creation,
+                &mut creation_error,
+                sessions,
+                model,
+                terminal
+                    .size()
+                    .context("read wt shell terminal area")?
+                    .into(),
+            )?;
+        }
         if redraw {
             let screen = sessions.screen(model.active());
-            terminal.draw(|frame| render::draw(frame, screen, model))?;
+            terminal.draw(|frame| {
+                render::draw(
+                    frame,
+                    screen,
+                    model,
+                    creation.as_ref(),
+                    creation_error.as_deref(),
+                )
+            })?;
             redraw = false;
         }
         if sessions.all_closed() {
@@ -146,6 +171,9 @@ fn run_loop(
                 sessions,
                 model,
                 area,
+                config,
+                &mut creation,
+                &mut creation_error,
             )?;
             if model.should_quit() {
                 return Ok(());
@@ -163,14 +191,56 @@ fn dispatch_event(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     area: Rect,
+    config: &ClientConfig,
+    creation: &mut Option<crate::create::Flow>,
+    creation_error: &mut Option<String>,
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
-            if model.handle_key(key) == InputRoute::World {
-                let screen = sessions.screen(model.active());
-                if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
-                    sessions.write(model.active(), &bytes)?;
+            if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
+                let _ = model.handle_key(key);
+                return Ok(true);
+            }
+            if model.mode() == Mode::Control {
+                if creation_error.is_some()
+                    && matches!(
+                        key.code,
+                        crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
+                    )
+                {
+                    creation_error.take();
+                    return Ok(true);
                 }
+                if let Some(flow) = creation.as_mut() {
+                    let action = flow.handle_key(key, config);
+                    let _ = apply_creation_action(
+                        action,
+                        creation,
+                        creation_error,
+                        sessions,
+                        model,
+                        area,
+                    )?;
+                    return Ok(true);
+                }
+            }
+            match model.handle_key(key) {
+                InputRoute::World => {
+                    let screen = sessions.screen(model.active());
+                    if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
+                        sessions.write(model.active(), &bytes)?;
+                    }
+                }
+                InputRoute::Command(command) => {
+                    start_creation(command, config, creation, creation_error);
+                }
+                InputRoute::Consumed => {}
+            }
+            Ok(true)
+        }
+        Event::Paste(text) if model.mode() == Mode::Control && creation.is_some() => {
+            if let Some(flow) = creation.as_mut() {
+                let _ = flow.handle_paste(&text);
             }
             Ok(true)
         }
@@ -192,7 +262,14 @@ fn dispatch_event(
             }
             Ok(false)
         }
-        Event::Mouse(mouse) if model.mode() == Mode::Control => Ok(model.handle_mouse(mouse, area)),
+        Event::Mouse(mouse) if model.mode() == Mode::Control => {
+            if creation.is_none() {
+                if let Some(command) = model.handle_mouse(mouse, area) {
+                    start_creation(command, config, creation, creation_error);
+                }
+            }
+            Ok(true)
+        }
         Event::Resize(columns, rows) => {
             sessions.resize(world_rows(rows), columns)?;
             Ok(true)
@@ -200,7 +277,6 @@ fn dispatch_event(
         _ => Ok(false),
     }
 }
-
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
@@ -229,6 +305,57 @@ fn world_mouse(
     mouse.column -= world.x;
     mouse.row -= world.y;
     Some(mouse)
+}
+
+fn start_creation(
+    command: ControlCommand,
+    config: &ClientConfig,
+    creation: &mut Option<crate::create::Flow>,
+    error: &mut Option<String>,
+) {
+    let kind = match command {
+        ControlCommand::NewDev => Ok(crate::create::Kind::Dev),
+        ControlCommand::NewHost => crate::host::default_input().map(crate::create::Kind::Host),
+    };
+    match kind.and_then(|kind| crate::create::prepare(config, kind)) {
+        Ok(flow) => {
+            *creation = Some(flow);
+            *error = None;
+        }
+        Err(cause) => *error = Some(format!("{cause:#}")),
+    }
+}
+
+fn apply_creation_action(
+    action: crate::create::FlowAction,
+    creation: &mut Option<crate::create::Flow>,
+    error: &mut Option<String>,
+    sessions: &mut SessionSet,
+    model: &mut ShellModel,
+    area: ratatui::layout::Rect,
+) -> Result<bool> {
+    match action {
+        crate::create::FlowAction::None => Ok(false),
+        crate::create::FlowAction::Changed => Ok(true),
+        crate::create::FlowAction::Cancel => {
+            creation.take();
+            Ok(true)
+        }
+        crate::create::FlowAction::Failed(message) => {
+            creation.take();
+            *error = Some(message);
+            Ok(true)
+        }
+        crate::create::FlowAction::Created(created) => {
+            let world = format!("{}.{}", created.context, created.instance.name);
+            if model.world_index(&world).is_none() {
+                sessions.add_world(&world, world_rows(area.height), area.width)?;
+            }
+            model.activate_world(world);
+            creation.take();
+            Ok(true)
+        }
+    }
 }
 
 #[cfg(test)]

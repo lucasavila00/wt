@@ -1,29 +1,22 @@
 use anyhow::{bail, Context as _, Result};
 use clap::{Parser, Subcommand};
-use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
-use ssh_key::{HashAlg, PublicKey};
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::os::unix::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
-use std::sync::atomic::{AtomicBool, Ordering};
 use wt_client::config::{ClientConfig, Context};
 use wt_client::inventory::{self, ContextInstance};
 use wt_client::transport::ContextError;
-use wt_control_protocol::{
-    ApiRequest, Capacity, CapacityResource, CreateApplication, CreateInstance, InstanceApplication,
-    Operation, Outcome, Response, WorldKind,
-};
+use wt_control_protocol::{ApiRequest, InstanceApplication, Operation, Response, WorldKind};
 
 mod code;
+mod create;
 mod git_author;
 mod host;
 mod reports;
 mod shell;
 
-use git_author::read_git_author;
 #[cfg(test)]
 use git_author::{parse_git_config_value, required_git_config_error};
 
@@ -71,35 +64,12 @@ fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
         Command::New(command) => {
-            let application = command.into_kind()?;
-            let input = prompt_create(&config, application, None)?;
-            let context = config
-                .context(&input.context)
-                .context("selected context is missing")?;
-            let request = CreateInstance {
-                name: input.name.clone(),
-                vcpus: input.vcpus,
-                memory_mib: input.memory_mib,
-                disk_gib: input.disk_gib,
-                ssh_authorized_keys: input.ssh_authorized_keys,
-                git_user_name: input.git_user_name,
-                git_user_email: input.git_user_email,
-                application: input.application,
-            };
-            let response = create_with_capacity_retry(context, &request)?;
-            let Response::Instance { instance } = response else {
-                bail!("helper returned the wrong response to create");
-            };
-            let instance = *instance;
-            sync_complete_inventory(&config).with_context(|| {
-                format!(
-                    "world {}.{} was created, but setup was not entered\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
-                    context.name, instance.name, context.name, instance.name
-                )
-            })?;
+            let created = create::run(&config, command.into_kind()?)?;
+            let context = created.context;
+            let instance = created.instance;
             println!(
                 "{}.{}\t{}\t{}",
-                context.name,
+                context,
                 instance.name,
                 instance.status,
                 instance.guest_ip.as_deref().unwrap_or("-")
@@ -109,15 +79,15 @@ fn run() -> Result<()> {
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
             if instance.kind() == WorldKind::Host {
-                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
-                println!("Direct: ssh {}.{}-vs", context.name, instance.name);
+                println!("\nStarting setup: ssh {}.{}", context, instance.name);
+                println!("Direct: ssh {}.{}-vs", context, instance.name);
             } else {
-                println!("\nStarting setup: ssh {}.{}", context.name, instance.name);
-                println!("Guest host: ssh {}.{}-host", context.name, instance.name);
+                println!("\nStarting setup: ssh {}.{}", context, instance.name);
+                println!("Guest host: ssh {}.{}-host", context, instance.name);
             }
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
-            let target = format!("{}.{}", context.name, instance.name);
+            let target = format!("{}.{}", context, instance.name);
             return Err(ProcessCommand::new("ssh").arg(&target).exec())
                 .with_context(|| format!("exec ssh {target}"));
         }
@@ -200,310 +170,6 @@ fn run() -> Result<()> {
         Command::ClearReports => reports::clear(&config)?,
     }
     Ok(())
-}
-
-fn create_with_capacity_retry(context: &Context, request: &CreateInstance) -> Result<Response> {
-    loop {
-        let spinner = cliclack::spinner();
-        spinner.start("Creating world");
-        let outcome = wt_client::transport::call_outcome(
-            context,
-            &ApiRequest::new(Operation::Create(request.clone())),
-        );
-        let outcome = match outcome {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                spinner.error("World creation did not complete");
-                return Err(anyhow::anyhow!(
-                    "create did not complete; run `wt ls` to check the world: {error:#}"
-                ));
-            }
-        };
-        match outcome {
-            Outcome::Ok { response } => {
-                spinner.stop("World created");
-                return Ok(*response);
-            }
-            Outcome::Error { error } if error.code == wt_control_protocol::ErrorCode::Capacity => {
-                spinner.error("World capacity is full");
-                let capacity = error
-                    .capacity
-                    .as_ref()
-                    .context("server returned a capacity error without capacity details")?;
-                if !prompt_capacity_retry(context, &request.name, capacity)? {
-                    bail!("creation cancelled");
-                }
-            }
-            Outcome::Error { error } => {
-                spinner.error("World creation did not complete");
-                let error = wt_client::transport::rejection(context, &error);
-                return Err(anyhow::anyhow!(
-                    "create did not complete; run `wt ls` to check the world: {error:#}"
-                ));
-            }
-        }
-    }
-}
-
-fn prompt_capacity_retry(
-    context: &Context,
-    name: &wt_control_protocol::InstanceName,
-    capacity: &Capacity,
-) -> Result<bool> {
-    cliclack::note(
-        "World memory capacity",
-        capacity_message(&context.name, name, capacity),
-    )?;
-    cliclack::confirm("Retry after freeing capacity in another terminal?")
-        .initial_value(true)
-        .interact()
-        .map_err(prompt_error)
-}
-
-fn capacity_message(
-    context: &str,
-    name: &wt_control_protocol::InstanceName,
-    capacity: &Capacity,
-) -> String {
-    let (resource, unit) = match capacity.resource {
-        CapacityResource::Cpu => ("CPU", "CPU"),
-        CapacityResource::Memory => ("memory", "MiB"),
-        CapacityResource::Disk => ("disk", "GiB"),
-    };
-    format!(
-        "{context} has {} {unit} of {} {unit} world and runner {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.",
-        capacity.reserved, capacity.total, capacity.requested
-    )
-}
-
-const DEFAULT_VCPUS: u32 = 2;
-const DEFAULT_MEMORY_MIB: u64 = 4096;
-const DEFAULT_DISK_GIB: u64 = 32;
-static CANCELLED: AtomicBool = AtomicBool::new(false);
-
-struct CreateInput {
-    context: String,
-    name: wt_control_protocol::InstanceName,
-    vcpus: u32,
-    memory_mib: u64,
-    disk_gib: u64,
-    ssh_authorized_keys: Vec<String>,
-    git_user_name: String,
-    git_user_email: String,
-    application: CreateApplication,
-}
-
-enum CreateKind {
-    Devcontainer,
-    Host(host::Input),
-}
-
-extern "C" fn cancel_prompt(_: i32) {
-    CANCELLED.store(true, Ordering::SeqCst);
-}
-
-struct SignalGuard(Vec<(Signal, SigAction)>);
-
-impl Drop for SignalGuard {
-    fn drop(&mut self) {
-        for (signal, action) in &self.0 {
-            // SAFETY: restore the action returned by the matching sigaction call.
-            let _ = unsafe { signal::sigaction(*signal, action) };
-        }
-    }
-}
-
-fn install_cancel_handlers() -> Result<SignalGuard> {
-    CANCELLED.store(false, Ordering::SeqCst);
-    let action = SigAction::new(
-        SigHandler::Handler(cancel_prompt),
-        SaFlags::empty(),
-        SigSet::empty(),
-    );
-    let mut previous = Vec::new();
-    for signal in [Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
-        // SAFETY: the handler only stores to a lock-free atomic.
-        let old = unsafe { signal::sigaction(signal, &action) }
-            .with_context(|| format!("install {signal} handler"))?;
-        previous.push((signal, old));
-    }
-    Ok(SignalGuard(previous))
-}
-
-fn prompt_create(
-    config: &ClientConfig,
-    kind: CreateKind,
-    name: Option<wt_control_protocol::InstanceName>,
-) -> Result<CreateInput> {
-    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
-        bail!("`wt new` requires an interactive terminal");
-    }
-    let _signals = install_cancel_handlers()?;
-    cliclack::intro("Create a new world")?;
-    let default_context = config
-        .contexts
-        .first()
-        .context("no contexts are configured")?
-        .name
-        .clone();
-    let context = if config.contexts.len() == 1 {
-        default_context
-    } else {
-        let mut prompt = cliclack::select("Where should the world run?");
-        for context in &config.contexts {
-            prompt = prompt.item(context.name.clone(), &context.name, "");
-        }
-        prompt
-            .initial_value(default_context)
-            .filter_mode()
-            .interact()
-            .map_err(prompt_error)?
-    };
-    let name = match name {
-        Some(name) => name,
-        None => {
-            let name: String = cliclack::input("World name")
-                .placeholder("my-world")
-                .validate(|value: &String| {
-                    wt_control_protocol::InstanceName::parse(value.clone())
-                        .map(|_| ())
-                        .map_err(|error| error.to_string())
-                })
-                .interact()
-                .map_err(prompt_error)?;
-            wt_control_protocol::InstanceName::parse(name)?
-        }
-    };
-    let git_author = read_git_author()?;
-    let (application, application_summary) = match kind {
-        CreateKind::Devcontainer => {
-            let source: String = cliclack::input("Git repository")
-                .placeholder("git@example.com:team/repository.git")
-                .validate(|value: &String| {
-                    wt_control_protocol::validate_ssh_git_source(value)
-                        .map_err(|error| error.to_string())
-                })
-                .interact()
-                .map_err(prompt_error)?;
-            let git_base: String = cliclack::input("Base branch")
-                .placeholder("main")
-                .validate(|value: &String| {
-                    wt_control_protocol::validate_git_branch(value)
-                        .map_err(|error| error.to_string())
-                })
-                .interact()
-                .map_err(prompt_error)?;
-            let summary = format!(
-                "Repository  {source}\nBase branch {git_base}\nGit author  {} <{}>\n",
-                git_author.name, git_author.email
-            );
-            (
-                CreateApplication::Devcontainer { source, git_base },
-                summary,
-            )
-        }
-        CreateKind::Host(input) => {
-            let summary = format!(
-                "{}Git author  {} <{}>\n",
-                host::application_summary(&input.user_data_path),
-                git_author.name,
-                git_author.email,
-            );
-            (
-                CreateApplication::Host {
-                    user_data: input.user_data,
-                },
-                summary,
-            )
-        }
-    };
-    let vcpus = prompt_number("Virtual CPUs", DEFAULT_VCPUS)?;
-    let memory_mib = prompt_number("RAM (MiB)", DEFAULT_MEMORY_MIB)?;
-    let disk_gib = prompt_number("Disk (GiB)", DEFAULT_DISK_GIB)?;
-    let keys = discover_public_keys()?;
-    let mut summary = format!(
-        "World       {name}\nContext     {context}\n{application_summary}Resources   {vcpus} CPU · {memory_mib} MiB RAM · {disk_gib} GiB disk\nSSH keys    {}",
-        keys.len()
-    );
-    for (_, fingerprint) in &keys {
-        write!(summary, "\n            {fingerprint}")?;
-    }
-    cliclack::note("Review", summary)?;
-    if !cliclack::confirm("Create this world?")
-        .initial_value(true)
-        .interact()
-        .map_err(prompt_error)?
-    {
-        cliclack::outro_cancel("Creation cancelled")?;
-        bail!("creation cancelled");
-    }
-    Ok(CreateInput {
-        context,
-        name,
-        vcpus,
-        memory_mib,
-        disk_gib,
-        ssh_authorized_keys: keys.into_iter().map(|(key, _)| key).collect(),
-        git_user_name: git_author.name,
-        git_user_email: git_author.email,
-        application,
-    })
-}
-
-fn prompt_error(error: std::io::Error) -> anyhow::Error {
-    if error.kind() == std::io::ErrorKind::Interrupted || CANCELLED.load(Ordering::SeqCst) {
-        anyhow::anyhow!("creation cancelled")
-    } else {
-        error.into()
-    }
-}
-
-fn prompt_number<T>(label: &str, default: T) -> Result<T>
-where
-    T: std::str::FromStr + std::fmt::Display + Copy + PartialEq + Default + 'static,
-    T::Err: std::fmt::Display,
-{
-    cliclack::input(label)
-        .default_input(&default.to_string())
-        .validate(|value: &String| match value.parse::<T>() {
-            Ok(number) if number != T::default() => Ok(()),
-            _ => Err("Enter a number greater than zero."),
-        })
-        .interact()
-        .map_err(prompt_error)
-}
-
-fn discover_public_keys() -> Result<Vec<(String, String)>> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .context("HOME is not set")?;
-    let directory = home.join(".ssh");
-    let entries = std::fs::read_dir(&directory)
-        .with_context(|| format!("read SSH directory {}", directory.display()))?;
-    let mut keys = BTreeSet::new();
-    for entry in entries {
-        let entry = entry.with_context(|| format!("read {} entry", directory.display()))?;
-        if entry.path().extension().and_then(|value| value.to_str()) != Some("pub")
-            || !entry.file_type()?.is_file()
-        {
-            continue;
-        }
-        let value = std::fs::read_to_string(entry.path())
-            .with_context(|| format!("read public key {}", entry.path().display()))?;
-        let mut key = PublicKey::from_openssh(value.trim())
-            .with_context(|| format!("parse public key {}", entry.path().display()))?;
-        key.set_comment("");
-        keys.insert(key.to_openssh()?);
-    }
-    if keys.is_empty() {
-        bail!("no valid public keys found in {}", directory.display());
-    }
-    keys.into_iter()
-        .map(|key| {
-            let parsed = PublicKey::from_openssh(&key)?;
-            Ok((key, parsed.fingerprint(HashAlg::Sha256).to_string()))
-        })
-        .collect()
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {
