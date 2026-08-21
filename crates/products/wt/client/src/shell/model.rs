@@ -40,6 +40,14 @@ impl ShellModel {
         self.active
     }
 
+    pub(super) fn active_world(&self) -> &str {
+        &self.worlds[self.active]
+    }
+
+    pub(super) fn world_count(&self) -> usize {
+        self.worlds.len()
+    }
+
     pub(super) fn should_quit(&self) -> bool {
         self.should_quit
     }

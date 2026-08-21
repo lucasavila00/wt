@@ -14,7 +14,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
                 frame.set_cursor_position((column, row));
             }
         }
-        Mode::Switcher => draw_switcher(frame),
+        Mode::Switcher => draw_switcher(frame, model),
         Mode::Control => draw_control(frame),
     }
 }
@@ -67,8 +67,18 @@ fn color(source: vt100::Color) -> Color {
     }
 }
 
-fn draw_switcher(frame: &mut Frame<'_>) {
-    draw_overlay(frame, 42, 3, "←/→ worlds   ↑ control   F5 close".to_owned());
+fn draw_switcher(frame: &mut Frame<'_>, model: &ShellModel) {
+    draw_overlay(
+        frame,
+        52,
+        4,
+        format!(
+            "←/→ worlds   ↑ control   F5 close\n {}  ({}/{})",
+            model.active_world(),
+            model.active() + 1,
+            model.world_count()
+        ),
+    );
 }
 
 fn draw_control(frame: &mut Frame<'_>) {

@@ -13,9 +13,9 @@ It has:
   input to that world's Byobu;
 - a control menu for managing worlds and Byobu sessions.
 
-`F5` opens a small black switcher over the active full-screen world view. The
-switcher shows the available directional controls; the world remains visible
-behind it.
+`F5` opens a small black switcher over the active full-screen world view. It
+shows directional controls, a fixed Nerd Font terminal icon, the active world
+name, and its position among open worlds. The world remains visible behind it.
 
 While the overlay is open, it captures its navigation keys:
 
