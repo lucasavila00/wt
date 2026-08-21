@@ -119,7 +119,7 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
     Ok(config_path)
 }
 
-pub(crate) fn has_alias(item: &ContextInstance) -> bool {
+pub fn has_alias(item: &ContextInstance) -> bool {
     matches!(
         item.instance.status,
         InstanceStatus::Setup | InstanceStatus::Running | InstanceStatus::Error

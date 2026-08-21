@@ -21,6 +21,7 @@ mod code;
 mod git_author;
 mod host;
 mod reports;
+mod shell;
 
 use git_author::read_git_author;
 #[cfg(test)]
@@ -52,6 +53,8 @@ enum Command {
     Code { name: String },
     /// Synchronize SSH aliases and connect to a world.
     Ssh { name: String },
+    /// Open the persistent world terminal workspace.
+    Shell,
     /// Update managed OpenSSH inventory.
     Sync,
     /// Show reports submitted about wt-tools.
@@ -198,6 +201,7 @@ fn run() -> Result<()> {
         }
         Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
+        Command::Shell => shell::run(&config)?,
         Command::Sync => {
             let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());
