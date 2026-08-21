@@ -73,13 +73,13 @@ pub(super) struct BuildEnvironment<'a> {
     pub(super) access_sha256: &'a str,
     pub(super) git_author_sha256: &'a str,
     pub(super) agent_git_sha256: &'a str,
-    pub(super) mount_folders_sha256: &'a str,
+    pub(super) mount_codex_sha256: &'a str,
 }
 
 impl BuildEnvironment<'_> {
     pub(super) fn render(&self) -> String {
         format!(
-        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_GIT_SHA256='{}'\nMOUNT_FOLDERS_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_GIT_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\nDEVCONTAINER_CLI_VERSION='{}'\n",
         self.kind,
         wt_retained::GUEST_USER,
         wt_retained::GUEST_UID,
@@ -97,7 +97,7 @@ impl BuildEnvironment<'_> {
         self.access_sha256,
         self.git_author_sha256,
         self.agent_git_sha256,
-        self.mount_folders_sha256,
+        self.mount_codex_sha256,
         DEVCONTAINER_CLI_VERSION,
     )
     }
@@ -153,7 +153,7 @@ power_state:
                 access_sha256: "access-sha",
                 git_author_sha256: "git-author-sha",
                 agent_git_sha256: "agent-git-sha",
-                mount_folders_sha256: "mount-folders-sha",
+                mount_codex_sha256: "mount-codex-sha",
             }
             .render(),
             @r###"
@@ -174,7 +174,7 @@ BYOBU_COLOR_SHA256='byobu-color-sha'
 ACCESS_SHA256='access-sha'
 GIT_AUTHOR_SHA256='git-author-sha'
 AGENT_GIT_SHA256='agent-git-sha'
-MOUNT_FOLDERS_SHA256='mount-folders-sha'
+MOUNT_CODEX_SHA256='mount-codex-sha'
 DEVCONTAINER_CLI_VERSION='0.80.2'
 "###
         );

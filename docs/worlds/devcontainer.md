@@ -38,28 +38,18 @@ The first `ssh CONTEXT.NAME` completes setup. It clones the repository, starts
 the recipe, and leaves its output in Byobu and the guest setup log. Later
 connections attach to the same session.
 
-## Shared agent conversations
+## Codex
 
-When the server enables the example shared folders, they are mounted in the VM
-at:
+WT installs Codex and `wt-codex` in the retained image and automatically
+injects both commands into the primary devcontainer. It links the configured
+`remoteUser`'s `.codex/sessions` to the server-backed read-write session store
+and `.codex/auth.json` to the server login exposed read-only. Repositories do
+not configure these mounts.
 
-```text
-/home/wt/.codex/sessions
-```
-
-WT does not inject them into the devcontainer. A repository using Docker
-Compose can expose them to its configured `remoteUser` with service bind
-mounts. For a container whose user is `vscode`:
-
-```yaml
-services:
-  app:
-    volumes:
-      - /home/wt/.codex/sessions:/home/vscode/.codex/sessions
-```
-
-The repository owns the container target paths and permissions; WT does not
-assume every image uses `/home/vscode`.
+`wt-codex` reconciles shared conversations into each environment's local Codex
+index before starting the real CLI. Databases, indexes, logs, and locks remain
+local to the world or container. Do not open the same conversation in two
+worlds at once.
 
 ## Git
 

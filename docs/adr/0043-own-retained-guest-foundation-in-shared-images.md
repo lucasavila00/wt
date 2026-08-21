@@ -6,14 +6,13 @@
   [ADR 0026](0026-make-world-kinds-first-class.md),
   [ADR 0027](0027-build-images-in-kvm.md),
   [ADR 0039](0039-make-world-disks-independent-of-golden-images.md),
-  [ADR 0041](0041-use-protocol-versions-for-client-server-compatibility.md), and
-  [ADR 0042](0042-share-configured-folders-with-retained-worlds.md)
+  [ADR 0041](0041-use-protocol-versions-for-client-server-compatibility.md)
 
 ## Context
 
 The retained `host` and `devcontainer` images are built independently from the
 same pinned Ubuntu source, but both kinds need the same guest owner, home
-directory, terminal profile, and shared-folder ownership. Those foundations
+directory, terminal profile, and Codex mount ownership. Those foundations
 must exist before a kind recipe runs. Runtime provisioning must be able to
 assume the image contract without silently creating a different guest layout.
 
@@ -41,12 +40,12 @@ terminal settings.
 
 The typed `wt-retained` crate owns the corresponding guest constants and one
 provisioning operation for guest access, Git author transfer, agent Git, and
-shared-folder mounts. Both retained kind workers call that complete operation.
+Codex mounts. Both retained kind workers call that complete operation.
 The image installs its helpers at
 `/usr/local/libexec/wt-retained-access`,
 `/usr/local/libexec/wt-retained-git-author`,
 `/usr/local/libexec/wt-retained-agent-git`, and
-`/usr/local/libexec/wt-retained-mount-folders`.
+`/usr/local/libexec/wt-retained-mount-codex`.
 
 Git author name and email are common retained-world create fields rather than a
 devcontainer-only application detail. This incompatible request change uses
@@ -73,10 +72,9 @@ The image builder validates the complete marker before accepting the build.
 Runtime kind provisioning validates the existing image user and fails if the
 contract is absent or has drifted; it does not create or repair `wt`.
 
-The server's shared-folder sources and every retained VM use this same
-`1001:1001` ownership contract. Shared-folder mounts remain VM-level paths
-under `/home/wt`; a devcontainer repository may bind them into its own
-container user separately.
+The server's Codex sessions and every retained VM use this same `1001:1001`
+ownership contract. WT mounts sessions at `/home/wt/.codex/sessions` and
+injects them into the primary devcontainer.
 
 ## Consequences
 

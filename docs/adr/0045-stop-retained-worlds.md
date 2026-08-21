@@ -23,8 +23,8 @@ has stopped. A timeout returns an error; it does not forcibly power off the
 guest.
 
 A stopped world keeps its disk, machine definition, metadata, SSH identities,
-Git grant, and shared-folder data. It does not keep RAM or live processes. QEMU,
-guest networking, SSH, and virtiofs processes stop with the guest.
+Git grant, and server-backed Codex data. It does not keep RAM or live processes.
+QEMU, guest networking, SSH, and virtiofs processes stop with the guest.
 
 Stopped worlds release CPU and memory and count only the disk space they
 actually use. `wt start` atomically reserves CPU, memory, and the disk's full

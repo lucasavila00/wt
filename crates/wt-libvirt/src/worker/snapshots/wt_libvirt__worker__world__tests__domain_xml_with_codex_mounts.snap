@@ -1,6 +1,6 @@
 ---
 source: crates/wt-libvirt/src/worker/world.rs
-expression: "test_domain_xml(vec![SharedFolder\n{\n    source: PathBuf::from(\"/home/wt/.codex/sessions\"), tag:\n    \"wt-shared-0\".to_owned(),\n}])"
+expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"/home/wt/.codex/sessions & rollouts\"), auth:\n    PathBuf::from(\"/home/wt/.codex/.wt-auth\"),\n}))"
 ---
 <domain type='kvm'>
   <name>wt-0123456789abcdef0123456789abcdef</name>
@@ -39,8 +39,13 @@ expression: "test_domain_xml(vec![SharedFolder\n{\n    source: PathBuf::from(\"/
     </interface>
     <filesystem type='mount' accessmode='passthrough'>
       <driver type='virtiofs'/>
-      <source dir='/home/wt/.codex/sessions'/>
-      <target dir='wt-shared-0'/>
+      <source dir='/home/wt/.codex/sessions &amp; rollouts'/>
+      <target dir='wt-codex-sessions'/>
+    </filesystem>
+    <filesystem type='mount' accessmode='passthrough'>
+      <driver type='virtiofs'/>
+      <source dir='/home/wt/.codex/.wt-auth'/>
+      <target dir='wt-codex-auth'/>
     </filesystem>
     <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>

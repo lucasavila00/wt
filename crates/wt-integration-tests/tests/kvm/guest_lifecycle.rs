@@ -11,6 +11,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut timings = Timings::new();
     let mut harness = KvmHarness::new(&mut timings);
+    let codex_auth_sha256 = assert_server_codex_auth_export();
     let name = unique_name("git");
 
     let disks_before_rejection = count_disks(&harness.config.libvirt.worlds_dir);
@@ -68,22 +69,19 @@ fn agent_git_transport_works_without_provider_credentials() {
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
     let shared_marker = format!("wt-kvm-e2e-{}", created.id.simple());
-    let codex_source = harness
-        .config
-        .shared_folders
-        .iter()
-        .find(|folder| folder.target == Path::new(".codex/sessions"))
-        .unwrap()
-        .source
-        .join(&shared_marker);
+    let codex_source = Path::new(wt_server::CODEX_SESSIONS_PATH).join(&shared_marker);
     run_guest(
         &harness,
         &name,
         &format!(
             "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
              test -x /usr/local/bin/wt-codex; \
-             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-shared-0; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-codex-sessions; \
              test \"$(findmnt -n -o FSTYPE --mountpoint /home/wt/.codex/sessions)\" = virtiofs; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /run/wt-codex-auth)\" = wt-codex-auth; \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
+             test ! -w /home/wt/.codex/auth.json; \
              printf 'from-devcontainer-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
         "write a shared marker through the devcontainer VM",
@@ -98,6 +96,11 @@ fn agent_git_transport_works_without_provider_credentials() {
         &host_name,
         &format!(
             "set -eu; test \"$(id -u)\" = 1001; test \"$(id -g)\" = 1001; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-codex-sessions; \
+             test \"$(findmnt -n -o SOURCE --mountpoint /run/wt-codex-auth)\" = wt-codex-auth; \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
+             test ! -w /home/wt/.codex/auth.json; \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-server; \
              printf 'from-host-vm\\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
         ),
@@ -109,6 +112,33 @@ fn agent_git_transport_works_without_provider_credentials() {
         &format!("test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm"),
         "read the host marker through the devcontainer VM",
     );
+    app(
+        &harness,
+        &name,
+        &format!(
+            "set -eu; \
+             test \"$(readlink /home/wt/.codex/sessions)\" = /var/lib/wt-codex-sessions; \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /var/lib/wt-codex-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
+             test ! -w /home/wt/.codex/auth.json; \
+             test -x /usr/local/bin/wt-codex; test -x /usr/local/bin/.codex.wt-real; \
+             cmp /usr/local/bin/codex /usr/local/bin/wt-codex; \
+             test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm; \
+             printf 'from-app\n' > /home/wt/.codex/sessions/{shared_marker}; sync"
+        ),
+        "verify automatic Codex integration in the devcontainer",
+    );
+    assert_eq!(fs::read_to_string(&codex_source).unwrap(), "from-app\n");
+    run_host(
+        &harness,
+        &host_name,
+        &format!(
+            "test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-app && \
+             printf 'from-host-vm\n' > /home/wt/.codex/sessions/{shared_marker} && sync"
+        ),
+        "read the app marker and restore the host marker",
+    );
+    verify_codex_auth_rotation(&harness, &name, &host_name, &codex_auth_sha256);
     run_host(
         &harness,
         &host_name,
@@ -217,7 +247,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "sudo -n true; ",
             "test -z \"${SSH_AUTH_SOCK:-}\"; ",
             "test -S /run/wt-agent-git/gateway.sock; ",
-            "test ! -e /home/wt/.codex/auth.json; ",
+            "test -s /home/wt/.codex/auth.json; test ! -w /home/wt/.codex/auth.json; ",
             "! command -v docker; ",
             "! command -v devcontainer; ",
             "git --version; curl --version; codex --version; command -v diffo; ",
@@ -297,8 +327,7 @@ fn agent_git_transport_works_without_provider_credentials() {
             "set -eu; ",
             "test \"$(id -un)\" = wt; ",
             "rustc --version; cargo clippy --version; rustfmt --version; ",
-            "codex --version; pkg-config --exists libvirt; ",
-            "test ! -e /home/wt/.codex/auth.json",
+            "codex --version; pkg-config --exists libvirt",
         ),
         "verify devcontainer project tools",
     );
@@ -312,7 +341,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         &harness,
         &name,
         &format!("test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm"),
-        "verify repository-owned Docker Compose shared-folder binds",
+        "verify automatic Codex session mount",
     );
 
     let help = app_output(&harness, &name, "ag-git --help", "read ag-git help");
@@ -425,6 +454,9 @@ fn agent_git_transport_works_without_provider_credentials() {
         &format!(
             "test -S /run/wt-agent-git/gateway.sock && \
              systemctl is-active --quiet docker.service wt-agent-git-relay.service && \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-auth/auth.json && \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
+             test ! -w /home/wt/.codex/auth.json && \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm"
         ),
         "verify guest services after KVM restart",
@@ -432,7 +464,12 @@ fn agent_git_transport_works_without_provider_credentials() {
     app(
         &harness,
         &name,
-        "test \"$(cat /workspaces/wt/.wt-kvm-e2e-restart)\" = 'persistent app state' && git fetch origin",
+        &format!(
+            "test \"$(cat /workspaces/wt/.wt-kvm-e2e-restart)\" = 'persistent app state' && \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /var/lib/wt-codex-auth/auth.json && \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
+             test ! -w /home/wt/.codex/auth.json && git fetch origin"
+        ),
         "verify app state and Git after KVM restart",
     );
 
@@ -455,6 +492,9 @@ fn agent_git_transport_works_without_provider_credentials() {
             "command -v codex diffo && test -S /run/wt-agent-git/gateway.sock && \
              systemctl is-active --quiet wt-agent-git-relay.service && \
              git -C /home/wt/gateway-check fetch origin && \
+             test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-auth/auth.json && \
+             test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256} && \
+             test ! -w /home/wt/.codex/auth.json && \
              test \"$(cat /home/wt/.codex/sessions/{shared_marker})\" = from-host-vm"
         ),
         "verify host state after KVM restart",
@@ -613,31 +653,6 @@ fn agent_git_transport_works_without_provider_credentials() {
     let _ = interrupted_setup.kill();
     let _ = interrupted_setup.wait();
     harness.delete(&interrupted_name);
-}
-
-fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
-    let output = app_command(harness, name, command).output().unwrap();
-    ensure_success(action, &output).unwrap();
-}
-
-fn app_output(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) -> String {
-    let output = app_command(harness, name, command).output().unwrap();
-    ensure_success(action, &output).unwrap();
-    String::from_utf8(output.stdout).unwrap()
-}
-
-fn app_command(harness: &KvmHarness, name: &InstanceName, command: &str) -> std::process::Command {
-    let mut command_process = cmd!(
-        "ssh",
-        "-F",
-        harness.temp.path().join(".ssh/config"),
-        "-i",
-        &harness.git.guest_key,
-        format!("local.{name}-vs"),
-        format!("cd /workspaces/wt && {command}"),
-    );
-    command_process.env_remove("SSH_AUTH_SOCK");
-    command_process
 }
 
 fn assert_ref(repository: &Path, reference: &str, exists: bool) {

@@ -186,7 +186,7 @@ fn service_unit_drift_requires_a_runtime_reset() {
 }
 
 #[test]
-fn service_runs_as_the_installing_user() {
+fn services_use_the_expected_users() {
     let user = User::from_uid(Uid::effective()).unwrap().unwrap();
     let input = toml::from_str::<InstallInput>(
         r#"
@@ -232,8 +232,9 @@ binary_dir = "/opt/wt bin"
     insta::assert_snapshot!(unit, @r###"
     [Unit]
     Description=WT control-plane daemon
-    Wants=network-online.target wt-agent-git-gateway.service
-    After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service
+    Requires=wt-codex-auth.service
+    Wants=network-online.target wt-agent-git-gateway.service wt-codex-auth.path
+    After=network-online.target docker.service libvirtd.service wt-agent-git-gateway.service wt-codex-auth.service
 
     [Service]
     Type=simple
@@ -245,6 +246,31 @@ binary_dir = "/opt/wt bin"
     RuntimeDirectory=wt
     RuntimeDirectoryMode=0700
     UMask=0077
+
+    [Install]
+    WantedBy=multi-user.target
+    "###);
+    let codex_auth = String::from_utf8(codex_auth_service(&user)).unwrap();
+    let codex_auth = codex_auth
+        .replace(&user.dir.display().to_string(), "[HOME]")
+        .replace(&format!("User={}", user.name), "User=[USER]");
+    insta::assert_snapshot!(codex_auth, @r###"
+    [Unit]
+    Description=Refresh the WT Codex authentication share
+
+    [Service]
+    Type=oneshot
+    Environment="HOME=[HOME]"
+    ExecStart=/usr/local/libexec/wt-codex-auth-share
+    UMask=0077
+    "###);
+    insta::assert_snapshot!(String::from_utf8(codex_auth_path_unit()).unwrap(), @r###"
+    [Unit]
+    Description=Watch the WT Codex authentication file
+
+    [Path]
+    PathChanged=/home/wt/.codex/auth.json
+    Unit=wt-codex-auth.service
 
     [Install]
     WantedBy=multi-user.target

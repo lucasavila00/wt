@@ -15,7 +15,7 @@ pub(in crate::image) fn staged_input_hashes(
         access_sha256: &sha_bytes(CONFIGURE_ACCESS),
         git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
         agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
-        mount_folders_sha256: &sha_bytes(MOUNT_FOLDERS),
+        mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
     }
     .render();
     let mut inputs = BTreeMap::from([
@@ -34,6 +34,10 @@ pub(in crate::image) fn staged_input_hashes(
         (
             "/var/tmp/wt-install-terminal.sh".to_owned(),
             sha_bytes(INSTALL_TERMINAL),
+        ),
+        (
+            "/var/tmp/wt-install-codex.sh".to_owned(),
+            sha_bytes(INSTALL_CODEX),
         ),
         (
             "/var/tmp/wt-image-build.sh".to_owned(),
@@ -58,8 +62,8 @@ pub(in crate::image) fn staged_input_hashes(
             sha_bytes(INSTALL_AGENT_GIT),
         ),
         (
-            "/var/tmp/wt-retained-mount-folders".to_owned(),
-            sha_bytes(MOUNT_FOLDERS),
+            "/var/tmp/wt-retained-mount-codex".to_owned(),
+            sha_bytes(MOUNT_CODEX),
         ),
         (
             "offline:/wt-finalize-image.sh".to_owned(),

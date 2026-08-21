@@ -24,7 +24,8 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service 2>/dev/null || true
+sudo systemctl disable --now wt-server.service wt-agent-git-gateway.service \
+    wt-codex-auth.path 2>/dev/null || true
 
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do
@@ -40,7 +41,10 @@ if command -v docker >/dev/null; then
 fi
 
 sudo rm -f /etc/systemd/system/wt-server.service \
-    /etc/systemd/system/wt-agent-git-gateway.service
+    /etc/systemd/system/wt-agent-git-gateway.service \
+    /etc/systemd/system/wt-codex-auth.service \
+    /etc/systemd/system/wt-codex-auth.path \
+    /usr/local/libexec/wt-codex-auth-share
 sudo rm -f \
     /etc/credstore.encrypted/wt-agent-git-github-api-token \
     /etc/credstore.encrypted/wt-agent-git-github-ssh-private-key \
@@ -49,6 +53,7 @@ sudo rm -f \
     /etc/credstore.encrypted/wt-agent-git-gitlab-ssh-private-key \
     /etc/credstore.encrypted/wt-agent-git-gitlab-ssh-known-hosts
 rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt"
+rm -rf "$HOME/.codex/.wt-auth"
 sudo rm -f /etc/systemd/system/docker.service.d/wt-registry-cache.conf
 sudo rm -f /usr/local/share/ca-certificates/wt-registry-cache.crt
 sudo systemctl daemon-reload

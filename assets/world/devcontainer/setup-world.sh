@@ -95,6 +95,9 @@ app_user=$(
     devcontainer read-configuration --workspace-folder "$workspace" |
         /usr/local/bin/wt-app-info configured-user
 )
+# The CLI's additional-mount grammar has no read-only flag. The authentication
+# source remains read-only because /run/wt-codex-auth is itself a read-only
+# virtiofs mount.
 devcontainer up --log-level debug --log-format text --workspace-folder "$workspace" \
     --additional-features "$additional_features" \
     --mount type=bind,source=/var/lib/wt-app-ssh/public,target=/run/wt-app-ssh \
@@ -102,9 +105,26 @@ devcontainer up --log-level debug --log-format text --workspace-folder "$workspa
     --mount type=bind,source=/run/wt-agent-git,target=/run/wt-agent-git \
     --mount type=bind,source=/usr/local/bin/git-remote-ag,target=/usr/local/bin/git-remote-ag \
     --mount type=bind,source=/usr/local/bin/ag-git,target=/usr/local/bin/ag-git \
-    --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint
+    --mount type=bind,source=/usr/local/bin/wt-agent-git-hint,target=/usr/local/bin/wt-agent-git-hint \
+    --mount type=bind,source=/usr/local/bin/wt-codex,target=/usr/local/bin/wt-codex \
+    --mount type=bind,source=/usr/local/bin/wt-codex,target=/usr/local/bin/codex \
+    --mount type=bind,source=/usr/local/bin/.codex.wt-real,target=/usr/local/bin/.codex.wt-real \
+    --mount type=bind,source=/home/wt/.codex/sessions,target=/var/lib/wt-codex-sessions \
+    --mount type=bind,source=/run/wt-codex-auth,target=/var/lib/wt-codex-auth
 devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
-    'workspace=$(pwd -P) && git config --global --add safe.directory "$workspace"'
+    'set -eu
+    workspace=$(pwd -P)
+    git config --global --add safe.directory "$workspace"
+    install -d -m 0700 "$HOME/.codex"
+    for name in sessions auth.json; do
+        target=$HOME/.codex/$name
+        if test -e "$target" && ! test -L "$target"; then
+            echo "Codex path is not managed by WT: $target" >&2
+            exit 1
+        fi
+    done
+    ln -sfn /var/lib/wt-codex-sessions "$HOME/.codex/sessions"
+    ln -sfn /var/lib/wt-codex-auth/auth.json "$HOME/.codex/auth.json"'
 while IFS= read -r host; do
     test -n "$host" || continue
     devcontainer exec --workspace-folder "$workspace" /bin/sh -c '

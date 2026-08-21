@@ -13,9 +13,8 @@ wt new host NAME
 
 WT honors `XDG_CONFIG_HOME` when it is set. For a one-off recipe, override the
 default with `wt new host NAME --user-data ./host.yaml`. The client installer
-creates a thin recipe with Diffo and Codex when the default file is missing and
-does not overwrite an existing file. It does not install Rust/Cargo or clone a
-project.
+creates a thin recipe with Diffo when the default file is missing and does not
+overwrite an existing file. It does not install Rust/Cargo or clone a project.
 
 WT first boots the retained host image, which already owns the `wt` login at
 UID/GID `1001:1001`. Provisioning validates that image contract, stages the
@@ -56,9 +55,11 @@ current SSH connection while Byobu and its processes persist; existing panes
 may retain a stale socket after disconnect or reattach. WT does not retarget
 that socket, and host setup never receives it.
 
-When configured by the server, shared Codex sessions are available at
-`/home/wt/.codex/sessions`. This mount is restored and verified whenever a
-stopped host world starts.
+The retained image contains Codex. Provisioning installs and activates
+`wt-codex`, mounts the server-backed sessions read-write at
+`/home/wt/.codex/sessions`, and links `.codex/auth.json` to the server login
+exposed read-only. These mounts are restored and verified whenever a stopped
+host world starts.
 
 Every host receives `ag-git` and a revocable gateway grant. Configured provider
 URLs use the gateway automatically. The grant can read every available

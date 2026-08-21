@@ -50,9 +50,9 @@ handling shared by the regular WT and standalone Git proxy installers.
 `wt-retained` contains the fixed retained-guest identity and shared guest
 operations used by both retained kinds. Its runtime calls the image-installed
 helpers for SSH access, Git author transfer, agent Git, and virtiofs
-shared-folder mounts. One retained provisioning operation applies that complete
-contract for both kinds; kind crates retain only their application-specific
-setup.
+Codex session and authentication mounts. One retained provisioning operation
+applies that complete contract for both kinds; kind crates retain only their
+application-specific setup.
 
 ## State
 

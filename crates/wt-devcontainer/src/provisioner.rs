@@ -159,7 +159,7 @@ impl WorldProvisioner {
 
     pub fn start(&self, machine: &Machine) -> Result<World, WorkerError> {
         let deadline = Instant::now() + self.config.recipe_timeout;
-        self.config.retained.mount_shared_folders(
+        self.config.retained.mount_codex(
             machine.transport.as_ref(),
             deadline,
             &mut std::io::sink(),

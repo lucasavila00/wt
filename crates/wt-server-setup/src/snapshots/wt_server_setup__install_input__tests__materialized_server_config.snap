@@ -4,10 +4,6 @@ expression: text
 ---
 version = 1
 
-[[shared_folders]]
-source = "/home/wt/.codex/sessions"
-target = ".codex/sessions"
-
 [image]
 devcontainer_path = "/var/lib/wt/images/devcontainer.qcow2"
 host_path = "/var/lib/wt/images/host.qcow2"

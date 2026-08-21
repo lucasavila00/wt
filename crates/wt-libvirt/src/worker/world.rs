@@ -53,23 +53,22 @@ pub(super) fn domain_xml(
     let memory_mib = spec.memory_mib;
     let vcpus = spec.vcpus;
     let mac = mac_address(provider_id);
-    let memory_backing = if config.shared_folders.is_empty() {
+    let memory_backing = if config.codex_mounts.is_none() {
         String::new()
     } else {
         "  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>\n".to_owned()
     };
-    let shared_folders = config
-        .shared_folders
-        .iter()
-        .map(|folder| {
-            let source = folder.source.to_string_lossy();
-            let source = quick_xml::escape::escape(source.as_ref());
-            let tag = quick_xml::escape::escape(&folder.tag);
-            format!(
-                "    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{source}'/>\n      <target dir='{tag}'/>\n    </filesystem>\n"
-            )
-        })
-        .collect::<String>();
+    let codex_mounts = config.codex_mounts.as_ref().map_or_else(String::new, |mounts| {
+        let sessions_path = mounts.sessions.to_string_lossy();
+        let auth_path = mounts.auth.to_string_lossy();
+        let sessions = quick_xml::escape::escape(sessions_path.as_ref());
+        let auth = quick_xml::escape::escape(auth_path.as_ref());
+        format!(
+            "    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{sessions}'/>\n      <target dir='{}'/>\n    </filesystem>\n    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{auth}'/>\n      <target dir='{}'/>\n    </filesystem>\n",
+            crate::CODEX_SESSIONS_TAG,
+            crate::CODEX_AUTH_TAG,
+        )
+    });
     let interface = if network_enabled {
         format!(
             "    <interface type='network'>\n      <mac address='{mac}'/>\n      <source network='{network}'/>\n      <model type='virtio'/>\n    </interface>\n"
@@ -104,7 +103,7 @@ pub(super) fn domain_xml(
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>
-{interface}{shared_folders}    <channel type='unix'>
+{interface}{codex_mounts}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
     <vsock model='virtio'><cid auto='yes'/></vsock>
@@ -129,10 +128,10 @@ fn mac_address(provider_id: &wt_provider::ProviderId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MachineConfig, SharedFolder};
+    use crate::{CodexMounts, MachineConfig};
     use std::time::Duration;
 
-    fn test_domain_xml(shared_folders: Vec<SharedFolder>) -> String {
+    fn test_domain_xml(codex_mounts: Option<CodexMounts>) -> String {
         let provider_id =
             wt_provider::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
         let paths = Paths::new(Path::new("/var/lib/libvirt/images/wt"), &provider_id);
@@ -141,7 +140,7 @@ mod tests {
             worlds_dir: PathBuf::from("/var/lib/libvirt/images/wt"),
             network: "default & private".to_owned(),
             boot_timeout: Duration::from_secs(300),
-            shared_folders,
+            codex_mounts,
         };
         let spec = wt_provider::MachineSpec {
             provider_id: provider_id.clone(),
@@ -175,38 +174,18 @@ mod tests {
     }
 
     #[test]
-    fn domain_without_shared_folders_has_no_virtiofs_support() {
-        insta::assert_snapshot!(
-            "domain_xml_without_shared_folders",
-            test_domain_xml(Vec::new())
-        );
+    fn domain_without_codex_has_no_virtiofs_support() {
+        insta::assert_snapshot!("domain_xml_without_codex", test_domain_xml(None));
     }
 
     #[test]
-    fn domain_with_one_shared_folder_has_virtiofs_support() {
+    fn domain_with_codex_mounts_has_virtiofs_support() {
         insta::assert_snapshot!(
-            "domain_xml_with_one_shared_folder",
-            test_domain_xml(vec![SharedFolder {
-                source: PathBuf::from("/home/wt/.codex/sessions"),
-                tag: "wt-shared-0".to_owned(),
-            }])
-        );
-    }
-
-    #[test]
-    fn domain_with_two_shared_folders_escapes_sources_and_keeps_stable_tags() {
-        insta::assert_snapshot!(
-            "domain_xml_with_two_shared_folders",
-            test_domain_xml(vec![
-                SharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/codex & sessions"),
-                    tag: "wt-shared-0".to_owned(),
-                },
-                SharedFolder {
-                    source: PathBuf::from("/var/lib/wt/shared/notes"),
-                    tag: "wt-shared-1".to_owned(),
-                },
-            ])
+            "domain_xml_with_codex_mounts",
+            test_domain_xml(Some(CodexMounts {
+                sessions: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
+                auth: PathBuf::from("/home/wt/.codex/.wt-auth"),
+            }))
         );
     }
 }

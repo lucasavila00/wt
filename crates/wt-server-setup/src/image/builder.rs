@@ -25,6 +25,7 @@ const INSTALL_PACKAGES: &[u8] =
     include_bytes!("../../../../assets/world/shared/install-packages.sh");
 const INSTALL_TERMINAL: &[u8] =
     include_bytes!("../../../../assets/world/shared/install-terminal.sh");
+const INSTALL_CODEX: &[u8] = include_bytes!("../../../../assets/world/shared/install-codex.sh");
 const SHARED_IMAGE_BUILD: &[u8] = include_bytes!("../../../../assets/world/shared/build-image.sh");
 const FINALIZE_IMAGE: &[u8] = include_bytes!("../../../../assets/world/shared/finalize-image.sh");
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../assets/world/shared/tmux.conf");
@@ -35,7 +36,7 @@ const CONFIGURE_GIT_AUTHOR: &[u8] =
     include_bytes!("../../../../assets/world/shared/configure-git-author.sh");
 const INSTALL_AGENT_GIT: &[u8] =
     include_bytes!("../../../../assets/world/shared/install-agent-git.sh");
-const MOUNT_FOLDERS: &[u8] = include_bytes!("../../../../assets/world/shared/mount-folders.sh");
+const MOUNT_CODEX: &[u8] = include_bytes!("../../../../assets/world/shared/mount-codex.sh");
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
 
 #[derive(Clone, Copy)]
@@ -148,6 +149,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let environment = build_dir.join("build.env");
     let install_packages = build_dir.join("install-packages.sh");
     let install_terminal = build_dir.join("install-terminal.sh");
+    let install_codex = build_dir.join("install-codex.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
     let kind_recipe = build_dir.join("kind-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
@@ -155,7 +157,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let configure_access = build_dir.join("configure-access.sh");
     let configure_git_author = build_dir.join("configure-git-author.sh");
     let install_agent_git = build_dir.join("install-agent-git.sh");
-    let mount_folders = build_dir.join("mount-folders.sh");
+    let mount_codex = build_dir.join("mount-codex.sh");
 
     println!("Preparing temporary {} KVM build disk...", spec.kind);
     runner.run(
@@ -189,13 +191,14 @@ pub(super) fn run_kvm_build<R: Runner>(
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
             git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
             agent_git_sha256: &sha_bytes(INSTALL_AGENT_GIT),
-            mount_folders_sha256: &sha_bytes(MOUNT_FOLDERS),
+            mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
         }
         .render(),
     )
     .context("write image build environment")?;
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
+    fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&shared_recipe, SHARED_IMAGE_BUILD).context("write shared image recipe")?;
     fs::write(&kind_recipe, spec.recipe).context("write kind image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
@@ -204,7 +207,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&configure_git_author, CONFIGURE_GIT_AUTHOR)
         .context("write shared guest Git author setup")?;
     fs::write(&install_agent_git, INSTALL_AGENT_GIT).context("write shared agent Git setup")?;
-    fs::write(&mount_folders, MOUNT_FOLDERS).context("write shared folder mount setup")?;
+    fs::write(&mount_codex, MOUNT_CODEX).context("write Codex mount setup")?;
 
     let mut customize = Command::new("sudo");
     customize.arg("virt-customize").arg("-a").arg(&paths.disk);
@@ -219,6 +222,7 @@ pub(super) fn run_kvm_build<R: Runner>(
             install_terminal.as_path(),
             "/var/tmp/wt-install-terminal.sh",
         ),
+        (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
         (kind_recipe.as_path(), "/var/tmp/wt-kind-image-build.sh"),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
@@ -232,10 +236,7 @@ pub(super) fn run_kvm_build<R: Runner>(
             install_agent_git.as_path(),
             "/var/tmp/wt-retained-agent-git",
         ),
-        (
-            mount_folders.as_path(),
-            "/var/tmp/wt-retained-mount-folders",
-        ),
+        (mount_codex.as_path(), "/var/tmp/wt-retained-mount-codex"),
     ] {
         customize
             .arg("--upload")
