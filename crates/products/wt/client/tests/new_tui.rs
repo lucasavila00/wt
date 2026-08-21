@@ -118,7 +118,7 @@ fn enter_validates_before_advancing() -> Result<()> {
 }
 
 #[test]
-fn arrows_select_a_context_and_shift_tab_moves_back() -> Result<()> {
+fn horizontal_arrows_select_a_context_and_vertical_arrows_move_focus() -> Result<()> {
     let fixture = Fixture::new(
         "[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n\
          [[contexts]]\nname = \"lab\"\nkind = \"bare_metal_local\"\n",
@@ -127,12 +127,12 @@ fn arrows_select_a_context_and_shift_tab_moves_back() -> Result<()> {
 
     screen
         .wait_for_text("‹ local ›")?
-        .press(Key::Down)?
+        .press(Key::Right)?
         .wait_for_text("‹ lab ›")?
-        .press(Key::Enter)?
+        .press(Key::Down)?
         .type_text("demo")?
-        .press(Key::BackTab)?
         .press(Key::Up)?
+        .press(Key::Left)?
         .wait_for_text("‹ local ›")?;
     Ok(())
 }

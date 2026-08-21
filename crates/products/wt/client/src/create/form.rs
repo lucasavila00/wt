@@ -140,8 +140,10 @@ impl Form {
         match key.code {
             KeyCode::Tab => self.move_focus(1),
             KeyCode::BackTab => self.move_focus(-1),
-            KeyCode::Up if self.field() == Field::Context => self.move_context(-1),
-            KeyCode::Down if self.field() == Field::Context => self.move_context(1),
+            KeyCode::Up => self.move_focus(-1),
+            KeyCode::Down => self.move_focus(1),
+            KeyCode::Left if self.field() == Field::Context => self.move_context(-1),
+            KeyCode::Right if self.field() == Field::Context => self.move_context(1),
             KeyCode::Enter => return self.advance(),
             KeyCode::Backspace => {
                 if let Some(value) = self.value_mut() {
@@ -226,7 +228,7 @@ impl Form {
             );
         }
         frame.render_widget(
-            Paragraph::new("Tab/Shift-Tab focus · ↑/↓ select · Enter continue · Esc cancel")
+            Paragraph::new("↑/↓ or Tab/Shift-Tab focus · ←/→ select · Enter continue · Esc cancel")
                 .style(Style::new().fg(Color::DarkGray)),
             rows[4],
         );
