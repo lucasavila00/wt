@@ -464,12 +464,10 @@ mod tests {
         let backend = TestBackend::new(64, 16);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = ShellModel::new(vec!["local.one".into()]);
-        for code in [KeyCode::F(1)] {
-            model.handle_key(crossterm::event::KeyEvent::new(
-                code,
-                crossterm::event::KeyModifiers::NONE,
-            ));
-        }
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(1),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let parser = parser();
 
         terminal
