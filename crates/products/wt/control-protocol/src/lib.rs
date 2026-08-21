@@ -21,13 +21,6 @@ pub const PROTOCOL_VERSION: u32 = 2;
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
     pub protocol_version: u32,
-    #[serde(
-        default,
-        rename = "client_commit",
-        skip_serializing,
-        deserialize_with = "reject_client_commit"
-    )]
-    removed_client_commit: bool,
     #[serde(flatten)]
     pub operation: Operation,
 }
@@ -36,20 +29,9 @@ impl ApiRequest {
     pub fn new(operation: Operation) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
-            removed_client_commit: false,
             operation,
         }
     }
-}
-
-fn reject_client_commit<'de, D>(_deserializer: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Err(serde::de::Error::unknown_field(
-        "client_commit",
-        &["protocol_version", "operation"],
-    ))
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -469,16 +451,6 @@ mod tests {
                 "name": "repo-feature"
             })
         );
-    }
-
-    #[test]
-    fn rejects_unknown_request_fields() {
-        let request = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
-            "client_commit": "0000000000000000000000000000000000000000",
-            "operation": "list"
-        }));
-        assert!(request.is_err());
     }
 
     #[test]
