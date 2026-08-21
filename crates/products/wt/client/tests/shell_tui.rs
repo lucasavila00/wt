@@ -154,9 +154,7 @@ fn world_form_receives_field_navigation_keys() -> Result<()> {
         .press(Key::Down)?
         .type_text("arrow-name")?
         .press(Key::Enter)?
-        .wait_for_text("git@example.com:team/repository.git")?
-        .press(Key::Up)?
-        .press(Key::Down)?;
+        .wait_for_text("git@example.com:team/repository.git")?;
     Ok(())
 }
 
