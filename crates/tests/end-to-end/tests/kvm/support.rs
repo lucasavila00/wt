@@ -47,8 +47,8 @@ impl KvmHarness {
             prepare_test_binaries(&workspace, &binary_dir)
         });
         let mut config = match std::env::var_os("WT_KVM_SERVER_CONFIG") {
-            Some(path) => ServerConfig::load_from(Path::new(&path)).unwrap(),
-            None => ServerConfig::load_from(
+            Some(path) => ServerConfig::load_runtime_from(Path::new(&path)).unwrap(),
+            None => ServerConfig::load_runtime_from(
                 &workspace.join("examples/server-config/wt-server.kvm-test.toml"),
             )
             .unwrap(),
