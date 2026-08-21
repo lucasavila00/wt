@@ -4,6 +4,20 @@ set -eu
 . /usr/local/share/wt-retained-contract
 
 case "${1:-}" in
+    wait)
+        state=$(systemctl is-system-running --wait || true)
+        case "$state" in
+            running | degraded) ;;
+            *)
+                echo "system did not finish booting: $state" >&2
+                exit 1
+                ;;
+        esac
+        if test -e /run/nologin; then
+            echo "system still denies user logins after boot" >&2
+            exit 1
+        fi
+        ;;
     access-policy)
         test "$(id -u "$WT_USER")" = "$WT_UID" && test "$(id -g "$WT_USER")" = "$WT_GID" || {
             echo "image user $WT_USER must use uid=$WT_UID and gid=$WT_GID" >&2
@@ -34,7 +48,7 @@ case "${1:-}" in
         sync
         ;;
     *)
-        echo "usage: wt-host-prepare access-policy|remove-key" >&2
+        echo "usage: wt-host-prepare wait|access-policy|remove-key" >&2
         exit 2
         ;;
 esac

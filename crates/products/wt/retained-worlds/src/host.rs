@@ -79,6 +79,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             log,
         )?;
         let deadline = Instant::now() + self.readiness_timeout;
+        run_prepare(machine.transport.as_ref(), "wait", None, deadline, log)?;
         run_prepare(
             machine.transport.as_ref(),
             "access-policy",
@@ -131,6 +132,13 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
 
     fn start(&self, backend_id: &str) -> Result<World, WorkerError> {
         let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
+        run_prepare(
+            machine.transport.as_ref(),
+            "wait",
+            None,
+            Instant::now() + self.readiness_timeout,
+            &mut std::io::sink(),
+        )?;
         self.retained.mount_codex(
             machine.transport.as_ref(),
             Instant::now() + self.readiness_timeout,
