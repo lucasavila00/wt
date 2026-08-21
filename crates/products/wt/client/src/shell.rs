@@ -53,6 +53,12 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let focus = codex::FocusWorker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
+    let runtime = ShellRuntime {
+        config,
+        refresh: &refresh,
+        codex_refresh: &codex_refresh,
+        focus: &focus,
+    };
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -68,10 +74,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        &focus,
-        config,
-        &refresh,
-        &codex_refresh,
+        &runtime,
         &shutdown,
     );
     let input_result = execute!(
@@ -115,6 +118,7 @@ struct CodexRefresh {
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
+    codex_refresh: &'a CodexRefresh,
     focus: &'a codex::FocusWorker,
 }
 
@@ -247,26 +251,19 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    focus: &codex::FocusWorker,
-    config: &ClientConfig,
-    refresh: &WorldRefresh,
-    codex_refresh: &CodexRefresh,
+    runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut creation = None;
     let mut creation_error = None;
-    let runtime = ShellRuntime {
-        config,
-        refresh,
-        focus,
-    };
     while !shutdown.load(Ordering::Relaxed) {
         if creation.is_none() {
-            if let Some(snapshot) =
-                take_current_snapshot(&refresh.updates, refresh.generation.load(Ordering::Relaxed))
-            {
-                if ssh::sync(config, &snapshot.instances).is_ok() {
+            if let Some(snapshot) = take_current_snapshot(
+                &runtime.refresh.updates,
+                runtime.refresh.generation.load(Ordering::Relaxed),
+            ) {
+                if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);
                     let area: Rect = terminal
                         .size()
@@ -279,7 +276,7 @@ fn run_loop(
                 }
             }
         }
-        if let Some(snapshot) = codex_refresh.updates.try_iter().last() {
+        if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
             model.set_codex(codex::cards(snapshot, model.worlds()), updated_at());
             redraw = true;
         }
@@ -291,7 +288,7 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
-        while let Some(result) = focus.try_recv() {
+        while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
             let route = model
                 .focus_route(&result.target)
@@ -316,7 +313,7 @@ fn run_loop(
                 &mut creation_error,
                 sessions,
                 model,
-                refresh,
+                runtime.refresh,
                 terminal
                     .size()
                     .context("read wt shell terminal area")?
@@ -349,7 +346,7 @@ fn run_loop(
                 sessions,
                 model,
                 area,
-                &runtime,
+                runtime,
                 &mut creation,
                 &mut creation_error,
             )?;
