@@ -1,6 +1,5 @@
 ---
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
-assertion_line: 34
 expression: HELP
 ---
 wt-tools reads and changes explicitly identified Git provider resources and records
@@ -46,7 +45,7 @@ gateway grant's base branch. It fails when there is no match or multiple matches
 The four wt-tools reporting actions store feedback against this authenticated world
 without contacting the Git provider.
 
-Provider operations return one versioned JSON result or error object. Help remains
+Provider operations return one JSON result or error object. Help remains
 plain text.
 
 The provider and project come from this world's gateway grant. Every other

@@ -1,0 +1,14 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": {
+    "handle": "45",
+    "name": "test",
+    "run": "92",
+    "state": "success",
+    "url": "https://gitlab.test/jobs/45"
+  },
+  "type": "ci_job"
+}

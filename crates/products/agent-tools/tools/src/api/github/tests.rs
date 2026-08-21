@@ -2,6 +2,7 @@ use super::*;
 use crate::api::test_server::{serve, serve_with_statuses, ExpectedRequest};
 
 mod branch_lookup;
+mod cli_output;
 mod job_logs;
 
 const PULL_REQUEST_RESPONSE: &str = r#"{

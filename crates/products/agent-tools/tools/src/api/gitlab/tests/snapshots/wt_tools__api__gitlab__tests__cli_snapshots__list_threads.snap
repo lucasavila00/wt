@@ -1,0 +1,23 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": [
+    {
+      "comments": [
+        {
+          "author": "reviewer",
+          "body": "Please clarify this.",
+          "url": "https://gitlab.test/thread/8"
+        }
+      ],
+      "handle": "gid://gitlab/Discussion/thread-8",
+      "line": 12,
+      "path": "src/lib.rs",
+      "resolvable": true,
+      "resolved": false
+    }
+  ],
+  "type": "review_threads"
+}

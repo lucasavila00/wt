@@ -7,7 +7,8 @@ const SNAPSHOT_LINE_LIMIT: usize = 1_000;
 const EXCEPTIONS: &str = "crates/tests/repository-checks/snapshot-line-limit-exceptions";
 
 fn main() -> Result<()> {
-    let [command] = std::env::args().skip(1).collect::<Vec<_>>().as_slice() else {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    let [command] = arguments.as_slice() else {
         bail!("usage: wt-repository-checks snapshot-lines");
     };
     match command.as_str() {
@@ -55,8 +56,10 @@ fn collect_paths(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            if !matches!(path.file_name().and_then(|name| name.to_str()), Some(".git" | "target"))
-            {
+            if !matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some(".git" | "target")
+            ) {
                 collect_paths(&path, paths)?;
             }
         } else if path.extension().and_then(|extension| extension.to_str()) == Some("snap") {
@@ -67,8 +70,8 @@ fn collect_paths(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 fn check_snapshot(path: &Path, failures: &mut Vec<String>) -> Result<()> {
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("read snapshot {}", path.display()))?;
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("read snapshot {}", path.display()))?;
     let lines = contents.lines().count();
     if lines > SNAPSHOT_LINE_LIMIT {
         failures.push(format!(

@@ -153,10 +153,9 @@ pub fn render_cli_command_output(output: ProviderCommandOutput) -> String {
         }
         output => output,
     };
-    format!(
-        "{}\n",
-        serde_json::json!({ "version": 1, "result": output })
-    )
+    let mut message = serde_json::to_string(&output).expect("provider command output serializes");
+    message.push('\n');
+    message
 }
 
 pub fn render_cli_confirmation(message: impl Into<String>) -> String {

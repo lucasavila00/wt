@@ -1,0 +1,29 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": {
+    "jobs": [
+      {
+        "handle": "44",
+        "name": "Linux",
+        "run": "91",
+        "state": "success",
+        "url": "https://github.test/jobs/44"
+      }
+    ],
+    "runs": [
+      {
+        "branch": "wt/fix-login",
+        "handle": "91",
+        "head": "abc123",
+        "name": "CI",
+        "state": "success",
+        "trigger": "pull_request",
+        "url": "https://github.test/runs/91"
+      }
+    ]
+  },
+  "type": "ci_runs_and_jobs"
+}

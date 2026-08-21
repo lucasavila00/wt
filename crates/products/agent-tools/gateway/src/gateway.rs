@@ -288,7 +288,7 @@ gateway grant's base branch. It fails when there is no match or multiple matches
 The four wt-tools reporting actions store feedback against this authenticated world\n\
 without contacting the Git provider.\n\
 \n\
-Provider operations return one versioned JSON result or error object. Help remains\n\
+Provider operations return one JSON result or error object. Help remains\n\
 plain text.\n\
 \n\
 The provider and project come from this world's gateway grant. Every other\n\

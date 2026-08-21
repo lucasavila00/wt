@@ -19,10 +19,10 @@ representation even though interactive use is not ag-git's purpose.
 Return JSON for every provider operation. Do not add an output mode or retain
 the current text result format.
 
-Use a versioned, tagged envelope for successful results and errors. Preserve
-typed distinctions between merge requests, review threads, CI runs, CI jobs,
-logs, and confirmations. Represent missing values as JSON `null`, not display
-placeholders such as `unknown` or `unavailable`.
+Serialize the tagged result message, not its transport frame. Preserve typed
+distinctions between merge requests, review threads, CI runs, CI jobs, logs, and
+confirmations. Represent missing values as JSON `null`, not display placeholders
+such as `unknown` or `unavailable`.
 
 Keep `ag-git help`, `--help`, and `-h` as plain text. They document the command
 schema for agents and are not provider-operation results.

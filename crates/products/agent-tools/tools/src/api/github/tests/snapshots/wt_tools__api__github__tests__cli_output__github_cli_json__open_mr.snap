@@ -1,0 +1,63 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": {
+    "base": "main",
+    "body": null,
+    "draft": false,
+    "handle": "#7",
+    "head": "abc123",
+    "jobs": [],
+    "review_state": "changes_requested",
+    "state": "open",
+    "threads": [
+      {
+        "comments": [
+          {
+            "author": "reviewer",
+            "body": "Handle the error here.",
+            "url": "https://github.test/acme/widget/pull/7#discussion"
+          }
+        ],
+        "handle": "thread-1",
+        "line": 12,
+        "path": "src/login.rs",
+        "resolvable": true,
+        "resolved": false
+      },
+      {
+        "comments": [
+          {
+            "author": "lead",
+            "body": "Review state: changes_requested.\n\nPlease cover the edge case.",
+            "url": "https://github.test/acme/widget/pull/7#review"
+          }
+        ],
+        "handle": "review-1",
+        "line": null,
+        "path": "pull request review",
+        "resolvable": false,
+        "resolved": false
+      },
+      {
+        "comments": [
+          {
+            "author": "maintainer",
+            "body": "Please update the documentation too.",
+            "url": "https://github.test/acme/widget/pull/7#issuecomment-1"
+          }
+        ],
+        "handle": "comment-1",
+        "line": null,
+        "path": "pull request comment",
+        "resolvable": false,
+        "resolved": false
+      }
+    ],
+    "title": "Fix login",
+    "url": "https://github.test/acme/widget/pull/7"
+  },
+  "type": "change_request"
+}

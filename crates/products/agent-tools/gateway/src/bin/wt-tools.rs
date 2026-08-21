@@ -23,7 +23,7 @@ fn main() {
 }
 
 fn render_error(message: &str) -> serde_json::Value {
-    serde_json::json!({ "version": 1, "error": { "message": message } })
+    serde_json::json!({ "error": { "message": message } })
 }
 
 fn run(args: Vec<String>) -> Result<()> {
@@ -134,9 +134,9 @@ mod tests {
     }
 
     #[test]
-    fn renders_versioned_json_errors() {
+    fn renders_json_errors() {
         insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
-        {"error":{"message":"gateway rejected command"},"version":1}
+        {"error":{"message":"gateway rejected command"}}
         "###);
     }
 }
