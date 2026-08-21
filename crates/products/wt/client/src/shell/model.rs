@@ -133,8 +133,12 @@ impl ShellModel {
         &self.control
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>) {
-        self.control.set_codex(codex);
+    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
+        self.control.set_worlds_updated_at(updated_at);
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>, updated_at: String) {
+        self.control.set_codex(codex, updated_at);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> InputRoute {

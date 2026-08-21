@@ -11,6 +11,8 @@ use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
@@ -26,16 +28,15 @@ use session::SessionSet;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
-const WORLD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-const WORLD_REFRESH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("wt shell requires an interactive terminal");
     }
     let cancelled = AtomicBool::new(false);
-    let report =
-        inventory::list_all_with_timeout(config, WORLD_REFRESH_REQUEST_TIMEOUT, &cancelled);
+    let report = inventory::list_all_with_timeout(config, CONTEXT_REQUEST_TIMEOUT, &cancelled);
     if !report.failures.is_empty() {
         return Err(crate::context_failures(
             "wt shell was not started because the complete world list is unavailable",
@@ -48,8 +49,9 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
-    model.set_codex(load_codex(config));
+    model.set_worlds_updated_at(updated_at());
     let refresh = WorldRefresh::start(config.clone());
+    let codex_refresh = CodexRefresh::start(config.clone());
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -67,6 +69,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         &mut model,
         config,
         &refresh,
+        &codex_refresh,
         &shutdown,
     );
     let input_result = execute!(
@@ -106,6 +109,13 @@ struct WorldSnapshot {
     instances: Vec<inventory::ContextInstance>,
 }
 
+struct CodexRefresh {
+    updates: Receiver<Vec<control::CodexContextSnapshot>>,
+    cancelled: Arc<AtomicBool>,
+    stop: Sender<()>,
+    worker: Option<JoinHandle<()>>,
+}
+
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
@@ -122,13 +132,13 @@ impl WorldRefresh {
         let worker = thread::Builder::new()
             .name("wt-shell-world-refresh".into())
             .spawn(move || loop {
-                if stop_rx.recv_timeout(WORLD_REFRESH_INTERVAL).is_ok() {
+                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
                     break;
                 }
                 let generation = worker_generation.load(Ordering::Relaxed);
                 let report = inventory::list_all_with_timeout(
                     &config,
-                    WORLD_REFRESH_REQUEST_TIMEOUT,
+                    CONTEXT_REQUEST_TIMEOUT,
                     &worker_cancelled,
                 );
                 if worker_cancelled.load(Ordering::Relaxed) {
@@ -169,6 +179,47 @@ impl Drop for WorldRefresh {
     }
 }
 
+impl CodexRefresh {
+    fn start(config: ClientConfig) -> Self {
+        let (updates_tx, updates) = mpsc::sync_channel(1);
+        let (stop, stop_rx) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker = thread::Builder::new()
+            .name("wt-shell-codex-refresh".into())
+            .spawn(move || loop {
+                let snapshot = load_codex(&config, &worker_cancelled);
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                match updates_tx.try_send(snapshot) {
+                    Ok(()) | Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => break,
+                }
+                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
+                    break;
+                }
+            })
+            .expect("start wt shell Codex refresh worker");
+        Self {
+            updates,
+            cancelled,
+            stop,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Drop for CodexRefresh {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 fn take_current_snapshot(
     updates: &Receiver<WorldSnapshot>,
     generation: u64,
@@ -179,13 +230,19 @@ fn take_current_snapshot(
         .filter(|snapshot| snapshot.generation == generation)
 }
 
-fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
+fn load_codex(config: &ClientConfig, cancelled: &AtomicBool) -> Vec<control::CodexContextSnapshot> {
     let request = ApiRequest::new(Operation::ListCodexSessions);
     config
         .contexts
         .iter()
-        .map(
-            |context| match wt_client::transport::call(context, &request) {
+        .take_while(|_| !cancelled.load(Ordering::Relaxed))
+        .map(|context| {
+            match wt_client::transport::call_with_timeout_until(
+                context,
+                &request,
+                CONTEXT_REQUEST_TIMEOUT,
+                cancelled,
+            ) {
                 Ok(Response::CodexSessions { sessions }) => {
                     control::CodexContextSnapshot::Sessions {
                         context: context.name.clone(),
@@ -201,9 +258,17 @@ fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
                     context: context.name.clone(),
                     message: error.to_string(),
                 },
-            },
-        )
+            }
+        })
         .collect()
+}
+
+fn updated_at() -> String {
+    OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .expect("zero is a valid nanosecond")
+        .format(&Rfc3339)
+        .expect("UTC timestamps support RFC 3339")
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
@@ -221,6 +286,7 @@ fn run_loop(
     model: &mut ShellModel,
     config: &ClientConfig,
     refresh: &WorldRefresh,
+    codex_refresh: &CodexRefresh,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
@@ -240,9 +306,14 @@ fn run_loop(
                         .into();
                     sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
                     model.reconcile_worlds(worlds);
+                    model.set_worlds_updated_at(updated_at());
                     redraw = true;
                 }
             }
+        }
+        if let Some(codex) = codex_refresh.updates.try_iter().last() {
+            model.set_codex(codex, updated_at());
+            redraw = true;
         }
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;

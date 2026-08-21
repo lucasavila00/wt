@@ -5,10 +5,11 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT navbar; the active world's Byobu uses the remaining
 terminal rows.
 
-The world list refreshes in the background every five seconds. Worlds created
-elsewhere are connected automatically, and removed worlds disappear. A refresh
-that cannot list every configured context leaves the last complete list in
-place.
+The world list and Codex sessions refresh independently in the background. Each
+worker starts its next refresh five seconds after the previous one finishes.
+Worlds created elsewhere are connected automatically, and removed worlds
+disappear. A world refresh that cannot list every configured context leaves the
+last complete list in place.
 
 The dim navbar shows the active world and its position in the world list. `F5`
 enables the navbar controls, `Left` and `Right` change worlds, and `Up` opens the
@@ -31,11 +32,11 @@ the workstation clipboard through `wt shell`.
 between session and world management. `F5` opens the active world when one is
 available.
 
-The Control UI's Codex activity is a read-only snapshot loaded when `wt shell`
-starts. It lists rollout-only sessions and every reported world, Byobu pane,
-activity state, and working directory across configured contexts. A failed
-context remains visible as an error row. Restart `wt shell` to refresh the
-snapshot.
+The Control UI's Codex activity lists rollout-only sessions and every reported
+world, Byobu pane, activity state, and working directory across configured
+contexts. A failed context remains visible as an error row. The Worlds and
+Codex titles show when their latest snapshot was applied in UTC, or `Updating…`
+before the first snapshot arrives.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

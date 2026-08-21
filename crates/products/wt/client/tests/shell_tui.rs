@@ -44,7 +44,11 @@ impl Fixture {
 request=$(cat)
 case "$request" in
   *'"operation":"list_codex_sessions"'*)
-    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]}}'
+    if test -f "$HOME/codex-active"; then
+      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","rollout_updated_at_unix_ms":10,"observations":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","cwd":"/workspace/live","state":"working","target":{"tmux_session":"wt-app","pane_id":"%1"},"received_at_unix_ms":20}]}]}}'
+    else
+      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]}}'
+    fi
     ;;
   *'"operation":"create"'*)
     : > "$HOME/created"
@@ -187,6 +191,30 @@ fn submitted_form_adds_and_activates_a_persistent_world_session() -> Result<()> 
         .wait_for_text("F5: disable navbar")?;
     assert!(fixture.home.path().join("created").exists());
     Ok(())
+}
+
+#[test]
+fn codex_sessions_refresh_after_startup() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen.wait_for_text("Codex sessions · Last updated ")?;
+    let first_title = codex_update_title(&screen.contents());
+    fs::write(fixture.home.path().join("codex-active"), "").unwrap();
+    screen.wait_for_text("/workspace/live")?;
+    let second_title = codex_update_title(&screen.contents());
+
+    assert_ne!(first_title, second_title);
+    Ok(())
+}
+
+fn codex_update_title(contents: &str) -> String {
+    contents
+        .lines()
+        .find(|line| line.contains("Codex sessions · Last updated "))
+        .expect("Codex update title")
+        .trim()
+        .to_owned()
 }
 
 fn write_executable(path: &std::path::Path, contents: &str) {

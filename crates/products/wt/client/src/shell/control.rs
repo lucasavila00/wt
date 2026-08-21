@@ -53,6 +53,8 @@ pub(super) struct ControlState {
     activity: Activity,
     palette: CommandPalette,
     codex: Vec<CodexContextSnapshot>,
+    worlds_updated_at: Option<String>,
+    codex_updated_at: Option<String>,
 }
 
 impl Default for ControlState {
@@ -61,6 +63,8 @@ impl Default for ControlState {
             activity: Activity::Codex,
             palette: CommandPalette::default(),
             codex: Vec::new(),
+            worlds_updated_at: None,
+            codex_updated_at: None,
         }
     }
 }
@@ -78,8 +82,21 @@ impl ControlState {
         &self.codex
     }
 
-    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>) {
+    pub(super) fn worlds_updated_at(&self) -> Option<&str> {
+        self.worlds_updated_at.as_deref()
+    }
+
+    pub(super) fn codex_updated_at(&self) -> Option<&str> {
+        self.codex_updated_at.as_deref()
+    }
+
+    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
+        self.worlds_updated_at = Some(updated_at);
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>, updated_at: String) {
         self.codex = codex;
+        self.codex_updated_at = Some(updated_at);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> Option<ControlCommand> {
@@ -281,6 +298,19 @@ mod tests {
             Some(ControlCommand::NewDev)
         );
         assert!(!state.palette().is_open());
+    }
+
+    #[test]
+    fn snapshot_times_track_the_last_applied_snapshot() {
+        let mut state = ControlState::default();
+
+        state.set_worlds_updated_at("2026-08-21T20:00:00Z".into());
+        state.set_worlds_updated_at("2026-08-21T20:00:05Z".into());
+        state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into());
+        state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into());
+
+        assert_eq!(state.worlds_updated_at(), Some("2026-08-21T20:00:05Z"));
+        assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:06Z"));
     }
 
     #[test]
