@@ -16,6 +16,7 @@ fn agent_git_transport_works_without_provider_credentials() {
     let codex_session_fixture = CodexSessionFixture::new(&name);
 
     let disks_before_rejection = count_disks(&harness.config.libvirt.worlds_dir);
+    let mut reserved_field_errors = Vec::new();
     for (index, field) in ["ssh_keys", "ssh_deletekeys", "output"]
         .into_iter()
         .enumerate()
@@ -27,11 +28,13 @@ fn agent_git_transport_works_without_provider_credentials() {
                 &format!("#cloud-config\n{field}: forbidden\n"),
             )
             .unwrap_err();
-        assert!(
-            error.contains(&format!("cannot set top-level {field}")),
-            "unexpected reserved-field rejection: {error}"
-        );
+        reserved_field_errors.push(error);
     }
+    insta::assert_snapshot!(reserved_field_errors.join("\n"), @r###"
+    0: cloud-init user-data cannot set top-level ssh_keys; WT owns host identity, setup stages, and output
+    0: cloud-init user-data cannot set top-level ssh_deletekeys; WT owns host identity, setup stages, and output
+    0: cloud-init user-data cannot set top-level output; WT owns host identity, setup stages, and output
+    "###);
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
         disks_before_rejection
@@ -59,13 +62,13 @@ fn agent_git_transport_works_without_provider_credentials() {
         .libvirt
         .worlds_dir
         .join(format!("wt-{}", created_host.id.simple()));
-    assert_eq!(
+    insta::assert_snapshot!(
         fs::read_to_string(host_machine.join("user-data")).unwrap(),
-        "#cloud-config\n"
+        @"#cloud-config"
     );
-    assert_eq!(
+    insta::assert_snapshot!(
         fs::read_to_string(host_machine.join("vendor-data")).unwrap(),
-        "#cloud-config\n"
+        @"#cloud-config"
     );
     let inventory = harness.sync_inventory();
     assert_eq!(inventory.len(), 2);
@@ -655,12 +658,9 @@ fn agent_git_transport_works_without_provider_credentials() {
         disks_before + 1
     );
     assert_eq!(failed.status, InstanceStatus::Error);
-    assert!(
-        failed
-            .last_error
-            .as_deref()
-            .is_some_and(|error| error.contains("cloud-init final stage failed")),
-        "failed host has no useful error: {failed:?}"
+    insta::assert_snapshot!(
+        failed.last_error.as_deref().unwrap(),
+        @"guest reconciliation: host cloud-init failed: cloud-init final stage failed with exit status 1"
     );
     harness.sync_inventory();
     run_host(
@@ -710,12 +710,9 @@ fn agent_git_transport_works_without_provider_credentials() {
         &mut interrupted_setup,
         InstanceStatus::Error,
     );
-    assert!(
-        interrupted_error
-            .last_error
-            .as_deref()
-            .is_some_and(|error| error.contains("host cloud-init was interrupted")),
-        "interrupted host has no useful error: {interrupted_error:?}"
+    insta::assert_snapshot!(
+        interrupted_error.last_error.as_deref().unwrap(),
+        @"guest reconciliation: host cloud-init failed: host cloud-init was interrupted"
     );
     run_host(
         &harness,
