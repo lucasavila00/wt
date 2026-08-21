@@ -160,18 +160,17 @@ pub(super) enum ControlCommand {
     NewDev,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum ControlAction {
+    Command(ControlCommand),
+    OpenCodex(CodexOpenTarget),
+}
+
 impl ControlCommand {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::NewHost => "World: New host",
             Self::NewDev => "World: New dev",
-        }
-    }
-
-    fn execute(self) {
-        match self {
-            Self::NewHost => {}
-            Self::NewDev => {}
         }
     }
 }
@@ -190,7 +189,7 @@ pub(super) struct ControlState {
 impl Default for ControlState {
     fn default() -> Self {
         Self {
-            activity: Activity::Worlds,
+            activity: Activity::Codex,
             palette: CommandPalette::default(),
             codex: Vec::new(),
             selected: None,
@@ -245,12 +244,9 @@ impl ControlState {
         self.codex_offset = 0;
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<CodexOpenTarget> {
+    pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
         if self.palette.is_open() {
-            if let Some(command) = self.palette.handle_key(key) {
-                command.execute();
-            }
-            return None;
+            return self.palette.handle_key(key).map(ControlAction::Command);
         }
         if key.modifiers != KeyModifiers::NONE {
             return None;
@@ -260,7 +256,9 @@ impl ControlState {
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Up if self.activity == Activity::Codex => self.move_codex(-1, area),
             KeyCode::Down if self.activity == Activity::Codex => self.move_codex(1, area),
-            KeyCode::Enter if self.activity == Activity::Codex => return self.activate_selected(),
+            KeyCode::Enter if self.activity == Activity::Codex => {
+                return self.activate_selected().map(ControlAction::OpenCodex)
+            }
             _ => {}
         }
         None
@@ -270,7 +268,7 @@ impl ControlState {
         &mut self,
         mouse: MouseEvent,
         area: Rect,
-    ) -> (bool, Option<CodexOpenTarget>) {
+    ) -> (bool, Option<ControlAction>) {
         if self.palette.is_open() && mouse.kind != MouseEventKind::Down(MouseButton::Left) {
             return (true, None);
         }
@@ -291,9 +289,10 @@ impl ControlState {
             if results.contains((mouse.column, mouse.row).into()) {
                 let index = usize::from(mouse.row.saturating_sub(results.y));
                 if index < self.palette.matches().len() {
-                    if let Some(command) = self.palette.execute(index) {
-                        command.execute();
-                    }
+                    return (
+                        true,
+                        self.palette.execute(index).map(ControlAction::Command),
+                    );
                 }
             }
             return (true, None);
@@ -311,7 +310,7 @@ impl ControlState {
                 mouse.row,
             ) {
                 self.selected = Some(self.codex[index].identity.clone());
-                return (true, self.activate_selected());
+                return (true, self.activate_selected().map(ControlAction::OpenCodex));
             }
         }
         (false, None)
@@ -545,155 +544,12 @@ fn activity_at_position(area: Rect, column: u16, row: u16) -> Option<Activity> {
         return None;
     }
     match row.saturating_sub(bar.y) / ACTIVITY_BUTTON_HEIGHT {
-        0 => Some(Activity::Worlds),
-        1 => Some(Activity::Codex),
+        0 => Some(Activity::Codex),
+        1 => Some(Activity::Worlds),
         _ => None,
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use wt_control_protocol::ByobuTarget;
-
-    #[test]
-    fn tab_cycles_activities() {
-        let mut state = ControlState::default();
-
-        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
-        assert_eq!(state.activity(), Activity::Codex);
-        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
-        assert_eq!(state.activity(), Activity::Worlds);
-    }
-
-    #[test]
-    fn f1_and_one_open_the_command_palette() {
-        for code in [KeyCode::F(1), KeyCode::Char('1')] {
-            let mut state = ControlState::default();
-            state.handle_key(KeyEvent::new(code, KeyModifiers::NONE), area());
-            assert!(state.palette().is_open());
-        }
-    }
-
-    #[test]
-    fn palette_filters_selects_and_executes_no_op_commands() {
-        let mut state = ControlState::default();
-        state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area());
-        for character in "dev".chars() {
-            state.handle_key(
-                KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
-                area(),
-            );
-        }
-
-        assert_eq!(state.palette().matches(), vec![ControlCommand::NewDev]);
-        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area());
-        assert!(!state.palette().is_open());
-    }
-
-    #[test]
-    fn activity_icons_and_palette_results_are_clickable() {
-        let mut state = ControlState::default();
-        let area = Rect::new(0, 0, 64, 16);
-
-        assert!(state.handle_mouse(mouse(1, 4), area).0);
-        assert_eq!(state.activity(), Activity::Codex);
-        state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area);
-        let (_, results) = command_palette_layout(control_areas(area).1);
-        assert!(state.handle_mouse(mouse(results.x, results.y + 1), area).0);
-        assert!(!state.palette().is_open());
-
-        state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area);
-        assert!(state.handle_mouse(mouse(results.x, results.y + 3), area).0);
-        assert!(state.palette().is_open());
-    }
-
-    #[test]
-    fn card_navigation_opens_only_the_selected_live_location() {
-        let mut state = ControlState::default();
-        let first = live_card(1, "%1");
-        let second = CodexCard::rollout_only("ars", Uuid::from_u128(2), 2);
-        state.set_codex(vec![first.clone(), second]);
-        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
-
-        state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
-        assert!(state
-            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
-            .is_none());
-        assert_eq!(state.selected(), Some(&state.codex()[1].identity));
-
-        state.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), area());
-        let target = state
-            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
-            .unwrap();
-        assert_eq!(target.identity, first.identity);
-        assert_eq!(target.pane_id, "%1");
-        assert!(state
-            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
-            .is_none());
-    }
-
-    #[test]
-    fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
-        let mut state = ControlState::default();
-        state.set_codex(vec![live_card(1, "%1"), live_card(2, "%2")]);
-        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
-        let second = codex_card_rects(area(), 0, 2)[1].1;
-
-        let (changed, target) = state.handle_mouse(mouse(second.x + 1, second.y + 1), area());
-        assert!(changed);
-        assert_eq!(target.unwrap().pane_id, "%2");
-        let selected = state.selected().unwrap().clone();
-        state.finish_open(&selected, Some("failed".into()));
-
-        let scroll = MouseEvent {
-            kind: MouseEventKind::ScrollUp,
-            column: second.x,
-            row: second.y,
-            modifiers: KeyModifiers::NONE,
-        };
-        assert!(state.handle_mouse(scroll, area()).0);
-        assert_eq!(state.selected(), Some(&state.codex()[0].identity));
-    }
-
-    fn live_card(index: u128, pane_id: &str) -> CodexCard {
-        let session_id = Uuid::from_u128(index);
-        let world_id = Uuid::from_u128(100 + index);
-        let identity = CodexCardIdentity::Observation {
-            context: "ars".into(),
-            session_id,
-            world_id,
-            tmux_session: "wt-host".into(),
-            pane_id: pane_id.into(),
-        };
-        CodexCard {
-            identity,
-            context: "ars".into(),
-            session_id: Some(session_id),
-            timestamp: Some(index as i64),
-            kind: CodexCardKind::Observation {
-                world_id,
-                world_name: "dev".into(),
-                cwd: "/workspace".into(),
-                state: CodexSessionState::Working,
-                target: ByobuTarget {
-                    tmux_session: "wt-host".into(),
-                    pane_id: pane_id.into(),
-                },
-            },
-        }
-    }
-
-    fn mouse(column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        }
-    }
-
-    fn area() -> Rect {
-        Rect::new(0, 0, 64, 20)
-    }
-}
+#[path = "control/tests.rs"]
+mod tests;

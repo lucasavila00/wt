@@ -7,7 +7,7 @@ use std::thread;
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
 use wt_client::inventory::ContextInstance;
-use wt_control_protocol::{CodexSession, InstanceApplication, WorldKind};
+use wt_control_protocol::{CodexSession, Instance, InstanceApplication, WorldKind};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ShellWorld {
@@ -21,17 +21,21 @@ pub(super) struct ShellWorld {
 
 impl ShellWorld {
     pub(super) fn from_inventory(item: &ContextInstance) -> Self {
-        let qualified_name = item.qualified_name();
-        let (kind, control_alias) = match item.instance.application {
+        Self::from_instance(&item.context, &item.instance)
+    }
+
+    pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
+        let qualified_name = format!("{context}.{}", instance.name);
+        let (kind, control_alias) = match instance.application {
             InstanceApplication::Devcontainer { .. } => {
                 (WorldKind::Devcontainer, format!("{qualified_name}-host"))
             }
             InstanceApplication::Host => (WorldKind::Host, format!("{qualified_name}-vs")),
         };
         Self {
-            context: item.context.clone(),
-            world_id: item.instance.id,
-            world_name: item.instance.name.to_string(),
+            context: context.into(),
+            world_id: instance.id,
+            world_name: instance.name.to_string(),
             qualified_name,
             kind,
             control_alias,

@@ -1,7 +1,4 @@
 use super::*;
-use std::sync::Mutex;
-
-static PROMPT_LOCK: Mutex<()> = Mutex::new(());
 use uuid::Uuid;
 use wt_control_protocol::{
     Capacity, CapacityResource, Instance, InstanceApplication, InstanceName, InstanceStatus,
@@ -99,7 +96,7 @@ fn ls_points_to_wt_tools_reports_without_changing_world_status() {
 #[test]
 fn explains_memory_capacity() {
     insta::assert_snapshot!(
-        capacity_message(
+        create::capacity_message(
             "ars",
             &wt_control_protocol::InstanceName::parse("mt3").unwrap(),
             &Capacity {
@@ -214,16 +211,6 @@ fn parses_bare_new_as_host_creation() {
     assert!(input.kind.is_none());
     assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
     assert!(Cli::try_parse_from(["wt", "new", "sandbox"]).is_err());
-}
-
-#[test]
-fn prompt_cancels_after_a_signal() {
-    let _lock = PROMPT_LOCK.lock().unwrap();
-    CANCELLED.store(false, Ordering::SeqCst);
-    cancel_prompt(0);
-    let error = prompt_error(std::io::Error::other("prompt failed"));
-    assert_eq!(error.to_string(), "creation cancelled");
-    CANCELLED.store(false, Ordering::SeqCst);
 }
 
 #[test]

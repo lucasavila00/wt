@@ -4,6 +4,7 @@ use super::control::{
 };
 use super::model::{Mode, ShellModel};
 use super::world_area;
+use crate::create::Flow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -11,11 +12,25 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellModel) {
+pub(super) fn draw(
+    frame: &mut Frame<'_>,
+    screen: Option<&vt100::Screen>,
+    model: &ShellModel,
+    creation: Option<&Flow>,
+    creation_error: Option<&str>,
+) {
     if model.mode() == Mode::Control {
+        if let Some(creation) = creation {
+            creation.render(frame, frame.area());
+            return;
+        }
         draw_control(frame, model);
+        if let Some(error) = creation_error {
+            draw_creation_error(frame, error);
+        }
         return;
     }
+    let screen = screen.expect("world mode requires a world screen");
     let world = world_area(frame.area());
     frame.render_widget(TerminalView(screen), world);
     draw_world_bar(frame, model);
@@ -29,6 +44,30 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellM
         Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
+}
+
+fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
+    let outer = frame.area();
+    let width = 70.min(outer.width);
+    let height = 12.min(outer.height);
+    let area = Rect::new(
+        outer.x + outer.width.saturating_sub(width) / 2,
+        outer.y + outer.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(error)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title("World creation unavailable")
+                    .title_bottom(" Enter/Esc close "),
+            ),
+        area,
+    );
 }
 
 struct TerminalView<'a>(&'a vt100::Screen);
@@ -151,17 +190,25 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => frame.render_widget(
-            Paragraph::new("World management")
-                .alignment(Alignment::Center)
-                .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            Paragraph::new(if model.has_worlds() {
+                "World management"
+            } else {
+                "No worlds with SSH access\nCreate a world to get started"
+            })
+            .alignment(Alignment::Center)
+            .block(Block::new().borders(Borders::ALL).title("Worlds")),
             body,
         ),
         Activity::Codex => draw_codex(frame, body, model.control()),
     }
-    let hint = match model.control().activity() {
-        Activity::Worlds => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]",
-        Activity::Codex => {
+    let hint = match (model.control().activity(), model.has_worlds()) {
+        (Activity::Worlds, true) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]",
+        (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
+        (Activity::Codex, true) => {
             "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+        }
+        (Activity::Codex, false) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
     frame.render_widget(
@@ -180,7 +227,8 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     );
     if state.codex().is_empty() {
         frame.render_widget(
-            Paragraph::new("No Codex sessions").alignment(Alignment::Center),
+            Paragraph::new("No Codex sessions\nStart Codex in a world to see its session here")
+                .alignment(Alignment::Center),
             area.inner(Margin::new(1, 1)),
         );
         return;
@@ -331,7 +379,7 @@ fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
             .border_style(Style::new().fg(Color::DarkGray)),
         area,
     );
-    for (index, (activity, icon)) in [(Activity::Worlds, ""), (Activity::Codex, "󰚩")]
+    for (index, (activity, icon)) in [(Activity::Codex, "󰚩"), (Activity::Worlds, "")]
         .into_iter()
         .enumerate()
     {
@@ -438,10 +486,11 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = model(&["local.one", "local.two"]);
         press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 6));
+        press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 6));
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -459,11 +508,12 @@ mod tests {
     fn world_bar_is_dim_until_activated() {
         let backend = TestBackend::new(80, 6);
         let mut terminal = Terminal::new(backend).unwrap();
-        let model = model(&["local.one", "local.two"]);
+        let mut model = model(&["local.one", "local.two"]);
+        press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 6));
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
             .unwrap();
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -482,14 +532,12 @@ mod tests {
     fn control_ui_has_activity_scaffolding() {
         let backend = TestBackend::new(64, 12);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut model = model(&["local.one"]);
-        for code in [KeyCode::F(5), KeyCode::Up] {
-            press(&mut model, code, Rect::new(0, 0, 64, 12));
-        }
+        let model = model(&["local.one"]);
+        assert_eq!(model.mode(), Mode::Control);
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -500,13 +548,11 @@ mod tests {
         let backend = TestBackend::new(64, 16);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut model = model(&["local.one"]);
-        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::F(1)] {
-            press(&mut model, code, Rect::new(0, 0, 64, 16));
-        }
+        press(&mut model, KeyCode::F(1), Rect::new(0, 0, 64, 16));
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -550,16 +596,26 @@ mod tests {
             ),
             CodexCard::context_error("lab", "context lab: SSH failed".into()),
         ]);
-        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::Tab] {
-            press(&mut model, code, Rect::new(0, 0, 100, 22));
-        }
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, parser.screen(), &model))
+            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn empty_shell_renders_the_control_ui() {
+        let backend = TestBackend::new(64, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let model = ShellModel::new(Vec::new());
+
+        terminal
+            .draw(|frame| draw(frame, None, &model, None, None))
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
     }
 
     fn now_ms() -> i64 {

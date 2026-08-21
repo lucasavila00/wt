@@ -22,10 +22,14 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
-The Control UI's Codex activity is a card snapshot loaded when `wt shell`
-starts. `Up` and `Down` select cards, the mouse wheel scrolls them, and `Enter`
-or left click opens the selected live Codex pane. Opening uses a short control
-SSH connection; it does not replace any world's playback connection.
+`wt shell` opens in the Control UI with Codex sessions selected. `Tab` switches
+between session and world management. `F5` opens the active world when one is
+available.
+
+The Codex activity is a card snapshot loaded when `wt shell` starts. `Up` and
+`Down` select cards, the mouse wheel scrolls them, and `Enter` or left click
+opens the selected live Codex pane. Opening uses a short control SSH connection;
+it does not replace any world's playback connection.
 
 Cards show activity, context, world, Byobu target, session, working directory,
 and report age. Inactive and rollout-only cards explain why they cannot open.

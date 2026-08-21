@@ -15,6 +15,7 @@ enum SessionEvent {
 pub(super) struct SessionSet {
     sessions: Vec<WorldSession>,
     events: Option<Receiver<SessionEvent>>,
+    sender: SyncSender<SessionEvent>,
 }
 
 impl SessionSet {
@@ -23,6 +24,7 @@ impl SessionSet {
         let mut set = Self {
             sessions: Vec::with_capacity(worlds.len()),
             events: Some(events),
+            sender: sender.clone(),
         };
         for (index, world) in worlds.iter().enumerate() {
             set.sessions.push(WorldSession::start_ssh(
@@ -92,7 +94,19 @@ impl SessionSet {
     }
 
     pub(super) fn all_closed(&self) -> bool {
-        self.sessions.iter().all(|session| session.closed)
+        !self.sessions.is_empty() && self.sessions.iter().all(|session| session.closed)
+    }
+
+    pub(super) fn add_world(&mut self, world: &str, rows: u16, columns: u16) -> Result<()> {
+        let index = self.sessions.len();
+        self.sessions.push(WorldSession::start_ssh(
+            index,
+            world,
+            rows,
+            columns,
+            &self.sender,
+        )?);
+        Ok(())
     }
 
     pub(super) fn is_open(&self, index: usize) -> bool {
@@ -323,6 +337,7 @@ mod tests {
                 fake_session(1, "two", &sender),
             ],
             events: Some(events),
+            sender,
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");
@@ -343,6 +358,7 @@ mod tests {
                 fake_session(1, "two", &sender),
             ],
             events: Some(events),
+            sender: sender.clone(),
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");

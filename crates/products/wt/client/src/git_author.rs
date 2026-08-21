@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::process::Command;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct GitAuthor {
     pub(super) name: String,
     pub(super) email: String,

@@ -1,5 +1,7 @@
 use super::codex::ShellWorld;
-use super::control::{CodexCard, CodexCardIdentity, CodexOpenTarget, ControlState};
+use super::control::{
+    CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
+};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
@@ -21,6 +23,7 @@ pub(super) enum InputRoute {
     Consumed,
     World,
     OpenCodex(Box<CodexOpenTarget>),
+    Command(ControlCommand),
 }
 
 #[derive(Debug)]
@@ -34,11 +37,10 @@ pub(super) struct ShellModel {
 
 impl ShellModel {
     pub(super) fn new(worlds: Vec<ShellWorld>) -> Self {
-        assert!(!worlds.is_empty(), "shell requires at least one world");
         Self {
             worlds,
             active: 0,
-            mode: Mode::World,
+            mode: Mode::Control,
             control: ControlState::default(),
             should_quit: false,
         }
@@ -52,12 +54,33 @@ impl ShellModel {
         self.active
     }
 
+    pub(super) fn has_worlds(&self) -> bool {
+        !self.worlds.is_empty()
+    }
+
     pub(super) fn active_world(&self) -> &str {
         &self.worlds[self.active].qualified_name
     }
 
     pub(super) fn world_count(&self) -> usize {
         self.worlds.len()
+    }
+
+    pub(super) fn world_index(&self, world: &str) -> Option<usize> {
+        self.worlds
+            .iter()
+            .position(|candidate| candidate.qualified_name == world)
+    }
+
+    pub(super) fn activate_world(&mut self, world: ShellWorld) {
+        self.active = match self.world_index(&world.qualified_name) {
+            Some(index) => index,
+            None => {
+                self.worlds.push(world);
+                self.worlds.len() - 1
+            }
+        };
+        self.mode = Mode::World;
     }
 
     pub(super) fn should_quit(&self) -> bool {
@@ -103,12 +126,12 @@ impl ShellModel {
                 _ => InputRoute::World,
             },
             Mode::Control => {
-                if key.code == KeyCode::F(5) {
+                if key.code == KeyCode::F(5) && self.has_worlds() {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
-                    if let Some(target) = self.control.handle_key(key, area) {
-                        return InputRoute::OpenCodex(Box::new(target));
+                    if let Some(action) = self.control.handle_key(key, area) {
+                        return route(action);
                     }
                 }
                 InputRoute::Consumed
@@ -120,11 +143,12 @@ impl ShellModel {
         &mut self,
         mouse: MouseEvent,
         area: Rect,
-    ) -> (bool, Option<CodexOpenTarget>) {
+    ) -> (bool, Option<InputRoute>) {
         if self.mode != Mode::Control {
             return (false, None);
         }
-        self.control.handle_mouse(mouse, area)
+        let (changed, action) = self.control.handle_mouse(mouse, area);
+        (changed, action.map(route))
     }
 
     pub(super) fn focus_route(&self, target: &CodexOpenTarget) -> Option<(usize, &str)> {
@@ -156,6 +180,13 @@ impl ShellModel {
     }
 }
 
+fn route(action: ControlAction) -> InputRoute {
+    match action {
+        ControlAction::Command(command) => InputRoute::Command(command),
+        ControlAction::OpenCodex(target) => InputRoute::OpenCodex(Box::new(target)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,11 +195,13 @@ mod tests {
     use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
     fn model() -> ShellModel {
-        ShellModel::new(vec![
+        let mut model = ShellModel::new(vec![
             ShellWorld::test("one", 1),
             ShellWorld::test("two", 2),
             ShellWorld::test("three", 3),
-        ])
+        ]);
+        model.handle_key(key(KeyCode::F(5)), area());
+        model
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -189,6 +222,24 @@ mod tests {
             InputRoute::Consumed
         );
         assert_eq!(model.mode(), Mode::Switcher);
+    }
+
+    #[test]
+    fn shell_starts_in_control_mode() {
+        let model = ShellModel::new(vec![ShellWorld::test("one", 1)]);
+
+        assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
+    fn empty_shell_stays_in_control_mode_on_f5() {
+        let mut model = ShellModel::new(Vec::new());
+
+        assert_eq!(
+            model.handle_key(key(KeyCode::F(5)), area()),
+            InputRoute::Consumed
+        );
+        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
@@ -333,7 +384,7 @@ mod tests {
     }
 
     fn open_codex_activity(model: &mut ShellModel) {
-        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::Tab] {
+        for code in [KeyCode::F(5), KeyCode::Up] {
             model.handle_key(key(code), area());
         }
     }

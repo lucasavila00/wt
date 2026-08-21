@@ -121,8 +121,7 @@ fn decode_codex_sessions(
     }
     match response {
         StrictCodexResponse::Ok {
-            response: StrictCodexResponseKind::CodexSessions,
-            sessions,
+            response: StrictCodexResponseKind::CodexSessions { sessions },
             ..
         } => Ok(sessions),
         StrictCodexResponse::Error { error, .. } => Err(rejection(context, &error)),
@@ -135,7 +134,6 @@ enum StrictCodexResponse {
     Ok {
         protocol_version: u32,
         response: StrictCodexResponseKind,
-        sessions: Vec<CodexSession>,
     },
     Error {
         protocol_version: u32,
@@ -144,9 +142,9 @@ enum StrictCodexResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "response", rename_all = "snake_case", deny_unknown_fields)]
 enum StrictCodexResponseKind {
-    CodexSessions,
+    CodexSessions { sessions: Vec<CodexSession> },
 }
 
 fn call_bytes(
@@ -402,14 +400,15 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}"#;
+        let valid = br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
         assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[],"extra":true}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}"#.as_slice(),
-            br#"{"protocol_version":3,"outcome":"ok","response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
+            br#"{"protocol_version":3,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"dev","cwd":"/workspace","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-app","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
             br#"{"protocol_version":3,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
             br#"{"protocol_version":3,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
