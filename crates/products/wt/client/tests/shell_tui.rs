@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
 use std::time::Duration;
 use support::{Key, Screen};
 
@@ -81,7 +82,7 @@ esac
         write_executable(&bin.join("wt-server"), &server);
         write_executable(
             &bin.join("ssh"),
-            "#!/bin/sh\nstty -echo\nprintf 'session: %s\\n' \"$2\"\ncat\n",
+            "#!/bin/sh\nstty -echo\nattempts=$HOME/ssh-attempts\nattempt=$(($(cat \"$attempts\" 2>/dev/null || echo 0) + 1))\nprintf '%s\\n' \"$attempt\" > \"$attempts\"\nprintf '%s\\n' \"$$\" > \"$HOME/ssh-pid\"\nprintf 'session: %s (%s)\\n' \"$2\" \"$attempt\"\nexec cat\n",
         );
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -423,6 +424,27 @@ fn codex_sessions_refresh_after_startup() -> Result<()> {
     let second_title = codex_update_title(&screen.contents());
 
     assert_ne!(first_title, second_title);
+    Ok(())
+}
+
+#[test]
+fn exited_ssh_session_is_reported_and_reconnects_on_space() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(5))?
+        .wait_for_text("session: local.existing (1)")?;
+    let pid = fs::read_to_string(fixture.home.path().join("ssh-pid")).unwrap();
+    assert!(Command::new("kill").arg(pid.trim()).status()?.success());
+
+    screen
+        .wait_for_text("SSH session")?
+        .wait_for_text("Space: reconnect")?
+        .press(Key::Char(' '))?
+        .wait_for_text("session: local.existing (2)")?
+        .wait_for_text_gone("Space: reconnect")?;
     Ok(())
 }
 

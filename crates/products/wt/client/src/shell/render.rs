@@ -16,6 +16,7 @@ use ratatui::Frame;
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     screen: Option<&vt100::Screen>,
+    closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
     creation_error: Option<&str>,
@@ -39,16 +40,34 @@ pub(super) fn draw(
     let world = world_area(frame.area());
     frame.render_widget(TerminalView(screen), world);
     draw_world_bar(frame, model);
+    if let Some(message) = closed_message {
+        draw_closed_session_bar(frame, message);
+    }
     match model.mode() {
-        Mode::World => {
+        Mode::World if closed_message.is_none() => {
             if !screen.hide_cursor() {
                 let (row, column) = screen.cursor_position();
                 frame.set_cursor_position((world.x + column, world.y + row));
             }
         }
-        Mode::Switcher => {}
+        Mode::World | Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
+}
+
+fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
+    let area = frame.area();
+    frame.render_widget(
+        Paragraph::new(format!(" {message} · Space: reconnect "))
+            .alignment(Alignment::Center)
+            .style(
+                Style::new()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
+    );
 }
 
 fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
@@ -452,7 +471,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -478,7 +497,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -505,10 +524,42 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn closed_session_has_a_red_reconnect_bar() {
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["local.one".into()]);
+        model.handle_key(crossterm::event::KeyEvent::new(
+            KeyCode::F(5),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let parser = parser();
+
+        terminal
+            .draw(|frame| {
+                draw(
+                    frame,
+                    Some(parser.screen()),
+                    Some("SSH session ended: Exited with code 255"),
+                    &model,
+                    None,
+                    None,
+                    None,
+                )
+            })
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_closed_session", terminal.backend().buffer());
+        let status = terminal.backend().buffer().cell((0, 5)).unwrap().style();
+        assert_eq!(status.fg, Some(Color::White));
+        assert_eq!(status.bg, Some(Color::Red));
+        assert!(status.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
@@ -520,7 +571,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -538,7 +589,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -589,7 +640,7 @@ mod tests {
         let parser = parser();
 
         terminal
-            .draw(|frame| draw(frame, Some(parser.screen()), &model, None, None, None))
+            .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
@@ -614,7 +665,7 @@ mod tests {
         let model = ShellModel::new(Vec::new());
 
         terminal
-            .draw(|frame| draw(frame, None, &model, None, None, None))
+            .draw(|frame| draw(frame, None, None, &model, None, None, None))
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());

@@ -360,10 +360,15 @@ fn run_loop(
         }
         if redraw {
             let screen = model.has_worlds().then(|| sessions.screen(model.active()));
+            let closed_message = model
+                .has_worlds()
+                .then(|| sessions.closed_message(model.active()))
+                .flatten();
             terminal.draw(|frame| {
                 render::draw(
                     frame,
                     screen,
+                    closed_message,
                     model,
                     flows.creation.as_ref(),
                     flows.creation_error.as_deref(),
@@ -409,8 +414,18 @@ fn dispatch_event(
 ) -> Result<bool> {
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
+            if model.mode() != Mode::Control
+                && sessions.closed_message(model.active()).is_some()
+                && key.code == crossterm::event::KeyCode::Char(' ')
+            {
+                sessions.restart(model.active(), world_rows(area.height), area.width);
+                return Ok(true);
+            }
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
                 if model.handle_key(key) == InputRoute::World {
+                    if sessions.closed_message(model.active()).is_some() {
+                        return Ok(true);
+                    }
                     let screen = sessions.screen(model.active());
                     if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
                         sessions.write(model.active(), &bytes)?;
@@ -456,6 +471,9 @@ fn dispatch_event(
             }
             match model.handle_key(key) {
                 InputRoute::World => {
+                    if sessions.closed_message(model.active()).is_some() {
+                        return Ok(true);
+                    }
                     let screen = sessions.screen(model.active());
                     if let Some(bytes) = input::encode_key(key, screen.application_cursor())? {
                         sessions.write(model.active(), &bytes)?;
@@ -481,11 +499,17 @@ fn dispatch_event(
             Ok(true)
         }
         Event::Paste(text) if model.mode() == Mode::World => {
+            if sessions.closed_message(model.active()).is_some() {
+                return Ok(true);
+            }
             let bracketed = sessions.screen(model.active()).bracketed_paste();
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
         Event::Mouse(mouse) if model.mode().forwards_mouse() => {
+            if sessions.closed_message(model.active()).is_some() {
+                return Ok(false);
+            }
             if let Some(mouse) = world_mouse(mouse, area) {
                 let screen = sessions.screen(model.active());
                 if let Some(bytes) = input::encode_mouse(
