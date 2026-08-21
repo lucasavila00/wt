@@ -457,6 +457,10 @@ fn install_services(
 }
 
 fn install_codex_auth_helper(runner: &impl Runner) -> Result<()> {
+    runner.run(
+        cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
+        "create system helper directory",
+    )?;
     let local = Path::new("target/wt-codex-auth-share.install");
     fs::write(local, host::CODEX_AUTH_SHARE).context("stage Codex auth share helper")?;
     let temporary = Path::new("/usr/local/libexec/.wt-codex-auth-share.wt-new");
