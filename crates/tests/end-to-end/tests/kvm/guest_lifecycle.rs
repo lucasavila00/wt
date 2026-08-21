@@ -429,9 +429,10 @@ fn agent_tools_transport_works_without_provider_credentials() {
     let gateway_diagnostics = diagnostics
         .lines()
         .filter_map(|line| line.strip_prefix("remote: "))
+        .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n");
-    insta::assert_snapshot!(gateway_diagnostics, @r###"
+    insta::assert_snapshot!(gateway_diagnostics, @"
     This is a WT-managed development environment for a coding agent.
     The gateway does not expose developer SSH keys or provider credentials.
     Do not look for credentials or use gh or glab.
@@ -442,10 +443,9 @@ fn agent_tools_transport_works_without_provider_credentials() {
     wt-tools uses explicit provider resource types and IDs; it does not infer
     resources from the current checkout.
     Run wt-tools --help to discover every available command.
-
     Published branch `wt/fix-login`.
     Run `wt-tools --help` for explicit provider commands.
-    "###);
+    ");
     assert_ref(
         &harness.git.repository,
         &format!("refs/heads/{branch}"),
@@ -482,6 +482,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
         String::from_utf8(upstream.stdout).unwrap().trim()
     );
 
+    let mut provider_statuses = Vec::new();
     for provider in ["github", "gitlab"] {
         harness.use_provider_api_fixture(provider, local.trim());
         let status = app_output(
@@ -493,9 +494,13 @@ fn agent_tools_transport_works_without_provider_credentials() {
             ),
             "read explicit CI through provider API fixture",
         );
-        insta::assert_snapshot!(status.trim_end_matches('\n'), @"No CI resources for the commit.");
+        provider_statuses.push(format!("{provider}: {}", status.trim_end_matches('\n')));
         harness.restart_gateway();
     }
+    insta::assert_snapshot!(provider_statuses.join("\n"), @"
+    github: No CI resources for the commit.
+    gitlab: No CI resources for the commit.
+    ");
 
     app(
         &harness,
