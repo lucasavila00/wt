@@ -1,8 +1,37 @@
+mod support;
+
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::process::Stdio;
+use support::{Key, Screen};
 use wt_client::cmd;
+
+fn complete_dev_form(screen: &mut Screen, name: &str) {
+    screen
+        .wait_for_text("Create development world")
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .type_text(name)
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .type_text("git@example.test:repo.git")
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .wait_for_text("Review")
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap();
+}
 
 #[test]
 fn new_requires_a_terminal_before_contacting_server() {
@@ -115,43 +144,26 @@ esac
     )))
     .unwrap();
 
-    let mut created = cmd!(
-        "script",
-        "-qfec",
-        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
-        "/dev/null"
+    let mut created = Screen::launch(
+        env!("CARGO_BIN_EXE_wt"),
+        &["new", "dev"],
+        temp.path(),
+        &[
+            ("HOME", temp.path().as_os_str().to_os_string()),
+            ("PATH", path.clone()),
+        ],
     )
-    .env("HOME", temp.path())
-    .env("PATH", &path)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
     .unwrap();
+    complete_dev_form(&mut created, "repo-feature");
     created
-        .stdin
-        .take()
+        .wait_for_text("local.repo-feature")
         .unwrap()
-        .write_all(b"repo-feature\ngit@example.test:repo.git\nmain\n\n\n\n\n")
+        .wait_for_text("ssh exec: local.repo-feature")
+        .unwrap()
+        .wait_for_exit(23)
         .unwrap();
-    let created = created.wait_with_output().unwrap();
-    assert_eq!(created.status.code(), Some(23));
-    let transcript = String::from_utf8_lossy(&created.stdout).replace('\r', "");
-    let completed = transcript
-        .find("local.repo-feature\tsetup")
-        .map(|start| &transcript[start..])
-        .expect("creation result is present in the terminal transcript");
-    insta::assert_snapshot!(
-        completed,
-        @r###"
-        local.repo-feature	setup	192.0.2.2
-
-        Starting setup: ssh local.repo-feature
-        Guest host: ssh local.repo-feature-host
-        Endpoint: wt@192.0.2.2:22
-        ssh exec: local.repo-feature
-        "###
-    );
+    let transcript = created.contents();
+    insta::assert_snapshot!("created_world_and_ssh_handoff", transcript);
     assert_eq!(
         fs::read_to_string(temp.path().join("helper-attempts")).unwrap(),
         "1\n"
@@ -253,31 +265,31 @@ esac
     )))
     .unwrap();
 
-    let mut created = cmd!(
-        "script",
-        "-qfec",
-        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
-        "/dev/null"
+    let mut created = Screen::launch(
+        env!("CARGO_BIN_EXE_wt"),
+        &["new", "dev"],
+        temp.path(),
+        &[
+            ("HOME", temp.path().as_os_str().to_os_string()),
+            ("PATH", path),
+        ],
     )
-    .env("HOME", temp.path())
-    .env("PATH", path)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
     .unwrap();
+    complete_dev_form(&mut created, "broken-config");
     created
-        .stdin
-        .take()
+        .wait_for_text("Creation did not complete")
         .unwrap()
-        .write_all(b"broken-config\ngit@example.test:repo.git\nmain\n\n\n\n\n")
+        .wait_for_text("world local.broken-config was created")
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .wait_for_text("wt: world")
+        .unwrap()
+        .wait_for_exit(1)
         .unwrap();
-    let created = created.wait_with_output().unwrap();
-
-    assert!(!created.status.success());
     assert!(!temp.path().join("ssh-execed").exists());
-    let transcript = String::from_utf8_lossy(&created.stdout)
-        .replace('\r', "")
+    let transcript = created
+        .contents()
         .replace(&temp.path().display().to_string(), "[HOME]");
     let error = transcript
         .find("wt: world")
@@ -348,33 +360,33 @@ esac
     )))
     .unwrap();
 
-    let mut created = cmd!(
-        "script",
-        "-qfec",
-        format!("{} new dev", env!("CARGO_BIN_EXE_wt")),
-        "/dev/null"
+    let mut created = Screen::launch(
+        env!("CARGO_BIN_EXE_wt"),
+        &["new", "dev"],
+        temp.path(),
+        &[
+            ("HOME", temp.path().as_os_str().to_os_string()),
+            ("PATH", path),
+        ],
     )
-    .env("HOME", temp.path())
-    .env("PATH", path)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
     .unwrap();
+    complete_dev_form(&mut created, "broken-config");
     created
-        .stdin
-        .take()
+        .wait_for_text("Creation did not complete")
         .unwrap()
-        .write_all(b"\nbroken-config\ngit@example.test:repo.git\nmain\n\n\n\n\n")
+        .wait_for_text("world local.broken-config was created")
+        .unwrap()
+        .press(Key::Enter)
+        .unwrap()
+        .wait_for_text("wt: world")
+        .unwrap()
+        .wait_for_exit(1)
         .unwrap();
-    let created = created.wait_with_output().unwrap();
-
-    assert!(!created.status.success());
     assert_eq!(
         fs::read_to_string(temp.path().join("ssh-calls")).unwrap(),
         "-- offline-server wt-server api\n"
     );
-    let transcript = String::from_utf8_lossy(&created.stdout).replace('\r', "");
+    let transcript = created.contents();
     let error = transcript
         .find("wt: world")
         .map(|start| &transcript[start..])

@@ -1,0 +1,10 @@
+---
+source: crates/products/wt/client/tests/automatic_sync.rs
+expression: transcript
+---
+local.repo-feature      setup   192.0.2.2
+
+Starting setup: ssh local.repo-feature
+Guest host: ssh local.repo-feature-host
+Endpoint: wt@192.0.2.2:22
+ssh exec: local.repo-feature

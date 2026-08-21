@@ -28,6 +28,7 @@ pub(super) struct NewHost {
     pub(super) user_data: Option<PathBuf>,
 }
 
+#[derive(Clone, Debug)]
 pub(super) struct Input {
     pub(super) user_data: String,
     pub(super) user_data_path: PathBuf,
@@ -63,15 +64,15 @@ impl NewHost {
 }
 
 impl New {
-    pub(super) fn into_kind(self) -> Result<super::CreateKind> {
+    pub(super) fn into_kind(self) -> Result<crate::create::Kind> {
         match self.kind {
-            Some(NewKind::Dev) => Ok(super::CreateKind::Devcontainer),
-            Some(NewKind::Host(input)) => input.load().map(super::CreateKind::Host),
+            Some(NewKind::Dev) => Ok(crate::create::Kind::Dev),
+            Some(NewKind::Host(input)) => input.load().map(crate::create::Kind::Host),
             None => NewHost {
                 user_data: self.user_data,
             }
             .load()
-            .map(super::CreateKind::Host),
+            .map(crate::create::Kind::Host),
         }
     }
 }
@@ -83,10 +84,6 @@ fn read_user_data(path: &Path) -> Result<String> {
         bail!("cloud-init user-data {} is empty", path.display());
     }
     Ok(user_data)
-}
-
-pub(super) fn application_summary(path: &Path) -> String {
-    format!("Kind        host\nCloud-init  {}\n", path.display())
 }
 
 fn default_user_data_path(
@@ -114,17 +111,6 @@ mod tests {
         assert_eq!(
             default_user_data_path(None, Some(OsStr::new("/home/test"))).unwrap(),
             PathBuf::from("/home/test/.config/wt/cloud-init.yaml")
-        );
-    }
-
-    #[test]
-    fn review_shows_cloud_init_source() {
-        insta::assert_snapshot!(
-            application_summary(Path::new("/home/test/.config/wt/cloud-init.yaml")),
-            @r###"
-        Kind        host
-        Cloud-init  /home/test/.config/wt/cloud-init.yaml
-        "###
         );
     }
 }
