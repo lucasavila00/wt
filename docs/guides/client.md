@@ -26,8 +26,8 @@ World names cannot end in `-host` or `-vs`; managed SSH reserves those suffixes.
 | Command | Kinds | Result |
 |---------|-------|--------|
 | `wt new dev` | devcontainer | Interactively create and enter setup |
-| `wt new host NAME` | host | Prepare the guest, then run the default cloud-init recipe in Byobu |
-| `wt new NAME` | host | Alias for `wt new host NAME` |
+| `wt new host` | host | Interactively create a host and enter its cloud-init setup in Byobu |
+| `wt new` | host | Alias for `wt new host` |
 | `wt ls` | retained | List kind, status, resources, disk use, and repository when present |
 | `wt start NAME` | retained | Start the existing guest and disk |
 | `wt stop NAME` | retained | Shut down the guest and keep its disk |

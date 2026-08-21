@@ -179,8 +179,8 @@ fn parses_explicit_dev_creation() {
 }
 
 #[test]
-fn parses_host_name_with_default_recipe() {
-    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox"]).unwrap();
+fn parses_interactive_host_creation_with_default_recipe() {
+    let cli = Cli::try_parse_from(["wt", "new", "host"]).unwrap();
     let Command::New(host::New {
         kind: Some(host::NewKind::Host(input)),
         ..
@@ -188,14 +188,13 @@ fn parses_host_name_with_default_recipe() {
     else {
         panic!("expected host new command")
     };
-    assert_eq!(input.name, InstanceName::parse("sandbox").unwrap());
     assert_eq!(input.user_data, None);
+    assert!(Cli::try_parse_from(["wt", "new", "host", "sandbox"]).is_err());
 }
 
 #[test]
 fn parses_host_recipe_override() {
-    let cli = Cli::try_parse_from(["wt", "new", "host", "sandbox", "--user-data", "recipe.yaml"])
-        .unwrap();
+    let cli = Cli::try_parse_from(["wt", "new", "host", "--user-data", "recipe.yaml"]).unwrap();
     let Command::New(host::New {
         kind: Some(host::NewKind::Host(input)),
         ..
@@ -203,19 +202,18 @@ fn parses_host_recipe_override() {
     else {
         panic!("expected host new command")
     };
-    assert_eq!(input.name, InstanceName::parse("sandbox").unwrap());
     assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
 }
 
 #[test]
 fn parses_bare_new_as_host_creation() {
-    let cli = Cli::try_parse_from(["wt", "new", "sandbox", "--user-data", "recipe.yaml"]).unwrap();
+    let cli = Cli::try_parse_from(["wt", "new", "--user-data", "recipe.yaml"]).unwrap();
     let Command::New(input) = cli.command else {
         panic!("expected new command")
     };
     assert!(input.kind.is_none());
-    assert_eq!(input.name, Some(InstanceName::parse("sandbox").unwrap()));
     assert_eq!(input.user_data, Some(PathBuf::from("recipe.yaml")));
+    assert!(Cli::try_parse_from(["wt", "new", "sandbox"]).is_err());
 }
 
 #[test]

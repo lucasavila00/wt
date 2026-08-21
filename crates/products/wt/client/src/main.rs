@@ -71,8 +71,8 @@ fn run() -> Result<()> {
     let config = ClientConfig::load()?;
     match Cli::parse().command {
         Command::New(command) => {
-            let (application, name) = command.into_kind()?;
-            let input = prompt_create(&config, application, name)?;
+            let application = command.into_kind()?;
+            let input = prompt_create(&config, application, None)?;
             let context = config
                 .context(&input.context)
                 .context("selected context is missing")?;

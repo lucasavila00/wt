@@ -16,8 +16,6 @@ pub(super) enum NewKind {
 pub(super) struct New {
     #[command(subcommand)]
     pub(super) kind: Option<NewKind>,
-    /// Name of the host world to create. Equivalent to `wt new host NAME`.
-    pub(super) name: Option<wt_control_protocol::InstanceName>,
     /// Override the default cloud-init user-data file.
     #[arg(long, value_name = "FILE")]
     pub(super) user_data: Option<PathBuf>,
@@ -25,15 +23,12 @@ pub(super) struct New {
 
 #[derive(Debug, Args)]
 pub(super) struct NewHost {
-    /// Name of the world to create.
-    pub(super) name: wt_control_protocol::InstanceName,
     /// Override the default cloud-init user-data file.
     #[arg(long, value_name = "FILE")]
     pub(super) user_data: Option<PathBuf>,
 }
 
 pub(super) struct Input {
-    pub(super) name: wt_control_protocol::InstanceName,
     pub(super) user_data: String,
     pub(super) user_data_path: PathBuf,
 }
@@ -61,7 +56,6 @@ impl NewHost {
             read_user_data(&user_data_path)?
         };
         Ok(Input {
-            name: self.name,
             user_data,
             user_data_path,
         })
@@ -69,31 +63,17 @@ impl NewHost {
 }
 
 impl New {
-    pub(super) fn into_kind(
-        self,
-    ) -> Result<(super::CreateKind, Option<wt_control_protocol::InstanceName>)> {
+    pub(super) fn into_kind(self) -> Result<super::CreateKind> {
         match self.kind {
-            Some(NewKind::Dev) => Ok((super::CreateKind::Devcontainer, None)),
-            Some(NewKind::Host(input)) => loaded_host(input),
-            None => {
-                let name = self.name.context(
-                    "host world name is required; use `wt new NAME` or `wt new host NAME`",
-                )?;
-                loaded_host(NewHost {
-                    name,
-                    user_data: self.user_data,
-                })
+            Some(NewKind::Dev) => Ok(super::CreateKind::Devcontainer),
+            Some(NewKind::Host(input)) => input.load().map(super::CreateKind::Host),
+            None => NewHost {
+                user_data: self.user_data,
             }
+            .load()
+            .map(super::CreateKind::Host),
         }
     }
-}
-
-fn loaded_host(
-    input: NewHost,
-) -> Result<(super::CreateKind, Option<wt_control_protocol::InstanceName>)> {
-    let input = input.load()?;
-    let name = input.name.clone();
-    Ok((super::CreateKind::Host(input), Some(name)))
 }
 
 fn read_user_data(path: &Path) -> Result<String> {
