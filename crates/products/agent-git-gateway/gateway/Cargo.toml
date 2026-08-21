@@ -11,7 +11,7 @@ name = "wt-agent-git-gateway"
 path = "src/bin/gateway.rs"
 
 [[bin]]
-name = "wt-agent-git-relay"
+name = "wt-agent-git-gateway-relay"
 path = "src/bin/relay.rs"
 
 [[bin]]

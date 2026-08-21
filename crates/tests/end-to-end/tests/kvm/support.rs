@@ -40,7 +40,7 @@ impl KvmHarness {
         let vsock_port = unique_vsock_port();
         std::env::set_var(VSOCK_PORT_ENV, vsock_port.to_string());
         let workspace =
-            fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
+            fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")).unwrap();
         let binary_dir = temp.path().join("bin");
         timings.run("build isolated test binaries", || {
             prepare_test_binaries(&workspace, &binary_dir)

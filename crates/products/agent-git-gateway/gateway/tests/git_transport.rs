@@ -288,7 +288,7 @@ fn reserve(control: &Path, world_id: &str, source: &str, base: &str) -> ControlR
 }
 
 fn spawn_relay(socket: &Path, grant_file: &Path, transport: &Path) -> Process {
-    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-relay"))
+    let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-git-gateway-relay"))
         .args([
             "--socket",
             socket.to_str().unwrap(),
