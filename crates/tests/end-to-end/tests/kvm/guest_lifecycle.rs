@@ -84,6 +84,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
              test \"$(findmnt -n -o FSTYPE --mountpoint /home/wt/.codex/sessions)\" = virtiofs; \
              test \"$(findmnt -n -o SOURCE --mountpoint /run/wt-codex-integration-auth)\" = wt-codex-integration-auth; \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/config.toml | awk '{{print $1}}')\" = c65282e2bb628cfddcb295f95b35bbc0cd369d0278976ffd6dc4cf3f3527ce68; \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
              test ! -w /home/wt/.codex/auth.json; \
              test -w \"$(dirname /home/wt/.codex/sessions/{shared_marker})\"; \
@@ -104,6 +105,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
              test \"$(findmnt -n -o SOURCE --mountpoint /home/wt/.codex/sessions)\" = wt-codex-integration-sessions; \
              test \"$(findmnt -n -o SOURCE --mountpoint /run/wt-codex-integration-auth)\" = wt-codex-integration-auth; \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/config.toml | awk '{{print $1}}')\" = c65282e2bb628cfddcb295f95b35bbc0cd369d0278976ffd6dc4cf3f3527ce68; \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
              test ! -w /home/wt/.codex/auth.json; \
              test -w \"$(dirname /home/wt/.codex/sessions/{shared_marker})\"; \
@@ -125,6 +127,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
             "set -eu; \
              test \"$(readlink /home/wt/.codex/sessions)\" = /var/lib/wt-codex-integration-sessions; \
              test \"$(readlink /home/wt/.codex/auth.json)\" = /var/lib/wt-codex-integration-auth/auth.json; \
+             test \"$(sha256sum /home/wt/.codex/config.toml | awk '{{print $1}}')\" = c65282e2bb628cfddcb295f95b35bbc0cd369d0278976ffd6dc4cf3f3527ce68; \
              test \"$(sha256sum /home/wt/.codex/auth.json | awk '{{print $1}}')\" = {codex_auth_sha256}; \
              test ! -w /home/wt/.codex/auth.json; \
              test -x /usr/local/bin/wt-codex-integration; test -x /usr/local/bin/.codex.wt-real; \
@@ -262,7 +265,7 @@ fn agent_tools_transport_works_without_provider_credentials() {
             "test \"$(readlink /usr/local/bin/.codex.wt-real)\" = /home/wt/.local/bin/codex; ",
             "sudo -n wt-codex-integration uninstall; ",
             "test \"$(readlink /usr/local/bin/codex)\" = /home/wt/.local/bin/codex; ",
-            "sudo -n wt-codex-integration install; ",
+            "sudo -n env CODEX_HOME=/home/wt/.codex wt-codex-integration install; ",
             "test ! -e /workspace; ",
             "test ! -e /usr/local/bin/wt-app-shell; ",
             "test -x /usr/local/bin/wt-agent-tool-gateway-relay; ",

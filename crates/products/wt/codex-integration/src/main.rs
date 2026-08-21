@@ -20,6 +20,8 @@ enum Command {
     Reconcile,
     /// Replace the Codex command in PATH with the WT trampoline.
     Install,
+    /// Install WT's exact Codex user configuration.
+    InstallConfig,
     /// Restore the Codex command replaced by `install`.
     Uninstall,
 }
@@ -51,6 +53,7 @@ fn run(args: Vec<OsString>) -> Result<()> {
             let outcome = install::install()?;
             println!("{}", outcome.message());
         }
+        Command::InstallConfig => install::install_user_config()?,
         Command::Uninstall => {
             let path = install::uninstall()?;
             println!("Removed Codex trampoline: {}", path.display());
@@ -91,10 +94,11 @@ mod tests {
 Usage: wt-codex-integration <COMMAND>
 
 Commands:
-  reconcile  Ask Codex to discover shared session rollouts
-  install    Replace the Codex command in PATH with the WT trampoline
-  uninstall  Restore the Codex command replaced by `install`
-  help       Print this message or the help of the given subcommand(s)
+  reconcile       Ask Codex to discover shared session rollouts
+  install         Replace the Codex command in PATH with the WT trampoline
+  install-config  Install WT's exact Codex user configuration
+  uninstall       Restore the Codex command replaced by `install`
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help

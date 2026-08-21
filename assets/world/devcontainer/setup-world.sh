@@ -116,6 +116,7 @@ devcontainer exec --workspace-folder "$workspace" /bin/sh -c \
     workspace=$(pwd -P)
     git config --global --add safe.directory "$workspace"
     install -d -m 0700 "$HOME/.codex"
+    CODEX_HOME="$HOME/.codex" wt-codex-integration install-config
     for name in sessions auth.json; do
         target=$HOME/.codex/$name
         if test -e "$target" && ! test -L "$target"; then

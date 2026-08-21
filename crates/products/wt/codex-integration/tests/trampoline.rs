@@ -30,6 +30,7 @@ fn install_runs_and_uninstall_restores_the_real_codex() {
     let install = Command::new(wt_codex_integration)
         .arg("install")
         .env("PATH", &path)
+        .env("CODEX_HOME", temp.path().join("codex-home"))
         .output()
         .unwrap();
     assert!(
