@@ -3,6 +3,9 @@ use crate::config::{Context, ContextKind};
 use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, Outcome, Response, PROTOCOL_VERSION};
 
 #[derive(Debug)]
@@ -57,6 +60,17 @@ pub fn call(
     }
 }
 
+pub fn call_with_timeout(
+    context: &Context,
+    request: &ApiRequest,
+    timeout: Duration,
+) -> std::result::Result<Response, ContextError> {
+    match call_outcome_inner(context, request, Some(timeout))? {
+        Outcome::Ok { response } => Ok(*response),
+        Outcome::Error { error } => Err(rejection(context, &error)),
+    }
+}
+
 pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
     let hint = match error.code {
         wt_control_protocol::ErrorCode::Capacity => {
@@ -81,6 +95,14 @@ pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
 pub fn call_outcome(
     context: &Context,
     request: &ApiRequest,
+) -> std::result::Result<Outcome, ContextError> {
+    call_outcome_inner(context, request, None)
+}
+
+fn call_outcome_inner(
+    context: &Context,
+    request: &ApiRequest,
+    timeout: Option<Duration>,
 ) -> std::result::Result<Outcome, ContextError> {
     let mut command = helper_command(context);
     let mut child = command
@@ -125,11 +147,15 @@ pub fn call_outcome(
                 retry_hint(context),
             )
         })?;
-    let output = child.wait_with_output().map_err(|error| {
+    let output = wait_with_output(child, timeout).map_err(|error| {
         context_error(
             context,
-            "could not wait for the context helper",
-            Some(error.to_string()),
+            if error.kind() == std::io::ErrorKind::TimedOut {
+                "context helper timed out"
+            } else {
+                "could not wait for the context helper"
+            },
+            (error.kind() != std::io::ErrorKind::TimedOut).then(|| error.to_string()),
             retry_hint(context),
         )
     })?;
@@ -165,6 +191,44 @@ pub fn call_outcome(
         ));
     }
     Ok(response.outcome)
+}
+
+fn wait_with_output(
+    child: std::process::Child,
+    timeout: Option<Duration>,
+) -> std::io::Result<std::process::Output> {
+    let Some(timeout) = timeout else {
+        return child.wait_with_output();
+    };
+    let pid = child.id();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let waiter = thread::spawn(move || {
+        let output = child.wait_with_output();
+        let _ = sender.send(output);
+    });
+    match receiver.recv_timeout(timeout) {
+        Ok(output) => {
+            let _ = waiter.join();
+            output
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid.cast_signed()),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+            let _ = waiter.join();
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "context helper timed out",
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = waiter.join();
+            Err(std::io::Error::other(
+                "context helper waiter stopped without returning output",
+            ))
+        }
+    }
 }
 
 fn context_error(
@@ -263,6 +327,7 @@ fn error_code(code: wt_control_protocol::ErrorCode) -> &'static str {
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+    use std::time::Instant;
 
     #[test]
     fn builds_exact_local_and_ssh_commands() {
@@ -310,5 +375,30 @@ mod tests {
           unsupported protocol: unsupported protocol version 4; expected 3
           hint: install protocol-compatible `wt` and `wt-server` versions on wt-lab
         "###);
+    }
+
+    #[test]
+    fn timed_wait_returns_completed_output() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf ready"]);
+        command.stdout(Stdio::piped());
+
+        let output =
+            wait_with_output(command.spawn().unwrap(), Some(Duration::from_millis(500))).unwrap();
+
+        assert_eq!(output.stdout, b"ready");
+    }
+
+    #[test]
+    fn timed_wait_kills_a_slow_helper() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "sleep 10"]);
+        let started = Instant::now();
+
+        let error = wait_with_output(command.spawn().unwrap(), Some(Duration::from_millis(50)))
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

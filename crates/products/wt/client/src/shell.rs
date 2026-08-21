@@ -7,7 +7,7 @@ use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -27,6 +27,7 @@ use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
 const WORLD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const WORLD_REFRESH_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
@@ -95,7 +96,7 @@ struct WorldRefresh {
 
 impl WorldRefresh {
     fn start(config: ClientConfig) -> Self {
-        let (updates_tx, updates) = mpsc::channel();
+        let (updates_tx, updates) = mpsc::sync_channel(1);
         let (stop, stop_rx) = mpsc::channel();
         let worker = thread::Builder::new()
             .name("wt-shell-world-refresh".into())
@@ -103,12 +104,13 @@ impl WorldRefresh {
                 if stop_rx.recv_timeout(WORLD_REFRESH_INTERVAL).is_ok() {
                     break;
                 }
-                let report = inventory::list_all(&config);
-                if report.failures.is_empty()
-                    && ssh::sync(&config, &report.instances).is_ok()
-                    && updates_tx.send(shell_worlds(&report.instances)).is_err()
-                {
-                    break;
+                let report =
+                    inventory::list_all_with_timeout(&config, WORLD_REFRESH_REQUEST_TIMEOUT);
+                if report.failures.is_empty() && ssh::sync(&config, &report.instances).is_ok() {
+                    match updates_tx.try_send(shell_worlds(&report.instances)) {
+                        Ok(()) | Err(TrySendError::Full(_)) => {}
+                        Err(TrySendError::Disconnected(_)) => break,
+                    }
                 }
             })
             .expect("start wt shell world refresh worker");

@@ -2,6 +2,7 @@ use crate::config::{ClientConfig, Context};
 use crate::transport::{self, ContextError};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
+use std::time::Duration;
 use wt_control_protocol::{ApiRequest, Instance, InstanceName, Operation, Response};
 
 #[derive(Clone, Debug)]
@@ -66,10 +67,22 @@ fn format_disk_usage(bytes: u64) -> String {
 }
 
 pub fn list_all(config: &ClientConfig) -> InventoryReport {
+    list_all_inner(config, None)
+}
+
+pub fn list_all_with_timeout(config: &ClientConfig, timeout: Duration) -> InventoryReport {
+    list_all_inner(config, Some(timeout))
+}
+
+fn list_all_inner(config: &ClientConfig, timeout: Option<Duration>) -> InventoryReport {
     let mut all = Vec::new();
     let mut failures = Vec::new();
     for context in &config.contexts {
-        let response = match transport::call(context, &ApiRequest::new(Operation::List)) {
+        let request = ApiRequest::new(Operation::List);
+        let response = match timeout.map_or_else(
+            || transport::call(context, &request),
+            |timeout| transport::call_with_timeout(context, &request, timeout),
+        ) {
             Ok(response) => response,
             Err(error) => {
                 failures.push(error);
