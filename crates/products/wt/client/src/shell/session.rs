@@ -3,13 +3,16 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use std::io::{Read as _, Write as _};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
+use uuid::Uuid;
+
+use super::model::ShellWorld;
 
 const OUTPUT_QUEUE: usize = 256;
 const SCROLLBACK_ROWS: usize = 10_000;
 
 enum SessionEvent {
-    Output { index: usize, bytes: Vec<u8> },
-    Closed { index: usize, error: Option<String> },
+    Output { world: Uuid, bytes: Vec<u8> },
+    Closed { world: Uuid, error: Option<String> },
 }
 
 pub(super) struct SessionSet {
@@ -19,17 +22,16 @@ pub(super) struct SessionSet {
 }
 
 impl SessionSet {
-    pub(super) fn start(worlds: &[String], rows: u16, columns: u16) -> Result<Self> {
+    pub(super) fn start(worlds: &[ShellWorld], rows: u16, columns: u16) -> Result<Self> {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut set = Self {
             sessions: Vec::with_capacity(worlds.len()),
             events: Some(events),
             sender: sender.clone(),
         };
-        for (index, world) in worlds.iter().enumerate() {
-            set.sessions.push(WorldSession::start_ssh(
-                index, world, rows, columns, &sender,
-            )?);
+        for world in worlds {
+            set.sessions
+                .push(WorldSession::start_ssh(world, rows, columns, &sender)?);
         }
         Ok(set)
     }
@@ -41,14 +43,20 @@ impl SessionSet {
         while let Ok(event) = events.try_recv() {
             changed = true;
             match event {
-                SessionEvent::Output { index, bytes } => {
+                SessionEvent::Output { world, bytes } => {
+                    let Some(index) = self.index_of(world) else {
+                        continue;
+                    };
                     let writes = self.sessions[index].clipboard.process(&bytes);
                     if index == active {
                         clipboard_writes.extend(writes);
                     }
                     self.sessions[index].parser.process(&bytes);
                 }
-                SessionEvent::Closed { index, error } => {
+                SessionEvent::Closed { world, error } => {
+                    let Some(index) = self.index_of(world) else {
+                        continue;
+                    };
                     self.sessions[index].closed = true;
                     if let Some(error) = error {
                         let message = format!("\r\nwt shell: session reader failed: {error}\r\n");
@@ -97,16 +105,37 @@ impl SessionSet {
         !self.sessions.is_empty() && self.sessions.iter().all(|session| session.closed)
     }
 
-    pub(super) fn add_world(&mut self, world: &str, rows: u16, columns: u16) -> Result<()> {
-        let index = self.sessions.len();
-        self.sessions.push(WorldSession::start_ssh(
-            index,
-            world,
-            rows,
-            columns,
-            &self.sender,
-        )?);
+    pub(super) fn add_world(&mut self, world: &ShellWorld, rows: u16, columns: u16) -> Result<()> {
+        self.sessions
+            .push(WorldSession::start_ssh(world, rows, columns, &self.sender)?);
         Ok(())
+    }
+
+    pub(super) fn reconcile(
+        &mut self,
+        worlds: &[ShellWorld],
+        rows: u16,
+        columns: u16,
+    ) -> Result<()> {
+        self.sessions.retain_mut(|session| {
+            let retained = worlds.iter().any(|world| world.id == session.id);
+            if !retained {
+                session.stop_without_joining_reader();
+            }
+            retained
+        });
+        for world in worlds {
+            if self.index_of(world.id).is_none() {
+                self.add_world(world, rows, columns)?;
+            }
+        }
+        self.sessions
+            .sort_by_key(|session| worlds.iter().position(|world| world.id == session.id));
+        Ok(())
+    }
+
+    fn index_of(&self, world: Uuid) -> Option<usize> {
+        self.sessions.iter().position(|session| session.id == world)
     }
 }
 
@@ -118,6 +147,7 @@ impl Drop for SessionSet {
 }
 
 struct WorldSession {
+    id: Uuid,
     name: String,
     parser: vt100::Parser,
     writer: Option<Box<dyn std::io::Write + Send>>,
@@ -130,19 +160,18 @@ struct WorldSession {
 
 impl WorldSession {
     fn start_ssh(
-        index: usize,
-        world: &str,
+        world: &ShellWorld,
         rows: u16,
         columns: u16,
         sender: &SyncSender<SessionEvent>,
     ) -> Result<Self> {
         let mut command = CommandBuilder::new("ssh");
-        command.args(["--", world]);
-        Self::start(index, world, command, rows, columns, sender)
+        command.args(["--", &world.name]);
+        Self::start(world.id, &world.name, command, rows, columns, sender)
     }
 
     fn start(
-        index: usize,
+        id: Uuid,
         name: &str,
         command: CommandBuilder,
         rows: u16,
@@ -166,11 +195,13 @@ impl WorldSession {
             .with_context(|| format!("start SSH for {name}"))?;
         drop(pair.slave);
         let output_sender = sender.clone();
+        let event_world = id;
         let reader = thread::Builder::new()
-            .name(format!("wt-shell-{index}"))
-            .spawn(move || read_output(index, reader, &output_sender))
+            .name(format!("wt-shell-{name}"))
+            .spawn(move || read_output(event_world, reader, &output_sender))
             .with_context(|| format!("start {name} terminal reader"))?;
         Ok(Self {
+            id,
             name: name.to_owned(),
             parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
             writer: Some(writer),
@@ -180,6 +211,16 @@ impl WorldSession {
             clipboard: ClipboardRelay::default(),
             closed: false,
         })
+    }
+
+    fn stop_without_joining_reader(&mut self) {
+        self.writer.take();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        self.master.take();
+        self.reader.take();
     }
 }
 
@@ -265,7 +306,7 @@ impl Drop for WorldSession {
 }
 
 fn read_output(
-    index: usize,
+    world: Uuid,
     mut reader: Box<dyn std::io::Read + Send>,
     sender: &SyncSender<SessionEvent>,
 ) {
@@ -273,13 +314,13 @@ fn read_output(
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => {
-                let _ = sender.send(SessionEvent::Closed { index, error: None });
+                let _ = sender.send(SessionEvent::Closed { world, error: None });
                 return;
             }
             Ok(length) => {
                 if sender
                     .send(SessionEvent::Output {
-                        index,
+                        world,
                         bytes: buffer[..length].to_vec(),
                     })
                     .is_err()
@@ -288,12 +329,12 @@ fn read_output(
                 }
             }
             Err(error) if is_pty_eof(&error) => {
-                let _ = sender.send(SessionEvent::Closed { index, error: None });
+                let _ = sender.send(SessionEvent::Closed { world, error: None });
                 return;
             }
             Err(error) => {
                 let _ = sender.send(SessionEvent::Closed {
-                    index,
+                    world,
                     error: Some(error.to_string()),
                 });
                 return;
@@ -326,10 +367,7 @@ mod tests {
     fn hidden_sessions_keep_running_and_parsing_output() {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut sessions = SessionSet {
-            sessions: vec![
-                fake_session(0, "one", &sender),
-                fake_session(1, "two", &sender),
-            ],
+            sessions: vec![fake_session("one", &sender), fake_session("two", &sender)],
             events: Some(events),
             sender,
         };
@@ -347,37 +385,67 @@ mod tests {
     fn relays_clipboard_writes_only_from_the_active_session() {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut sessions = SessionSet {
-            sessions: vec![
-                fake_session(0, "one", &sender),
-                fake_session(1, "two", &sender),
-            ],
+            sessions: vec![fake_session("one", &sender), fake_session("two", &sender)],
             events: Some(events),
             sender: sender.clone(),
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");
         let sequence = b"\x1b]52;c;Y29weQ==\x1b\\";
+        let one = sessions.sessions[0].id;
+        let two = sessions.sessions[1].id;
 
         sender
             .send(SessionEvent::Output {
-                index: 1,
+                world: two,
                 bytes: sequence.to_vec(),
             })
             .unwrap();
         assert!(sessions.drain_output(0).1.is_empty());
         sender
             .send(SessionEvent::Output {
-                index: 0,
+                world: one,
                 bytes: sequence.to_vec(),
             })
             .unwrap();
         assert_eq!(sessions.drain_output(0).1, vec![sequence.to_vec()]);
     }
 
-    fn fake_session(index: usize, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
+    fn fake_session(name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", r"stty -echo; printf '\033[2J\033[Hready'; cat"]);
-        WorldSession::start(index, name, command, 4, 20, sender).unwrap()
+        WorldSession::start(Uuid::new_v4(), name, command, 4, 20, sender).unwrap()
+    }
+
+    #[test]
+    fn reconciliation_adds_removes_and_reorders_sessions() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let mut sessions = SessionSet {
+            sessions: vec![fake_session("one", &sender), fake_session("two", &sender)],
+            events: Some(events),
+            sender,
+        };
+        let two = ShellWorld {
+            id: sessions.sessions[1].id,
+            name: "two".into(),
+        };
+        let replacement = ShellWorld {
+            id: Uuid::new_v4(),
+            name: "one".into(),
+        };
+        let replacement_id = replacement.id;
+
+        sessions.reconcile(&[two, replacement], 4, 20).unwrap();
+
+        assert_eq!(
+            sessions
+                .sessions
+                .iter()
+                .map(|session| session.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["two", "one"]
+        );
+        assert_eq!(sessions.sessions[1].id, replacement_id);
     }
 
     fn wait_for(sessions: &mut SessionSet, index: usize, expected: &str) {

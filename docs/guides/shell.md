@@ -5,6 +5,11 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT navbar; the active world's Byobu uses the remaining
 terminal rows.
 
+The world list refreshes in the background every five seconds. Worlds created
+elsewhere are connected automatically, and removed worlds disappear. A refresh
+that cannot list every configured context leaves the last complete list in
+place.
+
 The dim navbar shows the active world and its position in the world list. `F5`
 enables the navbar controls, `Left` and `Right` change worlds, and `Up` opens the
 Control UI. Press `F5` again to return keyboard control to the world. `F6`

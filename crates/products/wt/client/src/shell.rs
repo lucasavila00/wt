@@ -7,7 +7,9 @@ use crossterm::execute;
 use ratatui::layout::Rect;
 use std::io::{IsTerminal as _, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
@@ -19,11 +21,12 @@ mod render;
 mod session;
 
 use control::ControlCommand;
-use model::{InputRoute, Mode, ShellModel};
+use model::{InputRoute, Mode, ShellModel, ShellWorld};
 use session::SessionSet;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
 const BAR_HEIGHT: u16 = 1;
+const WORLD_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 pub fn run(config: &ClientConfig) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
@@ -38,16 +41,12 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         ));
     }
     ssh::sync(config, &report.instances)?;
-    let worlds = report
-        .instances
-        .iter()
-        .filter(|world| ssh::has_alias(world))
-        .map(inventory::ContextInstance::qualified_name)
-        .collect::<Vec<_>>();
+    let worlds = shell_worlds(&report.instances);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     model.set_codex(load_codex(config));
+    let refresh = WorldRefresh::start(config.clone());
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -59,7 +58,14 @@ pub fn run(config: &ClientConfig) -> Result<()> {
         return Err(error).context("enable terminal input for wt shell");
     }
 
-    let result = run_loop(&mut terminal, &mut sessions, &mut model, config, &shutdown);
+    let result = run_loop(
+        &mut terminal,
+        &mut sessions,
+        &mut model,
+        config,
+        refresh.updates(),
+        &shutdown,
+    );
     let input_result = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
@@ -68,6 +74,63 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     .context("disable terminal input for wt shell");
     ratatui::restore();
     result.and(input_result)
+}
+
+fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
+    instances
+        .iter()
+        .filter(|world| ssh::has_alias(world))
+        .map(|world| ShellWorld {
+            id: world.instance.id,
+            name: world.qualified_name(),
+        })
+        .collect()
+}
+
+struct WorldRefresh {
+    updates: Receiver<Vec<ShellWorld>>,
+    stop: Sender<()>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl WorldRefresh {
+    fn start(config: ClientConfig) -> Self {
+        let (updates_tx, updates) = mpsc::channel();
+        let (stop, stop_rx) = mpsc::channel();
+        let worker = thread::Builder::new()
+            .name("wt-shell-world-refresh".into())
+            .spawn(move || loop {
+                if stop_rx.recv_timeout(WORLD_REFRESH_INTERVAL).is_ok() {
+                    break;
+                }
+                let report = inventory::list_all(&config);
+                if report.failures.is_empty()
+                    && ssh::sync(&config, &report.instances).is_ok()
+                    && updates_tx.send(shell_worlds(&report.instances)).is_err()
+                {
+                    break;
+                }
+            })
+            .expect("start wt shell world refresh worker");
+        Self {
+            updates,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn updates(&self) -> &Receiver<Vec<ShellWorld>> {
+        &self.updates
+    }
+}
+
+impl Drop for WorldRefresh {
+    fn drop(&mut self) {
+        let _ = self.stop.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 fn load_codex(config: &ClientConfig) -> Vec<control::CodexContextSnapshot> {
@@ -111,12 +174,22 @@ fn run_loop(
     sessions: &mut SessionSet,
     model: &mut ShellModel,
     config: &ClientConfig,
+    world_updates: &Receiver<Vec<ShellWorld>>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut creation = None;
     let mut creation_error = None;
     while !shutdown.load(Ordering::Relaxed) {
+        if let Some(worlds) = world_updates.try_iter().last() {
+            let area: Rect = terminal
+                .size()
+                .context("read wt shell terminal area")?
+                .into();
+            sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+            model.reconcile_worlds(worlds);
+            redraw = true;
+        }
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
         for sequence in clipboard_writes {
@@ -343,8 +416,11 @@ fn apply_creation_action(
             Ok(true)
         }
         crate::create::FlowAction::Created(created) => {
-            let world = format!("{}.{}", created.context, created.instance.name);
-            if model.world_index(&world).is_none() {
+            let world = ShellWorld {
+                id: created.instance.id,
+                name: format!("{}.{}", created.context, created.instance.name),
+            };
+            if model.world_id_index(world.id).is_none() {
                 sessions.add_world(&world, world_rows(area.height), area.width)?;
             }
             model.activate_world(world);
