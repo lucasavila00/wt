@@ -453,10 +453,10 @@ fn agent_tools_transport_works_without_provider_credentials() {
         provider_statuses.push(format!("{provider}: {}", status.trim_end_matches('\n')));
         harness.restart_gateway();
     }
-    insta::assert_snapshot!(provider_statuses.join("\n"), @"
-    github: No CI resources for the commit.
-    gitlab: No CI resources for the commit.
-    ");
+    insta::assert_snapshot!(provider_statuses.join("\n"), @r###"
+    github: {"type":"ci_runs_and_jobs","data":{"runs":[],"jobs":[]}}
+    gitlab: {"type":"ci_runs_and_jobs","data":{"runs":[],"jobs":[]}}
+    "###);
 
     app(
         &harness,
