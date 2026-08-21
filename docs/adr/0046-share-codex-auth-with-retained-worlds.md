@@ -37,11 +37,13 @@ additional paths:
 - `/home/wt/.codex/.wt-auth`, a WT-managed export containing only `auth.json`,
   mounted read-only in retained worlds.
 
-The auth export is a hard link to the live server credential, not a copy. A
-systemd path unit reruns the export helper after an atomic replacement. The
-guest mounts the export directory at `/run/wt-codex-integration-auth` and links
-`/home/wt/.codex/auth.json` to its file. Refreshing expired authentication is a
-server-user operation; worlds cannot write it back.
+The auth export is an atomically published copy of the live server credential.
+A systemd path unit reruns the export helper after a replacement. If the source
+changes during publication, the helper republishes until the two files match.
+The guest mounts the export directory live at
+`/run/wt-codex-integration-auth` and links `/home/wt/.codex/auth.json` to its
+file. Refreshing expired authentication is a server-user operation; running
+worlds receive it automatically and cannot write it back.
 
 Devcontainer setup injects Codex, `wt-codex-integration`, the read-write sessions path, and
 the read-only auth export into the primary container. It links both resources
