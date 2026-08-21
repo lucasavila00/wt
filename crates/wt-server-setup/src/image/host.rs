@@ -71,7 +71,13 @@ pub(super) fn ensure(
         manifest_path.exists(),
         || verify(input, server, server_bytes, &manifest_path),
     ) {
-        InstalledImageState::Reusable => Ok(()),
+        InstalledImageState::Reusable => {
+            println!(
+                "Reusing verified host golden image: {}",
+                server.image.host_path.display()
+            );
+            Ok(())
+        }
         InstalledImageState::Missing => build(runner, input, server, server_bytes, source, byobu),
         InstalledImageState::Replace(reason) => {
             println!("Replacing the installed host golden image: {reason}");
@@ -89,6 +95,7 @@ pub(super) fn build(
     source: &Path,
     byobu: &Path,
 ) -> Result<()> {
+    println!("Building host golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
     if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
         bail!("stale image build state exists for {BUILD_NAME}");
@@ -157,8 +164,14 @@ fn build_inner<R: Runner>(
     )?;
     let packages = parse_packages(&package_output)?;
     validate_packages(&packages)?;
+    let package_summary = packages
+        .iter()
+        .map(|(name, version)| format!("{name}={version}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("Validated host packages: {package_summary}");
 
-    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
+    let tmux_sha256 = finalize_reusable_image(runner, &paths, spec.kind)?;
     let finalized_package_output = runner.text(
         cmd!(
             "sudo",
@@ -187,7 +200,7 @@ fn build_inner<R: Runner>(
         ),
         "restore host image build disk ownership",
     )?;
-    println!("Compacting host image...");
+    println!("Compacting host golden image...");
     runner.run(
         cmd!(
             "qemu-img",
@@ -205,6 +218,7 @@ fn build_inner<R: Runner>(
         "check host image",
     )?;
 
+    println!("Hashing and publishing host golden image...");
     let manifest = Manifest {
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
@@ -225,7 +239,12 @@ fn build_inner<R: Runner>(
         &manifest,
     )?;
     fs::remove_dir_all(&paths.dir).context("remove host image build directory")?;
-    publication.publish(runner)
+    publication.publish(runner)?;
+    println!(
+        "Published host golden image: {}",
+        server.image.host_path.display()
+    );
+    Ok(())
 }
 
 fn parse_packages(text: &str) -> Result<BTreeMap<String, String>> {

@@ -64,8 +64,10 @@ pub(crate) fn ensure(
         || verify_installed_image(input, server, server_bytes, &manifest_path),
     ) {
         InstalledImageState::Reusable => {
-            println!("Verifying installed golden image and provenance...");
-            println!("Reusing verified golden image.");
+            println!(
+                "Reusing verified devcontainer golden image: {}",
+                server.image.devcontainer_path.display()
+            );
         }
         InstalledImageState::Missing => {
             build_image(
@@ -146,7 +148,7 @@ fn source_image(input: &InstallInput, runner: &impl Runner) -> Result<PathBuf> {
     if path.exists() {
         println!("Verifying cached Ubuntu source image...");
         require_sha(&path, input.source_sha256(), "source image")?;
-        println!("Reusing verified source image: {}", path.display());
+        println!("Reusing verified Ubuntu source image: {}", path.display());
         return Ok(path);
     }
     let temporary = path.with_extension("img.download");
@@ -175,7 +177,7 @@ fn byobu_package(runner: &impl Runner) -> Result<PathBuf> {
     if path.exists() {
         println!("Verifying cached pinned Byobu package...");
         require_sha(&path, recipe::BYOBU_SHA256, "pinned Byobu package")?;
-        println!("Reusing verified pinned Byobu package: {}", path.display());
+        println!("Reusing verified Byobu package: {}", path.display());
         return Ok(path);
     }
     let temporary = path.with_extension("deb.download");
@@ -211,6 +213,7 @@ fn build_image(
     byobu: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
+    println!("Building devcontainer golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
 
     if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
@@ -274,9 +277,9 @@ fn build_image_inner<R: Runner>(
         .map(|(name, version)| format!("{name}={version}"))
         .collect::<Vec<_>>()
         .join(", ");
-    println!("Verified packages: {package_summary}");
+    println!("Validated devcontainer packages: {package_summary}");
 
-    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
+    let tmux_sha256 = finalize_reusable_image(runner, &paths, spec.kind)?;
     let tmux_version = runner.text(
         cmd!(
             "sudo",
@@ -319,7 +322,7 @@ fn build_image_inner<R: Runner>(
         ),
         "restore image build disk ownership",
     )?;
-    println!("Compacting golden image...");
+    println!("Compacting devcontainer golden image...");
     runner.run(
         cmd!(
             "qemu-img",
@@ -337,7 +340,7 @@ fn build_image_inner<R: Runner>(
         "check golden image",
     )?;
 
-    println!("Hashing and publishing golden image...");
+    println!("Hashing and publishing devcontainer golden image...");
     let manifest = ImageManifest {
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
@@ -356,6 +359,10 @@ fn build_image_inner<R: Runner>(
     )?;
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
+    println!(
+        "Published devcontainer golden image: {}",
+        server.image.devcontainer_path.display()
+    );
     Ok(())
 }
 
