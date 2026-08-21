@@ -1,8 +1,10 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
+mod codex;
 mod reports;
 mod validation;
 
+pub use codex::{CodexSession, CodexSessionState, CodexSessionTarget};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 
 pub use validation::{
@@ -16,7 +18,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -45,6 +47,7 @@ pub enum Operation {
     Delete { name: InstanceName },
     ListAgentToolReports,
     ClearAgentToolReports,
+    ListCodexSessions,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -183,6 +186,9 @@ pub enum Response {
     },
     AgentToolReportsCleared {
         count: u64,
+    },
+    CodexSessions {
+        sessions: Vec<CodexSession>,
     },
     Deleted {
         name: InstanceName,
@@ -446,7 +452,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -461,7 +467,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -476,11 +482,42 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "stop",
                 "name": "repo-feature"
             })
         );
+    }
+
+    #[test]
+    fn live_codex_session_has_a_complete_pane_target() {
+        let session = CodexSession {
+            session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            updated_at: 42,
+            state: CodexSessionState::NeedsAttention,
+            cwd: Some("/workspace".into()),
+            target: Some(CodexSessionTarget {
+                world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
+                world_name: InstanceName::parse("checkout").unwrap(),
+                tmux_session: "wt-app".into(),
+                pane_id: "%3".into(),
+            }),
+        };
+
+        insta::assert_snapshot!(serde_json::to_string_pretty(&session).unwrap(), @r###"
+        {
+          "session_id": "123e4567-e89b-12d3-a456-426614174000",
+          "updated_at": 42,
+          "state": "needs_attention",
+          "cwd": "/workspace",
+          "target": {
+            "world_id": "123e4567-e89b-12d3-a456-426614174001",
+            "world_name": "checkout",
+            "tmux_session": "wt-app",
+            "pane_id": "%3"
+          }
+        }
+        "###);
     }
 
     #[test]
@@ -493,7 +530,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 2,
+          "protocol_version": 3,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -527,7 +564,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 2,
+                "protocol_version": 3,
                 "operation": "create",
                 "kind": "devcontainer",
                 "name": "repo-feature",
@@ -567,7 +604,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 2,
+          "protocol_version": 3,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -580,7 +617,7 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 3,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -590,7 +627,7 @@ mod tests {
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 3,
             "operation": "create",
             "kind": "devcontainer",
             "name": "repo-feature",
@@ -629,7 +666,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 2,
+            "protocol_version": 3,
             "operation": "get",
             "name": "Not-Valid"
         }))
