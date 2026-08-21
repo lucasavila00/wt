@@ -8,7 +8,7 @@ use super::{capacity_message, Created, Input};
 
 pub(super) enum TaskEvent {
     Capacity(String),
-    Finished(Result<Created, String>),
+    Finished(Result<Box<Created>, String>),
 }
 
 pub(super) struct Task {
@@ -154,5 +154,5 @@ fn run(
 }
 
 fn finish(events: &Sender<TaskEvent>, result: Result<Created, String>) {
-    let _ = events.send(TaskEvent::Finished(result));
+    let _ = events.send(TaskEvent::Finished(result.map(Box::new)));
 }

@@ -42,7 +42,7 @@ pub(crate) enum FlowAction {
     None,
     Changed,
     Cancel,
-    Created(Created),
+    Created(Box<Created>),
     Failed(String),
 }
 
@@ -192,7 +192,7 @@ fn run_loop(
             bail!("creation cancelled");
         }
         match flow.poll() {
-            FlowAction::Created(created) => return Ok(created),
+            FlowAction::Created(created) => return Ok(*created),
             FlowAction::Failed(error) => bail!(error),
             FlowAction::Cancel => bail!("creation cancelled"),
             FlowAction::None => {}
@@ -213,7 +213,7 @@ fn run_loop(
             FlowAction::None => {}
             FlowAction::Changed => {}
             FlowAction::Cancel => bail!("creation cancelled"),
-            FlowAction::Created(created) => return Ok(created),
+            FlowAction::Created(created) => return Ok(*created),
             FlowAction::Failed(error) => bail!(error),
         }
     }
