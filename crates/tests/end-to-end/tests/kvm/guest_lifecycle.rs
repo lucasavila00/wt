@@ -355,7 +355,7 @@ fn agent_git_transport_works_without_provider_credentials() {
         "read wt-git-hosting help",
     );
     assert!(help.contains("explicitly identified Git provider resources"));
-    assert!(help.contains("| { action: \"wait_mr\"; mr: number }"));
+    assert!(help.contains("| { action: \"wait_mr\"; mr: number; timeout_seconds?: number }"));
 
     run_guest(
         &harness,
