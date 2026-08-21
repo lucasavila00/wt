@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn switcher_cycles_worlds_without_leaving_the_overlay() {
+    fn switcher_cycles_worlds_without_leaving_the_bar() {
         let mut model = model();
         model.handle_key(key(KeyCode::F(5)));
 
