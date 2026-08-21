@@ -74,6 +74,6 @@ static: check-crate-readmes check-file-lines check-snapshot-lines check-typescri
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \
 	done
-	cargo fmt --all --check
+	scripts/cargo fmt --all --check
 	scripts/cargo check --workspace --all-targets --locked
 	scripts/cargo clippy --workspace --all-targets --locked -- -D warnings
