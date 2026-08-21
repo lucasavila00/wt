@@ -5,6 +5,7 @@ codex_home=/home/wt/.codex
 auth=$codex_home/auth.json
 share=$codex_home/.wt-auth
 temporary=$share/auth.json.wt-new
+shared_auth=$share/auth.json
 
 if test -L "$auth" || ! test -f "$auth"; then
     echo "Codex authentication must be a regular, non-symlink file: $auth" >&2
@@ -21,6 +22,10 @@ auth_acl=$(getfacl -cp "$auth")
 printf '%s\n' "$auth_acl" | grep -Fqx 'user:1001:r--' ||
     setfacl -m u:1001:r,m::r "$auth"
 rm -f "$temporary"
+if test ! -L "$shared_auth" && test -f "$shared_auth" &&
+    test "$(stat -c %d:%i "$auth")" = "$(stat -c %d:%i "$shared_auth")"; then
+    exit 0
+fi
 ln "$auth" "$temporary"
-mv -f "$temporary" "$share/auth.json"
-test "$(stat -c %d:%i "$auth")" = "$(stat -c %d:%i "$share/auth.json")"
+mv -f "$temporary" "$shared_auth"
+test "$(stat -c %d:%i "$auth")" = "$(stat -c %d:%i "$shared_auth")"
