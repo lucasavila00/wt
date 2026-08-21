@@ -23,20 +23,19 @@ trap fail EXIT
 
 test ! -e "$state/started"
 install -m 0644 /dev/null "$state/started"
-exec >> "$log" 2>&1
 
-echo "WT host cloud-init: init"
+echo "WT host cloud-init: init" >> "$log"
 cloud-init modules --mode=init --file /etc/cloud/cloud.cfg \
     --file "$state/user-data"
 
 phase=config
-echo "WT host cloud-init: config"
+echo "WT host cloud-init: config" >> "$log"
 cloud-init modules --mode=config --file "$state/user-data"
 
 phase=final
-echo "WT host cloud-init: final"
+echo "WT host cloud-init: final" >> "$log"
 cloud-init modules --mode=final --file "$state/user-data"
 
 phase=complete
-echo "WT host cloud-init complete."
+echo "WT host cloud-init complete." >> "$log"
 install -m 0644 /dev/null "$state/complete"
