@@ -1,5 +1,5 @@
 use super::*;
-use crate::api::{cli_wait_deadline, wait_for_next_cli_poll};
+use crate::api::{cli::parse_resource_id, cli_wait_deadline, wait_for_next_cli_poll};
 
 impl GitProviderApi for GitlabApi {
     fn verify_repository_access(&self, project: &str, base: &str) -> Result<()> {
@@ -252,45 +252,52 @@ impl GitProviderApi for GitlabApi {
     fn execute_cli_command(
         &self,
         scope: &ProviderProjectScope<'_>,
-        command: &CliCommand,
+        command: &WtToolsCommand,
     ) -> Result<ProviderCommandOutput> {
         match command {
-            CliCommand::ShowMr { mr } => Ok(ProviderCommandOutput::ChangeRequest(
-                merge_request_status(self.read_merge_request(scope.project, *mr)?),
-            )),
-            CliCommand::ShowMrForBranch { branch } => {
+            WtToolsCommand::ShowMr { mr } => {
+                Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
+                    self.read_merge_request(scope.project, parse_resource_id(mr, "MR")?)?,
+                )))
+            }
+            WtToolsCommand::ShowMrForBranch { branch } => {
                 Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
                     self.read_open_merge_request_for_branch(scope.project, branch)?,
                 )))
             }
-            CliCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
-                self.read_pipeline(scope.project, *run)?,
+            WtToolsCommand::ShowRun { run } => Ok(ProviderCommandOutput::CiRun(gitlab_run(
+                self.read_pipeline(scope.project, parse_resource_id(run, "run")?)?,
             ))),
-            CliCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(gitlab_job(
-                self.read_job(scope.project, *job)?,
+            WtToolsCommand::ShowJob { job } => Ok(ProviderCommandOutput::CiJob(gitlab_job(
+                self.read_job(scope.project, parse_resource_id(job, "job")?)?,
             ))),
-            CliCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
-                self.read_merge_request_by_iid(scope.project, *mr)?.threads,
+            WtToolsCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
+                self.read_merge_request_by_iid(scope.project, parse_resource_id(mr, "MR")?)?
+                    .threads,
             )),
-            CliCommand::ListCi { commit } => {
+            WtToolsCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })
             }
-            CliCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
-                self.list_pipeline_jobs(scope.project, *run)?,
+            WtToolsCommand::ListJobs { run } => Ok(ProviderCommandOutput::CiJobs(
+                self.list_pipeline_jobs(scope.project, parse_resource_id(run, "run")?)?,
             )),
-            CliCommand::LogJob { job } => Ok(ProviderCommandOutput::CiJobLog(
-                self.http.read_text(&format!(
-                    "api/v4/projects/{}/jobs/{job}/trace",
-                    encoded_project(scope.project)
-                ))?,
-            )),
-            CliCommand::WaitMr {
+            WtToolsCommand::LogJob { job } => {
+                let job = parse_resource_id(job, "job")?;
+                Ok(ProviderCommandOutput::CiJobLog(self.http.read_text(
+                    &format!(
+                        "api/v4/projects/{}/jobs/{job}/trace",
+                        encoded_project(scope.project)
+                    ),
+                )?))
+            }
+            WtToolsCommand::WaitMr {
                 mr,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
-                let initial = self.read_merge_request(scope.project, *mr)?;
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let initial = self.read_merge_request(scope.project, mr_id)?;
                 if matches!(initial.state.as_str(), "closed" | "merged") {
                     return Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
                         initial,
@@ -303,7 +310,7 @@ impl GitProviderApi for GitlabApi {
                             initial.state
                         );
                     }
-                    let current = self.read_merge_request(scope.project, *mr)?;
+                    let current = self.read_merge_request(scope.project, mr_id)?;
                     if current != initial {
                         return Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
                             current,
@@ -311,13 +318,15 @@ impl GitProviderApi for GitlabApi {
                     }
                 }
             }
-            CliCommand::WaitRun {
+            WtToolsCommand::WaitRun {
                 run,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
                 loop {
-                    let output = gitlab_run(self.read_pipeline(scope.project, *run)?);
+                    let output = gitlab_run(
+                        self.read_pipeline(scope.project, parse_resource_id(run, "run")?)?,
+                    );
                     if gitlab_ci_terminal(&output.state) {
                         return Ok(ProviderCommandOutput::CiRun(output));
                     }
@@ -329,13 +338,14 @@ impl GitProviderApi for GitlabApi {
                     }
                 }
             }
-            CliCommand::WaitJob {
+            WtToolsCommand::WaitJob {
                 job,
                 timeout_seconds,
             } => {
                 let deadline = cli_wait_deadline(*timeout_seconds);
                 loop {
-                    let output = gitlab_job(self.read_job(scope.project, *job)?);
+                    let output =
+                        gitlab_job(self.read_job(scope.project, parse_resource_id(job, "job")?)?);
                     if gitlab_ci_terminal(&output.state) {
                         return Ok(ProviderCommandOutput::CiJob(output));
                     }
@@ -347,7 +357,7 @@ impl GitProviderApi for GitlabApi {
                     }
                 }
             }
-            CliCommand::OpenMr { head, base, draft } => {
+            WtToolsCommand::OpenMr { head, base, draft } => {
                 if !head.starts_with(scope.prefix) {
                     bail!("open mr must use a {}* head", scope.prefix);
                 }
@@ -369,8 +379,9 @@ impl GitProviderApi for GitlabApi {
                     &ProviderCommand::OpenChangeRequest { draft: *draft },
                 )
             }
-            CliCommand::SetMr { mr, state } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
+            WtToolsCommand::SetMr { mr, state } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
                 match state {
                     ChangeRequestState::Ready | ChangeRequestState::Draft => {
@@ -404,11 +415,12 @@ impl GitProviderApi for GitlabApi {
                     }
                 }
                 Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
-                    self.read_merge_request(scope.project, *mr)?,
+                    self.read_merge_request(scope.project, mr_id)?,
                 )))
             }
-            CliCommand::EditMr { mr, title, body } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
+            WtToolsCommand::EditMr { mr, title, body } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
                     "api/graphql",
@@ -426,13 +438,14 @@ impl GitProviderApi for GitlabApi {
                         .errors,
                 )?;
                 Ok(ProviderCommandOutput::ChangeRequest(merge_request_status(
-                    self.read_merge_request(scope.project, *mr)?,
+                    self.read_merge_request(scope.project, mr_id)?,
                 )))
             }
-            CliCommand::CommentMr { mr, body } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
+            WtToolsCommand::CommentMr { mr, body } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
+                let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
                     "api/graphql",
                     gitlab_add_merge_request_comment::Variables {
@@ -449,11 +462,13 @@ impl GitProviderApi for GitlabApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            CliCommand::ReplyThread { mr, thread, body } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
+            WtToolsCommand::ReplyThread { mr, thread, body } => {
+                let thread = ReviewThreadHandle::new(thread);
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
-                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
+                let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
                     "api/graphql",
                     gitlab_reply_to_discussion::Variables {
@@ -474,15 +489,17 @@ impl GitProviderApi for GitlabApi {
                     "Reply added.".to_owned(),
                 ))
             }
-            CliCommand::SetThread {
+            WtToolsCommand::SetThread {
                 mr,
                 thread,
                 resolved,
             } => {
-                let request = self.read_merge_request(scope.project, *mr)?;
+                let thread = ReviewThreadHandle::new(thread);
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request)?;
-                let direct = self.read_merge_request_by_iid(scope.project, *mr)?;
-                let discussion = Self::discussion_id(&direct.discussions, thread)?;
+                let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
+                let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
                     gitlab_set_discussion_resolved::Variables {
@@ -501,10 +518,10 @@ impl GitProviderApi for GitlabApi {
                     "Thread reopened.".to_owned()
                 }))
             }
-            CliCommand::RetryJob { job } | CliCommand::CancelJob { job } => {
-                let current = self.read_job(scope.project, *job)?;
+            WtToolsCommand::RetryJob { job } | WtToolsCommand::CancelJob { job } => {
+                let current = self.read_job(scope.project, parse_resource_id(job, "job")?)?;
                 Self::require_writable_ref(scope, current.reference.as_deref())?;
-                let action = if matches!(command, CliCommand::RetryJob { .. }) {
+                let action = if matches!(command, WtToolsCommand::RetryJob { .. }) {
                     "retry"
                 } else {
                     "cancel"
@@ -522,8 +539,8 @@ impl GitProviderApi for GitlabApi {
                     }
                 )))
             }
-            CliCommand::CancelRun { run } => {
-                let current = self.read_pipeline(scope.project, *run)?;
+            WtToolsCommand::CancelRun { run } => {
+                let current = self.read_pipeline(scope.project, parse_resource_id(run, "run")?)?;
                 Self::require_writable_ref(scope, current.reference.as_deref())?;
                 self.http.post_without_body(&format!(
                     "api/v4/projects/{}/pipelines/{run}/cancel",
@@ -533,10 +550,10 @@ impl GitProviderApi for GitlabApi {
                     "Cancellation requested for run {run}."
                 )))
             }
-            CliCommand::ReportWtToolBug { .. }
-            | CliCommand::ReportWtToolIssue { .. }
-            | CliCommand::SuggestWtToolImprovement { .. }
-            | CliCommand::RequestWtToolFeature { .. } => {
+            WtToolsCommand::ReportWtToolBug { .. }
+            | WtToolsCommand::ReportWtToolIssue { .. }
+            | WtToolsCommand::SuggestWtToolImprovement { .. }
+            | WtToolsCommand::RequestWtToolFeature { .. } => {
                 unreachable!("agent tool reports are handled before provider commands")
             }
         }

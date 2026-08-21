@@ -27,7 +27,7 @@ fn shows_the_open_pull_request_for_an_explicit_branch() {
     let output = provider
         .execute_cli_command(
             &project_scope(),
-            &CliCommand::ShowMrForBranch {
+            &WtToolsCommand::ShowMrForBranch {
                 branch: "wt/fix-login".to_owned(),
             },
         )
@@ -54,7 +54,7 @@ fn rejects_a_branch_without_an_open_pull_request() {
     let error = provider
         .execute_cli_command(
             &project_scope(),
-            &CliCommand::ShowMrForBranch {
+            &WtToolsCommand::ShowMrForBranch {
                 branch: "wt/missing".to_owned(),
             },
         )
@@ -86,7 +86,7 @@ fn refuses_to_choose_between_bases() {
     let error = provider
         .execute_cli_command(
             &project_scope(),
-            &CliCommand::ShowMrForBranch {
+            &WtToolsCommand::ShowMrForBranch {
                 branch: "wt/fix-login".to_owned(),
             },
         )

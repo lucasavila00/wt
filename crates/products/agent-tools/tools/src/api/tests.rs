@@ -1,6 +1,11 @@
 use super::*;
 
 #[test]
+fn generated_typescript_is_the_complete_command_contract() {
+    insta::assert_snapshot!(TYPESCRIPT_COMMAND_TYPE);
+}
+
+#[test]
 fn ci_output_includes_the_trigger_event() {
     let run = CiRun {
         handle: "91".to_owned(),
@@ -70,71 +75,81 @@ fn ci_job_logs_keep_only_a_bounded_tail() {
 #[test]
 fn command_parser_accepts_only_valid_json_objects() {
     for json in [
-        r#"{"action":"show_mr","mr":7}"#,
+        r#"{"action":"show_mr","mr":"7"}"#,
         r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#,
-        r#"{"action":"show_run","run":91}"#,
-        r#"{"action":"show_job","job":44}"#,
-        r#"{"action":"list_threads","mr":7}"#,
+        r#"{"action":"show_run","run":"91"}"#,
+        r#"{"action":"show_job","job":"44"}"#,
+        r#"{"action":"list_threads","mr":"7"}"#,
         r#"{"action":"list_ci","commit":"abc1234"}"#,
-        r#"{"action":"list_jobs","run":91}"#,
-        r#"{"action":"log_job","job":44}"#,
-        r#"{"action":"wait_mr","mr":7}"#,
-        r#"{"action":"wait_run","run":91}"#,
-        r#"{"action":"wait_job","job":44}"#,
+        r#"{"action":"list_jobs","run":"91"}"#,
+        r#"{"action":"log_job","job":"44"}"#,
+        r#"{"action":"wait_mr","mr":"7"}"#,
+        r#"{"action":"wait_run","run":"91"}"#,
+        r#"{"action":"wait_job","job":"44"}"#,
         r#"{"action":"open_mr","head":"wt/fix","base":"main"}"#,
-        r#"{"action":"set_mr","mr":7,"state":"ready"}"#,
-        r#"{"action":"edit_mr","mr":7,"title":"Fix login"}"#,
-        r#"{"action":"comment_mr","mr":7,"body":"Done"}"#,
-        r#"{"action":"reply_thread","mr":7,"thread":"T1","body":"Done"}"#,
-        r#"{"action":"set_thread","mr":7,"thread":"T1","resolved":true}"#,
-        r#"{"action":"retry_job","job":44}"#,
-        r#"{"action":"cancel_job","job":44}"#,
-        r#"{"action":"cancel_run","run":91}"#,
+        r#"{"action":"set_mr","mr":"7","state":"ready"}"#,
+        r#"{"action":"edit_mr","mr":"7","title":"Fix login"}"#,
+        r#"{"action":"comment_mr","mr":"7","body":"Done"}"#,
+        r#"{"action":"reply_thread","mr":"7","thread":"T1","body":"Done"}"#,
+        r#"{"action":"set_thread","mr":"7","thread":"T1","resolved":true}"#,
+        r#"{"action":"retry_job","job":"44"}"#,
+        r#"{"action":"cancel_job","job":"44"}"#,
+        r#"{"action":"cancel_run","run":"91"}"#,
         r#"{"action":"report_wt_tool_bug","description":"build failed"}"#,
         r#"{"action":"report_wt_tool_issue","description":"output is unclear"}"#,
         r#"{"action":"suggest_wt_tool_improvement","description":"show progress"}"#,
         r#"{"action":"request_wt_tool_feature","description":"add search"}"#,
     ] {
-        CliCommand::parse(&[json.to_owned()]).unwrap();
+        WtToolsCommand::parse(&[json.to_owned()]).unwrap();
     }
     assert_eq!(
-        CliCommand::parse(&[r#"{"action":"wait_job","job":42}"#.into()]).unwrap(),
-        CliCommand::WaitJob {
-            job: 42,
+        WtToolsCommand::parse(&[r#"{"action":"wait_job","job":"42"}"#.into()]).unwrap(),
+        WtToolsCommand::WaitJob {
+            job: "42".into(),
             timeout_seconds: None,
         }
     );
-    assert!(
-        CliCommand::parse(&[r#"{"action":"wait_run","run":91,"timeout_seconds":0}"#.into()])
-            .is_err()
-    );
+    assert!(WtToolsCommand::parse(&[
+        r#"{"action":"wait_run","run":"91","timeout_seconds":0}"#.into()
+    ])
+    .is_err());
     assert_eq!(
-        CliCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])
+        WtToolsCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])
             .unwrap(),
-        CliCommand::ShowMrForBranch {
+        WtToolsCommand::ShowMrForBranch {
             branch: "wt/fix".to_owned(),
         }
     );
     assert_eq!(
-        CliCommand::parse(&[
+        WtToolsCommand::parse(&[
             r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":true}"#.into()
         ])
         .unwrap(),
-        CliCommand::OpenMr {
+        WtToolsCommand::OpenMr {
             head: "wt/fix".to_owned(),
             base: "main".to_owned(),
             draft: true,
         }
     );
-    assert!(CliCommand::parse(&[]).is_err());
-    assert!(CliCommand::parse(&["show".into(), "mr".into(), "7".into()]).is_err());
-    assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":0}"#.into()]).is_err());
-    assert!(CliCommand::parse(&[r#"{"action":"show_mr","mr":7,"extra":true}"#.into()]).is_err());
-    assert!(CliCommand::parse(&[r#"{"action":"edit_mr","mr":7}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[]).is_err());
+    assert!(WtToolsCommand::parse(&["show".into(), "mr".into(), "7".into()]).is_err());
+    assert!(WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":""}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":7}"#.into()]).is_err());
     assert!(
-        CliCommand::parse(&[r#"{"action":"report_wt_tool_bug","description":"  "}"#.into()])
-            .is_err()
+        WtToolsCommand::parse(&[r#"{"action":"show_mr","mr":"7","extra":true}"#.into()]).is_err()
     );
+    assert!(WtToolsCommand::parse(&[r#"{"action":"edit_mr","mr":"7"}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[
+        r#"{"action":"report_wt_tool_bug","description":"  "}"#.into()
+    ])
+    .is_err());
+}
+
+#[test]
+fn provider_resource_ids_are_positive_integer_strings() {
+    assert_eq!(cli::parse_resource_id("7", "MR").unwrap(), 7);
+    assert!(cli::parse_resource_id("0", "MR").is_err());
+    assert!(cli::parse_resource_id("not-an-id", "MR").is_err());
 }
 
 #[test]

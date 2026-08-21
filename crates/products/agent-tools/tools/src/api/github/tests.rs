@@ -337,13 +337,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
     let scope = project_scope();
 
     let mr = provider
-        .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 7 })
+        .execute_cli_command(&scope, &WtToolsCommand::ShowMr { mr: "7".into() })
         .unwrap();
     let job = provider
         .execute_cli_command(
             &scope,
-            &CliCommand::WaitJob {
-                job: 44,
+            &WtToolsCommand::WaitJob {
+                job: "44".into(),
                 timeout_seconds: None,
             },
         )
@@ -400,7 +400,10 @@ fn lists_threads_by_pull_request_number() {
     let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
 
     let output = provider
-        .execute_cli_command(&project_scope(), &CliCommand::ListThreads { mr: 7 })
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ListThreads { mr: "7".into() },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ReviewThreads(threads) = output else {
@@ -435,9 +438,9 @@ fn refuses_a_thread_handle_from_another_pull_request() {
     let error = provider
         .execute_cli_command(
             &project_scope(),
-            &CliCommand::ReplyThread {
-                mr: 7,
-                thread: ReviewThreadHandle::new("thread-from-another-mr"),
+            &WtToolsCommand::ReplyThread {
+                mr: "7".into(),
+                thread: "thread-from-another-mr".to_owned(),
                 body: "No".to_owned(),
             },
         )

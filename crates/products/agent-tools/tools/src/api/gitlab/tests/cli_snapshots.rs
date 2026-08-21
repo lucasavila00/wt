@@ -11,51 +11,54 @@ const THREADS: &str = r#"{"data":{"project":{"mergeRequest":{"id":"gid://gitlab/
 #[test]
 fn cli_commands_render_provider_results_as_json() {
     let cases = [
-        ("show_mr", CliCommand::ShowMr { mr: 8 }),
+        ("show_mr", WtToolsCommand::ShowMr { mr: "8".into() }),
         (
             "show_mr_for_branch",
-            CliCommand::ShowMrForBranch {
+            WtToolsCommand::ShowMrForBranch {
                 branch: "wt/fix-login".to_owned(),
             },
         ),
-        ("show_run", CliCommand::ShowRun { run: 92 }),
-        ("show_job", CliCommand::ShowJob { job: 45 }),
-        ("list_threads", CliCommand::ListThreads { mr: 8 }),
+        ("show_run", WtToolsCommand::ShowRun { run: "92".into() }),
+        ("show_job", WtToolsCommand::ShowJob { job: "45".into() }),
+        (
+            "list_threads",
+            WtToolsCommand::ListThreads { mr: "8".into() },
+        ),
         (
             "list_ci",
-            CliCommand::ListCi {
+            WtToolsCommand::ListCi {
                 commit: "abc123".to_owned(),
             },
         ),
-        ("list_jobs", CliCommand::ListJobs { run: 92 }),
-        ("log_job", CliCommand::LogJob { job: 45 }),
+        ("list_jobs", WtToolsCommand::ListJobs { run: "92".into() }),
+        ("log_job", WtToolsCommand::LogJob { job: "45".into() }),
         (
             "wait_mr",
-            CliCommand::WaitMr {
-                mr: 8,
+            WtToolsCommand::WaitMr {
+                mr: "8".into(),
                 timeout_seconds: None,
             },
         ),
         (
             "wait_run",
-            CliCommand::WaitRun {
-                run: 92,
+            WtToolsCommand::WaitRun {
+                run: "92".into(),
                 timeout_seconds: None,
             },
         ),
         (
             "wait_job",
-            CliCommand::WaitJob {
-                job: 45,
+            WtToolsCommand::WaitJob {
+                job: "45".into(),
                 timeout_seconds: None,
             },
         ),
-        ("retry_job", CliCommand::RetryJob { job: 45 }),
-        ("cancel_job", CliCommand::CancelJob { job: 45 }),
-        ("cancel_run", CliCommand::CancelRun { run: 92 }),
+        ("retry_job", WtToolsCommand::RetryJob { job: "45".into() }),
+        ("cancel_job", WtToolsCommand::CancelJob { job: "45".into() }),
+        ("cancel_run", WtToolsCommand::CancelRun { run: "92".into() }),
         (
             "open_mr",
-            CliCommand::OpenMr {
+            WtToolsCommand::OpenMr {
                 head: "wt/fix-login".to_owned(),
                 base: "main".to_owned(),
                 draft: false,
@@ -63,39 +66,39 @@ fn cli_commands_render_provider_results_as_json() {
         ),
         (
             "set_mr",
-            CliCommand::SetMr {
-                mr: 8,
+            WtToolsCommand::SetMr {
+                mr: "8".into(),
                 state: ChangeRequestState::Closed,
             },
         ),
         (
             "edit_mr",
-            CliCommand::EditMr {
-                mr: 8,
+            WtToolsCommand::EditMr {
+                mr: "8".into(),
                 title: Some("Clarify login fix".to_owned()),
                 body: None,
             },
         ),
         (
             "comment_mr",
-            CliCommand::CommentMr {
-                mr: 8,
+            WtToolsCommand::CommentMr {
+                mr: "8".into(),
                 body: "Ready for another look.".to_owned(),
             },
         ),
         (
             "reply_thread",
-            CliCommand::ReplyThread {
-                mr: 8,
-                thread: ReviewThreadHandle::new("gid://gitlab/Discussion/thread-8"),
+            WtToolsCommand::ReplyThread {
+                mr: "8".into(),
+                thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 body: "Fixed.".to_owned(),
             },
         ),
         (
             "set_thread",
-            CliCommand::SetThread {
-                mr: 8,
-                thread: ReviewThreadHandle::new("gid://gitlab/Discussion/thread-8"),
+            WtToolsCommand::SetThread {
+                mr: "8".into(),
+                thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 resolved: true,
             },
         ),
@@ -115,26 +118,26 @@ fn cli_commands_render_provider_results_as_json() {
     }
 }
 
-fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
+fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
     match command {
-        CliCommand::ShowMr { .. } | CliCommand::WaitMr { .. } => vec![get(
+        WtToolsCommand::ShowMr { .. } | WtToolsCommand::WaitMr { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/merge_requests/8",
             MR,
         )],
-        CliCommand::ShowMrForBranch { .. } => vec![get(
+        WtToolsCommand::ShowMrForBranch { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/merge_requests?state=opened&source_branch=wt%2Ffix-login&per_page=100",
             format!("[{OPEN_MR}]").leak(),
         )],
-        CliCommand::ShowRun { .. } | CliCommand::WaitRun { .. } => vec![get(
+        WtToolsCommand::ShowRun { .. } | WtToolsCommand::WaitRun { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/pipelines/92",
             PIPELINE,
         )],
-        CliCommand::ShowJob { .. } | CliCommand::WaitJob { .. } => vec![get(
+        WtToolsCommand::ShowJob { .. } | WtToolsCommand::WaitJob { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/jobs/45",
             JOB,
         )],
-        CliCommand::ListThreads { .. } => vec![graphql("GitlabReadMergeRequestByIid", THREADS)],
-        CliCommand::ListCi { .. } => vec![
+        WtToolsCommand::ListThreads { .. } => vec![graphql("GitlabReadMergeRequestByIid", THREADS)],
+        WtToolsCommand::ListCi { .. } => vec![
             get(
                 "/api/v4/projects/acme%2Fwidget/pipelines?sha=abc123&per_page=100",
                 format!("[{PIPELINE}]").leak(),
@@ -144,11 +147,11 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
                 format!("[{JOB}]").leak(),
             ),
         ],
-        CliCommand::ListJobs { .. } => vec![get(
+        WtToolsCommand::ListJobs { .. } => vec![get(
             "/api/v4/projects/acme%2Fwidget/pipelines/92/jobs?include_retried=false&per_page=100",
             format!("[{JOB}]").leak(),
         )],
-        CliCommand::LogJob { .. } => vec![ExpectedRequest {
+        WtToolsCommand::LogJob { .. } => vec![ExpectedRequest {
             method: "GET",
             path: "/api/v4/projects/acme%2Fwidget/jobs/45/trace",
             required_header: Some(("private-token", "fixture-token")),
@@ -156,13 +159,13 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
             response_content_type: "text/plain",
             response_body: "build complete\n",
         }],
-        CliCommand::RetryJob { .. } => job_action("retry"),
-        CliCommand::CancelJob { .. } => job_action("cancel"),
-        CliCommand::CancelRun { .. } => vec![
+        WtToolsCommand::RetryJob { .. } => job_action("retry"),
+        WtToolsCommand::CancelJob { .. } => job_action("cancel"),
+        WtToolsCommand::CancelRun { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/pipelines/92", PIPELINE),
             post("/api/v4/projects/acme%2Fwidget/pipelines/92/cancel", "{}"),
         ],
-        CliCommand::OpenMr { .. } => vec![
+        WtToolsCommand::OpenMr { .. } => vec![
             get(
                 "/api/v4/projects/acme%2Fwidget/repository/commits/wt%2Ffix-login",
                 r#"{"id":"abc123"}"#,
@@ -174,7 +177,7 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
             ),
             graphql("GitlabReadMergeRequest", MERGE_REQUEST_RESPONSE),
         ],
-        CliCommand::SetMr { .. } | CliCommand::EditMr { .. } => vec![
+        WtToolsCommand::SetMr { .. } | WtToolsCommand::EditMr { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
             graphql(
                 "GitlabUpdateMergeRequest",
@@ -182,7 +185,7 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
             ),
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
         ],
-        CliCommand::CommentMr { .. } => vec![
+        WtToolsCommand::CommentMr { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
             graphql("GitlabReadMergeRequestByIid", THREADS),
             graphql(
@@ -190,7 +193,7 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
                 r#"{"data":{"createNote":{"errors":[],"note":{"id":"note-2","url":null}}}}"#,
             ),
         ],
-        CliCommand::ReplyThread { .. } => vec![
+        WtToolsCommand::ReplyThread { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
             graphql("GitlabReadMergeRequestByIid", THREADS),
             graphql(
@@ -198,7 +201,7 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
                 r#"{"data":{"createNote":{"errors":[],"note":{"id":"note-2","url":null}}}}"#,
             ),
         ],
-        CliCommand::SetThread { .. } => vec![
+        WtToolsCommand::SetThread { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
             graphql("GitlabReadMergeRequestByIid", THREADS),
             graphql(
@@ -206,10 +209,10 @@ fn fixtures(command: &CliCommand) -> Vec<ExpectedRequest> {
                 r#"{"data":{"discussionToggleResolve":{"errors":[],"discussion":{"id":"gid://gitlab/Discussion/thread-8","resolved":true}}}}"#,
             ),
         ],
-        CliCommand::ReportWtToolBug { .. }
-        | CliCommand::ReportWtToolIssue { .. }
-        | CliCommand::SuggestWtToolImprovement { .. }
-        | CliCommand::RequestWtToolFeature { .. } => unreachable!("not covered by this provider snapshot test"),
+        WtToolsCommand::ReportWtToolBug { .. }
+        | WtToolsCommand::ReportWtToolIssue { .. }
+        | WtToolsCommand::SuggestWtToolImprovement { .. }
+        | WtToolsCommand::RequestWtToolFeature { .. } => unreachable!("not covered by this provider snapshot test"),
     }
 }
 

@@ -11,12 +11,12 @@ fn cli_commands_render_complete_json_from_github_responses() {
     let cases = vec![
         (
             "show_mr",
-            CliCommand::ShowMr { mr: 7 },
+            WtToolsCommand::ShowMr { mr: "7".into() },
             vec![get("/repos/acme/widget/pulls/7", PULL_REQUEST)],
         ),
         (
             "show_mr_for_branch",
-            CliCommand::ShowMrForBranch {
+            WtToolsCommand::ShowMrForBranch {
                 branch: "wt/fix-login".to_owned(),
             },
             vec![
@@ -35,22 +35,22 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "show_run",
-            CliCommand::ShowRun { run: 91 },
+            WtToolsCommand::ShowRun { run: "91".into() },
             vec![get("/repos/acme/widget/actions/runs/91", WORKFLOW_RUN)],
         ),
         (
             "show_job",
-            CliCommand::ShowJob { job: 44 },
+            WtToolsCommand::ShowJob { job: "44".into() },
             vec![get("/repos/acme/widget/actions/jobs/44", WORKFLOW_JOB)],
         ),
         (
             "list_threads",
-            CliCommand::ListThreads { mr: 7 },
+            WtToolsCommand::ListThreads { mr: "7".into() },
             vec![graphql("GithubReadPullRequestByNumber", REVIEW_THREADS)],
         ),
         (
             "list_ci",
-            CliCommand::ListCi {
+            WtToolsCommand::ListCi {
                 commit: "abc123".to_owned(),
             },
             vec![
@@ -68,7 +68,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "list_jobs",
-            CliCommand::ListJobs { run: 91 },
+            WtToolsCommand::ListJobs { run: "91".into() },
             vec![get(
                 "/repos/acme/widget/actions/runs/91/jobs?filter=latest&per_page=100",
                 leak(format!(r#"{{"total_count":1,"jobs":[{WORKFLOW_JOB}]}}"#)),
@@ -76,7 +76,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "log_job",
-            CliCommand::LogJob { job: 44 },
+            WtToolsCommand::LogJob { job: "44".into() },
             vec![
                 get("/repos/acme/widget/actions/jobs/44", WORKFLOW_JOB),
                 get_text(
@@ -87,31 +87,31 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "wait_mr",
-            CliCommand::WaitMr {
-                mr: 7,
+            WtToolsCommand::WaitMr {
+                mr: "7".into(),
                 timeout_seconds: None,
             },
             vec![get("/repos/acme/widget/pulls/7", PULL_REQUEST)],
         ),
         (
             "wait_run",
-            CliCommand::WaitRun {
-                run: 91,
+            WtToolsCommand::WaitRun {
+                run: "91".into(),
                 timeout_seconds: None,
             },
             vec![get("/repos/acme/widget/actions/runs/91", WORKFLOW_RUN)],
         ),
         (
             "wait_job",
-            CliCommand::WaitJob {
-                job: 44,
+            WtToolsCommand::WaitJob {
+                job: "44".into(),
                 timeout_seconds: None,
             },
             vec![get("/repos/acme/widget/actions/jobs/44", WORKFLOW_JOB)],
         ),
         (
             "open_mr",
-            CliCommand::OpenMr {
+            WtToolsCommand::OpenMr {
                 head: "wt/fix-login".to_owned(),
                 base: "main".to_owned(),
                 draft: false,
@@ -131,8 +131,8 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "set_mr",
-            CliCommand::SetMr {
-                mr: 7,
+            WtToolsCommand::SetMr {
+                mr: "7".into(),
                 state: ChangeRequestState::Ready,
             },
             vec![
@@ -146,8 +146,8 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "edit_mr",
-            CliCommand::EditMr {
-                mr: 7,
+            WtToolsCommand::EditMr {
+                mr: "7".into(),
                 title: Some("Better title".to_owned()),
                 body: None,
             },
@@ -162,8 +162,8 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "comment_mr",
-            CliCommand::CommentMr {
-                mr: 7,
+            WtToolsCommand::CommentMr {
+                mr: "7".into(),
                 body: "Done".to_owned(),
             },
             vec![
@@ -176,9 +176,9 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "reply_thread",
-            CliCommand::ReplyThread {
-                mr: 7,
-                thread: ReviewThreadHandle::new("thread-7"),
+            WtToolsCommand::ReplyThread {
+                mr: "7".into(),
+                thread: "thread-7".to_owned(),
                 body: "Done".to_owned(),
             },
             vec![
@@ -192,9 +192,9 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "set_thread",
-            CliCommand::SetThread {
-                mr: 7,
-                thread: ReviewThreadHandle::new("thread-7"),
+            WtToolsCommand::SetThread {
+                mr: "7".into(),
+                thread: "thread-7".to_owned(),
                 resolved: true,
             },
             vec![
@@ -208,7 +208,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "retry_job",
-            CliCommand::RetryJob { job: 44 },
+            WtToolsCommand::RetryJob { job: "44".into() },
             vec![
                 get("/repos/acme/widget/actions/jobs/44", WORKFLOW_JOB),
                 get("/repos/acme/widget/actions/runs/91", WORKFLOW_RUN),
@@ -217,7 +217,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
         ),
         (
             "cancel_run",
-            CliCommand::CancelRun { run: 91 },
+            WtToolsCommand::CancelRun { run: "91".into() },
             vec![
                 get("/repos/acme/widget/actions/runs/91", WORKFLOW_RUN),
                 post("/repos/acme/widget/actions/runs/91/cancel"),
@@ -251,7 +251,10 @@ fn cancel_job_reports_githubs_real_command_error() {
     let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
 
     let error = provider
-        .execute_cli_command(&project_scope(), &CliCommand::CancelJob { job: 44 })
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::CancelJob { job: "44".into() },
+        )
         .unwrap_err();
 
     insta::assert_snapshot!(error);

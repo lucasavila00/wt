@@ -244,7 +244,7 @@ fn verify_repository(provider: &Provider, source: &GitSource, base: &str) -> Res
     Ok(())
 }
 
-const HELP: &str = "\
+const HELP_PREFIX: &str = "\
 wt-tools reads and changes explicitly identified Git provider resources and records\n\
 feedback about wt-tools itself. It accepts exactly one JSON command object and\n\
 rejects unknown fields.\n\
@@ -252,32 +252,9 @@ rejects unknown fields.\n\
 USAGE:\n\
     wt-tools '<JSON>'\n\
 \n\
-TYPESCRIPT COMMAND TYPE:\n\
-    type WtToolsCommand =\n\
-      | { action: \"show_mr\"; mr: number }\n\
-      | { action: \"show_mr_for_branch\"; branch: string }\n\
-      | { action: \"show_run\"; run: number }\n\
-      | { action: \"show_job\"; job: number }\n\
-      | { action: \"list_threads\"; mr: number }\n\
-      | { action: \"list_ci\"; commit: string }\n\
-      | { action: \"list_jobs\"; run: number }\n\
-      | { action: \"log_job\"; job: number }\n\
-      | { action: \"wait_mr\"; mr: number; timeout_seconds?: number }\n\
-      | { action: \"wait_run\"; run: number; timeout_seconds?: number }\n\
-      | { action: \"wait_job\"; job: number; timeout_seconds?: number }\n\
-      | { action: \"open_mr\"; head: string; base: string; draft?: boolean }\n\
-      | { action: \"set_mr\"; mr: number; state: \"ready\" | \"draft\" | \"open\" | \"closed\" }\n\
-      | { action: \"edit_mr\"; mr: number; title?: string; body?: string }\n\
-      | { action: \"comment_mr\"; mr: number; body: string }\n\
-      | { action: \"reply_thread\"; mr: number; thread: string; body: string }\n\
-      | { action: \"set_thread\"; mr: number; thread: string; resolved: boolean }\n\
-      | { action: \"retry_job\"; job: number }\n\
-      | { action: \"cancel_job\"; job: number }\n\
-      | { action: \"cancel_run\"; run: number }\n\
-      | { action: \"report_wt_tool_bug\"; description: string }\n\
-      | { action: \"report_wt_tool_issue\"; description: string }\n\
-      | { action: \"suggest_wt_tool_improvement\"; description: string }\n\
-      | { action: \"request_wt_tool_feature\"; description: string };\n\
+TYPESCRIPT COMMAND TYPE:\n";
+
+const HELP_SUFFIX: &str = "\
 \n\
 EXAMPLE:\n\
     wt-tools '{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}'\n\
@@ -292,8 +269,24 @@ Provider operations return one JSON result or error object. Help remains\n\
 plain text.\n\
 \n\
 The provider and project come from this world's gateway grant. Every other\n\
-resource is explicit. IDs must be positive integers. Commit values must be 7 to\n\
+resource is explicit. IDs must be positive integer strings. Commit values must be 7 to\n\
 64 hexadecimal characters. Use normal Git for commits, fetches, pulls, and pushes.\n";
+
+pub fn wt_tools_help() -> String {
+    let command_type = api::TYPESCRIPT_COMMAND_TYPE
+        .trim_end()
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("    {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
+}
 
 #[cfg(test)]
 mod tests;
