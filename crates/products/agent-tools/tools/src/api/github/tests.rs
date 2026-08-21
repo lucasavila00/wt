@@ -474,6 +474,7 @@ fn write_scope_comes_from_provider_resource_metadata() {
                 full_name: "acme/widget".to_owned(),
             }),
         },
+        mergeable: Some(true),
     };
     assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_err());
     request.head.reference = "wt/fix".to_owned();
@@ -578,4 +579,14 @@ fn project_scope() -> ProviderProjectScope<'static> {
         project: "acme/widget",
         prefix: "wt/",
     }
+}
+
+#[test]
+fn github_mergeability_distinguishes_pending_clean_and_conflicting() {
+    assert_eq!(github_conflict_state(None), ConflictState::Pending);
+    assert_eq!(github_conflict_state(Some(true)), ConflictState::Clean);
+    assert_eq!(
+        github_conflict_state(Some(false)),
+        ConflictState::Conflicting
+    );
 }

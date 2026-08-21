@@ -1,9 +1,9 @@
 mod client;
 
 use super::{
-    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, GitProviderApi,
-    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
-    ReviewComment, ReviewThread, ReviewThreadHandle,
+    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, ConflictState,
+    GitProviderApi, ProviderCommand, ProviderCommandOutput, ProviderCommandScope,
+    ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -209,6 +209,8 @@ struct PullRequest {
     draft: bool,
     head: PullRequestRef,
     base: PullRequestRef,
+    #[serde(default)]
+    mergeable: Option<bool>,
 }
 
 #[derive(Clone, Deserialize, Eq, PartialEq)]
@@ -230,6 +232,7 @@ struct Commit {
 }
 
 fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {
+    let conflict_state = Some(github_conflict_state(request.mergeable));
     ChangeRequestStatus {
         handle: request.number.to_string(),
         url: request.html_url,
@@ -239,9 +242,18 @@ fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {
         draft: request.draft,
         head: request.head.sha,
         base: request.base.reference,
+        conflict_state,
         review_state: None,
         threads: Vec::new(),
         jobs: Vec::new(),
+    }
+}
+
+fn github_conflict_state(mergeable: Option<bool>) -> ConflictState {
+    match mergeable {
+        None => ConflictState::Pending,
+        Some(true) => ConflictState::Clean,
+        Some(false) => ConflictState::Conflicting,
     }
 }
 

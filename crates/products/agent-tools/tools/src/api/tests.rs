@@ -40,6 +40,7 @@ fn merge_request_output_includes_the_body() {
         draft: false,
         head: "abc123".to_owned(),
         base: "main".to_owned(),
+        conflict_state: None,
         review_state: None,
         threads: Vec::new(),
         jobs: Vec::new(),

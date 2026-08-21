@@ -51,6 +51,14 @@ pub enum ChangeRequestState {
     Closed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictState {
+    Pending,
+    Clean,
+    Conflicting,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CliCommand {
@@ -195,6 +203,8 @@ pub struct ChangeRequestStatus {
     pub draft: bool,
     pub head: String,
     pub base: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_state: Option<ConflictState>,
     pub review_state: Option<String>,
     pub threads: Vec<ReviewThread>,
     pub jobs: Vec<CiJob>,

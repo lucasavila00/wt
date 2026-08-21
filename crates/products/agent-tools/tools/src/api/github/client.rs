@@ -265,6 +265,7 @@ impl GithubApi {
             draft: node.is_draft,
             head: node.head_ref_oid.0,
             base: node.base_ref_name,
+            conflict_state: None,
             review_state: node
                 .review_decision
                 .map(|state| format!("{state:?}").to_ascii_lowercase()),
@@ -386,7 +387,10 @@ impl GithubApi {
         });
         match requests.len() {
             0 => bail!("no open pull request from branch `{branch}`"),
-            1 => Ok(requests.pop().expect("one pull request remains")),
+            1 => {
+                let request = requests.pop().expect("one pull request remains");
+                self.read_pull_request(project, request.number)
+            }
             count => bail!(
                 "GitHub returned {count} open pull requests from branch `{branch}`; refusing to choose one"
             ),

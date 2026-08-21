@@ -1,9 +1,9 @@
 mod client;
 
 use super::{
-    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, GitProviderApi,
-    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
-    ReviewComment, ReviewThread, ReviewThreadHandle,
+    ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, CliCommand, ConflictState,
+    GitProviderApi, ProviderCommand, ProviderCommandOutput, ProviderCommandScope,
+    ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -181,6 +181,10 @@ struct MergeRequest {
     target_branch: String,
     source_project_id: Option<u64>,
     target_project_id: Option<u64>,
+    #[serde(default)]
+    has_conflicts: bool,
+    #[serde(default)]
+    detailed_merge_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -259,6 +263,10 @@ fn gitlab_ci_terminal(state: &str) -> bool {
 }
 
 fn merge_request_status(request: MergeRequest) -> ChangeRequestStatus {
+    let conflict_state = Some(gitlab_conflict_state(
+        request.has_conflicts,
+        request.detailed_merge_status.as_deref(),
+    ));
     ChangeRequestStatus {
         handle: request.iid.to_string(),
         url: request.web_url,
@@ -268,9 +276,20 @@ fn merge_request_status(request: MergeRequest) -> ChangeRequestStatus {
         draft: request.draft,
         head: request.sha,
         base: request.target_branch,
+        conflict_state,
         review_state: None,
         threads: Vec::new(),
         jobs: Vec::new(),
+    }
+}
+
+fn gitlab_conflict_state(has_conflicts: bool, detailed_status: Option<&str>) -> ConflictState {
+    if matches!(detailed_status, Some("checking" | "unchecked")) {
+        ConflictState::Pending
+    } else if has_conflicts || detailed_status == Some("conflict") {
+        ConflictState::Conflicting
+    } else {
+        ConflictState::Clean
     }
 }
 
