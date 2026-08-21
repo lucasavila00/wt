@@ -45,7 +45,7 @@ selected live Codex pane. Opening uses a short control SSH connection; it does
 not replace any world's playback connection.
 
 Cards show activity, context, world, Byobu target, session, working directory,
-and report age. Inactive and rollout-only cards explain why they cannot open.
+and report age. Inactive and saved-session cards explain why they cannot open.
 Malformed context data and failed pane checks remain visible as exact errors;
 WT does not guess another world or pane. The Worlds and Codex titles show when
 their latest snapshot was applied in UTC, or `Updating…` before the first

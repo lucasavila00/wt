@@ -372,7 +372,7 @@ fn card_title(card: &CodexCard) -> (String, Color) {
             };
             (format!("{icon} {label}{suffix}"), color)
         }
-        CodexCardKind::RolloutOnly => (format!("󰈙 ROLLOUT ONLY{suffix}"), Color::DarkGray),
+        CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::DarkGray),
         CodexCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
@@ -404,7 +404,7 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
                 card.context,
                 short_session.expect("rollout card has session ID")
             )),
-            Line::from("Durable rollout; no live WT pane was reported"),
+            Line::from("Saved in Codex history, but not open in a WT pane"),
         ],
         CodexCardKind::ContextError { message } => vec![
             Line::from(format!("Context {}", card.context)),
