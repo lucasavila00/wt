@@ -7,10 +7,13 @@ mod fixture;
 pub(crate) use fixture::*;
 #[path = "kvm/binaries.rs"]
 mod binaries;
+#[path = "kvm/codex.rs"]
+mod codex;
 #[path = "kvm/gateway.rs"]
 mod gateway;
 #[path = "kvm/images.rs"]
 mod images;
+pub(crate) use codex::*;
 #[path = "kvm/support.rs"]
 mod support;
 pub(crate) use support::*;

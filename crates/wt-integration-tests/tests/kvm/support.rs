@@ -385,6 +385,40 @@ pub(crate) fn guest_command(
     )
 }
 
+pub(crate) fn app(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
+    let output = app_command(harness, name, command).output().unwrap();
+    ensure_success(action, &output).unwrap();
+}
+
+pub(crate) fn app_output(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    command: &str,
+    action: &str,
+) -> String {
+    let output = app_command(harness, name, command).output().unwrap();
+    ensure_success(action, &output).unwrap();
+    String::from_utf8(output.stdout).unwrap()
+}
+
+pub(crate) fn app_command(
+    harness: &KvmHarness,
+    name: &InstanceName,
+    command: &str,
+) -> std::process::Command {
+    let mut command_process = cmd!(
+        "ssh",
+        "-F",
+        harness.temp.path().join(".ssh/config"),
+        "-i",
+        &harness.git.guest_key,
+        format!("local.{name}-vs"),
+        format!("cd /workspaces/wt && {command}"),
+    );
+    command_process.env_remove("SSH_AUTH_SOCK");
+    command_process
+}
+
 pub(crate) fn wait_for_running(
     home: &Path,
     config: &Path,
