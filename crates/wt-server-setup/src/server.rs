@@ -610,11 +610,9 @@ Description=Refresh the WT Codex authentication share\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
-User={}\n\
 Environment={}\n\
 ExecStart={}\n\
 UMask=0077\n",
-        user.name,
         systemd_quote(&format!("HOME={}", user.dir.display())),
         CODEX_AUTH_HELPER_PATH,
     )

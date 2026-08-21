@@ -186,7 +186,7 @@ fn service_unit_drift_requires_a_runtime_reset() {
 }
 
 #[test]
-fn service_runs_as_the_installing_user() {
+fn services_use_the_expected_users() {
     let user = User::from_uid(Uid::effective()).unwrap().unwrap();
     let input = toml::from_str::<InstallInput>(
         r#"
@@ -260,7 +260,6 @@ binary_dir = "/opt/wt bin"
 
     [Service]
     Type=oneshot
-    User=[USER]
     Environment="HOME=[HOME]"
     ExecStart=/usr/local/libexec/wt-codex-auth-share
     UMask=0077
