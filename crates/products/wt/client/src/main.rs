@@ -178,7 +178,7 @@ fn format_instances(instances: &[ContextInstance]) -> String {
             instance.name.to_string(),
             instance.status.to_string(),
             inventory::format_resources(instance, item.disk_usage_bytes),
-            instance_detail(item),
+            inventory::format_detail(item),
         ]
     }));
 
@@ -207,39 +207,6 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         .expect("writing to a String cannot fail");
     }
     output
-}
-
-fn instance_detail(item: &ContextInstance) -> String {
-    let instance = &item.instance;
-    let target = format!("{}.{}", item.context, instance.name);
-    let detail = match instance.status {
-        wt_control_protocol::InstanceStatus::Stopped => format!(
-            "{}; run `wt start {target}` or `wt rm {target}`",
-            instance.last_error.as_deref().unwrap_or("guest stopped")
-        ),
-        wt_control_protocol::InstanceStatus::Error => format!(
-            "{}; run `wt rm {target}`",
-            instance.last_error.as_deref().unwrap_or("world failed")
-        ),
-        _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
-    };
-    if item.agent_tool_report_count == 0 {
-        return detail;
-    }
-    let reports = format!(
-        "{} wt-tools report{}; run `wt reports`",
-        item.agent_tool_report_count,
-        if item.agent_tool_report_count == 1 {
-            ""
-        } else {
-            "s"
-        }
-    );
-    if detail == "-" {
-        reports
-    } else {
-        format!("{detail}; {reports}")
-    }
 }
 
 fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Context> {

@@ -553,6 +553,9 @@ mod tests {
             name: name.into(),
             instance_name: InstanceName::parse(instance).unwrap(),
             control_alias: format!("{name}-direct"),
+            status: wt_control_protocol::InstanceStatus::Running,
+            resources: "2 CPU · 4G · 1G/32G disk".into(),
+            detail: "-".into(),
         }
     }
 

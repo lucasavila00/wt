@@ -39,10 +39,12 @@ the workstation clipboard through `wt shell`.
 between session and world management. `F5` opens the active world when one is
 available.
 
-The Codex activity refreshes cards in the background. `Up` and `Down` select
-cards, the mouse wheel scrolls them, and `Enter` or left click opens the
-selected live Codex pane. Opening uses a short control SSH connection; it does
-not replace any world's playback connection.
+The Worlds activity shows cards with each world's status, resources, and
+actionable details. The Codex activity refreshes session cards in the
+background. In either activity, `Up` and `Down` select cards, the mouse wheel
+scrolls them, and `Enter` or left click opens the selected world or live Codex
+pane. Opening a Codex pane uses a short control SSH connection; it does not
+replace any world's playback connection.
 
 Cards show activity, context, world, Byobu target, session, working directory,
 and report age. Inactive and saved-session cards explain why they cannot open.
