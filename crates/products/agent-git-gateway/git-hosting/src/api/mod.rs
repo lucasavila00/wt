@@ -80,12 +80,15 @@ pub enum CliCommand {
     },
     WaitMr {
         mr: u64,
+        timeout_seconds: Option<u64>,
     },
     WaitRun {
         run: u64,
+        timeout_seconds: Option<u64>,
     },
     WaitJob {
         job: u64,
+        timeout_seconds: Option<u64>,
     },
     OpenMr {
         head: String,
@@ -187,6 +190,7 @@ pub struct ChangeRequestStatus {
     pub handle: String,
     pub url: String,
     pub title: String,
+    pub body: Option<String>,
     pub state: String,
     pub draft: bool,
     pub head: String,
@@ -301,6 +305,25 @@ pub trait GitProviderApi {
         scope: &ProviderProjectScope<'_>,
         command: &CliCommand,
     ) -> Result<ProviderCommandOutput>;
+}
+
+const DEFAULT_CLI_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const CLI_WAIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn cli_wait_deadline(timeout_seconds: Option<u64>) -> std::time::Instant {
+    std::time::Instant::now()
+        + timeout_seconds
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(DEFAULT_CLI_WAIT_TIMEOUT)
+}
+
+fn wait_for_next_cli_poll(deadline: std::time::Instant) -> bool {
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return false;
+    }
+    std::thread::sleep(remaining.min(CLI_WAIT_POLL_INTERVAL));
+    std::time::Instant::now() < deadline
 }
 
 pub fn verify_provider_access(

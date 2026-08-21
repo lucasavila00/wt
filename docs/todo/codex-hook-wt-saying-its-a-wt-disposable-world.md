@@ -1,0 +1,3 @@
+agents assume they're in an enviornment where they cant install stuff but they can...
+
+then they dont run tests etc

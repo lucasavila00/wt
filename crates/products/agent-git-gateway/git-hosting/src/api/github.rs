@@ -203,6 +203,8 @@ struct PullRequest {
     node_id: String,
     html_url: String,
     title: String,
+    #[serde(default)]
+    body: Option<String>,
     state: String,
     draft: bool,
     head: PullRequestRef,
@@ -232,6 +234,7 @@ fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {
         handle: request.number.to_string(),
         url: request.html_url,
         title: request.title,
+        body: request.body,
         state: request.state,
         draft: request.draft,
         head: request.head.sha,

@@ -36,6 +36,39 @@ fn ci_output_includes_the_trigger_event() {
 }
 
 #[test]
+fn merge_request_output_includes_the_body() {
+    let request = ChangeRequestStatus {
+        handle: "#7".to_owned(),
+        url: "https://github.test/pull/7".to_owned(),
+        title: "Fix login".to_owned(),
+        body: Some("First paragraph.\n\nSecond paragraph.".to_owned()),
+        state: "open".to_owned(),
+        draft: false,
+        head: "abc123".to_owned(),
+        base: "main".to_owned(),
+        review_state: None,
+        threads: Vec::new(),
+        jobs: Vec::new(),
+    };
+
+    insta::assert_snapshot!(
+        render_cli_command_output(ProviderCommandOutput::ChangeRequest(request)),
+        @r###"
+    MR: #7
+    State: open
+    Title: Fix login
+    Head: abc123
+    Base: main
+    URL: https://github.test/pull/7
+    Body:
+    First paragraph.
+
+    Second paragraph.
+    "###
+    );
+}
+
+#[test]
 fn ci_job_logs_keep_only_a_bounded_tail() {
     let output = tail_ci_job_log_at_limit(
         "012345678901234567890123456789αβγδεζηθικλμνξ".to_owned(),
@@ -80,7 +113,14 @@ fn command_parser_accepts_only_valid_json_objects() {
     }
     assert_eq!(
         CliCommand::parse(&[r#"{"action":"wait_job","job":42}"#.into()]).unwrap(),
-        CliCommand::WaitJob { job: 42 }
+        CliCommand::WaitJob {
+            job: 42,
+            timeout_seconds: None,
+        }
+    );
+    assert!(
+        CliCommand::parse(&[r#"{"action":"wait_run","run":91,"timeout_seconds":0}"#.into()])
+            .is_err()
     );
     assert_eq!(
         CliCommand::parse(&[r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#.into()])

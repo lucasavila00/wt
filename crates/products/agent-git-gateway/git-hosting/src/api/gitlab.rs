@@ -170,6 +170,8 @@ struct JobPipeline {
 struct MergeRequest {
     iid: u64,
     title: String,
+    #[serde(default)]
+    description: Option<String>,
     web_url: String,
     state: String,
     #[serde(default)]
@@ -261,6 +263,7 @@ fn merge_request_status(request: MergeRequest) -> ChangeRequestStatus {
         handle: request.iid.to_string(),
         url: request.web_url,
         title: request.title,
+        body: request.description,
         state: request.state,
         draft: request.draft,
         head: request.sha,

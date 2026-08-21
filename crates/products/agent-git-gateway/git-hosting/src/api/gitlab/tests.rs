@@ -471,7 +471,7 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
             required_header: Some(("private-token", "fixture-token")),
             body_contains: None,
             response_content_type: "application/json",
-            response_body: r#"{"iid":8,"title":"Fix login","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main","source_project_id":12,"target_project_id":12}"#,
+            response_body: r#"{"iid":8,"title":"Fix login","description":"Fixes the login flow.","web_url":"https://gitlab.test/acme/widget/-/merge_requests/8","state":"opened","draft":false,"sha":"abc123","source_branch":"wt/fix-login","target_branch":"main","source_project_id":12,"target_project_id":12}"#,
         },
         ExpectedRequest {
             method: "GET",
@@ -489,7 +489,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 8 })
         .unwrap();
     let job = provider
-        .execute_cli_command(&scope, &CliCommand::WaitJob { job: 45 })
+        .execute_cli_command(
+            &scope,
+            &CliCommand::WaitJob {
+                job: 45,
+                timeout_seconds: None,
+            },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ChangeRequest(mr) = mr else {
@@ -499,6 +505,7 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         panic!("expected job")
     };
     assert_eq!(mr.handle, "8");
+    assert_eq!(mr.body.as_deref(), Some("Fixes the login flow."));
     assert_eq!(job.state, "success");
     server.join().unwrap().unwrap();
 }
@@ -564,6 +571,7 @@ fn write_scope_comes_from_provider_resource_metadata() {
     let mut request = MergeRequest {
         iid: 8,
         title: String::new(),
+        description: None,
         web_url: String::new(),
         state: "opened".to_owned(),
         draft: false,

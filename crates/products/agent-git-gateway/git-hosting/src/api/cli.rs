@@ -16,7 +16,7 @@ impl CliCommand {
         match self {
             Self::ShowMr { mr }
             | Self::ListThreads { mr }
-            | Self::WaitMr { mr }
+            | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
             | Self::CommentMr { mr, .. }
@@ -24,11 +24,11 @@ impl CliCommand {
             | Self::SetThread { mr, .. } => positive_id(*mr, "MR")?,
             Self::ShowRun { run }
             | Self::ListJobs { run }
-            | Self::WaitRun { run }
+            | Self::WaitRun { run, .. }
             | Self::CancelRun { run } => positive_id(*run, "run")?,
             Self::ShowJob { job }
             | Self::LogJob { job }
-            | Self::WaitJob { job }
+            | Self::WaitJob { job, .. }
             | Self::RetryJob { job }
             | Self::CancelJob { job } => positive_id(*job, "job")?,
             Self::ShowMrForBranch { branch } => nonempty(branch, "branch")?,
@@ -48,6 +48,20 @@ impl CliCommand {
             if title.is_none() && body.is_none() {
                 bail!("edit_mr requires `title` or `body`");
             }
+        }
+        match self {
+            Self::WaitMr {
+                timeout_seconds, ..
+            }
+            | Self::WaitRun {
+                timeout_seconds, ..
+            }
+            | Self::WaitJob {
+                timeout_seconds, ..
+            } if matches!(timeout_seconds, Some(0)) => {
+                bail!("timeout_seconds must be a positive integer");
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -85,7 +99,7 @@ impl CliCommand {
             Self::ShowMrForBranch { branch } => format!("mr for branch {branch}"),
             Self::ShowMr { mr }
             | Self::ListThreads { mr }
-            | Self::WaitMr { mr }
+            | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
             | Self::CommentMr { mr, .. } => format!("mr {mr}"),
@@ -94,11 +108,11 @@ impl CliCommand {
             }
             Self::ShowRun { run }
             | Self::ListJobs { run }
-            | Self::WaitRun { run }
+            | Self::WaitRun { run, .. }
             | Self::CancelRun { run } => format!("run {run}"),
             Self::ShowJob { job }
             | Self::LogJob { job }
-            | Self::WaitJob { job }
+            | Self::WaitJob { job, .. }
             | Self::RetryJob { job }
             | Self::CancelJob { job } => format!("job {job}"),
             Self::ListCi { commit } => format!("commit {commit}"),
@@ -148,7 +162,7 @@ pub fn render_cli_command_output(output: ProviderCommandOutput) -> String {
 }
 
 fn render_change_request(request: &ChangeRequestStatus) -> String {
-    format!(
+    let mut output = format!(
         "MR: {}\nState: {}{}\nTitle: {}\nHead: {}\nBase: {}\nURL: {}\n",
         request.handle,
         request.state,
@@ -157,7 +171,12 @@ fn render_change_request(request: &ChangeRequestStatus) -> String {
         request.head,
         request.base,
         request.url
-    )
+    );
+    match &request.body {
+        Some(body) => output.push_str(&format!("Body:\n{body}\n")),
+        None => output.push_str("Body: unavailable\n"),
+    }
+    output
 }
 
 fn render_run(run: &CiRun) -> String {

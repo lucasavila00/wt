@@ -321,7 +321,7 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
             required_header: Some(("authorization", "Bearer fixture-token")),
             body_contains: None,
             response_content_type: "application/json",
-            response_body: r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
+            response_body: r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"open","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}}}"#,
         },
         ExpectedRequest {
             method: "GET",
@@ -339,7 +339,13 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         .execute_cli_command(&scope, &CliCommand::ShowMr { mr: 7 })
         .unwrap();
     let job = provider
-        .execute_cli_command(&scope, &CliCommand::WaitJob { job: 44 })
+        .execute_cli_command(
+            &scope,
+            &CliCommand::WaitJob {
+                job: 44,
+                timeout_seconds: None,
+            },
+        )
         .unwrap();
 
     let ProviderCommandOutput::ChangeRequest(mr) = mr else {
@@ -349,6 +355,7 @@ fn explicit_resource_commands_do_not_need_checkout_context() {
         panic!("expected job")
     };
     assert_eq!(mr.handle, "7");
+    assert_eq!(mr.body.as_deref(), Some("Fixes the login flow."));
     assert_eq!(job.state, "success");
     server.join().unwrap().unwrap();
 }
@@ -449,6 +456,7 @@ fn write_scope_comes_from_provider_resource_metadata() {
         node_id: "pull-request-7".to_owned(),
         html_url: String::new(),
         title: String::new(),
+        body: None,
         state: "open".to_owned(),
         draft: false,
         head: PullRequestRef {
