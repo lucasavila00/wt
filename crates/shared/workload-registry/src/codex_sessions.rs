@@ -41,6 +41,9 @@ pub struct CodexSessionReport {
     pub world_name: String,
     pub session_id: Uuid,
     pub cwd: String,
+    pub repository_root: Option<String>,
+    pub repository_url: Option<String>,
+    pub git_branch: Option<String>,
     pub tmux_session: String,
     pub pane_id: String,
     pub state: CodexSessionState,
@@ -52,6 +55,9 @@ pub struct CodexSessionReportInput<'a> {
     pub world_id: Uuid,
     pub session_id: Uuid,
     pub cwd: &'a str,
+    pub repository_root: Option<&'a str>,
+    pub repository_url: Option<&'a str>,
+    pub git_branch: Option<&'a str>,
     pub tmux_session: &'a str,
     pub pane_id: &'a str,
     pub state: CodexSessionState,
@@ -64,6 +70,9 @@ struct NewCodexSessionReport<'a> {
     world_id: String,
     session_id: String,
     cwd: &'a str,
+    repository_root: Option<&'a str>,
+    repository_url: Option<&'a str>,
+    git_branch: Option<&'a str>,
     tmux_session: &'a str,
     pane_id: &'a str,
     state: &'static str,
@@ -77,6 +86,9 @@ struct CodexSessionReportRow {
     world_name: String,
     session_id: String,
     cwd: String,
+    repository_root: Option<String>,
+    repository_url: Option<String>,
+    git_branch: Option<String>,
     tmux_session: String,
     pane_id: String,
     state: String,
@@ -91,6 +103,9 @@ impl Registry {
     ) -> Result<(), RegistryError> {
         validate_report(
             input.cwd,
+            input.repository_root,
+            input.repository_url,
+            input.git_branch,
             input.tmux_session,
             input.pane_id,
             input.session_start_source,
@@ -106,6 +121,9 @@ impl Registry {
             world_id: input.world_id.to_string(),
             session_id: input.session_id.to_string(),
             cwd: input.cwd,
+            repository_root: input.repository_root,
+            repository_url: input.repository_url,
+            git_branch: input.git_branch,
             tmux_session: input.tmux_session,
             pane_id: input.pane_id,
             state: input.state.as_str(),
@@ -122,6 +140,9 @@ impl Registry {
                 .do_update()
                 .set((
                     codex_session_reports::cwd.eq(report.cwd),
+                    codex_session_reports::repository_root.eq(report.repository_root),
+                    codex_session_reports::repository_url.eq(report.repository_url),
+                    codex_session_reports::git_branch.eq(report.git_branch),
                     codex_session_reports::tmux_session.eq(report.tmux_session),
                     codex_session_reports::pane_id.eq(report.pane_id),
                     codex_session_reports::state.eq(report.state),
@@ -147,6 +168,9 @@ impl Registry {
                     worlds::name,
                     codex_session_reports::session_id,
                     codex_session_reports::cwd,
+                    codex_session_reports::repository_root,
+                    codex_session_reports::repository_url,
+                    codex_session_reports::git_branch,
                     codex_session_reports::tmux_session,
                     codex_session_reports::pane_id,
                     codex_session_reports::state,
@@ -163,6 +187,9 @@ impl Registry {
                         session_id: Uuid::parse_str(&row.session_id)
                             .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
                         cwd: row.cwd,
+                        repository_root: row.repository_root,
+                        repository_url: row.repository_url,
+                        git_branch: row.git_branch,
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         state: CodexSessionState::parse(&row.state)?,
@@ -177,6 +204,9 @@ impl Registry {
 
 fn validate_report(
     cwd: &str,
+    repository_root: Option<&str>,
+    repository_url: Option<&str>,
+    git_branch: Option<&str>,
     tmux_session: &str,
     pane_id: &str,
     session_start_source: Option<&str>,
@@ -184,6 +214,14 @@ fn validate_report(
     if !cwd.starts_with('/') || cwd.len() > 4096 {
         return Err(RegistryError::InvalidData(
             "invalid Codex session working directory".into(),
+        ));
+    }
+    if repository_root.is_some_and(|value| !value.starts_with('/') || value.len() > 4096)
+        || repository_url.is_some_and(|value| value.is_empty() || value.len() > 4096)
+        || git_branch.is_some_and(|value| value.is_empty() || value.len() > 1024)
+    {
+        return Err(RegistryError::InvalidData(
+            "invalid Codex session Git context".into(),
         ));
     }
     if tmux_session != "wt-host" {

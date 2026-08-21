@@ -195,6 +195,9 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
     let mut event = CodexSessionEvent {
         session_id,
         cwd: "/home/wt/project".into(),
+        repository_root: Some("/home/wt/project".into()),
+        repository_url: Some("git@github.com:acme/project.git".into()),
+        git_branch: Some("wt/cards".into()),
         tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,

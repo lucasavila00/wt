@@ -63,7 +63,7 @@ fn card_navigation_opens_only_the_selected_live_location() {
     state.set_codex(
         vec![
             first.clone(),
-            CodexCard::rollout_only("ars", Uuid::from_u128(2), 2),
+            CodexCard::rollout_only("ars", Uuid::from_u128(2), 2, None),
         ],
         "2026-08-21T20:00:00Z".into(),
         area(),
@@ -160,11 +160,11 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     }
     let selected = state.selected().cloned();
-    assert_eq!(state.codex_offset(), 2);
+    assert_eq!(state.codex_offset(), 3);
 
     assert!(state.set_codex(cards, "2026-08-21T20:00:05Z".into(), area()));
     assert_eq!(state.selected(), selected.as_ref());
-    assert_eq!(state.codex_offset(), 2);
+    assert_eq!(state.codex_offset(), 3);
 }
 
 #[test]
@@ -202,10 +202,14 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
         context: "ars".into(),
         session_id: Some(session_id),
         timestamp: Some(index as i64),
+        title: Some(format!("Session {index}")),
         kind: CodexCardKind::Observation {
             world_id,
             world_name: "dev".into(),
             cwd: "/home/wt/project".into(),
+            repository_root: None,
+            repository_url: None,
+            git_branch: None,
             state: CodexSessionState::Working,
             session_start_source: None,
             target: ByobuTarget {

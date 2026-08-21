@@ -7,7 +7,7 @@ pub(super) const COMMANDS: [ControlCommand; 2] =
     [ControlCommand::NewWorld, ControlCommand::DeleteWorld];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
-pub(super) const CODEX_CARD_HEIGHT: u16 = 5;
+pub(super) const CODEX_CARD_HEIGHT: u16 = 6;
 pub(super) const WORLD_CARD_HEIGHT: u16 = 6;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -44,6 +44,9 @@ pub(super) enum CodexCardKind {
         world_id: Uuid,
         world_name: String,
         cwd: String,
+        repository_root: Option<String>,
+        repository_url: Option<String>,
+        git_branch: Option<String>,
         state: CodexSessionState,
         session_start_source: Option<String>,
         target: ByobuTarget,
@@ -60,11 +63,17 @@ pub(super) struct CodexCard {
     pub(super) context: String,
     pub(super) session_id: Option<Uuid>,
     pub(super) timestamp: Option<i64>,
+    pub(super) title: Option<String>,
     pub(super) kind: CodexCardKind,
 }
 
 impl CodexCard {
-    pub(super) fn rollout_only(context: &str, session_id: Uuid, timestamp: i64) -> Self {
+    pub(super) fn rollout_only(
+        context: &str,
+        session_id: Uuid,
+        timestamp: i64,
+        title: Option<String>,
+    ) -> Self {
         Self {
             identity: CodexCardIdentity::RolloutOnly {
                 context: context.into(),
@@ -73,6 +82,7 @@ impl CodexCard {
             context: context.into(),
             session_id: Some(session_id),
             timestamp: Some(timestamp),
+            title,
             kind: CodexCardKind::RolloutOnly,
         }
     }
@@ -85,6 +95,7 @@ impl CodexCard {
             context: context.into(),
             session_id: None,
             timestamp: None,
+            title: None,
             kind: CodexCardKind::ContextError { message },
         }
     }

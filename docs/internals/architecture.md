@@ -16,7 +16,7 @@ standalone Git client
 
 `wt-server` owns retained worlds. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
-protected server socket. Protocol version 5 carries host-world resources, a
+protected server socket. Protocol version 6 carries host-world resources, a
 Git author, and context-local Codex session observations.
 
 ## Crates

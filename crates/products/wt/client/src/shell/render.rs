@@ -426,20 +426,46 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
         CodexCardKind::Observation {
             world_name,
             cwd,
+            repository_root,
+            repository_url,
+            git_branch,
             target,
             ..
-        } => vec![
-            Line::from(format!(
-                "{}.{} · {}:{} · session {}",
-                card.context,
-                world_name,
-                target.tmux_session,
-                target.pane_id,
-                short_session.expect("observation card has session ID")
-            )),
-            Line::from(cwd.clone()),
-        ],
+        } => {
+            let git = repository_root.as_ref().map(|root| {
+                let repository = repository_url
+                    .as_deref()
+                    .and_then(repository_name)
+                    .or_else(|| std::path::Path::new(root).file_name()?.to_str())
+                    .unwrap_or(root);
+                git_branch.as_ref().map_or_else(
+                    || format!("{repository} · {cwd}"),
+                    |branch| format!("{repository} · {branch} · {cwd}"),
+                )
+            });
+            vec![
+                Line::from(
+                    card.title
+                        .clone()
+                        .unwrap_or_else(|| "Untitled Codex session".into()),
+                ),
+                Line::from(git.unwrap_or_else(|| cwd.clone())),
+                Line::from(format!(
+                    "{}.{} · {}:{} · session {}",
+                    card.context,
+                    world_name,
+                    target.tmux_session,
+                    target.pane_id,
+                    short_session.expect("observation card has session ID")
+                )),
+            ]
+        }
         CodexCardKind::RolloutOnly => vec![
+            Line::from(
+                card.title
+                    .clone()
+                    .unwrap_or_else(|| "Untitled Codex session".into()),
+            ),
             Line::from(format!(
                 "{} · session {}",
                 card.context,
@@ -452,6 +478,12 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
             Line::styled(message.clone(), Style::new().fg(Color::Red)),
         ],
     }
+}
+
+fn repository_name(url: &str) -> Option<&str> {
+    url.trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .find(|part| !part.is_empty())
 }
 
 fn relative_age(timestamp: i64) -> String {

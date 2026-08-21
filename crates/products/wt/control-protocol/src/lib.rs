@@ -15,7 +15,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -339,7 +339,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -365,11 +365,15 @@ mod tests {
     fn live_codex_session_has_a_complete_pane_target() {
         let session = CodexSession {
             session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            title: Some("Improve session cards".into()),
             rollout_updated_at_unix_ms: Some(40),
             observations: vec![CodexSessionObservation {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
                 cwd: "/home/wt/project".into(),
+                repository_root: Some("/home/wt/project".into()),
+                repository_url: Some("git@github.com:acme/project.git".into()),
+                git_branch: Some("wt/session-cards".into()),
                 state: CodexSessionState::Unknown,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
@@ -383,12 +387,16 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&session).unwrap(), @r###"
         {
           "session_id": "123e4567-e89b-12d3-a456-426614174000",
+          "title": "Improve session cards",
           "rollout_updated_at_unix_ms": 40,
           "observations": [
             {
               "world_id": "123e4567-e89b-12d3-a456-426614174001",
               "world_name": "checkout",
               "cwd": "/home/wt/project",
+              "repository_root": "/home/wt/project",
+              "repository_url": "git@github.com:acme/project.git",
+              "git_branch": "wt/session-cards",
               "state": "unknown",
               "session_start_source": "compact",
               "target": {
@@ -407,7 +415,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 5,
+                "protocol_version": 6,
                 "operation": "list_codex_sessions"
             })
         );
@@ -423,7 +431,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 5,
+          "protocol_version": 6,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -459,7 +467,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 5,
+          "protocol_version": 6,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -471,14 +479,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -510,7 +518,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 5,
+            "protocol_version": 6,
             "operation": "get",
             "name": "Not-Valid"
         }))
