@@ -32,7 +32,7 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
-	@test -f /run/wt-codex-integration-auth/auth.json \
+	@test -f /home/wt/.codex/.wt-auth/auth.json \
 		&& systemctl is-active --quiet wt-codex-integration-auth.path \
 		&& test -f /var/lib/wt/registry-cache/ca/ca.crt \
 		&& test "$$(docker inspect --format '{{.State.Running}}' wt-workload-registry-cache 2>/dev/null)" = true || { \
