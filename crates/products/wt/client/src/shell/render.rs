@@ -190,9 +190,13 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(content);
     match model.control().activity() {
         Activity::Worlds => frame.render_widget(
-            Paragraph::new("World management")
-                .alignment(Alignment::Center)
-                .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            Paragraph::new(if model.has_worlds() {
+                "World management"
+            } else {
+                "No worlds with SSH access\nCreate a world to get started"
+            })
+            .alignment(Alignment::Center)
+            .block(Block::new().borders(Borders::ALL).title("Worlds")),
             rows[0],
         ),
         Activity::Codex => draw_codex(frame, rows[0], model.control().codex()),

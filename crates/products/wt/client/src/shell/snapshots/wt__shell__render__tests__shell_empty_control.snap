@@ -6,8 +6,8 @@ Buffer {
     area: Rect { x: 0, y: 0, width: 64, height: 12 },
     content: [
         "    │┌Worlds───────────────────────────────────────────────────┐",
-        "▌  ││                    World management                     │",
-        "    ││                                                         │",
+        "▌  ││                No worlds with SSH access                │",
+        "    ││              Create a world to get started              │",
         "    ││                                                         │",
         "  󰚩 ││                                                         │",
         "    ││                                                         │",
