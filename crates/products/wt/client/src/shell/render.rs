@@ -1,5 +1,6 @@
 use super::control::{
-    command_palette_layout, control_areas, Activity, CommandPalette, ACTIVITY_BUTTON_HEIGHT,
+    command_palette_layout, control_areas, Activity, CodexContextSnapshot, CommandPalette,
+    ACTIVITY_BUTTON_HEIGHT,
 };
 use super::model::{Mode, ShellModel};
 use super::world_area;
@@ -7,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table};
 use ratatui::Frame;
 
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &vt100::Screen, model: &ShellModel) {
@@ -148,22 +149,107 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     let (activity_bar, content) = control_areas(area);
     draw_activity_bar(frame, activity_bar, model.control().activity());
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(content);
-    let (title, placeholder) = match model.control().activity() {
-        Activity::Worlds => ("Worlds", "World management"),
-        Activity::Codex => ("Codex sessions", "Codex session management"),
-    };
-    frame.render_widget(
-        Paragraph::new(placeholder)
-            .alignment(Alignment::Center)
-            .block(Block::new().borders(Borders::ALL).title(title)),
-        rows[0],
-    );
+    match model.control().activity() {
+        Activity::Worlds => frame.render_widget(
+            Paragraph::new("World management")
+                .alignment(Alignment::Center)
+                .block(Block::new().borders(Borders::ALL).title("Worlds")),
+            rows[0],
+        ),
+        Activity::Codex => draw_codex(frame, rows[0], model.control().codex()),
+    }
     frame.render_widget(
         Paragraph::new("[ Commands (1 / F1) ] [ Activities (Tab) ] [ World (F5) ]")
             .style(Style::new().fg(Color::DarkGray)),
         rows[1],
     );
     draw_command_palette(frame, content, model.control().palette());
+}
+
+fn draw_codex(frame: &mut Frame<'_>, area: Rect, contexts: &[CodexContextSnapshot]) {
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title("Codex sessions · read-only startup snapshot");
+    let rows = contexts.iter().flat_map(codex_rows).collect::<Vec<_>>();
+    if rows.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No Codex sessions")
+                .alignment(Alignment::Center)
+                .block(block),
+            area,
+        );
+        return;
+    }
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(11),
+            Constraint::Length(20),
+            Constraint::Length(11),
+            Constraint::Length(10),
+            Constraint::Min(8),
+        ],
+    )
+    .column_spacing(1)
+    .header(
+        Row::new(["STATE", "WORLD", "PANE", "SESSION", "CWD"])
+            .style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    )
+    .block(block);
+    frame.render_widget(table, area);
+}
+
+fn codex_rows(context: &CodexContextSnapshot) -> Vec<Row<'static>> {
+    match context {
+        CodexContextSnapshot::Failure { context, message } => vec![Row::new([
+            "error".to_owned(),
+            context.clone(),
+            "-".to_owned(),
+            "-".to_owned(),
+            message.lines().next().unwrap_or_default().to_owned(),
+        ])
+        .style(Style::new().fg(Color::Red))],
+        CodexContextSnapshot::Sessions { context, sessions } => sessions
+            .iter()
+            .flat_map(|session| {
+                let session_id = session.session_id.to_string()[..8].to_owned();
+                if session.observations.is_empty() {
+                    return vec![Row::new([
+                        "catalog".to_owned(),
+                        context.clone(),
+                        "-".to_owned(),
+                        session_id,
+                        "-".to_owned(),
+                    ])];
+                }
+                session
+                    .observations
+                    .iter()
+                    .map(|observation| {
+                        Row::new([
+                            codex_state(observation.state).to_owned(),
+                            format!("{context}.{}", observation.world_name),
+                            format!(
+                                "{}:{}",
+                                observation.target.tmux_session, observation.target.pane_id
+                            ),
+                            session_id.clone(),
+                            observation.cwd.clone(),
+                        ])
+                    })
+                    .collect()
+            })
+            .collect(),
+    }
+}
+
+fn codex_state(state: wt_control_protocol::CodexSessionState) -> &'static str {
+    match state {
+        wt_control_protocol::CodexSessionState::Unknown => "unknown",
+        wt_control_protocol::CodexSessionState::Working => "working",
+        wt_control_protocol::CodexSessionState::NeedsAttention => "attention",
+        wt_control_protocol::CodexSessionState::Inactive => "inactive",
+    }
 }
 
 fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
@@ -243,9 +329,14 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shell::control::CodexContextSnapshot;
     use crossterm::event::KeyCode;
     use ratatui::layout::Position;
     use ratatui::{backend::TestBackend, Terminal};
+    use uuid::Uuid;
+    use wt_control_protocol::{
+        ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, InstanceName,
+    };
 
     fn parser() -> vt100::Parser {
         let mut parser = vt100::Parser::new(6, 80, 0);
@@ -340,5 +431,59 @@ mod tests {
             .unwrap();
 
         insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn control_ui_shows_read_only_codex_sessions() {
+        let backend = TestBackend::new(100, 14);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut model = ShellModel::new(vec!["ars.dev".into()]);
+        model.set_codex(vec![
+            CodexContextSnapshot::Sessions {
+                context: "ars".into(),
+                sessions: vec![
+                    CodexSession {
+                        session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                        rollout_updated_at_unix_ms: Some(10),
+                        observations: vec![CodexSessionObservation {
+                            world_id: Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000")
+                                .unwrap(),
+                            world_name: InstanceName::parse("dev").unwrap(),
+                            cwd: "/workspace/wt".into(),
+                            state: CodexSessionState::NeedsAttention,
+                            target: ByobuTarget {
+                                tmux_session: "wt-app".into(),
+                                pane_id: "%1".into(),
+                            },
+                            received_at_unix_ms: 20,
+                        }],
+                    },
+                    CodexSession {
+                        session_id: Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                        rollout_updated_at_unix_ms: Some(30),
+                        observations: vec![],
+                    },
+                ],
+            },
+            CodexContextSnapshot::Failure {
+                context: "lab".into(),
+                message: "context lab could not be queried: SSH failed".into(),
+            },
+        ]);
+        for code in [KeyCode::F(5), KeyCode::Up, KeyCode::Tab] {
+            model.handle_key(crossterm::event::KeyEvent::new(
+                code,
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+        let parser = parser();
+
+        terminal
+            .draw(|frame| draw(frame, parser.screen(), &model))
+            .unwrap();
+
+        insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
     }
 }

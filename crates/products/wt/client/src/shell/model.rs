@@ -1,4 +1,4 @@
-use super::control::ControlState;
+use super::control::{CodexContextSnapshot, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
@@ -64,6 +64,10 @@ impl ShellModel {
 
     pub(super) fn control(&self) -> &ControlState {
         &self.control
+    }
+
+    pub(super) fn set_codex(&mut self, codex: Vec<CodexContextSnapshot>) {
+        self.control.set_codex(codex);
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> InputRoute {
