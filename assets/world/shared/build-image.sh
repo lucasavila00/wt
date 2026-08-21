@@ -1,6 +1,15 @@
 #!/bin/sh
 set -eu
 
+shutdown() {
+    status=$?
+    trap - EXIT
+    sync
+    systemctl poweroff || true
+    exit "$status"
+}
+trap shutdown EXIT
+
 . /var/tmp/wt-image-build.env
 
 phase() {
@@ -91,5 +100,3 @@ printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
 chown root:root /var/lib/wt-image-result
 chmod 0644 /var/lib/wt-image-result
 phase "recipe complete; requesting VM shutdown"
-sync
-systemctl poweroff

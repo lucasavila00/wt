@@ -140,30 +140,29 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_agent_tools = build_dir.join("install-agent-tools.sh");
     let mount_codex = build_dir.join("mount-codex.sh");
 
-    println!(
-        "Creating {} image-build disk from the verified Ubuntu source image...",
-        IMAGE_KIND
-    );
+    println!("Creating expanded {IMAGE_KIND} image-build disk...");
     runner.run(
         cmd!(
             "qemu-img",
-            "convert",
-            "-p",
-            "-O",
+            "create",
+            "-q",
+            "-f",
             "qcow2",
-            context.source,
-            &paths.disk
-        ),
-        "copy source image",
-    )?;
-    runner.run(
-        cmd!(
-            "qemu-img",
-            "resize",
             &paths.disk,
             format!("{}G", input.image.build_disk_gib),
         ),
-        "resize image build disk",
+        "create image build disk",
+    )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-resize",
+            "--expand",
+            "/dev/sda1",
+            context.source,
+            &paths.disk,
+        ),
+        "copy and expand source image",
     )?;
 
     fs::write(
