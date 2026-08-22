@@ -5,7 +5,7 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 6 },
     content: [
-        "  WT  F5 disabled            ←  local.one (1/1) →  Shift+F5: enable F6: close ",
+        "  WT  F5 disabled       ← PREV  local.one (1/1) NEXT →Shift+F5: enable F6: clo",
         "world output                                                                    ",
         "red                                                                             ",
         "                                                                                ",

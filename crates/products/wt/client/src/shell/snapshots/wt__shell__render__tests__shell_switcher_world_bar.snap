@@ -5,7 +5,7 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 6 },
     content: [
-        "  WT  F5: disable navbar     ←  local.one (1/2) →            ↑ ctrl F6: close ",
+        "  WT  F5: disable navbar← PREV  local.one (1/2) NEXT →       ↑ ctrl F6: close ",
         "world output                                                                    ",
         "red                                                                             ",
         "                                                                                ",
