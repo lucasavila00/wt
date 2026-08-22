@@ -56,11 +56,12 @@ Cards show activity, title, repository, branch, working directory, context,
 world, Byobu target, session, and report age. Inactive and saved-session cards
 explain why they cannot open.
 Malformed context data remains visible as an exact error. Failed context
-queries and pane-open checks leave existing cards intact and show a persistent,
-sanitized notification with a bold, clickable `Retry` action; `Enter` retries
-and `Esc` dismisses it. WT does not guess another world or pane. The Worlds and
-Codex titles show when their latest snapshot was applied in UTC, or `Updating…`
-before the first snapshot arrives.
+queries leave existing cards intact and show the query error in the Codex title
+beside the last successful update time. Failed pane-open checks leave existing
+cards intact and show a persistent, sanitized notification with a bold,
+clickable `Retry` action; `Enter` retries and `Esc` dismisses it. WT does not
+guess another world or pane. The Worlds and Codex titles show when their latest
+snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
 
 Opening requires worlds provisioned by a WT version containing this feature.
 After upgrading WT, recreate older worlds so their relay records pane markers

@@ -220,7 +220,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
     };
     frame.render_widget(Paragraph::new(hint).style(muted_style()), footer);
     draw_command_palette(frame, content, model.control().palette());
-    if model.control().open_failed() || model.control().context_failure().is_some() {
+    if model.control().open_failed() {
         draw_codex_toast(frame, area, model.control());
     }
 }
@@ -277,9 +277,11 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(refresh_title("Worlds", model.control().worlds_updated_at()));
+    let block = Block::new().borders(Borders::ALL).title(refresh_title(
+        "Worlds",
+        model.control().worlds_updated_at(),
+        None,
+    ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation
@@ -372,17 +374,24 @@ fn draw_world_card(
     frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
 }
 
-fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
-    updated_at.map_or_else(
+fn refresh_title(label: &str, updated_at: Option<&str>, failure: Option<&[String]>) -> String {
+    let mut title = updated_at.map_or_else(
         || format!("{label} · Updating…"),
         |updated_at| format!("{label} · Last updated {updated_at}"),
-    )
+    );
+    if let Some(failures) = failure {
+        title.push_str(" · Sync failed: ");
+        title.push_str(&failures.join("; "));
+    }
+    title
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(refresh_title("Codex sessions", state.codex_updated_at()));
+    let block = Block::new().borders(Borders::ALL).title(refresh_title(
+        "Codex sessions",
+        state.codex_updated_at(),
+        state.context_failure(),
+    ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if state.codex().is_empty() {

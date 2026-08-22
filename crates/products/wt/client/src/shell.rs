@@ -180,8 +180,12 @@ fn run_loop(
                 .context("read wt shell terminal area")?
                 .into();
             let snapshot = codex::cards(snapshot, &live_worlds);
-            model.set_codex_context_failures(snapshot.failed_contexts);
-            redraw |= model.set_codex(snapshot.cards, updated_at(), area);
+            redraw |= model.control_mut().apply_codex_refresh(
+                snapshot.cards,
+                snapshot.failures,
+                updated_at(),
+                area,
+            );
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
@@ -359,7 +363,6 @@ fn dispatch_event(
                 InputRoute::OpenCodex(target) => {
                     start_focus(sessions, model, runtime.focus, *target)
                 }
-                InputRoute::RefreshCodex => runtime.codex_refresh.refresh(),
                 InputRoute::Consumed => {}
             }
             Ok(true)
@@ -456,7 +459,6 @@ fn dispatch_event(
                     Some(InputRoute::OpenCodex(target)) => {
                         start_focus(sessions, model, runtime.focus, *target)
                     }
-                    Some(InputRoute::RefreshCodex) => runtime.codex_refresh.refresh(),
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
                 return Ok(changed);

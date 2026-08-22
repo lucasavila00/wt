@@ -1,5 +1,5 @@
 use super::*;
-use crate::shell::control::CodexCardIdentity;
+use crate::shell::control::{CodexCard, CodexCardIdentity};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 

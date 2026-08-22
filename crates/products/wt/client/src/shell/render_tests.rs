@@ -474,40 +474,51 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
 }
 
 #[test]
-fn failed_context_refresh_is_a_sanitized_retryable_toast() {
+fn failed_context_refresh_is_shown_in_the_title() {
     let backend = TestBackend::new(80, 18);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev"]);
-    model.set_codex_context_failures(vec!["ars".into()]);
+    model.set_codex(
+        vec![CodexCard::rollout_only(
+            "ars",
+            Uuid::from_u128(10),
+            now_ms(),
+            Some("Keep this session visible while sync is unavailable".into()),
+        )],
+        "2026-08-22T19:25:06Z".into(),
+        Rect::new(0, 0, 80, 18),
+    );
+    model.set_codex_context_failures(vec![
+        "context ars could not be queried: connection timed out".into(),
+    ]);
 
     terminal
         .draw(|frame| draw(frame, None, None, &model, None, None, None))
         .unwrap();
 
     insta::assert_debug_snapshot!(
-        "shell_codex_context_failure_toast",
+        "shell_codex_context_failure_title",
         terminal.backend().buffer()
     );
-    let rendered = terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .map(ratatui::buffer::Cell::symbol)
-        .collect::<String>();
-    assert!(!rendered.contains("Permission denied"));
-    assert!(!rendered.contains("/home/wt/.codex"));
 }
 
 #[test]
 fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
     assert_eq!(
-        refresh_title("Codex sessions", None),
+        refresh_title("Codex sessions", None, None),
         "Codex sessions · Updating…"
     );
     assert_eq!(
-        refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z")),
+        refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z"), None),
         "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+    );
+    assert_eq!(
+        refresh_title(
+            "Codex sessions",
+            Some("2026-08-21T20:00:00Z"),
+            Some(&["context ars could not be queried: connection timed out".into()])
+        ),
+        "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
     );
 }
 

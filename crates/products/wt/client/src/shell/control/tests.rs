@@ -172,28 +172,33 @@ fn refresh_and_navigation_do_not_hide_an_opening_card() {
 }
 
 #[test]
-fn context_failure_retry_and_dismiss_are_explicit() {
+fn context_failure_persists_until_a_successful_refresh() {
     let mut state = ControlState::default();
-    state.set_context_failures(vec!["ars".into()]);
-    assert_eq!(state.context_failure().unwrap(), ["ars"]);
+    state.set_context_failures(vec!["context ars could not be queried: timed out".into()]);
     assert_eq!(
-        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area()),
-        Some(ControlAction::RefreshCodex)
+        state.context_failure().unwrap(),
+        ["context ars could not be queried: timed out"]
     );
-
-    state.set_context_failures(vec!["ars".into()]);
-    state.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), area());
-    assert!(state.context_failure().is_none());
-    state.set_context_failures(vec!["ars".into()]);
-    assert!(state.context_failure().is_none());
-
     state.set_context_failures(Vec::new());
-    state.set_context_failures(vec!["ars".into()]);
-    let (retry, _) = super::super::toast::actions(area());
-    assert_eq!(
-        state.handle_mouse(mouse(retry.x, retry.y), area()),
-        (true, Some(ControlAction::RefreshCodex))
-    );
+    assert!(state.context_failure().is_none());
+}
+
+#[test]
+fn failed_refresh_keeps_the_last_codex_snapshot_and_timestamp() {
+    let mut state = ControlState::default();
+    let card = live_card(1, "%1");
+    state.set_codex(vec![card.clone()], "2026-08-21T20:00:00Z".into(), area());
+
+    assert!(state.apply_codex_refresh(
+        Vec::new(),
+        vec!["context ars could not be queried: connection timed out".into()],
+        "2026-08-21T20:00:05Z".into(),
+        area(),
+    ));
+
+    assert_eq!(state.codex().len(), 1);
+    assert_eq!(state.codex()[0].identity, card.identity);
+    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:00Z"));
 }
 
 #[test]

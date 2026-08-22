@@ -5,9 +5,9 @@
 ## Decision
 
 Codex inventory uses a dedicated `std::thread`, separate from the world refresh
-worker described in ADR 0054. The two inventories have different acceptance
-rules: Codex publishes per-context failures, while worlds require a complete
-snapshot and reconcile SSH sessions.
+worker described in ADR 0054. Both inventories retain their last complete
+snapshot when any configured context cannot be queried. Codex also publishes
+the query error so the shell can show why its displayed session state is stale.
 
 The Codex worker fetches immediately, then starts each subsequent fetch five
 seconds after the previous fetch finishes. Each context request has a one-minute
@@ -20,5 +20,6 @@ the next cycle. Fetches cannot overlap or accumulate work.
 
 The Worlds and Codex panels store independent RFC 3339 UTC timestamps. The UI
 updates a timestamp only when it applies a snapshot; it shows `Updating…` until
-the first snapshot for that panel. A Codex snapshot containing context failures
-still advances its timestamp because the failure rows are the applied result.
+the first snapshot for that panel. A Codex query failure does not advance the
+timestamp because no new snapshot is applied. The Codex title shows the failure
+beside the last successful update time until a complete refresh succeeds.
