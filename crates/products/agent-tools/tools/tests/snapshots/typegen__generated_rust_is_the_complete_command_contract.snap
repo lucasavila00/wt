@@ -78,8 +78,6 @@ pub enum GitHostingCommand {
     OpenMr {
         head: String,
         base: String,
-        #[serde(default)]
-        draft: bool,
     },
     #[serde(rename = "set_mr")]
     SetMr {

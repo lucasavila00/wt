@@ -61,7 +61,6 @@ fn cli_commands_render_provider_results_as_json() {
             WtToolsCommand::OpenMr {
                 head: "wt/fix-login".to_owned(),
                 base: "main".to_owned(),
-                draft: false,
             },
         ),
         (
@@ -247,6 +246,16 @@ fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
                 r#"{"data":{"mergeRequestCreate":{"errors":[],"mergeRequest":{"id":"merge-request-8","iid":"8","webUrl":"https://gitlab.test/acme/widget/-/merge_requests/8"}}}}"#,
             ),
             graphql("GitlabReadMergeRequest", MERGE_REQUEST_RESPONSE),
+            graphql(
+                "GitlabSetMergeRequestDraft",
+                r#"{"data":{"mergeRequestSetDraft":{"errors":[],"mergeRequest":{"id":"merge-request-8","iid":"8","webUrl":"https://gitlab.test/acme/widget/-/merge_requests/8"}}}}"#,
+            ),
+            graphql(
+                "GitlabReadMergeRequest",
+                MERGE_REQUEST_RESPONSE
+                    .replace("\"draft\": false", "\"draft\": true")
+                    .leak(),
+            ),
         ],
         WtToolsCommand::SetMr { .. } | WtToolsCommand::EditMr { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),

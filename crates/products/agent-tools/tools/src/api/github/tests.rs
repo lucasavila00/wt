@@ -540,22 +540,22 @@ fn opens_pull_request_through_typed_graphql_mutation() {
             required_header: Some(("authorization", "Bearer fixture-token")),
             body_contains: Some("GithubReadPullRequest"),
             response_content_type: "application/json",
-            response_body: PULL_REQUEST_RESPONSE,
+            response_body: leak_fixture(
+                PULL_REQUEST_RESPONSE.replace("\"isDraft\": false", "\"isDraft\": true"),
+            ),
         },
     ]);
     let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
 
     let output = provider
-        .execute_command(
-            &scope(),
-            &ProviderCommand::OpenChangeRequest { draft: false },
-        )
+        .execute_command(&scope(), &ProviderCommand::OpenChangeRequest)
         .unwrap();
 
     let ProviderCommandOutput::ChangeRequest(request) = output else {
         panic!("expected opened pull request");
     };
     assert_eq!(request.handle, "#7");
+    assert!(request.draft);
     server.join().unwrap().unwrap();
 }
 

@@ -20,7 +20,7 @@ export type GitHostingCommand =
   | { action: "wait_mr"; mr: string; timeout_seconds?: number }
   | { action: "wait_run"; run: string; timeout_seconds?: number }
   | { action: "wait_job"; job: string; timeout_seconds?: number }
-  | { action: "open_mr"; head: string; base: string; draft?: boolean }
+  | { action: "open_mr"; head: string; base: string }
   | { action: "set_mr"; mr: string; state: ChangeRequestState }
   | { action: "edit_mr"; mr: string; title?: string; body?: string }
   | { action: "comment_mr"; mr: string; body: string }

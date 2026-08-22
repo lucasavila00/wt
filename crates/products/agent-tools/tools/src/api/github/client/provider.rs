@@ -44,7 +44,7 @@ impl GitProviderApi for GithubApi {
             ProviderCommand::ReadCurrentStatus => Ok(ProviderCommandOutput::CurrentStatus(
                 self.read_change_request_snapshot(scope, true)?.request,
             )),
-            ProviderCommand::OpenChangeRequest { draft } => {
+            ProviderCommand::OpenChangeRequest => {
                 let snapshot = self.read_change_request_snapshot(scope, false)?;
                 if let Some(request) = snapshot.request {
                     return Ok(ProviderCommandOutput::ChangeRequest(request));
@@ -56,7 +56,7 @@ impl GitProviderApi for GithubApi {
                         base: scope.base.to_owned(),
                         branch: scope.branch.to_owned(),
                         title: title_from_branch(scope),
-                        draft: *draft,
+                        draft: true,
                     },
                 )?;
                 self.read_refreshed_change_request(scope)
@@ -372,7 +372,7 @@ impl GitProviderApi for GithubApi {
                     }
                 }
             }
-            WtToolsCommand::OpenMr { head, base, draft } => {
+            WtToolsCommand::OpenMr { head, base } => {
                 if !head.starts_with(scope.prefix) {
                     bail!("open mr must use a {}* head", scope.prefix);
                 }
@@ -389,10 +389,7 @@ impl GitProviderApi for GithubApi {
                     branch: head,
                     head: &commit.sha,
                 };
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::OpenChangeRequest { draft: *draft },
-                )
+                self.execute_command(&current, &ProviderCommand::OpenChangeRequest)
             }
             WtToolsCommand::SetMr { mr, state } => {
                 let mr_id = parse_resource_id(mr, "MR")?;

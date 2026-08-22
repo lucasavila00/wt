@@ -136,14 +136,10 @@ fn command_parser_accepts_only_valid_json_objects() {
             branch: "wt/fix".to_owned(),
         }
     );
-    assert_eq!(
-        parsed_command(r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":true}"#,),
-        GitHostingCommand::OpenMr {
-            head: "wt/fix".to_owned(),
-            base: "main".to_owned(),
-            draft: true,
-        }
-    );
+    assert!(WtToolsCommand::parse(&[targeted(
+        r#"{"action":"open_mr","head":"wt/fix","base":"main","draft":false}"#
+    )])
+    .is_err());
     assert!(WtToolsCommand::parse(&[]).is_err());
     assert!(WtToolsCommand::parse(&["show".into(), "mr".into(), "7".into()]).is_err());
     assert!(WtToolsCommand::parse(&[targeted(r#"{"action":"show_mr","mr":""}"#)]).is_err());

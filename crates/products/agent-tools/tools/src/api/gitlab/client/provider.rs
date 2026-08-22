@@ -37,7 +37,7 @@ impl GitProviderApi for GitlabApi {
             ProviderCommand::ReadCurrentStatus => Ok(ProviderCommandOutput::CurrentStatus(
                 self.read_change_request_snapshot(scope, true)?.request,
             )),
-            ProviderCommand::OpenChangeRequest { draft } => {
+            ProviderCommand::OpenChangeRequest => {
                 let snapshot = self.read_change_request_snapshot(scope, false)?;
                 if let Some(request) = snapshot.request {
                     return Ok(ProviderCommandOutput::ChangeRequest(request));
@@ -56,17 +56,15 @@ impl GitProviderApi for GitlabApi {
                         .context("GitLab returned no result")?
                         .errors,
                 )?;
-                if *draft {
-                    let snapshot = self.require_change_request(scope)?;
-                    set_change_request_draft(
-                        &self.http,
-                        scope.project,
-                        snapshot
-                            .merge_request_number
-                            .context("merge request has no number")?,
-                        true,
-                    )?;
-                }
+                let snapshot = self.require_change_request(scope)?;
+                set_change_request_draft(
+                    &self.http,
+                    scope.project,
+                    snapshot
+                        .merge_request_number
+                        .context("merge request has no number")?,
+                    true,
+                )?;
                 self.read_refreshed_change_request(scope)
             }
             ProviderCommand::MarkChangeRequestReady | ProviderCommand::MarkChangeRequestDraft => {
@@ -369,7 +367,7 @@ impl GitProviderApi for GitlabApi {
                     }
                 }
             }
-            WtToolsCommand::OpenMr { head, base, draft } => {
+            WtToolsCommand::OpenMr { head, base } => {
                 if !head.starts_with(scope.prefix) {
                     bail!("open mr must use a {}* head", scope.prefix);
                 }
@@ -386,10 +384,7 @@ impl GitProviderApi for GitlabApi {
                     branch: head,
                     head: &commit.id,
                 };
-                self.execute_command(
-                    &current,
-                    &ProviderCommand::OpenChangeRequest { draft: *draft },
-                )
+                self.execute_command(&current, &ProviderCommand::OpenChangeRequest)
             }
             WtToolsCommand::SetMr { mr, state } => {
                 let mr_id = parse_resource_id(mr, "MR")?;

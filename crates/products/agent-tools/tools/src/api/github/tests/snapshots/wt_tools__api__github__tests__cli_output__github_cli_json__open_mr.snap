@@ -6,7 +6,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
   "data": {
     "base": "main",
     "body": null,
-    "draft": false,
+    "draft": true,
     "handle": "#7",
     "head": "abc123",
     "jobs": [],
