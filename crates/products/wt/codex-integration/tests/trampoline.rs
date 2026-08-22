@@ -52,7 +52,7 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool, ignore_check
     assert_eq!(String::from_utf8(run.stdout).unwrap(), expected_stdout);
     let expected_stderr = if blocked {
         format!(
-            "wt-codex-integration: Codex reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable; full diagnostic recorded at {}/.local/state/wt/codex-reconciliation.log\n",
+            "wt-codex-integration: Codex reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable; full diagnostic recorded at {}/.local/state/wt/codex-reconciliation.log; set IGNORE_CODEX_WT_CHECKS=true to start Codex without reconciliation\n",
             home.display()
         )
     } else {
@@ -136,7 +136,10 @@ fn both_image_entrypoints_reconcile_then_exec_the_fixed_real_codex() {
     fs::create_dir_all(&sessions).unwrap();
     fs::write(
         sessions.join("rollout-2026-08-20T10-00-00-33333333-3333-4333-8333-333333333333.jsonl"),
-        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"33333333-3333-4333-8333-333333333333\"}}\n",
+        concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"33333333-3333-4333-8333-333333333333\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\"}}\n"
+        ),
     )
     .unwrap();
 

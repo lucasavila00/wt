@@ -130,8 +130,10 @@ fn collect_rollouts(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
 
 fn rollout_id(path: &Path) -> Result<Option<String>> {
     let file = File::open(path).with_context(|| format!("open rollout {}", path.display()))?;
+    let mut reader = BufReader::new(file);
     let mut line = String::new();
-    BufReader::new(file)
+    reader
+        .by_ref()
         .take(MAX_SESSION_META_BYTES + 1)
         .read_line(&mut line)?;
     if line.is_empty() {
@@ -153,7 +155,13 @@ fn rollout_id(path: &Path) -> Result<Option<String>> {
     if id != parsed.hyphenated().to_string() {
         bail!("session_meta thread ID is not canonical");
     }
-    Ok(Some(id))
+    for record in serde_json::Deserializer::from_reader(reader).into_iter::<ConversationRecord>() {
+        let record = record.context("rollout record is not valid JSON")?;
+        if record.kind == "event_msg" && record.payload.kind.as_deref() == Some("user_message") {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 #[derive(Deserialize)]
@@ -168,6 +176,19 @@ struct SessionPayload {
     id: Option<String>,
     #[serde(default)]
     source: Value,
+}
+
+#[derive(Deserialize)]
+struct ConversationRecord {
+    #[serde(rename = "type")]
+    kind: String,
+    payload: ConversationPayload,
+}
+
+#[derive(Deserialize)]
+struct ConversationPayload {
+    #[serde(rename = "type")]
+    kind: Option<String>,
 }
 
 impl SessionPayload {
@@ -479,7 +500,13 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         fs::write(
             directory.join(format!("rollout-2026-08-20T10-00-00-{ID}.jsonl")),
-            format!("{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{ID}\"}}}}\n"),
+            format!(
+                concat!(
+                    "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\"}}}}\n",
+                    "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"user_message\"}}}}\n"
+                ),
+                ID
+            ),
         )
         .unwrap();
     }
@@ -527,6 +554,38 @@ done
         fake_codex(&codex, &home);
 
         reconcile_home(&codex, &home).unwrap();
+    }
+
+    #[test]
+    fn rollout_scan_skips_sessions_without_a_user_prompt() {
+        let temp = tempdir().unwrap();
+        let sessions = temp.path().join("sessions/2026/08/20");
+        fs::create_dir_all(&sessions).unwrap();
+        let metadata_only = "11111111-1111-4111-8111-111111111111";
+        let shell_only = "22222222-2222-4222-8222-222222222222";
+        fs::write(
+            sessions.join(format!("rollout-metadata-{metadata_only}.jsonl")),
+            format!("{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{metadata_only}\"}}}}\n"),
+        )
+        .unwrap();
+        fs::write(
+            sessions.join(format!("rollout-shell-{shell_only}.jsonl")),
+            format!(
+                concat!(
+                    "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\"}}}}\n",
+                    "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",",
+                    "\"role\":\"user\",\"content\":[]}}}}\n"
+                ),
+                shell_only
+            ),
+        )
+        .unwrap();
+        write_rollout(temp.path());
+
+        assert_eq!(
+            rollout_ids(&temp.path().join("sessions")).unwrap(),
+            [ID.into()].into()
+        );
     }
 
     #[test]
