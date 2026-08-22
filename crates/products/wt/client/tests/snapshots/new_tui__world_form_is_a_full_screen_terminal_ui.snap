@@ -1,6 +1,6 @@
 ---
 source: crates/products/wt/client/tests/new_tui.rs
-expression: screen.contents()
+expression: contents
 ---
 
 
@@ -8,15 +8,15 @@ expression: screen.contents()
 
 
          ┌Create world────────────────────────────────────────────────────────────────────┐
-         │ › Context         ‹ local ›                                                    │
-         │   World name      <my-world>                                                   │
+         │   Context         ‹ local ›                                                    │
+         │   World name      <suggested-name>                                              │
          │   Virtual CPUs    2 (default)                                                  │
          │   RAM (MiB)       4096 (default)                                               │
          │   Disk (GiB)      32 (default)                                                 │
+         │   [ OK ]                                                                       │
          │                                                                                │
          │ Git author  Test User <test@example.test>                                      │
          │ SSH keys    1 discovered                                                       │
-         │                                                                                │
          │                                                                                │
          │                                                                                │
          │                                                                                │

@@ -65,8 +65,10 @@ fn local_context() -> &'static str {
 
 fn complete_fields(screen: &mut Screen) -> Result<()> {
     screen
+        .press(Key::Tab)?
         .press(Key::Enter)?
         .type_text("repo-feature")?
+        .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
@@ -83,7 +85,19 @@ fn world_form_is_a_full_screen_terminal_ui() -> Result<()> {
         .wait_for_text("World name")?
         .wait_for_text("Tab/Shift-Tab focus")?
         .wait_for_quiet(Duration::from_millis(50))?;
-    insta::assert_snapshot!(screen.contents());
+    let contents = screen
+        .contents()
+        .lines()
+        .map(|line| {
+            if line.contains("World name") {
+                "         │   World name      <suggested-name>                                              │"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(contents);
     Ok(())
 }
 
@@ -93,7 +107,9 @@ fn enter_validates_before_advancing() -> Result<()> {
     let mut screen = fixture.screen()?;
     screen
         .wait_for_text("Create world")?
+        .press(Key::Tab)?
         .press(Key::Enter)?
+        .type_text("_")?
         .press(Key::Enter)?
         .wait_for_text("invalid instance name")?;
     Ok(())
