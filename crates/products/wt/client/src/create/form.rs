@@ -14,22 +14,22 @@ const DEFAULT_MEMORY_MIB: u64 = 4096;
 const DEFAULT_DISK_GIB: u64 = 32;
 const LABEL_WIDTH: usize = 16;
 const SUGGESTED_NAMES: [&str; 16] = [
-    "beagle",
-    "collie",
-    "corgi",
-    "dachshund",
-    "dalmatian",
-    "greyhound",
-    "husky",
-    "labrador",
-    "mastiff",
-    "poodle",
-    "pug",
-    "retriever",
-    "samoyed",
-    "terrier",
-    "whippet",
-    "wolfhound",
+    "quiet-otter",
+    "brisk-falcon",
+    "curious-badger",
+    "gentle-heron",
+    "clever-corgi",
+    "amber-fox",
+    "bright-puffin",
+    "calm-bison",
+    "eager-gecko",
+    "happy-yak",
+    "lucky-raven",
+    "nimble-panda",
+    "swift-turtle",
+    "vivid-koala",
+    "warm-wombat",
+    "wise-orca",
 ];
 const HOST_FIELDS: [Field; 5] = [
     Field::Context,
@@ -526,11 +526,11 @@ mod tests {
 
     #[test]
     fn suggests_the_first_unused_world_name() {
-        let used_names = ["beagle".to_owned(), "collie".to_owned()]
+        let used_names = ["quiet-otter".to_owned(), "brisk-falcon".to_owned()]
             .into_iter()
             .collect();
 
-        assert_eq!(suggested_name(&used_names), "corgi");
+        assert_eq!(suggested_name(&used_names), "curious-badger");
     }
 
     #[test]
