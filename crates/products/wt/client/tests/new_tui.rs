@@ -54,6 +54,7 @@ impl Fixture {
                 ("HOME", self.home.path().as_os_str().to_os_string()),
                 ("PATH", self.path.clone()),
             ],
+            Duration::from_secs(10),
         )
     }
 }

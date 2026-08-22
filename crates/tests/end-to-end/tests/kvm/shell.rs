@@ -6,7 +6,7 @@ use wt_control_protocol::{Operation, Response};
 
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
-fn shell_creates_a_real_world() {
+fn shell_creates_and_deletes_a_real_world() {
     let _lock = KVM_TEST_LOCK.lock().unwrap();
     let mut timings = Timings::new();
     let harness = KvmHarness::new(&mut timings);
@@ -40,37 +40,8 @@ fn shell_creates_a_real_world() {
     )
     .unwrap();
 
-    screen
-        .wait_for_text("WT E2E TEST SERVER")
-        .unwrap()
-        .press(Key::Function(1))
-        .unwrap()
-        .wait_for_text("Command Palette")
-        .unwrap()
-        .type_text("new")
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .wait_for_text("Create world")
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .type_text(name.as_str())
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .wait_for_text("Review")
-        .unwrap()
-        .press(Key::Enter)
-        .unwrap()
-        .wait_for_text("RUNNING")
-        .unwrap();
+    screen.wait_for_text("WT E2E TEST SERVER").unwrap();
+    create_world_with_defaults(&mut screen, name.as_str()).unwrap();
 
     let Response::Instances { instances, .. } = call_api(
         harness.temp.path(),
@@ -80,6 +51,17 @@ fn shell_creates_a_real_world() {
         panic!("expected list response");
     };
     assert!(instances.iter().any(|instance| instance.name == name));
+
+    delete_world(&mut screen, name.as_str()).unwrap();
+    let Response::Instances { instances, .. } = call_api(
+        harness.temp.path(),
+        &harness.server_config_path,
+        Operation::List,
+    ) else {
+        panic!("expected list response");
+    };
+    assert!(instances.iter().all(|instance| instance.name != name));
+
     screen
         .press(Key::Function(6))
         .unwrap()

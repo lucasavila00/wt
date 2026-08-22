@@ -30,11 +30,8 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
 
-      - name: Run static analysis
-        run: make static
-
-      - name: Run tests
-        run: scripts/cargo test --workspace --locked
+      - name: Run checks
+        run: make ci
 
   stress:
     runs-on: ubuntu-24.04

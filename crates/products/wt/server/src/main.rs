@@ -86,46 +86,51 @@ fn run_server() -> Result<()> {
     let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let owner = process_user()?;
+    let context = DaemonContext {
+        state,
+        operations,
+        worker,
+        gateway,
+        owner,
+        capacity_limit,
+        test_server,
+    };
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
-        handle_daemon_request(
-            &state,
-            &operations,
-            &worker,
-            &gateway,
-            &owner,
-            capacity_limit,
-            test_server,
-            (request, progress),
-        )
+        handle_daemon_request(&context, request, progress)
     })
 }
 
-fn handle_daemon_request(
-    state: &StateConfig,
-    operations: &Operations,
-    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
-    gateway: &wt_agent_tool_gateway::ControlClient,
-    owner: &str,
+struct DaemonContext {
+    state: StateConfig,
+    operations: Operations,
+    worker: wt_retained_worlds::host::Worker<LibvirtProvider>,
+    gateway: wt_agent_tool_gateway::ControlClient,
+    owner: String,
     capacity_limit: wt_workload_registry::Resources,
     test_server: bool,
-    request: (ApiRequest, &mut dyn std::io::Write),
+}
+
+fn handle_daemon_request(
+    context: &DaemonContext,
+    request: ApiRequest,
+    progress: &mut dyn std::io::Write,
 ) -> ApiResponse {
-    let (request, progress) = request;
     let result = (|| {
-        let store = Store::open(&state.database_path()).context("open instance registry")?;
+        let store =
+            Store::open(&context.state.database_path()).context("open instance registry")?;
         let service = Service::with_capacity_limit(
             store,
-            worker.clone(),
-            gateway.clone(),
-            operations.clone(),
-            capacity_limit,
+            context.worker.clone(),
+            context.gateway.clone(),
+            context.operations.clone(),
+            context.capacity_limit,
         );
         Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
             &service,
-            owner,
+            &context.owner,
             request,
-            test_server,
+            context.test_server,
             progress,
         ))
     })();

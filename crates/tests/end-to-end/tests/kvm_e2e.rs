@@ -22,6 +22,9 @@ pub(crate) use terminal::*;
 #[path = "../../../products/wt/client/tests/support/screen.rs"]
 mod screen;
 pub(crate) use screen::{Key, Screen};
+#[path = "kvm/wt_shell.rs"]
+mod wt_shell;
+pub(crate) use wt_shell::{create_world_with_defaults, delete_world};
 
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;

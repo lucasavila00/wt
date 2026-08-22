@@ -39,10 +39,12 @@ identity, or partial libvirt state fail closed.
 
 ## Full KVM E2E
 
-Full KVM E2E requires a KVM-capable WT server and is destructive to its WT
-worlds and runtime state. `make e2e-tests` runs `scripts/clear`, installs the E2E
-server in the ordinary host paths, and leaves that marked test server installed.
-The Ubuntu source and verified golden image remain installed.
+Full KVM E2E requires a host with the full KVM and libvirt prerequisites. Every
+run uses `make clear` to remove WT worlds and runtime state, installs the E2E
+server from the current checkout into the ordinary host paths, and leaves that
+marked test server installed. The Ubuntu source, verified golden image,
+downloads, Cargo artifacts, and build caches remain available. Image
+preparation rebuilds only when current provenance does not match the cache.
 
 The E2E host is a disposable environment with no production workload. Both
 runtime cleanup and full server removal are safe there; the normal test path

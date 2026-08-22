@@ -23,12 +23,17 @@ make e2e-tests
 The E2E environment is disposable and contains no production workload. Runtime
 cleanup and a full `make nuke` are both safe on that host.
 
-`make e2e-tests` is destructive to existing WT worlds and runtime state. It
-validates the E2E install input, runs `scripts/clear`, and installs a test server
-through the ordinary production installation paths. Existing `wt-*` guests,
-world disks, runtime configuration, grants, the registry, and generated SSH
-inventory are removed before the test install starts. The Ubuntu source image,
-verified golden image, downloads, and build caches remain in place.
+Every run validates the E2E install input, runs `make clear`, and installs a
+test server from the current checkout into the ordinary host paths. Existing
+`wt-*` guests, world disks, runtime configuration, grants, the registry, and
+generated SSH inventory are removed. The Ubuntu source image, verified golden
+image, downloads, Cargo artifacts, and build caches remain in place.
+
+The host is expected to already have the full KVM and libvirt prerequisites.
+The installer verifies the cached golden image against current inputs and
+rebuilds it only when it is missing or stale. The KVM harness builds the current
+checkout's test binaries and installs current guest assets into disposable
+overlays.
 
 The test server remains installed after the tests. Local `wt` commands identify
 it, `wt shell` displays a test-server badge, and remote OpenSSH WT clients are

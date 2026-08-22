@@ -23,6 +23,7 @@ mod model;
 mod refresh;
 mod render;
 mod session;
+mod terminal_view;
 mod toast;
 
 use control::ControlCommand;

@@ -90,6 +90,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - For Rust changes, run `cargo fmt --all --check` plus tests and Clippy for the
   affected crates. Use workspace-wide Rust checks only for cross-crate changes or
   when explicitly requested.
+- Run `make ci` for the complete pre-merge check. It matches the regular CI job:
+  repository static analysis and the workspace test suite. It intentionally
+  excludes the separate scheduler-contention stress job and ignored real-system
+  KVM tests.
 - Prefer Insta snapshots for stable user-visible text, diagnostics, generated
   configuration, scripts and service units, serialized text, and multiline
   output. Snapshot the complete normalized value instead of checking fragments
