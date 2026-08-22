@@ -341,10 +341,7 @@ impl GitProviderApi for GitlabApi {
                         return Ok(ProviderCommandOutput::CiRun(output));
                     }
                     if !wait_for_next_cli_poll(deadline) {
-                        return Ok(ProviderCommandOutput::WaitTimeout {
-                            resource: format!("run {run}"),
-                            last_state: output.state,
-                        });
+                        return Ok(ProviderCommandOutput::CiRun(output));
                     }
                 }
             }
