@@ -24,11 +24,11 @@ phase "installing base operating-system packages"
 phase "configuring base operating-system services"
 systemctl enable --now qemu-guest-agent.service
 systemctl disable --now ssh.service ssh.socket
-if ! getent group "$WT_USER" >/dev/null; then
-    groupadd --gid "$WT_GID" "$WT_USER"
+if ! getent group "$WT_GROUP" >/dev/null; then
+    groupadd --gid "$WT_GID" "$WT_GROUP"
 fi
 if ! id "$WT_USER" >/dev/null 2>&1; then
-    useradd --uid "$WT_UID" --gid "$WT_GID" --create-home \
+    useradd --uid "$WT_UID" --gid "$WT_GROUP" --create-home \
         --home-dir "$WT_HOME" --shell /bin/bash "$WT_USER"
 fi
 test "$(id -u "$WT_USER")" = "$WT_UID"
@@ -47,8 +47,8 @@ phase "installing Codex"
 phase "installing Diffo"
 /bin/sh /var/tmp/wt-install-diffo.sh
 install -d -m 0755 /usr/local/share /usr/local/libexec
-printf "WT_USER='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
-    "$WT_USER" "$WT_UID" "$WT_GID" "$WT_HOME" \
+printf "WT_USER='%s'\nWT_GROUP='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
+    "$WT_USER" "$WT_GROUP" "$WT_UID" "$WT_GID" "$WT_HOME" \
     > /usr/local/share/wt-retained-contract
 chmod 0644 /usr/local/share/wt-retained-contract
 install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf

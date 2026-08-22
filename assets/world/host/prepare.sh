@@ -42,7 +42,7 @@ case "${1:-}" in
         file=$WT_HOME/.ssh/authorized_keys
         temporary=$file.wt-readiness
         grep -Fvx -- "$key" "$file" > "$temporary"
-        chown "$WT_USER:$WT_USER" "$temporary"
+        chown "$WT_USER:$WT_GROUP" "$temporary"
         chmod 0600 "$temporary"
         mv -f "$temporary" "$file"
         sync "$file" "$(dirname "$file")"

@@ -4040,6 +4040,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "insta",
+ "nix 0.31.3",
  "quick-xml",
  "serde_json",
  "tempfile",
