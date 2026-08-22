@@ -7,8 +7,12 @@ pub(crate) fn create_world_with_defaults(screen: &mut Screen, name: &str) -> Res
     open_command(screen, "new", "Create world")?;
     eprintln!("WT shell E2E: submit world {name}");
     screen
-        .press(Key::Enter)?
+        .press(Key::Up)?
+        .press(Key::Up)?
+        .press(Key::Up)?
+        .press(Key::Up)?
         .type_text(name)?
+        .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
