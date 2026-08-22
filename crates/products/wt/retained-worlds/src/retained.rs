@@ -149,7 +149,10 @@ impl RetainedConfig {
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
+        let phase_started = Instant::now();
         self.install_access(transport, spec.authorized_keys, deadline, log)?;
+        crate::write_creation_timing(log, "install SSH access", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.install_git_author(
             transport,
             spec.git_user_name,
@@ -157,9 +160,16 @@ impl RetainedConfig {
             deadline,
             log,
         )?;
+        crate::write_creation_timing(log, "install Git author", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.install_agent_tools(transport, spec.git_grant, deadline, log)?;
+        crate::write_creation_timing(log, "install agent tools", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.install_wt_codex_integration(transport, deadline, log)?;
-        self.mount_codex(transport, deadline, log)
+        crate::write_creation_timing(log, "install Codex integration", phase_started.elapsed())?;
+        let phase_started = Instant::now();
+        self.mount_codex(transport, deadline, log)?;
+        crate::write_creation_timing(log, "mount Codex state", phase_started.elapsed())
     }
 
     fn install_access(

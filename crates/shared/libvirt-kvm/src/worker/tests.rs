@@ -1,4 +1,4 @@
-use super::{allocated_bytes, create_overlay_command, shutdown_reason};
+use super::{allocated_bytes, create_overlay_command, shutdown_reason, write_creation_timing};
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -34,6 +34,19 @@ fn initial_world_disk_is_a_golden_image_overlay() {
         "48G",
     ]
     "###);
+}
+
+#[test]
+fn creation_timing_has_stable_precision() {
+    let mut output = Vec::new();
+    write_creation_timing(
+        &mut output,
+        "wait for guest agent",
+        std::time::Duration::from_millis(1250),
+    )
+    .unwrap();
+
+    insta::assert_snapshot!(String::from_utf8(output).unwrap(), @"World creation timing: wait for guest agent took 1.250s\n");
 }
 
 #[test]

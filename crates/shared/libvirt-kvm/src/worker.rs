@@ -232,19 +232,40 @@ impl LibvirtProvider {
         writeln!(progress, "Creating KVM guest {}...", spec.provider_id)
             .map_err(|error| context("write machine progress", error))?;
         let disk = world::disk_path(&self.config.worlds_dir, spec.disk_id);
+        let phase_started = Instant::now();
         run(
             create_overlay_command(&self.config.image, &disk, spec.disk_gib),
             "create qcow2 overlay",
         )?;
+        write_creation_timing(progress, "create world disk", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.start_domain(spec, &disk, true)?;
+        write_creation_timing(progress, "start KVM domain", phase_started.elapsed())?;
         writeln!(progress, "Waiting for the guest transport...")
             .map_err(|error| context("write machine progress", error))?;
+        let phase_started = Instant::now();
         self.wait_for_agent(&spec.provider_id)?;
+        write_creation_timing(progress, "wait for guest agent", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         let guest_ip = self.wait_for_ip(&spec.provider_id)?;
+        write_creation_timing(progress, "wait for guest IP", phase_started.elapsed())?;
         writeln!(progress, "Machine transport ready at {guest_ip}.")
             .map_err(|error| context("write machine progress", error))?;
         Ok(self.machine(&spec.provider_id, guest_ip))
     }
+}
+
+fn write_creation_timing(
+    progress: &mut dyn Write,
+    phase: &str,
+    elapsed: Duration,
+) -> Result<(), WorkerError> {
+    writeln!(
+        progress,
+        "World creation timing: {phase} took {:.3}s",
+        elapsed.as_secs_f64()
+    )
+    .map_err(|error| context("write machine timing", error))
 }
 
 fn allocated_bytes(path: &std::path::Path) -> Result<u64, WorkerError> {
