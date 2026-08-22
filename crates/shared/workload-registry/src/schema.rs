@@ -46,6 +46,7 @@ diesel::table! {
         ssh_port -> Nullable<Integer>,
         ssh_host_keys -> Text,
         gateway_grant_id -> Nullable<Text>,
+        created_at_unix_ms -> BigInt,
     }
 }
 

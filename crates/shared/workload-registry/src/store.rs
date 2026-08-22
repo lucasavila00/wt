@@ -6,6 +6,7 @@ use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::sqlite::SqliteConnection;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use uuid::Uuid;
 use wt_control_protocol::{Instance, InstanceName, InstanceStatus, SshAccess};
@@ -61,6 +62,7 @@ struct NewWorld<'a> {
     setup_fingerprint: &'a str,
     ssh_host_keys: &'static str,
     gateway_grant_id: Option<&'a str>,
+    created_at_unix_ms: i64,
 }
 
 #[derive(Queryable, Selectable)]
@@ -84,6 +86,7 @@ struct WorldRow {
     ssh_port: Option<i32>,
     ssh_host_keys: String,
     gateway_grant_id: Option<String>,
+    created_at_unix_ms: i64,
 }
 
 impl Store {
@@ -153,7 +156,7 @@ impl Store {
         self.registry.read(|connection| {
             worlds::table
                 .filter(worlds::owner.eq(owner))
-                .order(worlds::name)
+                .order((worlds::created_at_unix_ms, worlds::id))
                 .select(WorldRow::as_select())
                 .load::<WorldRow>(connection)?
                 .into_iter()
@@ -281,6 +284,8 @@ impl TryFrom<WorldRow> for StoredInstance {
             Uuid::parse_str(&row.id).map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let disk_id = Uuid::parse_str(&row.disk_id)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
+        let _created_at_unix_ms = crate::to_u64(row.created_at_unix_ms, "created_at_unix_ms")
+            .map_err(map_registry_error)?;
         let ssh = match row.ssh_user {
             Some(user) => Some(SshAccess {
                 user,
@@ -326,6 +331,12 @@ fn insert_world(
     limit: Resources,
 ) -> Result<(), StoreError> {
     let instance = &stored.instance;
+    let created_at_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| StoreError::InvalidData(error.to_string()))?
+        .as_millis()
+        .try_into()
+        .map_err(|_| StoreError::InvalidData("creation time is too large".into()))?;
     let resources = Resources {
         vcpus: instance.vcpus.into(),
         memory_mib: instance.memory_mib,
@@ -349,6 +360,7 @@ fn insert_world(
         setup_fingerprint: &stored.setup_fingerprint,
         ssh_host_keys: "[]",
         gateway_grant_id: stored.gateway_grant_id.as_deref(),
+        created_at_unix_ms,
     };
     insert_result(
         diesel::insert_into(worlds::table)
@@ -417,11 +429,61 @@ fn invalid_number(field: &str, value: impl std::fmt::Display) -> StoreError {
 mod tests {
     use super::*;
 
+    fn stored(name: &str) -> StoredInstance {
+        StoredInstance {
+            instance: Instance {
+                id: Uuid::new_v4(),
+                name: InstanceName::parse(name).unwrap(),
+                owner: "owner".into(),
+                status: InstanceStatus::Running,
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
+                guest_ip: None,
+                last_error: None,
+                ssh: None,
+            },
+            backend_id: format!("backend-{name}"),
+            disk_id: Uuid::new_v4(),
+            setup_fingerprint: "fingerprint".into(),
+            gateway_grant_id: None,
+        }
+    }
+
     #[test]
     fn open_applies_shared_registry_migration() {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&temp.path().join("instances.db")).unwrap();
 
         assert!(store.list("owner").unwrap().is_empty());
+    }
+
+    #[test]
+    fn lists_worlds_in_creation_order_instead_of_name_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let first = stored("w6");
+        let second = stored("w10");
+        store.insert(&first).unwrap();
+        store.insert(&second).unwrap();
+        store.registry.read(|connection| {
+            diesel::update(worlds::table.find(first.instance.id.to_string()))
+                .set(worlds::created_at_unix_ms.eq(1))
+                .execute(connection)
+                .unwrap();
+            diesel::update(worlds::table.find(second.instance.id.to_string()))
+                .set(worlds::created_at_unix_ms.eq(2))
+                .execute(connection)
+                .unwrap();
+        });
+
+        let names = store
+            .list("owner")
+            .unwrap()
+            .into_iter()
+            .map(|stored| stored.instance.name.to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, ["w6", "w10"]);
     }
 }
