@@ -82,16 +82,6 @@ fn prepare_client(harness: &KvmHarness) {
     )
     .unwrap();
     fs::copy(
-        &harness.git.guest_key,
-        harness.temp.path().join(".ssh/id_ed25519"),
-    )
-    .unwrap();
-    fs::set_permissions(
-        harness.temp.path().join(".ssh/id_ed25519"),
-        fs::Permissions::from_mode(0o600),
-    )
-    .unwrap();
-    fs::copy(
         &harness.git.guest_public_key,
         harness.temp.path().join(".ssh/id_ed25519.pub"),
     )
