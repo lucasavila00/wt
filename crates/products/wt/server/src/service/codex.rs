@@ -14,10 +14,12 @@ use wt_control_protocol::{
 use wt_retained_worlds::WorldWorker;
 
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
+const MAX_SESSION_TITLE_SCAN_BYTES: u64 = 1024 * 1024;
 #[derive(Clone, Debug)]
 struct Rollout {
     session_id: Uuid,
     updated_at_unix_ms: i64,
+    title: Option<String>,
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -53,6 +55,7 @@ fn merge_sessions(
                 rollout.session_id,
                 CodexSession {
                     session_id: rollout.session_id,
+                    title: rollout.title,
                     rollout_updated_at_unix_ms: Some(rollout.updated_at_unix_ms),
                     observations: Vec::new(),
                 },
@@ -62,6 +65,7 @@ fn merge_sessions(
     for report in reports {
         let session = sessions.entry(report.session_id).or_insert(CodexSession {
             session_id: report.session_id,
+            title: None,
             rollout_updated_at_unix_ms: None,
             observations: Vec::new(),
         });
@@ -74,6 +78,9 @@ fn merge_sessions(
                 )
             })?,
             cwd: report.cwd,
+            repository_root: report.repository_root,
+            repository_url: report.repository_url,
+            git_branch: report.git_branch,
             state: match report.state {
                 wt_workload_registry::CodexSessionState::Unknown => CodexSessionState::Unknown,
                 wt_workload_registry::CodexSessionState::Working => CodexSessionState::Working,
@@ -168,8 +175,9 @@ fn collect_rollouts(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), St
 
 fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
+    let mut reader = BufReader::new(file);
     let mut first = String::new();
-    BufReader::new(file)
+    (&mut reader)
         .take(MAX_SESSION_META_BYTES + 1)
         .read_line(&mut first)
         .map_err(|error| error.to_string())?;
@@ -198,10 +206,37 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
     let modified = fs::metadata(path)
         .and_then(|metadata| metadata.modified())
         .map_err(|error| error.to_string())?;
+    let title = reader
+        .take(MAX_SESSION_TITLE_SCAN_BYTES)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+        .find_map(session_title);
     Ok(Some(Rollout {
         session_id,
         updated_at_unix_ms: unix_time_from(modified)?,
+        title,
     }))
+}
+
+fn session_title(record: Value) -> Option<String> {
+    let payload = record.get("payload")?;
+    if record.get("type")?.as_str()? != "response_item"
+        || payload.get("type")?.as_str()? != "message"
+        || payload.get("role")?.as_str()? != "user"
+    {
+        return None;
+    }
+    let text = payload
+        .get("content")?
+        .as_array()?
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("input_text"))
+        .filter_map(|item| item.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!normalized.is_empty()).then(|| normalized.chars().take(160).collect())
 }
 
 fn unix_time_from(time: SystemTime) -> Result<i64, String> {
@@ -265,18 +300,43 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_first_user_message_as_the_session_title() {
+        let temp = tempfile::tempdir().unwrap();
+        let session_id = Uuid::new_v4();
+        fs::write(
+            temp.path().join("rollout-main.jsonl"),
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\",\"source\":{{}}}}}}\n{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"Improve  the session\\n cards\"}}]}}}}\n"
+            ),
+        )
+        .unwrap();
+
+        let (rollouts, warnings) = discover_rollouts(temp.path()).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(
+            rollouts[0].title.as_deref(),
+            Some("Improve the session cards")
+        );
+    }
+
+    #[test]
     fn reports_keep_the_observed_state_and_complete_target() {
         let session_id = Uuid::new_v4();
         let sessions = merge_sessions(
             vec![Rollout {
                 session_id,
                 updated_at_unix_ms: 1,
+                title: Some("Improve session cards".into()),
             }],
             vec![wt_workload_registry::CodexSessionReport {
                 world_id: Uuid::new_v4(),
                 world_name: "example".into(),
                 session_id,
                 cwd: "/home/wt/project".into(),
+                repository_root: Some("/home/wt/project".into()),
+                repository_url: Some("git@github.com:acme/project.git".into()),
+                git_branch: Some("wt/cards".into()),
                 tmux_session: "wt-host".into(),
                 pane_id: "%1".into(),
                 state: wt_workload_registry::CodexSessionState::Working,
@@ -305,6 +365,9 @@ mod tests {
                     world_name: world_name.into(),
                     session_id,
                     cwd: "/home/wt/project".into(),
+                    repository_root: None,
+                    repository_url: None,
+                    git_branch: None,
                     tmux_session: "wt-host".into(),
                     pane_id: pane_id.into(),
                     state: wt_workload_registry::CodexSessionState::Working,

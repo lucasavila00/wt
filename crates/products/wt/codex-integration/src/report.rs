@@ -54,9 +54,13 @@ pub(crate) fn report_hook() -> Result<()> {
         Ok(value) => value,
         Err(_) => current_tmux_session(&pane_id)?,
     };
+    let (repository_root, repository_url, git_branch) = git_context(&payload.cwd);
     let event = CodexSessionEvent {
         session_id: payload.session_id,
         cwd: payload.cwd,
+        repository_root,
+        repository_url,
+        git_branch,
         tmux_session,
         pane_id,
         kind: match payload.hook_event_name {
@@ -85,6 +89,29 @@ pub(crate) fn report_hook() -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn git_context(cwd: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let run = |args: &[&str]| {
+        let output = Command::new("/usr/bin/git")
+            .arg("-C")
+            .arg(cwd)
+            .args(args)
+            .output()
+            .ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let root = run(&["rev-parse", "--show-toplevel"]);
+    if root.is_none() {
+        return (None, None, None);
+    }
+    let url = run(&["config", "--get", "remote.origin.url"]);
+    let branch = run(&["branch", "--show-current"]);
+    (root, url, branch)
 }
 
 fn current_tmux_session(pane_id: &str) -> Result<String> {
@@ -131,5 +158,27 @@ mod tests {
                 raw: "compact".into(),
             })
         );
+    }
+
+    #[test]
+    fn reports_git_context_when_the_working_directory_is_in_a_repository() {
+        let temp = tempfile::tempdir().unwrap();
+        Command::new("/usr/bin/git")
+            .args(["init", "-b", "wt/session-cards"])
+            .arg(temp.path())
+            .status()
+            .unwrap();
+        Command::new("/usr/bin/git")
+            .arg("-C")
+            .arg(temp.path())
+            .args(["remote", "add", "origin", "git@github.com:acme/widget.git"])
+            .status()
+            .unwrap();
+
+        let (root, url, branch) = git_context(temp.path().to_str().unwrap());
+
+        assert_eq!(root.as_deref(), temp.path().to_str());
+        assert_eq!(url.as_deref(), Some("git@github.com:acme/widget.git"));
+        assert_eq!(branch.as_deref(), Some("wt/session-cards"));
     }
 }

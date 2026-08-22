@@ -37,7 +37,8 @@ installs hooks for these events:
 | `Stop` | `needs_attention` |
 | `SessionEnd` | `inactive` |
 
-Every hook reports `session_id`, `cwd`, `tmux_session`, and `%N` `pane_id`.
+Every hook reports `session_id`, `cwd`, optional Git repository and branch
+context, `tmux_session`, and `%N` `pane_id`.
 The Byobu target is required and verified before forwarding.
 WT parses known session-start sources while preserving the raw value. The shell
 renders that value with an unknown state, for example `unknown(compact)`.
@@ -58,8 +59,9 @@ cascades to its observations.
 ### API
 
 ```text
-session { session_id, rollout_updated_at_unix_ms?, observations[] }
-observation { world_id, world_name, cwd, state, received_at_unix_ms,
+session { session_id, title?, rollout_updated_at_unix_ms?, observations[] }
+observation { world_id, world_name, cwd, repository_root?, repository_url?,
+              git_branch?, state, received_at_unix_ms,
               target { tmux_session, pane_id } }
 ```
 

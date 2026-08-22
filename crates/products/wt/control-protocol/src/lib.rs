@@ -16,7 +16,6 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u32 = 6;
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiProgress {
     pub protocol_version: u32,
@@ -387,11 +386,15 @@ mod tests {
     fn live_codex_session_has_a_complete_pane_target() {
         let session = CodexSession {
             session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            title: Some("Improve session cards".into()),
             rollout_updated_at_unix_ms: Some(40),
             observations: vec![CodexSessionObservation {
                 world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
                 world_name: InstanceName::parse("checkout").unwrap(),
                 cwd: "/home/wt/project".into(),
+                repository_root: Some("/home/wt/project".into()),
+                repository_url: Some("git@github.com:acme/project.git".into()),
+                git_branch: Some("wt/session-cards".into()),
                 state: CodexSessionState::Unknown,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
@@ -405,12 +408,16 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&session).unwrap(), @r###"
         {
           "session_id": "123e4567-e89b-12d3-a456-426614174000",
+          "title": "Improve session cards",
           "rollout_updated_at_unix_ms": 40,
           "observations": [
             {
               "world_id": "123e4567-e89b-12d3-a456-426614174001",
               "world_name": "checkout",
               "cwd": "/home/wt/project",
+              "repository_root": "/home/wt/project",
+              "repository_url": "git@github.com:acme/project.git",
+              "git_branch": "wt/session-cards",
               "state": "unknown",
               "session_start_source": "compact",
               "target": {

@@ -147,6 +147,15 @@ fn validate_context(
                 &session.session_id.to_string(),
             ));
         }
+        if session.title.as_deref().is_some_and(|title| {
+            title.is_empty() || title.len() > 640 || title.chars().any(char::is_control)
+        }) {
+            return Err(invalid(
+                context,
+                "short control-free session title",
+                &session.session_id.to_string(),
+            ));
+        }
         if session.observations.is_empty() {
             let Some(timestamp) = session.rollout_updated_at_unix_ms else {
                 return Err(invalid(
@@ -159,6 +168,7 @@ fn validate_context(
                 context,
                 session.session_id,
                 timestamp,
+                session.title,
             ));
             continue;
         }
@@ -176,6 +186,19 @@ fn validate_context(
                     "absolute control-free cwd",
                     &observation.cwd,
                 ));
+            }
+            if observation
+                .repository_root
+                .as_deref()
+                .is_some_and(|value| !valid_cwd(value))
+                || observation.repository_url.as_deref().is_some_and(|value| {
+                    value.is_empty() || value.len() > 4096 || value.chars().any(char::is_control)
+                })
+                || observation.git_branch.as_deref().is_some_and(|value| {
+                    value.is_empty() || value.len() > 1024 || value.chars().any(char::is_control)
+                })
+            {
+                return Err(invalid(context, "valid Git context", &observation.cwd));
             }
             if !valid_pane_id(&observation.target.pane_id) {
                 return Err(invalid(
@@ -231,10 +254,14 @@ fn validate_context(
                 context: context.into(),
                 session_id: Some(session.session_id),
                 timestamp: Some(observation.received_at_unix_ms),
+                title: session.title.clone(),
                 kind: CodexCardKind::Observation {
                     world_id: observation.world_id,
                     world_name: world.instance_name.to_string(),
                     cwd: observation.cwd,
+                    repository_root: observation.repository_root,
+                    repository_url: observation.repository_url,
+                    git_branch: observation.git_branch,
                     state: observation.state,
                     session_start_source: observation.session_start_source,
                     target: observation.target,
@@ -361,11 +388,15 @@ mod tests {
     fn session(world: &ShellWorld, cwd: &str) -> CodexSession {
         CodexSession {
             session_id: Uuid::from_u128(10),
+            title: Some("Improve session cards".into()),
             rollout_updated_at_unix_ms: Some(10),
             observations: vec![CodexSessionObservation {
                 world_id: world.identity.id,
                 world_name: world.instance_name.clone(),
                 cwd: cwd.into(),
+                repository_root: Some("/home/wt/project".into()),
+                repository_url: Some("git@github.com:acme/project.git".into()),
+                git_branch: Some("wt/cards".into()),
                 state: CodexSessionState::NeedsAttention,
                 session_start_source: None,
                 target: ByobuTarget {
