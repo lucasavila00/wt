@@ -90,12 +90,11 @@ if ! ssh-keygen -l -f "$authorized_keys_source" >/dev/null; then
     exit 1
 fi
 
-if [[ -z $group_entry ]]; then
-    groupadd --gid "$server_gid" "$server_group"
-fi
-if [[ -z $user_entry ]]; then
-    useradd --create-home --uid "$server_uid" --gid "$server_gid" --shell /bin/bash "$server_user"
-fi
+temporary_sudoers=$(mktemp)
+trap 'rm -f "$temporary_sudoers"' EXIT
+printf '%s\n' "$sudoers_rule" >"$temporary_sudoers"
+chmod 0440 "$temporary_sudoers"
+visudo -cf "$temporary_sudoers" >/dev/null
 
 if [[ -L $server_home/.ssh ]]; then
     echo "WT SSH path must be a regular directory: $server_home/.ssh" >&2
@@ -106,11 +105,12 @@ elif [[ -d $server_home/.ssh ]]; then
         echo "directory drift at $server_home/.ssh: expected uid=$server_uid gid=$server_gid mode=0700; actual uid=$ssh_uid gid=$ssh_gid mode=0$ssh_mode" >&2
         exit 1
     fi
-else
-    install -d -o "$server_uid" -g "$server_gid" -m 0700 "$server_home/.ssh"
+elif [[ -e $server_home/.ssh ]]; then
+    echo "WT SSH path must be a regular directory: $server_home/.ssh" >&2
+    exit 1
 fi
 
-if [[ -e $authorized_keys_destination ]]; then
+if [[ -e $authorized_keys_destination || -L $authorized_keys_destination ]]; then
     if [[ -L $authorized_keys_destination || ! -f $authorized_keys_destination ]] ||
         ! cmp --silent "$authorized_keys_source" "$authorized_keys_destination"; then
         echo "authorized keys conflict at $authorized_keys_destination; refusing to overwrite" >&2
@@ -121,19 +121,11 @@ if [[ -e $authorized_keys_destination ]]; then
         echo "file drift at $authorized_keys_destination: expected uid=$server_uid gid=$server_gid mode=0600; actual uid=$keys_uid gid=$keys_gid mode=0$keys_mode" >&2
         exit 1
     fi
-else
-    install -o "$server_uid" -g "$server_gid" -m 0600 \
-        "$authorized_keys_source" "$authorized_keys_destination"
 fi
 
-temporary_sudoers=$(mktemp)
-trap 'rm -f "$temporary_sudoers"' EXIT
-printf '%s\n' "$sudoers_rule" >"$temporary_sudoers"
-chmod 0440 "$temporary_sudoers"
-visudo -cf "$temporary_sudoers" >/dev/null
-
-if [[ -e $sudoers_path ]]; then
-    if [[ ! -f $sudoers_path ]] || ! cmp --silent "$temporary_sudoers" "$sudoers_path"; then
+if [[ -e $sudoers_path || -L $sudoers_path ]]; then
+    if [[ -L $sudoers_path || ! -f $sudoers_path ]] ||
+        ! cmp --silent "$temporary_sudoers" "$sudoers_path"; then
         echo "sudoers conflict at $sudoers_path; refusing to overwrite" >&2
         exit 1
     fi
@@ -142,7 +134,22 @@ if [[ -e $sudoers_path ]]; then
         echo "file drift at $sudoers_path: expected root:root, mode=0440" >&2
         exit 1
     fi
-else
+fi
+
+if [[ -z $group_entry ]]; then
+    groupadd --gid "$server_gid" "$server_group"
+fi
+if [[ -z $user_entry ]]; then
+    useradd --create-home --uid "$server_uid" --gid "$server_gid" --shell /bin/bash "$server_user"
+fi
+if [[ ! -d $server_home/.ssh ]]; then
+    install -d -o "$server_uid" -g "$server_gid" -m 0700 "$server_home/.ssh"
+fi
+if [[ ! -e $authorized_keys_destination && ! -L $authorized_keys_destination ]]; then
+    install -o "$server_uid" -g "$server_gid" -m 0600 \
+        "$authorized_keys_source" "$authorized_keys_destination"
+fi
+if [[ ! -e $sudoers_path && ! -L $sudoers_path ]]; then
     install -o root -g root -m 0440 "$temporary_sudoers" "$sudoers_path"
 fi
 visudo -cf "$sudoers_path" >/dev/null

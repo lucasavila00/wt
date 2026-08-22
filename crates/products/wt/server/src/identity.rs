@@ -129,7 +129,7 @@ fn validate_shared_root_details(
 
 fn shared_root_mode(path: &Path) -> Option<u32> {
     match path.to_str() {
-        Some(crate::CODEX_SESSIONS_PATH | crate::CODEX_AUTH_SHARE_DIR) => Some(0o700),
+        Some(crate::CODEX_SESSIONS_PATH) | Some(crate::CODEX_AUTH_SHARE_DIR) => Some(0o700),
         _ => None,
     }
 }

@@ -424,8 +424,12 @@ fn validate_worlds_storage_dir(
     let kvm = Group::from_name(WORLDS_GROUP)
         .map_err(|error| context("look up host kvm group", error))?
         .ok_or_else(|| WorkerError::new("required host group does not exist: kvm"))?;
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| context(&format!("inspect disk node directory {}", path.display()), error))?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        context(
+            &format!("inspect disk node directory {}", path.display()),
+            error,
+        )
+    })?;
     validate_worlds_storage_dir_details(
         path,
         expected_uid,

@@ -28,7 +28,7 @@ ensure_qemu_acl() {
         echo "directory ACL drift at $path: expected only user:libvirt-qemu:--x in addition to mode 2770" >&2
         exit 1
     fi
-    sudo setfacl -m u:libvirt-qemu:--x -- "$path"
+    test "$mutate" = false || sudo setfacl -m u:libvirt-qemu:--x -- "$path"
 }
 
 active_group() {
@@ -56,13 +56,14 @@ ensure_directory() {
             exit 1
         fi
     else
-        sudo install -d -o "$owner" -g "$group" -m "$mode" "$path"
+        test "$mutate" = false || sudo install -d -o "$owner" -g "$group" -m "$mode" "$path"
     fi
 }
 
 case ${1-} in
-    prepare)
+    check|prepare)
         test "$#" -eq 5 || exit 2
+        if test "$1" = prepare; then mutate=true; else mutate=false; fi
         wt_require_effective_identity
         network=$2
         image_dir=$3
@@ -92,13 +93,15 @@ case ${1-} in
             exit 1
         }
         virsh -c qemu:///system domcapabilities --virttype kvm >/dev/null
-        sudo -v
+        test "$mutate" = false || sudo -v
 
         network_info=$(virsh -c qemu:///system net-info "$network")
-        printf '%s\n' "$network_info" | awk -F: '$1 == "Active" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
-            virsh -c qemu:///system net-start "$network"
-        printf '%s\n' "$network_info" | awk -F: '$1 == "Autostart" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
-            virsh -c qemu:///system net-autostart "$network"
+        if test "$mutate" = true; then
+            printf '%s\n' "$network_info" | awk -F: '$1 == "Active" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
+                virsh -c qemu:///system net-start "$network"
+            printf '%s\n' "$network_info" | awk -F: '$1 == "Autostart" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
+                virsh -c qemu:///system net-autostart "$network"
+        fi
 
         ensure_directory 0 0 755 "$image_dir"
         ensure_directory 0 0 755 "$binary_dir"
@@ -107,15 +110,16 @@ case ${1-} in
         ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 /run/wt-image-build
         ensure_directory "$WT_IDENTITY_UID" "$kvm_gid" 2770 "$worlds_dir"
         ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 "$WT_IDENTITY_HOME/.codex/sessions"
-        ensure_qemu_acl "$worlds_dir"
+        test ! -e "$worlds_dir" || ensure_qemu_acl "$worlds_dir"
         ;;
     acl)
         test "$#" -eq 2 || exit 2
+        mutate=true
         wt_require_effective_identity
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
+        echo 'usage: install-host.sh {check|prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
         exit 2
         ;;
 esac

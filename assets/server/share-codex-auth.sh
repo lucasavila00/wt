@@ -15,24 +15,19 @@ share=$codex_home/.wt-auth
 temporary=$codex_home/.wt-auth.wt-new.$$
 shared_auth=$share/auth.json
 
+case ${1-} in
+    '') check_only=false ;;
+    --check) check_only=true ;;
+    *) echo 'usage: share-codex-auth.sh [--check]' >&2; exit 2 ;;
+esac
+
 wt_require_effective_identity
 
 cleanup() {
     rm -f "$temporary"
 }
-trap cleanup EXIT HUP INT TERM
 
-if test -e "$share" || test -L "$share"; then
-    wt_require_owned_directory "$share"
-    share_mode=$(stat -c %a "$share")
-    if test "$share_mode" != 700; then
-        echo "directory mode drift at $share: expected mode=0700; actual mode=0$share_mode" >&2
-        exit 1
-    fi
-else
-    install -d -m 0700 "$share"
-fi
-while :; do
+require_auth() {
     if test -L "$auth" || ! test -f "$auth"; then
         echo "Codex authentication must be a regular, non-symlink file: $auth" >&2
         exit 1
@@ -43,6 +38,24 @@ while :; do
         echo "Codex authentication ownership mismatch at $auth: expected uid=$WT_IDENTITY_UID gid=$WT_IDENTITY_GID; actual uid=$auth_uid gid=$auth_gid" >&2
         exit 1
     fi
+}
+
+require_auth
+if test -e "$share" || test -L "$share"; then
+    wt_require_owned_directory "$share"
+    share_mode=$(stat -c %a "$share")
+    if test "$share_mode" != 700; then
+        echo "directory mode drift at $share: expected mode=0700; actual mode=0$share_mode" >&2
+        exit 1
+    fi
+elif test "$check_only" = false; then
+    install -d -m 0700 "$share"
+fi
+test "$check_only" = false || exit 0
+trap cleanup EXIT HUP INT TERM
+
+while :; do
+    require_auth
     chmod 0600 "$auth"
 
     rm -f "$temporary"

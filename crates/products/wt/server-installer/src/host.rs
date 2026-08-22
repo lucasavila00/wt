@@ -42,14 +42,24 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
     ];
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     runner.run_script(
+        &shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
+        &["check", args[1], args[2], args[3], args[4]],
+        "validate server host",
+    )?;
+    runner.run_script(
         &codex_auth_share(),
-        &[],
-        "prepare Codex authentication share",
+        &["--check"],
+        "validate Codex authentication share",
     )?;
     runner.run_script(
         &shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
         &args,
         "prepare server host",
+    )?;
+    runner.run_script(
+        &codex_auth_share(),
+        &[],
+        "prepare Codex authentication share",
     )
 }
 
@@ -64,6 +74,49 @@ pub(crate) fn ensure_qemu_search_acl(runner: &impl Runner, path: &Path) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    struct RecordingRunner(RefCell<Vec<(String, Vec<String>)>>);
+
+    impl Runner for RecordingRunner {
+        fn output(&self, _command: std::process::Command) -> Result<std::process::Output> {
+            panic!("prepare_state must use run_script")
+        }
+
+        fn run_script(&self, _script: &[u8], args: &[&str], action: &str) -> Result<()> {
+            self.0.borrow_mut().push((
+                action.to_owned(),
+                args.iter().map(|arg| (*arg).to_owned()).collect(),
+            ));
+            Ok(())
+        }
+    }
+
+    fn config() -> ServerConfig {
+        ServerConfig {
+            version: 1,
+            test_server: true,
+            image: wt_server::ImageConfig {
+                path: "/var/lib/wt/images/retained.qcow2".into(),
+            },
+            libvirt: wt_server::ServerLibvirtConfig {
+                network: "default".to_owned(),
+                worlds_dir: "/var/lib/libvirt/images/wt".into(),
+            },
+            agent_tools: wt_server::AgentToolsConfig {
+                vsock_port: wt_server::DEFAULT_AGENT_TOOL_VSOCK_PORT,
+                github: None,
+                gitlab: None,
+            },
+            guest: wt_server::GuestConfig {
+                boot_timeout_seconds: 300,
+                readiness_timeout_seconds: 900,
+            },
+            install: wt_server::InstallConfig {
+                binary_dir: "/usr/local/bin".into(),
+            },
+        }
+    }
 
     #[test]
     fn composed_shell_assets_keep_their_interpreter() {
@@ -88,5 +141,55 @@ mod tests {
         assert!(flow.contains(
             "ensure_directory \"$WT_IDENTITY_UID\" \"$WT_IDENTITY_GID\" 700 \"$WT_IDENTITY_HOME/.codex/sessions\""
         ));
+    }
+
+    #[test]
+    fn host_and_auth_preconditions_run_before_mutation() {
+        let runner = RecordingRunner(RefCell::new(Vec::new()));
+        prepare_state(&runner, &config()).unwrap();
+
+        assert_eq!(
+            runner.0.into_inner(),
+            vec![
+                (
+                    "validate server host".to_owned(),
+                    vec![
+                        "check".to_owned(),
+                        "default".to_owned(),
+                        "/var/lib/wt/images".to_owned(),
+                        "/usr/local/bin".to_owned(),
+                        "/var/lib/libvirt/images/wt".to_owned(),
+                    ],
+                ),
+                (
+                    "validate Codex authentication share".to_owned(),
+                    vec!["--check".to_owned()],
+                ),
+                (
+                    "prepare server host".to_owned(),
+                    vec![
+                        "prepare".to_owned(),
+                        "default".to_owned(),
+                        "/var/lib/wt/images".to_owned(),
+                        "/usr/local/bin".to_owned(),
+                        "/var/lib/libvirt/images/wt".to_owned(),
+                    ],
+                ),
+                ("prepare Codex authentication share".to_owned(), vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn bootstrap_validates_managed_paths_before_creating_the_account() {
+        let bootstrap = include_str!("../../../../../scripts/bootstrap-server-user");
+        let first_account_mutation = bootstrap.find("groupadd --gid").unwrap();
+        for precondition in [
+            "WT SSH path must be a regular directory",
+            "authorized keys conflict",
+            "sudoers conflict",
+        ] {
+            assert!(bootstrap.find(precondition).unwrap() < first_account_mutation);
+        }
     }
 }
