@@ -46,17 +46,21 @@ fn switcher_activates_the_world_bar() {
 
     insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
     let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
-    assert_eq!(brand.fg, Some(Color::Black));
-    assert_eq!(brand.bg, Some(Color::Cyan));
-    assert!(brand.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(brand.fg, Some(Color::Reset));
+    assert_eq!(brand.bg, Some(Color::Reset));
+    assert!(brand
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
     let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert_eq!(style.fg, Some(Color::Black));
-    assert_eq!(style.bg, Some(Color::White));
-    assert!(style.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(style.fg, Some(Color::Reset));
+    assert_eq!(style.bg, Some(Color::Reset));
+    assert!(style
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
 }
 
 #[test]
-fn world_bar_is_dim_until_activated() {
+fn world_bar_uses_reverse_video() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one", "local.two"]);
@@ -70,17 +74,21 @@ fn world_bar_is_dim_until_activated() {
     assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
     insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
     let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
-    assert_eq!(brand.fg, Some(Color::Black));
-    assert_eq!(brand.bg, Some(Color::Cyan));
-    assert!(brand.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(brand.fg, Some(Color::Reset));
+    assert_eq!(brand.bg, Some(Color::Reset));
+    assert!(brand
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
     let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert_eq!(style.fg, Some(Color::DarkGray));
-    assert_eq!(style.bg, Some(Color::Black));
-    assert!(style.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(style.fg, Some(Color::Reset));
+    assert_eq!(style.bg, Some(Color::Reset));
+    assert!(style
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
 }
 
 #[test]
-fn disabled_f5_override_has_a_red_top_bar() {
+fn disabled_f5_override_emphasizes_the_top_bar() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = ShellModel::new(vec!["local.one".into()]);
@@ -113,9 +121,11 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
         terminal.backend().buffer()
     );
     let style = terminal.backend().buffer().cell((79, 0)).unwrap().style();
-    assert_eq!(style.fg, Some(Color::Yellow));
-    assert_eq!(style.bg, Some(Color::Red));
-    assert!(style.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(style.fg, Some(Color::Reset));
+    assert_eq!(style.bg, Some(Color::Reset));
+    assert!(style
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
 
     press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 12));
     let parser = parser();
@@ -136,7 +146,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
 }
 
 #[test]
-fn closed_session_has_a_red_reconnect_bar() {
+fn closed_session_uses_a_reverse_video_reconnect_bar() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = ShellModel::new(vec!["local.one".into()]);
@@ -162,9 +172,11 @@ fn closed_session_has_a_red_reconnect_bar() {
 
     insta::assert_debug_snapshot!("shell_closed_session", terminal.backend().buffer());
     let status = terminal.backend().buffer().cell((0, 5)).unwrap().style();
-    assert_eq!(status.fg, Some(Color::White));
-    assert_eq!(status.bg, Some(Color::Red));
-    assert!(status.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(status.fg, Some(Color::Reset));
+    assert_eq!(status.bg, Some(Color::Reset));
+    assert!(status
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
 }
 
 #[test]

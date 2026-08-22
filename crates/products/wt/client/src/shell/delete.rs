@@ -4,7 +4,7 @@ use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind
 use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -12,8 +12,6 @@ use std::thread;
 use wt_client::config::ClientConfig;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
-const CHROME: Color = Color::DarkGray;
-const TEXT: Color = Color::White;
 const SEARCH_PICKER_MAX_HEIGHT: u16 = 18;
 const CONFIRMATION_MAX_HEIGHT: u16 = 11;
 
@@ -304,8 +302,7 @@ impl Picker {
         let sections = picker_sections(modal.inner(Margin::new(2, 1)));
         frame.render_widget(Paragraph::new(format!("> {}█", self.query)), sections[0]);
         frame.render_widget(
-            Paragraph::new("─".repeat(usize::from(sections[1].width)))
-                .style(Style::new().fg(CHROME)),
+            Paragraph::new("─".repeat(usize::from(sections[1].width))).style(muted_style()),
             sections[1],
         );
         let items = if self.matches.is_empty() {
@@ -314,7 +311,7 @@ impl Picker {
             } else {
                 "No matching worlds"
             })
-            .style(Style::new().fg(CHROME))]
+            .style(muted_style())]
         } else {
             self.matches
                 .iter()
@@ -328,13 +325,12 @@ impl Picker {
             .and_then(|selected| selected.checked_sub(self.offset))
             .filter(|selected| *selected < usize::from(results.height));
         let list = List::new(items)
-            .style(Style::new().fg(TEXT))
             .highlight_symbol(" ")
-            .highlight_style(Style::new().bg(CHROME));
+            .highlight_style(selected_style());
         let mut state = ListState::default().with_selected(visible_selection);
         frame.render_stateful_widget(list, results, &mut state);
         frame.render_widget(
-            Paragraph::new("↑/↓ select · Enter choose · Esc close").style(Style::new().fg(CHROME)),
+            Paragraph::new("↑/↓ select · Enter choose · Esc close").style(muted_style()),
             sections[3],
         );
     }
@@ -410,7 +406,7 @@ fn render_confirmation(
     frame.render_widget(
         Paragraph::new("Arrows: select · Enter: choose · Esc: cancel")
             .alignment(Alignment::Center)
-            .style(Style::new().fg(CHROME)),
+            .style(muted_style()),
         layout.footer,
     );
 }
@@ -426,25 +422,31 @@ fn render_message(frame: &mut Frame<'_>, area: Rect, title: &str, message: &str,
     frame.render_widget(
         Paragraph::new(footer)
             .alignment(Alignment::Center)
-            .style(Style::new().fg(CHROME)),
+            .style(muted_style()),
         layout.footer,
     );
 }
 
 fn button_style(selected: bool) -> Style {
-    let style = Style::new().fg(TEXT);
     if selected {
-        style.bg(CHROME)
+        selected_style()
     } else {
-        style
+        Style::new()
     }
 }
 
 fn modal_block(title: &str) -> Block<'static> {
     Block::new()
         .borders(Borders::ALL)
-        .border_style(Style::new().fg(CHROME))
         .title(format!(" {title} "))
+}
+
+fn muted_style() -> Style {
+    Style::new().add_modifier(Modifier::DIM)
+}
+
+fn selected_style() -> Style {
+    Style::new().add_modifier(Modifier::REVERSED)
 }
 
 fn picker_layout(area: Rect) -> (Rect, Rect) {

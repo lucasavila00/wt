@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -110,6 +110,7 @@ struct AppServer {
     stdin: Option<ChildStdin>,
     output: mpsc::Receiver<ServerOutput>,
     stderr: Arc<Mutex<Vec<u8>>>,
+    stderr_complete: mpsc::Receiver<()>,
     deadline: Instant,
     next_id: u64,
 }
@@ -155,13 +156,18 @@ impl AppServer {
 
         let stderr = Arc::new(Mutex::new(Vec::new()));
         let stderr_tail = Arc::clone(&stderr);
-        thread::spawn(move || drain_stderr(stderr_pipe, stderr_tail));
+        let (stderr_complete_sender, stderr_complete) = mpsc::channel();
+        thread::spawn(move || {
+            drain_stderr(stderr_pipe, stderr_tail);
+            let _ = stderr_complete_sender.send(());
+        });
 
         Ok(Self {
             child,
             stdin: Some(stdin),
             output,
             stderr,
+            stderr_complete,
             deadline: Instant::now() + timeout,
             next_id: 0,
         })
@@ -170,7 +176,17 @@ impl AppServer {
     fn call<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T> {
         self.next_id += 1;
         let id = self.next_id;
-        self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
+        if let Err(error) =
+            self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
+        {
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == ErrorKind::BrokenPipe)
+            {
+                return Err(self.stopped_before_reply(method));
+            }
+            return Err(error);
+        }
         loop {
             let remaining = self
                 .deadline
@@ -191,10 +207,7 @@ impl AppServer {
                         .with_context(|| format!("decode Codex {method} response"));
                 }
                 Ok(ServerOutput::Error(error)) => return Err(error.into()),
-                Ok(ServerOutput::Eof) => bail!(
-                    "Codex app-server stopped before {method} replied{}",
-                    self.stderr_suffix()
-                ),
+                Ok(ServerOutput::Eof) => return Err(self.stopped_before_reply(method)),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     bail!(
                         "Codex app-server timed out during {method}{}",
@@ -220,10 +233,23 @@ impl AppServer {
             .stdin
             .as_mut()
             .context("Codex app-server stdin is closed")?;
-        serde_json::to_writer(&mut *stdin, message)?;
-        stdin.write_all(b"\n")?;
+        let mut message = serde_json::to_vec(message)?;
+        message.push(b'\n');
+        stdin.write_all(&message)?;
         stdin.flush()?;
         Ok(())
+    }
+
+    fn stopped_before_reply(&mut self, method: &str) -> anyhow::Error {
+        if self.child.try_wait().ok().flatten().is_some() {
+            let _ = self
+                .stderr_complete
+                .recv_timeout(Duration::from_millis(100));
+        }
+        anyhow::anyhow!(
+            "Codex app-server stopped before {method} replied{}",
+            self.stderr_suffix()
+        )
     }
 
     fn stderr_suffix(&self) -> String {
