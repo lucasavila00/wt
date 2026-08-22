@@ -44,6 +44,9 @@ pub(super) fn encode_mouse(
         MouseEventKind::ScrollDown => (65, false),
         MouseEventKind::ScrollLeft => (66, false),
         MouseEventKind::ScrollRight => (67, false),
+        MouseEventKind::Drag(button) if matches!(mode, ButtonMotion | AnyMotion) => {
+            (button_code(button) | 32, false)
+        }
         MouseEventKind::Up(_) | MouseEventKind::Drag(_) | MouseEventKind::Moved => return None,
     };
     if !matches!(mode, Press | PressRelease | ButtonMotion | AnyMotion) {
@@ -202,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn encodes_sgr_clicks_scrolls_and_ignores_motion() {
+    fn encodes_sgr_clicks_scrolls_and_drag_motion() {
         let down = mouse(MouseEventKind::Down(MouseButton::Left), 4, 2);
         let up = mouse(MouseEventKind::Up(MouseButton::Left), 4, 2);
 
@@ -241,6 +244,32 @@ mod tests {
             )
             .unwrap(),
             b"\x1b[<65;5;3M"
+        );
+        assert_eq!(
+            encode_mouse(
+                mouse(MouseEventKind::Drag(MouseButton::Left), 5, 3),
+                vt100::MouseProtocolMode::ButtonMotion,
+                vt100::MouseProtocolEncoding::Sgr,
+            )
+            .unwrap(),
+            b"\x1b[<32;6;4M"
+        );
+        assert_eq!(
+            encode_mouse(
+                mouse(MouseEventKind::Drag(MouseButton::Right), 5, 3),
+                vt100::MouseProtocolMode::AnyMotion,
+                vt100::MouseProtocolEncoding::Sgr,
+            )
+            .unwrap(),
+            b"\x1b[<34;6;4M"
+        );
+        assert_eq!(
+            encode_mouse(
+                mouse(MouseEventKind::Drag(MouseButton::Left), 5, 3),
+                vt100::MouseProtocolMode::PressRelease,
+                vt100::MouseProtocolEncoding::Sgr,
+            ),
+            None
         );
         assert_eq!(
             encode_mouse(
