@@ -55,7 +55,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     model.set_test_server(test_server);
-    model.set_worlds_updated_at(updated_at());
+    model.finish_worlds_refresh(Some(updated_at()));
     let focus = codex::FocusWorker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
@@ -155,7 +155,7 @@ fn run_loop(
                 runtime.refresh.generation.load(Ordering::Relaxed),
             ) {
                 if snapshot.failed {
-                    model.set_worlds_refresh_failed(true);
+                    model.finish_worlds_refresh(None);
                     redraw = true;
                 } else if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);
@@ -165,8 +165,7 @@ fn run_loop(
                         .into();
                     sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
                     model.reconcile_worlds(worlds);
-                    model.set_worlds_updated_at(updated_at());
-                    model.set_worlds_refresh_failed(false);
+                    model.finish_worlds_refresh(Some(updated_at()));
                     redraw = true;
                 }
             }
