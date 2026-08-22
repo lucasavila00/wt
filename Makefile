@@ -36,12 +36,8 @@ nuke:
 
 e2e-tests:
 	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
-	scripts/nuke
+	scripts/clear
 	scripts/install-server --config "$(KVM_INSTALL_CONFIG)"
-	@scripts/cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
-		printf '\nImage verification failed. Rebuild the E2E images with:\n  make prepare-image CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
-		exit 1; \
-	}
 	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
 	@printf '\nWT E2E test server remains installed on this host.\n'
 

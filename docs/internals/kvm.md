@@ -40,8 +40,13 @@ identity, or partial libvirt state fail closed.
 ## Full KVM E2E
 
 Full KVM E2E requires a KVM-capable WT server and is destructive to its WT
-installation. `make e2e-tests` runs `scripts/nuke`, installs the E2E server in
-the ordinary host paths, and leaves that marked test server installed.
+worlds and runtime state. `make e2e-tests` runs `scripts/clear`, installs the E2E
+server in the ordinary host paths, and leaves that marked test server installed.
+The Ubuntu source and verified golden image remain installed.
+
+The E2E host is a disposable environment with no production workload. Both
+runtime cleanup and full server removal are safe there; the normal test path
+uses the narrower cleanup so verified images and downloads can be reused.
 
 Individual harnesses use temporary ports, databases, grants, provider fixtures,
 and disposable world overlays for deterministic test state. Installation,

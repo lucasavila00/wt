@@ -31,7 +31,7 @@ fn shell_creates_a_real_world() {
                 .into_os_string(),
         ),
     ];
-    let mut screen = Screen::launch_with_timeout(
+    let mut screen = Screen::launch(
         &harness.wt_binary,
         &["shell"],
         harness.temp.path(),

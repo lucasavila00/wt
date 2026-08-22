@@ -20,10 +20,15 @@ Run the complete lifecycle on a full Ubuntu/KVM WT server:
 make e2e-tests
 ```
 
-`make e2e-tests` is destructive. It validates the E2E install input, runs
-`scripts/nuke`, and installs a test server through the ordinary production
-installation paths. This removes the current WT services, credentials, worlds,
-images, client configuration, and Codex export before the test install starts.
+The E2E environment is disposable and contains no production workload. Runtime
+cleanup and a full `make nuke` are both safe on that host.
+
+`make e2e-tests` is destructive to existing WT worlds and runtime state. It
+validates the E2E install input, runs `scripts/clear`, and installs a test server
+through the ordinary production installation paths. Existing `wt-*` guests,
+world disks, runtime configuration, grants, the registry, and generated SSH
+inventory are removed before the test install starts. The Ubuntu source image,
+verified golden image, downloads, and build caches remain in place.
 
 The test server remains installed after the tests. Local `wt` commands identify
 it, `wt shell` displays a test-server badge, and remote OpenSSH WT clients are

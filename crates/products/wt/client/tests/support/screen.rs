@@ -9,9 +9,6 @@ use std::time::{Duration, Instant};
 
 const ROWS: u16 = 30;
 const COLUMNS: u16 = 100;
-#[allow(dead_code)]
-const TIMEOUT: Duration = Duration::from_secs(10);
-
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum Key {
@@ -39,17 +36,7 @@ pub struct Screen {
 }
 
 impl Screen {
-    #[allow(dead_code)]
     pub fn launch(
-        binary: impl AsRef<Path>,
-        arguments: &[&str],
-        cwd: impl AsRef<Path>,
-        environment: &[(&str, OsString)],
-    ) -> Result<Self> {
-        Self::launch_with_timeout(binary, arguments, cwd, environment, TIMEOUT)
-    }
-
-    pub fn launch_with_timeout(
         binary: impl AsRef<Path>,
         arguments: &[&str],
         cwd: impl AsRef<Path>,

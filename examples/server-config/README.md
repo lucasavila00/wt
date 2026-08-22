@@ -10,9 +10,11 @@ Copy it outside this directory and review every value. Setup writes the strict
 runtime config to `/etc/wt/server.toml`. Keep the input for reinstalling the same
 configuration.
 
-Each `agent_tools` provider names an API-token file, SSH key pair, and trusted
-host-key file. Paths may be absolute or start with `~/`. The installer validates
-them and stores encrypted copies for the gateway; worlds never receive them.
+Each `agent_tools` provider names an API-token file and SSH key pair. Paths may
+be absolute or start with `~/`. The installer validates them and stores
+encrypted copies for the gateway; worlds never receive them. The gateway's
+provider host-identity tradeoff is documented in
+[known limitations](../../docs/known-limitations.md#agent-gateway-provider-host-identity).
 `agent_tools.vsock_port` is the private gateway endpoint shared by the server and
 world relays. Installed services use the configured value. Development and E2E
 processes may override it with `WT_AGENT_TOOL_VSOCK_PORT`.
@@ -23,6 +25,6 @@ configuration: every retained world receives the server-backed sessions and
 read-only login.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
-`wt-server.kvm-e2e-install.toml` is different: it prepares a clean, dedicated
-KVM test host with disposable provider fixtures. It must not be used to run a
-real WT server. See the [integration-test instructions](../../crates/tests/end-to-end/README.md#clean-kvm-test-host).
+`wt-server.kvm-e2e-install.toml` sets `test_server = true` and uses disposable
+provider fixtures for the full KVM E2E flow. See the
+[integration-test instructions](../../crates/tests/end-to-end/README.md#kvm-test-host).
