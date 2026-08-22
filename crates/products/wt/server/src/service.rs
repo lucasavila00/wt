@@ -199,7 +199,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
-            ssh_authorized_keys: &request.ssh_authorized_keys,
             git_grant: &grant.as_ref().expect("host grant").token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,

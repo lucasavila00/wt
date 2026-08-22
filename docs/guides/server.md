@@ -30,6 +30,11 @@ Refresh expired Codex authentication as the server `wt` user. A systemd path
 unit atomically republishes `auth.json`; running worlds receive the replacement
 automatically and cannot write it back.
 
+The server also exports `/home/wt/.ssh/authorized_keys` read-only to every
+world. A systemd path unit republishes changes atomically, so adding or removing
+a key on the KVM host updates SSH access to all running worlds without
+recreating them. Other files under `/home/wt/.ssh` are never exposed.
+
 Provisioning is not resumable. Remove a failed world and recreate it from the
 golden image. A world disk cannot be smaller than the image build disk.
 

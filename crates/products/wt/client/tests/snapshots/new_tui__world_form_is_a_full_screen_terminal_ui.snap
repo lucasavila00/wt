@@ -16,7 +16,7 @@ expression: contents
          │   [ OK ]                                                                       │
          │                                                                                │
          │ Git author  Test User <test@example.test>                                      │
-         │ SSH keys    1 discovered                                                       │
+         │                                                                                │
          │                                                                                │
          │                                                                                │
          │                                                                                │

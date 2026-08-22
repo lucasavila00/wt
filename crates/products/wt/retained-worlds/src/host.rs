@@ -19,7 +19,6 @@ pub struct ProvisionSpec<'a> {
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
-    pub ssh_authorized_keys: &'a [String],
     pub git_grant: &'a str,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
@@ -65,8 +64,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         let phase_started = Instant::now();
         let readiness_key = ReadinessKey::generate()?;
         crate::write_creation_timing(log, "generate readiness key", phase_started.elapsed())?;
-        let mut authorized_keys = spec.ssh_authorized_keys.to_vec();
-        authorized_keys.push(readiness_key.public_key.clone());
+        let authorized_keys = [readiness_key.public_key.clone()];
         let phase_started = Instant::now();
         let machine = self.provider.create(
             &MachineSpec {
@@ -388,7 +386,6 @@ mod tests {
                     memory_mib: 1024,
                     vcpus: 1,
                     disk_gib: 16,
-                    ssh_authorized_keys: &[],
                     git_grant: "grant",
                     git_user_name: "WT",
                     git_user_email: "wt@example.com",

@@ -37,7 +37,6 @@ pub(crate) struct Input {
     pub(crate) vcpus: u32,
     pub(crate) memory_mib: u64,
     pub(crate) disk_gib: u64,
-    pub(crate) ssh_authorized_keys: Vec<String>,
     pub(crate) git_user_name: String,
     pub(crate) git_user_email: String,
 }
@@ -74,7 +73,6 @@ pub(crate) struct Form {
     memory: String,
     disk: String,
     author: GitAuthor,
-    keys: Vec<(String, String)>,
     focus: usize,
     stage: Stage,
     error: Option<String>,
@@ -84,7 +82,6 @@ impl Form {
     pub(crate) fn new(
         config: &ClientConfig,
         author: GitAuthor,
-        keys: Vec<(String, String)>,
         used_names: &std::collections::BTreeSet<String>,
     ) -> anyhow::Result<Self> {
         if config.contexts.is_empty() {
@@ -103,7 +100,6 @@ impl Form {
             memory: String::new(),
             disk: String::new(),
             author,
-            keys,
             focus: OK_FOCUS,
             stage: Stage::Fields,
             error: None,
@@ -298,13 +294,12 @@ impl Form {
             "Git author  {} <{}>",
             self.author.name, self.author.email
         ));
-        lines.push(format!("SSH keys    {} discovered", self.keys.len()));
         lines.join("\n")
     }
 
     fn summary(&self) -> String {
-        let mut summary = format!(
-            "World       {}\nContext     {}\nResources   {} CPU · {} MiB RAM · {} GiB disk\nGit author  {} <{}>\nSSH keys    {}",
+        format!(
+            "World       {}\nContext     {}\nResources   {} CPU · {} MiB RAM · {} GiB disk\nGit author  {} <{}>",
             self.name,
             self.contexts[self.context],
             number(&self.vcpus, DEFAULT_VCPUS),
@@ -312,13 +307,7 @@ impl Form {
             number(&self.disk, DEFAULT_DISK_GIB),
             self.author.name,
             self.author.email,
-            self.keys.len(),
-        );
-        for (_, fingerprint) in &self.keys {
-            summary.push_str("\n            ");
-            summary.push_str(fingerprint);
-        }
-        summary
+        )
     }
 
     fn advance(&mut self) -> Action {
@@ -350,7 +339,6 @@ impl Form {
             vcpus: parse_number(&self.vcpus, DEFAULT_VCPUS)?,
             memory_mib: parse_number(&self.memory, DEFAULT_MEMORY_MIB)?,
             disk_gib: parse_number(&self.disk, DEFAULT_DISK_GIB)?,
-            ssh_authorized_keys: self.keys.iter().map(|(key, _)| key.clone()).collect(),
             git_user_name: self.author.name.clone(),
             git_user_email: self.author.email.clone(),
         })
@@ -528,7 +516,6 @@ mod tests {
                 name: "Test User".into(),
                 email: "test@example.com".into(),
             },
-            vec![("ssh-ed25519 key".into(), "SHA256:key".into())],
             &std::collections::BTreeSet::new(),
         )
         .unwrap()

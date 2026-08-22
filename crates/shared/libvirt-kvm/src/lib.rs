@@ -13,8 +13,8 @@ macro_rules! cmd {
 }
 
 pub use config::{
-    CodexMounts, MachineConfig, CODEX_AUTH_TAG, CODEX_SESSIONS_TAG, GUEST_ARCHITECTURE,
-    GUEST_MACHINE, LIBVIRT_URI,
+    MachineConfig, SharedMounts, CODEX_AUTH_TAG, CODEX_SESSIONS_TAG, GUEST_ARCHITECTURE,
+    GUEST_MACHINE, LIBVIRT_URI, SSH_AUTHORIZED_KEYS_TAG,
 };
 pub use provider::*;
 pub use transport::*;

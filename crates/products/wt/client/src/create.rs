@@ -5,10 +5,8 @@ use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
 use std::io::IsTerminal as _;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use wt_client::config::ClientConfig;
@@ -314,8 +312,7 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
 
 pub(crate) fn prepare(config: &ClientConfig, used_names: &BTreeSet<String>) -> Result<Flow> {
     let author = read_git_author()?;
-    let keys = discover_public_keys()?;
-    Form::new(config, author, keys, used_names).map(Flow::new)
+    Form::new(config, author, used_names).map(Flow::new)
 }
 
 fn run_loop(
@@ -393,39 +390,6 @@ pub(crate) fn capacity_message(context: &str, name: &InstanceName, capacity: &Ca
         "{context} has {} {unit} of {} {unit} world {resource} reserved; {name} requests {} {unit}.\nFree capacity with `wt ls` and `wt stop CONTEXT.WORLD` or `wt rm CONTEXT.WORLD`.",
         capacity.reserved, capacity.total, capacity.requested
     )
-}
-
-fn discover_public_keys() -> Result<Vec<(String, String)>> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .context("HOME is not set")?;
-    let directory = home.join(".ssh");
-    let entries = std::fs::read_dir(&directory)
-        .with_context(|| format!("read SSH directory {}", directory.display()))?;
-    let mut keys = BTreeSet::new();
-    for entry in entries {
-        let entry = entry.with_context(|| format!("read {} entry", directory.display()))?;
-        if entry.path().extension().and_then(|value| value.to_str()) != Some("pub")
-            || !entry.file_type()?.is_file()
-        {
-            continue;
-        }
-        let value = std::fs::read_to_string(entry.path())
-            .with_context(|| format!("read public key {}", entry.path().display()))?;
-        let mut key = PublicKey::from_openssh(value.trim())
-            .with_context(|| format!("parse public key {}", entry.path().display()))?;
-        key.set_comment("");
-        keys.insert(key.to_openssh()?);
-    }
-    if keys.is_empty() {
-        bail!("no valid public keys found in {}", directory.display());
-    }
-    keys.into_iter()
-        .map(|key| {
-            let parsed = PublicKey::from_openssh(&key)?;
-            Ok((key, parsed.fingerprint(HashAlg::Sha256).to_string()))
-        })
-        .collect()
 }
 
 extern "C" fn cancel_prompt(_: i32) {
