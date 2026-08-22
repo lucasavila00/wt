@@ -13,8 +13,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
-mod title;
-use title::refresh_title;
 
 pub(super) fn draw(
     frame: &mut Frame<'_>,
@@ -280,11 +278,9 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
     let state = model.control();
-    let block = Block::new().borders(Borders::ALL).title(refresh_title(
-        "Worlds",
-        state.worlds_updated_at(),
-        state.worlds_refresh_failure(),
-    ));
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(state.worlds_refresh().title("Worlds"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation
@@ -378,15 +374,13 @@ fn draw_world_card(
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    let block = Block::new().borders(Borders::ALL).title(refresh_title(
-        "Codex sessions",
-        state.codex_updated_at(),
-        state.context_failure(),
-    ));
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(state.codex_refresh().title("Codex sessions"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if state.codex().is_empty() {
-        let message = if state.codex_updated_at().is_some() {
+        let message = if state.codex_refresh().updated_at().is_some() {
             "No Codex sessions\nStart Codex in a world to see its session here"
         } else {
             "Loading Codex sessions…"

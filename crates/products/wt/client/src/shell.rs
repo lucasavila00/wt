@@ -21,6 +21,7 @@ mod delete;
 mod input;
 mod model;
 mod refresh;
+mod refresh_status;
 mod render;
 mod session;
 mod terminal_view;

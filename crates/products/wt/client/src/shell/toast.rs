@@ -34,11 +34,11 @@ impl ControlState {
     }
 
     pub(super) fn context_failure(&self) -> Option<&[String]> {
-        self.context_failure.as_deref()
+        self.codex_refresh().failures()
     }
 
     pub(super) fn set_context_failures(&mut self, contexts: Vec<String>) {
-        self.context_failure = (!contexts.is_empty()).then_some(contexts);
+        self.codex_refresh_mut().set_failures(contexts);
     }
 
     pub(super) fn finish_open(&mut self, target: &CodexOpenTarget, failed: bool) -> bool {
