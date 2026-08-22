@@ -225,7 +225,6 @@ impl Flow {
             return;
         };
         let elapsed_duration = started.elapsed();
-        let elapsed = elapsed_duration.as_secs();
         const GRADIENT: [u8; 12] = [24, 25, 31, 37, 43, 42, 36, 30, 24, 60, 54, 53];
         let animation_tick = elapsed_duration.as_millis() as usize / 25;
         let spinner = ["", "", "", ""][(animation_tick / 2) % 4];
@@ -240,7 +239,7 @@ impl Flow {
             .title(Line::from("×").alignment(Alignment::Right));
         frame.render_widget(block, area);
         frame.render_widget(
-            Paragraph::new(format!("{spinner} {world}\n{status}\n{elapsed}s elapsed"))
+            Paragraph::new(format!("{spinner} {world}\n{status}"))
                 .wrap(Wrap { trim: false })
                 .style(Style::new().fg(Color::Indexed(
                     GRADIENT[(animation_tick / 4) % GRADIENT.len()],
@@ -272,14 +271,14 @@ impl Flow {
 
 fn progress_area(outer: Rect) -> Option<Rect> {
     let width = 44.min(outer.width.saturating_sub(2));
-    if width < 24 || outer.height < 7 {
+    if width < 24 || outer.height < 6 {
         return None;
     }
     Some(Rect::new(
         outer.right().saturating_sub(1).saturating_sub(width),
         outer.y.saturating_add(1),
         width,
-        6,
+        5,
     ))
 }
 
