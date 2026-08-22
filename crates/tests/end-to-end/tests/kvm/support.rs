@@ -24,11 +24,12 @@ use wt_workload_registry::{CapacityConfig, Resources};
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn acquire_kvm_test_lock() -> MutexGuard<'static, ()> {
-    let guard = KVM_TEST_LOCK.lock().unwrap();
     require_test_server_config(Path::new(wt_server::SERVER_CONFIG_PATH)).unwrap_or_else(|error| {
         panic!("refusing to run real-system KVM tests: {error}; run `make e2e-tests`")
     });
-    guard
+    KVM_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn require_test_server_config(path: &Path) -> Result<(), String> {
