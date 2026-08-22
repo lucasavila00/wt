@@ -230,11 +230,11 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
             continue;
         };
         if let Some(value) = session_title(&record) {
-            title.get_or_insert_with(|| value.clone());
+            title.get_or_insert_with(|| value.chars().take(160).collect());
             latest_user_message = Some(value);
             latest_user_message_at_unix_ms = record_timestamp(&record);
         } else if let Some(value) = legacy_session_title(&record) {
-            legacy_title.get_or_insert_with(|| value.clone());
+            legacy_title.get_or_insert_with(|| value.chars().take(160).collect());
             latest_user_message = Some(value);
             latest_user_message_at_unix_ms = record_timestamp(&record);
         }
