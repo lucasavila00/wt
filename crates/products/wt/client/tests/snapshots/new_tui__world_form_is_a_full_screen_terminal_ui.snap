@@ -8,15 +8,15 @@ expression: contents
 
 
          ┌Create world────────────────────────────────────────────────────────────────────┐
-         │ › Context         ‹ local ›                                                    │
+         │   Context         ‹ local ›                                                    │
          │   World name      <suggested-name>                                              │
          │   Virtual CPUs    2 (default)                                                  │
          │   RAM (MiB)       4096 (default)                                               │
          │   Disk (GiB)      32 (default)                                                 │
+         │   [ OK ]                                                                       │
          │                                                                                │
          │ Git author  Test User <test@example.test>                                      │
          │ SSH keys    1 discovered                                                       │
-         │                                                                                │
          │                                                                                │
          │                                                                                │
          │                                                                                │

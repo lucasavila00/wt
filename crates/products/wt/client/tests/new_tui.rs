@@ -65,8 +65,10 @@ fn local_context() -> &'static str {
 
 fn complete_fields(screen: &mut Screen) -> Result<()> {
     screen
+        .press(Key::Tab)?
         .press(Key::Enter)?
         .type_text("repo-feature")?
+        .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
@@ -105,6 +107,7 @@ fn enter_validates_before_advancing() -> Result<()> {
     let mut screen = fixture.screen()?;
     screen
         .wait_for_text("Create world")?
+        .press(Key::Tab)?
         .press(Key::Enter)?
         .type_text("_")?
         .press(Key::Enter)?

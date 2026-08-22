@@ -28,6 +28,7 @@ const HOST_FIELDS: [Field; 5] = [
     Field::Memory,
     Field::Disk,
 ];
+const OK_FOCUS: usize = HOST_FIELDS.len();
 
 #[derive(Clone, Debug)]
 pub(crate) struct Input {
@@ -103,7 +104,7 @@ impl Form {
             disk: String::new(),
             author,
             keys,
-            focus: 0,
+            focus: OK_FOCUS,
             stage: Stage::Fields,
             error: None,
         })
@@ -132,11 +133,11 @@ impl Form {
             KeyCode::BackTab => self.move_focus(-1),
             KeyCode::Up => self.move_focus(-1),
             KeyCode::Down => self.move_focus(1),
-            KeyCode::Left if self.field() == Field::Context => self.move_context(-1),
-            KeyCode::Right if self.field() == Field::Context => self.move_context(1),
+            KeyCode::Left if self.field() == Some(Field::Context) => self.move_context(-1),
+            KeyCode::Right if self.field() == Some(Field::Context) => self.move_context(1),
             KeyCode::Enter => return self.advance(),
             KeyCode::Backspace => {
-                if self.field() == Field::Name {
+                if self.field() == Some(Field::Name) {
                     self.name_is_suggestion = false;
                 }
                 if let Some(value) = self.value_mut() {
@@ -149,7 +150,7 @@ impl Form {
                     .modifiers
                     .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
             {
-                if self.field() == Field::Name && self.name_is_suggestion {
+                if self.field() == Some(Field::Name) && self.name_is_suggestion {
                     self.name.clear();
                     self.name_is_suggestion = false;
                 }
@@ -165,7 +166,7 @@ impl Form {
 
     pub(crate) fn handle_paste(&mut self, text: &str) -> Action {
         if self.stage == Stage::Fields {
-            if self.field() == Field::Name && self.name_is_suggestion {
+            if self.field() == Some(Field::Name) && self.name_is_suggestion {
                 self.name.clear();
                 self.name_is_suggestion = false;
             }
@@ -202,18 +203,19 @@ impl Form {
     fn render_fields(&self, frame: &mut Frame<'_>, area: Rect) {
         let fields = self.fields();
         let rows = Layout::vertical([
-            Constraint::Length(fields.len() as u16),
+            Constraint::Length((fields.len() + 1) as u16),
             Constraint::Length(1),
             Constraint::Min(2),
             Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(area);
-        let lines = fields
+        let mut lines = fields
             .iter()
             .enumerate()
             .map(|(index, field)| self.field_line(*field, index == self.focus))
             .collect::<Vec<_>>();
+        lines.push(self.ok_line());
         frame.render_widget(Paragraph::new(lines), rows[0]);
         frame.render_widget(Paragraph::new(self.details()).style(muted_style()), rows[2]);
         if let Some(error) = &self.error {
@@ -271,6 +273,15 @@ impl Form {
         ])
     }
 
+    fn ok_line(&self) -> Line<'static> {
+        let style = if self.focus == OK_FOCUS {
+            Style::new().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::new()
+        };
+        Line::from(Span::styled("  [ OK ]", style))
+    }
+
     fn details(&self) -> String {
         let mut lines = Vec::new();
         lines.push(format!(
@@ -301,22 +312,22 @@ impl Form {
     }
 
     fn advance(&mut self) -> Action {
-        if let Err(error) = self.validate(self.field()) {
+        let Some(field) = self.field() else {
+            return match self.input() {
+                Ok(_) => {
+                    self.stage = Stage::Review;
+                    self.error = None;
+                    Action::None
+                }
+                Err(error) => self.fail(error),
+            };
+        };
+        if let Err(error) = self.validate(field) {
             return self.fail(error);
         }
-        if self.focus + 1 < self.fields().len() {
-            self.focus += 1;
-            self.error = None;
-            return Action::None;
-        }
-        match self.input() {
-            Ok(_) => {
-                self.stage = Stage::Review;
-                self.error = None;
-                Action::None
-            }
-            Err(error) => self.fail(error),
-        }
+        self.focus += 1;
+        self.error = None;
+        Action::None
     }
 
     fn input(&self) -> Result<Input, String> {
@@ -351,12 +362,12 @@ impl Form {
         &HOST_FIELDS
     }
 
-    fn field(&self) -> Field {
-        self.fields()[self.focus]
+    fn field(&self) -> Option<Field> {
+        self.fields().get(self.focus).copied()
     }
 
     fn value_mut(&mut self) -> Option<&mut String> {
-        match self.field() {
+        match self.field()? {
             Field::Context => None,
             Field::Name => Some(&mut self.name),
             Field::Vcpus => Some(&mut self.vcpus),
@@ -386,7 +397,7 @@ impl Form {
     }
 
     fn move_focus(&mut self, direction: isize) {
-        let len = self.fields().len();
+        let len = self.fields().len() + 1;
         self.focus = if direction < 0 {
             self.focus.checked_sub(1).unwrap_or(len - 1)
         } else {
@@ -549,6 +560,18 @@ mod tests {
         ));
         assert!(form.error.as_deref().unwrap().contains("instance name"));
         assert_eq!(form.focus, 1);
+    }
+
+    #[test]
+    fn starts_on_ok_and_accepts_the_valid_defaults() {
+        let mut form = form();
+
+        assert_eq!(form.focus, OK_FOCUS);
+        assert!(matches!(
+            form.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Action::None
+        ));
+        assert_eq!(form.stage, Stage::Review);
     }
 
     #[test]
