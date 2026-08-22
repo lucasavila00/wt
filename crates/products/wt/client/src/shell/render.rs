@@ -285,6 +285,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 name,
                 resources,
                 None,
+                &[],
                 false,
                 "Creation in progress",
             );
@@ -307,6 +308,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             &world.name,
             &world.resources,
             (world.detail != "-").then_some(world.detail.as_str()),
+            &world_codex_lines(world, model.control().codex()),
             index == model.active(),
             "Enter or click to open",
         );
@@ -323,6 +325,7 @@ fn draw_world_card(
     name: &str,
     resources: &str,
     detail: Option<&str>,
+    codex: &[Line<'static>],
     selected: bool,
     footer: &str,
 ) {
@@ -343,9 +346,90 @@ fn draw_world_card(
     if let Some(detail) = detail {
         lines.push(Line::from(detail.to_owned()));
     }
+    lines.extend_from_slice(codex);
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
     frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
+}
+
+fn world_codex_lines(world: &super::model::ShellWorld, cards: &[CodexCard]) -> Vec<Line<'static>> {
+    let mut observations = cards
+        .iter()
+        .filter_map(|card| {
+            let CodexCardKind::Observation {
+                world_id,
+                cwd,
+                repository_root,
+                repository_url,
+                git_branch,
+                state,
+                ..
+            } = &card.kind
+            else {
+                return None;
+            };
+            (*world_id == world.identity.id && card.context == world.identity.context).then_some((
+                card,
+                cwd,
+                repository_root,
+                repository_url,
+                git_branch,
+                state,
+            ))
+        })
+        .collect::<Vec<_>>();
+    observations.sort_by(|left, right| {
+        let left_root = left.2.as_deref().unwrap_or(left.1);
+        let right_root = right.2.as_deref().unwrap_or(right.1);
+        left_root.cmp(right_root).then_with(|| {
+            std::cmp::Reverse(left.0.timestamp()).cmp(&std::cmp::Reverse(right.0.timestamp()))
+        })
+    });
+
+    let mut lines = Vec::new();
+    let mut checkout = None;
+    for (card, cwd, repository_root, repository_url, git_branch, state) in observations {
+        let root = repository_root.as_deref().unwrap_or(cwd);
+        if checkout != Some(root) {
+            checkout = Some(root);
+            let repository = repository_url
+                .as_deref()
+                .and_then(repository_name)
+                .unwrap_or(root);
+            let label = git_branch.as_deref().map_or_else(
+                || repository.to_owned(),
+                |branch| format!("{repository} · {branch}"),
+            );
+            lines.push(Line::from(vec![
+                Span::styled("Checkout ", muted_style()),
+                Span::raw(label),
+            ]));
+        }
+        let session = card
+            .session_id
+            .map(|id| id.to_string()[..8].to_owned())
+            .unwrap_or_else(|| "unknown".into());
+        lines.push(Line::from(vec![
+            Span::styled("  Codex ", muted_style()),
+            Span::raw(format!(
+                "session {session} · {} · {}",
+                codex_state_label(*state),
+                card.timestamp
+                    .map(relative_age)
+                    .unwrap_or_else(|| "unknown".into())
+            )),
+        ]));
+    }
+    lines
+}
+
+fn codex_state_label(state: wt_control_protocol::CodexSessionState) -> &'static str {
+    match state {
+        wt_control_protocol::CodexSessionState::Unknown => "UNKNOWN",
+        wt_control_protocol::CodexSessionState::Working => "WORKING",
+        wt_control_protocol::CodexSessionState::NeedsAttention => "NEEDS ATTENTION",
+        wt_control_protocol::CodexSessionState::Inactive => "INACTIVE",
+    }
 }
 
 fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
