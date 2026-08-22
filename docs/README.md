@@ -9,7 +9,8 @@ Codex integration.
 - [Development and setup](../DEVELOPMENT.md)
 - [World contract](./worlds/host.md)
 - [Client and SSH](./guides/client.md), [terminal workspace](./guides/shell.md),
-  and [server operations](./guides/server.md)
+  [server operations](./guides/server.md), and
+  [known limitations](./known-limitations.md)
 
 ## Work on WT
 

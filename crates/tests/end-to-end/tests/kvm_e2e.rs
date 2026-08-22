@@ -19,6 +19,11 @@ pub(crate) use support::*;
 #[path = "kvm/terminal.rs"]
 mod terminal;
 pub(crate) use terminal::*;
+#[path = "../../../products/wt/client/tests/support/screen.rs"]
+mod screen;
+pub(crate) use screen::{Key, Screen};
 
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;
+#[path = "kvm/shell.rs"]
+mod shell;

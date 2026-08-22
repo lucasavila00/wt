@@ -35,16 +35,15 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
-	@test -f /home/wt/.codex/.wt-auth/auth.json \
-		&& systemctl is-active --quiet wt-codex-integration-auth.path || { \
-		printf '\nKVM E2E host prerequisites are missing. Install them with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
-		exit 1; \
-	}
+	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
+	scripts/nuke
+	scripts/install-server --config "$(KVM_INSTALL_CONFIG)"
 	@scripts/cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
 		printf '\nImage verification failed. Rebuild the E2E images with:\n  make prepare-image CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
 		exit 1; \
 	}
 	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
+	@printf '\nWT E2E test server remains installed on this host.\n'
 
 install-client:
 	scripts/install-client
