@@ -399,8 +399,18 @@ fn install_services(
     server: &ServerConfig,
     replace_runtime: bool,
 ) -> Result<()> {
-    install_codex_auth_helper(runner)?;
-    install_ssh_keys_helper(runner)?;
+    install_share_helper(
+        runner,
+        "wt-codex-integration-auth-share",
+        &host::codex_auth_share(),
+        "Codex auth",
+    )?;
+    install_share_helper(
+        runner,
+        "wt-ssh-authorized-keys-share",
+        &host::ssh_authorized_keys_share(),
+        "SSH authorized keys",
+    )?;
     install_service_unit(
         runner,
         "wt-codex-integration-auth",
@@ -465,32 +475,26 @@ fn install_services(
     Ok(())
 }
 
-fn install_ssh_keys_helper(runner: &impl Runner) -> Result<()> {
+fn install_share_helper(
+    runner: &impl Runner,
+    name: &str,
+    script: &[u8],
+    description: &str,
+) -> Result<()> {
     runner.run(
         cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
         "create system helper directory",
     )?;
-    let local = Path::new("target/wt-ssh-authorized-keys-share.install");
-    fs::write(local, host::ssh_authorized_keys_share())
-        .context("stage SSH authorized keys share helper")?;
-    let temporary = Path::new("/usr/local/libexec/.wt-ssh-authorized-keys-share.wt-new");
-    sudo_install(runner, local, temporary, 0o755)?;
-    sudo_move(runner, temporary, Path::new(SSH_KEYS_HELPER_PATH))?;
-    let _ = fs::remove_file(local);
-    Ok(())
-}
-
-fn install_codex_auth_helper(runner: &impl Runner) -> Result<()> {
-    runner.run(
-        cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
-        "create system helper directory",
+    let local = Path::new("target").join(format!("{name}.install"));
+    fs::write(&local, script).with_context(|| format!("stage {description} share helper"))?;
+    let temporary = Path::new("/usr/local/libexec").join(format!(".{name}.wt-new"));
+    sudo_install(runner, &local, &temporary, 0o755)?;
+    sudo_move(
+        runner,
+        &temporary,
+        &Path::new("/usr/local/libexec").join(name),
     )?;
-    let local = Path::new("target/wt-codex-integration-auth-share.install");
-    fs::write(local, host::codex_auth_share()).context("stage Codex auth share helper")?;
-    let temporary = Path::new("/usr/local/libexec/.wt-codex-integration-auth-share.wt-new");
-    sudo_install(runner, local, temporary, 0o755)?;
-    sudo_move(runner, temporary, Path::new(CODEX_AUTH_HELPER_PATH))?;
-    let _ = fs::remove_file(local);
+    let _ = fs::remove_file(&local);
     Ok(())
 }
 
@@ -628,9 +632,17 @@ WantedBy=multi-user.target\n",
 }
 
 fn codex_auth_service() -> Vec<u8> {
+    shared_file_service("Codex authentication", CODEX_AUTH_HELPER_PATH)
+}
+
+fn ssh_keys_service() -> Vec<u8> {
+    shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH)
+}
+
+fn shared_file_service(description: &str, helper: &str) -> Vec<u8> {
     format!(
         "[Unit]\n\
-Description=Refresh the WT Codex authentication share\n\
+Description=Refresh the WT {description} share\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
@@ -642,41 +654,38 @@ UMask=0077\n",
         SERVER_USER,
         SERVER_GROUP,
         systemd_quote(&format!("HOME={SERVER_HOME}")),
-        CODEX_AUTH_HELPER_PATH,
+        helper,
     )
     .into_bytes()
 }
 
 fn codex_auth_path_unit() -> Vec<u8> {
-    format!(
-        "[Unit]\n\
-Description=Watch the WT Codex authentication file\n\
-\n\
-[Path]\n\
-PathChanged={}\n\
-Unit=wt-codex-integration-auth.service\n\
-\n\
-[Install]\n\
-WantedBy=multi-user.target\n",
+    shared_file_path_unit(
+        "Codex authentication",
         wt_server::CODEX_AUTH_PATH,
+        "wt-codex-integration-auth.service",
     )
-    .into_bytes()
-}
-
-fn ssh_keys_service() -> Vec<u8> {
-    format!(
-        "[Unit]\nDescription=Refresh the WT SSH authorized keys share\n\n[Service]\nType=oneshot\nUser={}\nGroup={}\nEnvironment={}\nExecStart={}\nUMask=0077\n",
-        SERVER_USER,
-        SERVER_GROUP,
-        systemd_quote(&format!("HOME={SERVER_HOME}")),
-        SSH_KEYS_HELPER_PATH,
-    )
-    .into_bytes()
 }
 
 fn ssh_keys_path_unit() -> Vec<u8> {
+    shared_file_path_unit(
+        "SSH authorized keys",
+        &format!("{SERVER_HOME}/.ssh/authorized_keys"),
+        "wt-ssh-authorized-keys.service",
+    )
+}
+
+fn shared_file_path_unit(description: &str, path: &str, unit: &str) -> Vec<u8> {
     format!(
-        "[Unit]\nDescription=Watch the WT SSH authorized keys file\n\n[Path]\nPathChanged={SERVER_HOME}/.ssh/authorized_keys\nUnit=wt-ssh-authorized-keys.service\n\n[Install]\nWantedBy=multi-user.target\n"
+        "[Unit]\n\
+Description=Watch the WT {description} file\n\
+\n\
+[Path]\n\
+PathChanged={path}\n\
+Unit={unit}\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n",
     )
     .into_bytes()
 }

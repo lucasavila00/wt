@@ -10,6 +10,8 @@ const CODEX_AUTH_SHARE_FLOW: &[u8] =
     include_bytes!("../../../../../assets/server/share-codex-auth.sh");
 const SSH_AUTHORIZED_KEYS_SHARE_FLOW: &[u8] =
     include_bytes!("../../../../../assets/server/share-ssh-authorized-keys.sh");
+const PUBLISH_SHARED_FILE: &[u8] =
+    include_bytes!("../../../../../assets/server/publish-shared-file.sh");
 
 fn shell_with_identity_contract(flow: &[u8]) -> Vec<u8> {
     const SHEBANG: &[u8] = b"#!/bin/sh\n";
@@ -26,11 +28,28 @@ fn shell_with_identity_contract(flow: &[u8]) -> Vec<u8> {
 }
 
 pub(crate) fn codex_auth_share() -> Vec<u8> {
-    shell_with_identity_contract(CODEX_AUTH_SHARE_FLOW)
+    shell_with_shared_file_publisher(CODEX_AUTH_SHARE_FLOW)
 }
 
 pub(crate) fn ssh_authorized_keys_share() -> Vec<u8> {
-    shell_with_identity_contract(SSH_AUTHORIZED_KEYS_SHARE_FLOW)
+    shell_with_shared_file_publisher(SSH_AUTHORIZED_KEYS_SHARE_FLOW)
+}
+
+fn shell_with_shared_file_publisher(flow: &[u8]) -> Vec<u8> {
+    const SHEBANG: &[u8] = b"#!/bin/sh\n";
+    let body = flow
+        .strip_prefix(SHEBANG)
+        .expect("WT server shell asset must use #!/bin/sh");
+    let mut script = Vec::with_capacity(
+        SHEBANG.len() + WT_IDENTITY_CONTRACT.len() + PUBLISH_SHARED_FILE.len() + body.len() + 2,
+    );
+    script.extend_from_slice(SHEBANG);
+    script.extend_from_slice(WT_IDENTITY_CONTRACT);
+    script.push(b'\n');
+    script.extend_from_slice(PUBLISH_SHARED_FILE);
+    script.push(b'\n');
+    script.extend_from_slice(body);
+    script
 }
 
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
@@ -144,6 +163,11 @@ mod tests {
             assert!(script.starts_with(
                 b"#!/bin/sh\n# shellcheck shell=sh\n# Canonical WT host/guest filesystem identity."
             ));
+        }
+        for script in [codex_auth_share(), ssh_authorized_keys_share()] {
+            assert!(script
+                .windows(b"wt_publish_shared_file()".len())
+                .any(|window| { window == b"wt_publish_shared_file()" }));
         }
     }
 
