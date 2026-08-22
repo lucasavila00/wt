@@ -6,7 +6,7 @@ use super::ssh::AuthorizedKeysFixture;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use wt_agent_tool_gateway::{
@@ -22,6 +22,29 @@ use wt_server::ServerConfig;
 use wt_workload_registry::{CapacityConfig, Resources};
 
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+pub(crate) fn acquire_kvm_test_lock() -> MutexGuard<'static, ()> {
+    let guard = KVM_TEST_LOCK.lock().unwrap();
+    require_test_server_config(Path::new(wt_server::SERVER_CONFIG_PATH)).unwrap_or_else(|error| {
+        panic!("refusing to run real-system KVM tests: {error}; run `make e2e-tests`")
+    });
+    guard
+}
+
+fn require_test_server_config(path: &Path) -> Result<(), String> {
+    let config = ServerConfig::load_from(path)?;
+    require_test_server(&config, path)
+}
+
+fn require_test_server(config: &ServerConfig, path: &Path) -> Result<(), String> {
+    if !config.test_server {
+        return Err(format!(
+            "installed server config {} has test_server = false",
+            path.display()
+        ));
+    }
+    Ok(())
+}
 
 pub(crate) struct KvmHarness {
     _authorized_keys: AuthorizedKeysFixture,
@@ -53,7 +76,8 @@ impl KvmHarness {
             )
             .unwrap(),
         };
-        config.test_server = true;
+        require_test_server(&config, Path::new("KVM runtime config"))
+            .unwrap_or_else(|error| panic!("refusing to construct KVM test harness: {error}"));
         assert_eq!(config.agent_tools.vsock_port, vsock_port);
         config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
         let installed_image = config.image.path.clone();
@@ -422,5 +446,28 @@ impl Drop for Timings {
             eprintln!("  {label}: {:.1}s", elapsed.as_secs_f64());
         }
         eprintln!("  total: {:.1}s", self.started.elapsed().as_secs_f64());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kvm_tests_require_an_explicit_test_server() {
+        let path = Path::new("/etc/wt/server.toml");
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let mut config = ServerConfig::load_from(
+            &workspace.join("examples/server-config/wt-server.kvm-test.toml"),
+        )
+        .unwrap();
+
+        config.test_server = false;
+        assert_eq!(
+            require_test_server(&config, path).unwrap_err(),
+            "installed server config /etc/wt/server.toml has test_server = false"
+        );
+        config.test_server = true;
+        require_test_server(&config, path).unwrap();
     }
 }

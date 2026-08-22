@@ -7,7 +7,7 @@ use wt_control_protocol::{Operation, Response};
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
 fn shell_creates_and_deletes_a_real_world() {
-    let _lock = KVM_TEST_LOCK.lock().unwrap();
+    let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
     let harness = KvmHarness::new(&mut timings);
     let name = unique_name("shell");

@@ -5,7 +5,7 @@ use std::process::Stdio;
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
 fn retained_host_lifecycle() {
-    let _lock = KVM_TEST_LOCK.lock().unwrap();
+    let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
     let name = unique_name("host");
     let codex_auth_sha256 = assert_server_codex_auth_export();
