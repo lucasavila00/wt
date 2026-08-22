@@ -27,7 +27,11 @@ pub(crate) fn create_world_with_defaults(screen: &mut Screen, name: &str) -> Res
 
 pub(crate) fn delete_world(screen: &mut Screen, name: &str) -> Result<()> {
     eprintln!("WT shell E2E: open control mode before deleting {name}");
-    screen.press(Key::Up)?.wait_for_text("Worlds ·")?;
+    screen
+        .press(Key::Function(5))?
+        .wait_for_text("F5: disable navbar")?
+        .press(Key::Up)?
+        .wait_for_text("Worlds ·")?;
     eprintln!("WT shell E2E: delete world {name}");
     open_command(screen, "delete", "Delete world")?;
     screen
