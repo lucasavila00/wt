@@ -243,8 +243,11 @@ fn stage_generation(
     })
 }
 
-pub(in crate::image) fn image_config_sha(server_bytes: &[u8], input: &InstallInput) -> String {
-    let mut bytes = server_bytes.to_vec();
+pub(in crate::image) fn image_config_sha(input: &InstallInput) -> String {
+    let mut server = input.materialize();
+    server.test_server = false;
+    let mut bytes = crate::install_input::serialize_server_config(&server)
+        .expect("validated server configuration is serializable");
     bytes.extend_from_slice(
         format!(
             "\nimage_memory_mib={}\nimage_vcpus={}\nimage_disk_gib={}\n",

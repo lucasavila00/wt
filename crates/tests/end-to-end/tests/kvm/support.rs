@@ -28,6 +28,7 @@ pub(crate) struct KvmHarness {
     pub(crate) temp: TempDir,
     pub(crate) config: ServerConfig,
     pub(crate) server_config_path: PathBuf,
+    pub(crate) wt_binary: PathBuf,
     pub(crate) guest_public_key: String,
     pub(crate) initial_disks: usize,
     _images: TempDir,
@@ -51,6 +52,7 @@ impl KvmHarness {
             )
             .unwrap(),
         };
+        config.test_server = true;
         assert_eq!(config.agent_tools.vsock_port, vsock_port);
         config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
         let installed_image = config.image.path.clone();
@@ -59,6 +61,7 @@ impl KvmHarness {
         });
         config.image.path = images.path().join("retained.qcow2");
         config.install.binary_dir = binary_dir;
+        let wt_binary = config.install.binary_dir.join("wt");
         let initial_disks = count_disks(&config.libvirt.worlds_dir);
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
@@ -113,6 +116,7 @@ impl KvmHarness {
             temp,
             config,
             server_config_path,
+            wt_binary,
             guest_public_key,
             initial_disks,
             _images: images,

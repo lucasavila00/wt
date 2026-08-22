@@ -35,16 +35,11 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
-	@test -f /home/wt/.codex/.wt-auth/auth.json \
-		&& systemctl is-active --quiet wt-codex-integration-auth.path || { \
-		printf '\nKVM E2E host prerequisites are missing. Install them with:\n  make install-server CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
-		exit 1; \
-	}
-	@scripts/cargo run --release -p wt-server-installer -- image verify --config "$(KVM_INSTALL_CONFIG)" || { \
-		printf '\nImage verification failed. Rebuild the E2E images with:\n  make prepare-image CONFIG=%s\n' "$(KVM_INSTALL_CONFIG)" >&2; \
-		exit 1; \
-	}
-	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
+	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
+	$(MAKE) clear
+	scripts/cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
+	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
+	@printf '\nWT E2E test server remains installed on this host.\n'
 
 install-client:
 	scripts/install-client
@@ -66,6 +61,9 @@ shell:
 
 check-typescript:
 	npm run check:typescript
+
+ci: static
+	scripts/cargo test --workspace --locked
 
 static: check-crate-readmes check-file-lines check-snapshot-lines check-typescript
 	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \

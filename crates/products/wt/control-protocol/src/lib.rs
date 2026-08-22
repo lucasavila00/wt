@@ -15,7 +15,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiProgress {
     pub protocol_version: u32,
@@ -57,6 +57,7 @@ impl ApiRequest {
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Operation {
+    ServerInfo,
     Create(CreateInstance),
     List,
     Get { name: InstanceName },
@@ -149,6 +150,9 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
+    ServerInfo {
+        test_server: bool,
+    },
     Instance {
         instance: Box<Instance>,
     },
@@ -345,7 +349,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 6,
+                "protocol_version": 7,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -360,7 +364,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 6,
+                "protocol_version": 7,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -375,7 +379,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 6,
+                "protocol_version": 7,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -436,7 +440,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 6,
+                "protocol_version": 7,
                 "operation": "list_codex_sessions"
             })
         );
@@ -452,7 +456,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 6,
+          "protocol_version": 7,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -488,7 +492,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 6,
+          "protocol_version": 7,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -500,14 +504,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 6,
+            "protocol_version": 7,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 6,
+            "protocol_version": 7,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -539,7 +543,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 6,
+            "protocol_version": 7,
             "operation": "get",
             "name": "Not-Valid"
         }))
@@ -551,10 +555,32 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 6,
+          "protocol_version": 7,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
+        "###);
+    }
+
+    #[test]
+    fn server_info_has_a_stable_shape() {
+        let request = ApiRequest::new(Operation::ServerInfo);
+        let response = ApiResponse::ok(Response::ServerInfo { test_server: true });
+        insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
+        [
+          {
+            "protocol_version": 7,
+            "operation": "server_info"
+          },
+          {
+            "protocol_version": 7,
+            "outcome": "ok",
+            "response": {
+              "response": "server_info",
+              "test_server": true
+            }
+          }
+        ]
         "###);
     }
 }

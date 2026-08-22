@@ -82,6 +82,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
         match operation {
+            Operation::ServerInfo => unreachable!("server info is handled before service dispatch"),
             Operation::Create(request) => self.create(owner, request, progress),
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),

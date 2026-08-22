@@ -66,7 +66,6 @@ pub(crate) fn ensure(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
-    server_bytes: &[u8],
 ) -> Result<()> {
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
@@ -80,7 +79,7 @@ pub(crate) fn ensure(
     match installed_image_state(
         installed.image.exists(),
         installed.manifest.exists(),
-        || verify_installed_image(input, server_bytes, &installed.image, &installed.manifest),
+        || verify_installed_image(input, &installed.image, &installed.manifest),
     ) {
         InstalledImageState::Reusable => {
             println!(
@@ -89,12 +88,12 @@ pub(crate) fn ensure(
             );
         }
         InstalledImageState::Missing => {
-            build_image(runner, input, server, server_bytes, &source, &byobu)?;
+            build_image(runner, input, server, &source, &byobu)?;
         }
         InstalledImageState::Replace(reason) => {
             println!("Replacing the installed retained golden image: {reason}");
             println!("Existing worlds remain backed by their retained image generations.");
-            build_image(runner, input, server, server_bytes, &source, &byobu)?;
+            build_image(runner, input, server, &source, &byobu)?;
         }
     }
     Ok(())
@@ -104,24 +103,19 @@ pub(crate) fn rebuild(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
-    server_bytes: &[u8],
 ) -> Result<()> {
     let _lock = BuildLock::acquire()?;
     require_clean_build_state(runner, server)?;
     require_clean_publication_state(server)?;
     let source = source_image(input, runner)?;
     let byobu = byobu_package(runner)?;
-    build_image(runner, input, server, server_bytes, &source, &byobu)?;
+    build_image(runner, input, server, &source, &byobu)?;
     Ok(())
 }
 
-pub(crate) fn verify(
-    input: &InstallInput,
-    server: &ServerConfig,
-    server_bytes: &[u8],
-) -> Result<()> {
+pub(crate) fn verify(input: &InstallInput, server: &ServerConfig) -> Result<()> {
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
-    verify_installed_image(input, server_bytes, &installed.image, &installed.manifest)?;
+    verify_installed_image(input, &installed.image, &installed.manifest)?;
     println!(
         "Verified retained golden image and provenance: {}",
         server.image.path.display()
@@ -195,7 +189,6 @@ fn build_image(
     runner: &impl Runner,
     input: &InstallInput,
     server: &ServerConfig,
-    server_bytes: &[u8],
     source: &Path,
     byobu: &Path,
 ) -> Result<()> {
@@ -217,7 +210,7 @@ fn build_image(
         fs::set_permissions(&build_dir, fs::Permissions::from_mode(0o2770))
             .context("set image build directory permissions")?;
         host::ensure_qemu_search_acl(runner, &build_dir)?;
-        build_image_inner(&context, server_bytes, &build_dir)
+        build_image_inner(&context, &build_dir)
     })();
     if let Err(primary) = result {
         let primary = attach_console_tail(primary, &build_dir);
@@ -231,11 +224,7 @@ fn build_image(
     Ok(())
 }
 
-fn build_image_inner<R: Runner>(
-    context: &BuildContext<'_, R>,
-    server_bytes: &[u8],
-    build_dir: &Path,
-) -> Result<()> {
+fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path) -> Result<()> {
     let runner = context.runner;
     let input = context.input;
     let server = context.server;
@@ -349,7 +338,7 @@ fn build_image_inner<R: Runner>(
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
         source_sha256: input.source_sha256().to_ascii_lowercase(),
-        config_sha256: image_config_sha(server_bytes, input),
+        config_sha256: image_config_sha(input),
         inputs: retained_input_hashes(&spec)?,
         golden_sha256: sha_file(&paths.prepared)?,
         tmux_sha256,
@@ -367,7 +356,6 @@ fn build_image_inner<R: Runner>(
 
 pub(crate) fn verify_installed_image(
     input: &InstallInput,
-    server_bytes: &[u8],
     image_path: &Path,
     manifest_path: &Path,
 ) -> Result<()> {
@@ -384,7 +372,7 @@ pub(crate) fn verify_installed_image(
         recipe: RETAINED_IMAGE_BUILD,
     })?;
     if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
-        || manifest.config_sha256 != image_config_sha(server_bytes, input)
+        || manifest.config_sha256 != image_config_sha(input)
         || manifest.inputs != expected_inputs
         || !is_sha256(&manifest.tmux_sha256)
     {

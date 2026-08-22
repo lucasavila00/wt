@@ -49,6 +49,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let server = ServerConfig::load_runtime_from(config_path).map_err(anyhow::Error::msg)?;
+    let test_server = server.test_server;
     let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server.retained_config();
     let worker = wt_retained_worlds::host::Worker::new(
@@ -68,6 +69,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
             &service,
             "lucas",
             request,
+            test_server,
             &mut std::io::stderr().lock(),
         ),
         Err(error) => ApiResponse::error(ApiError::new(

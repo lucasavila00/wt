@@ -3962,11 +3962,13 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "insta",
+ "portable-pty",
  "serde",
  "serde_json",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
+ "vt100",
  "wt-agent-tool-gateway",
  "wt-client",
  "wt-control-protocol",
@@ -4015,6 +4017,7 @@ name = "wt-git-smart-protocol"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "insta",
  "serde",
 ]
 

@@ -658,4 +658,22 @@ mod tests {
             terminal.backend().buffer()
         );
     }
+
+    #[test]
+    fn deletion_progress_follows_the_diffo_modal_layout() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let (_sender, result) = mpsc::sync_channel(1);
+        let flow = Flow {
+            phase: Phase::Deleting {
+                world: world("local.alpha"),
+                result,
+            },
+        };
+
+        terminal
+            .draw(|frame| flow.render(frame, frame.area()))
+            .unwrap();
+        insta::assert_debug_snapshot!("shell_delete_world_progress", terminal.backend().buffer());
+    }
 }

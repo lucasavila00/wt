@@ -12,6 +12,8 @@ use wt_server::{
 #[serde(deny_unknown_fields)]
 pub(crate) struct InstallInput {
     pub version: u32,
+    #[serde(default)]
+    pub test_server: bool,
     pub capacity: wt_workload_registry::CapacityConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
@@ -51,7 +53,6 @@ pub(crate) struct AgentToolsProviderInstallConfig {
     pub api_token_file: PathBuf,
     pub ssh_private_key_file: PathBuf,
     pub ssh_public_key_file: PathBuf,
-    pub ssh_known_hosts_file: PathBuf,
 }
 
 impl InstallInput {
@@ -71,7 +72,6 @@ impl InstallInput {
                 ("api_token_file", &mut provider.api_token_file),
                 ("ssh_private_key_file", &mut provider.ssh_private_key_file),
                 ("ssh_public_key_file", &mut provider.ssh_public_key_file),
-                ("ssh_known_hosts_file", &mut provider.ssh_known_hosts_file),
             ] {
                 *path = expand_home(path, &format!("agent_tools.{kind}.{field}"))?;
             }
@@ -111,6 +111,7 @@ impl InstallInput {
     pub(crate) fn materialize(&self) -> ServerConfig {
         ServerConfig {
             version: self.version,
+            test_server: self.test_server,
             image: ImageConfig {
                 path: self.image.path.clone(),
             },
@@ -191,6 +192,7 @@ mod tests {
 
     const VALID: &str = r#"
 version = 1
+test_server = false
 
 [capacity]
 version = 1
@@ -213,7 +215,6 @@ host = "github.com"
 api_token_file = "/tmp/github.token"
 ssh_private_key_file = "/tmp/id_ed25519"
 ssh_public_key_file = "/tmp/id_ed25519.pub"
-ssh_known_hosts_file = "/tmp/known_hosts"
 
 [guest]
 boot_timeout_seconds = 300

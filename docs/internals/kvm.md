@@ -37,10 +37,19 @@ the world and recreate it from the image.
 Stopped worlds keep their disk and identity. Missing files, changed SSH
 identity, or partial libvirt state fail closed.
 
-## Real-system test isolation
+## Full KVM E2E
 
-The KVM lifecycle test uses a disposable overlay backed by the installed image
-and keeps it alive until its worlds are deleted. It uses a unique gateway port
-and temporary server, capacity, socket, grant, provider-fixture, and database
-state. The installed image and Codex authentication export are shared read-only
-prerequisites. Do not install, rebuild images, or reset WT while KVM E2E runs.
+Full KVM E2E requires a host with the full KVM and libvirt prerequisites. Every
+run uses `make clear` to remove WT worlds and runtime state, installs the E2E
+server from the current checkout into the ordinary host paths, and leaves that
+marked test server installed. The Ubuntu source, verified golden image,
+downloads, Cargo artifacts, and build caches remain available. Image
+preparation rebuilds only when current provenance does not match the cache.
+
+The E2E host is a disposable environment with no production workload. Both
+runtime cleanup and full server removal are safe there; the normal test path
+uses the narrower cleanup so verified images and downloads can be reused.
+
+Individual harnesses use temporary ports, databases, grants, provider fixtures,
+and disposable world overlays for deterministic test state. Installation,
+image rebuild, reset, and another E2E run cannot execute concurrently.

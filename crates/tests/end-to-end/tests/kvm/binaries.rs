@@ -6,6 +6,10 @@ use wt_end_to_end_tests::cmd;
 const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 
 pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
+    let mut build_client = cmd!(env!("CARGO"), "build", "-p", "wt-client");
+    build_client.current_dir(workspace);
+    run(build_client, "build current WT client for KVM tests");
+
     let mut build = cmd!(
         env!("CARGO"),
         "build",
@@ -20,6 +24,7 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     run(build, "build static KVM test binaries");
 
     fs::create_dir(destination).unwrap();
+    fs::copy(workspace.join("target/debug/wt"), destination.join("wt")).unwrap();
     let binaries = workspace.join("target").join(MUSL_TARGET).join("debug");
     for name in [
         "wt-agent-tool-gateway",

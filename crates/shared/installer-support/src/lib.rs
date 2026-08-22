@@ -208,12 +208,12 @@ pub struct SshCredentialInput<'a> {
     pub host: &'a str,
     pub private_key_file: &'a Path,
     pub public_key_file: Option<&'a Path>,
-    pub known_hosts_file: &'a Path,
+    pub known_hosts_file: Option<&'a Path>,
 }
 
 pub struct PreparedSshCredentials {
     pub private_key: tempfile::NamedTempFile,
-    pub known_hosts: tempfile::NamedTempFile,
+    pub known_hosts: Option<tempfile::NamedTempFile>,
 }
 
 pub trait PassphrasePrompt {
@@ -260,7 +260,9 @@ pub fn validate_ssh_files(input: &SshCredentialInput<'_>) -> Result<()> {
     if let Some(public_key_file) = input.public_key_file {
         read_owned_file(public_key_file, false, &public_key_name(input))?;
     }
-    read_owned_file(input.known_hosts_file, false, &known_hosts_name(input))?;
+    if let Some(path) = input.known_hosts_file {
+        read_owned_file(path, false, &known_hosts_name(input))?;
+    }
     Ok(())
 }
 
@@ -319,21 +321,24 @@ pub fn prepare_ssh_credentials(
         }
     }
 
-    let known_hosts = temporary_credential(&read_owned_file(
-        input.known_hosts_file,
-        false,
-        &known_hosts_name(input),
-    )?)?;
-    let output = runner.output(cmd!(
-        "ssh-keygen",
-        "-F",
-        input.host,
-        "-f",
-        known_hosts.path(),
-    ))?;
-    if !output.status.success() || output.stdout.is_empty() {
-        bail!("{} has no key for {}", known_hosts_name(input), input.host);
-    }
+    let known_hosts = input
+        .known_hosts_file
+        .map(|path| -> Result<_> {
+            let known_hosts =
+                temporary_credential(&read_owned_file(path, false, &known_hosts_name(input))?)?;
+            let output = runner.output(cmd!(
+                "ssh-keygen",
+                "-F",
+                input.host,
+                "-f",
+                known_hosts.path(),
+            ))?;
+            if !output.status.success() || output.stdout.is_empty() {
+                bail!("{} has no key for {}", known_hosts_name(input), input.host);
+            }
+            Ok(known_hosts)
+        })
+        .transpose()?;
     Ok(PreparedSshCredentials {
         private_key: private_key_file,
         known_hosts,

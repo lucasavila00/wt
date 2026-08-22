@@ -42,11 +42,24 @@ fn run() -> Result<()> {
 }
 
 fn run_api() -> Result<()> {
+    let config = ServerConfig::load_from(Path::new(wt_server::SERVER_CONFIG_PATH))
+        .map_err(anyhow::Error::msg)?;
+    reject_remote_test_server(
+        config.test_server,
+        std::env::var_os("SSH_CONNECTION").is_some(),
+    )?;
     daemon::proxy(
         Path::new(CONTROL_SOCKET_PATH),
         std::io::stdin().lock(),
         std::io::stdout().lock(),
     )
+}
+
+fn reject_remote_test_server(test_server: bool, open_ssh: bool) -> Result<()> {
+    if test_server && open_ssh {
+        anyhow::bail!("WT test server refuses remote OpenSSH clients");
+    }
+    Ok(())
 }
 
 fn run_server() -> Result<()> {
@@ -60,6 +73,7 @@ fn run_server() -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
+    let test_server = server_config.test_server;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server_config.retained_config();
@@ -72,41 +86,52 @@ fn run_server() -> Result<()> {
     let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let owner = process_user()?;
+    let context = DaemonContext {
+        state,
+        operations,
+        worker,
+        gateway,
+        owner,
+        capacity_limit,
+        test_server,
+    };
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
-        handle_daemon_request(
-            &state,
-            &operations,
-            &worker,
-            &gateway,
-            &owner,
-            capacity_limit,
-            (request, progress),
-        )
+        handle_daemon_request(&context, request, progress)
     })
 }
 
-fn handle_daemon_request(
-    state: &StateConfig,
-    operations: &Operations,
-    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
-    gateway: &wt_agent_tool_gateway::ControlClient,
-    owner: &str,
+struct DaemonContext {
+    state: StateConfig,
+    operations: Operations,
+    worker: wt_retained_worlds::host::Worker<LibvirtProvider>,
+    gateway: wt_agent_tool_gateway::ControlClient,
+    owner: String,
     capacity_limit: wt_workload_registry::Resources,
-    request: (ApiRequest, &mut dyn std::io::Write),
+    test_server: bool,
+}
+
+fn handle_daemon_request(
+    context: &DaemonContext,
+    request: ApiRequest,
+    progress: &mut dyn std::io::Write,
 ) -> ApiResponse {
-    let (request, progress) = request;
     let result = (|| {
-        let store = Store::open(&state.database_path()).context("open instance registry")?;
+        let store =
+            Store::open(&context.state.database_path()).context("open instance registry")?;
         let service = Service::with_capacity_limit(
             store,
-            worker.clone(),
-            gateway.clone(),
-            operations.clone(),
-            capacity_limit,
+            context.worker.clone(),
+            context.gateway.clone(),
+            context.operations.clone(),
+            context.capacity_limit,
         );
         Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
-            &service, owner, request, progress,
+            &service,
+            &context.owner,
+            request,
+            context.test_server,
+            progress,
         ))
     })();
     result.unwrap_or_else(|error| {
@@ -124,4 +149,20 @@ fn process_user() -> Result<String> {
         .map(|user| user.name)
         .filter(|name| !name.is_empty())
         .ok_or_else(|| anyhow::anyhow!("no process user for uid {uid}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_clients_are_rejected_only_by_test_servers() {
+        assert!(reject_remote_test_server(false, false).is_ok());
+        assert!(reject_remote_test_server(false, true).is_ok());
+        assert!(reject_remote_test_server(true, false).is_ok());
+        insta::assert_snapshot!(
+            reject_remote_test_server(true, true).unwrap_err().to_string(),
+            @"WT test server refuses remote OpenSSH clients"
+        );
+    }
 }

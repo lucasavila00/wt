@@ -9,8 +9,6 @@ use std::time::{Duration, Instant};
 
 const ROWS: u16 = 30;
 const COLUMNS: u16 = 100;
-const TIMEOUT: Duration = Duration::from_secs(10);
-
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum Key {
@@ -34,6 +32,7 @@ pub struct Screen {
     output: Receiver<Vec<u8>>,
     writer: Option<Box<dyn Write + Send>>,
     child: Box<dyn Child + Send + Sync>,
+    timeout: Duration,
 }
 
 impl Screen {
@@ -42,6 +41,7 @@ impl Screen {
         arguments: &[&str],
         cwd: impl AsRef<Path>,
         environment: &[(&str, OsString)],
+        timeout: Duration,
     ) -> Result<Self> {
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -75,6 +75,7 @@ impl Screen {
             output,
             writer: Some(writer),
             child,
+            timeout,
         })
     }
 
@@ -102,7 +103,7 @@ impl Screen {
     }
 
     pub fn wait_for_text(&mut self, text: &str) -> Result<&mut Self> {
-        let deadline = Instant::now() + TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         loop {
             self.pump_available();
             if self.contents().contains(text) {
@@ -110,7 +111,8 @@ impl Screen {
             }
             if Instant::now() >= deadline {
                 bail!(
-                    "text {text:?} was not visible within ten seconds\n{}",
+                    "text {text:?} was not visible within {:?}\n{}",
+                    self.timeout,
                     self.contents()
                 );
             }
@@ -120,7 +122,7 @@ impl Screen {
 
     #[allow(dead_code)]
     pub fn wait_for_text_gone(&mut self, text: &str) -> Result<&mut Self> {
-        let deadline = Instant::now() + TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         loop {
             self.pump_available();
             if !self.contents().contains(text) {
@@ -128,7 +130,8 @@ impl Screen {
             }
             if Instant::now() >= deadline {
                 bail!(
-                    "text {text:?} remained visible for ten seconds\n{}",
+                    "text {text:?} remained visible for {:?}\n{}",
+                    self.timeout,
                     self.contents()
                 );
             }
@@ -138,7 +141,7 @@ impl Screen {
 
     #[allow(dead_code)]
     pub fn wait_for_exit(&mut self, expected_code: u32) -> Result<&mut Self> {
-        let deadline = Instant::now() + TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         loop {
             if let Some(status) = self.child.try_wait().context("poll wt process")? {
                 if status.exit_code() != expected_code {
@@ -154,7 +157,11 @@ impl Screen {
                 return Ok(self);
             }
             if Instant::now() >= deadline {
-                bail!("wt did not exit within ten seconds\n{}", self.contents());
+                bail!(
+                    "wt did not exit within {:?}\n{}",
+                    self.timeout,
+                    self.contents()
+                );
             }
             self.pump_available();
             thread::sleep(Duration::from_millis(10));
@@ -167,7 +174,7 @@ impl Screen {
 
     #[allow(dead_code)]
     pub fn wait_for_quiet(&mut self, interval: Duration) -> Result<&mut Self> {
-        let deadline = Instant::now() + TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         let mut quiet_until = Instant::now() + interval;
         loop {
             let now = Instant::now();
@@ -175,7 +182,10 @@ impl Screen {
                 return Ok(self);
             }
             if now >= deadline {
-                bail!("wt terminal output did not become quiet within ten seconds");
+                bail!(
+                    "wt terminal output did not become quiet within {:?}",
+                    self.timeout
+                );
             }
             match self
                 .output

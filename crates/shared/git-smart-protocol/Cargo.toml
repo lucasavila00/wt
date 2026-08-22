@@ -9,3 +9,6 @@ description = "Shared Git transport and write authorization for WT"
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+insta.workspace = true

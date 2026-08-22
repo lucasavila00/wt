@@ -5,6 +5,7 @@ use std::io::Write;
 use std::os::unix::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
+use wt_client::config::ContextKind;
 use wt_client::config::{ClientConfig, Context};
 use wt_client::inventory::{self, ContextInstance};
 use wt_client::transport::ContextError;
@@ -14,6 +15,8 @@ mod create;
 mod git_author;
 mod reports;
 mod shell;
+
+const TEST_SERVER_WARNING: &str = "WARNING: WT E2E TEST SERVER — test fixtures are installed.";
 
 #[cfg(test)]
 use git_author::{parse_git_config_value, required_git_config_error};
@@ -58,7 +61,12 @@ fn main() {
 
 fn run() -> Result<()> {
     let config = ClientConfig::load()?;
-    match Cli::parse().command {
+    let command = Cli::parse().command;
+    let test_server = local_test_server(&config);
+    if test_server {
+        eprintln!("{TEST_SERVER_WARNING}");
+    }
+    match command {
         Command::New => {
             let created = create::run(&config)?;
             let context = created.context;
@@ -151,7 +159,7 @@ fn run() -> Result<()> {
             );
         }
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
-        Command::Shell => shell::run(&config)?,
+        Command::Shell => shell::run(&config, test_server)?,
         Command::Sync => {
             let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());
@@ -160,6 +168,14 @@ fn run() -> Result<()> {
         Command::ClearReports => reports::clear(&config)?,
     }
     Ok(())
+}
+
+fn local_test_server(config: &ClientConfig) -> bool {
+    config
+        .contexts
+        .iter()
+        .filter(|context| matches!(context.kind, ContextKind::BareMetalLocal))
+        .any(|context| wt_client::transport::server_info(context).unwrap_or(false))
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

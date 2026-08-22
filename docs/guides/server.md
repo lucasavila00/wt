@@ -28,8 +28,9 @@ automatically and cannot write it back.
 Provisioning is not resumable. Remove a failed world and recreate it from the
 golden image. A world disk cannot be smaller than the image build disk.
 
-Provider tokens, SSH private keys, and trusted host keys remain in encrypted
-systemd credentials. Worlds receive scoped grants, never provider credentials.
+Provider tokens and SSH private keys remain in encrypted systemd credentials.
+Worlds receive scoped grants, never provider credentials. Gateway Git does not
+pin provider SSH host keys, so provider key rotation cannot block worlds.
 
 ## Reset
 

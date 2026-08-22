@@ -4,7 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::path::Path;
-use wt_git_smart_protocol::{serve_git, DuplexStream, GitTarget};
+use wt_git_smart_protocol::{serve_git, DuplexStream, GitTarget, HostKeyPolicy};
 
 pub fn serve(config_path: &Path) -> Result<()> {
     let config = ProxyConfig::load(config_path)?;
@@ -20,7 +20,7 @@ pub fn serve(config_path: &Path) -> Result<()> {
             user: &provider.user,
             port: Some(provider.port),
             private_key_file: &provider.private_key_file,
-            known_hosts_file: &provider.known_hosts_file,
+            host_key_policy: HostKeyPolicy::Pinned(&provider.known_hosts_file),
             path: &repository,
         },
         service,

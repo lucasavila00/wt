@@ -15,6 +15,8 @@ pub const CODEX_SESSIONS_PATH: &str = "/home/wt/.codex/sessions";
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub version: u32,
+    #[serde(default)]
+    pub test_server: bool,
     pub image: ImageConfig,
     pub libvirt: ServerLibvirtConfig,
     pub agent_tools: AgentToolsConfig,
