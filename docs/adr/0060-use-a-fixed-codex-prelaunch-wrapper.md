@@ -20,14 +20,15 @@ real CLI                  = /home/wt/.codex/packages/standalone/current/bin/code
 ```
 
 Both supported PATH orders enter the same wrapper. Before every launch, the
-wrapper validates the upstream executable, starts its app server, and calls
-`thread/list` without `useStateDbOnly`. Codex defines that operation as scanning
-rollout logs and repairing their state metadata.
+wrapper validates the upstream executable, starts its app server, discovers
+shared rollout IDs, reads any missing threads through the app server, and
+verifies that every shared session is indexed before it starts Codex.
 
-Index refresh is best-effort. Failure prints a warning and does not prevent the
-real CLI from starting. A missing or non-executable upstream CLI is an image
-contract failure and tells the operator to recreate the world from a verified
-image.
+Index refresh is best-effort. Failure prints a warning, appends the complete
+diagnostic to `~/.local/state/wt/codex-reconciliation.log`, and does not prevent
+the real CLI from starting. A missing or non-executable upstream CLI is an
+image contract failure and tells the operator to recreate the world from a
+verified image.
 
 The wrapper uses `exec` so the real CLI inherits the original arguments,
 environment, working directory, standard streams, signals, process identity,

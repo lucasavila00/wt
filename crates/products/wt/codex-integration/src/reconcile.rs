@@ -14,7 +14,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(20);
-const STDERR_LIMIT: usize = 64 * 1024;
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 
 pub(crate) fn reconcile() -> Result<()> {
@@ -314,10 +313,11 @@ impl AppServer {
             return Err(error);
         }
         loop {
-            let remaining = self
-                .deadline
-                .checked_duration_since(Instant::now())
-                .context("Codex app-server timed out")?;
+            let Some(remaining) = self.deadline.checked_duration_since(Instant::now()) else {
+                return Err(self.failure_with_stderr(format!(
+                    "Codex app-server timed out during {method}"
+                )));
+            };
             match self.output.recv_timeout(remaining) {
                 Ok(ServerOutput::Line(line)) => {
                     let Ok(response) = serde_json::from_str::<RpcResponse>(&line) else {
@@ -335,16 +335,14 @@ impl AppServer {
                 Ok(ServerOutput::Error(error)) => return Err(error.into()),
                 Ok(ServerOutput::Eof) => return Err(self.stopped_before_reply(method)),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    bail!(
-                        "Codex app-server timed out during {method}{}",
-                        self.stderr_suffix()
-                    )
+                    return Err(self.failure_with_stderr(format!(
+                        "Codex app-server timed out during {method}"
+                    )));
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    bail!(
-                        "Codex app-server output closed during {method}{}",
-                        self.stderr_suffix()
-                    )
+                    return Err(self.failure_with_stderr(format!(
+                        "Codex app-server output closed during {method}"
+                    )));
                 }
             }
         }
@@ -393,15 +391,15 @@ impl AppServer {
     }
 
     fn stopped_before_reply(&mut self, method: &str) -> anyhow::Error {
-        if self.child.try_wait().ok().flatten().is_some() {
-            let _ = self
-                .stderr_complete
-                .recv_timeout(Duration::from_millis(100));
-        }
-        anyhow::anyhow!(
-            "Codex app-server stopped before {method} replied{}",
-            self.stderr_suffix()
-        )
+        self.failure_with_stderr(format!(
+            "Codex app-server stopped before {method} replied"
+        ))
+    }
+
+    fn failure_with_stderr(&mut self, message: String) -> anyhow::Error {
+        self.close();
+        let _ = self.stderr_complete.recv_timeout(Duration::from_secs(1));
+        anyhow::anyhow!("{message}{}", self.stderr_suffix())
     }
 
     fn stderr_suffix(&self) -> String {
@@ -459,10 +457,6 @@ fn drain_stderr(mut pipe: impl Read, tail: Arc<Mutex<Vec<u8>>>) {
         }
         let mut tail = tail.lock().unwrap();
         tail.extend_from_slice(&buffer[..count]);
-        if tail.len() > STDERR_LIMIT {
-            let remove = tail.len() - STDERR_LIMIT;
-            tail.drain(..remove);
-        }
     }
 }
 
@@ -493,15 +487,24 @@ mod tests {
         let script = format!(
             r#"#!/bin/sh
 set -eu
+indexed=false
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
       printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"codexHome":"{}"}}}}'
       ;;
     *'"method":"thread/list"'*)
-      case "$line" in *useStateDbOnly*) exit 42 ;; esac
       id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[{{"id":"{}"}}],"nextCursor":null}}}}\n' "$id"
+      if "$indexed"; then
+        printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[{{"id":"{}"}}],"nextCursor":null}}}}\n' "$id"
+      else
+        printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[],"nextCursor":null}}}}\n' "$id"
+      fi
+      ;;
+    *'"method":"thread/read"'*)
+      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+      indexed=true
+      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"thread":{{}}}}}}\n' "$id"
       ;;
   esac
 done
@@ -514,7 +517,7 @@ done
     }
 
     #[test]
-    fn asks_codex_to_scan_and_repair_the_session_index() {
+    fn repairs_and_verifies_each_shared_session_before_returning() {
         let temp = tempdir().unwrap();
         let home = temp.path().join("codex-home");
         fs::create_dir(&home).unwrap();

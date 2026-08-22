@@ -13,7 +13,9 @@ The golden image owns two direct links to the integration executable:
 app server to perform its documented rollout scan and index repair, then
 executes the upstream CLI at
 `~/.codex/packages/standalone/current/bin/codex`. Reconciliation failure emits
-a warning but does not prevent Codex from starting.
+a warning but does not prevent Codex from starting. The complete failure is
+also appended to `~/.local/state/wt/codex-reconciliation.log` so it remains
+inspectable after the terminal diagnostic disappears.
 
 `install-config` installs WT's exact environment configuration at
 `$CODEX_HOME/config.toml`. It fails if a different configuration already

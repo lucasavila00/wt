@@ -48,14 +48,25 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
         )
     );
     let expected_stderr = if reconciliation_fails {
-        concat!(
-            "wt-codex-integration: reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable\n",
-            "stderr=unchanged\n"
+        format!(
+            "wt-codex-integration: reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable; full diagnostic recorded at {}/.local/state/wt/codex-reconciliation.log\nstderr=unchanged\n",
+            home.display()
         )
     } else {
-        "stderr=unchanged\n"
+        "stderr=unchanged\n".to_owned()
     };
     assert_eq!(String::from_utf8(run.stderr).unwrap(), expected_stderr);
+    let log = home.join(".local/state/wt/codex-reconciliation.log");
+    if reconciliation_fails {
+        let diagnostic = fs::read_to_string(log).unwrap();
+        assert!(diagnostic.starts_with("timestamp_unix="));
+        assert!(diagnostic.contains(" pid="));
+        assert!(diagnostic.ends_with(
+            "\nCodex app-server stopped before initialize replied: refresh unavailable\n\n"
+        ));
+    } else {
+        assert!(!log.exists());
+    }
 }
 
 #[test]
@@ -74,16 +85,22 @@ fn both_image_entrypoints_reconcile_then_exec_the_fixed_real_codex() {
             "    printf 'refresh unavailable\\n' >&2\n",
             "    exit 7\n",
             "  fi\n",
+            "  indexed=false\n",
             "  while IFS= read -r line; do\n",
             "    case \"$line\" in\n",
             "      *'\"method\":\"initialize\"'*)\n",
             "        printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"codexHome\":\"%s\"}}\\n' \"$CODEX_HOME\"\n",
             "        ;;\n",
             "      *'\"method\":\"thread/list\"'*)\n",
-            "        test \"${line#*useStateDbOnly}\" = \"$line\" || exit 42\n",
             "        id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
+            "        if \"$indexed\"; then data='[{\"id\":\"33333333-3333-4333-8333-333333333333\"}]'; else data='[]'; fi\n",
+            "        printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":%s,\"nextCursor\":null}}\\n' \"$id\" \"$data\"\n",
+            "        ;;\n",
+            "      *'\"method\":\"thread/read\"'*)\n",
+            "        id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
+            "        indexed=true\n",
             "        : > \"$CODEX_HOME/reconciled\"\n",
-            "        printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":[],\"nextCursor\":null}}\\n' \"$id\"\n",
+            "        printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"thread\":{}}}\\n' \"$id\"\n",
             "        ;;\n",
             "    esac\n",
             "  done\n",
@@ -108,6 +125,13 @@ fn both_image_entrypoints_reconcile_then_exec_the_fixed_real_codex() {
     )
     .unwrap();
     fs::set_permissions(&real_codex, fs::Permissions::from_mode(0o755)).unwrap();
+    let sessions = temp.path().join(".codex/sessions/2026/08/20");
+    fs::create_dir_all(&sessions).unwrap();
+    fs::write(
+        sessions.join("rollout-2026-08-20T10-00-00-33333333-3333-4333-8333-333333333333.jsonl"),
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"33333333-3333-4333-8333-333333333333\"}}\n",
+    )
+    .unwrap();
 
     let user_bin = temp.path().join(".local/bin");
     let system_bin = temp.path().join("system-bin");
