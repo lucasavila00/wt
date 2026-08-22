@@ -161,6 +161,31 @@ fn validate_context(
                 &session.session_id.to_string(),
             ));
         }
+        if session
+            .latest_user_message
+            .as_deref()
+            .is_some_and(|message| {
+                message.is_empty() || message.len() > 640 || message.chars().any(char::is_control)
+            })
+        {
+            return Err(invalid(
+                context,
+                "bounded control-free latest user message",
+                &session.session_id.to_string(),
+            ));
+        }
+        if session
+            .latest_user_message_at_unix_ms
+            .is_some_and(|timestamp| timestamp < 0)
+            || session.latest_user_message_at_unix_ms.is_some()
+                != session.latest_user_message.is_some()
+        {
+            return Err(invalid(
+                context,
+                "latest user message and nonnegative timestamp appear together",
+                &session.session_id.to_string(),
+            ));
+        }
         if session.observations.is_empty() {
             let Some(timestamp) = session.rollout_updated_at_unix_ms else {
                 return Err(invalid(
@@ -174,6 +199,7 @@ fn validate_context(
                 session.session_id,
                 timestamp,
                 session.title,
+                session.latest_user_message,
             ));
             continue;
         }
@@ -260,6 +286,7 @@ fn validate_context(
                 session_id: Some(session.session_id),
                 timestamp: Some(observation.received_at_unix_ms),
                 title: session.title.clone(),
+                latest_user_message: session.latest_user_message.clone(),
                 kind: CodexCardKind::Observation {
                     world_id: observation.world_id,
                     world_name: world.instance_name.to_string(),
@@ -394,6 +421,8 @@ mod tests {
         CodexSession {
             session_id: Uuid::from_u128(10),
             title: Some("Improve session cards".into()),
+            latest_user_message: Some("Make the cards taller and show the latest request".into()),
+            latest_user_message_at_unix_ms: Some(9),
             rollout_updated_at_unix_ms: Some(10),
             observations: vec![CodexSessionObservation {
                 world_id: world.identity.id,

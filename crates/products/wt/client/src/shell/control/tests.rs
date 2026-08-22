@@ -63,7 +63,7 @@ fn card_navigation_opens_only_the_selected_live_location() {
     state.set_codex(
         vec![
             first.clone(),
-            CodexCard::rollout_only("ars", Uuid::from_u128(2), 2, None),
+            CodexCard::rollout_only("ars", Uuid::from_u128(2), 2, None, None),
         ],
         "2026-08-21T20:00:00Z".into(),
         area(),
@@ -250,6 +250,7 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
         session_id: Some(session_id),
         timestamp: Some(index as i64),
         title: Some(format!("Session {index}")),
+        latest_user_message: Some(format!("Latest message {index}")),
         kind: CodexCardKind::Observation {
             world_id,
             world_name: "dev".into(),

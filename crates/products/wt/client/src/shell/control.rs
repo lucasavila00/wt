@@ -7,7 +7,7 @@ pub(super) const COMMANDS: [ControlCommand; 2] =
     [ControlCommand::NewWorld, ControlCommand::DeleteWorld];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
-pub(super) const CODEX_CARD_HEIGHT: u16 = 6;
+pub(super) const CODEX_CARD_HEIGHT: u16 = 8;
 pub(super) const WORLD_CARD_HEIGHT: u16 = 6;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -64,6 +64,7 @@ pub(super) struct CodexCard {
     pub(super) session_id: Option<Uuid>,
     pub(super) timestamp: Option<i64>,
     pub(super) title: Option<String>,
+    pub(super) latest_user_message: Option<String>,
     pub(super) kind: CodexCardKind,
 }
 
@@ -73,6 +74,7 @@ impl CodexCard {
         session_id: Uuid,
         timestamp: i64,
         title: Option<String>,
+        latest_user_message: Option<String>,
     ) -> Self {
         Self {
             identity: CodexCardIdentity::RolloutOnly {
@@ -83,6 +85,7 @@ impl CodexCard {
             session_id: Some(session_id),
             timestamp: Some(timestamp),
             title,
+            latest_user_message,
             kind: CodexCardKind::RolloutOnly,
         }
     }
@@ -96,6 +99,7 @@ impl CodexCard {
             session_id: None,
             timestamp: None,
             title: None,
+            latest_user_message: None,
             kind: CodexCardKind::ContextError { message },
         }
     }

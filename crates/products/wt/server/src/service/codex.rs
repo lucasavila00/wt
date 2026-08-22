@@ -6,6 +6,8 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use uuid::Uuid;
 use wt_control_protocol::{
     ApiError, ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, ErrorCode,
@@ -15,11 +17,15 @@ use wt_retained_worlds::WorldWorker;
 
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 const MAX_SESSION_TITLE_SCAN_BYTES: u64 = 1024 * 1024;
+const MAX_MESSAGE_PREVIEW_BYTES: usize = 640;
+
 #[derive(Clone, Debug)]
 struct Rollout {
     session_id: Uuid,
     updated_at_unix_ms: i64,
     title: Option<String>,
+    latest_user_message: Option<String>,
+    latest_user_message_at_unix_ms: Option<i64>,
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -56,6 +62,8 @@ fn merge_sessions(
                 CodexSession {
                     session_id: rollout.session_id,
                     title: rollout.title,
+                    latest_user_message: rollout.latest_user_message,
+                    latest_user_message_at_unix_ms: rollout.latest_user_message_at_unix_ms,
                     rollout_updated_at_unix_ms: Some(rollout.updated_at_unix_ms),
                     observations: Vec::new(),
                 },
@@ -66,6 +74,8 @@ fn merge_sessions(
         let session = sessions.entry(report.session_id).or_insert(CodexSession {
             session_id: report.session_id,
             title: None,
+            latest_user_message: None,
+            latest_user_message_at_unix_ms: None,
             rollout_updated_at_unix_ms: None,
             observations: Vec::new(),
         });
@@ -140,8 +150,9 @@ fn discover_rollouts(root: &Path) -> Result<(Vec<Rollout>, Vec<String>), String>
                 rollouts
                     .entry(rollout.session_id)
                     .and_modify(|current: &mut Rollout| {
-                        current.updated_at_unix_ms =
-                            current.updated_at_unix_ms.max(rollout.updated_at_unix_ms)
+                        if rollout.updated_at_unix_ms > current.updated_at_unix_ms {
+                            *current = rollout.clone();
+                        }
                     })
                     .or_insert(rollout);
             }
@@ -208,6 +219,8 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
         .map_err(|error| error.to_string())?;
     let mut title = None;
     let mut legacy_title = None;
+    let mut latest_user_message = None;
+    let mut latest_user_message_at_unix_ms = None;
     for line in reader
         .take(MAX_SESSION_TITLE_SCAN_BYTES)
         .lines()
@@ -217,18 +230,31 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
             continue;
         };
         if let Some(value) = session_title(&record) {
-            title = Some(value);
-            break;
-        }
-        if legacy_title.is_none() {
-            legacy_title = legacy_session_title(&record);
+            title.get_or_insert_with(|| value.clone());
+            latest_user_message = Some(value);
+            latest_user_message_at_unix_ms = record_timestamp(&record);
+        } else if let Some(value) = legacy_session_title(&record) {
+            legacy_title.get_or_insert_with(|| value.clone());
+            latest_user_message = Some(value);
+            latest_user_message_at_unix_ms = record_timestamp(&record);
         }
     }
     Ok(Some(Rollout {
         session_id,
         updated_at_unix_ms: unix_time_from(modified)?,
         title: title.or(legacy_title),
+        latest_user_message,
+        latest_user_message_at_unix_ms,
     }))
+}
+
+fn record_timestamp(record: &Value) -> Option<i64> {
+    let timestamp = record.get("timestamp")?.as_str()?;
+    let milliseconds = OffsetDateTime::parse(timestamp, &Rfc3339)
+        .ok()?
+        .unix_timestamp_nanos()
+        / 1_000_000;
+    i64::try_from(milliseconds).ok()
 }
 
 fn session_title(record: &Value) -> Option<String> {
@@ -263,8 +289,38 @@ fn normalized_message_text(message: &Value, content_type: &str) -> Option<String
         .filter_map(|item| item.get("text").and_then(Value::as_str))
         .collect::<Vec<_>>()
         .join(" ");
-    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!normalized.is_empty()).then(|| normalized.chars().take(160).collect())
+    let normalized = strip_terminal_controls(&text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!normalized.is_empty()).then(|| bounded_utf8(&normalized, MAX_MESSAGE_PREVIEW_BYTES))
+}
+
+fn strip_terminal_controls(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut characters = value.chars();
+    while let Some(character) = characters.next() {
+        if character == '\u{1b}' {
+            if characters.next() == Some('[') {
+                characters
+                    .by_ref()
+                    .find(|character| ('@'..='~').contains(character));
+            }
+        } else if character.is_control() {
+            output.push(' ');
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
+    let mut end = value.len().min(maximum_bytes);
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
 }
 
 fn unix_time_from(time: SystemTime) -> Result<i64, String> {
@@ -334,7 +390,7 @@ mod tests {
         fs::write(
             temp.path().join("rollout-main.jsonl"),
             format!(
-                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\",\"source\":{{}}}}}}\n{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"Improve  the session\\n cards\"}}]}}}}\n"
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\",\"source\":{{}}}}}}\n{{\"timestamp\":\"2026-08-22T10:00:00Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"Improve  the session\\n cards\"}}]}}}}\n"
             ),
         )
         .unwrap();
@@ -344,6 +400,10 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(
             rollouts[0].title.as_deref(),
+            Some("Improve the session cards")
+        );
+        assert_eq!(
+            rollouts[0].latest_user_message.as_deref(),
             Some("Improve the session cards")
         );
     }
@@ -357,8 +417,9 @@ mod tests {
             format!(
                 concat!(
                     "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\",\"source\":{{}}}}}}\n",
-                    "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"AGENTS.md instructions\"}}]}}}}\n",
-                    "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"UserMessage\",\"content\":[{{\"type\":\"text\",\"text\":\"Fix  session\\n titles\"}}]}}}}}}\n"
+                    "{{\"timestamp\":\"2026-08-22T10:00:00Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"AGENTS.md instructions\"}}]}}}}\n",
+                    "{{\"timestamp\":\"2026-08-22T10:01:00Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"UserMessage\",\"content\":[{{\"type\":\"text\",\"text\":\"Fix  session\\n titles\"}}]}}}}}}\n",
+                    "{{\"timestamp\":\"2026-08-22T10:02:00Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"UserMessage\",\"content\":[{{\"type\":\"text\",\"text\":\"Show \\u001b[31mthe latest\\u001b[0m request\"}}]}}}}}}\n"
                 ),
                 session_id
             ),
@@ -369,6 +430,14 @@ mod tests {
 
         assert!(warnings.is_empty());
         assert_eq!(rollouts[0].title.as_deref(), Some("Fix session titles"));
+        assert_eq!(
+            rollouts[0].latest_user_message.as_deref(),
+            Some("Show the latest request")
+        );
+        assert_eq!(
+            rollouts[0].latest_user_message_at_unix_ms,
+            Some(1_787_392_920_000)
+        );
     }
 
     #[test]
@@ -379,6 +448,8 @@ mod tests {
                 session_id,
                 updated_at_unix_ms: 1,
                 title: Some("Improve session cards".into()),
+                latest_user_message: Some("Implement the session cards".into()),
+                latest_user_message_at_unix_ms: Some(1),
             }],
             vec![wt_workload_registry::CodexSessionReport {
                 world_id: Uuid::new_v4(),

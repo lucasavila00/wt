@@ -477,9 +477,10 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
             });
             vec![
                 Line::from(
-                    card.title
+                    card.latest_user_message
                         .clone()
-                        .unwrap_or_else(|| "Untitled Codex session".into()),
+                        .or_else(|| card.title.clone())
+                        .unwrap_or_else(|| "No user-message preview".into()),
                 ),
                 Line::from(git.unwrap_or_else(|| cwd.clone())),
                 Line::from(format!(
@@ -494,8 +495,9 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
         }
         CodexCardKind::RolloutOnly => vec![
             Line::from(
-                card.title
+                card.latest_user_message
                     .clone()
+                    .or_else(|| card.title.clone())
                     .unwrap_or_else(|| "Untitled Codex session".into()),
             ),
             Line::from(format!(

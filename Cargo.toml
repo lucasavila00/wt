@@ -62,7 +62,7 @@ socket2 = { version = "0.6.5", features = ["all"] }
 ssh-key = { version = "0.6.7", features = ["ed25519", "encryption", "getrandom"] }
 thiserror = "2.0.18"
 toml = "1.0.3"
-time = { version = "0.3.53", features = ["formatting"] }
+time = { version = "0.3.53", features = ["formatting", "parsing"] }
 tempfile = "3.27.0"
 termwiz = "0.23.3"
 swc_common = "24.0.0"
