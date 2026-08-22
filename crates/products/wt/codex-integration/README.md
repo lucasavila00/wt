@@ -5,21 +5,20 @@ index.
 
 ```text
 wt-codex-integration reconcile
-wt-codex-integration install
 wt-codex-integration install-config
-wt-codex-integration uninstall
 ```
 
-`install` writes WT's exact environment configuration to
-`$CODEX_HOME/config.toml` and replaces the `codex` command found in `PATH` with
-a trampoline. It fails if a different configuration already exists. The
-trampoline reconciles sessions, then runs the saved Codex CLI. `uninstall`
-restores the saved command.
+The golden image owns two direct links to the integration executable:
+`~/.local/bin/codex` and `/usr/local/bin/codex`. The integration asks Codex's
+app server to perform its documented rollout scan and index repair, then
+executes the upstream CLI at
+`~/.codex/packages/standalone/current/bin/codex`. Reconciliation failure emits
+a warning but does not prevent Codex from starting.
 
-`install-config` installs only the user configuration, for environments where
-the trampoline is already provided by the host.
+`install-config` installs WT's exact environment configuration at
+`$CODEX_HOME/config.toml`. It fails if a different configuration already
+exists.
 
-WT runs `install` only as part of initial retained-world provisioning. That
-provisioning flow does not resume or repair an interrupted trampoline
-transition; remove the failed world and create it again from the retained
-image.
+The image recipe installs and verifies the links. Per-world provisioning does
+not replace or repair the image-owned entrypoints. Remove a world with damaged
+Codex integration and create it again from a verified retained image.

@@ -20,8 +20,6 @@ struct Cli {
 enum Command {
     /// Ask Codex to discover shared session rollouts.
     Reconcile,
-    /// Replace the Codex command in PATH with the WT trampoline.
-    Install,
     /// Install WT's exact Codex user configuration.
     InstallConfig,
     /// Report a WT-managed Codex lifecycle hook.
@@ -34,8 +32,6 @@ enum Command {
         tmux_session: String,
         pane_id: String,
     },
-    /// Restore the Codex command replaced by `install`.
-    Uninstall,
 }
 
 fn main() {
@@ -57,18 +53,8 @@ fn run(args: Vec<OsString>) -> Result<()> {
 
     match Cli::parse_from(args).command {
         Command::Reconcile => {
-            let result = reconcile::reconcile()?;
-            for warning in &result.warnings {
-                eprintln!("wt-codex-integration: {warning}");
-            }
-            println!(
-                "Codex sessions: {} already indexed, {} reconciled.",
-                result.already_indexed, result.reconciled
-            );
-        }
-        Command::Install => {
-            let outcome = install::install()?;
-            println!("{}", outcome.message());
+            reconcile::reconcile()?;
+            println!("Codex session index refreshed.");
         }
         Command::InstallConfig => install::install_user_config()?,
         Command::ReportHook => report::report_hook()?,
@@ -77,24 +63,14 @@ fn run(args: Vec<OsString>) -> Result<()> {
             tmux_session,
             pane_id,
         } => println!("{}", focus::focus(session_id, &tmux_session, &pane_id)?),
-        Command::Uninstall => {
-            let path = install::uninstall()?;
-            println!("Removed Codex trampoline: {}", path.display());
-        }
     }
     Ok(())
 }
 
 fn run_trampoline(args: Vec<OsString>) -> Result<()> {
-    let real_codex = install::active_installation(&args)?;
-    install::prepare_shared_sessions()?;
-    nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o027));
+    let real_codex = install::real_codex()?;
     match reconcile::reconcile_with_codex(&real_codex) {
-        Ok(result) => {
-            for warning in result.warnings {
-                eprintln!("wt-codex-integration: {warning}");
-            }
-        }
+        Ok(()) => {}
         Err(error) => eprintln!("wt-codex-integration: reconciliation failed: {error:#}"),
     }
 
@@ -120,9 +96,7 @@ Usage: wt-codex-integration <COMMAND>
 
 Commands:
   reconcile       Ask Codex to discover shared session rollouts
-  install         Replace the Codex command in PATH with the WT trampoline
   install-config  Install WT's exact Codex user configuration
-  uninstall       Restore the Codex command replaced by `install`
   help            Print this message or the help of the given subcommand(s)
 
 Options:

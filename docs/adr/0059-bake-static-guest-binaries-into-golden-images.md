@@ -21,8 +21,8 @@ executables change with a WT release, not with an individual world.
 Build and validate the four static executables before preparing the retained
 image. Include their SHA-256 digests in the image provenance manifest, install
 them root-owned with mode 0755, and verify their metadata and contents before
-publishing the image. Run the Codex integration installer while building the
-image so its user-owned trampoline is part of the same contract.
+publishing the image. Install and verify the Codex integration entrypoints
+while building the image so their fixed topology is part of the same contract.
 
 World provisioning transfers only mutable, world-specific data: SSH access,
 Git identity, gateway grant and provider configuration, the vsock port, and

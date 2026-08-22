@@ -23,10 +23,15 @@ printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu")" = "$WT_UID:$WT_GID 755"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu/color")" = "$WT_UID:$WT_GID 644"
 test -x "$WT_HOME/.local/bin/codex"
-test "$(readlink /usr/local/bin/codex)" = "$WT_HOME/.local/bin/codex"
+test "$(readlink /usr/local/bin/codex)" = \
+    /usr/local/bin/wt-codex-integration
 test "$(readlink "$WT_HOME/.local/bin/codex")" = \
     /usr/local/bin/wt-codex-integration
-test -x "$WT_HOME/.local/bin/.codex.wt-real"
+test -x "$WT_HOME/.codex/packages/standalone/current/bin/codex"
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
+    /usr/local/bin/codex --version > /dev/null
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
+    "$WT_HOME/.local/bin/codex" --version > /dev/null
 printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \

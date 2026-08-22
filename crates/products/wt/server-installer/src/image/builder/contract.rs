@@ -41,11 +41,7 @@ pub(in crate::image) fn verify_retained_guest_contract(
     )?;
     for (name, _) in super::super::GUEST_BINARY_INPUTS {
         let guest_path = format!("/usr/local/bin/{name}");
-        let fields = binary_listing
-            .lines()
-            .find(|line| line.ends_with(&format!(" {guest_path}")))
-            .map(|line| line.split_whitespace().collect::<Vec<_>>())
-            .unwrap_or_default();
+        let fields = metadata_fields(&binary_listing, &guest_path);
         if fields.len() < 6
             || fields[0] != "-"
             || fields[1] != "0755"
@@ -125,6 +121,14 @@ pub(in crate::image) fn verify_retained_guest_contract(
     Ok(())
 }
 
+fn metadata_fields<'a>(listing: &'a str, path: &str) -> Vec<&'a str> {
+    listing
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .find(|fields| fields.get(5).is_some_and(|candidate| *candidate == path))
+        .unwrap_or_default()
+}
+
 pub(in crate::image) fn validate_result_metadata(listing: &str) -> Result<()> {
     let fields = listing
         .lines()
@@ -140,4 +144,22 @@ pub(in crate::image) fn validate_result_metadata(listing: &str) -> Result<()> {
         bail!("image build result must be owned by root:root with mode 0644");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_fields;
+
+    #[test]
+    fn binary_metadata_ignores_symlinks_that_target_the_binary() {
+        let guest_path = "/usr/local/bin/wt-codex-integration";
+        let listing = concat!(
+            "l 0777 39 0 0 /usr/local/bin/codex -> /usr/local/bin/wt-codex-integration\n",
+            "- 0755 123 0 0 /usr/local/bin/wt-codex-integration\n",
+        );
+        let fields = metadata_fields(listing, guest_path);
+
+        assert_eq!(fields[0], "-");
+        assert_eq!(fields[1], "0755");
+    }
 }
