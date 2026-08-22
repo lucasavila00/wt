@@ -147,6 +147,17 @@ impl Flow {
         FlowAction::None
     }
 
+    pub(crate) fn handle_mouse(&mut self, mouse: event::MouseEvent, area: Rect) -> FlowAction {
+        if !matches!(self.phase, Phase::Form) {
+            return FlowAction::None;
+        }
+        match self.form.handle_mouse(mouse, area) {
+            FormAction::None => FlowAction::None,
+            FormAction::Cancel => FlowAction::Cancel,
+            FormAction::Submit(_) => unreachable!("the fields stage only advances to review"),
+        }
+    }
+
     pub(crate) fn poll(&mut self) -> FlowAction {
         let Some(event) = self.task.as_ref().and_then(Task::poll) else {
             return FlowAction::None;
@@ -340,6 +351,7 @@ fn run_loop(
                 flow.handle_key(key, config)
             }
             Event::Paste(text) => flow.handle_paste(&text),
+            Event::Mouse(mouse) => flow.handle_mouse(mouse, terminal.size()?.into()),
             _ => FlowAction::None,
         };
         match action {

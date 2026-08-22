@@ -292,7 +292,19 @@ fn dispatch_event(
         if flow.handle_progress_mouse(&event, area) {
             return Ok(true);
         }
-        if matches!(event, Event::Mouse(_)) && flow.blocks_input() {
+        if let Event::Mouse(mouse) = event
+            && flow.blocks_input()
+        {
+            let action = flow.handle_mouse(mouse, area);
+            let _ = apply_creation_action(
+                action,
+                &mut flows.creation,
+                &mut flows.creation_error,
+                sessions,
+                model,
+                runtime.refresh,
+                area,
+            )?;
             return Ok(true);
         }
     }
