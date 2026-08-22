@@ -9,4 +9,4 @@ to authorize or revoke agent keys.
 Host file, command, and SSH credential handling comes from
 `wt-installer-support`. Proxy request handling stays in `wt-git-proxy`.
 
-Install and operation: [wt-git-proxy](../service/README.md).
+Run with `scripts/install-git-server --config PATH`.

@@ -7,5 +7,3 @@ handling, and the common provisioning flow for guest access, Git author state,
 agent tooling, and Codex mounts.
 
 Host lifecycle decisions are implemented in this crate's product-owned module.
-
-System boundary: [Architecture](../../../../docs/internals/architecture.md).

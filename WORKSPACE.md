@@ -25,5 +25,3 @@ scripts/cargo run -p wt-server -- --help
 scripts/cargo run -p wt-server-installer -- --help
 make install-git-server CONFIG=path/to/config.toml
 ```
-
-Development setup and required checks: [Development](./DEVELOPMENT.md).

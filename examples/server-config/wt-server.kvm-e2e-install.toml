@@ -1,6 +1,6 @@
-# Test-only install input for preparing a clean host for make e2e-tests.
-# The provider files are disposable fixtures created by the instructions in
-# crates/tests/end-to-end/README.md. Do not put real credentials there.
+# Test-only install input for make e2e-tests on a disposable Ubuntu/KVM host.
+# The provider paths below must contain disposable fixtures, never real
+# credentials.
 version = 1
 test_server = true
 

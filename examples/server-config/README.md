@@ -12,9 +12,7 @@ configuration.
 
 Each `agent_tools` provider names an API-token file and SSH key pair. Paths may
 be absolute or start with `~/`. The installer validates them and stores
-encrypted copies for the gateway; worlds never receive them. The gateway's
-provider host-identity tradeoff is documented in
-[known limitations](../../docs/known-limitations.md#agent-gateway-provider-host-identity).
+encrypted copies for the gateway; worlds never receive them.
 `agent_tools.vsock_port` is the private gateway endpoint shared by the server and
 world relays. Installed services use the configured value. Development and E2E
 processes may override it with `WT_AGENT_TOOL_VSOCK_PORT`.
@@ -26,5 +24,4 @@ read-only login.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` sets `test_server = true` and uses disposable
-provider fixtures for the full KVM E2E flow. See the
-[integration-test instructions](../../crates/tests/end-to-end/README.md#kvm-test-host).
+provider paths. Never use it with real credentials or production workloads.

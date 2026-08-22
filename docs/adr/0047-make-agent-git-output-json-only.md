@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-21
-- Amends: [ADR 0034](0034-use-json-for-agent-git-commands.md)'s output decision
 
 ## Context
 

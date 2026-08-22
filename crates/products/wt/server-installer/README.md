@@ -36,6 +36,3 @@ installed state and fails on drift or partial state.
 
 Membership in `libvirt` grants control of the host hypervisor. Limit it to
 trusted server users.
-
-Usage: [Development and setup](../../DEVELOPMENT.md). Config samples:
-[`examples/server-config/`](../../examples/server-config/).

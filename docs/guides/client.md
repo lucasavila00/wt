@@ -33,7 +33,7 @@ reserved for managed SSH.
 | `wt start NAME` | Start the existing guest and disk |
 | `wt stop NAME` | Shut down the guest and keep its disk |
 | `wt ssh NAME` | Sync managed aliases and connect to Byobu |
-| `wt shell` | Open all accessible worlds in one [terminal workspace](./shell.md) |
+| `wt shell` | Open all accessible worlds in one terminal workspace |
 | `wt rm NAME` | Destroy the world |
 | `wt sync` | Rewrite managed SSH inventory |
 

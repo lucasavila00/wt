@@ -14,5 +14,4 @@ or RAM and count only current disk allocation; starting one reacquires its full
 configured capacity.
 
 Migrations and generated schema are owned by
-`crates/shared/workload-registry` and embedded in the binaries. This host-only
-schema intentionally requires a fresh registry after the feature removal.
+`crates/shared/workload-registry` and embedded in the binaries.

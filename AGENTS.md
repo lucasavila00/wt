@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Never run unrestricted Rust builds or tests.** The repository-wide settings
-> in [`.cargo/config.toml`](.cargo/config.toml) cap Cargo build jobs and Rust test
+> in `.cargo/config.toml` cap Cargo build jobs and Rust test
 > threads at four. Keep those limits in place and do not override or raise them;
 > tooling that bypasses Cargo configuration must enforce an equivalent maximum.
 
@@ -72,7 +72,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 # Agents
 
-- Read `docs/README.md` and `docs/internals/architecture.md` first.
+- Read `README.md` and `docs/internals/architecture.md` first.
 - If Rust tooling is missing, install stable Rust as the normal user with
   rustup, not from apt:
   `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`,

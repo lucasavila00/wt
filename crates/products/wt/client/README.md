@@ -28,6 +28,3 @@ It does not install or change the server.
 ```text
 scripts/cargo run -p wt-client -- --help
 ```
-
-User-visible behavior, transport, and SSH generation:
-[Client and SSH](../../../../docs/guides/client.md).

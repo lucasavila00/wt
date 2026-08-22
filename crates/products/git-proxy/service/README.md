@@ -110,9 +110,3 @@ and select the same client to remove its server access.
   branch rules apply after the proxy policy.
 - A repository with an explicit noncanonical `remote.*.pushurl` may bypass the
   global URL rewrite. Remove it or point it at a canonical provider URL.
-
-## More detail
-
-- [How a connection moves through the proxy](docs/how-it-works.md)
-- [How the write policy works](docs/write-policy.md)
-- [Where to pay attention when changing it](docs/maintenance.md)

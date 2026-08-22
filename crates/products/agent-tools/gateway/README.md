@@ -12,5 +12,3 @@ the shared registry; it validates their Byobu target inside the guest first.
 Provider SSH keys and API tokens never enter the guest. Gateway Git prioritizes
 availability and does not verify provider SSH host keys; its SSH transport uses
 no persistent known-hosts file.
-
-System boundaries: [Provider boundaries](../../../../docs/internals/provider.md).

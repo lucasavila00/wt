@@ -7,5 +7,4 @@ mkdir -p ~/.wt
 cp examples/client-config/wt.development.toml ~/.wt/config.toml
 ```
 
-Each context names a local or OpenSSH WT server. See
-[Client and SSH](../../docs/guides/client.md).
+Each context names a local or OpenSSH WT server.

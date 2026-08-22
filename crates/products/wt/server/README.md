@@ -4,10 +4,10 @@ Owner-scoped control-plane daemon for one KVM server.
 
 Systemd runs `wt-server serve` as the installed server user. It listens only on
 the mode-`0600` Unix socket `/run/wt/server.sock`. `wt` invokes `wt-server api`
-locally or through OpenSSH; that command bridges one protocol version 6 JSON
-request, zero or more line-delimited progress events, and exactly one final
-response between stdio and the daemon. Progress delivery is best-effort and a
-disconnected observer does not cancel world provisioning.
+locally or through OpenSSH; that command bridges one JSON request, zero or more
+line-delimited progress events, and exactly one final response between stdio
+and the daemon. Progress delivery is best-effort and a disconnected observer
+does not cancel world provisioning.
 
 ## Owns
 
@@ -35,6 +35,3 @@ restart marks interrupted operations `error` at startup; cleanup requires
 ```text
 wt ls
 ```
-
-Install: [Development and setup](../../DEVELOPMENT.md). System flow:
-[Architecture](../../docs/internals/architecture.md).

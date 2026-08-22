@@ -32,11 +32,5 @@ before creating a `GitTarget`.
 The main entry points are `serve_git`, `WritePolicy`, and `repository_refs`.
 The other public helpers support frontend messages and custom streams.
 
-## More detail
-
-- [How a request moves through the crate](docs/how-it-works.md)
-- [How the write policy works](docs/write-policy.md)
-- [Where to pay attention when changing it](docs/maintenance.md)
-
-Read the maintenance page before changing parsing, process cleanup, or target
-handling. This small crate sits on a write and credential boundary.
+Changes to parsing, process cleanup, or target handling need extra care. This
+crate sits on a write and credential boundary.

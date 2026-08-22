@@ -10,5 +10,3 @@ Production libvirt/KVM backend.
 
 The retained-world crate owns provisioning and readiness after the machine is
 available.
-
-Lifecycle: [KVM](../../docs/internals/kvm.md).
