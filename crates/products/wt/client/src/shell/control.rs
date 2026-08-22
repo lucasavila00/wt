@@ -197,7 +197,7 @@ pub(super) struct ControlState {
     selected: Option<CodexCardIdentity>,
     codex_offset: usize,
     opening: Option<CodexCardIdentity>,
-    open_error: Option<(CodexCardIdentity, String)>,
+    open_failure: Option<CodexOpenTarget>,
     worlds_updated_at: Option<String>,
     codex_updated_at: Option<String>,
 }
@@ -211,7 +211,7 @@ impl Default for ControlState {
             selected: None,
             codex_offset: 0,
             opening: None,
-            open_error: None,
+            open_failure: None,
             worlds_updated_at: None,
             codex_updated_at: None,
         }
@@ -259,11 +259,8 @@ impl ControlState {
         self.opening.as_ref()
     }
 
-    pub(super) fn open_error(&self, identity: &CodexCardIdentity) -> Option<&str> {
-        self.open_error
-            .as_ref()
-            .filter(|(target, _)| target == identity)
-            .map(|(_, message)| message.as_str())
+    pub(super) fn open_failed(&self) -> bool {
+        self.open_failure.is_some()
     }
 
     pub(super) fn set_codex(
@@ -293,6 +290,16 @@ impl ControlState {
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
+        if self.open_failure.is_some() && key.modifiers == KeyModifiers::NONE {
+            match key.code {
+                KeyCode::Enter => return self.retry_open(),
+                KeyCode::Esc => {
+                    self.open_failure = None;
+                    return None;
+                }
+                _ => {}
+            }
+        }
         if self.palette.is_open() {
             return self.palette.handle_key(key).map(ControlAction::Command);
         }
@@ -334,6 +341,20 @@ impl ControlState {
             }
             MouseEventKind::Down(MouseButton::Left) => {}
             _ => return (false, None),
+        }
+        if self.open_failure.is_some() {
+            let (retry, dismiss) = super::toast::actions(area);
+            let position = (mouse.column, mouse.row).into();
+            if retry.contains(position) {
+                return (true, self.retry_open());
+            }
+            if dismiss.contains(position) {
+                self.open_failure = None;
+                return (true, None);
+            }
+            if super::toast::area(area).contains(position) {
+                return (true, None);
+            }
         }
         if self.palette.is_open() {
             let (_, results) = command_palette_layout(control_areas(area).1);
@@ -379,16 +400,12 @@ impl ControlState {
         self.palette.close();
     }
 
-    pub(super) fn finish_open(
-        &mut self,
-        identity: &CodexCardIdentity,
-        error: Option<String>,
-    ) -> bool {
-        if self.opening.as_ref() != Some(identity) {
+    pub(super) fn finish_open(&mut self, target: &CodexOpenTarget, failed: bool) -> bool {
+        if self.opening.as_ref() != Some(&target.identity) {
             return false;
         }
         self.opening = None;
-        self.open_error = error.map(|message| (identity.clone(), message));
+        self.open_failure = failed.then(|| target.clone());
         true
     }
 
@@ -403,8 +420,14 @@ impl ControlState {
             .find(|card| &card.identity == selected)?
             .open_target()?;
         self.opening = Some(target.identity.clone());
-        self.open_error = None;
+        self.open_failure = None;
         Some(target)
+    }
+
+    fn retry_open(&mut self) -> Option<ControlAction> {
+        let target = self.open_failure.take()?;
+        self.opening = Some(target.identity.clone());
+        Some(ControlAction::OpenCodex(Box::new(target)))
     }
 
     fn move_codex(&mut self, delta: isize, area: Rect) {

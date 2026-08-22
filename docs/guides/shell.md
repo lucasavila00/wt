@@ -52,10 +52,11 @@ replace any world's playback connection.
 Cards show activity, title, repository, branch, working directory, context,
 world, Byobu target, session, and report age. Inactive and saved-session cards
 explain why they cannot open.
-Malformed context data and failed pane checks remain visible as exact errors;
-WT does not guess another world or pane. The Worlds and Codex titles show when
-their latest snapshot was applied in UTC, or `Updating…` before the first
-snapshot arrives.
+Malformed context data remains visible as an exact error. A failed pane-open
+check leaves the card intact and shows a persistent notification with a bold,
+clickable `Retry` action; `Enter` retries and `Esc` dismisses it. WT does not
+guess another world or pane. The Worlds and Codex titles show when their latest
+snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
 
 Opening requires worlds provisioned by a WT version containing this feature.
 After upgrading WT, recreate older worlds so their relay records pane markers

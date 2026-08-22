@@ -252,6 +252,44 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
         footer,
     );
     draw_command_palette(frame, content, model.control().palette());
+    if model.control().open_failed() {
+        draw_codex_open_toast(frame, area);
+    }
+}
+
+fn draw_codex_open_toast(frame: &mut Frame<'_>, area: Rect) {
+    let toast = super::toast::area(area);
+    let (retry, _) = super::toast::actions(area);
+    frame.render_widget(Clear, toast);
+    frame.render_widget(
+        Block::new()
+            .borders(Borders::ALL)
+            .border_style(Style::new().fg(Color::Red))
+            .title(" Could not open Codex session ")
+            .title(
+                Line::styled(
+                    "×",
+                    Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
+                )
+                .alignment(Alignment::Right),
+            ),
+        toast,
+    );
+    frame.render_widget(
+        Paragraph::new("The session could not be focused. Try again."),
+        Rect::new(
+            toast.x.saturating_add(1),
+            toast.y.saturating_add(1),
+            toast.width.saturating_sub(2),
+            1,
+        ),
+    );
+    frame.render_widget(
+        Paragraph::new("Retry")
+            .alignment(Alignment::Right)
+            .style(Style::new().fg(Color::White).add_modifier(Modifier::BOLD)),
+        retry,
+    );
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
@@ -407,15 +445,6 @@ fn draw_codex_card(
         ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-
-    if let Some(error) = state.open_error(&card.identity) {
-        frame.render_widget(
-            Paragraph::new(Line::styled(error, Style::new().fg(Color::Red)))
-                .wrap(Wrap { trim: false }),
-            inner,
-        );
-        return;
-    }
 
     let lines = card_lines(card);
     let footer = if state.opening() == Some(&card.identity) {

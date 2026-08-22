@@ -1,6 +1,4 @@
-use super::control::{
-    CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
-};
+use super::control::{CodexCard, CodexOpenTarget, ControlAction, ControlCommand, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use uuid::Uuid;
@@ -334,15 +332,15 @@ impl ShellModel {
 
     pub(super) fn finish_codex_open(
         &mut self,
-        identity: &CodexCardIdentity,
+        target: &CodexOpenTarget,
         world: Option<usize>,
-        error: Option<String>,
+        failed: bool,
     ) {
-        let accepted = self.control.finish_open(identity, error.clone());
+        let accepted = self.control.finish_open(target, failed);
         if accepted
             && self.mode == Mode::Control
             && self.control.activity() == super::control::Activity::Codex
-            && error.is_none()
+            && !failed
         {
             let Some(world) = world else {
                 return;
