@@ -13,6 +13,24 @@ const DEFAULT_VCPUS: u32 = 2;
 const DEFAULT_MEMORY_MIB: u64 = 4096;
 const DEFAULT_DISK_GIB: u64 = 32;
 const LABEL_WIDTH: usize = 16;
+const SUGGESTED_NAMES: [&str; 16] = [
+    "beagle",
+    "collie",
+    "corgi",
+    "dachshund",
+    "dalmatian",
+    "greyhound",
+    "husky",
+    "labrador",
+    "mastiff",
+    "poodle",
+    "pug",
+    "retriever",
+    "samoyed",
+    "terrier",
+    "whippet",
+    "wolfhound",
+];
 const HOST_FIELDS: [Field; 5] = [
     Field::Context,
     Field::Name,
@@ -60,6 +78,7 @@ pub(crate) struct Form {
     contexts: Vec<String>,
     context: usize,
     name: String,
+    name_is_suggestion: bool,
     vcpus: String,
     memory: String,
     disk: String,
@@ -75,6 +94,7 @@ impl Form {
         config: &ClientConfig,
         author: GitAuthor,
         keys: Vec<(String, String)>,
+        used_names: &std::collections::BTreeSet<String>,
     ) -> anyhow::Result<Self> {
         if config.contexts.is_empty() {
             anyhow::bail!("no contexts are configured");
@@ -86,7 +106,8 @@ impl Form {
                 .map(|context| context.name.clone())
                 .collect(),
             context: 0,
-            name: String::new(),
+            name: suggested_name(used_names),
+            name_is_suggestion: true,
             vcpus: String::new(),
             memory: String::new(),
             disk: String::new(),
@@ -125,6 +146,9 @@ impl Form {
             KeyCode::Right if self.field() == Field::Context => self.move_context(1),
             KeyCode::Enter => return self.advance(),
             KeyCode::Backspace => {
+                if self.field() == Field::Name {
+                    self.name_is_suggestion = false;
+                }
                 if let Some(value) = self.value_mut() {
                     value.pop();
                     self.error = None;
@@ -135,6 +159,10 @@ impl Form {
                     .modifiers
                     .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
             {
+                if self.field() == Field::Name && self.name_is_suggestion {
+                    self.name.clear();
+                    self.name_is_suggestion = false;
+                }
                 if let Some(value) = self.value_mut() {
                     value.push(character);
                     self.error = None;
@@ -147,6 +175,10 @@ impl Form {
 
     pub(crate) fn handle_paste(&mut self, text: &str) -> Action {
         if self.stage == Stage::Fields {
+            if self.field() == Field::Name && self.name_is_suggestion {
+                self.name.clear();
+                self.name_is_suggestion = false;
+            }
             if let Some(value) = self.value_mut() {
                 value.push_str(text);
                 self.error = None;
@@ -393,6 +425,21 @@ fn muted_style() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
 
+fn suggested_name(used_names: &std::collections::BTreeSet<String>) -> String {
+    SUGGESTED_NAMES
+        .iter()
+        .find(|name| !used_names.contains(**name))
+        .map_or_else(
+            || {
+                (1..)
+                    .map(|number| format!("world-{number}"))
+                    .find(|name| !used_names.contains(name))
+                    .expect("the generated world name space is unbounded")
+            },
+            |name| (*name).to_owned(),
+        )
+}
+
 fn placeholder(value: &str, default: &str) -> String {
     if value.is_empty() {
         format!("{default} (default)")
@@ -458,6 +505,7 @@ mod tests {
                 email: "test@example.com".into(),
             },
             vec![("ssh-ed25519 key".into(), "SHA256:key".into())],
+            &std::collections::BTreeSet::new(),
         )
         .unwrap()
     }
@@ -477,9 +525,20 @@ mod tests {
     }
 
     #[test]
+    fn suggests_the_first_unused_world_name() {
+        let used_names = ["beagle".to_owned(), "collie".to_owned()]
+            .into_iter()
+            .collect();
+
+        assert_eq!(suggested_name(&used_names), "corgi");
+    }
+
+    #[test]
     fn invalid_values_stay_in_the_form() {
         let mut form = form();
         form.focus = 1;
+        form.name.clear();
+        form.name_is_suggestion = false;
 
         assert!(matches!(
             form.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),

@@ -487,6 +487,7 @@ fn start_control_command(
                 command,
                 config,
                 refresh,
+                model,
                 &mut flows.creation,
                 &mut flows.creation_error,
             );
@@ -528,6 +529,7 @@ fn start_creation(
     command: ControlCommand,
     config: &ClientConfig,
     refresh: &WorldRefresh,
+    model: &ShellModel,
     creation: &mut Option<crate::create::Flow>,
     error: &mut Option<String>,
 ) {
@@ -535,7 +537,12 @@ fn start_creation(
         ControlCommand::NewWorld => {}
         ControlCommand::DeleteWorld => unreachable!("delete is handled separately"),
     }
-    match crate::create::prepare(config) {
+    let used_names = model
+        .worlds()
+        .iter()
+        .map(|world| world.instance_name.to_string())
+        .collect();
+    match crate::create::prepare(config, &used_names) {
         Ok(flow) => {
             refresh.invalidate();
             *creation = Some(flow);

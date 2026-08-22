@@ -94,6 +94,7 @@ fn enter_validates_before_advancing() -> Result<()> {
     screen
         .wait_for_text("Create world")?
         .press(Key::Enter)?
+        .type_text("_")?
         .press(Key::Enter)?
         .wait_for_text("invalid instance name")?;
     Ok(())

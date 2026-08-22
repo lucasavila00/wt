@@ -9,7 +9,7 @@ expression: screen.contents()
 
          ┌Create world────────────────────────────────────────────────────────────────────┐
          │ › Context         ‹ local ›                                                    │
-         │   World name      <my-world>                                                   │
+         │   World name      beagle                                                       │
          │   Virtual CPUs    2 (default)                                                  │
          │   RAM (MiB)       4096 (default)                                               │
          │   Disk (GiB)      32 (default)                                                 │

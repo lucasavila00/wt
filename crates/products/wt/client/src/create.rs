@@ -290,7 +290,12 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
-    let mut flow = prepare(config)?;
+    let used_names = crate::inventory::list_all(config)
+        .instances
+        .into_iter()
+        .map(|item| item.instance.name.to_string())
+        .collect();
+    let mut flow = prepare(config, &used_names)?;
     let _signals = install_cancel_handlers()?;
     let mut terminal = ratatui::init();
     let result = run_loop(&mut terminal, &mut flow, config);
@@ -298,10 +303,10 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     result
 }
 
-pub(crate) fn prepare(config: &ClientConfig) -> Result<Flow> {
+pub(crate) fn prepare(config: &ClientConfig, used_names: &BTreeSet<String>) -> Result<Flow> {
     let author = read_git_author()?;
     let keys = discover_public_keys()?;
-    Form::new(config, author, keys).map(Flow::new)
+    Form::new(config, author, keys, used_names).map(Flow::new)
 }
 
 fn run_loop(
