@@ -7,9 +7,8 @@ Codex integration.
 ## Use WT
 
 - [Development and setup](../DEVELOPMENT.md)
-- [World contract](./worlds/host.md)
-- [Client and SSH](./guides/client.md), [terminal workspace](./guides/shell.md),
-  [server operations](./guides/server.md), and
+- [Client, world lifecycle, and SSH](./guides/client.md),
+  [terminal workspace](./guides/shell.md), [server operations](./guides/server.md), and
   [known limitations](./known-limitations.md)
 
 ## Work on WT
