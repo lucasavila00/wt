@@ -191,6 +191,7 @@ pub(super) struct ControlState {
     pub(super) open_failure: Option<CodexOpenTarget>,
     pub(super) context_failure: Option<Vec<String>>,
     worlds_updated_at: Option<String>,
+    worlds_refresh_failed: bool,
     codex_updated_at: Option<String>,
 }
 
@@ -206,6 +207,7 @@ impl Default for ControlState {
             open_failure: None,
             context_failure: None,
             worlds_updated_at: None,
+            worlds_refresh_failed: false,
             codex_updated_at: None,
         }
     }
@@ -236,12 +238,20 @@ impl ControlState {
         self.worlds_updated_at.as_deref()
     }
 
+    pub(super) fn worlds_refresh_failed(&self) -> bool {
+        self.worlds_refresh_failed
+    }
+
     pub(super) fn codex_updated_at(&self) -> Option<&str> {
         self.codex_updated_at.as_deref()
     }
 
     pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
         self.worlds_updated_at = Some(updated_at);
+    }
+
+    pub(super) fn set_worlds_refresh_failed(&mut self, failed: bool) {
+        self.worlds_refresh_failed = failed;
     }
 
     pub(super) fn codex_offset(&self) -> usize {

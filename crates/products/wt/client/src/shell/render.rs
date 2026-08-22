@@ -277,11 +277,9 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
-    let block = Block::new().borders(Borders::ALL).title(refresh_title(
-        "Worlds",
-        model.control().worlds_updated_at(),
-        None,
-    ));
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(worlds_refresh_title(model.control()));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation
@@ -384,6 +382,16 @@ fn refresh_title(label: &str, updated_at: Option<&str>, failure: Option<&[String
         title.push_str(&failures.join("; "));
     }
     title
+}
+
+fn worlds_refresh_title(state: &ControlState) -> String {
+    if state.worlds_refresh_failed() {
+        return state.worlds_updated_at().map_or_else(
+            || "Worlds · Refresh failed".into(),
+            |updated_at| format!("Worlds · Refresh failed · Showing data from {updated_at}"),
+        );
+    }
+    refresh_title("Worlds", state.worlds_updated_at(), None)
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {

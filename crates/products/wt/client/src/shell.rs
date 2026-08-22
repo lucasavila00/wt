@@ -154,7 +154,10 @@ fn run_loop(
                 &runtime.refresh.updates,
                 runtime.refresh.generation.load(Ordering::Relaxed),
             ) {
-                if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
+                if snapshot.failed {
+                    model.set_worlds_refresh_failed(true);
+                    redraw = true;
+                } else if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);
                     let area: Rect = terminal
                         .size()
@@ -163,6 +166,7 @@ fn run_loop(
                     sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
                     model.reconcile_worlds(worlds);
                     model.set_worlds_updated_at(updated_at());
+                    model.set_worlds_refresh_failed(false);
                     redraw = true;
                 }
             }

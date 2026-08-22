@@ -523,6 +523,25 @@ fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
 }
 
 #[test]
+fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
+    let mut state = ControlState::default();
+    state.set_worlds_refresh_failed(true);
+    assert_eq!(worlds_refresh_title(&state), "Worlds · Refresh failed");
+
+    state.set_worlds_updated_at("2026-08-22T19:29:38Z".into());
+    assert_eq!(
+        worlds_refresh_title(&state),
+        "Worlds · Refresh failed · Showing data from 2026-08-22T19:29:38Z"
+    );
+
+    state.set_worlds_refresh_failed(false);
+    assert_eq!(
+        worlds_refresh_title(&state),
+        "Worlds · Last updated 2026-08-22T19:29:38Z"
+    );
+}
+
+#[test]
 fn empty_shell_renders_the_control_ui() {
     let backend = TestBackend::new(64, 12);
     let mut terminal = Terminal::new(backend).unwrap();

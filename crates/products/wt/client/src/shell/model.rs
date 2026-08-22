@@ -175,6 +175,10 @@ impl ShellModel {
         self.control.set_worlds_updated_at(updated_at);
     }
 
+    pub(super) fn set_worlds_refresh_failed(&mut self, failed: bool) {
+        self.control.set_worlds_refresh_failed(failed);
+    }
+
     #[cfg(test)]
     pub(super) fn set_codex(
         &mut self,
