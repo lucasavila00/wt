@@ -32,13 +32,6 @@ enum Command {
         tmux_session: String,
         pane_id: String,
     },
-    /// Capture a strictly identified WT Byobu pane.
-    #[command(hide = true)]
-    CapturePane {
-        session_id: uuid::Uuid,
-        tmux_session: String,
-        pane_id: String,
-    },
 }
 
 fn main() {
@@ -70,14 +63,6 @@ fn run(args: Vec<OsString>) -> Result<()> {
             tmux_session,
             pane_id,
         } => println!("{}", focus::focus(session_id, &tmux_session, &pane_id)?),
-        Command::CapturePane {
-            session_id,
-            tmux_session,
-            pane_id,
-        } => std::io::Write::write_all(
-            &mut std::io::stdout(),
-            &focus::capture(session_id, &tmux_session, &pane_id)?,
-        )?,
     }
     Ok(())
 }

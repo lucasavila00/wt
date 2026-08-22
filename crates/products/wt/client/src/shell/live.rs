@@ -87,7 +87,8 @@ pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize,
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     area: Rect,
-    previews: &super::preview::PreviewSet,
+    screens: &[&vt100::Screen],
+    live_focus: &super::live_focus::LiveFocus,
     model: &ShellModel,
 ) {
     let state = model.control();
@@ -116,7 +117,17 @@ pub(super) fn draw(
             ));
         let viewport = block.inner(rect);
         frame.render_widget(block, rect);
-        let screen = previews.screen(&card.identity);
+        let screen = match &card.kind {
+            super::control::CodexCardKind::Observation { world_id, .. } => model
+                .worlds()
+                .iter()
+                .position(|world| {
+                    world.identity.context == card.context && world.identity.id == *world_id
+                })
+                .and_then(|index| screens.get(index).copied()),
+            super::control::CodexCardKind::RolloutOnly
+            | super::control::CodexCardKind::ContextError { .. } => None,
+        };
         if let Some(screen) = screen {
             frame.render_widget(TerminalView(screen), viewport);
         } else {
@@ -125,6 +136,20 @@ pub(super) fn draw(
                     .alignment(Alignment::Center)
                     .style(muted_style()),
                 viewport,
+            );
+        }
+        if let Some(warning) = live_focus.warning(card, state.codex()) {
+            let warning_area = Rect::new(
+                viewport.x,
+                viewport.bottom().saturating_sub(1),
+                viewport.width,
+                1.min(viewport.height),
+            );
+            frame.render_widget(
+                Paragraph::new(warning)
+                    .alignment(Alignment::Center)
+                    .style(Style::new().add_modifier(Modifier::REVERSED)),
+                warning_area,
             );
         }
     }

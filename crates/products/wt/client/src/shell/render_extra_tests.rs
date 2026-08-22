@@ -1,6 +1,16 @@
 use super::*;
 use ratatui::{backend::TestBackend, Terminal};
 
+pub(super) fn now_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
+}
+
 #[test]
 fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
     assert_eq!(
@@ -32,7 +42,7 @@ fn empty_shell_renders_the_control_ui() {
             draw(
                 frame,
                 &[],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,

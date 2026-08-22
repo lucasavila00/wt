@@ -374,6 +374,7 @@ fn bounded_escaped(bytes: &[u8]) -> String {
 pub(super) struct FocusResult {
     pub(super) target: CodexOpenTarget,
     pub(super) result: Result<(), String>,
+    pub(super) open_world: bool,
 }
 
 pub(super) struct FocusWorker {
@@ -390,10 +391,22 @@ impl Default for FocusWorker {
 
 impl FocusWorker {
     pub(super) fn start(&self, target: CodexOpenTarget, alias: String) {
+        self.start_request(target, alias, true);
+    }
+
+    pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String) {
+        self.start_request(target, alias, false);
+    }
+
+    fn start_request(&self, target: CodexOpenTarget, alias: String, open_world: bool) {
         let sender = self.sender.clone();
         thread::spawn(move || {
             let result = focus(&target, &alias).map_err(|error| error.to_string());
-            let _ = sender.send(FocusResult { target, result });
+            let _ = sender.send(FocusResult {
+                target,
+                result,
+                open_world,
+            });
         });
     }
 

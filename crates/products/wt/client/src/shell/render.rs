@@ -17,7 +17,7 @@ use ratatui::Frame;
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
-    previews: &super::preview::PreviewSet,
+    live_focus: &super::live_focus::LiveFocus,
     closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
@@ -32,7 +32,7 @@ pub(super) fn draw(
         }
     }
     if model.mode() == Mode::Control {
-        draw_control(frame, previews, model, creation);
+        draw_control(frame, screens, live_focus, model, creation);
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
@@ -199,7 +199,8 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 
 fn draw_control(
     frame: &mut Frame<'_>,
-    previews: &super::preview::PreviewSet,
+    screens: &[&vt100::Screen],
+    live_focus: &super::live_focus::LiveFocus,
     model: &ShellModel,
     creation: Option<&Flow>,
 ) {
@@ -211,7 +212,7 @@ fn draw_control(
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
         Activity::Codex => draw_codex(frame, body, model.control()),
-        Activity::Live => super::live::draw(frame, body, previews, model),
+        Activity::Live => super::live::draw(frame, body, screens, live_focus, model),
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
         (Activity::Worlds, true) => {
@@ -689,3 +690,5 @@ mod tests;
 #[cfg(test)]
 #[path = "render_extra_tests.rs"]
 mod extra_tests;
+#[cfg(test)]
+use extra_tests::now_ms;

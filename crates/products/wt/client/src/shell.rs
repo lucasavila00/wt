@@ -21,8 +21,8 @@ mod control;
 mod delete;
 mod input;
 mod live;
+mod live_focus;
 mod model;
-mod preview;
 mod refresh;
 mod render;
 mod session;
@@ -60,7 +60,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.set_worlds_updated_at(updated_at());
     let focus = codex::FocusWorker::default();
-    let mut previews = preview::PreviewSet::new();
+    let mut live_focus = live_focus::LiveFocus::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let runtime = ShellRuntime {
@@ -84,7 +84,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        &mut previews,
+        &mut live_focus,
         &runtime,
         &shutdown,
     );
@@ -140,7 +140,7 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    previews: &mut preview::PreviewSet,
+    live_focus: &mut live_focus::LiveFocus,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
@@ -155,9 +155,10 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        redraw |= previews.drain();
         if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
-            previews.schedule(model, area);
+            live_focus.sync(model, sessions, runtime.focus);
+        } else {
+            live_focus.clear();
         }
         for sequence in clipboard_writes {
             terminal
@@ -205,6 +206,10 @@ fn run_loop(
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
+            if !result.open_world {
+                live_focus.complete(&result.target, result.result.is_ok());
+                continue;
+            }
             match result.result {
                 Ok(()) => match model.focus_route(&result.target) {
                     Some((index, _)) if sessions.is_open(index) => {
@@ -256,7 +261,7 @@ fn run_loop(
                 render::draw(
                     frame,
                     &screens,
-                    previews,
+                    live_focus,
                     closed_message,
                     model,
                     flows.creation.as_ref(),

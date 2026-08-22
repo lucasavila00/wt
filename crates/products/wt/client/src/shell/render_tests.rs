@@ -46,7 +46,7 @@ fn switcher_activates_the_world_bar() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -95,7 +95,7 @@ fn inactive_world_bar_is_dimmed() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -137,7 +137,7 @@ fn disabled_f5_override_emphasizes_the_top_bar() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -162,7 +162,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
             draw(
                 frame,
                 &[],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -190,7 +190,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -228,7 +228,7 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 Some("SSH session ended: Exited with code 255"),
                 &model,
                 None,
@@ -260,7 +260,7 @@ fn control_ui_has_activity_scaffolding() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -324,7 +324,7 @@ fn control_ui_shows_world_cards() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -350,7 +350,7 @@ fn control_ui_opens_the_command_palette() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -379,7 +379,7 @@ fn active_navbar_opens_the_command_palette_over_the_world() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -489,7 +489,7 @@ fn control_ui_shows_codex_session_cards() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -508,16 +508,15 @@ fn control_ui_shows_live_session_panes() {
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev"]);
     let session_id = Uuid::from_u128(2);
-    let identity = CodexCardIdentity::Observation {
-        context: "ars".into(),
-        session_id,
-        world_id: Uuid::from_u128(1),
-        tmux_session: "wt-host".into(),
-        pane_id: "%1".into(),
-    };
     model.set_codex(
         vec![CodexCard {
-            identity: identity.clone(),
+            identity: CodexCardIdentity::Observation {
+                context: "ars".into(),
+                session_id,
+                world_id: Uuid::from_u128(1),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
             context: "ars".into(),
             session_id: Some(session_id),
             timestamp: Some(now_ms()),
@@ -542,11 +541,19 @@ fn control_ui_shows_live_session_panes() {
     );
     press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
     press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
-    let mut previews = super::super::preview::PreviewSet::new();
-    previews.insert(identity, 10, 91, b"world output\r\n\x1b[31mred\x1b[0m");
+    let mut live_parser = vt100::Parser::new(10, 91, 0);
+    live_parser.process(b"world output\r\n\x1b[31mred\x1b[0m");
 
     terminal
-        .draw(|frame| super::super::live::draw(frame, frame.area(), &previews, &model))
+        .draw(|frame| {
+            super::super::live::draw(
+                frame,
+                frame.area(),
+                &[live_parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                &model,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_live_sessions", terminal.backend().buffer());
@@ -604,7 +611,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
             draw(
                 frame,
                 &[],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -669,7 +676,7 @@ fn failed_context_refresh_is_shown_in_the_title() {
             draw(
                 frame,
                 &[],
-                &super::super::preview::PreviewSet::new(),
+                &super::super::live_focus::LiveFocus::default(),
                 None,
                 &model,
                 None,
@@ -683,14 +690,4 @@ fn failed_context_refresh_is_shown_in_the_title() {
         "shell_codex_context_failure_title",
         terminal.backend().buffer()
     );
-}
-
-fn now_ms() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap()
 }
