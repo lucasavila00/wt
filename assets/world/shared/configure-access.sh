@@ -16,8 +16,8 @@ install -d -m 0755 -o root -g root /etc/ssh/sshd_config.d
 printf 'AuthorizedKeysFile .ssh/authorized_keys /run/wt-ssh-authorized-keys/authorized_keys\n' \
     > /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
 chmod 0644 /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
-sshd -t
 ssh-keygen -A
+sshd -t
 
 if ! systemctl enable --now ssh.service; then
     systemctl status --no-pager --full ssh.service >&2 || true
