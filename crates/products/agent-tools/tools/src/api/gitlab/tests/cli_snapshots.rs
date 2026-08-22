@@ -130,20 +130,6 @@ fn wait_timeouts_preserve_the_last_observed_state() {
             "opened",
         ),
         (
-            WtToolsCommand::WaitRun {
-                run: "92".into(),
-                timeout_seconds: Some(0),
-            },
-            get(
-                "/api/v4/projects/acme%2Fwidget/pipelines/92",
-                PIPELINE
-                    .replace(r#""status":"success""#, r#""status":"running""#)
-                    .leak(),
-            ),
-            "run 92",
-            "running",
-        ),
-        (
             WtToolsCommand::WaitJob {
                 job: "45".into(),
                 timeout_seconds: Some(0),
@@ -173,6 +159,33 @@ fn wait_timeouts_preserve_the_last_observed_state() {
         );
         server.join().unwrap().unwrap();
     }
+}
+
+#[test]
+fn wait_run_timeout_returns_the_unfinished_run() {
+    let response = PIPELINE
+        .replace(r#""status":"success""#, r#""status":"running""#)
+        .leak();
+    let (base_url, server) = serve(vec![get(
+        "/api/v4/projects/acme%2Fwidget/pipelines/92",
+        response,
+    )]);
+    let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let output = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::WaitRun {
+                run: "92".into(),
+                timeout_seconds: Some(0),
+            },
+        )
+        .unwrap();
+
+    insta::assert_snapshot!(render_cli_command_output(output), @r###"
+    {"type":"ci_run","data":{"handle":"92","name":"pipeline","state":"running","trigger":"merge_request_event","url":"https://gitlab.test/pipelines/92","head":"abc123","branch":"wt/fix-login"}}
+    "###);
+    server.join().unwrap().unwrap();
 }
 
 fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {

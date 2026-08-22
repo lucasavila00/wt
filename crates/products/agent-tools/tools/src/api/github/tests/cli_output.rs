@@ -289,22 +289,6 @@ fn wait_timeouts_preserve_the_last_observed_state() {
             "open",
         ),
         (
-            WtToolsCommand::WaitRun {
-                run: "91".into(),
-                timeout_seconds: Some(0),
-            },
-            get(
-                "/repos/acme/widget/actions/runs/91",
-                leak(
-                    WORKFLOW_RUN
-                        .replace(r#""status":"completed""#, r#""status":"in_progress""#)
-                        .replace(r#""conclusion":"success""#, r#""conclusion":null"#),
-                ),
-            ),
-            "run 91",
-            "in_progress",
-        ),
-        (
             WtToolsCommand::WaitJob {
                 job: "44".into(),
                 timeout_seconds: Some(0),
@@ -337,6 +321,32 @@ fn wait_timeouts_preserve_the_last_observed_state() {
         );
         server.join().unwrap().unwrap();
     }
+}
+
+#[test]
+fn wait_run_timeout_returns_the_unfinished_run() {
+    let response = leak(
+        WORKFLOW_RUN
+            .replace(r#""status":"completed""#, r#""status":"in_progress""#)
+            .replace(r#""conclusion":"success""#, r#""conclusion":null"#),
+    );
+    let (base_url, server) = serve(vec![get("/repos/acme/widget/actions/runs/91", response)]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let output = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::WaitRun {
+                run: "91".into(),
+                timeout_seconds: Some(0),
+            },
+        )
+        .unwrap();
+
+    insta::assert_snapshot!(render_cli_command_output(output), @r###"
+    {"type":"ci_run","data":{"handle":"91","name":"CI","state":"in_progress","trigger":"pull_request","url":"https://github.test/runs/91","head":"abc123","branch":"wt/fix-login"}}
+    "###);
+    server.join().unwrap().unwrap();
 }
 
 fn get(path: &'static str, response_body: &'static str) -> ExpectedRequest {
