@@ -98,7 +98,7 @@ esac
 }
 
 #[test]
-fn command_palette_opens_the_world_form_and_escape_cancels() -> Result<()> {
+fn command_palette_opens_the_world_form_and_ok_is_clickable() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
@@ -108,6 +108,8 @@ fn command_palette_opens_the_world_form_and_escape_cancels() -> Result<()> {
         .type_text("new")?
         .press(Key::Enter)?
         .wait_for_text("Create world")?
+        .click(13, 11)?
+        .wait_for_text("Review")?
         .press(Key::Escape)?
         .wait_for_text("No Codex sessions")?
         .wait_for_text_gone("Create world")?;
