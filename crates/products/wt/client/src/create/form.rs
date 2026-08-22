@@ -157,7 +157,6 @@ impl Form {
 
     pub(crate) fn render(&self, frame: &mut Frame<'_>, outer: Rect) {
         frame.render_widget(Clear, outer);
-        frame.render_widget(Block::new().style(Style::new().bg(Color::Black)), outer);
         let width = 82.min(outer.width);
         let height = 20.min(outer.height);
         let area = Rect::new(
@@ -194,10 +193,7 @@ impl Form {
             .map(|(index, field)| self.field_line(*field, index == self.focus))
             .collect::<Vec<_>>();
         frame.render_widget(Paragraph::new(lines), rows[0]);
-        frame.render_widget(
-            Paragraph::new(self.details()).style(Style::new().fg(Color::DarkGray)),
-            rows[2],
-        );
+        frame.render_widget(Paragraph::new(self.details()).style(muted_style()), rows[2]);
         if let Some(error) = &self.error {
             frame.render_widget(
                 Paragraph::new(error.as_str()).style(Style::new().fg(Color::LightRed)),
@@ -206,7 +202,7 @@ impl Form {
         }
         frame.render_widget(
             Paragraph::new("↑/↓ or Tab/Shift-Tab focus · ←/→ select · Enter continue · Esc cancel")
-                .style(Style::new().fg(Color::DarkGray)),
+                .style(muted_style()),
             rows[4],
         );
     }
@@ -233,7 +229,7 @@ impl Form {
         frame.render_widget(
             Paragraph::new("Enter create · b edit · Esc cancel")
                 .alignment(Alignment::Center)
-                .style(Style::new().fg(Color::DarkGray)),
+                .style(muted_style()),
             rows[2],
         );
     }
@@ -248,7 +244,7 @@ impl Form {
         }
         Line::from(vec![
             Span::raw(marker),
-            Span::styled(label, Style::new().fg(Color::DarkGray)),
+            Span::styled(label, muted_style()),
             Span::styled(value, style),
         ])
     }
@@ -391,6 +387,10 @@ impl Form {
         self.error = Some(error);
         Action::None
     }
+}
+
+fn muted_style() -> Style {
+    Style::new().add_modifier(Modifier::DIM)
 }
 
 fn placeholder(value: &str, default: &str) -> String {

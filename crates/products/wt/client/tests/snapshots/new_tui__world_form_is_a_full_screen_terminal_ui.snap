@@ -2,28 +2,28 @@
 source: crates/products/wt/client/tests/new_tui.rs
 expression: screen.contents()
 ---
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-         ┌Create world────────────────────────────────────────────────────────────────────┐         
-         │ › Context         ‹ local ›                                                    │         
-         │   World name      <my-world>                                                   │         
-         │   Virtual CPUs    2 (default)                                                  │         
-         │   RAM (MiB)       4096 (default)                                               │         
-         │   Disk (GiB)      32 (default)                                                 │         
-         │                                                                                │         
-         │ Git author  Test User <test@example.test>                                      │         
-         │ SSH keys    1 discovered                                                       │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │                                                                                │         
-         │ ↑/↓ or Tab/Shift-Tab focus · ←/→ select · Enter continue · Esc cancel          │         
+
+
+
+
+
+         ┌Create world────────────────────────────────────────────────────────────────────┐
+         │ › Context         ‹ local ›                                                    │
+         │   World name      <my-world>                                                   │
+         │   Virtual CPUs    2 (default)                                                  │
+         │   RAM (MiB)       4096 (default)                                               │
+         │   Disk (GiB)      32 (default)                                                 │
+         │                                                                                │
+         │ Git author  Test User <test@example.test>                                      │
+         │ SSH keys    1 discovered                                                       │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │                                                                                │
+         │ ↑/↓ or Tab/Shift-Tab focus · ←/→ select · Enter continue · Esc cancel          │
          └────────────────────────────────────────────────────────────────────────────────┘

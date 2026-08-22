@@ -75,12 +75,9 @@ fn draw_test_server_banner(frame: &mut Frame<'_>, model: &ShellModel) {
         .unwrap_or(u16::MAX)
         .min(area.width);
     frame.render_widget(
-        Paragraph::new(label).alignment(Alignment::Center).style(
-            Style::new()
-                .fg(Color::Yellow)
-                .bg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Paragraph::new(label)
+            .alignment(Alignment::Center)
+            .style(Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
         Rect::new(area.right().saturating_sub(width), area.y, width, 1),
     );
 }
@@ -90,12 +87,7 @@ fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
     frame.render_widget(
         Paragraph::new(format!(" {message} · Space: reconnect "))
             .alignment(Alignment::Center)
-            .style(
-                Style::new()
-                    .fg(Color::White)
-                    .bg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            .style(Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
         Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
     );
 }
@@ -141,22 +133,15 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     } else {
         "F6: close "
     };
-    let style = if disabled {
-        Style::new()
-            .fg(Color::White)
-            .bg(Color::Red)
-            .add_modifier(Modifier::BOLD)
-    } else if active {
-        Style::new()
-            .fg(Color::Black)
-            .bg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::new()
-            .fg(Color::DarkGray)
-            .bg(Color::Black)
-            .add_modifier(Modifier::BOLD)
-    };
+    let style = Style::new().add_modifier(
+        Modifier::REVERSED
+            | Modifier::BOLD
+            | if disabled {
+                Modifier::UNDERLINED
+            } else {
+                Modifier::empty()
+            },
+    );
     let bar = Rect::new(frame.area().x, frame.area().y, frame.area().width, 1);
     let [previous, world, next] = super::bar::world_bar_controls(model, bar);
     let left = Rect::new(bar.x, bar.y, previous.x.saturating_sub(bar.x), 1);
@@ -168,17 +153,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(
-                "  WT ",
-                if disabled {
-                    style
-                } else {
-                    Style::new()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
-                },
-            ),
+            Span::styled("  WT ", style),
             Span::raw(left_hint),
         ]))
         .style(style),
@@ -202,7 +177,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 
 fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flow>) {
     let area = frame.area();
-    frame.render_widget(Block::new().style(Style::new().bg(Color::Black)), area);
+    frame.render_widget(Clear, area);
     let (activity_bar, content) = control_areas(area);
     draw_activity_bar(frame, activity_bar, model.control().activity());
     let (body, footer) = control_content_areas(area);
@@ -222,10 +197,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
             "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
-    frame.render_widget(
-        Paragraph::new(hint).style(Style::new().fg(Color::DarkGray)),
-        footer,
-    );
+    frame.render_widget(Paragraph::new(hint).style(muted_style()), footer);
     draw_command_palette(frame, content, model.control().palette());
     if model.control().open_failed() || model.control().context_failure().is_some() {
         draw_codex_toast(frame, area, model.control());
@@ -261,11 +233,8 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
             .border_style(Style::new().fg(Color::Red))
             .title(title)
             .title(
-                Line::styled(
-                    "×",
-                    Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
-                )
-                .alignment(Alignment::Right),
+                Line::styled("×", Style::new().add_modifier(Modifier::BOLD))
+                    .alignment(Alignment::Right),
             ),
         toast,
     );
@@ -281,7 +250,7 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     frame.render_widget(
         Paragraph::new("Retry")
             .alignment(Alignment::Right)
-            .style(Style::new().fg(Color::White).add_modifier(Modifier::BOLD)),
+            .style(Style::new().add_modifier(Modifier::BOLD)),
         retry,
     );
 }
@@ -324,7 +293,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         let (icon, color) = match world.status {
             wt_control_protocol::InstanceStatus::Running => ("󰐊", Color::Green),
             wt_control_protocol::InstanceStatus::Provisioning => ("󰔟", Color::Yellow),
-            wt_control_protocol::InstanceStatus::Stopped => ("󰅖", Color::DarkGray),
+            wt_control_protocol::InstanceStatus::Stopped => ("󰅖", Color::Reset),
             wt_control_protocol::InstanceStatus::Destroying => ("󰩹", Color::Yellow),
             wt_control_protocol::InstanceStatus::Error => ("󰅚", Color::Red),
         };
@@ -356,13 +325,10 @@ fn draw_world_card(
     selected: bool,
     footer: &str,
 ) {
+    let card_style = selected_style(selected);
     let block = Block::new()
         .borders(Borders::ALL)
-        .border_style(Style::new().fg(if selected {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
+        .style(card_style)
         .title(Span::styled(
             format!(" {icon} {status} "),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
@@ -378,10 +344,7 @@ fn draw_world_card(
     }
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
-    frame.render_widget(
-        Paragraph::new(footer).style(Style::new().fg(Color::DarkGray)),
-        rows[1],
-    );
+    frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
 }
 
 fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
@@ -426,13 +389,10 @@ fn draw_codex_card(
     selected: bool,
 ) {
     let (title, title_color) = card_title(card);
+    let card_style = selected_style(selected);
     let block = Block::new()
         .borders(Borders::ALL)
-        .border_style(Style::new().fg(if selected {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
+        .style(card_style)
         .title(Span::styled(
             format!(" {title} "),
             Style::new().fg(title_color).add_modifier(Modifier::BOLD),
@@ -444,12 +404,9 @@ fn draw_codex_card(
     let footer = if state.opening() == Some(&card.identity) {
         Span::styled("OPENING…", Style::new().fg(Color::Yellow))
     } else if let Some(reason) = card.disabled_reason() {
-        Span::styled(
-            format!("Unavailable: {reason}"),
-            Style::new().fg(Color::DarkGray),
-        )
+        Span::styled(format!("Unavailable: {reason}"), muted_style())
     } else {
-        Span::styled("Enter or click to open", Style::new().fg(Color::DarkGray))
+        Span::styled("Enter or click to open", muted_style())
     };
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
@@ -482,12 +439,12 @@ fn card_title(card: &CodexCard) -> (String, Color) {
                     Color::Gray,
                 ),
                 wt_control_protocol::CodexSessionState::Inactive => {
-                    ("󰅖", "INACTIVE".into(), Color::DarkGray)
+                    ("󰅖", "INACTIVE".into(), Color::Reset)
                 }
             };
             (format!("{icon} {label}{suffix}"), color)
         }
-        CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::DarkGray),
+        CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::Reset),
         CodexCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
@@ -592,7 +549,7 @@ fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
     frame.render_widget(
         Block::new()
             .borders(Borders::RIGHT)
-            .border_style(Style::new().fg(Color::DarkGray)),
+            .border_style(Style::new()),
         area,
     );
     for (index, (activity, icon)) in [(Activity::Codex, "󰚩"), (Activity::Worlds, "")]
@@ -635,13 +592,12 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
     .split(inner);
     frame.render_widget(Paragraph::new(format!("> {}█", palette.query())), rows[0]);
     frame.render_widget(
-        Paragraph::new("─".repeat(usize::from(rows[1].width)))
-            .style(Style::new().fg(Color::DarkGray)),
+        Paragraph::new("─".repeat(usize::from(rows[1].width))).style(muted_style()),
         rows[1],
     );
     let commands = palette.matches();
     let items = if commands.is_empty() {
-        vec![ListItem::new("No matching commands").style(Style::new().fg(Color::DarkGray))]
+        vec![ListItem::new("No matching commands").style(muted_style())]
     } else {
         commands
             .iter()
@@ -650,16 +606,27 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
     };
     let list = List::new(items)
         .highlight_symbol(" ")
-        .highlight_style(Style::new().bg(Color::DarkGray));
+        .highlight_style(selected_style(true));
     let mut state = ListState::default().with_selected(
         (!commands.is_empty()).then_some(palette.selected().min(commands.len().saturating_sub(1))),
     );
     frame.render_stateful_widget(list, rows[2], &mut state);
     frame.render_widget(
-        Paragraph::new("↑/↓ select · Enter run · Esc close")
-            .style(Style::new().fg(Color::DarkGray)),
+        Paragraph::new("↑/↓ select · Enter run · Esc close").style(muted_style()),
         rows[3],
     );
+}
+
+fn muted_style() -> Style {
+    Style::new().add_modifier(Modifier::DIM)
+}
+
+fn selected_style(selected: bool) -> Style {
+    if selected {
+        Style::new().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::new()
+    }
 }
 
 #[cfg(test)]
