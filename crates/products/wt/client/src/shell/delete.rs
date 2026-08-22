@@ -674,9 +674,6 @@ mod tests {
         terminal
             .draw(|frame| flow.render(frame, frame.area()))
             .unwrap();
-        insta::assert_debug_snapshot!(
-            "shell_delete_world_progress",
-            terminal.backend().buffer()
-        );
+        insta::assert_debug_snapshot!("shell_delete_world_progress", terminal.backend().buffer());
     }
 }
