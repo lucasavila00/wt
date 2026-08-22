@@ -6,7 +6,7 @@ request/response terminal state and timing, approvals, per-file diff summaries,
 and client-owned pin/archive/read/group state.
 
 Keep SQLite for WT-owned lifecycle and rebuildable query metadata. For complete
-history, add an on-demand API that streams canonical rollout records to trusted
-clients instead of copying arbitrary Codex JSON into SQLite. Add new typed
-summary fields only with a concrete client use; store user presentation state
-separately from the catalog.
+history, have the trusted client SSH directly to the selected world and read
+canonical rollout records; do not add a `wt-server` history proxy or copy
+arbitrary Codex JSON into SQLite. Add new typed summary fields only with a
+concrete client use; store user presentation state separately from the catalog.

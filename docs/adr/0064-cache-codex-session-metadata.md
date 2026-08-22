@@ -20,7 +20,8 @@
 - Return the broad, typed metadata through the control protocol; WT clients are
   trusted to view Codex data available to their worlds.
 - Keep raw rollout records in their canonical JSONL files rather than duplicate
-  them in SQLite. A future history API may stream those records on demand.
+  them in SQLite or proxy them through `wt-server`. Clients that need complete
+  history SSH directly to the selected world and read its canonical records.
 - Do not make arbitrary upstream JSON a SQLite schema or a stable protocol
   contract; add typed fields when clients have a concrete use for them.
 - Normalize previews as untrusted terminal text and limit each to 640 UTF-8
@@ -30,7 +31,8 @@
 ## Consequences
 
 - Client-only releases can present richer session summaries without changing
-  server extraction.
+  server extraction; complete-history views can evolve independently over the
+  existing world SSH connection.
 - After warm-up, parsing cost is proportional to new rollout data; discovery
   still visits every rollout path and is tracked for follow-up optimization.
 - The catalog can be deleted and reconstructed from the sessions tree.
