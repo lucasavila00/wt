@@ -36,7 +36,7 @@ fn image_manifest_records_structured_package_versions() {
 
 #[test]
 fn retained_manifest_tracks_host_assets() {
-    let inputs = retained_input_hashes(&BuildSpec {
+    let inputs = retained_script_input_hashes(&BuildSpec {
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,
     });
@@ -54,12 +54,28 @@ fn retained_manifest_tracks_host_assets() {
 
 #[test]
 fn retained_manifest_tracks_the_diffo_installer() {
-    let inputs = retained_input_hashes(&BuildSpec {
+    let inputs = retained_script_input_hashes(&BuildSpec {
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,
     });
 
     assert!(inputs.contains_key("/var/tmp/wt-install-diffo.sh"));
+}
+
+#[test]
+fn retained_image_owns_static_guest_binaries() {
+    let inputs = GUEST_BINARY_INPUTS
+        .iter()
+        .map(|(name, path)| format!("{name}\t{path}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    insta::assert_snapshot!(inputs, @r###"
+    wt-agent-tool-gateway-relay	/var/tmp/wt-agent-tool-gateway-relay
+    git-remote-wt-agent	/var/tmp/wt-git-remote-agent
+    wt-tools	/var/tmp/wt-tools
+    wt-codex-integration	/var/tmp/wt-codex-integration
+    "###);
 }
 
 #[test]

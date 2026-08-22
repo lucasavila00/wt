@@ -1,4 +1,4 @@
-mod binaries;
+pub(crate) mod binaries;
 
 use crate::host;
 use crate::image;
@@ -48,11 +48,14 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Preparing host state");
     prepare_host(runner, &server)?;
 
+    phase("Building WT binaries");
+    binaries::build(runner)?;
+
     phase("Preparing reusable world image");
     image::ensure(runner, &input, &server, &server_bytes)?;
 
-    phase("Building and installing WT binaries");
-    binaries::build_and_install(runner, &server)?;
+    phase("Installing WT binaries");
+    binaries::install(runner, &server)?;
 
     phase("Installing configuration and credentials");
     install_server_config(runner, input_path, &server, &server_bytes)?;
@@ -75,6 +78,7 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
     prepare_host(runner, &server)?;
+    binaries::build_static(runner)?;
     if rebuild {
         image::rebuild(runner, &input, &server, &server_bytes)?;
     } else {
@@ -84,10 +88,11 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
     Ok(())
 }
 
-pub(crate) fn verify_images(input_path: &Path) -> Result<()> {
+pub(crate) fn verify_images(runner: &impl Runner, input_path: &Path) -> Result<()> {
     require_server_user()?;
     let (input, server, server_bytes) = load_install_input(input_path)?;
     require_workspace()?;
+    binaries::build_static(runner)?;
     image::verify(&input, &server, &server_bytes)
 }
 

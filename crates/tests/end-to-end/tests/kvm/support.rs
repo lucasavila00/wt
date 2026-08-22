@@ -55,7 +55,7 @@ impl KvmHarness {
         config.agent_tools.github.as_mut().unwrap().host = "local.test".to_owned();
         let installed_image = config.image.path.clone();
         let images = timings.run("prepare isolated golden images", || {
-            isolated_test_images(&workspace, &installed_image)
+            isolated_test_images(&workspace, &installed_image, &binary_dir)
         });
         config.image.path = images.path().join("retained.qcow2");
         config.install.binary_dir = binary_dir;

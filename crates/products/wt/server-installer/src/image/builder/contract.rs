@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::binaries;
 
 pub(in crate::image) fn verify_retained_guest_contract(
     runner: &impl Runner,
@@ -23,6 +24,45 @@ pub(in crate::image) fn verify_retained_guest_contract(
     );
     if contract != expected_contract {
         bail!("finalized image retained guest contract differs from policy");
+    }
+
+    let binary_listing = runner.text(
+        cmd!(
+            "sudo",
+            "virt-ls",
+            "--long",
+            "--recursive",
+            "--uids",
+            "-a",
+            disk,
+            "/usr/local/bin"
+        ),
+        "inspect finalized guest binary metadata",
+    )?;
+    for (name, _) in super::super::GUEST_BINARY_INPUTS {
+        let guest_path = format!("/usr/local/bin/{name}");
+        let fields = binary_listing
+            .lines()
+            .find(|line| line.ends_with(&format!(" {guest_path}")))
+            .map(|line| line.split_whitespace().collect::<Vec<_>>())
+            .unwrap_or_default();
+        if fields.len() < 6
+            || fields[0] != "-"
+            || fields[1] != "0755"
+            || fields[3] != "0"
+            || fields[4] != "0"
+        {
+            bail!("finalized image guest binary must be root:root 0755: {guest_path}");
+        }
+        let output = runner.output(cmd!("sudo", "virt-cat", "-a", disk, &guest_path))?;
+        if !output.status.success() {
+            bail!("finalized image does not contain {guest_path}");
+        }
+        let expected = fs::read(binaries::release_binary(name))
+            .with_context(|| format!("read built guest binary {name}"))?;
+        if output.stdout != expected {
+            bail!("finalized image guest binary differs: {guest_path}");
+        }
     }
 
     let passwd = runner.text(

@@ -15,7 +15,11 @@ pub(crate) fn unique_vsock_port() -> u32 {
     }
 }
 
-pub(crate) fn isolated_test_images(workspace: &Path, installed: &Path) -> TempDir {
+pub(crate) fn isolated_test_images(
+    workspace: &Path,
+    installed: &Path,
+    binary_dir: &Path,
+) -> TempDir {
     let images = tempfile::Builder::new()
         .prefix("wt-kvm-images-")
         .tempdir_in("/var/tmp")
@@ -30,21 +34,48 @@ pub(crate) fn isolated_test_images(workspace: &Path, installed: &Path) -> TempDi
     let installed_manifest = format!("{}.manifest.json", installed.display());
     let isolated_manifest = format!("{}.manifest.json", retained.display());
     fs::copy(installed_manifest, isolated_manifest).unwrap();
-    let prepare = workspace.join("assets/world/host/prepare.sh");
-    run(
-        cmd!(
-            "sudo",
-            "-n",
-            "virt-customize",
-            "--no-network",
-            "-a",
-            &retained,
-            "--upload",
-            format!("{}:/usr/local/libexec/wt-host-prepare", prepare.display()),
-            "--chmod",
-            "0755:/usr/local/libexec/wt-host-prepare",
+    let inputs = [
+        (
+            workspace.join("assets/world/host/prepare.sh"),
+            "/usr/local/libexec/wt-host-prepare",
         ),
-        "install current host prepare asset in isolated test image",
+        (
+            workspace.join("assets/world/shared/install-agent-tools.sh"),
+            "/usr/local/libexec/wt-retained-agent-tools",
+        ),
+        (
+            binary_dir.join("wt-agent-tool-gateway-relay"),
+            "/usr/local/bin/wt-agent-tool-gateway-relay",
+        ),
+        (
+            binary_dir.join("git-remote-wt-agent"),
+            "/usr/local/bin/git-remote-wt-agent",
+        ),
+        (binary_dir.join("wt-tools"), "/usr/local/bin/wt-tools"),
+        (
+            binary_dir.join("wt-codex-integration"),
+            "/usr/local/bin/wt-codex-integration",
+        ),
+    ];
+    let mut customize = cmd!(
+        "sudo",
+        "-n",
+        "virt-customize",
+        "--no-network",
+        "-a",
+        &retained
+    );
+    for (source, guest_path) in &inputs {
+        customize
+            .arg("--upload")
+            .arg(format!("{}:{guest_path}", source.display()));
+    }
+    for (_, guest_path) in &inputs {
+        customize.arg("--chmod").arg(format!("0755:{guest_path}"));
+    }
+    run(
+        customize,
+        "install current guest assets in isolated test image",
     );
     fs::set_permissions(&retained, fs::Permissions::from_mode(0o644)).unwrap();
     images

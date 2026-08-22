@@ -64,7 +64,12 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let service =
         Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
-        Ok(request) => wt_server::handle_request(&service, "lucas", request),
+        Ok(request) => wt_server::handle_request_with_progress(
+            &service,
+            "lucas",
+            request,
+            &mut std::io::stderr().lock(),
+        ),
         Err(error) => ApiResponse::error(ApiError::new(
             ErrorCode::InvalidRequest,
             format!("invalid JSON request: {error}"),

@@ -24,6 +24,9 @@ test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu")" = "$WT_UID:$WT_GID 755"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu/color")" = "$WT_UID:$WT_GID 644"
 test -x "$WT_HOME/.local/bin/codex"
 test "$(readlink /usr/local/bin/codex)" = "$WT_HOME/.local/bin/codex"
+test "$(readlink "$WT_HOME/.local/bin/codex")" = \
+    /usr/local/bin/wt-codex-integration
+test -x "$WT_HOME/.local/bin/.codex.wt-real"
 printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
@@ -43,6 +46,10 @@ rm -f /etc/netplan/50-cloud-init.yaml /var/log/cloud-init.log \
     /var/tmp/wt-retained-access /var/tmp/wt-retained-git-author \
     /var/tmp/wt-retained-agent-tools \
     /var/tmp/wt-retained-mount-codex \
+    /var/tmp/wt-agent-tool-gateway-relay \
+    /var/tmp/wt-git-remote-agent \
+    /var/tmp/wt-tools \
+    /var/tmp/wt-codex-integration \
     /var/lib/wt-tmux
 truncate -s 0 /etc/machine-id
 ln -sfn /etc/machine-id /var/lib/dbus/machine-id

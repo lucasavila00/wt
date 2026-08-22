@@ -85,7 +85,7 @@ fn run() -> Result<()> {
         } => server::image(&runner, &config, true).context("image preparation stopped")?,
         SetupCommand::Image {
             command: ImageCommand::Verify { config },
-        } => server::verify_images(&config).context("image verification stopped")?,
+        } => server::verify_images(&runner, &config).context("image verification stopped")?,
     }
     Ok(())
 }

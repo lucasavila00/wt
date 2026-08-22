@@ -9,6 +9,7 @@ use self::builder::*;
 use self::recipe::ImageRecipe;
 use crate::host;
 use crate::install_input::InstallInput;
+use crate::server::binaries;
 use anyhow::{bail, Context, Result};
 use nix::unistd::{Uid, User};
 use recipe::PackageVersions;
@@ -39,6 +40,15 @@ const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/pre
 const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
     ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
+];
+const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
+    (
+        "wt-agent-tool-gateway-relay",
+        "/var/tmp/wt-agent-tool-gateway-relay",
+    ),
+    ("git-remote-wt-agent", "/var/tmp/wt-git-remote-agent"),
+    ("wt-tools", "/var/tmp/wt-tools"),
+    ("wt-codex-integration", "/var/tmp/wt-codex-integration"),
 ];
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -242,10 +252,19 @@ fn build_image_inner<R: Runner>(
             Ok(path)
         })
         .collect::<Result<Vec<_>>>()?;
+    let guest_binary_inputs = GUEST_BINARY_INPUTS
+        .iter()
+        .map(|(name, guest_path)| (binaries::release_binary(name), *guest_path))
+        .collect::<Vec<_>>();
     let extra_inputs = staged_paths
         .iter()
         .zip(HOST_INPUTS)
         .map(|(source, (_, guest_path, _))| StagedInput { source, guest_path })
+        .chain(
+            guest_binary_inputs
+                .iter()
+                .map(|(source, guest_path)| StagedInput { source, guest_path }),
+        )
         .collect::<Vec<_>>();
     let paths = run_kvm_build(context, build_dir, &spec, &extra_inputs)?;
     let package_output = runner.text(
@@ -331,7 +350,7 @@ fn build_image_inner<R: Runner>(
     let manifest = ImageManifest {
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(server_bytes, input),
-        inputs: retained_input_hashes(&spec),
+        inputs: retained_input_hashes(&spec)?,
         golden_sha256: sha_file(&paths.prepared)?,
         tmux_sha256,
         packages,
@@ -360,13 +379,13 @@ pub(crate) fn verify_installed_image(
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
+    let expected_inputs = retained_input_hashes(&BuildSpec {
+        name: BUILD_NAME,
+        recipe: RETAINED_IMAGE_BUILD,
+    })?;
     if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(server_bytes, input)
-        || manifest.inputs
-            != retained_input_hashes(&BuildSpec {
-                name: BUILD_NAME,
-                recipe: RETAINED_IMAGE_BUILD,
-            })
+        || manifest.inputs != expected_inputs
         || !is_sha256(&manifest.tmux_sha256)
     {
         bail!("provenance does not match the current source or install input");
@@ -381,12 +400,23 @@ pub(crate) fn verify_installed_image(
     )
 }
 
-fn retained_input_hashes(spec: &BuildSpec<'_>) -> BTreeMap<String, String> {
+fn retained_script_input_hashes(spec: &BuildSpec<'_>) -> BTreeMap<String, String> {
     let inputs = HOST_INPUTS
         .iter()
         .map(|(_, guest_path, bytes)| (*guest_path, *bytes))
         .collect::<Vec<_>>();
     staged_input_hashes(spec, &inputs)
+}
+
+fn retained_input_hashes(spec: &BuildSpec<'_>) -> Result<BTreeMap<String, String>> {
+    let mut inputs = retained_script_input_hashes(spec);
+    for (name, guest_path) in GUEST_BINARY_INPUTS {
+        inputs.insert(
+            (*guest_path).to_owned(),
+            sha_file(&binaries::release_binary(name))?,
+        );
+    }
+    Ok(inputs)
 }
 
 #[derive(Debug, Eq, PartialEq)]
