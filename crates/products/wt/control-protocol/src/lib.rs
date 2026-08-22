@@ -16,6 +16,27 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u32 = 6;
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ApiProgress {
+    pub protocol_version: u32,
+    #[serde(flatten)]
+    pub event: ProgressEvent,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ProgressEvent {
+    Progress { message: String },
+}
+
+impl ApiProgress {
+    pub fn new(message: String) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            event: ProgressEvent::Progress { message },
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
@@ -524,5 +545,16 @@ mod tests {
         }))
         .unwrap_err();
         insta::assert_snapshot!(error.to_string(), @"invalid instance name: must start with a lowercase letter or digit");
+    }
+
+    #[test]
+    fn progress_is_a_line_delimited_wire_event() {
+        insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
+        {
+          "protocol_version": 6,
+          "event": "progress",
+          "message": "Waiting for the guest transport..."
+        }
+        "###);
     }
 }

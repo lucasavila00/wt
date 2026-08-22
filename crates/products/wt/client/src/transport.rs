@@ -13,6 +13,10 @@ use wt_control_protocol::{
     ApiError, ApiRequest, ApiResponse, CodexSession, Outcome, Response, PROTOCOL_VERSION,
 };
 
+mod progress;
+
+pub use progress::call_outcome_with_progress;
+
 #[derive(Debug)]
 pub struct ContextError {
     pub context: String,

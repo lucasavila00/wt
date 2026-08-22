@@ -73,7 +73,7 @@ fn run_server() -> Result<()> {
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let owner = process_user()?;
 
-    daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request| {
+    daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
         handle_daemon_request(
             &state,
             &operations,
@@ -81,7 +81,7 @@ fn run_server() -> Result<()> {
             &gateway,
             &owner,
             capacity_limit,
-            request,
+            (request, progress),
         )
     })
 }
@@ -93,8 +93,9 @@ fn handle_daemon_request(
     gateway: &wt_agent_tool_gateway::ControlClient,
     owner: &str,
     capacity_limit: wt_workload_registry::Resources,
-    request: ApiRequest,
+    request: (ApiRequest, &mut dyn std::io::Write),
 ) -> ApiResponse {
+    let (request, progress) = request;
     let result = (|| {
         let store = Store::open(&state.database_path()).context("open instance registry")?;
         let service = Service::with_capacity_limit(
@@ -104,7 +105,9 @@ fn handle_daemon_request(
             operations.clone(),
             capacity_limit,
         );
-        Ok::<_, anyhow::Error>(wt_server::handle_request(&service, owner, request))
+        Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
+            &service, owner, request, progress,
+        ))
     })();
     result.unwrap_or_else(|error| {
         ApiResponse::error(ApiError::new(

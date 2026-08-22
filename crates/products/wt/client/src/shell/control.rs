@@ -219,6 +219,10 @@ impl Default for ControlState {
 }
 
 impl ControlState {
+    pub(super) fn show_worlds(&mut self) {
+        self.activity = Activity::Worlds;
+        self.palette.close();
+    }
     pub(super) fn activity(&self) -> Activity {
         self.activity
     }

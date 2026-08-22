@@ -18,11 +18,23 @@ pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentToolG
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
+    handle_request_with_progress(service, owner, request, &mut std::io::sink())
+}
+
+pub fn handle_request_with_progress<
+    W: wt_retained_worlds::WorldWorker,
+    G: service::AgentToolGateway,
+>(
+    service: &service::Service<W, G>,
+    owner: &str,
+    request: ApiRequest,
+    progress: &mut dyn std::io::Write,
+) -> ApiResponse {
     if let Err(error) = validate_protocol_version(request.protocol_version) {
         return ApiResponse::error(error);
     }
 
-    match service.execute(owner, request.operation) {
+    match service.execute_with_progress(owner, request.operation, progress) {
         Ok(response) => ApiResponse::ok(response),
         Err(error) => ApiResponse::error(error),
     }
