@@ -69,11 +69,20 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     }
 
     pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
+        self.execute_with_progress(owner, operation, &mut std::io::sink())
+    }
+
+    pub fn execute_with_progress(
+        &self,
+        owner: &str,
+        operation: Operation,
+        progress: &mut dyn std::io::Write,
+    ) -> Result<Response, ApiError> {
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
         match operation {
-            Operation::Create(request) => self.create(owner, request),
+            Operation::Create(request) => self.create(owner, request, progress),
             Operation::List => self.list(owner),
             Operation::Get { name } => self.get(owner, &name),
             Operation::Start { name } => self.start(owner, &name),
@@ -85,7 +94,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
     }
 
-    fn create(&self, owner: &str, request: CreateInstance) -> Result<Response, ApiError> {
+    fn create(
+        &self,
+        owner: &str,
+        request: CreateInstance,
+        progress: &mut dyn std::io::Write,
+    ) -> Result<Response, ApiError> {
         wt_control_protocol::validate_create_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
         let _operation = self.operations.lock(owner, &request.name);
@@ -183,7 +197,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
         };
-        let result = self.worker.provision(spec, &mut std::io::stderr());
+        let result = self.worker.provision(spec, progress);
         match result {
             Ok(access) => self
                 .store

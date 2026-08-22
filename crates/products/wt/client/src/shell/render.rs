@@ -23,17 +23,20 @@ pub(super) fn draw(
     creation_error: Option<&str>,
     deletion: Option<&delete::Flow>,
 ) {
+    if let Some(creation) = creation.filter(|flow| flow.blocks_input()) {
+        creation.render(frame, frame.area());
+        return;
+    }
     if model.mode() == Mode::Control {
-        if let Some(creation) = creation {
-            creation.render(frame, frame.area());
-            return;
-        }
-        draw_control(frame, model);
+        draw_control(frame, model, creation);
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
         if let Some(deletion) = deletion {
             deletion.render(frame, frame.area());
+        }
+        if let Some(creation) = creation {
+            creation.render_progress(frame, frame.area());
         }
         return;
     }
@@ -43,6 +46,9 @@ pub(super) fn draw(
     draw_world_bar(frame, model);
     if let Some(message) = closed_message {
         draw_closed_session_bar(frame, message);
+    }
+    if let Some(creation) = creation {
+        creation.render_progress(frame, frame.area());
     }
     match model.mode() {
         Mode::World if closed_message.is_none() => {
@@ -219,14 +225,14 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     );
 }
 
-fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
+fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flow>) {
     let area = frame.area();
     frame.render_widget(Block::new().style(Style::new().bg(Color::Black)), area);
     let (activity_bar, content) = control_areas(area);
     draw_activity_bar(frame, activity_bar, model.control().activity());
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
-        Activity::Worlds => draw_worlds(frame, body, model),
+        Activity::Worlds => draw_worlds(frame, body, model, creation),
         Activity::Codex => draw_codex(frame, body, model.control()),
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
@@ -248,13 +254,16 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel) {
     draw_command_palette(frame, content, model.control().palette());
 }
 
-fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
+fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
     let block = Block::new()
         .borders(Borders::ALL)
         .title(refresh_title("Worlds", model.control().worlds_updated_at()));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    if !model.has_worlds() {
+    let creating = creation
+        .and_then(Flow::creating_world)
+        .filter(|(name, _)| model.worlds().iter().all(|world| world.name != *name));
+    if !model.has_worlds() && creating.is_none() {
         frame.render_widget(
             Paragraph::new("No worlds with SSH access\nCreate a world to get started")
                 .alignment(Alignment::Center),
@@ -262,7 +271,23 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
         );
         return;
     }
-    for (index, rect) in world_card_rects(frame.area(), model.active(), model.world_count()) {
+    let count = model.world_count() + usize::from(creating.is_some());
+    for (index, rect) in world_card_rects(frame.area(), model.active(), count) {
+        if let Some((name, resources)) = creating.filter(|_| index == model.world_count()) {
+            draw_world_card(
+                frame,
+                rect,
+                "󰔟",
+                Color::Yellow,
+                "PROVISIONING",
+                name,
+                resources,
+                None,
+                false,
+                "Creation in progress",
+            );
+            continue;
+        }
         let world = &model.worlds()[index];
         let (icon, color) = match world.status {
             wt_control_protocol::InstanceStatus::Running => ("󰐊", Color::Green),
@@ -271,34 +296,60 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
             wt_control_protocol::InstanceStatus::Destroying => ("󰩹", Color::Yellow),
             wt_control_protocol::InstanceStatus::Error => ("󰅚", Color::Red),
         };
-        let block = Block::new()
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(if index == model.active() {
-                Color::Cyan
-            } else {
-                Color::DarkGray
-            }))
-            .title(Span::styled(
-                format!(" {icon} {} ", world.status.to_string().to_uppercase()),
-                Style::new().fg(color).add_modifier(Modifier::BOLD),
-            ));
-        let inner = block.inner(rect);
-        frame.render_widget(block, rect);
-        let detail = (world.detail != "-").then(|| Line::from(world.detail.clone()));
-        let mut lines = vec![
-            Line::from(world.name.clone()),
-            Line::from(world.resources.clone()),
-        ];
-        if let Some(detail) = detail {
-            lines.push(detail);
-        }
-        let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
-        frame.render_widget(
-            Paragraph::new("Enter or click to open").style(Style::new().fg(Color::DarkGray)),
-            rows[1],
+        draw_world_card(
+            frame,
+            rect,
+            icon,
+            color,
+            &world.status.to_string().to_uppercase(),
+            &world.name,
+            &world.resources,
+            (world.detail != "-").then_some(world.detail.as_str()),
+            index == model.active(),
+            "Enter or click to open",
         );
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_world_card(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    icon: &str,
+    color: Color,
+    status: &str,
+    name: &str,
+    resources: &str,
+    detail: Option<&str>,
+    selected: bool,
+    footer: &str,
+) {
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_style(Style::new().fg(if selected {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        }))
+        .title(Span::styled(
+            format!(" {icon} {status} "),
+            Style::new().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let mut lines = vec![
+        Line::from(name.to_owned()),
+        Line::from(resources.to_owned()),
+    ];
+    if let Some(detail) = detail {
+        lines.push(Line::from(detail.to_owned()));
+    }
+    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
+    frame.render_widget(
+        Paragraph::new(footer).style(Style::new().fg(Color::DarkGray)),
+        rows[1],
+    );
 }
 
 fn refresh_title(label: &str, updated_at: Option<&str>) -> String {
