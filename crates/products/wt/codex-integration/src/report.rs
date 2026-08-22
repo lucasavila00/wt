@@ -109,7 +109,7 @@ fn git_context(cwd: &str) -> (Option<String>, Option<String>, Option<String>) {
     if root.is_none() {
         return (None, None, None);
     }
-    let url = run(&["remote", "get-url", "origin"]);
+    let url = run(&["config", "--get", "remote.origin.url"]);
     let branch = run(&["branch", "--show-current"]);
     (root, url, branch)
 }
@@ -178,10 +178,7 @@ mod tests {
         let (root, url, branch) = git_context(temp.path().to_str().unwrap());
 
         assert_eq!(root.as_deref(), temp.path().to_str());
-        assert_eq!(
-            url.as_deref(),
-            Some("wt-agent::git@github.com:acme/widget.git")
-        );
+        assert_eq!(url.as_deref(), Some("git@github.com:acme/widget.git"));
         assert_eq!(branch.as_deref(), Some("wt/session-cards"));
     }
 }
