@@ -22,8 +22,13 @@ pub(super) struct WorldSnapshot {
 pub(super) struct CodexRefresh {
     pub(super) updates: Receiver<Vec<codex::CodexContextSnapshot>>,
     cancelled: Arc<AtomicBool>,
-    stop: Sender<()>,
+    commands: Sender<CodexRefreshCommand>,
     worker: Option<JoinHandle<()>>,
+}
+
+enum CodexRefreshCommand {
+    Refresh,
+    Stop,
 }
 
 impl WorldRefresh {
@@ -87,7 +92,7 @@ impl Drop for WorldRefresh {
 impl CodexRefresh {
     pub(super) fn start(config: ClientConfig) -> Self {
         let (updates_tx, updates) = mpsc::sync_channel(1);
-        let (stop, stop_rx) = mpsc::channel();
+        let (commands, command_rx) = mpsc::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = Arc::clone(&cancelled);
         let worker = thread::Builder::new()
@@ -101,24 +106,31 @@ impl CodexRefresh {
                     Ok(()) | Err(TrySendError::Full(_)) => {}
                     Err(TrySendError::Disconnected(_)) => break,
                 }
-                if stop_rx.recv_timeout(REFRESH_INTERVAL).is_ok() {
-                    break;
+                match command_rx.recv_timeout(REFRESH_INTERVAL) {
+                    Ok(CodexRefreshCommand::Refresh) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Ok(CodexRefreshCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        break
+                    }
                 }
             })
             .expect("start wt shell Codex refresh worker");
         Self {
             updates,
             cancelled,
-            stop,
+            commands,
             worker: Some(worker),
         }
+    }
+
+    pub(super) fn refresh(&self) {
+        let _ = self.commands.send(CodexRefreshCommand::Refresh);
     }
 }
 
 impl Drop for CodexRefresh {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.stop.send(());
+        let _ = self.commands.send(CodexRefreshCommand::Stop);
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }

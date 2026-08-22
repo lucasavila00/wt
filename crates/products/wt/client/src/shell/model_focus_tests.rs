@@ -1,4 +1,5 @@
 use super::*;
+use crate::shell::control::CodexCardIdentity;
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
@@ -9,7 +10,7 @@ fn completed_focus_switches_only_from_the_active_codex_view() {
     let InputRoute::OpenCodex(target) = model.handle_key(key(KeyCode::Enter), area()) else {
         panic!("live card did not produce an open target");
     };
-    model.finish_codex_open(&target.identity, Some(1), None);
+    model.finish_codex_open(&target, Some(1), false);
     assert_eq!(model.active(), 1);
     assert_eq!(model.mode(), Mode::World);
 
@@ -19,7 +20,7 @@ fn completed_focus_switches_only_from_the_active_codex_view() {
         panic!("live card did not produce an open target");
     };
     canceled.handle_key(key(KeyCode::F(5)), area());
-    canceled.finish_codex_open(&target.identity, Some(1), None);
+    canceled.finish_codex_open(&target, Some(1), false);
     assert_eq!(canceled.active(), 0);
     assert_eq!(canceled.mode(), Mode::World);
 }

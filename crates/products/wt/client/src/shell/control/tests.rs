@@ -101,8 +101,7 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
         panic!("live card click did not produce an open target");
     };
     assert_eq!(target.pane_id, "%2");
-    let selected = state.selected().unwrap().clone();
-    state.finish_open(&selected, Some("failed".into()));
+    state.finish_open(&target, true);
     let scroll = MouseEvent {
         kind: MouseEventKind::ScrollUp,
         column: second.x,
@@ -145,8 +144,56 @@ fn refresh_and_navigation_do_not_hide_an_opening_card() {
     assert_eq!(state.selected(), Some(&target.identity));
     assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:00Z"));
 
-    assert!(state.finish_open(&target.identity, Some("failed".into())));
-    assert_eq!(state.open_error(&target.identity), Some("failed"));
+    assert!(state.finish_open(&target, true));
+    assert!(state.open_failed());
+
+    let Some(ControlAction::OpenCodex(retry)) =
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
+    else {
+        panic!("failed open did not produce a retry target");
+    };
+    assert_eq!(retry.identity, target.identity);
+    assert!(!state.open_failed());
+
+    assert!(state.finish_open(&retry, true));
+    let (retry_area, _) = super::super::toast::actions(area());
+    let (_, action) = state.handle_mouse(mouse(retry_area.x, retry_area.y), area());
+    let Some(ControlAction::OpenCodex(clicked_retry)) = action else {
+        panic!("clicking Retry did not produce an open target");
+    };
+    assert_eq!(clicked_retry.identity, target.identity);
+
+    assert!(state.finish_open(&clicked_retry, true));
+    let (_, dismiss) = super::super::toast::actions(area());
+    let (changed, action) = state.handle_mouse(mouse(dismiss.x, dismiss.y), area());
+    assert!(changed);
+    assert!(action.is_none());
+    assert!(!state.open_failed());
+}
+
+#[test]
+fn context_failure_retry_and_dismiss_are_explicit() {
+    let mut state = ControlState::default();
+    state.set_context_failures(vec!["ars".into()]);
+    assert_eq!(state.context_failure().unwrap(), ["ars"]);
+    assert_eq!(
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area()),
+        Some(ControlAction::RefreshCodex)
+    );
+
+    state.set_context_failures(vec!["ars".into()]);
+    state.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), area());
+    assert!(state.context_failure().is_none());
+    state.set_context_failures(vec!["ars".into()]);
+    assert!(state.context_failure().is_none());
+
+    state.set_context_failures(Vec::new());
+    state.set_context_failures(vec!["ars".into()]);
+    let (retry, _) = super::super::toast::actions(area());
+    assert_eq!(
+        state.handle_mouse(mouse(retry.x, retry.y), area()),
+        (true, Some(ControlAction::RefreshCodex))
+    );
 }
 
 #[test]

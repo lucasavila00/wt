@@ -178,15 +178,7 @@ pub(super) enum ControlCommand {
 pub(super) enum ControlAction {
     Command(ControlCommand),
     OpenCodex(Box<CodexOpenTarget>),
-}
-
-impl ControlCommand {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::NewWorld => "World: New",
-            Self::DeleteWorld => "World: Delete...",
-        }
-    }
+    RefreshCodex,
 }
 
 #[derive(Debug)]
@@ -196,8 +188,10 @@ pub(super) struct ControlState {
     codex: Vec<CodexCard>,
     selected: Option<CodexCardIdentity>,
     codex_offset: usize,
-    opening: Option<CodexCardIdentity>,
-    open_error: Option<(CodexCardIdentity, String)>,
+    pub(super) opening: Option<CodexCardIdentity>,
+    pub(super) open_failure: Option<CodexOpenTarget>,
+    pub(super) context_failure: Option<Vec<String>>,
+    pub(super) dismissed_context_failure: Option<Vec<String>>,
     worlds_updated_at: Option<String>,
     codex_updated_at: Option<String>,
 }
@@ -211,7 +205,9 @@ impl Default for ControlState {
             selected: None,
             codex_offset: 0,
             opening: None,
-            open_error: None,
+            open_failure: None,
+            context_failure: None,
+            dismissed_context_failure: None,
             worlds_updated_at: None,
             codex_updated_at: None,
         }
@@ -259,13 +255,6 @@ impl ControlState {
         self.opening.as_ref()
     }
 
-    pub(super) fn open_error(&self, identity: &CodexCardIdentity) -> Option<&str> {
-        self.open_error
-            .as_ref()
-            .filter(|(target, _)| target == identity)
-            .map(|(_, message)| message.as_str())
-    }
-
     pub(super) fn set_codex(
         &mut self,
         codex: Vec<CodexCard>,
@@ -293,6 +282,26 @@ impl ControlState {
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> Option<ControlAction> {
+        if self.open_failure.is_some() && key.modifiers == KeyModifiers::NONE {
+            match key.code {
+                KeyCode::Enter => return self.retry_open(),
+                KeyCode::Esc => {
+                    self.open_failure = None;
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        if self.context_failure.is_some() && key.modifiers == KeyModifiers::NONE {
+            match key.code {
+                KeyCode::Enter => return self.retry_context_refresh(),
+                KeyCode::Esc => {
+                    self.dismiss_context_failure();
+                    return None;
+                }
+                _ => {}
+            }
+        }
         if self.palette.is_open() {
             return self.palette.handle_key(key).map(ControlAction::Command);
         }
@@ -334,6 +343,34 @@ impl ControlState {
             }
             MouseEventKind::Down(MouseButton::Left) => {}
             _ => return (false, None),
+        }
+        if self.open_failure.is_some() {
+            let (retry, dismiss) = super::toast::actions(area);
+            let position = (mouse.column, mouse.row).into();
+            if retry.contains(position) {
+                return (true, self.retry_open());
+            }
+            if dismiss.contains(position) {
+                self.open_failure = None;
+                return (true, None);
+            }
+            if super::toast::area(area).contains(position) {
+                return (true, None);
+            }
+        }
+        if self.context_failure.is_some() {
+            let (retry, dismiss) = super::toast::actions(area);
+            let position = (mouse.column, mouse.row).into();
+            if retry.contains(position) {
+                return (true, self.retry_context_refresh());
+            }
+            if dismiss.contains(position) {
+                self.dismiss_context_failure();
+                return (true, None);
+            }
+            if super::toast::area(area).contains(position) {
+                return (true, None);
+            }
         }
         if self.palette.is_open() {
             let (_, results) = command_palette_layout(control_areas(area).1);
@@ -379,19 +416,6 @@ impl ControlState {
         self.palette.close();
     }
 
-    pub(super) fn finish_open(
-        &mut self,
-        identity: &CodexCardIdentity,
-        error: Option<String>,
-    ) -> bool {
-        if self.opening.as_ref() != Some(identity) {
-            return false;
-        }
-        self.opening = None;
-        self.open_error = error.map(|message| (identity.clone(), message));
-        true
-    }
-
     fn activate_selected(&mut self) -> Option<CodexOpenTarget> {
         if self.opening.is_some() {
             return None;
@@ -403,7 +427,7 @@ impl ControlState {
             .find(|card| &card.identity == selected)?
             .open_target()?;
         self.opening = Some(target.identity.clone());
-        self.open_error = None;
+        self.open_failure = None;
         Some(target)
     }
 
@@ -630,27 +654,6 @@ fn codex_card_at_position(
         .map(|(index, _)| index)
 }
 
-pub(super) fn command_palette_layout(content: Rect) -> (Rect, Rect) {
-    let width = (content.width.saturating_mul(70) / 100)
-        .clamp(30.min(content.width), 70.min(content.width));
-    let height = 9.min(content.height);
-    let area = Rect::new(
-        content.x + content.width.saturating_sub(width) / 2,
-        content.y + content.height.saturating_mul(20) / 100,
-        width,
-        height,
-    );
-    let inner = area.inner(Margin::new(1, 1));
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(1),
-    ])
-    .split(inner);
-    (area, rows[2])
-}
-
 fn activity_at_position(area: Rect, column: u16, row: u16) -> Option<Activity> {
     let (bar, _) = control_areas(area);
     if column < bar.x
@@ -670,3 +673,7 @@ fn activity_at_position(area: Rect, column: u16, row: u16) -> Option<Activity> {
 #[cfg(test)]
 #[path = "control/tests.rs"]
 mod tests;
+
+#[path = "control/command.rs"]
+mod command;
+pub(super) use command::command_palette_layout;

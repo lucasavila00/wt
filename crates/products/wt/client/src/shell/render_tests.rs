@@ -1,7 +1,8 @@
 use super::*;
 use crate::shell::codex::ShellWorld;
 use crate::shell::control::{CodexCardIdentity, CodexCardKind};
-use crossterm::event::KeyCode;
+use crate::shell::model::InputRoute;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
 use ratatui::{backend::TestBackend, Terminal};
 use uuid::Uuid;
@@ -263,6 +264,114 @@ fn control_ui_shows_codex_session_cards() {
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+}
+
+#[test]
+fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
+    let backend = TestBackend::new(80, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    let session_id = Uuid::from_u128(10);
+    let world_id = Uuid::from_u128(20);
+    let target = ByobuTarget {
+        tmux_session: "wt-host".into(),
+        pane_id: "%1".into(),
+    };
+    model.set_codex(
+        vec![CodexCard {
+            identity: CodexCardIdentity::Observation {
+                context: "ars".into(),
+                session_id,
+                world_id,
+                tmux_session: target.tmux_session.clone(),
+                pane_id: target.pane_id.clone(),
+            },
+            context: "ars".into(),
+            session_id: Some(session_id),
+            timestamp: Some(now_ms()),
+            title: Some("Focus the session".into()),
+            kind: CodexCardKind::Observation {
+                world_id,
+                world_name: "dev".into(),
+                cwd: "/home/wt/project".into(),
+                repository_root: Some("/home/wt/project".into()),
+                repository_url: Some("https://github.com/lucasavila00/wt".into()),
+                git_branch: Some("wt/ctx-timeout-toast".into()),
+                state: CodexSessionState::Unknown,
+                session_start_source: Some("compact".into()),
+                target,
+            },
+        }],
+        "2026-08-21T20:00:00Z".into(),
+        Rect::new(0, 0, 80, 18),
+    );
+    let InputRoute::OpenCodex(target) = model.handle_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        Rect::new(0, 0, 80, 18),
+    ) else {
+        panic!("live card did not produce an open target");
+    };
+    model.finish_codex_open(&target, None, true);
+
+    terminal
+        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_codex_open_failure_toast",
+        terminal.backend().buffer()
+    );
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(!rendered.contains("world_id"));
+    let (retry, dismiss) = super::super::toast::actions(Rect::new(0, 0, 80, 18));
+    assert!(terminal
+        .backend()
+        .buffer()
+        .cell((retry.right() - 1, retry.y))
+        .unwrap()
+        .style()
+        .add_modifier
+        .contains(Modifier::BOLD));
+    assert!(terminal
+        .backend()
+        .buffer()
+        .cell((dismiss.x, dismiss.y))
+        .unwrap()
+        .style()
+        .add_modifier
+        .contains(Modifier::BOLD));
+}
+
+#[test]
+fn failed_context_refresh_is_a_sanitized_retryable_toast() {
+    let backend = TestBackend::new(80, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    model.set_codex_context_failures(vec!["ars".into()]);
+
+    terminal
+        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_codex_context_failure_toast",
+        terminal.backend().buffer()
+    );
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(!rendered.contains("Permission denied"));
+    assert!(!rendered.contains("/home/wt/.codex"));
 }
 
 #[test]

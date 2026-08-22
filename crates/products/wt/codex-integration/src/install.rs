@@ -105,6 +105,43 @@ fn codex_home() -> Result<PathBuf> {
     Ok(Path::new(&home).join(".codex"))
 }
 
+pub(crate) fn prepare_shared_sessions() -> Result<()> {
+    let root = codex_home()?.join("sessions");
+    if !root.exists() {
+        return Ok(());
+    }
+    repair_session_children(&root)
+}
+
+fn repair_session_children(directory: &Path) -> Result<()> {
+    for entry in fs::read_dir(directory)
+        .with_context(|| format!("read Codex session directory {}", directory.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.is_dir() {
+            add_group_permissions(&path, &metadata, 0o050)?;
+            repair_session_children(&path)?;
+        } else if metadata.is_file()
+            && entry.file_name().to_string_lossy().starts_with("rollout-")
+            && path.extension() == Some(OsStr::new("jsonl"))
+        {
+            add_group_permissions(&path, &metadata, 0o040)?;
+        }
+    }
+    Ok(())
+}
+
+fn add_group_permissions(path: &Path, metadata: &fs::Metadata, permissions: u32) -> Result<()> {
+    let mode = metadata.permissions().mode();
+    if mode & permissions == permissions {
+        return Ok(());
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(mode | permissions))
+        .with_context(|| format!("make Codex session path group-readable: {}", path.display()))
+}
+
 fn install_config(codex_home: &Path) -> Result<()> {
     let path = codex_home.join("config.toml");
     match fs::read(&path) {
@@ -345,6 +382,36 @@ mod tests {
             .to_string()
             .replace(&codex_home.display().to_string(), "<CODEX_HOME>");
         insta::assert_snapshot!(error, @"Codex configuration differs from WT's configuration: <CODEX_HOME>/config.toml");
+    }
+
+    #[test]
+    fn repairs_existing_shared_session_permissions_without_touching_other_files() {
+        let temp = tempdir().unwrap();
+        let sessions = temp.path().join("sessions");
+        let day = sessions.join("2026/08/22");
+        fs::create_dir_all(&day).unwrap();
+        let rollout = day.join("rollout-session.jsonl");
+        let other = day.join("state.json");
+        fs::write(&rollout, "rollout").unwrap();
+        fs::write(&other, "state").unwrap();
+        fs::set_permissions(&day, fs::Permissions::from_mode(0o2700)).unwrap();
+        fs::set_permissions(&rollout, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).unwrap();
+
+        repair_session_children(&sessions).unwrap();
+
+        assert_eq!(
+            fs::metadata(&day).unwrap().permissions().mode() & 0o7777,
+            0o2750
+        );
+        assert_eq!(
+            fs::metadata(&rollout).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(
+            fs::metadata(&other).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
