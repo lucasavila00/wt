@@ -14,6 +14,7 @@ pub use runtime_config::{
     AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
     ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV, CODEX_AUTH_PATH,
     CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_TOOL_VSOCK_PORT, SERVER_CONFIG_PATH,
+    SSH_AUTHORIZED_KEYS_SHARE_DIR,
 };
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};

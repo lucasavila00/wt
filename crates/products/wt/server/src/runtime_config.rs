@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
-use wt_libvirt_kvm::{CodexMounts, MachineConfig};
+use wt_libvirt_kvm::{MachineConfig, SharedMounts};
 
 pub const DEFAULT_AGENT_TOOL_VSOCK_PORT: u32 = wt_agent_tool_gateway::VSOCK_PORT;
 pub const AGENT_TOOL_VSOCK_PORT_ENV: &str = wt_agent_tool_gateway::VSOCK_PORT_ENV;
@@ -10,6 +10,7 @@ pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 pub const CODEX_AUTH_PATH: &str = "/home/wt/.codex/auth.json";
 pub const CODEX_AUTH_SHARE_DIR: &str = "/home/wt/.codex/.wt-auth";
 pub const CODEX_SESSIONS_PATH: &str = "/home/wt/.codex/sessions";
+pub const SSH_AUTHORIZED_KEYS_SHARE_DIR: &str = "/home/wt/.ssh/.wt-authorized-keys";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -174,7 +175,7 @@ impl ServerConfig {
             worlds_owner_uid: wt_retained_worlds::WT_IDENTITY.uid,
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
-            codex_mounts: Some(self.codex_mounts()),
+            shared_mounts: Some(self.shared_mounts()),
         }
     }
 
@@ -277,10 +278,11 @@ impl ServerConfig {
         Ok(())
     }
 
-    fn codex_mounts(&self) -> CodexMounts {
-        CodexMounts {
+    fn shared_mounts(&self) -> SharedMounts {
+        SharedMounts {
             sessions: PathBuf::from(CODEX_SESSIONS_PATH),
             auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
+            ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
         }
     }
 
@@ -370,10 +372,11 @@ binary_dir = "/usr/local/bin"
         );
         assert_eq!(machine.network, "default");
         assert_eq!(
-            machine.codex_mounts,
-            Some(CodexMounts {
+            machine.shared_mounts,
+            Some(SharedMounts {
                 sessions: PathBuf::from(CODEX_SESSIONS_PATH),
                 auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
+                ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
             })
         );
     }

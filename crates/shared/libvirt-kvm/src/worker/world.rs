@@ -23,20 +23,23 @@ pub(super) fn domain_xml(
     let memory_mib = spec.memory_mib;
     let vcpus = spec.vcpus;
     let mac = mac_address(provider_id);
-    let memory_backing = if config.codex_mounts.is_none() {
+    let memory_backing = if config.shared_mounts.is_none() {
         String::new()
     } else {
         "  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>\n".to_owned()
     };
-    let codex_mounts = config.codex_mounts.as_ref().map_or_else(String::new, |mounts| {
+    let shared_mounts = config.shared_mounts.as_ref().map_or_else(String::new, |mounts| {
         let sessions_path = mounts.sessions.to_string_lossy();
         let auth_path = mounts.auth.to_string_lossy();
+        let ssh_authorized_keys_path = mounts.ssh_authorized_keys.to_string_lossy();
         let sessions = quick_xml::escape::escape(sessions_path.as_ref());
         let auth = quick_xml::escape::escape(auth_path.as_ref());
+        let ssh_authorized_keys = quick_xml::escape::escape(ssh_authorized_keys_path.as_ref());
         format!(
-            "    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{sessions}'/>\n      <target dir='{}'/>\n    </filesystem>\n    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{auth}'/>\n      <target dir='{}'/>\n    </filesystem>\n",
+            "    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{sessions}'/>\n      <target dir='{}'/>\n    </filesystem>\n    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{auth}'/>\n      <target dir='{}'/>\n    </filesystem>\n    <filesystem type='mount' accessmode='passthrough'>\n      <driver type='virtiofs'/>\n      <source dir='{ssh_authorized_keys}'/>\n      <target dir='{}'/>\n    </filesystem>\n",
             crate::CODEX_SESSIONS_TAG,
             crate::CODEX_AUTH_TAG,
+            crate::SSH_AUTHORIZED_KEYS_TAG,
         )
     });
     let interface = if network_enabled {
@@ -67,7 +70,7 @@ pub(super) fn domain_xml(
       <source file='{disk}'/>
       <target dev='vda' bus='virtio'/>
     </disk>
-{interface}{codex_mounts}    <channel type='unix'>
+{interface}{shared_mounts}    <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
     <vsock model='virtio'><cid auto='yes'/></vsock>
@@ -92,10 +95,10 @@ fn mac_address(provider_id: &crate::ProviderId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CodexMounts, MachineConfig};
+    use crate::{MachineConfig, SharedMounts};
     use std::time::Duration;
 
-    fn test_domain_xml(codex_mounts: Option<CodexMounts>) -> String {
+    fn test_domain_xml(shared_mounts: Option<SharedMounts>) -> String {
         let provider_id = crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
@@ -103,7 +106,7 @@ mod tests {
             worlds_owner_uid: 1001,
             network: "default & private".to_owned(),
             boot_timeout: Duration::from_secs(300),
-            codex_mounts,
+            shared_mounts,
         };
         let spec = crate::MachineSpec {
             provider_id: provider_id.clone(),
@@ -128,11 +131,12 @@ mod tests {
 
     #[test]
     fn domain_with_codex_mounts_has_virtiofs_support() {
-        let xml = test_domain_xml(Some(CodexMounts {
+        let xml = test_domain_xml(Some(SharedMounts {
             sessions: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
             auth: PathBuf::from("/home/wt/.codex/.wt-auth"),
+            ssh_authorized_keys: PathBuf::from("/home/wt/.ssh/.wt-authorized-keys"),
         }));
-        assert_eq!(xml.matches("accessmode='passthrough'").count(), 2);
+        assert_eq!(xml.matches("accessmode='passthrough'").count(), 3);
         assert!(!xml.contains("<idmap"));
         insta::assert_snapshot!("domain_xml_with_codex_mounts", xml);
     }

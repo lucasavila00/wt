@@ -30,6 +30,9 @@ const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-tool-gateway.se
 const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.service";
 const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.path";
 const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-integration-auth-share";
+const SSH_KEYS_SERVICE_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.service";
+const SSH_KEYS_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.path";
+const SSH_KEYS_HELPER_PATH: &str = "/usr/local/libexec/wt-ssh-authorized-keys-share";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
@@ -397,6 +400,7 @@ fn install_services(
     replace_runtime: bool,
 ) -> Result<()> {
     install_codex_auth_helper(runner)?;
+    install_ssh_keys_helper(runner)?;
     install_service_unit(
         runner,
         "wt-codex-integration-auth",
@@ -409,6 +413,20 @@ fn install_services(
         "wt-codex-integration-auth-path",
         Path::new(CODEX_AUTH_PATH_UNIT_PATH),
         &codex_auth_path_unit(),
+        replace_runtime,
+    )?;
+    install_service_unit(
+        runner,
+        "wt-ssh-authorized-keys",
+        Path::new(SSH_KEYS_SERVICE_PATH),
+        &ssh_keys_service(),
+        replace_runtime,
+    )?;
+    install_service_unit(
+        runner,
+        "wt-ssh-authorized-keys-path",
+        Path::new(SSH_KEYS_PATH_UNIT_PATH),
+        &ssh_keys_path_unit(),
         replace_runtime,
     )?;
     install_service_unit(
@@ -431,6 +449,7 @@ fn install_services(
     )?;
     for name in [
         "wt-codex-integration-auth.path",
+        "wt-ssh-authorized-keys.path",
         "wt-agent-tool-gateway.service",
         "wt-server.service",
     ] {
@@ -443,6 +462,21 @@ fn install_services(
             &format!("restart {name}"),
         )?;
     }
+    Ok(())
+}
+
+fn install_ssh_keys_helper(runner: &impl Runner) -> Result<()> {
+    runner.run(
+        cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
+        "create system helper directory",
+    )?;
+    let local = Path::new("target/wt-ssh-authorized-keys-share.install");
+    fs::write(local, host::ssh_authorized_keys_share())
+        .context("stage SSH authorized keys share helper")?;
+    let temporary = Path::new("/usr/local/libexec/.wt-ssh-authorized-keys-share.wt-new");
+    sudo_install(runner, local, temporary, 0o755)?;
+    sudo_move(runner, temporary, Path::new(SSH_KEYS_HELPER_PATH))?;
+    let _ = fs::remove_file(local);
     Ok(())
 }
 
@@ -562,9 +596,9 @@ fn server_service(server: &ServerConfig) -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
-Requires=wt-codex-integration-auth.service\n\
-Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path\n\
-After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service\n\
+Requires=wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
+Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path wt-ssh-authorized-keys.path\n\
+After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -625,6 +659,24 @@ Unit=wt-codex-integration-auth.service\n\
 [Install]\n\
 WantedBy=multi-user.target\n",
         wt_server::CODEX_AUTH_PATH,
+    )
+    .into_bytes()
+}
+
+fn ssh_keys_service() -> Vec<u8> {
+    format!(
+        "[Unit]\nDescription=Refresh the WT SSH authorized keys share\n\n[Service]\nType=oneshot\nUser={}\nGroup={}\nEnvironment={}\nExecStart={}\nUMask=0077\n",
+        SERVER_USER,
+        SERVER_GROUP,
+        systemd_quote(&format!("HOME={SERVER_HOME}")),
+        SSH_KEYS_HELPER_PATH,
+    )
+    .into_bytes()
+}
+
+fn ssh_keys_path_unit() -> Vec<u8> {
+    format!(
+        "[Unit]\nDescription=Watch the WT SSH authorized keys file\n\n[Path]\nPathChanged={SERVER_HOME}/.ssh/authorized_keys\nUnit=wt-ssh-authorized-keys.service\n\n[Install]\nWantedBy=multi-user.target\n"
     )
     .into_bytes()
 }

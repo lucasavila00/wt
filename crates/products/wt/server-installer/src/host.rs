@@ -8,6 +8,8 @@ const SERVER_HOST_INSTALL_FLOW: &[u8] =
     include_bytes!("../../../../../assets/server/install-host.sh");
 const CODEX_AUTH_SHARE_FLOW: &[u8] =
     include_bytes!("../../../../../assets/server/share-codex-auth.sh");
+const SSH_AUTHORIZED_KEYS_SHARE_FLOW: &[u8] =
+    include_bytes!("../../../../../assets/server/share-ssh-authorized-keys.sh");
 
 fn shell_with_identity_contract(flow: &[u8]) -> Vec<u8> {
     const SHEBANG: &[u8] = b"#!/bin/sh\n";
@@ -25,6 +27,10 @@ fn shell_with_identity_contract(flow: &[u8]) -> Vec<u8> {
 
 pub(crate) fn codex_auth_share() -> Vec<u8> {
     shell_with_identity_contract(CODEX_AUTH_SHARE_FLOW)
+}
+
+pub(crate) fn ssh_authorized_keys_share() -> Vec<u8> {
+    shell_with_identity_contract(SSH_AUTHORIZED_KEYS_SHARE_FLOW)
 }
 
 pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
@@ -52,6 +58,11 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
         "validate Codex authentication share",
     )?;
     runner.run_script(
+        &ssh_authorized_keys_share(),
+        &["--check"],
+        "validate SSH authorized keys share",
+    )?;
+    runner.run_script(
         &shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
         &args,
         "prepare server host",
@@ -60,6 +71,11 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
         &codex_auth_share(),
         &[],
         "prepare Codex authentication share",
+    )?;
+    runner.run_script(
+        &ssh_authorized_keys_share(),
+        &[],
+        "prepare SSH authorized keys share",
     )
 }
 
@@ -123,6 +139,7 @@ mod tests {
         for script in [
             shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
             codex_auth_share(),
+            ssh_authorized_keys_share(),
         ] {
             assert!(script.starts_with(
                 b"#!/bin/sh\n# shellcheck shell=sh\n# Canonical WT host/guest filesystem identity."
@@ -166,6 +183,10 @@ mod tests {
                     vec!["--check".to_owned()],
                 ),
                 (
+                    "validate SSH authorized keys share".to_owned(),
+                    vec!["--check".to_owned()],
+                ),
+                (
                     "prepare server host".to_owned(),
                     vec![
                         "prepare".to_owned(),
@@ -176,6 +197,7 @@ mod tests {
                     ],
                 ),
                 ("prepare Codex authentication share".to_owned(), vec![]),
+                ("prepare SSH authorized keys share".to_owned(), vec![]),
             ]
         );
     }

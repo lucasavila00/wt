@@ -40,7 +40,10 @@ sudo rm -f /etc/systemd/system/wt-server.service \
     /etc/systemd/system/wt-agent-tool-gateway.service \
     /etc/systemd/system/wt-codex-integration-auth.service \
     /etc/systemd/system/wt-codex-integration-auth.path \
-    /usr/local/libexec/wt-codex-integration-auth-share
+    /etc/systemd/system/wt-ssh-authorized-keys.service \
+    /etc/systemd/system/wt-ssh-authorized-keys.path \
+    /usr/local/libexec/wt-codex-integration-auth-share \
+    /usr/local/libexec/wt-ssh-authorized-keys-share
 sudo rm -f \
     /etc/credstore.encrypted/wt-agent-tool-gateway-github-api-token \
     /etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-private-key \
@@ -51,6 +54,7 @@ sudo rm -f \
 rm -f "$HOME/.codex/sessions/.wt-image-publication-probe"
 rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt" "$HOME/.wt"
 rm -rf "$HOME/.codex/.wt-auth"
+rm -rf "$HOME/.ssh/.wt-authorized-keys"
 sudo systemctl daemon-reload
 sudo rm -rf /etc/wt /var/lib/wt/images /var/lib/wt/agent-tools \
     /var/lib/libvirt/images/wt \

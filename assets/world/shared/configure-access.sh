@@ -12,6 +12,11 @@ cat > "$temporary"
 chown "$WT_USER:$WT_GROUP" "$temporary"
 chmod 0600 "$temporary"
 mv -f "$temporary" "$WT_HOME/.ssh/authorized_keys"
+install -d -m 0755 -o root -g root /etc/ssh/sshd_config.d
+printf 'AuthorizedKeysFile .ssh/authorized_keys /run/wt-ssh-authorized-keys/authorized_keys\n' \
+    > /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
+chmod 0644 /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
+sshd -t
 ssh-keygen -A
 
 if ! systemctl enable --now ssh.service; then

@@ -6,6 +6,7 @@ pub const GUEST_ARCHITECTURE: &str = "x86_64";
 pub const GUEST_MACHINE: &str = "q35";
 pub const CODEX_SESSIONS_TAG: &str = "wt-codex-integration-sessions";
 pub const CODEX_AUTH_TAG: &str = "wt-codex-integration-auth";
+pub const SSH_AUTHORIZED_KEYS_TAG: &str = "wt-ssh-authorized-keys";
 
 #[derive(Clone, Debug)]
 pub struct MachineConfig {
@@ -14,11 +15,12 @@ pub struct MachineConfig {
     pub worlds_owner_uid: u32,
     pub network: String,
     pub boot_timeout: Duration,
-    pub codex_mounts: Option<CodexMounts>,
+    pub shared_mounts: Option<SharedMounts>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CodexMounts {
+pub struct SharedMounts {
     pub sessions: PathBuf,
     pub auth: PathBuf,
+    pub ssh_authorized_keys: PathBuf,
 }

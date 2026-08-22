@@ -4,6 +4,7 @@ set -eu
 sessions=/home/wt/.codex/sessions
 auth_mount=/run/wt-codex-integration-auth
 auth=/home/wt/.codex/auth.json
+ssh_keys_mount=/run/wt-ssh-authorized-keys
 
 escape_fstab_path() {
     printf '%s' "$1" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g' -e 's/	/\\011/g'
@@ -23,10 +24,14 @@ fi
 if ! findmnt --noheadings --mountpoint "$auth_mount" >/dev/null; then
     install -d -m 0700 -o root -g root "$auth_mount"
 fi
+if ! findmnt --noheadings --mountpoint "$ssh_keys_mount" >/dev/null; then
+    install -d -m 0700 -o root -g root "$ssh_keys_mount"
+fi
 
 sessions_entry="wt-codex-integration-sessions $(escape_fstab_path "$sessions") virtiofs rw,nosuid,nodev 0 0"
 auth_entry="wt-codex-integration-auth $(escape_fstab_path "$auth_mount") virtiofs ro,nosuid,nodev,noexec 0 0"
-for entry in "$sessions_entry" "$auth_entry"; do
+ssh_keys_entry="wt-ssh-authorized-keys $(escape_fstab_path "$ssh_keys_mount") virtiofs ro,nosuid,nodev,noexec 0 0"
+for entry in "$sessions_entry" "$auth_entry" "$ssh_keys_entry"; do
     tag=${entry%% *}
     rest=${entry#* }
     mountpoint=${rest%% *}
@@ -51,6 +56,10 @@ done
 
 test -f "$auth_mount/auth.json" || {
     echo "Codex authentication share does not contain auth.json" >&2
+    exit 1
+}
+test -f "$ssh_keys_mount/authorized_keys" || {
+    echo "SSH access share does not contain authorized_keys" >&2
     exit 1
 }
 if test -e "$auth" && ! test -L "$auth"; then

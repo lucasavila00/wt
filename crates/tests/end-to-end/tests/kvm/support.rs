@@ -29,7 +29,6 @@ pub(crate) struct KvmHarness {
     pub(crate) config: ServerConfig,
     pub(crate) server_config_path: PathBuf,
     pub(crate) wt_binary: PathBuf,
-    pub(crate) guest_public_key: String,
     pub(crate) initial_disks: usize,
     _images: TempDir,
 }
@@ -66,10 +65,6 @@ impl KvmHarness {
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
         });
-        let guest_public_key = fs::read_to_string(&git.guest_public_key)
-            .unwrap()
-            .trim()
-            .to_owned();
         std::env::set_var("HOME", temp.path());
         fs::create_dir_all(temp.path().join(".ssh")).unwrap();
         fs::write(
@@ -117,7 +112,6 @@ impl KvmHarness {
             config,
             server_config_path,
             wt_binary,
-            guest_public_key,
             initial_disks,
             _images: images,
         }
@@ -132,7 +126,6 @@ impl KvmHarness {
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
-                ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),

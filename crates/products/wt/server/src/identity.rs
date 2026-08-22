@@ -9,11 +9,12 @@ pub const SERVER_UID: u32 = wt_retained_worlds::WT_IDENTITY.uid;
 pub const SERVER_GID: u32 = wt_retained_worlds::WT_IDENTITY.gid;
 pub const SERVER_HOME: &str = wt_retained_worlds::WT_IDENTITY.home;
 
-const SHARED_ROOTS: [&str; 4] = [
+const SHARED_ROOTS: [&str; 5] = [
     SERVER_HOME,
     "/home/wt/.codex",
     crate::CODEX_SESSIONS_PATH,
     crate::CODEX_AUTH_SHARE_DIR,
+    crate::SSH_AUTHORIZED_KEYS_SHARE_DIR,
 ];
 const RECOVERY: &str = "rebootstrap the WT server account before installing or starting WT";
 
@@ -129,7 +130,9 @@ fn validate_shared_root_details(
 
 fn shared_root_mode(path: &Path) -> Option<u32> {
     match path.to_str() {
-        Some(crate::CODEX_SESSIONS_PATH) | Some(crate::CODEX_AUTH_SHARE_DIR) => Some(0o700),
+        Some(crate::CODEX_SESSIONS_PATH)
+        | Some(crate::CODEX_AUTH_SHARE_DIR)
+        | Some(crate::SSH_AUTHORIZED_KEYS_SHARE_DIR) => Some(0o700),
         _ => None,
     }
 }
@@ -224,6 +227,7 @@ mod tests {
                 "/home/wt/.codex",
                 "/home/wt/.codex/sessions",
                 "/home/wt/.codex/.wt-auth",
+                "/home/wt/.ssh/.wt-authorized-keys",
             ]
         );
     }
