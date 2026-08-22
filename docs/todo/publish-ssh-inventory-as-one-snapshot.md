@@ -13,3 +13,5 @@ SSH directory. Add a concurrent test using disjoint inventories and verify that
 the two published files always describe the same inventory generation.
 
 Relevant code: `crates/products/wt/client/src/ssh.rs`.
+
+Status: not addressed by the Codex session metadata work.
