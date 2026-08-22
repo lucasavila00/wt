@@ -13,6 +13,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
+mod title;
+use title::{refresh_title, worlds_refresh_title};
 
 pub(super) fn draw(
     frame: &mut Frame<'_>,
@@ -277,9 +279,13 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
+    let state = model.control();
     let block = Block::new()
         .borders(Borders::ALL)
-        .title(worlds_refresh_title(model.control()));
+        .title(worlds_refresh_title(
+            state.worlds_updated_at(),
+            state.worlds_refresh_failure(),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation
@@ -370,30 +376,6 @@ fn draw_world_card(
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
     frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
-}
-
-fn refresh_title(label: &str, updated_at: Option<&str>, failure: Option<&[String]>) -> String {
-    let mut title = updated_at.map_or_else(
-        || format!("{label} · Updating…"),
-        |updated_at| format!("{label} · Last updated {updated_at}"),
-    );
-    if let Some(failures) = failure {
-        title.push_str(" · Sync failed: ");
-        title.push_str(&failures.join("; "));
-    }
-    title
-}
-
-fn worlds_refresh_title(state: &ControlState) -> String {
-    if let Some(error) = state.worlds_refresh_failure() {
-        return state.worlds_updated_at().map_or_else(
-            || format!("Worlds · Refresh failed: {error}"),
-            |updated_at| {
-                format!("Worlds · Refresh failed: {error} · Showing data from {updated_at}")
-            },
-        );
-    }
-    refresh_title("Worlds", state.worlds_updated_at(), None)
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {

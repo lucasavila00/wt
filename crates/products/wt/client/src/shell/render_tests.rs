@@ -528,13 +528,16 @@ fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
     state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
     state.finish_worlds_refresh(Err("ars: request timed out after 60s".into()));
     assert_eq!(
-        worlds_refresh_title(&state),
+        worlds_refresh_title(
+            state.worlds_updated_at(),
+            state.worlds_refresh_failure()
+        ),
         "Worlds · Refresh failed: ars: request timed out after 60s · Showing data from 2026-08-22T19:29:38Z"
     );
 
     state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
     assert_eq!(
-        worlds_refresh_title(&state),
+        worlds_refresh_title(state.worlds_updated_at(), state.worlds_refresh_failure()),
         "Worlds · Last updated 2026-08-22T19:30:00Z"
     );
 }
