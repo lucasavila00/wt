@@ -22,6 +22,7 @@ fn sha_validation_detects_drift() {
 #[test]
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
+        guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         source_sha256: "source".to_owned(),
         config_sha256: "config".to_owned(),
         inputs: BTreeMap::new(),
@@ -32,6 +33,42 @@ fn image_manifest_records_structured_package_versions() {
 
     let json = serde_json::to_value(manifest).unwrap();
     assert_eq!(json["packages"]["tmux"], "3.4-1");
+    assert_eq!(json["guest_identity"]["uid"], 1001);
+    assert_eq!(json["guest_identity"]["gid"], 1001);
+}
+
+#[test]
+fn image_publication_rejects_a_mismatched_guest_identity() {
+    struct UnusedRunner;
+
+    impl Runner for UnusedRunner {
+        fn output(&self, _command: std::process::Command) -> Result<std::process::Output> {
+            unreachable!()
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let prepared = directory.path().join("prepared.qcow2");
+    let destination = directory.path().join("retained.qcow2");
+    let manifest = ImageManifest {
+        guest_identity: wt_retained_worlds::GuestIdentity {
+            uid: 1000,
+            gid: 1000,
+        },
+        source_sha256: "source".to_owned(),
+        config_sha256: "config".to_owned(),
+        inputs: BTreeMap::new(),
+        golden_sha256: "golden".to_owned(),
+        tmux_sha256: "tmux".to_owned(),
+        packages: BTreeMap::new(),
+    };
+
+    let error = stage_publication(&UnusedRunner, &prepared, &destination, &manifest)
+        .err()
+        .unwrap();
+
+    insta::assert_snapshot!(error.to_string(), @"retained image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+    assert!(!prepared.with_extension("manifest.json").exists());
 }
 
 #[test]

@@ -1,5 +1,6 @@
 mod builder;
 mod console;
+mod probe;
 mod recipe;
 
 #[cfg(test)]
@@ -54,6 +55,7 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
+    guest_identity: wt_retained_worlds::GuestIdentity,
     source_sha256: String,
     config_sha256: String,
     inputs: BTreeMap<String, String>,
@@ -334,9 +336,9 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         cmd!("qemu-img", "check", &paths.prepared),
         "check golden image",
     )?;
-
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
+        guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(input),
         inputs: retained_input_hashes(&spec)?,
@@ -345,6 +347,14 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         packages,
     };
     let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
+    if let Err(primary) = probe::verify_publication(input, server, publication.image_path()) {
+        return match publication.discard(runner) {
+            Ok(()) => Err(primary),
+            Err(cleanup) => Err(primary.context(format!(
+                "discard staged publication after failed virtiofs probe: {cleanup:#}"
+            ))),
+        };
+    }
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(
@@ -367,6 +377,8 @@ pub(crate) fn verify_installed_image(
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
+    wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
+        .map_err(anyhow::Error::msg)?;
     let expected_inputs = retained_input_hashes(&BuildSpec {
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,

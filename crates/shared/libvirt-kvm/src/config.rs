@@ -11,6 +11,7 @@ pub const CODEX_AUTH_TAG: &str = "wt-codex-integration-auth";
 pub struct MachineConfig {
     pub image: PathBuf,
     pub worlds_dir: PathBuf,
+    pub worlds_owner_uid: u32,
     pub network: String,
     pub boot_timeout: Duration,
     pub codex_mounts: Option<CodexMounts>,

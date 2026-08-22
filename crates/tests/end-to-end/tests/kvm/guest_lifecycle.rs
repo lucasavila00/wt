@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::process::Stdio;
 
 #[test]
@@ -27,6 +28,8 @@ fn retained_host_lifecycle() {
         concat!(
             "set -eu; ",
             "test \"$(id -un)\" = wt; ",
+            "test \"$(id -u)\" = 1001; ",
+            "test \"$(id -g)\" = 1001; ",
             "test \"$(git config --get user.name)\" = 'WT E2E'; ",
             "test \"$(git config --get user.email)\" = wt@example.invalid; ",
             "test -S /run/wt-agent-tool-gateway/gateway.sock; ",
@@ -93,7 +96,7 @@ fn retained_host_lifecycle() {
         &harness,
         &name,
         &format!(
-            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; printf 'from-host\\n' > /home/wt/.codex/sessions/{}",
+            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-host\\n' > /home/wt/.codex/sessions/{}",
             codex_sessions.marker
         ),
         "verify Codex integration",
@@ -111,6 +114,13 @@ fn retained_host_lifecycle() {
         .unwrap(),
         "from-host\n"
     );
+    let rollout_metadata = std::fs::metadata(
+        std::path::Path::new(wt_server::CODEX_SESSIONS_PATH).join(&codex_sessions.marker),
+    )
+    .unwrap();
+    assert_eq!(rollout_metadata.uid(), wt_retained_worlds::GUEST_UID);
+    assert_eq!(rollout_metadata.gid(), wt_retained_worlds::GUEST_GID);
+    assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 
     let stopped = timings.run("stop host", || harness.shutdown(&name));

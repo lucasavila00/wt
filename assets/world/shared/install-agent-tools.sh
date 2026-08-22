@@ -12,9 +12,9 @@ esac
 test -x /usr/local/bin/wt-agent-tool-gateway-relay
 test -x /usr/local/bin/git-remote-wt-agent
 test -x /usr/local/bin/wt-tools
-install -d -m 0700 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-agent-tool-gateway
-install -m 0600 -o "$WT_USER" -g "$WT_USER" "$stage-grant" /var/lib/wt-agent-tool-gateway/grant
-install -m 0600 -o "$WT_USER" -g "$WT_USER" \
+install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" /var/lib/wt-agent-tool-gateway
+install -m 0600 -o "$WT_USER" -g "$WT_GROUP" "$stage-grant" /var/lib/wt-agent-tool-gateway/grant
+install -m 0600 -o "$WT_USER" -g "$WT_GROUP" \
     "$stage-providers" /var/lib/wt-agent-tool-gateway/providers
 while IFS= read -r host; do
     test -n "$host" || continue

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use nix::unistd::{Uid, User};
 use std::path::Path;
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
@@ -63,6 +62,10 @@ fn reject_remote_test_server(test_server: bool, open_ssh: bool) -> Result<()> {
 }
 
 fn run_server() -> Result<()> {
+    wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
+    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)?;
+    let owner = wt_server::SERVER_USER.to_owned();
+    let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
     store
@@ -72,7 +75,6 @@ fn run_server() -> Result<()> {
     let capacity_limit = wt_workload_registry::CapacityConfig::load()
         .map_err(anyhow::Error::msg)?
         .limits;
-    let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
     let test_server = server_config.test_server;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
@@ -85,7 +87,6 @@ fn run_server() -> Result<()> {
     .map_err(anyhow::Error::msg)?;
     let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
-    let owner = process_user()?;
     let context = DaemonContext {
         state,
         operations,
@@ -140,15 +141,6 @@ fn handle_daemon_request(
             format!("initialize request: {error:#}"),
         ))
     })
-}
-
-fn process_user() -> Result<String> {
-    let uid = Uid::effective();
-    User::from_uid(uid)
-        .context("look up process user")?
-        .map(|user| user.name)
-        .filter(|name| !name.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("no process user for uid {uid}"))
 }
 
 #[cfg(test)]

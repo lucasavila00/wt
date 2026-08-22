@@ -9,8 +9,9 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=[USER]
-Environment="HOME=[HOME]"
+User=wt
+Group=wt
+Environment="HOME=/home/wt"
 Environment="WT_AGENT_TOOL_VSOCK_PORT=18017"
 LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wt-agent-tool-gateway-github-api-token
 LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-private-key

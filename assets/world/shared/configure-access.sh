@@ -6,10 +6,10 @@ set -eu
 test "$(id -u "$WT_USER")" = "$WT_UID"
 test "$(id -g "$WT_USER")" = "$WT_GID"
 
-install -d -m 0700 -o "$WT_USER" -g "$WT_USER" "$WT_HOME/.ssh"
+install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" "$WT_HOME/.ssh"
 temporary=$WT_HOME/.ssh/authorized_keys.wt-new
 cat > "$temporary"
-chown "$WT_USER:$WT_USER" "$temporary"
+chown "$WT_USER:$WT_GROUP" "$temporary"
 chmod 0600 "$temporary"
 mv -f "$temporary" "$WT_HOME/.ssh/authorized_keys"
 ssh-keygen -A

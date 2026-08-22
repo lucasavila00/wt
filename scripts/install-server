@@ -19,6 +19,8 @@ show_phase() {
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=../assets/server/wt-identity.sh
+source "$root/assets/server/wt-identity.sh"
 phase="checking command-line arguments"
 
 if [[ $# -ne 2 || $1 != --config ]]; then
@@ -27,8 +29,7 @@ if [[ $# -ne 2 || $1 != --config ]]; then
 fi
 config=$2
 
-if [[ $EUID -eq 0 ]]; then
-    echo "run this script as the dedicated wt user, not as root or with sudo" >&2
+if ! wt_require_effective_identity; then
     echo "on a fresh server, first run scripts/bootstrap-server-user as root" >&2
     exit 1
 fi
@@ -101,7 +102,7 @@ show_phase "Validating the install input"
 "$setup_binary" validate --config "$config"
 
 show_phase "Activating server permissions"
-sudo usermod -aG libvirt,kvm "$USER"
+sudo usermod -aG libvirt,kvm "$WT_IDENTITY_USER"
 groups=" $(id -nG) "
 if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
     echo "WT added the server user to the libvirt and kvm groups." >&2

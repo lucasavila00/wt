@@ -1,4 +1,8 @@
-use super::{allocated_bytes, create_overlay_command, shutdown_reason, write_creation_timing};
+use super::{
+    allocated_bytes, create_overlay_command, shutdown_reason, validate_worlds_dir_details,
+    validate_worlds_storage_dir_details, write_creation_timing,
+};
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -64,4 +68,88 @@ fn disk_usage_reports_allocated_blocks_not_virtual_length() {
     let usage = allocated_bytes(&path).unwrap();
     assert!(usage >= 4096);
     assert!(usage < 1024 * 1024 * 1024);
+}
+
+fn worlds_acl() -> BTreeSet<String> {
+    [
+        "user::rwx",
+        "user:libvirt-qemu:--x",
+        "group::rwx",
+        "mask::rwx",
+        "other::---",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect()
+}
+
+#[test]
+fn worlds_directory_keeps_the_host_kvm_boundary() {
+    validate_worlds_dir_details(
+        Path::new("/var/lib/libvirt/images/wt"),
+        1001,
+        36,
+        1001,
+        36,
+        0o2770,
+        &worlds_acl(),
+    )
+    .unwrap();
+
+    let error = validate_worlds_dir_details(
+        Path::new("/var/lib/libvirt/images/wt"),
+        1001,
+        36,
+        1001,
+        1001,
+        0o2770,
+        &worlds_acl(),
+    )
+    .unwrap_err();
+    insta::assert_snapshot!(error.to_string(), @"worlds directory identity mismatch at /var/lib/libvirt/images/wt: expected uid=1001 gid=36 (kvm) mode=2770; actual uid=1001 gid=1001 mode=2770");
+}
+
+#[test]
+fn worlds_directory_requires_qemu_traverse_access() {
+    let error = validate_worlds_dir_details(
+        Path::new("/var/lib/libvirt/images/wt"),
+        1001,
+        36,
+        1001,
+        36,
+        0o2770,
+        &BTreeSet::from([
+            "user::rwx".to_owned(),
+            "group::rwx".to_owned(),
+            "other::---".to_owned(),
+        ]),
+    )
+    .unwrap_err();
+    insta::assert_snapshot!(error.to_string(), @"worlds directory QEMU access mismatch at /var/lib/libvirt/images/wt: expected ACL [group::rwx, mask::rwx, other::---, user::rwx, user:libvirt-qemu:--x]; actual ACL [group::rwx, other::---, user::rwx]");
+}
+
+#[test]
+fn disk_node_directory_keeps_the_host_kvm_boundary() {
+    validate_worlds_storage_dir_details(
+        Path::new("/var/lib/libvirt/images/wt/disks"),
+        1001,
+        36,
+        true,
+        1001,
+        36,
+        0o2770,
+    )
+    .unwrap();
+
+    let error = validate_worlds_storage_dir_details(
+        Path::new("/var/lib/libvirt/images/wt/disks"),
+        1001,
+        36,
+        true,
+        1001,
+        1001,
+        0o2770,
+    )
+    .unwrap_err();
+    insta::assert_snapshot!(error.to_string(), @"disk node directory identity mismatch at /var/lib/libvirt/images/wt/disks: expected non-symlink directory uid=1001 gid=36 (kvm) mode=2770; actual type=directory uid=1001 gid=1001 mode=2770");
 }

@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# The installer prepends wt-identity.sh when this asset runs from stdin. Source
+# the sibling contract when invoking the checked-in asset directly.
+if ! command -v wt_require_effective_identity >/dev/null 2>&1; then
+    wt_asset_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    # shellcheck source=wt-identity.sh
+    . "$wt_asset_dir/wt-identity.sh"
+fi
+
 acl_entries() {
     getfacl -cp -- "$1" |
         sed -e '/^[[:space:]]*$/d' -e '/^[[:space:]]*#/d' -e 's/^[[:space:]]*//' |
@@ -20,7 +28,7 @@ ensure_qemu_acl() {
         echo "directory ACL drift at $path: expected only user:libvirt-qemu:--x in addition to mode 2770" >&2
         exit 1
     fi
-    sudo setfacl -m u:libvirt-qemu:--x -- "$path"
+    test "$mutate" = false || sudo setfacl -m u:libvirt-qemu:--x -- "$path"
 }
 
 active_group() {
@@ -33,56 +41,30 @@ ensure_directory() {
     group=$2
     mode=$3
     path=$4
-    if test -e "$path"; then
-        if ! test -d "$path" ||
-            test "$(stat -Lc %u "$path")" != "$owner" ||
-            test "$(stat -Lc %g "$path")" != "$group" ||
-            test "$(stat -Lc %a "$path")" != "$mode"; then
+    if test -e "$path" || test -L "$path"; then
+        actual_uid=$(stat -c %u "$path")
+        actual_gid=$(stat -c %g "$path")
+        actual_mode=$(stat -c %a "$path")
+        if ! test -d "$path" || test -L "$path" ||
+            test "$actual_uid" != "$owner" ||
+            test "$actual_gid" != "$group" ||
+            test "$actual_mode" != "$mode"; then
             display_mode=$mode
             test "${#display_mode}" -ge 4 || display_mode=0$display_mode
-            echo "directory drift at $path: expected uid=$owner, gid=$group, mode=$display_mode" >&2
+            test "${#actual_mode}" -ge 4 || actual_mode=0$actual_mode
+            echo "directory drift at $path: expected uid=$owner gid=$group mode=$display_mode; actual uid=$actual_uid gid=$actual_gid mode=$actual_mode" >&2
             exit 1
         fi
     else
-        sudo install -d -o "$owner" -g "$group" -m "$mode" "$path"
+        test "$mutate" = false || sudo install -d -o "$owner" -g "$group" -m "$mode" "$path"
     fi
-}
-
-ensure_codex_sessions() {
-    path=$1
-    host_uid=$(id -u)
-    guest_gid=1001
-    if test -L "$path"; then
-        echo "Codex sessions path must not be a symbolic link: $path" >&2
-        exit 1
-    fi
-    if test -e "$path"; then
-        if ! test -d "$path"; then
-            echo "Codex sessions path is not a directory: $path" >&2
-            exit 1
-        fi
-        owner=$(stat -Lc %u "$path")
-        if test "$owner" != "$host_uid" && test "$owner" != 1001; then
-            echo "Codex sessions path owner must be uid=$host_uid or uid=1001: $path" >&2
-            exit 1
-        fi
-        sudo chmod 0700 "$path"
-    else
-        sudo install -d -o "$host_uid" -g "$guest_gid" -m 2770 "$path"
-    fi
-
-    # virtiofs does not expose the host ACL to guests. Keep the shared guest
-    # gid in the ordinary mode bits and inherit it for transcript directories.
-    sudo chgrp -R "$guest_gid" -- "$path"
-    sudo setfacl -R -P -m "u:$host_uid:rwX,g::rwX,m::rwX,o::---" -- "$path"
-    sudo find -P "$path" -type d -exec \
-        setfacl -m "d:u::rwx,d:u:$host_uid:rwx,d:g::rwx,d:m::rwx,d:o::---" -- {} +
-    sudo find -P "$path" -type d -exec chmod g+s -- {} +
 }
 
 case ${1-} in
-    prepare)
+    check|prepare)
         test "$#" -eq 5 || exit 2
+        if test "$1" = prepare; then mutate=true; else mutate=false; fi
+        wt_require_effective_identity
         network=$2
         image_dir=$3
         binary_dir=$4
@@ -90,15 +72,15 @@ case ${1-} in
 
         # shellcheck source=/dev/null
         . /etc/os-release
-        test "${ID-}" = ubuntu && test "${VERSION_ID-}" = 24.04 &&
-            test "$(dpkg --print-architecture)" = amd64 || {
-                echo 'Ubuntu 24.04 amd64 is required' >&2
-                exit 1
-            }
-        test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm || {
+        if ! { test "${ID-}" = ubuntu && test "${VERSION_ID-}" = 24.04 &&
+            test "$(dpkg --print-architecture)" = amd64; }; then
+            echo 'Ubuntu 24.04 amd64 is required' >&2
+            exit 1
+        fi
+        if ! { test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm; }; then
             echo 'KVM is required: /dev/kvm must be a readable and writable character device' >&2
             exit 1
-        }
+        fi
         for group in kvm libvirt; do
             active_group "$group" || {
                 echo "group $group is not active; log out, log back in, and rerun" >&2
@@ -111,27 +93,33 @@ case ${1-} in
             exit 1
         }
         virsh -c qemu:///system domcapabilities --virttype kvm >/dev/null
-        sudo -v
+        test "$mutate" = false || sudo -v
 
         network_info=$(virsh -c qemu:///system net-info "$network")
-        printf '%s\n' "$network_info" | awk -F: '$1 == "Active" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
-            virsh -c qemu:///system net-start "$network"
-        printf '%s\n' "$network_info" | awk -F: '$1 == "Autostart" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
-            virsh -c qemu:///system net-autostart "$network"
+        if test "$mutate" = true; then
+            printf '%s\n' "$network_info" | awk -F: '$1 == "Active" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
+                virsh -c qemu:///system net-start "$network"
+            printf '%s\n' "$network_info" | awk -F: '$1 == "Autostart" && $2 ~ /^[[:space:]]*yes[[:space:]]*$/ { found=1 } END { exit !found }' ||
+                virsh -c qemu:///system net-autostart "$network"
+        fi
 
         ensure_directory 0 0 755 "$image_dir"
         ensure_directory 0 0 755 "$binary_dir"
-        ensure_directory "$(id -u)" "$(id -g)" 700 /run/wt-image-build
-        ensure_directory "$(id -u)" "$kvm_gid" 2770 "$worlds_dir"
-        ensure_codex_sessions /home/wt/.codex/sessions
-        ensure_qemu_acl "$worlds_dir"
+        wt_require_owned_directory "$WT_IDENTITY_HOME"
+        wt_require_owned_directory "$WT_IDENTITY_HOME/.codex"
+        ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 /run/wt-image-build
+        ensure_directory "$WT_IDENTITY_UID" "$kvm_gid" 2770 "$worlds_dir"
+        ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 "$WT_IDENTITY_HOME/.codex/sessions"
+        test ! -e "$worlds_dir" || ensure_qemu_acl "$worlds_dir"
         ;;
     acl)
         test "$#" -eq 2 || exit 2
+        mutate=true
+        wt_require_effective_identity
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
+        echo 'usage: install-host.sh {check|prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
         exit 2
         ;;
 esac

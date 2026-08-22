@@ -60,6 +60,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         spec: ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<GuestAccess, WorkerError> {
+        crate::verify_pinned_image_identity(self.provider.image_path())?;
         let creation_started = Instant::now();
         let phase_started = Instant::now();
         let readiness_key = ReadinessKey::generate()?;
@@ -305,4 +306,98 @@ fn verify_login(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::WorldWorker;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct FakeProvider {
+        image: PathBuf,
+        create_calls: Arc<AtomicUsize>,
+    }
+
+    impl MachineProvider for FakeProvider {
+        fn image_path(&self) -> &Path {
+            &self.image
+        }
+
+        fn create(
+            &self,
+            _spec: &MachineSpec,
+            _progress: &mut dyn Write,
+        ) -> Result<Machine, WorkerError> {
+            self.create_calls.fetch_add(1, Ordering::SeqCst);
+            Err(WorkerError::new("unexpected machine creation"))
+        }
+
+        fn inspect(&self, _provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
+            unreachable!()
+        }
+
+        fn start(&self, _provider_id: &ProviderId) -> Result<Machine, WorkerError> {
+            unreachable!()
+        }
+
+        fn stop(&self, _provider_id: &ProviderId) -> Result<(), WorkerError> {
+            unreachable!()
+        }
+
+        fn disk_usage(&self, _disk_id: Uuid) -> Result<u64, WorkerError> {
+            unreachable!()
+        }
+
+        fn delete(&self, _provider_id: &ProviderId, _disk_id: Uuid) -> Result<(), WorkerError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn identity_mismatch_fails_before_machine_creation() {
+        let directory = tempfile::tempdir().unwrap();
+        let image = directory.path().join("retained.qcow2");
+        fs::write(
+            crate::retained::image_manifest_path(&image),
+            r#"{"guest_identity":{"uid":1000,"gid":1000}}"#,
+        )
+        .unwrap();
+        let create_calls = Arc::new(AtomicUsize::new(0));
+        let worker = Worker::new(
+            FakeProvider {
+                image,
+                create_calls: Arc::clone(&create_calls),
+            },
+            Duration::from_secs(1),
+            RetainedConfig {
+                agent_tools: crate::AgentToolsConfig {
+                    provider_hosts: vec!["github.com".to_owned()],
+                    vsock_port: 18017,
+                },
+            },
+        )
+        .unwrap();
+        let error = worker
+            .provision(
+                ProvisionSpec {
+                    backend_id: "wt-0123456789abcdef0123456789abcdef",
+                    disk_id: Uuid::nil(),
+                    memory_mib: 1024,
+                    vcpus: 1,
+                    disk_gib: 16,
+                    ssh_authorized_keys: &[],
+                    git_grant: "grant",
+                    git_user_name: "WT",
+                    git_user_email: "wt@example.com",
+                },
+                &mut std::io::sink(),
+            )
+            .unwrap_err();
+
+        assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+        insta::assert_snapshot!(error.to_string(), @"retained image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+    }
 }

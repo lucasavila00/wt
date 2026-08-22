@@ -4040,6 +4040,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "insta",
+ "nix 0.31.3",
  "quick-xml",
  "serde_json",
  "tempfile",
@@ -4107,6 +4108,7 @@ dependencies = [
  "ssh-key",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
+ "uuid",
  "wt-installer-support",
  "wt-libvirt-kvm",
  "wt-retained-worlds",

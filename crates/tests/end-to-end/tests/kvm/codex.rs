@@ -42,9 +42,13 @@ pub(crate) fn assert_server_codex_auth_export() -> String {
         (source_metadata.dev(), source_metadata.ino()),
         (export_metadata.dev(), export_metadata.ino())
     );
-    assert_eq!(source_metadata.gid(), wt_retained_worlds::GUEST_GID);
-    assert_eq!(source_metadata.mode() & 0o777, 0o640);
-    assert_eq!(directory_metadata.mode() & 0o777, 0o750);
+    for metadata in [&source_metadata, &export_metadata, &directory_metadata] {
+        assert_eq!(metadata.uid(), wt_retained_worlds::GUEST_UID);
+        assert_eq!(metadata.gid(), wt_retained_worlds::GUEST_GID);
+    }
+    assert_eq!(source_metadata.mode() & 0o777, 0o600);
+    assert_eq!(export_metadata.mode() & 0o777, 0o600);
+    assert_eq!(directory_metadata.mode() & 0o777, 0o700);
     assert_eq!(sha256_file(source), sha256_file(&export));
     sha256_file(source)
 }
@@ -77,7 +81,7 @@ pub(crate) fn verify_codex_auth_rotation(
     while fs::metadata(auth).unwrap().ino() == old_server_inode
         || sha256_file(auth) != sha256_file(&export)
         || fs::metadata(auth).unwrap().gid() != wt_retained_worlds::GUEST_GID
-        || fs::metadata(auth).unwrap().mode() & 0o777 != 0o640
+        || fs::metadata(auth).unwrap().mode() & 0o777 != 0o600
     {
         assert!(
             Instant::now() < deadline,

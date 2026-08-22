@@ -171,6 +171,7 @@ impl ServerConfig {
         MachineConfig {
             image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
+            worlds_owner_uid: wt_retained_worlds::WT_IDENTITY.uid,
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             codex_mounts: Some(self.codex_mounts()),

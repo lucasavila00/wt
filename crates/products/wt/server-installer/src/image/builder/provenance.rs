@@ -88,12 +88,27 @@ pub(in crate::image) fn staged_input_hashes(
 pub(in crate::image) struct PendingPublication {
     generation_temporary: Option<PathBuf>,
     generation_destination: PathBuf,
+    staged_image: PathBuf,
     current_temporary: PathBuf,
     current_destination: PathBuf,
     link_target: PathBuf,
 }
 
 impl PendingPublication {
+    pub(in crate::image) fn image_path(&self) -> &Path {
+        &self.staged_image
+    }
+
+    pub(in crate::image) fn discard(self, runner: &impl Runner) -> Result<()> {
+        let Some(temporary) = self.generation_temporary else {
+            return Ok(());
+        };
+        runner.run(
+            cmd!("sudo", "rm", "-rf", "--", &temporary),
+            "discard staged image generation",
+        )
+    }
+
     pub(in crate::image) fn publish(self, runner: &impl Runner) -> Result<()> {
         if let Some(temporary) = self.generation_temporary {
             runner.run(
@@ -139,6 +154,8 @@ pub(in crate::image) fn stage_publication(
     image_destination: &Path,
     manifest: &ImageManifest,
 ) -> Result<PendingPublication> {
+    wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
+        .map_err(anyhow::Error::msg)?;
     let local_manifest = prepared.with_extension("manifest.json");
     let manifest_bytes = serde_json::to_vec_pretty(manifest)?;
     fs::write(&local_manifest, &manifest_bytes).context("write image manifest")?;
@@ -148,6 +165,7 @@ pub(in crate::image) fn stage_publication(
         &manifest_bytes,
         |image, installed_manifest| {
             sudo_install_owned(runner, prepared, image, "libvirt-qemu", "kvm", 0o644)?;
+            crate::image::require_sha(image, &manifest.golden_sha256, "staged image generation")?;
             sudo_install(runner, &local_manifest, installed_manifest, 0o644)
         },
     )
@@ -183,7 +201,7 @@ fn stage_generation(
         .context("installed image path has no file name")?;
     let installed_image = generation_temporary.join(image_name);
     let installed_manifest = manifest_path(&installed_image);
-    let generation_temporary = if generation_destination.exists() {
+    let (generation_temporary, staged_image) = if generation_destination.exists() {
         let existing_image = generation_destination.join(image_name);
         let existing_manifest = manifest_path(&existing_image);
         if fs::read(&existing_manifest).context("read existing image generation manifest")?
@@ -197,7 +215,7 @@ fn stage_generation(
             &manifest.golden_sha256,
             "existing image generation",
         )?;
-        None
+        (None, existing_image)
     } else {
         if generation_temporary.exists() {
             bail!("stale temporary image generation exists");
@@ -218,7 +236,7 @@ fn stage_generation(
             "stage image generation directory",
         )?;
         stage_files(&installed_image, &installed_manifest)?;
-        Some(generation_temporary)
+        (Some(generation_temporary), installed_image)
     };
 
     let current_destination = current_path(configured_image);
@@ -237,6 +255,7 @@ fn stage_generation(
     Ok(PendingPublication {
         generation_temporary,
         generation_destination,
+        staged_image,
         current_temporary,
         current_destination,
         link_target,
@@ -317,10 +336,35 @@ mod tests {
         PendingPublication {
             generation_temporary: Some(temporary.to_path_buf()),
             generation_destination: destination.to_path_buf(),
+            staged_image: temporary.join("retained.qcow2"),
             current_temporary: sibling_temporary(&current_path(image)).unwrap(),
             current_destination: current_path(image),
             link_target: PathBuf::from("retained.qcow2.generations/new"),
         }
+    }
+
+    #[test]
+    fn failed_probe_discards_only_the_temporary_generation() {
+        let directory = tempfile::tempdir().unwrap();
+        let image = directory.path().join("retained.qcow2");
+        let generations = generations_path(&image);
+        fs::create_dir(&generations).unwrap();
+        let existing = generation(&generations, "existing", b"old image", b"old manifest");
+        let temporary = generation(&generations, ".new.wt-new", b"new image", b"new manifest");
+        let destination = generations.join("new");
+        let publication = publication(&image, &temporary, &destination);
+        assert_eq!(publication.image_path(), temporary.join("retained.qcow2"));
+
+        publication
+            .discard(&FilesystemRunner {
+                fail_at: None,
+                calls: Cell::new(0),
+            })
+            .unwrap();
+
+        assert!(!temporary.exists());
+        assert!(existing.exists());
+        assert!(!destination.exists());
     }
 
     #[test]

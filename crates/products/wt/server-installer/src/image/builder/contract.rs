@@ -16,8 +16,9 @@ pub(in crate::image) fn verify_retained_guest_contract(
         "inspect finalized retained guest contract",
     )?;
     let expected_contract = format!(
-        "WT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\n",
+        "WT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\n",
         wt_retained_worlds::GUEST_USER,
+        wt_retained_worlds::GUEST_GROUP,
         wt_retained_worlds::GUEST_UID,
         wt_retained_worlds::GUEST_GID,
         wt_retained_worlds::GUEST_HOME,
@@ -77,6 +78,18 @@ pub(in crate::image) fn verify_retained_guest_contract(
         .any(|line| line.starts_with(&expected_user) && line.contains(&expected_home))
     {
         bail!("finalized image does not contain the required retained guest user");
+    }
+    let group = runner.text(
+        cmd!("sudo", "virt-cat", "-a", disk, "/etc/group"),
+        "inspect finalized guest groups",
+    )?;
+    let expected_group = format!(
+        "{}:x:{}:",
+        wt_retained_worlds::GUEST_GROUP,
+        wt_retained_worlds::GUEST_GID
+    );
+    if !group.lines().any(|line| line == expected_group) {
+        bail!("finalized image does not contain the required retained guest group");
     }
 
     let color = runner.output(cmd!(

@@ -1,6 +1,10 @@
 use super::*;
 
 impl MachineProvider for LibvirtProvider {
+    fn image_path(&self) -> &std::path::Path {
+        &self.config.image
+    }
+
     fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError> {
         match self.create_inner(spec, progress) {
             Ok(machine) => Ok(machine),

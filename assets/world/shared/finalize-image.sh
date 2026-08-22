@@ -15,8 +15,8 @@ printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
 test "$(id -u "$WT_USER")" = "$WT_UID"
 test "$(id -g "$WT_USER")" = "$WT_GID"
 test "$(getent passwd "$WT_USER" | cut -d: -f6)" = "$WT_HOME"
-install -d -m 0755 -o "$WT_USER" -g "$WT_USER" "$WT_HOME/.byobu"
-install -m 0644 -o "$WT_USER" -g "$WT_USER" \
+install -d -m 0755 -o "$WT_USER" -g "$WT_GROUP" "$WT_HOME/.byobu"
+install -m 0644 -o "$WT_USER" -g "$WT_GROUP" \
     /var/tmp/wt-byobu-color "$WT_HOME/.byobu/color"
 printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
     "$WT_HOME/.byobu/color" | sha256sum --check --strict
