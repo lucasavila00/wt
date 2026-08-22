@@ -19,8 +19,6 @@ a warning but does not prevent Codex from starting.
 `$CODEX_HOME/config.toml`. It fails if a different configuration already
 exists.
 
-The image recipe, not the runtime executable, installs and verifies the links.
-There is no saved sibling command, PATH discovery, or runtime install/uninstall
-transaction. Per-world provisioning does not replace or repair the image-owned
-entrypoints. Remove a world with damaged Codex integration and create it again
-from a verified retained image.
+The image recipe installs and verifies the links. Per-world provisioning does
+not replace or repair the image-owned entrypoints. Remove a world with damaged
+Codex integration and create it again from a verified retained image.
