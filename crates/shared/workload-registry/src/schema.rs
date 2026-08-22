@@ -1,6 +1,35 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    codex_session_catalog (session_id) {
+        session_id -> Text,
+        rollout_path -> Text,
+        rollout_file_identity -> Text,
+        rollout_length -> BigInt,
+        scan_offset -> BigInt,
+        created_at_unix_ms -> Nullable<BigInt>,
+        rollout_updated_at_unix_ms -> BigInt,
+        rollout_modified_at_unix_ns -> BigInt,
+        title -> Nullable<Text>,
+        title_from_user_message -> Bool,
+        latest_user_message -> Nullable<Text>,
+        latest_user_message_at_unix_ms -> Nullable<BigInt>,
+        latest_agent_message -> Nullable<Text>,
+        latest_agent_message_at_unix_ms -> Nullable<BigInt>,
+        cwd -> Nullable<Text>,
+        model -> Nullable<Text>,
+        cli_version -> Nullable<Text>,
+        turn_count -> BigInt,
+        command_count -> BigInt,
+        file_change_count -> BigInt,
+        input_tokens -> BigInt,
+        cached_input_tokens -> BigInt,
+        output_tokens -> BigInt,
+        reasoning_output_tokens -> BigInt,
+    }
+}
+
+diesel::table! {
     codex_session_reports (world_id, session_id) {
         world_id -> Text,
         session_id -> Text,
@@ -52,4 +81,9 @@ diesel::table! {
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(codex_session_reports -> worlds (world_id));
 
-diesel::allow_tables_to_appear_in_same_query!(agent_tool_reports, codex_session_reports, worlds);
+diesel::allow_tables_to_appear_in_same_query!(
+    agent_tool_reports,
+    codex_session_catalog,
+    codex_session_reports,
+    worlds
+);

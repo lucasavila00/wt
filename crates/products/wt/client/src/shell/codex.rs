@@ -186,6 +186,41 @@ fn validate_context(
                 &session.session_id.to_string(),
             ));
         }
+        if session
+            .latest_agent_message
+            .as_deref()
+            .is_some_and(|message| {
+                message.is_empty() || message.len() > 640 || message.chars().any(char::is_control)
+            })
+            || session
+                .latest_agent_message_at_unix_ms
+                .is_some_and(|timestamp| timestamp < 0)
+            || session.latest_agent_message_at_unix_ms.is_some()
+                != session.latest_agent_message.is_some()
+        {
+            return Err(invalid(
+                context,
+                "latest agent message and nonnegative timestamp appear together",
+                &session.session_id.to_string(),
+            ));
+        }
+        if session
+            .created_at_unix_ms
+            .is_some_and(|timestamp| timestamp < 0)
+            || session.cwd.as_deref().is_some_and(|cwd| !valid_cwd(cwd))
+            || session.model.as_deref().is_some_and(|value| {
+                value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
+            })
+            || session.cli_version.as_deref().is_some_and(|value| {
+                value.is_empty() || value.len() > 64 || value.chars().any(char::is_control)
+            })
+        {
+            return Err(invalid(
+                context,
+                "valid cached Codex session metadata",
+                &session.session_id.to_string(),
+            ));
+        }
         if session.observations.is_empty() {
             let Some(timestamp) = session.rollout_updated_at_unix_ms else {
                 return Err(invalid(
@@ -421,7 +456,20 @@ mod tests {
             title: Some("Improve session cards".into()),
             latest_user_message: Some("Make the cards taller and show the latest request".into()),
             latest_user_message_at_unix_ms: Some(9),
+            latest_agent_message: None,
+            latest_agent_message_at_unix_ms: None,
+            created_at_unix_ms: None,
             rollout_updated_at_unix_ms: Some(10),
+            cwd: None,
+            model: None,
+            cli_version: None,
+            turn_count: 0,
+            command_count: 0,
+            file_change_count: 0,
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
             observations: vec![CodexSessionObservation {
                 world_id: world.identity.id,
                 world_name: world.instance_name.clone(),

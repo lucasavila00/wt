@@ -1,9 +1,35 @@
 use super::{map_registry_error, Store, StoreError};
-use crate::{AgentToolReport, CodexSessionReport};
-use std::collections::BTreeMap;
+use crate::{
+    AgentToolReport, CodexSessionCatalogEntry, CodexSessionCatalogInput, CodexSessionReport,
+};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 impl Store {
+    pub fn upsert_codex_session_catalog(
+        &self,
+        entry: &CodexSessionCatalogInput,
+    ) -> Result<(), StoreError> {
+        self.registry
+            .upsert_codex_session_catalog(entry)
+            .map_err(map_registry_error)
+    }
+
+    pub fn list_codex_session_catalog(&self) -> Result<Vec<CodexSessionCatalogEntry>, StoreError> {
+        self.registry
+            .list_codex_session_catalog()
+            .map_err(map_registry_error)
+    }
+
+    pub fn retain_codex_session_catalog_paths(
+        &self,
+        paths: &BTreeSet<String>,
+    ) -> Result<(), StoreError> {
+        self.registry
+            .retain_codex_session_catalog_paths(paths)
+            .map_err(map_registry_error)
+    }
+
     pub fn list_codex_session_reports(
         &self,
         owner: &str,
