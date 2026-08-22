@@ -238,6 +238,82 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
 }
 
 #[test]
+fn new_codex_session_in_a_pane_deactivates_the_previous_session() {
+    let temp = tempfile::tempdir().unwrap();
+    let database_path = temp.path().join("instances.db");
+    let registry = wt_workload_registry::Registry::open(&database_path).unwrap();
+    let world_id = insert_world(&registry);
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path,
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+    let mut grant = test_grant();
+    grant.world_id = world_id.to_string();
+    let previous_session_id = Uuid::new_v4();
+    let mut event = CodexSessionEvent {
+        session_id: previous_session_id,
+        cwd: "/home/wt/project".into(),
+        repository_root: None,
+        repository_url: None,
+        git_branch: None,
+        tmux_session: "wt-host".into(),
+        pane_id: "%3".into(),
+        kind: CodexSessionEventKind::UserPromptSubmit,
+        session_start_source: None,
+    };
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let replacement_session_id = Uuid::new_v4();
+    event.session_id = replacement_session_id;
+    event.kind = CodexSessionEventKind::SessionStart;
+    event.session_start_source = Some(CodexSessionStartSource {
+        kind: CodexSessionStartSourceKind::Clear,
+        raw: "clear".into(),
+    });
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(reports.len(), 2);
+    assert_eq!(
+        reports
+            .iter()
+            .find(|report| report.session_id == previous_session_id)
+            .unwrap()
+            .state,
+        wt_workload_registry::CodexSessionState::Inactive
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .find(|report| report.session_id == replacement_session_id)
+            .unwrap()
+            .state,
+        wt_workload_registry::CodexSessionState::Unknown
+    );
+
+    event.session_id = previous_session_id;
+    event.kind = CodexSessionEventKind::SessionEnd;
+    event.session_start_source = None;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(
+        reports
+            .iter()
+            .find(|report| report.session_id == replacement_session_id)
+            .unwrap()
+            .state,
+        wt_workload_registry::CodexSessionState::Unknown
+    );
+}
+
+#[test]
 fn push_messages_cover_publish_delete_and_rejection() {
     let command = |new: &str, reference: &str| {
         let payload = format!("{} {new} {reference}\0report-status\n", "0".repeat(40));

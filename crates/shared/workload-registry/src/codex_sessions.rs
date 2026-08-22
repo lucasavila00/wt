@@ -130,7 +130,22 @@ impl Registry {
             session_start_source: input.session_start_source,
             received_at_unix_ms,
         };
-        self.read(|connection| {
+        self.immediate_transaction(|connection| {
+            if input.state != CodexSessionState::Inactive {
+                diesel::update(
+                    codex_session_reports::table
+                        .filter(codex_session_reports::world_id.eq(&report.world_id))
+                        .filter(codex_session_reports::session_id.ne(&report.session_id))
+                        .filter(codex_session_reports::tmux_session.eq(report.tmux_session))
+                        .filter(codex_session_reports::pane_id.eq(report.pane_id))
+                        .filter(codex_session_reports::state.ne("inactive")),
+                )
+                .set((
+                    codex_session_reports::state.eq("inactive"),
+                    codex_session_reports::received_at_unix_ms.eq(received_at_unix_ms),
+                ))
+                .execute(connection)?;
+            }
             diesel::insert_into(codex_session_reports::table)
                 .values(&report)
                 .on_conflict((
