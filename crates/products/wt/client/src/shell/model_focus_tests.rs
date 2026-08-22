@@ -50,7 +50,6 @@ fn model_with_open_card() -> ShellModel {
             context: "local".into(),
             session_id: Some(session_id),
             timestamp: Some(1),
-            title: Some("Focus the session".into()),
             latest_user_message: Some("Focus this latest request".into()),
             kind: super::super::control::CodexCardKind::Observation {
                 world_id,

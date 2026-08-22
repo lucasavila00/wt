@@ -401,7 +401,6 @@ fn draw_codex_card(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines = card_lines(card);
     let footer = if state.opening() == Some(&card.identity) {
         Span::styled("OPENING…", Style::new().fg(Color::Yellow))
     } else if let Some(reason) = card.disabled_reason() {
@@ -410,7 +409,26 @@ fn draw_codex_card(
         Span::styled("Enter or click to open", muted_style())
     };
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
+    let metadata = card_metadata_lines(card);
+    if let Some(preview) = card.latest_user_message.as_deref() {
+        let content_rows =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(rows[0]);
+        let preview_paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
+        let truncated = wrapped_line_count(preview, content_rows[0].width) > 3;
+        frame.render_widget(preview_paragraph, content_rows[0]);
+        if truncated && !content_rows[0].is_empty() {
+            let ellipsis = Rect::new(
+                content_rows[0].right().saturating_sub(1),
+                content_rows[0].bottom().saturating_sub(1),
+                1,
+                1,
+            );
+            frame.render_widget(Paragraph::new("…"), ellipsis);
+        }
+        frame.render_widget(Paragraph::new(metadata), content_rows[1]);
+    } else {
+        frame.render_widget(Paragraph::new(metadata), rows[0]);
+    }
     frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
 }
 
@@ -450,7 +468,7 @@ fn card_title(card: &CodexCard) -> (String, Color) {
     }
 }
 
-fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
+fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
     let short_session = card
         .session_id
         .map(|session| session.to_string()[..8].to_owned());
@@ -476,12 +494,6 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
                 )
             });
             vec![
-                Line::from(
-                    card.latest_user_message
-                        .clone()
-                        .or_else(|| card.title.clone())
-                        .unwrap_or_else(|| "No user-message preview".into()),
-                ),
                 Line::from(git.unwrap_or_else(|| cwd.clone())),
                 Line::from(format!(
                     "{}.{} · {}:{} · session {}",
@@ -494,12 +506,6 @@ fn card_lines(card: &CodexCard) -> Vec<Line<'static>> {
             ]
         }
         CodexCardKind::RolloutOnly => vec![
-            Line::from(
-                card.latest_user_message
-                    .clone()
-                    .or_else(|| card.title.clone())
-                    .unwrap_or_else(|| "Untitled Codex session".into()),
-            ),
             Line::from(format!(
                 "{} · session {}",
                 card.context,
@@ -518,6 +524,31 @@ fn repository_name(url: &str) -> Option<&str> {
     url.trim_end_matches(".git")
         .rsplit(['/', ':'])
         .find(|part| !part.is_empty())
+}
+
+fn wrapped_line_count(value: &str, width: u16) -> usize {
+    let width = usize::from(width);
+    if width == 0 {
+        return 0;
+    }
+    let mut lines = 1;
+    let mut used = 0;
+    for word in value.split_whitespace() {
+        let word_width = Line::from(word).width();
+        if used > 0 && used + 1 + word_width <= width {
+            used += 1 + word_width;
+            continue;
+        }
+        if used > 0 {
+            lines += 1;
+        }
+        lines += word_width.saturating_sub(1) / width;
+        used = word_width % width;
+        if used == 0 && word_width > 0 {
+            used = width;
+        }
+    }
+    lines
 }
 
 fn relative_age(timestamp: i64) -> String {

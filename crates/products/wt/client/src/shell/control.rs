@@ -63,7 +63,6 @@ pub(super) struct CodexCard {
     pub(super) context: String,
     pub(super) session_id: Option<Uuid>,
     pub(super) timestamp: Option<i64>,
-    pub(super) title: Option<String>,
     pub(super) latest_user_message: Option<String>,
     pub(super) kind: CodexCardKind,
 }
@@ -73,7 +72,6 @@ impl CodexCard {
         context: &str,
         session_id: Uuid,
         timestamp: i64,
-        title: Option<String>,
         latest_user_message: Option<String>,
     ) -> Self {
         Self {
@@ -84,7 +82,6 @@ impl CodexCard {
             context: context.into(),
             session_id: Some(session_id),
             timestamp: Some(timestamp),
-            title,
             latest_user_message,
             kind: CodexCardKind::RolloutOnly,
         }
@@ -98,7 +95,6 @@ impl CodexCard {
             context: context.into(),
             session_id: None,
             timestamp: None,
-            title: None,
             latest_user_message: None,
             kind: CodexCardKind::ContextError { message },
         }

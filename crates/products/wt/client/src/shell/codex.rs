@@ -198,7 +198,6 @@ fn validate_context(
                 context,
                 session.session_id,
                 timestamp,
-                session.title,
                 session.latest_user_message,
             ));
             continue;
@@ -285,7 +284,6 @@ fn validate_context(
                 context: context.into(),
                 session_id: Some(session.session_id),
                 timestamp: Some(observation.received_at_unix_ms),
-                title: session.title.clone(),
                 latest_user_message: session.latest_user_message.clone(),
                 kind: CodexCardKind::Observation {
                     world_id: observation.world_id,
