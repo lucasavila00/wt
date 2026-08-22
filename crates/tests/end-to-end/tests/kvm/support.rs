@@ -2,6 +2,7 @@ use super::binaries::prepare_test_binaries;
 use super::fixture::*;
 use super::gateway::spawn_gateway;
 use super::images::{isolated_test_images, unique_vsock_port};
+use super::ssh::AuthorizedKeysFixture;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
@@ -23,6 +24,7 @@ use wt_workload_registry::{CapacityConfig, Resources};
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) struct KvmHarness {
+    _authorized_keys: AuthorizedKeysFixture,
     pub(crate) git: GitFixture,
     pub(crate) gateway: Child,
     pub(crate) temp: TempDir,
@@ -65,6 +67,7 @@ impl KvmHarness {
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
         });
+        let authorized_keys = AuthorizedKeysFixture::install(&git.guest_public_key);
         std::env::set_var("HOME", temp.path());
         fs::create_dir_all(temp.path().join(".ssh")).unwrap();
         fs::write(
@@ -106,6 +109,7 @@ impl KvmHarness {
             std::thread::sleep(Duration::from_millis(10));
         }
         Self {
+            _authorized_keys: authorized_keys,
             git,
             gateway,
             temp,

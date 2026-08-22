@@ -17,7 +17,6 @@ printf 'AuthorizedKeysFile .ssh/authorized_keys /run/wt-ssh-authorized-keys/auth
     > /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
 chmod 0644 /etc/ssh/sshd_config.d/50-wt-authorized-keys.conf
 ssh-keygen -A
-sshd -t
 
 if ! systemctl enable --now ssh.service; then
     systemctl status --no-pager --full ssh.service >&2 || true
