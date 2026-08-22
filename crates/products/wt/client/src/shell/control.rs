@@ -1,3 +1,4 @@
+use super::refresh_status::RefreshStatus;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
@@ -176,9 +177,8 @@ pub(super) struct ControlState {
     codex_offset: usize,
     pub(super) opening: Option<CodexCardIdentity>,
     pub(super) open_failure: Option<CodexOpenTarget>,
-    pub(super) context_failure: Option<Vec<String>>,
-    worlds_updated_at: Option<String>,
-    codex_updated_at: Option<String>,
+    worlds_refresh: RefreshStatus,
+    codex_refresh: RefreshStatus,
 }
 
 impl Default for ControlState {
@@ -191,9 +191,8 @@ impl Default for ControlState {
             codex_offset: 0,
             opening: None,
             open_failure: None,
-            context_failure: None,
-            worlds_updated_at: None,
-            codex_updated_at: None,
+            worlds_refresh: RefreshStatus::default(),
+            codex_refresh: RefreshStatus::default(),
         }
     }
 }
@@ -219,16 +218,20 @@ impl ControlState {
         self.selected.as_ref()
     }
 
-    pub(super) fn worlds_updated_at(&self) -> Option<&str> {
-        self.worlds_updated_at.as_deref()
+    pub(super) fn worlds_refresh(&self) -> &RefreshStatus {
+        &self.worlds_refresh
     }
 
-    pub(super) fn codex_updated_at(&self) -> Option<&str> {
-        self.codex_updated_at.as_deref()
+    pub(super) fn codex_refresh(&self) -> &RefreshStatus {
+        &self.codex_refresh
     }
 
-    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
-        self.worlds_updated_at = Some(updated_at);
+    pub(super) fn codex_refresh_mut(&mut self) -> &mut RefreshStatus {
+        &mut self.codex_refresh
+    }
+
+    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
+        self.worlds_refresh.finish(result);
     }
 
     pub(super) fn codex_offset(&self) -> usize {
@@ -257,7 +260,7 @@ impl ControlState {
         self.codex = codex;
         self.selected = selected;
         self.keep_codex_selection_visible(area);
-        self.codex_updated_at = Some(updated_at);
+        self.codex_refresh.finish(Ok(updated_at));
         true
     }
 

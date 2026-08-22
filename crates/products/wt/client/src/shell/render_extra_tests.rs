@@ -13,21 +13,39 @@ pub(super) fn now_ms() -> i64 {
 
 #[test]
 fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
+    let mut status = crate::shell::refresh_status::RefreshStatus::default();
+    assert_eq!(status.title("Codex sessions"), "Codex sessions · Updating…");
+    status.finish(Ok("2026-08-21T20:00:00Z".into()));
     assert_eq!(
-        refresh_title("Codex sessions", None, None),
-        "Codex sessions · Updating…"
-    );
-    assert_eq!(
-        refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z"), None),
+        status.title("Codex sessions"),
         "Codex sessions · Last updated 2026-08-21T20:00:00Z"
     );
+    status.set_failures(vec![
+        "context ars could not be queried: connection timed out".into(),
+    ]);
     assert_eq!(
-        refresh_title(
-            "Codex sessions",
-            Some("2026-08-21T20:00:00Z"),
-            Some(&["context ars could not be queried: connection timed out".into()])
-        ),
+        status.title("Codex sessions"),
         "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
+    );
+}
+
+#[test]
+fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
+    let mut state = ControlState::default();
+    state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
+    state.finish_worlds_refresh(Err(vec![
+        "context ars could not be queried: request timed out after 60s".into(),
+        "context lab could not be queried: connection refused".into(),
+    ]));
+    assert_eq!(
+        state.worlds_refresh().title("Worlds"),
+        "Worlds · Last updated 2026-08-22T19:29:38Z · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused"
+    );
+
+    state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
+    assert_eq!(
+        state.worlds_refresh().title("Worlds"),
+        "Worlds · Last updated 2026-08-22T19:30:00Z"
     );
 }
 

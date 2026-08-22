@@ -1,6 +1,7 @@
 use crate::operations::Operations;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use uuid::Uuid;
 use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
@@ -21,6 +22,9 @@ pub use gateway::AgentToolGateway;
 pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<String>, String> {
     codex_catalog::refresh(store, root)
 }
+
+const INSPECTION_RETRIES: usize = 6;
+const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 pub struct Service<W, G> {
     store: Store,
@@ -199,7 +203,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
-            ssh_authorized_keys: &request.ssh_authorized_keys,
             git_grant: &grant.as_ref().expect("host grant").token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
@@ -275,11 +278,20 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {
         if !matches!(
             stored.instance.status,
-            InstanceStatus::Running | InstanceStatus::Stopped
+            InstanceStatus::Running | InstanceStatus::Stopped | InstanceStatus::Error
         ) {
             return Ok(());
         }
-        match self.worker.inspect(&stored.backend_id) {
+        let retries = if stored.instance.status == InstanceStatus::Error {
+            0
+        } else {
+            INSPECTION_RETRIES
+        };
+        match retry(
+            || self.worker.inspect(&stored.backend_id),
+            retries,
+            || std::thread::sleep(INSPECTION_RETRY_DELAY),
+        ) {
             Ok(WorldInspection::Running(world)) => {
                 self.store
                     .ensure_resources_reserved(stored.instance.id)
@@ -442,6 +454,24 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .delete(stored.instance.id, stored.disk_id)
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
+    }
+}
+
+fn retry<T, E>(
+    mut operation: impl FnMut() -> Result<T, E>,
+    retries: usize,
+    mut wait: impl FnMut(),
+) -> Result<T, E> {
+    let mut attempts = 0;
+    loop {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error) if attempts == retries => return Err(error),
+            Err(_) => {
+                attempts += 1;
+                wait();
+            }
+        }
     }
 }
 

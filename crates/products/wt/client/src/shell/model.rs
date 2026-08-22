@@ -171,8 +171,8 @@ impl ShellModel {
         self.control.show_worlds();
     }
 
-    pub(super) fn set_worlds_updated_at(&mut self, updated_at: String) {
-        self.control.set_worlds_updated_at(updated_at);
+    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
+        self.control.finish_worlds_refresh(result);
     }
 
     #[cfg(test)]

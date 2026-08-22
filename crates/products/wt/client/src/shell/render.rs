@@ -291,11 +291,10 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
-    let block = Block::new().borders(Borders::ALL).title(refresh_title(
-        "Worlds",
-        model.control().worlds_updated_at(),
-        None,
-    ));
+    let state = model.control();
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(state.worlds_refresh().title("Worlds"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation
@@ -388,28 +387,14 @@ fn draw_world_card(
     frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
 }
 
-fn refresh_title(label: &str, updated_at: Option<&str>, failure: Option<&[String]>) -> String {
-    let mut title = updated_at.map_or_else(
-        || format!("{label} · Updating…"),
-        |updated_at| format!("{label} · Last updated {updated_at}"),
-    );
-    if let Some(failures) = failure {
-        title.push_str(" · Sync failed: ");
-        title.push_str(&failures.join("; "));
-    }
-    title
-}
-
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    let block = Block::new().borders(Borders::ALL).title(refresh_title(
-        "Codex sessions",
-        state.codex_updated_at(),
-        state.context_failure(),
-    ));
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(state.codex_refresh().title("Codex sessions"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if state.codex().is_empty() {
-        let message = if state.codex_updated_at().is_some() {
+        let message = if state.codex_refresh().updated_at().is_some() {
             "No Codex sessions\nStart Codex in a world to see its session here"
         } else {
             "Loading Codex sessions…"

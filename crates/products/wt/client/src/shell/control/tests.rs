@@ -144,13 +144,19 @@ fn live_grid_click_and_keys_follow_four_column_geometry() {
 fn snapshot_times_track_the_last_applied_snapshot() {
     let mut state = ControlState::default();
 
-    state.set_worlds_updated_at("2026-08-21T20:00:00Z".into());
-    state.set_worlds_updated_at("2026-08-21T20:00:05Z".into());
+    state.finish_worlds_refresh(Ok("2026-08-21T20:00:00Z".into()));
+    state.finish_worlds_refresh(Ok("2026-08-21T20:00:05Z".into()));
     state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into(), area());
     state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into(), area());
 
-    assert_eq!(state.worlds_updated_at(), Some("2026-08-21T20:00:05Z"));
-    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:06Z"));
+    assert_eq!(
+        state.worlds_refresh().updated_at(),
+        Some("2026-08-21T20:00:05Z")
+    );
+    assert_eq!(
+        state.codex_refresh().updated_at(),
+        Some("2026-08-21T20:00:06Z")
+    );
 }
 
 #[test]
@@ -170,7 +176,10 @@ fn refresh_and_navigation_do_not_hide_an_opening_card() {
     assert!(!state.set_codex(Vec::new(), "2026-08-21T20:00:05Z".into(), area()));
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert_eq!(state.selected(), Some(&target.identity));
-    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:00Z"));
+    assert_eq!(
+        state.codex_refresh().updated_at(),
+        Some("2026-08-21T20:00:00Z")
+    );
 
     assert!(state.finish_open(&target, true));
     assert!(state.open_failed());
@@ -226,7 +235,10 @@ fn failed_refresh_keeps_the_last_codex_snapshot_and_timestamp() {
 
     assert_eq!(state.codex().len(), 1);
     assert_eq!(state.codex()[0].identity, card.identity);
-    assert_eq!(state.codex_updated_at(), Some("2026-08-21T20:00:00Z"));
+    assert_eq!(
+        state.codex_refresh().updated_at(),
+        Some("2026-08-21T20:00:00Z")
+    );
 }
 
 #[test]

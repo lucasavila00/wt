@@ -2,6 +2,7 @@ use super::binaries::prepare_test_binaries;
 use super::fixture::*;
 use super::gateway::spawn_gateway;
 use super::images::{isolated_test_images, unique_vsock_port};
+use super::ssh::AuthorizedKeysFixture;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
@@ -23,13 +24,13 @@ use wt_workload_registry::{CapacityConfig, Resources};
 pub(crate) static KVM_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) struct KvmHarness {
+    _authorized_keys: AuthorizedKeysFixture,
     pub(crate) git: GitFixture,
     pub(crate) gateway: Child,
     pub(crate) temp: TempDir,
     pub(crate) config: ServerConfig,
     pub(crate) server_config_path: PathBuf,
     pub(crate) wt_binary: PathBuf,
-    pub(crate) guest_public_key: String,
     pub(crate) initial_disks: usize,
     _images: TempDir,
 }
@@ -66,10 +67,7 @@ impl KvmHarness {
         let git = timings.run("prepare local Git fixture", || {
             GitFixture::create(temp.path())
         });
-        let guest_public_key = fs::read_to_string(&git.guest_public_key)
-            .unwrap()
-            .trim()
-            .to_owned();
+        let authorized_keys = AuthorizedKeysFixture::install(&git.guest_public_key);
         std::env::set_var("HOME", temp.path());
         fs::create_dir_all(temp.path().join(".ssh")).unwrap();
         fs::write(
@@ -111,13 +109,13 @@ impl KvmHarness {
             std::thread::sleep(Duration::from_millis(10));
         }
         Self {
+            _authorized_keys: authorized_keys,
             git,
             gateway,
             temp,
             config,
             server_config_path,
             wt_binary,
-            guest_public_key,
             initial_disks,
             _images: images,
         }
@@ -132,7 +130,6 @@ impl KvmHarness {
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
-                ssh_authorized_keys: vec![self.guest_public_key.clone()],
                 git_user_name: "WT E2E".to_owned(),
                 git_user_email: "wt@example.invalid".to_owned(),
             }),

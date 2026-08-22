@@ -8,6 +8,10 @@ if ! command -v wt_require_effective_identity >/dev/null 2>&1; then
     # shellcheck source=wt-identity.sh
     . "$wt_asset_dir/wt-identity.sh"
 fi
+if ! command -v wt_publish_shared_file >/dev/null 2>&1; then
+    # shellcheck source=publish-shared-file.sh
+    . "$wt_asset_dir/publish-shared-file.sh"
+fi
 
 codex_home=$WT_IDENTITY_HOME/.codex
 auth=$codex_home/auth.json
@@ -23,11 +27,7 @@ esac
 
 wt_require_effective_identity
 
-cleanup() {
-    rm -f "$temporary"
-}
-
-require_auth() {
+validate_auth() {
     if test -L "$auth" || ! test -f "$auth"; then
         echo "Codex authentication must be a regular, non-symlink file: $auth" >&2
         exit 1
@@ -40,29 +40,9 @@ require_auth() {
     fi
 }
 
-require_auth
-if test -e "$share" || test -L "$share"; then
-    wt_require_owned_directory "$share"
-    share_mode=$(stat -c %a "$share")
-    if test "$share_mode" != 700; then
-        echo "directory mode drift at $share: expected mode=0700; actual mode=0$share_mode" >&2
-        exit 1
-    fi
-elif test "$check_only" = false; then
-    install -d -m 0700 "$share"
-fi
-test "$check_only" = false || exit 0
-trap cleanup EXIT HUP INT TERM
-
-while :; do
-    require_auth
+prepare_auth() {
+    validate_auth
     chmod 0600 "$auth"
+}
 
-    rm -f "$temporary"
-    install -m 0600 "$auth" "$temporary"
-    mv -f "$temporary" "$shared_auth"
-
-    if cmp -s "$auth" "$shared_auth"; then
-        exit 0
-    fi
-done
+wt_publish_shared_file validate_auth prepare_auth "$auth" "$share" "$temporary" "$shared_auth" "$check_only"

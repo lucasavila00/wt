@@ -29,7 +29,6 @@ impl Task {
             vcpus: input.vcpus,
             memory_mib: input.memory_mib,
             disk_gib: input.disk_gib,
-            ssh_authorized_keys: input.ssh_authorized_keys,
             git_user_name: input.git_user_name,
             git_user_email: input.git_user_email,
         };

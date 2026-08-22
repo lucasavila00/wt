@@ -209,9 +209,9 @@ binary_dir = "/opt/wt bin"
     insta::assert_snapshot!(unit, @r###"
     [Unit]
     Description=WT control-plane daemon
-    Requires=wt-codex-integration-auth.service
-    Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path
-    After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service
+    Requires=wt-codex-integration-auth.service wt-ssh-authorized-keys.service
+    Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path wt-ssh-authorized-keys.path
+    After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service wt-ssh-authorized-keys.service
 
     [Service]
     Type=simple
@@ -248,6 +248,29 @@ binary_dir = "/opt/wt bin"
     [Path]
     PathChanged=/home/wt/.codex/auth.json
     Unit=wt-codex-integration-auth.service
+
+    [Install]
+    WantedBy=multi-user.target
+    "###);
+    insta::assert_snapshot!(String::from_utf8(ssh_keys_service()).unwrap(), @r###"
+    [Unit]
+    Description=Refresh the WT SSH authorized keys share
+
+    [Service]
+    Type=oneshot
+    User=wt
+    Group=wt
+    Environment="HOME=/home/wt"
+    ExecStart=/usr/local/libexec/wt-ssh-authorized-keys-share
+    UMask=0077
+    "###);
+    insta::assert_snapshot!(String::from_utf8(ssh_keys_path_unit()).unwrap(), @r###"
+    [Unit]
+    Description=Watch the WT SSH authorized keys file
+
+    [Path]
+    PathChanged=/home/wt/.ssh/authorized_keys
+    Unit=wt-ssh-authorized-keys.service
 
     [Install]
     WantedBy=multi-user.target

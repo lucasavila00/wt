@@ -30,6 +30,9 @@ const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-tool-gateway.se
 const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.service";
 const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.path";
 const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-integration-auth-share";
+const SSH_KEYS_SERVICE_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.service";
+const SSH_KEYS_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.path";
+const SSH_KEYS_HELPER_PATH: &str = "/usr/local/libexec/wt-ssh-authorized-keys-share";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
@@ -396,7 +399,18 @@ fn install_services(
     server: &ServerConfig,
     replace_runtime: bool,
 ) -> Result<()> {
-    install_codex_auth_helper(runner)?;
+    install_share_helper(
+        runner,
+        "wt-codex-integration-auth-share",
+        &host::codex_auth_share(),
+        "Codex auth",
+    )?;
+    install_share_helper(
+        runner,
+        "wt-ssh-authorized-keys-share",
+        &host::ssh_authorized_keys_share(),
+        "SSH authorized keys",
+    )?;
     install_service_unit(
         runner,
         "wt-codex-integration-auth",
@@ -409,6 +423,20 @@ fn install_services(
         "wt-codex-integration-auth-path",
         Path::new(CODEX_AUTH_PATH_UNIT_PATH),
         &codex_auth_path_unit(),
+        replace_runtime,
+    )?;
+    install_service_unit(
+        runner,
+        "wt-ssh-authorized-keys",
+        Path::new(SSH_KEYS_SERVICE_PATH),
+        &ssh_keys_service(),
+        replace_runtime,
+    )?;
+    install_service_unit(
+        runner,
+        "wt-ssh-authorized-keys-path",
+        Path::new(SSH_KEYS_PATH_UNIT_PATH),
+        &ssh_keys_path_unit(),
         replace_runtime,
     )?;
     install_service_unit(
@@ -431,6 +459,7 @@ fn install_services(
     )?;
     for name in [
         "wt-codex-integration-auth.path",
+        "wt-ssh-authorized-keys.path",
         "wt-agent-tool-gateway.service",
         "wt-server.service",
     ] {
@@ -446,17 +475,26 @@ fn install_services(
     Ok(())
 }
 
-fn install_codex_auth_helper(runner: &impl Runner) -> Result<()> {
+fn install_share_helper(
+    runner: &impl Runner,
+    name: &str,
+    script: &[u8],
+    description: &str,
+) -> Result<()> {
     runner.run(
         cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
         "create system helper directory",
     )?;
-    let local = Path::new("target/wt-codex-integration-auth-share.install");
-    fs::write(local, host::codex_auth_share()).context("stage Codex auth share helper")?;
-    let temporary = Path::new("/usr/local/libexec/.wt-codex-integration-auth-share.wt-new");
-    sudo_install(runner, local, temporary, 0o755)?;
-    sudo_move(runner, temporary, Path::new(CODEX_AUTH_HELPER_PATH))?;
-    let _ = fs::remove_file(local);
+    let local = Path::new("target").join(format!("{name}.install"));
+    fs::write(&local, script).with_context(|| format!("stage {description} share helper"))?;
+    let temporary = Path::new("/usr/local/libexec").join(format!(".{name}.wt-new"));
+    sudo_install(runner, &local, &temporary, 0o755)?;
+    sudo_move(
+        runner,
+        &temporary,
+        &Path::new("/usr/local/libexec").join(name),
+    )?;
+    let _ = fs::remove_file(&local);
     Ok(())
 }
 
@@ -562,9 +600,9 @@ fn server_service(server: &ServerConfig) -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=WT control-plane daemon\n\
-Requires=wt-codex-integration-auth.service\n\
-Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path\n\
-After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service\n\
+Requires=wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
+Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path wt-ssh-authorized-keys.path\n\
+After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -594,9 +632,17 @@ WantedBy=multi-user.target\n",
 }
 
 fn codex_auth_service() -> Vec<u8> {
+    shared_file_service("Codex authentication", CODEX_AUTH_HELPER_PATH)
+}
+
+fn ssh_keys_service() -> Vec<u8> {
+    shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH)
+}
+
+fn shared_file_service(description: &str, helper: &str) -> Vec<u8> {
     format!(
         "[Unit]\n\
-Description=Refresh the WT Codex authentication share\n\
+Description=Refresh the WT {description} share\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
@@ -608,23 +654,38 @@ UMask=0077\n",
         SERVER_USER,
         SERVER_GROUP,
         systemd_quote(&format!("HOME={SERVER_HOME}")),
-        CODEX_AUTH_HELPER_PATH,
+        helper,
     )
     .into_bytes()
 }
 
 fn codex_auth_path_unit() -> Vec<u8> {
+    shared_file_path_unit(
+        "Codex authentication",
+        wt_server::CODEX_AUTH_PATH,
+        "wt-codex-integration-auth.service",
+    )
+}
+
+fn ssh_keys_path_unit() -> Vec<u8> {
+    shared_file_path_unit(
+        "SSH authorized keys",
+        &format!("{SERVER_HOME}/.ssh/authorized_keys"),
+        "wt-ssh-authorized-keys.service",
+    )
+}
+
+fn shared_file_path_unit(description: &str, path: &str, unit: &str) -> Vec<u8> {
     format!(
         "[Unit]\n\
-Description=Watch the WT Codex authentication file\n\
+Description=Watch the WT {description} file\n\
 \n\
 [Path]\n\
-PathChanged={}\n\
-Unit=wt-codex-integration-auth.service\n\
+PathChanged={path}\n\
+Unit={unit}\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target\n",
-        wt_server::CODEX_AUTH_PATH,
     )
     .into_bytes()
 }

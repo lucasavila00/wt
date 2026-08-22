@@ -13,6 +13,8 @@ mod gateway;
 #[path = "kvm/images.rs"]
 mod images;
 pub(crate) use codex::*;
+#[path = "kvm/ssh.rs"]
+mod ssh;
 #[path = "kvm/support.rs"]
 mod support;
 pub(crate) use support::*;

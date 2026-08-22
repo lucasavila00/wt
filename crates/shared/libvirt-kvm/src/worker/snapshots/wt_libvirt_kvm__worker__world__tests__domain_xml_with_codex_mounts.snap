@@ -1,6 +1,6 @@
 ---
 source: crates/shared/libvirt-kvm/src/worker/world.rs
-expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"/home/wt/.codex/sessions & rollouts\"), auth:\n    PathBuf::from(\"/home/wt/.codex/.wt-auth\"),\n}))"
+expression: xml
 ---
 <domain type='kvm'>
   <name>wt-0123456789abcdef0123456789abcdef</name>
@@ -40,6 +40,11 @@ expression: "test_domain_xml(Some(CodexMounts\n{\n    sessions: PathBuf::from(\"
       <driver type='virtiofs'/>
       <source dir='/home/wt/.codex/.wt-auth'/>
       <target dir='wt-codex-integration-auth'/>
+    </filesystem>
+    <filesystem type='mount' accessmode='passthrough'>
+      <driver type='virtiofs'/>
+      <source dir='/home/wt/.ssh/.wt-authorized-keys'/>
+      <target dir='wt-ssh-authorized-keys'/>
     </filesystem>
     <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>

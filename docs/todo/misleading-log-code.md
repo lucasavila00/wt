@@ -1,0 +1,1 @@
+Existing worlds remain backed by their retained image generations.

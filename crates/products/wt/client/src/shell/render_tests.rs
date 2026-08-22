@@ -315,7 +315,7 @@ fn control_ui_shows_world_cards() {
         "2026-08-21T23:26:52Z".into(),
         Rect::new(0, 0, 100, 25),
     );
-    model.set_worlds_updated_at("2026-08-21T23:26:52Z".into());
+    model.finish_worlds_refresh(Ok("2026-08-21T23:26:52Z".into()));
     press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 25));
     let parser = parser();
 
