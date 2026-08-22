@@ -59,9 +59,7 @@ pub enum ConflictState {
 #[derive(Debug, Eq, PartialEq)]
 pub enum ProviderCommand {
     ReadCurrentStatus,
-    OpenChangeRequest {
-        draft: bool,
-    },
+    OpenChangeRequest,
     MarkChangeRequestReady,
     MarkChangeRequestDraft,
     AddChangeRequestComment {

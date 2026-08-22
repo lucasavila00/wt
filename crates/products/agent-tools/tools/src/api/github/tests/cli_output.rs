@@ -124,7 +124,6 @@ fn cli_commands_render_complete_json_from_github_responses() {
             WtToolsCommand::OpenMr {
                 head: "wt/fix-login".to_owned(),
                 base: "main".to_owned(),
-                draft: false,
             },
             vec![
                 get(
@@ -134,9 +133,12 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 graphql("GithubReadPullRequest", NO_PULL_REQUEST_RESPONSE),
                 graphql(
                     "GithubCreatePullRequest",
-                    r#"{"data":{"createPullRequest":{"pullRequest":{"id":"pull-request-7","number":7,"url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"OPEN","isDraft":false,"headRefOid":"abc123","baseRefName":"main","reviewDecision":null}}}}"#,
+                    r#"{"data":{"createPullRequest":{"pullRequest":{"id":"pull-request-7","number":7,"url":"https://github.test/acme/widget/pull/7","title":"Fix login","state":"OPEN","isDraft":true,"headRefOid":"abc123","baseRefName":"main","reviewDecision":null}}}}"#,
                 ),
-                graphql("GithubReadPullRequest", PULL_REQUEST_RESPONSE),
+                graphql(
+                    "GithubReadPullRequest",
+                    leak(PULL_REQUEST_RESPONSE.replace("\"isDraft\": false", "\"isDraft\": true")),
+                ),
             ],
         ),
         (
