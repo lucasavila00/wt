@@ -37,6 +37,11 @@ reserved for managed SSH.
 | `wt shell` | Open all accessible worlds in one terminal workspace |
 | `wt rm NAME` | Destroy the world |
 | `wt sync` | Rewrite managed SSH inventory |
+| `wt diagnostics` | Compare the client build identity with every configured server |
+
+`wt --version` prints the package version and full source commit SHA. A
+`MISMATCH` in `wt diagnostics` means the client and that server came from
+different commits, even when their control protocols remain compatible.
 
 Each world has a writable qcow2 overlay on the server. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports

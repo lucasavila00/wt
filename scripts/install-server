@@ -19,6 +19,7 @@ show_phase() {
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+"$root/scripts/require-clean-checkout"
 # shellcheck source=../assets/server/wt-identity.sh
 source "$root/assets/server/wt-identity.sh"
 phase="checking command-line arguments"

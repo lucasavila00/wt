@@ -135,7 +135,7 @@ fn replace_server_with_request_log(home: &Path, requests: &Path) {
     fs::write(
         &server,
         format!(
-            "#!/bin/sh\nrequest=$(cat)\nprintf '%s\\n' \"$request\" >> '{}'\nprintf '%s\\n' '{{\"protocol_version\":8,\"outcome\":\"ok\",\"response\":{{\"response\":\"server_info\",\"test_server\":false}}}}'\n",
+            "#!/bin/sh\nrequest=$(cat)\nprintf '%s\\n' \"$request\" >> '{}'\nprintf '%s\\n' '{{\"protocol_version\":9,\"outcome\":\"ok\",\"response\":{{\"response\":\"server_info\",\"test_server\":false,\"build\":{{\"version\":\"test\",\"commit\":\"0000000000000000000000000000000000000000\"}}}}}}'\n",
             requests.display()
         ),
     )

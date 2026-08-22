@@ -38,7 +38,7 @@ impl Fixture {
 request=$(cat)
 case "$request" in
   *'"operation":"server_info"'*)
-    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"server_info","test_server":false}}'
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"server_info","test_server":false,"build":{"version":"test","commit":"0000000000000000000000000000000000000000"}}}'
     ;;
   *'"operation":"list_codex_sessions"'*)
     if test -f "$HOME/codex-active"; then
