@@ -41,7 +41,10 @@ pub fn handle_request_with_progress<
     }
 
     if request.operation == wt_control_protocol::Operation::ServerInfo {
-        return ApiResponse::ok(wt_control_protocol::Response::ServerInfo { test_server });
+        return ApiResponse::ok(wt_control_protocol::Response::ServerInfo {
+            test_server,
+            build: wt_control_protocol::BuildIdentity::current(),
+        });
     }
 
     match service.execute_with_progress(owner, request.operation, progress) {
@@ -74,7 +77,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 9; expected 8"
+            @"unsupported protocol version 10; expected 9"
         );
     }
 }

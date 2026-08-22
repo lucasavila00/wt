@@ -55,6 +55,7 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
+    build: wt_control_protocol::BuildIdentity,
     guest_identity: wt_retained_worlds::GuestIdentity,
     source_sha256: String,
     config_sha256: String,
@@ -338,6 +339,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     )?;
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
+        build: wt_control_protocol::BuildIdentity::current(),
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(input),
@@ -383,7 +385,8 @@ pub(crate) fn verify_installed_image(
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,
     })?;
-    if manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
+    if manifest.build != wt_control_protocol::BuildIdentity::current()
+        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
         || manifest.config_sha256 != image_config_sha(input)
         || manifest.inputs != expected_inputs
         || !is_sha256(&manifest.tmux_sha256)

@@ -4110,6 +4110,7 @@ dependencies = [
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
  "uuid",
+ "wt-control-protocol",
  "wt-installer-support",
  "wt-libvirt-kvm",
  "wt-retained-worlds",

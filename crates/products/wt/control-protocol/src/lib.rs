@@ -15,7 +15,36 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
+pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
+pub const BUILD_DESCRIPTION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("WT_GIT_COMMIT_SHA"),
+    ")"
+);
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BuildIdentity {
+    pub version: String,
+    pub commit: String,
+}
+
+impl BuildIdentity {
+    pub fn current() -> Self {
+        Self {
+            version: BUILD_VERSION.to_owned(),
+            commit: GIT_COMMIT_SHA.to_owned(),
+        }
+    }
+}
+
+impl fmt::Display for BuildIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} ({})", self.version, self.commit)
+    }
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiProgress {
     pub protocol_version: u32,
@@ -152,6 +181,7 @@ pub enum Outcome {
 pub enum Response {
     ServerInfo {
         test_server: bool,
+        build: BuildIdentity,
     },
     Instance {
         instance: Box<Instance>,
@@ -349,7 +379,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 8,
+                "protocol_version": 9,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -364,7 +394,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 8,
+                "protocol_version": 9,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -379,7 +409,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 8,
+                "protocol_version": 9,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -444,7 +474,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 8,
+                "protocol_version": 9,
                 "operation": "list_codex_sessions"
             })
         );
@@ -460,7 +490,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 8,
+          "protocol_version": 9,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -496,7 +526,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 8,
+          "protocol_version": 9,
           "ssh_authorized_keys": [
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo wt@example"
           ],
@@ -508,14 +538,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 8,
+            "protocol_version": 9,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 8,
+            "protocol_version": 9,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -547,7 +577,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 8,
+            "protocol_version": 9,
             "operation": "get",
             "name": "Not-Valid"
         }))
@@ -559,7 +589,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 8,
+          "protocol_version": 9,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -569,19 +599,29 @@ mod tests {
     #[test]
     fn server_info_has_a_stable_shape() {
         let request = ApiRequest::new(Operation::ServerInfo);
-        let response = ApiResponse::ok(Response::ServerInfo { test_server: true });
+        let response = ApiResponse::ok(Response::ServerInfo {
+            test_server: true,
+            build: BuildIdentity {
+                version: "1.2.3".to_owned(),
+                commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            },
+        });
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 8,
+            "protocol_version": 9,
             "operation": "server_info"
           },
           {
-            "protocol_version": 8,
+            "protocol_version": 9,
             "outcome": "ok",
             "response": {
               "response": "server_info",
-              "test_server": true
+              "test_server": true,
+              "build": {
+                "version": "1.2.3",
+                "commit": "0123456789abcdef0123456789abcdef01234567"
+              }
             }
           }
         ]

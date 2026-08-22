@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+directory=$(mktemp -d)
+cleanup() {
+    rm -rf -- "$directory"
+}
+trap cleanup EXIT
+
+mkdir "$directory/scripts"
+cp "$(dirname "${BASH_SOURCE[0]}")/require-clean-checkout" "$directory/scripts/"
+cd "$directory"
+git init --quiet
+git config user.name Test
+git config user.email test@example.invalid
+touch tracked
+git add .
+git commit --quiet -m initial
+
+scripts/require-clean-checkout
+
+printf dirty >tracked
+if scripts/require-clean-checkout >diagnostic 2>&1; then
+    echo "unstaged change was accepted" >&2
+    exit 1
+fi
+grep -Fq " M tracked" diagnostic
+
+git add tracked
+if scripts/require-clean-checkout >diagnostic 2>&1; then
+    echo "staged change was accepted" >&2
+    exit 1
+fi
+grep -Fq "M  tracked" diagnostic
+
+git reset --quiet --hard HEAD
+touch untracked
+if scripts/require-clean-checkout >diagnostic 2>&1; then
+    echo "untracked file was accepted" >&2
+    exit 1
+fi
+grep -Fq "?? untracked" diagnostic

@@ -22,6 +22,7 @@ fn sha_validation_detects_drift() {
 #[test]
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
+        build: wt_control_protocol::BuildIdentity::current(),
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         source_sha256: "source".to_owned(),
         config_sha256: "config".to_owned(),
@@ -33,6 +34,7 @@ fn image_manifest_records_structured_package_versions() {
 
     let json = serde_json::to_value(manifest).unwrap();
     assert_eq!(json["packages"]["tmux"], "3.4-1");
+    assert_eq!(json["build"]["commit"], wt_control_protocol::GIT_COMMIT_SHA);
     assert_eq!(json["guest_identity"]["uid"], 1001);
     assert_eq!(json["guest_identity"]["gid"], 1001);
 }
@@ -51,6 +53,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
     let prepared = directory.path().join("prepared.qcow2");
     let destination = directory.path().join("retained.qcow2");
     let manifest = ImageManifest {
+        build: wt_control_protocol::BuildIdentity::current(),
         guest_identity: wt_retained_worlds::GuestIdentity {
             uid: 1000,
             gid: 1000,

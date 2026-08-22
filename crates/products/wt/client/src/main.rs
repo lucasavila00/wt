@@ -18,12 +18,11 @@ mod reports;
 mod shell;
 
 const TEST_SERVER_WARNING: &str = "WARNING: WT E2E TEST SERVER — test fixtures are installed.";
-
 #[cfg(test)]
 use git_author::{parse_git_config_value, required_git_config_error};
 
 #[derive(Debug, Parser)]
-#[command(name = "wt")]
+#[command(name = "wt", version = wt_control_protocol::BUILD_DESCRIPTION)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -53,6 +52,8 @@ enum Command {
     Reports,
     /// Clear reports submitted about wt-tools.
     ClearReports,
+    /// Show client and configured server build identities.
+    Diagnostics,
 }
 
 fn main() {
@@ -63,8 +64,8 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let config = ClientConfig::load()?;
     let command = Cli::parse().command;
+    let config = ClientConfig::load()?;
     let test_server = local_test_server(&config);
     if test_server {
         eprintln!("{TEST_SERVER_WARNING}");
@@ -170,6 +171,7 @@ fn run() -> Result<()> {
         }
         Command::Reports => reports::show(&config)?,
         Command::ClearReports => reports::clear(&config)?,
+        Command::Diagnostics => print_diagnostics(&config),
     }
     Ok(())
 }
@@ -179,7 +181,36 @@ fn local_test_server(config: &ClientConfig) -> bool {
         .contexts
         .iter()
         .filter(|context| matches!(context.kind, ContextKind::BareMetalLocal))
-        .any(|context| wt_client::transport::server_info(context).unwrap_or(false))
+        .any(|context| {
+            wt_client::transport::server_info(context)
+                .map(|(test_server, _)| test_server)
+                .unwrap_or(false)
+        })
+}
+
+fn print_diagnostics(config: &ClientConfig) {
+    let client = wt_control_protocol::BuildIdentity::current();
+    println!("client\t{client}");
+    for context in &config.contexts {
+        match wt_client::transport::server_info(context) {
+            Ok((_, server)) => {
+                let status = build_status(&client, &server);
+                println!("{}\t{}\t{status}", context.name, server);
+            }
+            Err(error) => println!("{}\tunavailable: {error}", context.name),
+        }
+    }
+}
+
+fn build_status(
+    client: &wt_control_protocol::BuildIdentity,
+    server: &wt_control_protocol::BuildIdentity,
+) -> &'static str {
+    if client == server {
+        "match"
+    } else {
+        "MISMATCH"
+    }
 }
 
 fn format_instances(instances: &[ContextInstance]) -> String {

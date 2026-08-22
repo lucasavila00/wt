@@ -25,6 +25,9 @@ check-file-lines:
 	done; \
 	test -z "$$failed"; }
 
+check-install-checkout:
+	scripts/test-require-clean-checkout
+
 check-snapshot-lines:
 	scripts/cargo run --quiet -p wt-repository-checks -- snapshot-lines
 
@@ -66,7 +69,7 @@ check-typescript:
 ci: static
 	scripts/cargo test --workspace --locked
 
-static: check-crate-readmes check-file-lines check-snapshot-lines check-typescript
+static: check-crate-readmes check-file-lines check-install-checkout check-snapshot-lines check-typescript
 	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \
