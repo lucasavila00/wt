@@ -126,20 +126,14 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     } else {
         " F5: enable navbar"
     };
-    let right_hint = if disabled {
-        "Shift+F5: enable F6: close "
-    } else if active {
-        "↑ ctrl F6: close "
-    } else {
-        "F6: close "
-    };
     let style = Style::new().add_modifier(if disabled {
         Modifier::BOLD | Modifier::REVERSED | Modifier::UNDERLINED
     } else if active {
-        Modifier::BOLD | Modifier::REVERSED
+        Modifier::REVERSED
     } else {
-        Modifier::BOLD | Modifier::DIM
+        Modifier::DIM
     });
+    let clickable_style = style.add_modifier(Modifier::BOLD);
     let bar = Rect::new(frame.area().x, frame.area().y, frame.area().width, 1);
     let [previous, world, next] = super::bar::world_bar_controls(model, bar);
     let left = Rect::new(bar.x, bar.y, previous.x.saturating_sub(bar.x), 1);
@@ -151,23 +145,36 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  WT ", style),
+            Span::styled(super::bar::BRAND_LABEL, clickable_style),
             Span::raw(left_hint),
         ]))
         .style(style),
         left,
     );
     frame.render_widget(
-        Paragraph::new(super::bar::PREVIOUS_LABEL).style(style),
+        Paragraph::new(super::bar::PREVIOUS_LABEL).style(clickable_style),
         previous,
     );
     frame.render_widget(
         Paragraph::new(super::bar::world_bar_label(model))
             .alignment(Alignment::Center)
-            .style(style),
+            .style(clickable_style),
         world,
     );
-    frame.render_widget(Paragraph::new(super::bar::NEXT_LABEL).style(style), next);
+    frame.render_widget(
+        Paragraph::new(super::bar::NEXT_LABEL).style(clickable_style),
+        next,
+    );
+    let right_hint = if disabled {
+        Line::from("Shift+F5: enable F6: close ")
+    } else if active {
+        Line::from(vec![
+            Span::styled(super::bar::CONTROL_LABEL, clickable_style),
+            Span::raw(super::bar::CLOSE_LABEL),
+        ])
+    } else {
+        Line::from("F6: close ")
+    };
     frame.render_widget(
         Paragraph::new(right_hint)
             .alignment(Alignment::Right)

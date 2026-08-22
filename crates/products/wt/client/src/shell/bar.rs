@@ -4,6 +4,15 @@ use ratatui::text::Span;
 
 pub(super) const PREVIOUS_LABEL: &str = "← PREV ";
 pub(super) const NEXT_LABEL: &str = " NEXT →";
+pub(super) const BRAND_LABEL: &str = "  WT ";
+pub(super) const CONTROL_LABEL: &str = "↑ ctrl";
+pub(super) const CLOSE_LABEL: &str = " F6: close ";
+
+pub(super) fn world_bar_brand(area: Rect) -> Rect {
+    let width =
+        u16::try_from(Span::raw(BRAND_LABEL).width()).expect("brand label width is bounded");
+    Rect::new(area.x, area.y, width.min(area.width), 1)
+}
 
 pub(super) fn world_bar_label(model: &ShellModel) -> String {
     format!(
@@ -38,4 +47,24 @@ pub(super) fn world_bar_controls(model: &ShellModel, area: Rect) -> [Rect; 3] {
     ])
     .split(group);
     [controls[0], controls[1], controls[2]]
+}
+
+pub(super) fn world_bar_control(area: Rect, next: Rect) -> Rect {
+    let control_width =
+        u16::try_from(Span::raw(CONTROL_LABEL).width()).expect("control label width is bounded");
+    let close_width =
+        u16::try_from(Span::raw(CLOSE_LABEL).width()).expect("close label width is bounded");
+    let right = Rect::new(
+        next.right(),
+        area.y,
+        area.right().saturating_sub(next.right()),
+        1,
+    );
+    let controls = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(control_width),
+        Constraint::Length(close_width),
+    ])
+    .split(right);
+    controls[1]
 }

@@ -287,11 +287,18 @@ impl ShellModel {
                 self.f5_disabled = false;
                 self.mode = Mode::Switcher;
             } else if self.mode == Mode::Switcher {
-                let [previous, _, next] = super::bar::world_bar_controls(self, area);
+                let [previous, world, next] = super::bar::world_bar_controls(self, area);
+                let brand = super::bar::world_bar_brand(area);
+                let control = super::bar::world_bar_control(area, next);
                 if previous.contains((mouse.column, mouse.row).into()) {
                     self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
                 } else if next.contains((mouse.column, mouse.row).into()) {
                     self.active = (self.active + 1) % self.worlds.len();
+                } else if brand.contains((mouse.column, mouse.row).into())
+                    || world.contains((mouse.column, mouse.row).into())
+                    || control.contains((mouse.column, mouse.row).into())
+                {
+                    self.mode = Mode::Control;
                 } else {
                     self.mode = Mode::World;
                 }
@@ -592,6 +599,27 @@ mod tests {
         assert_eq!(next.width, 7);
         model.handle_mouse(mouse(next.x, next.y), area());
         assert_eq!(model.active(), 0);
+    }
+
+    #[test]
+    fn clicking_a_bold_control_target_opens_the_control_ui() {
+        for target in ["brand", "world", "control"] {
+            let mut model = model();
+            model.handle_mouse(mouse(0, 0), area());
+            let [_, world, next] = super::super::bar::world_bar_controls(&model, area());
+            let brand = super::super::bar::world_bar_brand(area());
+            let control = super::super::bar::world_bar_control(area(), next);
+            let target = match target {
+                "brand" => brand,
+                "world" => world,
+                "control" => control,
+                _ => unreachable!(),
+            };
+
+            model.handle_mouse(mouse(target.x, target.y), area());
+
+            assert_eq!(model.mode(), Mode::Control);
+        }
     }
 
     #[test]

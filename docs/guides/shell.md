@@ -13,8 +13,9 @@ last complete list in place.
 
 The dim navbar shows the active world and its position in the world list. `F5`
 or a click on the navbar enables its controls. `Left` and `Right`, or the
-clickable arrows beside the active world, change worlds, and `Up` opens the
-Control UI. Press `F5` or click elsewhere on the enabled navbar to return
+clickable arrows beside the active world, change worlds, and `Up`, the ` WT`
+brand, the world label, or the `↑ ctrl` label opens the Control UI. Press `F5`
+or click elsewhere on the enabled navbar to return
 keyboard control to the world. Clickable navbar text is bold. `F6` closes `wt
 shell` from every view. Other keyboard input is forwarded to the active world,
 including while the navbar is enabled.
