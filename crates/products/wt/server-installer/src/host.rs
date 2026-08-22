@@ -65,30 +65,6 @@ pub(crate) fn ensure_qemu_search_acl(runner: &impl Runner, path: &Path) -> Resul
 mod tests {
     use super::*;
 
-    fn contract_value(name: &str) -> &str {
-        let prefix = format!("{name}=");
-        std::str::from_utf8(WT_IDENTITY_CONTRACT)
-            .unwrap()
-            .lines()
-            .find_map(|line| line.strip_prefix(&prefix))
-            .unwrap_or_else(|| panic!("missing {name} in the shell identity contract"))
-    }
-
-    #[test]
-    fn shell_and_rust_identity_contracts_match() {
-        assert_eq!(contract_value("WT_IDENTITY_USER"), wt_server::SERVER_USER);
-        assert_eq!(contract_value("WT_IDENTITY_GROUP"), wt_server::SERVER_GROUP);
-        assert_eq!(
-            contract_value("WT_IDENTITY_UID"),
-            wt_server::SERVER_UID.to_string()
-        );
-        assert_eq!(
-            contract_value("WT_IDENTITY_GID"),
-            wt_server::SERVER_GID.to_string()
-        );
-        assert_eq!(contract_value("WT_IDENTITY_HOME"), wt_server::SERVER_HOME);
-    }
-
     #[test]
     fn composed_shell_assets_keep_their_interpreter() {
         for script in [

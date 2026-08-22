@@ -13,7 +13,7 @@ server_home=$WT_IDENTITY_HOME
 authorized_keys_source=/root/.ssh/authorized_keys
 authorized_keys_destination=$server_home/.ssh/authorized_keys
 sudoers_path=/etc/sudoers.d/wt-server
-sudoers_rule='wt ALL=(ALL:ALL) NOPASSWD: ALL'
+sudoers_rule="$server_user ALL=(ALL:ALL) NOPASSWD: ALL"
 
 if [[ $# -ne 0 ]]; then
     echo "usage: scripts/bootstrap-server-user" >&2

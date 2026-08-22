@@ -31,6 +31,12 @@ Virtiofs remains an unmapped passthrough mount. ACL repair,
 supplementary-group access, and recursive ownership repair are not part of the
 contract.
 
+The libvirt worlds directory is deliberately outside the shared identity
+contract. It remains owned by UID `1001` and the host's numeric `kvm` group,
+with mode `2770` and search access for `libvirt-qemu`. Server startup and every
+domain creation validate that boundary. Tests must reject replacing its host
+group and QEMU ACL with ordinary `wt:wt` ownership.
+
 All worlds sharing the sessions tree are therefore the same filesystem
 principal and may read or modify it. The tree must contain no host secrets or
 control state, and the server must treat its contents as guest-controlled

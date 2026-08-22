@@ -475,6 +475,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn posix_and_rust_identity_contracts_match() {
+        let contract =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../assets/server/wt-identity.sh");
+        let output = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(
+                ". \"$1\"; printf '%s:%s:%s:%s:%s\\n' \"$WT_IDENTITY_USER\" \"$WT_IDENTITY_GROUP\" \"$WT_IDENTITY_UID\" \"$WT_IDENTITY_GID\" \"$WT_IDENTITY_HOME\"",
+            )
+            .arg("wt-identity-parity")
+            .arg(contract)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!(
+                "{}:{}:{}:{}:{}\n",
+                WT_IDENTITY.user,
+                WT_IDENTITY.group,
+                WT_IDENTITY.uid,
+                WT_IDENTITY.gid,
+                WT_IDENTITY.home
+            )
+        );
+    }
+
+    #[test]
     fn canonicalizes_authorized_keys() {
         let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPAo47CHM4yuzilWsuXWaYMSnEUMOCBQjSTLIofQSNqo person's-key";
         insta::assert_snapshot!(authorized_keys_file(&[key.to_owned()]).unwrap(), @r###"

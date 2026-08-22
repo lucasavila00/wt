@@ -43,6 +43,7 @@ while :; do
         echo "Codex authentication ownership mismatch at $auth: expected uid=$WT_IDENTITY_UID gid=$WT_IDENTITY_GID; actual uid=$auth_uid gid=$auth_gid" >&2
         exit 1
     fi
+    chmod 0600 "$auth"
 
     rm -f "$temporary"
     install -m 0600 "$auth" "$temporary"
