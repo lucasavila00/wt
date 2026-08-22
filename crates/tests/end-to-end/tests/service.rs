@@ -200,3 +200,33 @@ fn reconciliation_marks_missing_or_changed_worlds_as_error() {
         assert_eq!(instances[0].status, InstanceStatus::Error);
     }
 }
+
+#[test]
+fn reconciliation_recovers_an_errored_world_that_is_healthy_again() {
+    let temp = TempDir::new().unwrap();
+    service(&temp, Worker::default())
+        .execute("tester", Operation::Create(create("sample")))
+        .unwrap();
+
+    let Response::Instances { instances, .. } = service(
+        &temp,
+        Worker {
+            changed_guest_identity: true,
+            ..Worker::default()
+        },
+    )
+    .execute("tester", Operation::List)
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Error);
+
+    let Response::Instances { instances, .. } = service(&temp, Worker::default())
+        .execute("tester", Operation::List)
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(instances[0].status, InstanceStatus::Running);
+    assert_eq!(instances[0].last_error, None);
+}
