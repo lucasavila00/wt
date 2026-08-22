@@ -184,14 +184,17 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
         .style(style),
         left,
     );
-    frame.render_widget(Paragraph::new("← ").style(style), previous);
+    frame.render_widget(
+        Paragraph::new(super::bar::PREVIOUS_LABEL).style(style),
+        previous,
+    );
     frame.render_widget(
         Paragraph::new(super::bar::world_bar_label(model))
             .alignment(Alignment::Center)
             .style(style),
         world,
     );
-    frame.render_widget(Paragraph::new(" →").style(style), next);
+    frame.render_widget(Paragraph::new(super::bar::NEXT_LABEL).style(style), next);
     frame.render_widget(
         Paragraph::new(right_hint)
             .alignment(Alignment::Right)
