@@ -24,11 +24,12 @@ wrapper validates the upstream executable, starts its app server, discovers
 shared rollout IDs, reads any missing threads through the app server, and
 verifies that every shared session is indexed before it starts Codex.
 
-Index refresh is best-effort. Failure prints a warning, appends the complete
-diagnostic to `~/.local/state/wt/codex-reconciliation.log`, and does not prevent
-the real CLI from starting. A missing or non-executable upstream CLI is an
-image contract failure and tells the operator to recreate the world from a
-verified image.
+Index refresh failure appends the complete diagnostic to
+`~/.local/state/wt/codex-reconciliation.log` and prevents the real CLI from
+starting. Setting `IGNORE_CODEX_WT_CHECKS=true` bypasses reconciliation when an
+operator needs to start Codex without WT's session guarantees. A missing or
+non-executable upstream CLI is an image contract failure and tells the operator
+to recreate the world from a verified image.
 
 The wrapper uses `exec` so the real CLI inherits the original arguments,
 environment, working directory, standard streams, signals, process identity,
@@ -40,7 +41,8 @@ The image recipe creates both command links and validates both with
 ## Consequences
 
 - Shared sessions are visible when the initial Codex UI opens.
-- Session-index failures do not make Codex unavailable.
+- Session-index failures block Codex unless the operator explicitly bypasses
+  WT's checks.
 - Codex owns rollout discovery and state repair through its documented app
   server behavior.
 - The stable standalone `current` path is part of the image contract. Image

@@ -74,19 +74,18 @@ fn run(args: Vec<OsString>) -> Result<()> {
 
 fn run_trampoline(args: Vec<OsString>) -> Result<()> {
     let real_codex = install::real_codex()?;
-    match reconcile::reconcile_with_codex(&real_codex) {
-        Ok(()) => {}
-        Err(error) => {
+    if std::env::var("IGNORE_CODEX_WT_CHECKS").as_deref() != Ok("true") {
+        if let Err(error) = reconcile::reconcile_with_codex(&real_codex) {
             let diagnostic = format!("{error:#}");
-            match record_reconciliation_failure(&diagnostic) {
-                Ok(path) => eprintln!(
-                    "wt-codex-integration: reconciliation failed: {diagnostic}; full diagnostic recorded at {}",
+            return match record_reconciliation_failure(&diagnostic) {
+                Ok(path) => Err(anyhow::anyhow!(
+                    "Codex reconciliation failed: {diagnostic}; full diagnostic recorded at {}",
                     path.display()
-                ),
-                Err(log_error) => eprintln!(
-                    "wt-codex-integration: reconciliation failed: {diagnostic}; could not record diagnostic: {log_error:#}"
-                ),
-            }
+                )),
+                Err(log_error) => Err(anyhow::anyhow!(
+                    "Codex reconciliation failed: {diagnostic}; could not record diagnostic: {log_error:#}"
+                )),
+            };
         }
     }
 
@@ -124,6 +123,8 @@ fn record_reconciliation_failure(diagnostic: &str) -> Result<PathBuf> {
         .with_context(|| format!("secure diagnostic log {}", path.display()))?;
     file.write_all(record.as_bytes())
         .with_context(|| format!("write diagnostic log {}", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("sync diagnostic log {}", path.display()))?;
     Ok(path)
 }
 

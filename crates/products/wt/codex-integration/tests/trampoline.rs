@@ -4,7 +4,7 @@ use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
+fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool, ignore_checks: bool) {
     let marker = home.join(".codex/reconciled");
     let _ = fs::remove_file(&marker);
     let mut command = Command::new("/bin/sh");
@@ -15,6 +15,10 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
         .env("HOME", home)
         .env("CODEX_HOME", home.join(".codex"))
         .env("WT_CODEX_TEST_ENV", "unchanged")
+        .env(
+            "IGNORE_CODEX_WT_CHECKS",
+            if ignore_checks { "true" } else { "false" },
+        )
         .env(
             "WT_CODEX_TEST_RECONCILE_FAIL",
             if reconciliation_fails { "1" } else { "0" },
@@ -33,23 +37,22 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
         .unwrap();
     let run = child.wait_with_output().unwrap();
 
-    assert_eq!(run.status.code(), Some(23));
-    assert_eq!(
-        String::from_utf8(run.stdout).unwrap(),
+    let blocked = reconciliation_fails && !ignore_checks;
+    assert_eq!(run.status.code(), Some(if blocked { 1 } else { 23 }));
+    let expected_stdout = if blocked {
+        String::new()
+    } else {
         format!(
             "reconciled={}\nargc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0077\nstdin=unchanged\npid={}\n",
-            if reconciliation_fails {
-                "not-refreshed"
-            } else {
-                "before-exec"
-            },
+            if ignore_checks { "not-refreshed" } else { "before-exec" },
             home.display(),
             pid
         )
-    );
-    let expected_stderr = if reconciliation_fails {
+    };
+    assert_eq!(String::from_utf8(run.stdout).unwrap(), expected_stdout);
+    let expected_stderr = if blocked {
         format!(
-            "wt-codex-integration: reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable; full diagnostic recorded at {}/.local/state/wt/codex-reconciliation.log\nstderr=unchanged\n",
+            "wt-codex-integration: Codex reconciliation failed: Codex app-server stopped before initialize replied: refresh unavailable; full diagnostic recorded at {}/.local/state/wt/codex-reconciliation.log\n",
             home.display()
         )
     } else {
@@ -57,7 +60,7 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
     };
     assert_eq!(String::from_utf8(run.stderr).unwrap(), expected_stderr);
     let log = home.join(".local/state/wt/codex-reconciliation.log");
-    if reconciliation_fails {
+    if blocked {
         let diagnostic = fs::read_to_string(&log).unwrap();
         assert!(diagnostic.starts_with("timestamp_unix="));
         assert!(diagnostic.contains(" pid="));
@@ -69,7 +72,7 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
             0o700
         );
         assert_eq!(fs::metadata(log).unwrap().mode() & 0o777, 0o600);
-    } else {
+    } else if !reconciliation_fails {
         assert!(!log.exists());
     }
 }
@@ -98,13 +101,12 @@ fn both_image_entrypoints_reconcile_then_exec_the_fixed_real_codex() {
             "        ;;\n",
             "      *'\"method\":\"thread/list\"'*)\n",
             "        id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
-            "        if \"$indexed\"; then data='[{\"id\":\"33333333-3333-4333-8333-333333333333\"}]'; else data='[]'; fi\n",
+            "        if \"$indexed\"; then sleep 0.1; : > \"$CODEX_HOME/reconciled\"; data='[{\"id\":\"33333333-3333-4333-8333-333333333333\"}]'; else data='[]'; fi\n",
             "        printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":%s,\"nextCursor\":null}}\\n' \"$id\" \"$data\"\n",
             "        ;;\n",
             "      *'\"method\":\"thread/read\"'*)\n",
             "        id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
             "        indexed=true\n",
-            "        : > \"$CODEX_HOME/reconciled\"\n",
             "        printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"thread\":{}}}\\n' \"$id\"\n",
             "        ;;\n",
             "    esac\n",
@@ -146,6 +148,7 @@ fn both_image_entrypoints_reconcile_then_exec_the_fixed_real_codex() {
     symlink(integration, user_bin.join("codex")).unwrap();
     symlink(integration, system_bin.join("codex")).unwrap();
 
-    run_codex(&user_bin.join("codex"), temp.path(), false);
-    run_codex(&system_bin.join("codex"), temp.path(), true);
+    run_codex(&user_bin.join("codex"), temp.path(), false, false);
+    run_codex(&system_bin.join("codex"), temp.path(), true, false);
+    run_codex(&system_bin.join("codex"), temp.path(), true, true);
 }
