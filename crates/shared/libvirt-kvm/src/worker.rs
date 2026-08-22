@@ -211,10 +211,12 @@ impl LibvirtProvider {
     }
 
     fn cleanup(&self, provider_id: &ProviderId, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
-        let mut errors = Vec::new();
         if let Err(error) = self.remove_domain(provider_id) {
-            errors.push(error.to_string());
+            return Err(WorkerError::new(format!(
+                "delete libvirt machine: {error}; retained machine files and disk because domain removal failed"
+            )));
         }
+        let mut errors = Vec::new();
         if let Err(error) = self.remove_files(provider_id) {
             errors.push(error.to_string());
         }

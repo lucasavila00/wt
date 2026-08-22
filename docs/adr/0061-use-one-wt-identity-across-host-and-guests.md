@@ -1,6 +1,6 @@
 # ADR 0061: Use one WT identity across host and guests
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-22
 - Amends: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md),
   [ADR 0046](0046-share-codex-auth-with-retained-worlds.md)

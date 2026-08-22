@@ -1,5 +1,6 @@
 mod builder;
 mod console;
+mod probe;
 mod recipe;
 
 #[cfg(test)]
@@ -335,7 +336,6 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         cmd!("qemu-img", "check", &paths.prepared),
         "check golden image",
     )?;
-
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
@@ -347,6 +347,14 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         packages,
     };
     let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
+    if let Err(primary) = probe::verify_publication(input, server, publication.image_path()) {
+        return match publication.discard(runner) {
+            Ok(()) => Err(primary),
+            Err(cleanup) => Err(primary.context(format!(
+                "discard staged publication after failed virtiofs probe: {cleanup:#}"
+            ))),
+        };
+    }
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(

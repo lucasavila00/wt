@@ -128,12 +128,12 @@ mod tests {
 
     #[test]
     fn domain_with_codex_mounts_has_virtiofs_support() {
-        insta::assert_snapshot!(
-            "domain_xml_with_codex_mounts",
-            test_domain_xml(Some(CodexMounts {
-                sessions: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
-                auth: PathBuf::from("/home/wt/.codex/.wt-auth"),
-            }))
-        );
+        let xml = test_domain_xml(Some(CodexMounts {
+            sessions: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
+            auth: PathBuf::from("/home/wt/.codex/.wt-auth"),
+        }));
+        assert_eq!(xml.matches("accessmode='passthrough'").count(), 2);
+        assert!(!xml.contains("<idmap"));
+        insta::assert_snapshot!("domain_xml_with_codex_mounts", xml);
     }
 }
