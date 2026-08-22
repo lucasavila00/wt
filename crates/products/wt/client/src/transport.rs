@@ -574,17 +574,17 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
+        let valid = br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
         assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
-            br#"{"protocol_version":7,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":8,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
             let error = decode_codex_sessions(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));

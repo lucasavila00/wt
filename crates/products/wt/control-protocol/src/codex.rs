@@ -44,6 +44,10 @@ pub struct CodexSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_user_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_user_message_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rollout_updated_at_unix_ms: Option<i64>,
     pub observations: Vec<CodexSessionObservation>,
 }

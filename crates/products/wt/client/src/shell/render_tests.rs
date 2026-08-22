@@ -254,7 +254,15 @@ fn control_ui_shows_codex_session_cards() {
                 context: "ars".into(),
                 session_id: Some(session_id),
                 timestamp: Some(now_ms()),
-                title: Some("Improve authentication diagnostics".into()),
+                latest_user_message: Some(
+                    concat!(
+                        "Show the latest authentication failure with enough context to act on it. ",
+                        "Include which credential source was selected, which host rejected it, ",
+                        "and the recovery command the user can run without exposing any secret ",
+                        "values or raw protocol diagnostics in the terminal session card."
+                    )
+                    .into(),
+                ),
                 kind: CodexCardKind::Observation {
                     world_id,
                     world_name: "dev".into(),
@@ -278,7 +286,9 @@ fn control_ui_shows_codex_session_cards() {
                 context: "ars".into(),
                 session_id: Some(unknown_session_id),
                 timestamp: Some(now_ms()),
-                title: Some("Investigate compacted session".into()),
+                latest_user_message: Some(
+                    "Investigate why this compacted session is unknown".into(),
+                ),
                 kind: CodexCardKind::Observation {
                     world_id: unknown_world_id,
                     world_name: "compact".into(),
@@ -298,7 +308,7 @@ fn control_ui_shows_codex_session_cards() {
                 "ars",
                 Uuid::parse_str("323e4567-e89b-12d3-a456-426614174000").unwrap(),
                 now_ms(),
-                Some("Review saved migration work".into()),
+                Some("Review the saved migration and identify the remaining steps".into()),
             ),
             CodexCard::context_error("lab", "context lab: SSH failed".into()),
         ],
@@ -337,7 +347,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
             context: "ars".into(),
             session_id: Some(session_id),
             timestamp: Some(now_ms()),
-            title: Some("Focus the session".into()),
+            latest_user_message: Some("Retry opening this session".into()),
             kind: CodexCardKind::Observation {
                 world_id,
                 world_name: "dev".into(),

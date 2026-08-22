@@ -228,10 +228,10 @@ fn resize_keeps_the_selected_card_in_its_viewport() {
     for _ in 0..5 {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), tall);
     }
-    assert_eq!(state.codex_offset(), 0);
+    assert_eq!(state.codex_offset(), 1);
 
     state.resize(Rect::new(0, 0, 64, 10));
-    assert_eq!(state.codex_offset(), 4);
+    assert_eq!(state.codex_offset(), 5);
 }
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {
@@ -249,7 +249,7 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
         context: "ars".into(),
         session_id: Some(session_id),
         timestamp: Some(index as i64),
-        title: Some(format!("Session {index}")),
+        latest_user_message: Some(format!("Latest message {index}")),
         kind: CodexCardKind::Observation {
             world_id,
             world_name: "dev".into(),
