@@ -32,16 +32,18 @@ pub(crate) fn delete_world(screen: &mut Screen, name: &str) -> Result<()> {
         .wait_for_text("F5: disable navbar")?
         .press(Key::Up)?
         .wait_for_text("Worlds ·")?;
+    log_screen(screen, "control mode is open");
     eprintln!("WT shell E2E: delete world {name}");
     open_command(screen, "delete", "Delete world")?;
     screen
         .type_text(name)?
         .press(Key::Enter)?
-        .wait_for_text("Delete world?")?
+        .wait_for_text("Delete world?")?;
+    eprintln!("WT shell E2E: confirm deletion of {name}");
+    screen
         .press(Key::Right)?
         .press(Key::Enter)?
-        .wait_for_text(&format!("Deleting {name}…"))?
-        .wait_for_text_gone(&format!("Deleting {name}…"))?;
+        .wait_for_text_gone(name)?;
     eprintln!("WT shell E2E: world {name} was deleted");
     Ok(())
 }
@@ -49,11 +51,16 @@ pub(crate) fn delete_world(screen: &mut Screen, name: &str) -> Result<()> {
 fn open_command(screen: &mut Screen, query: &str, expected: &str) -> Result<()> {
     screen
         .press(Key::Function(1))?
-        .wait_for_text("Command Palette")?
-        .type_text(query)?
-        .press(Key::Enter)?
-        .wait_for_text(expected)?;
+        .wait_for_text("Command Palette")?;
+    log_screen(screen, "command palette is open");
+    screen.type_text(query)?;
+    log_screen(screen, &format!("command query {query:?} is entered"));
+    screen.press(Key::Enter)?.wait_for_text(expected)?;
     Ok(())
+}
+
+fn log_screen(screen: &Screen, label: &str) {
+    eprintln!("WT shell E2E: {label}\n{}", screen.contents());
 }
 
 fn wait_for_slow_text(screen: &mut Screen, expected: &str, timeout: Duration) -> Result<()> {

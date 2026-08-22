@@ -236,6 +236,12 @@ impl ShellModel {
                     self.control.close();
                     self.mode = Mode::World;
                 } else {
+                    if self.control.palette().is_open() {
+                        return self
+                            .control
+                            .handle_key(key, area)
+                            .map_or(InputRoute::Consumed, route);
+                    }
                     if self.has_worlds()
                         && self.control.activity() == super::control::Activity::Worlds
                     {
@@ -463,6 +469,22 @@ mod tests {
         model.handle_key(key(KeyCode::Enter), area());
         assert_eq!(model.active_world(), "two");
         assert_eq!(model.mode(), Mode::World);
+    }
+
+    #[test]
+    fn command_palette_executes_from_the_worlds_activity() {
+        let mut model = ShellModel::new(vec![world("one")]);
+        model.handle_key(key(KeyCode::Tab), area());
+        model.handle_key(key(KeyCode::F(1)), area());
+        for character in "delete".chars() {
+            model.handle_key(key(KeyCode::Char(character)), area());
+        }
+
+        assert_eq!(
+            model.handle_key(key(KeyCode::Enter), area()),
+            InputRoute::Command(ControlCommand::DeleteWorld)
+        );
+        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
