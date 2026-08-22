@@ -2,12 +2,10 @@ use anyhow::{bail, Context, Result};
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-const REAL_NAME: &str = ".codex.wt-real";
-const NEW_NAME: &str = ".codex.wt-new";
-const REMOVE_NAME: &str = ".codex.wt-remove";
+const REAL_CODEX_SUFFIX: &str = ".codex/packages/standalone/current/bin/codex";
 const LEGACY_CONFIG: &str = r#"approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
@@ -49,48 +47,30 @@ type = "command"
 command = '''wt-codex-integration report-hook'''
 "#;
 
-#[derive(Debug)]
-pub(crate) enum InstallOutcome {
-    Installed(PathBuf),
-    AlreadyInstalled(PathBuf),
-}
-
-impl InstallOutcome {
-    pub(crate) fn message(&self) -> String {
-        match self {
-            Self::Installed(path) => format!("Installed Codex trampoline: {}", path.display()),
-            Self::AlreadyInstalled(path) => {
-                format!("Codex trampoline is already installed: {}", path.display())
-            }
-        }
-    }
-}
-
 pub(crate) fn invoked_as_codex(args: &[OsString]) -> Result<bool> {
     let argv0 = args.first().context("missing process name")?;
     Ok(Path::new(argv0).file_name() == Some(OsStr::new("codex")))
 }
 
-pub(crate) fn active_installation(args: &[OsString]) -> Result<PathBuf> {
-    let argv0 = args.first().context("missing process name")?;
-    let shim = command_path(argv0)?;
-    let real_codex = sibling(&shim, REAL_NAME)?;
-    if !real_codex.exists() {
-        bail!(
-            "the Codex trampoline at {} has no saved CLI at {}",
-            shim.display(),
-            real_codex.display()
-        );
-    }
-    Ok(real_codex)
+pub(crate) fn real_codex() -> Result<PathBuf> {
+    let home = env::var_os("HOME").context("HOME is not set")?;
+    real_codex_at(Path::new(&home))
 }
 
-pub(crate) fn install() -> Result<InstallOutcome> {
-    let wt_codex_integration =
-        env::current_exe().context("find the wt-codex-integration executable")?;
-    let codex = find_in_path("codex")?;
-    install_user_config()?;
-    install_at(&codex, &wt_codex_integration)
+fn real_codex_at(home: &Path) -> Result<PathBuf> {
+    let path = home.join(REAL_CODEX_SUFFIX);
+    match path.metadata() {
+        Ok(metadata) if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 => Ok(path),
+        Ok(_) => bail!(
+            "real Codex CLI is missing or not executable at {}; recreate this world from a verified WT image",
+            path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => bail!(
+            "real Codex CLI is missing or not executable at {}; recreate this world from a verified WT image",
+            path.display()
+        ),
+        Err(error) => Err(error).with_context(|| format!("inspect real Codex CLI {}", path.display())),
+    }
 }
 
 pub(crate) fn install_user_config() -> Result<()> {
@@ -103,43 +83,6 @@ fn codex_home() -> Result<PathBuf> {
     }
     let home = env::var_os("HOME").context("neither CODEX_HOME nor HOME is set")?;
     Ok(Path::new(&home).join(".codex"))
-}
-
-pub(crate) fn prepare_shared_sessions() -> Result<()> {
-    let root = codex_home()?.join("sessions");
-    if !root.exists() {
-        return Ok(());
-    }
-    repair_session_children(&root)
-}
-
-fn repair_session_children(directory: &Path) -> Result<()> {
-    for entry in fs::read_dir(directory)
-        .with_context(|| format!("read Codex session directory {}", directory.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        let metadata = fs::symlink_metadata(&path)?;
-        if metadata.is_dir() {
-            add_group_permissions(&path, &metadata, 0o050)?;
-            repair_session_children(&path)?;
-        } else if metadata.is_file()
-            && entry.file_name().to_string_lossy().starts_with("rollout-")
-            && path.extension() == Some(OsStr::new("jsonl"))
-        {
-            add_group_permissions(&path, &metadata, 0o040)?;
-        }
-    }
-    Ok(())
-}
-
-fn add_group_permissions(path: &Path, metadata: &fs::Metadata, permissions: u32) -> Result<()> {
-    let mode = metadata.permissions().mode();
-    if mode & permissions == permissions {
-        return Ok(());
-    }
-    fs::set_permissions(path, fs::Permissions::from_mode(mode | permissions))
-        .with_context(|| format!("make Codex session path group-readable: {}", path.display()))
 }
 
 fn install_config(codex_home: &Path) -> Result<()> {
@@ -163,174 +106,31 @@ fn install_config(codex_home: &Path) -> Result<()> {
         .with_context(|| format!("write Codex configuration {}", path.display()))
 }
 
-pub(crate) fn uninstall() -> Result<PathBuf> {
-    let wt_codex_integration =
-        env::current_exe().context("find the wt-codex-integration executable")?;
-    let codex = find_in_path("codex")?;
-    uninstall_at(&codex, &wt_codex_integration)
-}
-
-pub(crate) fn real_codex_in_path() -> Result<PathBuf> {
-    let codex = find_in_path("codex")?;
-    let wt_codex_integration =
-        env::current_exe().context("find the wt-codex-integration executable")?;
-    if is_symlink_to(&codex, &wt_codex_integration)? {
-        let real = sibling(&codex, REAL_NAME)?;
-        if !real.exists() {
-            bail!("Codex trampoline has no saved CLI: {}", real.display());
-        }
-        Ok(real)
-    } else {
-        Ok(codex)
-    }
-}
-
-fn install_at(codex: &Path, wt_codex_integration: &Path) -> Result<InstallOutcome> {
-    let real = sibling(codex, REAL_NAME)?;
-    if is_symlink_to(codex, wt_codex_integration)? {
-        if real.exists() {
-            return Ok(InstallOutcome::AlreadyInstalled(codex.to_path_buf()));
-        }
-        bail!("Codex trampoline has no saved CLI: {}", real.display());
-    }
-    if real.exists() {
-        bail!(
-            "refusing to replace Codex because the saved path already exists: {}",
-            real.display()
-        );
-    }
-
-    let temporary = sibling(codex, NEW_NAME)?;
-    if temporary.exists() {
-        bail!(
-            "stale trampoline install path exists: {}",
-            temporary.display()
-        );
-    }
-    fs::rename(codex, &real)
-        .with_context(|| format!("save the real Codex CLI as {}", real.display()))?;
-    if let Err(error) =
-        symlink(wt_codex_integration, &temporary).and_then(|()| fs::rename(&temporary, codex))
-    {
-        let _ = fs::remove_file(&temporary);
-        let _ = fs::rename(&real, codex);
-        return Err(error).context("install the Codex trampoline");
-    }
-    Ok(InstallOutcome::Installed(codex.to_path_buf()))
-}
-
-fn uninstall_at(codex: &Path, wt_codex_integration: &Path) -> Result<PathBuf> {
-    if !is_symlink_to(codex, wt_codex_integration)? {
-        bail!("Codex trampoline is not installed at {}", codex.display());
-    }
-    let real = sibling(codex, REAL_NAME)?;
-    if !real.exists() {
-        bail!("Codex trampoline has no saved CLI: {}", real.display());
-    }
-    let temporary = sibling(codex, REMOVE_NAME)?;
-    if temporary.exists() {
-        bail!(
-            "stale trampoline removal path exists: {}",
-            temporary.display()
-        );
-    }
-
-    fs::rename(codex, &temporary).context("stage the Codex trampoline for removal")?;
-    if let Err(error) = fs::rename(&real, codex) {
-        let _ = fs::rename(&temporary, codex);
-        return Err(error).context("restore the real Codex CLI");
-    }
-    fs::remove_file(&temporary).context("remove the Codex trampoline")?;
-    Ok(codex.to_path_buf())
-}
-
-fn command_path(argv0: &OsStr) -> Result<PathBuf> {
-    let path = Path::new(argv0);
-    if path.components().count() > 1 {
-        return if path.is_absolute() {
-            Ok(path.to_path_buf())
-        } else {
-            env::current_dir()
-                .context("read the current directory")
-                .map(|cwd| cwd.join(path))
-        };
-    }
-    find_in_path(argv0)
-}
-
-fn find_in_path(name: impl AsRef<OsStr>) -> Result<PathBuf> {
-    let path = env::var_os("PATH").context("PATH is not set")?;
-    for directory in env::split_paths(&path) {
-        let candidate = directory.join(name.as_ref());
-        if candidate
-            .metadata()
-            .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-        {
-            return Ok(candidate);
-        }
-    }
-    bail!("Codex CLI was not found in PATH")
-}
-
-fn sibling(path: &Path, name: &str) -> Result<PathBuf> {
-    let parent = path
-        .parent()
-        .with_context(|| format!("path has no parent: {}", path.display()))?;
-    Ok(parent.join(name))
-}
-
-fn is_symlink_to(path: &Path, target: &Path) -> Result<bool> {
-    if !path
-        .symlink_metadata()
-        .map(|metadata| metadata.file_type().is_symlink())
-        .unwrap_or(false)
-    {
-        return Ok(false);
-    }
-    let actual =
-        fs::canonicalize(path).with_context(|| format!("resolve symlink {}", path.display()))?;
-    let expected = fs::canonicalize(target)
-        .with_context(|| format!("resolve executable {}", target.display()))?;
-    Ok(actual == expected)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::tempdir;
 
-    fn executable(path: &Path, contents: &str) {
-        fs::write(path, contents).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    #[test]
+    fn resolves_the_fixed_standalone_codex_path() {
+        let temp = tempdir().unwrap();
+        let real = temp.path().join(REAL_CODEX_SUFFIX);
+        fs::create_dir_all(real.parent().unwrap()).unwrap();
+        fs::write(&real, "real codex").unwrap();
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(real_codex_at(temp.path()).unwrap(), real);
     }
 
     #[test]
-    fn install_is_idempotent_and_uninstall_restores_codex() {
+    fn missing_real_codex_has_an_actionable_error() {
         let temp = tempdir().unwrap();
-        let codex = temp.path().join("codex");
-        let wt_codex_integration = temp.path().join("wt-codex-integration");
-        executable(&codex, "real codex");
-        executable(&wt_codex_integration, "wt codex");
+        let error = real_codex_at(temp.path())
+            .unwrap_err()
+            .to_string()
+            .replace(&temp.path().display().to_string(), "<HOME>");
 
-        assert!(matches!(
-            install_at(&codex, &wt_codex_integration).unwrap(),
-            InstallOutcome::Installed(_)
-        ));
-        assert_eq!(fs::canonicalize(&codex).unwrap(), wt_codex_integration);
-        assert_eq!(
-            fs::read_to_string(temp.path().join(REAL_NAME)).unwrap(),
-            "real codex"
-        );
-        assert!(matches!(
-            install_at(&codex, &wt_codex_integration).unwrap(),
-            InstallOutcome::AlreadyInstalled(_)
-        ));
-
-        uninstall_at(&codex, &wt_codex_integration).unwrap();
-        assert_eq!(fs::read_to_string(&codex).unwrap(), "real codex");
-        assert!(!temp.path().join(REAL_NAME).exists());
+        insta::assert_snapshot!(error, @"real Codex CLI is missing or not executable at <HOME>/.codex/packages/standalone/current/bin/codex; recreate this world from a verified WT image");
     }
 
     #[test]
@@ -385,36 +185,6 @@ mod tests {
     }
 
     #[test]
-    fn repairs_existing_shared_session_permissions_without_touching_other_files() {
-        let temp = tempdir().unwrap();
-        let sessions = temp.path().join("sessions");
-        let day = sessions.join("2026/08/22");
-        fs::create_dir_all(&day).unwrap();
-        let rollout = day.join("rollout-session.jsonl");
-        let other = day.join("state.json");
-        fs::write(&rollout, "rollout").unwrap();
-        fs::write(&other, "state").unwrap();
-        fs::set_permissions(&day, fs::Permissions::from_mode(0o2700)).unwrap();
-        fs::set_permissions(&rollout, fs::Permissions::from_mode(0o600)).unwrap();
-        fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).unwrap();
-
-        repair_session_children(&sessions).unwrap();
-
-        assert_eq!(
-            fs::metadata(&day).unwrap().permissions().mode() & 0o7777,
-            0o2750
-        );
-        assert_eq!(
-            fs::metadata(&rollout).unwrap().permissions().mode() & 0o777,
-            0o640
-        );
-        assert_eq!(
-            fs::metadata(&other).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
-
-    #[test]
     fn config_install_upgrades_the_previous_wt_config() {
         let temp = tempdir().unwrap();
         let codex_home = temp.path().join(".codex");
@@ -426,16 +196,6 @@ mod tests {
         assert_eq!(
             fs::read_to_string(codex_home.join("config.toml")).unwrap(),
             CONFIG
-        );
-    }
-
-    #[test]
-    fn uninstall_refuses_a_foreign_codex_command() {
-        insta::assert_snapshot!(
-            uninstall_at(Path::new("/codex"), Path::new("/wt-codex-integration"))
-                .unwrap_err()
-                .to_string(),
-            @"Codex trampoline is not installed at /codex"
         );
     }
 }

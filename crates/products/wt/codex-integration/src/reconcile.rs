@@ -3,47 +3,29 @@ use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{BTreeSet, HashSet};
 use std::env;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 
 const TIMEOUT: Duration = Duration::from_secs(20);
 const STDERR_LIMIT: usize = 64 * 1024;
-const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 
-pub(crate) struct ReconcileResult {
-    pub(crate) already_indexed: usize,
-    pub(crate) reconciled: usize,
-    pub(crate) warnings: Vec<String>,
-}
-
-pub(crate) fn reconcile() -> Result<ReconcileResult> {
-    let codex = install::real_codex_in_path()?;
+pub(crate) fn reconcile() -> Result<()> {
+    let codex = install::real_codex()?;
     reconcile_with_codex(&codex)
 }
 
-pub(crate) fn reconcile_with_codex(codex: &Path) -> Result<ReconcileResult> {
+pub(crate) fn reconcile_with_codex(codex: &Path) -> Result<()> {
     let home = codex_home()?;
     reconcile_home(codex, &home)
 }
 
-fn reconcile_home(codex: &Path, home: &Path) -> Result<ReconcileResult> {
-    let (ids, warnings) = rollout_ids(&home.join("sessions"))?;
-    if ids.is_empty() {
-        return Ok(ReconcileResult {
-            already_indexed: 0,
-            reconciled: 0,
-            warnings,
-        });
-    }
-
+fn reconcile_home(codex: &Path, home: &Path) -> Result<()> {
     let mut server = AppServer::start(codex, home, TIMEOUT)?;
     let initialized: InitializeResult = server.call(
         "initialize",
@@ -61,52 +43,12 @@ fn reconcile_home(codex: &Path, home: &Path) -> Result<ReconcileResult> {
         );
     }
 
-    let mut state_only = true;
-    let discovered = match server.list_ids(true) {
-        Ok(ids) => ids,
-        Err(error)
-            if error
-                .downcast_ref::<RpcError>()
-                .is_some_and(RpcError::is_invalid_params) =>
-        {
-            state_only = false;
-            server.list_ids(false)?
-        }
-        Err(error) => return Err(error),
-    };
-    let already_indexed = ids.iter().filter(|id| discovered.contains(*id)).count();
-    let missing = ids
-        .iter()
-        .filter(|id| !discovered.contains(*id))
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut picker_visible = BTreeSet::new();
-    for id in &missing {
-        let read: ThreadReadResult = server.call(
-            "thread/read",
-            json!({"threadId": id, "includeTurns": false}),
-        )?;
-        if !read.thread.preview.is_empty() {
-            picker_visible.insert(id.clone());
-        }
-    }
-
-    let verified = server.list_ids(state_only)?;
-    let absent = picker_visible
-        .iter()
-        .filter(|id| !verified.contains(*id))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !absent.is_empty() {
-        bail!("Codex did not index these sessions: {}", absent.join(", "));
-    }
+    // Codex documents the default thread/list behavior as scanning rollout
+    // files and repairing the state database before returning picker results.
+    let _: Value = server.call("thread/list", json!({"limit": 1}))?;
     server.close();
 
-    Ok(ReconcileResult {
-        already_indexed,
-        reconciled: missing.iter().filter(|id| verified.contains(*id)).count(),
-        warnings,
-    })
+    Ok(())
 }
 
 fn codex_home() -> Result<PathBuf> {
@@ -116,100 +58,6 @@ fn codex_home() -> Result<PathBuf> {
             .map(PathBuf::from)
             .map(|home| home.join(".codex"))
             .context("neither CODEX_HOME nor HOME is set"),
-    }
-}
-
-fn rollout_ids(root: &Path) -> Result<(BTreeSet<String>, Vec<String>)> {
-    if !root.exists() {
-        return Ok((BTreeSet::new(), Vec::new()));
-    }
-    let mut files = Vec::new();
-    collect_rollouts(root, &mut files)?;
-    files.sort();
-
-    let mut ids = BTreeSet::new();
-    let mut warnings = Vec::new();
-    for path in files {
-        match rollout_id(&path) {
-            Ok(Some(id)) => {
-                ids.insert(id);
-            }
-            Ok(None) => {}
-            Err(error) => warnings.push(format!("skip {}: {error:#}", path.display())),
-        }
-    }
-    Ok((ids, warnings))
-}
-
-fn collect_rollouts(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(directory)
-        .with_context(|| format!("read session directory {}", directory.display()))?
-    {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            collect_rollouts(&entry.path(), files)?;
-        } else if file_type.is_file()
-            && entry.file_name().to_string_lossy().starts_with("rollout-")
-            && entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "jsonl")
-        {
-            files.push(entry.path());
-        }
-    }
-    Ok(())
-}
-
-fn rollout_id(path: &Path) -> Result<Option<String>> {
-    let file = File::open(path).with_context(|| format!("open rollout {}", path.display()))?;
-    let mut line = String::new();
-    BufReader::new(file)
-        .take(MAX_SESSION_META_BYTES + 1)
-        .read_line(&mut line)?;
-    if line.is_empty() {
-        bail!("rollout is empty");
-    }
-    if line.len() as u64 > MAX_SESSION_META_BYTES {
-        bail!("first rollout record is too large");
-    }
-    let record: SessionRecord =
-        serde_json::from_str(&line).context("first rollout record is not valid JSON")?;
-    if record.kind != "session_meta" {
-        bail!("first rollout record is not session_meta");
-    }
-    if record.payload.is_subagent() {
-        return Ok(None);
-    }
-    let id = record.payload.id.context("session_meta has no thread ID")?;
-    let parsed = Uuid::parse_str(&id).context("session_meta thread ID is not a UUID")?;
-    let canonical = parsed.hyphenated().to_string();
-    if id != canonical {
-        bail!("session_meta thread ID is not canonical");
-    }
-    Ok(Some(id))
-}
-
-#[derive(Deserialize)]
-struct SessionRecord {
-    #[serde(rename = "type")]
-    kind: String,
-    payload: SessionPayload,
-}
-
-#[derive(Deserialize)]
-struct SessionPayload {
-    id: Option<String>,
-    #[serde(default)]
-    source: Value,
-}
-
-impl SessionPayload {
-    fn is_subagent(&self) -> bool {
-        self.source.as_object().is_some_and(|source| {
-            source.contains_key("subagent") || source.contains_key("subAgent")
-        })
     }
 }
 
@@ -225,12 +73,6 @@ struct RpcError {
     message: String,
     #[serde(default)]
     data: Value,
-}
-
-impl RpcError {
-    fn is_invalid_params(&self) -> bool {
-        self.code == -32602
-    }
 }
 
 impl std::fmt::Display for RpcError {
@@ -384,32 +226,6 @@ impl AppServer {
         Ok(())
     }
 
-    fn list_ids(&mut self, state_only: bool) -> Result<HashSet<String>> {
-        let mut ids = HashSet::new();
-        let mut cursor = None;
-        let mut cursors = HashSet::new();
-        for _ in 0..10_000 {
-            let mut params = json!({"limit": 100});
-            if state_only {
-                params["useStateDbOnly"] = Value::Bool(true);
-            }
-            if let Some(value) = cursor.take() {
-                params["cursor"] = value;
-            }
-            let page: ThreadPage = self.call("thread/list", params)?;
-            ids.extend(page.data.into_iter().map(|thread| thread.id));
-            let Some(next) = page.next_cursor else {
-                return Ok(ids);
-            };
-            let key = next.to_string();
-            if !cursors.insert(key) {
-                bail!("Codex thread/list repeated a pagination cursor");
-            }
-            cursor = Some(next);
-        }
-        bail!("Codex thread/list exceeded its pagination limit")
-    }
-
     fn stderr_suffix(&self) -> String {
         let text = String::from_utf8_lossy(&self.stderr.lock().unwrap())
             .trim()
@@ -438,29 +254,6 @@ impl Drop for AppServer {
     fn drop(&mut self) {
         self.close();
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ThreadPage {
-    data: Vec<ThreadSummary>,
-    next_cursor: Option<Value>,
-}
-
-#[derive(Deserialize)]
-struct ThreadSummary {
-    id: String,
-}
-
-#[derive(Deserialize)]
-struct ThreadReadResult {
-    thread: ReadThread,
-}
-
-#[derive(Deserialize)]
-struct ReadThread {
-    #[serde(default)]
-    preview: String,
 }
 
 fn drain_stderr(mut pipe: impl Read, tail: Arc<Mutex<Vec<u8>>>) {
@@ -505,24 +298,15 @@ mod tests {
         let script = format!(
             r#"#!/bin/sh
 set -eu
-indexed=false
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
       printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"codexHome":"{}"}}}}'
       ;;
     *'"method":"thread/list"'*)
+      case "$line" in *useStateDbOnly*) exit 42 ;; esac
       id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-      if "$indexed"; then
-        printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[{{"id":"{}"}}],"nextCursor":null}}}}\n' "$id"
-      else
-        printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[],"nextCursor":null}}}}\n' "$id"
-      fi
-      ;;
-    *'"method":"thread/read"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-      indexed=true
-      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"thread":{{"preview":"shared session"}}}}}}\n' "$id"
+      printf '{{"jsonrpc":"2.0","id":%s,"result":{{"data":[{{"id":"{}"}}],"nextCursor":null}}}}\n' "$id"
       ;;
   esac
 done
@@ -535,7 +319,7 @@ done
     }
 
     #[test]
-    fn asks_codex_to_index_a_missing_rollout() {
+    fn asks_codex_to_scan_and_repair_the_session_index() {
         let temp = tempdir().unwrap();
         let home = temp.path().join("codex-home");
         fs::create_dir(&home).unwrap();
@@ -543,42 +327,7 @@ done
         let codex = temp.path().join("codex");
         fake_codex(&codex, &home);
 
-        let result = reconcile_home(&codex, &home).unwrap();
-        assert_eq!(result.already_indexed, 0);
-        assert_eq!(result.reconciled, 1);
-        assert!(result.warnings.is_empty());
-    }
-
-    #[test]
-    fn skips_a_malformed_rollout_with_a_clear_warning() {
-        let temp = tempdir().unwrap();
-        let sessions = temp.path().join("sessions");
-        fs::create_dir(&sessions).unwrap();
-        let path = sessions.join("rollout-broken.jsonl");
-        fs::write(&path, "not json\n").unwrap();
-
-        let (ids, warnings) = rollout_ids(&sessions).unwrap();
-        assert!(ids.is_empty());
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("first rollout record is not valid JSON"));
-    }
-
-    #[test]
-    fn does_not_reconcile_subagent_rollouts() {
-        let temp = tempdir().unwrap();
-        let sessions = temp.path().join("sessions/2026/08/20");
-        fs::create_dir_all(&sessions).unwrap();
-        fs::write(
-            sessions.join(format!("rollout-2026-08-20T10-00-00-{ID}.jsonl")),
-            format!(
-                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{ID}\",\"source\":{{\"subagent\":{{}}}}}}}}\n"
-            ),
-        )
-        .unwrap();
-
-        let (ids, warnings) = rollout_ids(&temp.path().join("sessions")).unwrap();
-        assert!(ids.is_empty());
-        assert!(warnings.is_empty());
+        reconcile_home(&codex, &home).unwrap();
     }
 
     #[test]
@@ -610,10 +359,7 @@ done
         )
         .unwrap();
 
-        let first = reconcile_home(Path::new("codex"), &home).unwrap();
-        assert_eq!(first.already_indexed + first.reconciled, 1);
-        let second = reconcile_home(Path::new("codex"), &home).unwrap();
-        assert_eq!(second.already_indexed, 1);
-        assert_eq!(second.reconciled, 0);
+        reconcile_home(Path::new("codex"), &home).unwrap();
+        reconcile_home(Path::new("codex"), &home).unwrap();
     }
 }
