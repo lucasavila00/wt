@@ -385,10 +385,12 @@ fn refresh_title(label: &str, updated_at: Option<&str>, failure: Option<&[String
 }
 
 fn worlds_refresh_title(state: &ControlState) -> String {
-    if state.worlds_refresh_failed() {
+    if let Some(error) = state.worlds_refresh_failure() {
         return state.worlds_updated_at().map_or_else(
-            || "Worlds · Refresh failed".into(),
-            |updated_at| format!("Worlds · Refresh failed · Showing data from {updated_at}"),
+            || format!("Worlds · Refresh failed: {error}"),
+            |updated_at| {
+                format!("Worlds · Refresh failed: {error} · Showing data from {updated_at}")
+            },
         );
     }
     refresh_title("Worlds", state.worlds_updated_at(), None)

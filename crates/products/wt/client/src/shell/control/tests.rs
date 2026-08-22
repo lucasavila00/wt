@@ -116,8 +116,8 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
 fn snapshot_times_track_the_last_applied_snapshot() {
     let mut state = ControlState::default();
 
-    state.set_worlds_updated_at("2026-08-21T20:00:00Z".into());
-    state.set_worlds_updated_at("2026-08-21T20:00:05Z".into());
+    state.finish_worlds_refresh(Ok("2026-08-21T20:00:00Z".into()));
+    state.finish_worlds_refresh(Ok("2026-08-21T20:00:05Z".into()));
     state.set_codex(Vec::new(), "2026-08-21T20:00:01Z".into(), area());
     state.set_codex(Vec::new(), "2026-08-21T20:00:06Z".into(), area());
 

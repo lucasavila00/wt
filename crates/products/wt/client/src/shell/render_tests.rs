@@ -248,7 +248,7 @@ fn control_ui_shows_world_cards() {
         "2026-08-21T23:26:52Z".into(),
         Rect::new(0, 0, 100, 25),
     );
-    model.finish_worlds_refresh(Some("2026-08-21T23:26:52Z".into()));
+    model.finish_worlds_refresh(Ok("2026-08-21T23:26:52Z".into()));
     press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 25));
     let parser = parser();
 
@@ -525,19 +525,17 @@ fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
 #[test]
 fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
     let mut state = ControlState::default();
-    state.set_worlds_refresh_failed(true);
-    assert_eq!(worlds_refresh_title(&state), "Worlds · Refresh failed");
-
-    state.set_worlds_updated_at("2026-08-22T19:29:38Z".into());
+    state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
+    state.finish_worlds_refresh(Err("ars: request timed out after 60s".into()));
     assert_eq!(
         worlds_refresh_title(&state),
-        "Worlds · Refresh failed · Showing data from 2026-08-22T19:29:38Z"
+        "Worlds · Refresh failed: ars: request timed out after 60s · Showing data from 2026-08-22T19:29:38Z"
     );
 
-    state.set_worlds_refresh_failed(false);
+    state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
     assert_eq!(
         worlds_refresh_title(&state),
-        "Worlds · Last updated 2026-08-22T19:29:38Z"
+        "Worlds · Last updated 2026-08-22T19:30:00Z"
     );
 }
 

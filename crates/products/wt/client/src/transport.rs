@@ -26,6 +26,10 @@ pub struct ContextError {
 }
 
 impl ContextError {
+    pub fn summary(&self) -> &str {
+        &self.summary
+    }
+
     fn body(&self) -> String {
         let mut output = format!(
             "context {} could not be queried: {}\n",
