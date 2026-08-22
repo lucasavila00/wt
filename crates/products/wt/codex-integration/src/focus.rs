@@ -6,6 +6,47 @@ use wt_agent_tool_gateway::{
 };
 
 pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
+    let expected = inspect(session_id, tmux_session, pane_id)?;
+
+    let output = Command::new("/usr/bin/tmux")
+        .args([
+            "select-window",
+            "-t",
+            pane_id,
+            ";",
+            "select-pane",
+            "-t",
+            pane_id,
+        ])
+        .output()
+        .context("focus Codex Byobu target")?;
+    if !output.status.success() || !output.stdout.is_empty() {
+        bail!(
+            "could not focus Codex Byobu target: status {}; stdout {}; stderr {}",
+            output.status,
+            escaped(&output.stdout),
+            escaped(&output.stderr)
+        );
+    }
+    Ok(expected)
+}
+
+pub(crate) fn capture(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<Vec<u8>> {
+    inspect(session_id, tmux_session, pane_id)?;
+    let output = Command::new("/usr/bin/tmux")
+        .args(["capture-pane", "-e", "-p", "-t", pane_id])
+        .output()
+        .context("capture Codex Byobu target")?;
+    if !output.status.success() {
+        bail!(
+            "could not capture Codex Byobu target: status {}",
+            output.status
+        );
+    }
+    Ok(output.stdout)
+}
+
+fn inspect(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
     if !valid_codex_tmux_session(tmux_session) {
         bail!("invalid Codex tmux session: {tmux_session}");
     }
@@ -37,26 +78,6 @@ pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Resu
         );
     }
 
-    let output = Command::new("/usr/bin/tmux")
-        .args([
-            "select-window",
-            "-t",
-            pane_id,
-            ";",
-            "select-pane",
-            "-t",
-            pane_id,
-        ])
-        .output()
-        .context("focus Codex Byobu target")?;
-    if !output.status.success() || !output.stdout.is_empty() {
-        bail!(
-            "could not focus Codex Byobu target: status {}; stdout {}; stderr {}",
-            output.status,
-            escaped(&output.stdout),
-            escaped(&output.stderr)
-        );
-    }
     Ok(expected)
 }
 
@@ -77,6 +98,14 @@ mod tests {
         );
         insta::assert_snapshot!(
             focus(session_id, "wt-host", "%bad").unwrap_err(),
+            @"invalid Codex pane ID: %bad"
+        );
+        insta::assert_snapshot!(
+            capture(session_id, "other", "%1").unwrap_err(),
+            @"invalid Codex tmux session: other"
+        );
+        insta::assert_snapshot!(
+            capture(session_id, "wt-host", "%bad").unwrap_err(),
             @"invalid Codex pane ID: %bad"
         );
     }

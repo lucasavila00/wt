@@ -3,6 +3,8 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
+pub(super) use super::activity::Activity;
+
 pub(super) const COMMANDS: [ControlCommand; 2] =
     [ControlCommand::NewWorld, ControlCommand::DeleteWorld];
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
@@ -154,21 +156,6 @@ impl CodexCard {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Activity {
-    Worlds,
-    Codex,
-}
-
-impl Activity {
-    fn next(self) -> Self {
-        match self {
-            Self::Worlds => Self::Codex,
-            Self::Codex => Self::Worlds,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ControlCommand {
     NewWorld,
     DeleteWorld,
@@ -310,11 +297,20 @@ impl ControlState {
             return None;
         }
         match key.code {
-            KeyCode::Tab => self.activity = self.activity.next(),
+            KeyCode::Tab => {
+                self.activity = self.activity.next();
+                self.keep_codex_selection_visible(area);
+            }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
-            KeyCode::Up if self.activity == Activity::Codex => self.move_codex(-1, area),
-            KeyCode::Down if self.activity == Activity::Codex => self.move_codex(1, area),
-            KeyCode::Enter if self.activity == Activity::Codex => {
+            KeyCode::Up if self.activity != Activity::Worlds => {
+                self.move_codex(-(super::live::columns(area) as isize), area)
+            }
+            KeyCode::Down if self.activity != Activity::Worlds => {
+                self.move_codex(super::live::columns(area) as isize, area)
+            }
+            KeyCode::Left if self.activity == Activity::Live => self.move_codex(-1, area),
+            KeyCode::Right if self.activity == Activity::Live => self.move_codex(1, area),
+            KeyCode::Enter if self.activity != Activity::Worlds => {
                 return self
                     .activate_selected()
                     .map(Box::new)
@@ -334,12 +330,12 @@ impl ControlState {
             return (true, None);
         }
         match mouse.kind {
-            MouseEventKind::ScrollUp if self.activity == Activity::Codex => {
-                self.move_codex(-3, area);
+            MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
+                self.move_codex(-(super::live::columns(area) as isize), area);
                 return (true, None);
             }
-            MouseEventKind::ScrollDown if self.activity == Activity::Codex => {
-                self.move_codex(3, area);
+            MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
+                self.move_codex(super::live::columns(area) as isize, area);
                 return (true, None);
             }
             MouseEventKind::Down(MouseButton::Left) => {}
@@ -372,16 +368,18 @@ impl ControlState {
             }
             return (true, None);
         }
-        if let Some(activity) = activity_at_position(area, mouse.column, mouse.row) {
+        if let Some(activity) = super::activity::at_position(area, mouse.column, mouse.row) {
             self.activity = activity;
+            self.keep_codex_selection_visible(area);
             return (true, None);
         }
-        if self.activity == Activity::Codex {
+        if self.activity != Activity::Worlds {
             if self.opening.is_some() {
                 return (true, None);
             }
-            if let Some(index) = codex_card_at_position(
+            if let Some(index) = session_card_at_position(
                 area,
+                self.activity,
                 self.codex_offset,
                 self.codex.len(),
                 mouse.column,
@@ -435,7 +433,16 @@ impl ControlState {
             .saturating_add_signed(delta)
             .min(self.codex.len().saturating_sub(1));
         self.selected = Some(self.codex[selected].identity.clone());
-        let visible = codex_visible_cards(area).max(1);
+        let visible = codex_visible_cards(area, self.activity).max(1);
+        if self.activity == Activity::Live {
+            let columns = super::live::columns(area);
+            if selected < self.codex_offset {
+                self.codex_offset = selected / columns * columns;
+            } else if selected >= self.codex_offset.saturating_add(visible) {
+                self.codex_offset = (selected / columns + 1 - visible / columns) * columns;
+            }
+            return;
+        }
         if selected < self.codex_offset {
             self.codex_offset = selected;
         } else if selected >= self.codex_offset.saturating_add(visible) {
@@ -444,7 +451,7 @@ impl ControlState {
     }
 
     fn keep_codex_selection_visible(&mut self, area: Rect) {
-        let visible = codex_visible_cards(area).max(1);
+        let visible = codex_visible_cards(area, self.activity).max(1);
         self.codex_offset = self
             .codex_offset
             .min(self.codex.len().saturating_sub(visible));
@@ -456,6 +463,16 @@ impl ControlState {
             self.codex_offset = 0;
             return;
         };
+        if self.activity == Activity::Live {
+            let columns = super::live::columns(area);
+            self.codex_offset -= self.codex_offset % columns;
+            if selected < self.codex_offset {
+                self.codex_offset = selected / columns * columns;
+            } else if selected >= self.codex_offset.saturating_add(visible) {
+                self.codex_offset = (selected / columns + 1 - visible / columns) * columns;
+            }
+            return;
+        }
         if selected < self.codex_offset {
             self.codex_offset = selected;
         } else if selected >= self.codex_offset.saturating_add(visible) {
@@ -555,12 +572,21 @@ pub(super) fn control_content_areas(area: Rect) -> (Rect, Rect) {
 }
 
 pub(super) fn codex_card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize, Rect)> {
+    session_card_rects(area, offset, count, CODEX_CARD_HEIGHT)
+}
+
+fn session_card_rects(
+    area: Rect,
+    offset: usize,
+    count: usize,
+    card_height: u16,
+) -> Vec<(usize, Rect)> {
     let (body, _) = control_content_areas(area);
     let viewport = body.inner(Margin::new(1, 1));
     if viewport.is_empty() {
         return Vec::new();
     }
-    let visible = usize::from(viewport.height.div_ceil(CODEX_CARD_HEIGHT));
+    let visible = usize::from(viewport.height.div_ceil(card_height));
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(row, index)| {
@@ -568,12 +594,12 @@ pub(super) fn codex_card_rects(area: Rect, offset: usize, count: usize) -> Vec<(
                 index,
                 Rect::new(
                     viewport.x,
-                    viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * CODEX_CARD_HEIGHT,
+                    viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * card_height,
                     viewport.width,
-                    CODEX_CARD_HEIGHT.min(
+                    card_height.min(
                         viewport
                             .bottom()
-                            .saturating_sub(viewport.y + row as u16 * CODEX_CARD_HEIGHT),
+                            .saturating_sub(viewport.y + row as u16 * card_height),
                     ),
                 ),
             )
@@ -619,7 +645,10 @@ pub(super) fn world_card_at_position(
         .map(|(index, _)| index)
 }
 
-fn codex_visible_cards(area: Rect) -> usize {
+fn codex_visible_cards(area: Rect, activity: Activity) -> usize {
+    if activity == Activity::Live {
+        return super::live::visible(area);
+    }
     let (body, _) = control_content_areas(area);
     usize::from(
         body.inner(Margin::new(1, 1))
@@ -628,33 +657,23 @@ fn codex_visible_cards(area: Rect) -> usize {
     )
 }
 
-fn codex_card_at_position(
+fn session_card_at_position(
     area: Rect,
+    activity: Activity,
     offset: usize,
     count: usize,
     column: u16,
     row: u16,
 ) -> Option<usize> {
-    codex_card_rects(area, offset, count)
+    let rects = if activity == Activity::Live {
+        super::live::card_rects(area, offset, count)
+    } else {
+        codex_card_rects(area, offset, count)
+    };
+    rects
         .into_iter()
         .find(|(_, rect)| rect.contains((column, row).into()))
         .map(|(index, _)| index)
-}
-
-fn activity_at_position(area: Rect, column: u16, row: u16) -> Option<Activity> {
-    let (bar, _) = control_areas(area);
-    if column < bar.x
-        || column >= bar.right().saturating_sub(1)
-        || row < bar.y
-        || row >= bar.bottom()
-    {
-        return None;
-    }
-    match row.saturating_sub(bar.y) / ACTIVITY_BUTTON_HEIGHT {
-        0 => Some(Activity::Codex),
-        1 => Some(Activity::Worlds),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

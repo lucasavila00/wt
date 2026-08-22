@@ -4,16 +4,21 @@ use anyhow::Result;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use support::{Key, Screen};
 
+static SHELL_TEST: Mutex<()> = Mutex::new(());
+
 struct Fixture {
+    _guard: MutexGuard<'static, ()>,
     home: tempfile::TempDir,
     path: OsString,
 }
 
 impl Fixture {
     fn new() -> Self {
+        let guard = SHELL_TEST.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join("bin");
         fs::create_dir(&bin).unwrap();
@@ -65,13 +70,17 @@ esac
         write_executable(&bin.join("wt-server"), &server);
         write_executable(
             &bin.join("ssh"),
-            "#!/bin/sh\nstty -echo\nprintf 'session: %s\n' \"$2\"\nexec cat\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncase \"$*\" in\n  *'capture-pane'*'%1') printf 'captured-pane-one' ;;\n  *) stty -echo; printf 'session: %s\\n' \"$2\"; exec cat ;;\nesac\n",
         );
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         )))
         .unwrap();
-        Self { home, path }
+        Self {
+            _guard: guard,
+            home,
+            path,
+        }
     }
 
     fn screen(&self) -> Result<Screen> {
@@ -173,6 +182,23 @@ fn codex_sessions_refresh_after_startup() -> Result<()> {
         .wait_for_text("/home/wt/project")?
         .wait_for_text("wt-host:%1")?
         .wait_for_quiet(Duration::from_millis(50))?;
+    Ok(())
+}
+
+#[test]
+fn live_activity_captures_the_observed_pane_through_mock_ssh() -> Result<()> {
+    let fixture = Fixture::new();
+    fs::write(fixture.home.path().join("codex-active"), "").unwrap();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("/home/wt/project")?
+        .press(Key::Tab)?
+        .press(Key::Tab)?
+        .wait_for_text("Live sessions · Experimental")?
+        .wait_for_text("captured-pane-one")?;
+    let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
+    assert!(calls.contains("wt-codex-integration capture-pane"));
+    assert!(calls.contains("123e4567-e89b-12d3-a456-426614174000 wt-host %1"));
     Ok(())
 }
 

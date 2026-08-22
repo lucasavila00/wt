@@ -41,9 +41,9 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
-`wt shell` opens in the Control UI with Codex sessions selected. `Tab` switches
-between session and world management. `F5` opens the active world when one is
-available.
+`wt shell` opens in the Control UI with Codex sessions selected. `Tab` cycles
+through Codex sessions, Worlds, and the experimental live-session activity.
+`F5` opens the active world when one is available.
 
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
@@ -69,6 +69,17 @@ and their focus helper is current.
 
 An unknown observation includes its raw Codex session-start source when one was
 reported, such as `unknown(compact)`.
+
+The experimental live-session activity uses the same observed sessions but
+shows only each session's state and report age around a live view of its
+strictly identified Byobu pane. At 400 terminal columns and wider, previews use
+a four-column by four-row grid; narrower terminals use one card per row. WT
+temporarily resizes world playback terminals to the smaller preview viewport
+while this activity is visible and restores the full-screen size when it is
+left. Arrow keys, the mouse wheel, `Enter`, and clicking navigate or open the
+previews. Pane capture requires worlds created from an image containing this
+feature; unsupported older worlds leave the preview unavailable without
+disabling full-screen opening.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

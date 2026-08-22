@@ -14,12 +14,15 @@ use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod activity;
 mod bar;
 mod codex;
 mod control;
 mod delete;
 mod input;
+mod live;
 mod model;
+mod preview;
 mod refresh;
 mod render;
 mod session;
@@ -57,6 +60,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.set_worlds_updated_at(updated_at());
     let focus = codex::FocusWorker::default();
+    let mut previews = preview::PreviewSet::new();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let runtime = ShellRuntime {
@@ -80,6 +84,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
+        &mut previews,
         &runtime,
         &shutdown,
     );
@@ -135,14 +140,25 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    previews: &mut preview::PreviewSet,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut flows = ControlFlows::default();
     while !shutdown.load(Ordering::Relaxed) {
+        let area: Rect = terminal
+            .size()
+            .context("read wt shell terminal area")?
+            .into();
+        let (rows, columns) = session_viewport(model, area);
+        sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
+        redraw |= previews.drain();
+        if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+            previews.schedule(model, area);
+        }
         for sequence in clipboard_writes {
             terminal
                 .backend_mut()
@@ -231,7 +247,7 @@ fn run_loop(
             )?;
         }
         if redraw {
-            let screen = model.has_worlds().then(|| sessions.screen(model.active()));
+            let screens = sessions.screens();
             let closed_message = model
                 .has_worlds()
                 .then(|| sessions.closed_message(model.active()))
@@ -239,7 +255,8 @@ fn run_loop(
             terminal.draw(|frame| {
                 render::draw(
                     frame,
-                    screen,
+                    &screens,
+                    previews,
                     closed_message,
                     model,
                     flows.creation.as_ref(),
@@ -519,6 +536,14 @@ fn start_control_command(
 
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
+}
+
+fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
+    if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+        live::preview_size(area)
+    } else {
+        (world_rows(area.height), area.width)
+    }
 }
 
 fn world_area(area: Rect) -> Rect {

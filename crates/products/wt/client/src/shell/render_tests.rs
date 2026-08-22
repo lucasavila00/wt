@@ -42,7 +42,18 @@ fn switcher_activates_the_world_bar() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -80,7 +91,18 @@ fn inactive_world_bar_is_dimmed() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -111,7 +133,18 @@ fn disabled_f5_override_emphasizes_the_top_bar() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
@@ -125,7 +158,18 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     model.set_test_server(true);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -142,7 +186,18 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 12));
     let parser = parser();
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
     let top = (0..80)
         .map(|column| {
@@ -172,7 +227,8 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
         .draw(|frame| {
             draw(
                 frame,
-                Some(parser.screen()),
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
                 Some("SSH session ended: Exited with code 255"),
                 &model,
                 None,
@@ -200,7 +256,18 @@ fn control_ui_has_activity_scaffolding() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -253,7 +320,18 @@ fn control_ui_shows_world_cards() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_world_cards", terminal.backend().buffer());
@@ -268,7 +346,18 @@ fn control_ui_opens_the_command_palette() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -286,7 +375,18 @@ fn active_navbar_opens_the_command_palette_over_the_world() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -385,10 +485,71 @@ fn control_ui_shows_codex_session_cards() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+}
+
+#[test]
+fn control_ui_shows_live_session_panes() {
+    let backend = TestBackend::new(100, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    let session_id = Uuid::from_u128(2);
+    let identity = CodexCardIdentity::Observation {
+        context: "ars".into(),
+        session_id,
+        world_id: Uuid::from_u128(1),
+        tmux_session: "wt-host".into(),
+        pane_id: "%1".into(),
+    };
+    model.set_codex(
+        vec![CodexCard {
+            identity: identity.clone(),
+            context: "ars".into(),
+            session_id: Some(session_id),
+            timestamp: Some(now_ms()),
+            latest_user_message: None,
+            kind: CodexCardKind::Observation {
+                world_id: Uuid::from_u128(1),
+                world_name: "dev".into(),
+                cwd: "/home/wt/wt".into(),
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                state: CodexSessionState::Working,
+                session_start_source: None,
+                target: ByobuTarget {
+                    tmux_session: "wt-host".into(),
+                    pane_id: "%1".into(),
+                },
+            },
+        }],
+        "2026-08-22T19:00:00Z".into(),
+        Rect::new(0, 0, 100, 18),
+    );
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
+    let mut previews = super::super::preview::PreviewSet::new();
+    previews.insert(identity, 10, 91, b"world output\r\n\x1b[31mred\x1b[0m");
+
+    terminal
+        .draw(|frame| super::super::live::draw(frame, frame.area(), &previews, &model))
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_control_live_sessions", terminal.backend().buffer());
 }
 
 #[test]
@@ -439,7 +600,18 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
     model.finish_codex_open(&target, None, true);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -493,46 +665,24 @@ fn failed_context_refresh_is_shown_in_the_title() {
     ]);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::preview::PreviewSet::new(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
         "shell_codex_context_failure_title",
         terminal.backend().buffer()
     );
-}
-
-#[test]
-fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
-    assert_eq!(
-        refresh_title("Codex sessions", None, None),
-        "Codex sessions · Updating…"
-    );
-    assert_eq!(
-        refresh_title("Codex sessions", Some("2026-08-21T20:00:00Z"), None),
-        "Codex sessions · Last updated 2026-08-21T20:00:00Z"
-    );
-    assert_eq!(
-        refresh_title(
-            "Codex sessions",
-            Some("2026-08-21T20:00:00Z"),
-            Some(&["context ars could not be queried: connection timed out".into()])
-        ),
-        "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
-    );
-}
-
-#[test]
-fn empty_shell_renders_the_control_ui() {
-    let backend = TestBackend::new(64, 12);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let model = ShellModel::new(Vec::new());
-
-    terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
-        .unwrap();
-
-    insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
 }
 
 fn now_ms() -> i64 {

@@ -1,5 +1,5 @@
 ---
-source: crates/products/wt/client/src/shell/render_tests.rs
+source: crates/products/wt/client/src/shell/render_extra_tests.rs
 expression: terminal.backend().buffer()
 ---
 Buffer {
@@ -12,7 +12,7 @@ Buffer {
         "   ││                                                         │",
         "    ││                                                         │",
         "    ││                                                         │",
-        "    ││                                                         │",
+        "  󰆍 ││                                                         │",
         "    ││                                                         │",
         "    ││                                                         │",
         "    │└─────────────────────────────────────────────────────────┘",

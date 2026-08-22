@@ -12,7 +12,7 @@ Buffer {
         "   │││can run without exposing any secret values or raw protocol diagnostics in the terminal    …││",
         "    │││project · wt/auth-diagnostics · /home/wt/project                                           ││",
         "    │││ars.dev · wt-host:%1 · session 123e4567                                                    ││",
-        "    │││Enter or click to open                                                                     ││",
+        "  󰆍 │││Enter or click to open                                                                     ││",
         "    ││└───────────────────────────────────────────────────────────────────────────────────────────┘│",
         "    ││┌ 󰋗 UNKNOWN (compact) · 0s ago ─────────────────────────────────────────────────────────────┐│",
         "    │││Investigate why this compacted session is unknown                                          ││",
