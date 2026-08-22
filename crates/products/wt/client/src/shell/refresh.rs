@@ -17,6 +17,7 @@ pub(super) struct WorldRefresh {
 pub(super) struct WorldSnapshot {
     pub(super) generation: u64,
     pub(super) instances: Vec<inventory::ContextInstance>,
+    pub(super) failures: Vec<String>,
 }
 
 pub(super) struct CodexRefresh {
@@ -53,14 +54,25 @@ impl WorldRefresh {
                 if worker_cancelled.load(Ordering::Relaxed) {
                     break;
                 }
-                if report.failures.is_empty() {
-                    match updates_tx.try_send(WorldSnapshot {
-                        generation,
-                        instances: report.instances,
-                    }) {
-                        Ok(()) | Err(TrySendError::Full(_)) => {}
-                        Err(TrySendError::Disconnected(_)) => break,
-                    }
+                let failures = report
+                    .failures
+                    .into_iter()
+                    .map(|failure| {
+                        failure
+                            .to_string()
+                            .lines()
+                            .next()
+                            .unwrap_or_default()
+                            .to_owned()
+                    })
+                    .collect();
+                match updates_tx.try_send(WorldSnapshot {
+                    generation,
+                    instances: report.instances,
+                    failures,
+                }) {
+                    Ok(()) | Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => break,
                 }
             })
             .expect("start wt shell world refresh worker");

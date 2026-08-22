@@ -21,6 +21,7 @@ mod delete;
 mod input;
 mod model;
 mod refresh;
+mod refresh_status;
 mod render;
 mod session;
 mod terminal_view;
@@ -55,7 +56,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
     model.set_test_server(test_server);
-    model.set_worlds_updated_at(updated_at());
+    model.finish_worlds_refresh(Ok(updated_at()));
     let focus = codex::FocusWorker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
@@ -154,7 +155,10 @@ fn run_loop(
                 &runtime.refresh.updates,
                 runtime.refresh.generation.load(Ordering::Relaxed),
             ) {
-                if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
+                if !snapshot.failures.is_empty() {
+                    model.finish_worlds_refresh(Err(snapshot.failures));
+                    redraw = true;
+                } else if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);
                     let area: Rect = terminal
                         .size()
@@ -162,7 +166,7 @@ fn run_loop(
                         .into();
                     sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
                     model.reconcile_worlds(worlds);
-                    model.set_worlds_updated_at(updated_at());
+                    model.finish_worlds_refresh(Ok(updated_at()));
                     redraw = true;
                 }
             }
