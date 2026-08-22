@@ -279,6 +279,14 @@ fn dispatch_event(
     runtime: &ShellRuntime<'_>,
     flows: &mut ControlFlows,
 ) -> Result<bool> {
+    if let Some(flow) = flows.creation.as_mut() {
+        if flow.handle_progress_mouse(&event, area) {
+            return Ok(true);
+        }
+        if matches!(event, Event::Mouse(_)) && flow.blocks_input() {
+            return Ok(true);
+        }
+    }
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
             if model.mode() != Mode::Control
@@ -414,7 +422,7 @@ fn dispatch_event(
                     runtime.refresh,
                     area,
                 )?;
-            } else if flows.creation.is_none() {
+            } else {
                 let (changed, route) = model.handle_mouse(mouse, area);
                 match route {
                     Some(InputRoute::Command(command)) => start_control_command(
