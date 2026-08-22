@@ -41,6 +41,10 @@ pub(in crate::image) fn staged_input_hashes(
             sha_bytes(INSTALL_CODEX),
         ),
         (
+            "/var/tmp/wt-install-diffo.sh".to_owned(),
+            sha_bytes(INSTALL_DIFFO),
+        ),
+        (
             "/var/tmp/wt-image-build.sh".to_owned(),
             sha_bytes(SHARED_IMAGE_BUILD),
         ),
