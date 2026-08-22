@@ -9,6 +9,7 @@ diesel::table! {
         created_at_unix_ms -> Nullable<BigInt>,
         rollout_updated_at_unix_ms -> BigInt,
         title -> Nullable<Text>,
+        title_from_user_message -> Bool,
         latest_user_message -> Nullable<Text>,
         latest_user_message_at_unix_ms -> Nullable<BigInt>,
         latest_agent_message -> Nullable<Text>,

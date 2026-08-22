@@ -177,6 +177,7 @@ fn new_entry(path: &Path) -> Result<CodexSessionCatalogEntry, String> {
         created_at_unix_ms: None,
         rollout_updated_at_unix_ms: 0,
         title: None,
+        title_from_user_message: false,
         latest_user_message: None,
         latest_user_message_at_unix_ms: None,
         latest_agent_message: None,
@@ -218,7 +219,9 @@ fn apply_record(entry: &mut CodexSessionCatalogEntry, record: &Value) {
                 && payload.get("role").and_then(Value::as_str) == Some("user") =>
         {
             if let Some(message) = normalized_message_text(payload, "input_text") {
-                entry.title.get_or_insert_with(|| title_from(&message));
+                if entry.title.is_none() {
+                    entry.title = Some(title_from(&message));
+                }
                 if let Some(timestamp) = record_timestamp(record) {
                     entry.latest_user_message = Some(message);
                     entry.latest_user_message_at_unix_ms = Some(timestamp);
@@ -238,7 +241,10 @@ fn apply_event(entry: &mut CodexSessionCatalogEntry, payload: &Value, timestamp:
             match item.get("type").and_then(Value::as_str) {
                 Some("UserMessage") => {
                     if let Some(message) = normalized_message_text(item, "text") {
-                        entry.title.get_or_insert_with(|| title_from(&message));
+                        if !entry.title_from_user_message {
+                            entry.title = Some(title_from(&message));
+                            entry.title_from_user_message = true;
+                        }
                         if let Some(timestamp) = timestamp {
                             entry.latest_user_message = Some(message);
                             entry.latest_user_message_at_unix_ms = Some(timestamp);
@@ -398,6 +404,7 @@ mod tests {
             format!(
                 concat!(
                     "{{\"timestamp\":\"2026-08-22T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\",\"source\":{{}},\"timestamp\":\"2026-08-22T10:00:00Z\",\"cwd\":\"/work\",\"cli_version\":\"1.2.3\"}}}}\n",
+                    "{{\"timestamp\":\"2026-08-22T10:00:30Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"Injected context\"}}]}}}}\n",
                     "{{\"type\":\"turn_context\",\"payload\":{{\"model\":\"gpt-test\",\"cwd\":\"/work/repo\"}}}}\n",
                     "{{\"timestamp\":\"2026-08-22T10:01:00Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_started\"}}}}\n",
                     "{{\"timestamp\":\"2026-08-22T10:02:00Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"UserMessage\",\"content\":[{{\"type\":\"text\",\"text\":\"Build  the\\n cache\"}}]}}}}}}\n",
@@ -414,6 +421,7 @@ mod tests {
         let first = store.list_codex_session_catalog().unwrap().remove(0);
         assert_eq!(first.session_id, session_id);
         assert_eq!(first.title.as_deref(), Some("Build the cache"));
+        assert!(first.title_from_user_message);
         assert_eq!(first.model.as_deref(), Some("gpt-test"));
         assert_eq!(first.turn_count, 1);
         assert_eq!(first.command_count, 1);

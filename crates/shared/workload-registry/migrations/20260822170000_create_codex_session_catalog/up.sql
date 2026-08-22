@@ -6,6 +6,7 @@ CREATE TABLE codex_session_catalog (
     created_at_unix_ms BIGINT,
     rollout_updated_at_unix_ms BIGINT NOT NULL,
     title TEXT,
+    title_from_user_message BOOL NOT NULL,
     latest_user_message TEXT,
     latest_user_message_at_unix_ms BIGINT,
     latest_agent_message TEXT,
