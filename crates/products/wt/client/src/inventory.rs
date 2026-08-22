@@ -158,13 +158,16 @@ fn list_all_inner(
             }
         }));
     }
-    all.sort_by(|left, right| {
-        (&left.context, &left.instance.name).cmp(&(&right.context, &right.instance.name))
-    });
+    group_by_context(&mut all);
     InventoryReport {
         instances: all,
         failures,
     }
+}
+
+fn group_by_context(instances: &mut [ContextInstance]) {
+    // Stable sorting groups contexts without changing the server's creation order.
+    instances.sort_by(|left, right| left.context.cmp(&right.context));
 }
 
 pub fn parse_target<'a>(
@@ -254,5 +257,22 @@ mod tests {
         let inventory = vec![item("local", "same"), item("lab", "same")];
         let error = resolve(&inventory, "same").unwrap_err().to_string();
         insta::assert_snapshot!(error, @"world name is ambiguous: same; use one of: local.same, lab.same");
+    }
+
+    #[test]
+    fn grouping_contexts_preserves_server_world_order() {
+        let mut inventory = vec![
+            item("local", "w6"),
+            item("lab", "other"),
+            item("local", "w10"),
+        ];
+
+        group_by_context(&mut inventory);
+
+        let names = inventory
+            .iter()
+            .map(ContextInstance::qualified_name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["lab.other", "local.w6", "local.w10"]);
     }
 }
