@@ -11,7 +11,7 @@ scripts/install-server --config ./server.toml
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
 verified retained-world golden image. The final image contains Git, OpenSSH,
-QEMU guest support, Byobu, tmux, Codex, and WT's host helpers.
+QEMU guest support, Byobu, tmux, Codex, Diffo, and WT's host helpers.
 
 Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
 limits are materialized at `/etc/wt/capacity.toml`.

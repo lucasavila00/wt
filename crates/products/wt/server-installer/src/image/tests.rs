@@ -53,6 +53,16 @@ fn retained_manifest_tracks_host_assets() {
 }
 
 #[test]
+fn retained_manifest_tracks_the_diffo_installer() {
+    let inputs = retained_input_hashes(&BuildSpec {
+        name: BUILD_NAME,
+        recipe: RETAINED_IMAGE_BUILD,
+    });
+
+    assert!(inputs.contains_key("/var/tmp/wt-install-diffo.sh"));
+}
+
+#[test]
 fn installed_image_drift_is_replaced_automatically() {
     assert_eq!(
         installed_image_state(false, false, || unreachable!()),

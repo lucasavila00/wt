@@ -27,6 +27,8 @@ const INSTALL_TERMINAL: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-terminal.sh");
 const INSTALL_CODEX: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-codex.sh");
+const INSTALL_DIFFO: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/install-diffo.sh");
 const SHARED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/build-image.sh");
 const FINALIZE_IMAGE: &[u8] =
@@ -131,6 +133,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_packages = build_dir.join("install-packages.sh");
     let install_terminal = build_dir.join("install-terminal.sh");
     let install_codex = build_dir.join("install-codex.sh");
+    let install_diffo = build_dir.join("install-diffo.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
     let retained_recipe = build_dir.join("retained-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
@@ -182,6 +185,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
+    fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
     fs::write(&shared_recipe, SHARED_IMAGE_BUILD).context("write shared image recipe")?;
     fs::write(&retained_recipe, spec.recipe).context("write retained image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
@@ -208,6 +212,7 @@ pub(super) fn run_kvm_build<R: Runner>(
             "/var/tmp/wt-install-terminal.sh",
         ),
         (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
+        (install_diffo.as_path(), "/var/tmp/wt-install-diffo.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
         (
             retained_recipe.as_path(),
