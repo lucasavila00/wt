@@ -63,18 +63,23 @@ fn reconcile_home(codex: &Path, home: &Path) -> Result<()> {
         Err(error) => return Err(error),
     };
     let missing = ids
-        .difference(&discovered)
+        .iter()
+        .filter(|id| !discovered.contains(*id))
         .cloned()
         .collect::<Vec<_>>();
     for id in &missing {
-        let _: ThreadReadResult = server.call(
+        let _: Value = server.call(
             "thread/read",
             json!({"threadId": id, "includeTurns": false}),
         )?;
     }
 
     let verified = server.list_ids(state_only)?;
-    let absent = ids.difference(&verified).cloned().collect::<Vec<_>>();
+    let absent = ids
+        .iter()
+        .filter(|id| !verified.contains(*id))
+        .cloned()
+        .collect::<Vec<_>>();
     if !absent.is_empty() {
         bail!("Codex did not index these sessions: {}", absent.join(", "));
     }
@@ -112,7 +117,10 @@ fn collect_rollouts(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
             collect_rollouts(&entry.path(), files)?;
         } else if file_type.is_file()
             && entry.file_name().to_string_lossy().starts_with("rollout-")
-            && entry.path().extension().is_some_and(|value| value == "jsonl")
+            && entry
+                .path()
+                .extension()
+                .is_some_and(|value| value == "jsonl")
         {
             files.push(entry.path());
         }
@@ -314,9 +322,9 @@ impl AppServer {
         }
         loop {
             let Some(remaining) = self.deadline.checked_duration_since(Instant::now()) else {
-                return Err(self.failure_with_stderr(format!(
-                    "Codex app-server timed out during {method}"
-                )));
+                return Err(
+                    self.failure_with_stderr(format!("Codex app-server timed out during {method}"))
+                );
             };
             match self.output.recv_timeout(remaining) {
                 Ok(ServerOutput::Line(line)) => {
@@ -391,9 +399,7 @@ impl AppServer {
     }
 
     fn stopped_before_reply(&mut self, method: &str) -> anyhow::Error {
-        self.failure_with_stderr(format!(
-            "Codex app-server stopped before {method} replied"
-        ))
+        self.failure_with_stderr(format!("Codex app-server stopped before {method} replied"))
     }
 
     fn failure_with_stderr(&mut self, message: String) -> anyhow::Error {
@@ -436,11 +442,6 @@ struct ThreadPage {
 #[derive(Deserialize)]
 struct ThreadSummary {
     id: String,
-}
-
-#[derive(Deserialize)]
-struct ThreadReadResult {
-    thread: Value,
 }
 
 impl Drop for AppServer {

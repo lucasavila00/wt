@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -58,12 +58,17 @@ fn run_codex(codex: &Path, home: &Path, reconciliation_fails: bool) {
     assert_eq!(String::from_utf8(run.stderr).unwrap(), expected_stderr);
     let log = home.join(".local/state/wt/codex-reconciliation.log");
     if reconciliation_fails {
-        let diagnostic = fs::read_to_string(log).unwrap();
+        let diagnostic = fs::read_to_string(&log).unwrap();
         assert!(diagnostic.starts_with("timestamp_unix="));
         assert!(diagnostic.contains(" pid="));
         assert!(diagnostic.ends_with(
             "\nCodex app-server stopped before initialize replied: refresh unavailable\n\n"
         ));
+        assert_eq!(
+            fs::metadata(home.join(".local/state/wt")).unwrap().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(fs::metadata(log).unwrap().mode() & 0o777, 0o600);
     } else {
         assert!(!log.exists());
     }
