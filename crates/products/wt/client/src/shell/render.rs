@@ -183,7 +183,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
             .add_modifier(Modifier::BOLD)
     };
     let bar = Rect::new(frame.area().x, frame.area().y, frame.area().width, 1);
-    let [previous, world, next] = model.world_bar_controls(bar);
+    let [previous, world, next] = super::bar::world_bar_controls(model, bar);
     let left = Rect::new(bar.x, bar.y, previous.x.saturating_sub(bar.x), 1);
     let right = Rect::new(
         next.right(),
@@ -211,7 +211,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     );
     frame.render_widget(Paragraph::new("← ").style(style), previous);
     frame.render_widget(
-        Paragraph::new(model.world_bar_label())
+        Paragraph::new(super::bar::world_bar_label(model))
             .alignment(Alignment::Center)
             .style(style),
         world,

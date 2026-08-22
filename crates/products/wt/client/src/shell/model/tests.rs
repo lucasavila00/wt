@@ -181,10 +181,10 @@ fn clicking_the_world_bar_activates_it_and_clicking_arrows_changes_worlds() {
 
     assert!(model.handle_mouse(mouse(0, 0), area()).0);
     assert_eq!(model.mode(), Mode::Switcher);
-    let [previous, _, _] = model.world_bar_controls(area());
+    let [previous, _, _] = super::super::bar::world_bar_controls(&model, area());
     model.handle_mouse(mouse(previous.x, previous.y), area());
     assert_eq!(model.active(), 2);
-    let [_, _, next] = model.world_bar_controls(area());
+    let [_, _, next] = super::super::bar::world_bar_controls(&model, area());
     model.handle_mouse(mouse(next.x, next.y), area());
     assert_eq!(model.active(), 0);
 }

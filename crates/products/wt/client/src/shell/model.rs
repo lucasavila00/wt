@@ -2,8 +2,7 @@ use super::control::{
     CodexCard, CodexCardIdentity, CodexOpenTarget, ControlAction, ControlCommand, ControlState,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::text::Span;
+use ratatui::layout::Rect;
 use uuid::Uuid;
 use wt_control_protocol::InstanceName;
 use wt_control_protocol::InstanceStatus;
@@ -269,7 +268,7 @@ impl ShellModel {
                 self.f5_disabled = false;
                 self.mode = Mode::Switcher;
             } else if self.mode == Mode::Switcher {
-                let [previous, _, next] = self.world_bar_controls(area);
+                let [previous, _, next] = super::bar::world_bar_controls(self, area);
                 if previous.contains((mouse.column, mouse.row).into()) {
                     self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
                 } else if next.contains((mouse.column, mouse.row).into()) {
@@ -352,34 +351,6 @@ impl ShellModel {
             self.mode = Mode::World;
         }
     }
-
-    pub(super) fn world_bar_label(&self) -> String {
-        format!(
-            " {} ({}/{})",
-            self.active_world(),
-            self.active + 1,
-            self.world_count()
-        )
-    }
-
-    pub(super) fn world_bar_controls(&self, area: Rect) -> [Rect; 3] {
-        let label_width = u16::try_from(Span::raw(self.world_bar_label()).width().min(24))
-            .expect("world bar label width is bounded");
-        let group_width = label_width.saturating_add(4).min(area.width);
-        let group = Layout::horizontal([
-            Constraint::Fill(1),
-            Constraint::Length(group_width),
-            Constraint::Fill(1),
-        ])
-        .split(Rect::new(area.x, area.y, area.width, 1))[1];
-        let controls = Layout::horizontal([
-            Constraint::Length(2),
-            Constraint::Length(label_width),
-            Constraint::Length(2),
-        ])
-        .split(group);
-        [controls[0], controls[1], controls[2]]
-    }
 }
 
 fn route(action: ControlAction) -> InputRoute {
@@ -390,5 +361,5 @@ fn route(action: ControlAction) -> InputRoute {
 }
 
 #[cfg(test)]
-#[path = "model_tests.rs"]
+#[path = "model/tests.rs"]
 mod tests;

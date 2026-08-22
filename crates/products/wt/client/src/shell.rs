@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod bar;
 mod codex;
 mod control;
 mod delete;
