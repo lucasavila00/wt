@@ -79,6 +79,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   then source `$HOME/.cargo/env` and run
   `rustup component add rustfmt clippy`. Use `sudo apt-get` only for missing
   system prerequisites such as `curl`.
+- In a fresh Ubuntu guest, install the repository CI prerequisites with
+  `sudo apt-get update && sudo apt-get install -y npm shellcheck libvirt-dev`,
+  then run `npm ci` from the repository root. If Cargo compiled `virt-sys`
+  before `libvirt-dev` was installed, run `cargo clean -p virt-sys` once so its
+  native link metadata is regenerated.
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git access, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-installer`. Real-system tests belong in `wt-end-to-end-tests`.

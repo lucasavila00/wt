@@ -6,7 +6,7 @@ The `wt` client.
 
 - Local and OpenSSH server contexts.
 - World naming and cross-context resolution.
-- `new`, `ls`, `start`, `stop`, `ssh`, `shell`, `rm`, and `sync`.
+- `new`, `ls`, `start`, `stop`, `ssh`, `code`, `shell`, `rm`, and `sync`.
 - Managed OpenSSH config and known hosts.
 - Managed SSH aliases with pinned host identities.
 

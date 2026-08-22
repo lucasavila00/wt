@@ -33,6 +33,7 @@ reserved for managed SSH.
 | `wt start NAME` | Start the existing guest and disk |
 | `wt stop NAME` | Shut down the guest and keep its disk |
 | `wt ssh NAME` | Sync managed aliases and connect to Byobu |
+| `wt code NAME` | Sync managed aliases and open the direct guest in VS Code |
 | `wt shell` | Open all accessible worlds in one terminal workspace |
 | `wt rm NAME` | Destroy the world |
 | `wt sync` | Rewrite managed SSH inventory |
@@ -64,7 +65,8 @@ any `Host` or `Match` block. WT owns `~/.ssh/wt/config` and
 contexts.
 
 `CONTEXT.WORLD` opens Byobu. `CONTEXT.WORLD-direct` opens a normal guest shell
-or runs a command. Managed aliases do not enable SSH-agent forwarding.
+or runs a command. `wt code` requires the local `code` CLI and VS Code
+Remote-SSH extension. Managed aliases do not enable SSH-agent forwarding.
 
 World-changing commands synchronize automatically. Run `wt sync` on another
 workstation after changing worlds elsewhere.
