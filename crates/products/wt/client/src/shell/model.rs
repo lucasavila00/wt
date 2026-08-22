@@ -74,6 +74,7 @@ pub(super) struct ShellModel {
     active: usize,
     mode: Mode,
     f5_disabled: bool,
+    test_server: bool,
     control: ControlState,
     should_quit: bool,
 }
@@ -85,6 +86,7 @@ impl ShellModel {
             active: 0,
             mode: Mode::Control,
             f5_disabled: false,
+            test_server: false,
             control: ControlState::default(),
             should_quit: false,
         }
@@ -100,6 +102,14 @@ impl ShellModel {
 
     pub(super) fn f5_disabled(&self) -> bool {
         self.f5_disabled
+    }
+
+    pub(super) fn test_server(&self) -> bool {
+        self.test_server
+    }
+
+    pub(super) fn set_test_server(&mut self, test_server: bool) {
+        self.test_server = test_server;
     }
 
     pub(super) fn has_worlds(&self) -> bool {

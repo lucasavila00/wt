@@ -18,7 +18,7 @@ pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentToolG
     owner: &str,
     request: ApiRequest,
 ) -> ApiResponse {
-    handle_request_with_progress(service, owner, request, &mut std::io::sink())
+    handle_request_with_progress(service, owner, request, false, &mut std::io::sink())
 }
 
 pub fn handle_request_with_progress<
@@ -28,10 +28,15 @@ pub fn handle_request_with_progress<
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
+    test_server: bool,
     progress: &mut dyn std::io::Write,
 ) -> ApiResponse {
     if let Err(error) = validate_protocol_version(request.protocol_version) {
         return ApiResponse::error(error);
+    }
+
+    if request.operation == wt_control_protocol::Operation::ServerInfo {
+        return ApiResponse::ok(wt_control_protocol::Response::ServerInfo { test_server });
     }
 
     match service.execute_with_progress(owner, request.operation, progress) {
@@ -64,7 +69,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 7; expected 6"
+            @"unsupported protocol version 8; expected 7"
         );
     }
 }

@@ -114,24 +114,29 @@ fn completed_fields_open_review_and_b_returns_to_editing() -> Result<()> {
 }
 
 #[test]
-fn escape_cancels_without_contacting_the_server() -> Result<()> {
+fn escape_cancels_after_server_info_without_creating_a_world() -> Result<()> {
     let fixture = Fixture::new(local_context());
-    let contacted = fixture.home.path().join("server-contacted");
-    replace_server_with_contact_marker(fixture.home.path(), &contacted);
+    let requests = fixture.home.path().join("server-requests");
+    replace_server_with_request_log(fixture.home.path(), &requests);
     let mut screen = fixture.screen()?;
     screen
         .wait_for_text("Create world")?
         .press(Key::Escape)?
         .wait_for_exit(1)?;
-    assert!(!contacted.exists());
+    let requests = fs::read_to_string(requests).unwrap();
+    assert!(requests.contains(r#""operation":"server_info""#));
+    assert!(!requests.contains(r#""operation":"create""#));
     Ok(())
 }
 
-fn replace_server_with_contact_marker(home: &Path, marker: &Path) {
+fn replace_server_with_request_log(home: &Path, requests: &Path) {
     let server = home.join("bin/wt-server");
     fs::write(
         &server,
-        format!("#!/bin/sh\ntouch '{}'\nexit 2\n", marker.display()),
+        format!(
+            "#!/bin/sh\nrequest=$(cat)\nprintf '%s\\n' \"$request\" >> '{}'\nprintf '%s\\n' '{{\"protocol_version\":7,\"outcome\":\"ok\",\"response\":{{\"response\":\"server_info\",\"test_server\":false}}}}'\n",
+            requests.display()
+        ),
     )
     .unwrap();
     fs::set_permissions(server, fs::Permissions::from_mode(0o755)).unwrap();

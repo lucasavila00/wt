@@ -23,8 +23,11 @@ fn test_home() -> (tempfile::TempDir, std::ffi::OsString) {
 set -eu
 request=$(cat)
 case "$request" in
+  *'"operation":"server_info"'*)
+    printf '%s\n' "{\"protocol_version\":7,\"outcome\":\"ok\",\"response\":{\"response\":\"server_info\",\"test_server\":${WT_FIXTURE_TEST_SERVER:-false}}}"
+    ;;
   *'"operation":"list"'*)
-    printf '%s\n' '{"protocol_version":6,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
+    printf '%s\n' '{"protocol_version":7,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'
     ;;
   *) exit 2 ;;
 esac
@@ -35,6 +38,23 @@ esac
     )))
     .unwrap();
     (temp, path)
+}
+
+#[test]
+fn test_server_warning_is_the_only_stderr_line() {
+    let (temp, path) = test_home();
+    let output = cmd!(env!("CARGO_BIN_EXE_wt"), "ls")
+        .env("HOME", temp.path())
+        .env("PATH", path)
+        .env("WT_FIXTURE_TEST_SERVER", "true")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "WARNING: WT E2E TEST SERVER — test fixtures are installed.\n"
+    );
 }
 
 #[test]

@@ -52,7 +52,7 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     binaries::build(runner)?;
 
     phase("Preparing reusable world image");
-    image::ensure(runner, &input, &server, &server_bytes)?;
+    image::ensure(runner, &input, &server)?;
 
     phase("Installing WT binaries");
     binaries::install(runner, &server)?;
@@ -75,14 +75,14 @@ pub(crate) fn validate(input_path: &Path) -> Result<()> {
 
 pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> Result<()> {
     require_server_user()?;
-    let (input, server, server_bytes) = load_install_input(input_path)?;
+    let (input, server, _) = load_install_input(input_path)?;
     require_workspace()?;
     prepare_host(runner, &server)?;
     binaries::build_static(runner)?;
     if rebuild {
-        image::rebuild(runner, &input, &server, &server_bytes)?;
+        image::rebuild(runner, &input, &server)?;
     } else {
-        image::ensure(runner, &input, &server, &server_bytes)?;
+        image::ensure(runner, &input, &server)?;
     }
     println!("image ready: {}", server.image.path.display());
     Ok(())
@@ -90,10 +90,10 @@ pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> R
 
 pub(crate) fn verify_images(runner: &impl Runner, input_path: &Path) -> Result<()> {
     require_server_user()?;
-    let (input, server, server_bytes) = load_install_input(input_path)?;
+    let (input, server, _) = load_install_input(input_path)?;
     require_workspace()?;
     binaries::build_static(runner)?;
-    image::verify(&input, &server, &server_bytes)
+    image::verify(&input, &server)
 }
 
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
@@ -518,10 +518,7 @@ fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> 
         let token = format!("%d/{kind}-api-token");
         let key = format!("%d/{kind}-ssh-private-key");
         command.push_str(&format!(" --{kind}-provider "));
-        command.push_str(&systemd_quote(&format!(
-            "{}={token},{key}",
-            provider.host
-        )));
+        command.push_str(&systemd_quote(&format!("{}={token},{key}", provider.host)));
         for suffix in ["api-token", "ssh-private-key"] {
             let id = format!("{kind}-{suffix}");
             credentials.push_str(&format!(

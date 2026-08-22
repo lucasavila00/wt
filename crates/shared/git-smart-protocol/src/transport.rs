@@ -76,10 +76,12 @@ fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
             path,
         } => {
             let mut command = Command::new("ssh");
-            command
-                .arg("-i")
-                .arg(private_key_file)
-                .args(["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"]);
+            command.arg("-i").arg(private_key_file).args([
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "IdentitiesOnly=yes",
+            ]);
             configure_host_key_policy(&mut command, host_key_policy);
             if let Some(port) = port {
                 command.args(["-p", &port.to_string()]);

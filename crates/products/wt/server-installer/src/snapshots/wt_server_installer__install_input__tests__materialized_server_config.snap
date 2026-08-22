@@ -3,6 +3,7 @@ source: crates/products/wt/server-installer/src/install_input.rs
 expression: text
 ---
 version = 1
+test_server = false
 
 [image]
 path = "/var/lib/wt/images/retained.qcow2"

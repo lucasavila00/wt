@@ -25,6 +25,7 @@ pub(super) fn draw(
 ) {
     if let Some(creation) = creation.filter(|flow| flow.blocks_input()) {
         creation.render(frame, frame.area());
+        draw_test_server_banner(frame, model);
         return;
     }
     if model.mode() == Mode::Control {
@@ -38,6 +39,7 @@ pub(super) fn draw(
         if let Some(creation) = creation {
             creation.render_progress(frame, frame.area());
         }
+        draw_test_server_banner(frame, model);
         return;
     }
     let screen = screen.expect("world mode requires a world screen");
@@ -60,6 +62,27 @@ pub(super) fn draw(
         Mode::World | Mode::Switcher => {}
         Mode::Control => unreachable!("control UI returns before rendering a world"),
     }
+    draw_test_server_banner(frame, model);
+}
+
+fn draw_test_server_banner(frame: &mut Frame<'_>, model: &ShellModel) {
+    if !model.test_server() {
+        return;
+    }
+    let area = frame.area();
+    let label = " WT E2E TEST SERVER ";
+    let width = u16::try_from(label.len())
+        .unwrap_or(u16::MAX)
+        .min(area.width);
+    frame.render_widget(
+        Paragraph::new(label).alignment(Alignment::Center).style(
+            Style::new()
+                .fg(Color::Yellow)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Rect::new(area.right().saturating_sub(width), area.y, width, 1),
+    );
 }
 
 fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {

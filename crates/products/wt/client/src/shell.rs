@@ -34,7 +34,7 @@ const BAR_HEIGHT: u16 = 1;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub fn run(config: &ClientConfig) -> Result<()> {
+pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("wt shell requires an interactive terminal");
     }
@@ -52,6 +52,7 @@ pub fn run(config: &ClientConfig) -> Result<()> {
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
+    model.set_test_server(test_server);
     model.set_worlds_updated_at(updated_at());
     let focus = codex::FocusWorker::default();
     let refresh = WorldRefresh::start(config.clone());

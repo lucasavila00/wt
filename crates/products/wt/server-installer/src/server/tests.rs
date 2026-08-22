@@ -178,6 +178,7 @@ fn services_use_the_expected_users() {
     let input = toml::from_str::<InstallInput>(
         r#"
 version = 1
+test_server = false
 [capacity]
 version = 1
 limits = { vcpus = 4, memory_mib = 8192, disk_gib = 128 }

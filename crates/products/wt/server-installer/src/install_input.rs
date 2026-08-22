@@ -12,6 +12,8 @@ use wt_server::{
 #[serde(deny_unknown_fields)]
 pub(crate) struct InstallInput {
     pub version: u32,
+    #[serde(default)]
+    pub test_server: bool,
     pub capacity: wt_workload_registry::CapacityConfig,
     pub image: InstallImageConfig,
     pub libvirt: ServerLibvirtConfig,
@@ -109,6 +111,7 @@ impl InstallInput {
     pub(crate) fn materialize(&self) -> ServerConfig {
         ServerConfig {
             version: self.version,
+            test_server: self.test_server,
             image: ImageConfig {
                 path: self.image.path.clone(),
             },
@@ -189,6 +192,7 @@ mod tests {
 
     const VALID: &str = r#"
 version = 1
+test_server = false
 
 [capacity]
 version = 1

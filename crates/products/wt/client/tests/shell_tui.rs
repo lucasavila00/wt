@@ -37,6 +37,9 @@ impl Fixture {
         let server = r#"#!/bin/sh
 request=$(cat)
 case "$request" in
+  *'"operation":"server_info"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"server_info","test_server":false}}'
+    ;;
   *'"operation":"list_codex_sessions"'*)
     if test -f "$HOME/codex-active"; then
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","rollout_updated_at_unix_ms":10,"observations":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","cwd":"/home/wt/project","state":"working","target":{"tmux_session":"wt-host","pane_id":"%1"},"received_at_unix_ms":20}]}]}}'

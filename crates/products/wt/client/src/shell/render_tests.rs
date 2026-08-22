@@ -98,6 +98,44 @@ fn disabled_f5_override_has_a_red_top_bar() {
 }
 
 #[test]
+fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
+    let backend = TestBackend::new(80, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["local.one"]);
+    model.set_test_server(true);
+
+    terminal
+        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_test_server_control_warning",
+        terminal.backend().buffer()
+    );
+    let style = terminal.backend().buffer().cell((79, 0)).unwrap().style();
+    assert_eq!(style.fg, Some(Color::Yellow));
+    assert_eq!(style.bg, Some(Color::Red));
+    assert!(style.add_modifier.contains(Modifier::BOLD));
+
+    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 12));
+    let parser = parser();
+    terminal
+        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .unwrap();
+    let top = (0..80)
+        .map(|column| {
+            terminal
+                .backend()
+                .buffer()
+                .cell((column, 0))
+                .unwrap()
+                .symbol()
+        })
+        .collect::<String>();
+    assert!(top.contains("WT E2E TEST SERVER"));
+}
+
+#[test]
 fn closed_session_has_a_red_reconnect_bar() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();

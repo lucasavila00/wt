@@ -108,11 +108,7 @@ fn development_and_kvm_inputs_share_image_identity() {
     };
     let development = load("wt-server.development.toml");
     let kvm = load("wt-server.kvm-e2e-install.toml");
-    let fingerprint = |input: &InstallInput| {
-        let server_bytes = crate::install_input::serialize_server_config(&input.materialize())
-            .expect("serialize server config");
-        image_config_sha(&server_bytes, input)
-    };
+    let fingerprint = image_config_sha;
 
     assert_eq!(development.source_sha256(), kvm.source_sha256());
     assert_eq!(fingerprint(&development), fingerprint(&kvm));

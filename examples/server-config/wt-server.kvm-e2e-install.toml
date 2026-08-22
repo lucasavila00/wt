@@ -2,6 +2,7 @@
 # The provider files are disposable fixtures created by the instructions in
 # crates/tests/end-to-end/README.md. Do not put real credentials there.
 version = 1
+test_server = true
 
 [capacity]
 version = 1
