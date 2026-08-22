@@ -1,4 +1,5 @@
 use super::*;
+use crate::shell::bar;
 use crate::shell::codex::ShellWorld;
 use crate::shell::control::{CodexCardIdentity, CodexCardKind};
 use crate::shell::model::InputRoute;
@@ -51,12 +52,23 @@ fn switcher_activates_the_world_bar() {
     assert!(brand
         .add_modifier
         .contains(Modifier::BOLD | Modifier::REVERSED));
-    let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert_eq!(style.fg, Some(Color::Reset));
-    assert_eq!(style.bg, Some(Color::Reset));
-    assert!(style
-        .add_modifier
-        .contains(Modifier::BOLD | Modifier::REVERSED));
+    let hint = terminal.backend().buffer().cell((6, 0)).unwrap().style();
+    assert!(hint.add_modifier.contains(Modifier::REVERSED));
+    assert!(!hint.add_modifier.contains(Modifier::BOLD));
+    let [previous, world, next] = bar::world_bar_controls(&model, Rect::new(0, 0, 80, 6));
+    let brand = bar::world_bar_brand(Rect::new(0, 0, 80, 6));
+    let control = bar::world_bar_control(Rect::new(0, 0, 80, 6), next);
+    for clickable in [brand, previous, world, next, control] {
+        let style = terminal
+            .backend()
+            .buffer()
+            .cell((clickable.x, clickable.y))
+            .unwrap()
+            .style();
+        assert!(style
+            .add_modifier
+            .contains(Modifier::BOLD | Modifier::REVERSED));
+    }
 }
 
 #[test]
@@ -78,11 +90,13 @@ fn inactive_world_bar_is_dimmed() {
     assert_eq!(brand.bg, Some(Color::Reset));
     assert!(brand.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
     assert!(!brand.add_modifier.contains(Modifier::REVERSED));
-    let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert_eq!(style.fg, Some(Color::Reset));
-    assert_eq!(style.bg, Some(Color::Reset));
-    assert!(style.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
-    assert!(!style.add_modifier.contains(Modifier::REVERSED));
+    let hint = terminal.backend().buffer().cell((6, 0)).unwrap().style();
+    assert_eq!(hint.fg, Some(Color::Reset));
+    assert_eq!(hint.bg, Some(Color::Reset));
+    assert!(hint.add_modifier.contains(Modifier::DIM));
+    assert!(!hint
+        .add_modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
 }
 
 #[test]
