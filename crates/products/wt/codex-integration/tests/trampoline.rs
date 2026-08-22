@@ -15,6 +15,7 @@ fn install_runs_and_uninstall_restores_the_real_codex() {
             "for arg do printf 'arg=[%s]\\n' \"$arg\"; done\n",
             "printf 'env=%s\\n' \"$WT_CODEX_TEST_ENV\"\n",
             "printf 'cwd=%s\\n' \"$PWD\"\n",
+            "printf 'umask=%s\\n' \"$(umask)\"\n",
             "IFS= read -r input\n",
             "printf 'stdin=%s\\n' \"$input\"\n",
             "printf 'pid=%s\\n' \"$$\"\n",
@@ -63,7 +64,7 @@ fn install_runs_and_uninstall_restores_the_real_codex() {
     assert_eq!(
         String::from_utf8(run.stdout).unwrap(),
         format!(
-            "argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\nstdin=unchanged\npid={}\n",
+            "argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0027\nstdin=unchanged\npid={}\n",
             temp.path().display(),
             pid
         )

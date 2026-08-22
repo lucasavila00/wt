@@ -42,7 +42,7 @@ clap = { version = "4.5.60", features = ["derive"] }
 cliclack = "0.5.4"
 console = "0.16.4"
 crossterm = "0.29.0"
-nix = { version = "0.31.2", features = ["signal", "user"] }
+nix = { version = "0.31.2", features = ["fs", "signal", "user"] }
 nucleo-matcher = "0.3"
 quick-xml = "0.39.2"
 portable-pty = "0.9.0"

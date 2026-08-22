@@ -87,6 +87,8 @@ fn run(args: Vec<OsString>) -> Result<()> {
 
 fn run_trampoline(args: Vec<OsString>) -> Result<()> {
     let real_codex = install::active_installation(&args)?;
+    install::prepare_shared_sessions()?;
+    nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o027));
     match reconcile::reconcile_with_codex(&real_codex) {
         Ok(result) => {
             for warning in result.warnings {

@@ -252,20 +252,39 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
         footer,
     );
     draw_command_palette(frame, content, model.control().palette());
-    if model.control().open_failed() {
-        draw_codex_open_toast(frame, area);
+    if model.control().open_failed() || model.control().context_failure().is_some() {
+        draw_codex_toast(frame, area, model.control());
     }
 }
 
-fn draw_codex_open_toast(frame: &mut Frame<'_>, area: Rect) {
+fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     let toast = super::toast::area(area);
     let (retry, _) = super::toast::actions(area);
+    let (title, message) = if state.open_failed() {
+        (
+            " Could not open Codex session ".to_owned(),
+            "The session could not be focused. Try again.".to_owned(),
+        )
+    } else {
+        let contexts = state
+            .context_failure()
+            .expect("Codex toast has an open or context failure");
+        let target = if contexts.len() == 1 {
+            format!("context {}", contexts[0])
+        } else {
+            format!("{} contexts", contexts.len())
+        };
+        (
+            format!(" Could not refresh Codex sessions for {target} "),
+            "The context could not be queried. Try again.".to_owned(),
+        )
+    };
     frame.render_widget(Clear, toast);
     frame.render_widget(
         Block::new()
             .borders(Borders::ALL)
             .border_style(Style::new().fg(Color::Red))
-            .title(" Could not open Codex session ")
+            .title(title)
             .title(
                 Line::styled(
                     "×",
@@ -276,7 +295,7 @@ fn draw_codex_open_toast(frame: &mut Frame<'_>, area: Rect) {
         toast,
     );
     frame.render_widget(
-        Paragraph::new("The session could not be focused. Try again."),
+        Paragraph::new(message),
         Rect::new(
             toast.x.saturating_add(1),
             toast.y.saturating_add(1),

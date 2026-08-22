@@ -22,8 +22,12 @@ pub(super) enum CodexContextSnapshot {
     },
     Failure {
         context: String,
-        message: String,
     },
+}
+
+pub(super) struct CodexCards {
+    pub(super) cards: Vec<CodexCard>,
+    pub(super) failed_contexts: Vec<String>,
 }
 
 impl ShellWorld {
@@ -88,17 +92,17 @@ pub(super) fn load_snapshots(
                     context: context.name.clone(),
                     sessions,
                 },
-                Err(error) => CodexContextSnapshot::Failure {
+                Err(_) => CodexContextSnapshot::Failure {
                     context: context.name.clone(),
-                    message: bounded_escaped(error.to_string().as_bytes()),
                 },
             }
         })
         .collect()
 }
 
-pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld]) -> Vec<CodexCard> {
+pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld]) -> CodexCards {
     let mut cards = Vec::new();
+    let mut failed_contexts = Vec::new();
     for snapshot in snapshots {
         match snapshot {
             CodexContextSnapshot::Sessions { context, sessions } => {
@@ -107,9 +111,7 @@ pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld])
                     Err(message) => cards.push(CodexCard::context_error(&context, message)),
                 }
             }
-            CodexContextSnapshot::Failure { context, message } => {
-                cards.push(CodexCard::context_error(&context, message));
-            }
+            CodexContextSnapshot::Failure { context } => failed_contexts.push(context),
         }
     }
     cards.sort_by(|left, right| {
@@ -118,7 +120,10 @@ pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld])
             .then_with(|| Reverse(left.timestamp()).cmp(&Reverse(right.timestamp())))
             .then_with(|| left.identity.cmp(&right.identity))
     });
-    cards
+    CodexCards {
+        cards,
+        failed_contexts,
+    }
 }
 
 fn validate_context(
@@ -465,5 +470,18 @@ mod tests {
             validate_context("ars", vec![negative], &[world]).unwrap_err(),
             @"context ars: failed invariant nonnegative observation timestamp; value 00000000-0000-0000-0000-00000000000a"
         );
+    }
+
+    #[test]
+    fn query_failures_become_notifications_instead_of_cards() {
+        let result = cards(
+            vec![CodexContextSnapshot::Failure {
+                context: "ars".into(),
+            }],
+            &[],
+        );
+
+        assert!(result.cards.is_empty());
+        assert_eq!(result.failed_contexts, ["ars"]);
     }
 }

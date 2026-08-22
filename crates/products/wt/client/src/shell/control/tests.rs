@@ -172,6 +172,31 @@ fn refresh_and_navigation_do_not_hide_an_opening_card() {
 }
 
 #[test]
+fn context_failure_retry_and_dismiss_are_explicit() {
+    let mut state = ControlState::default();
+    state.set_context_failures(vec!["ars".into()]);
+    assert_eq!(state.context_failure().unwrap(), ["ars"]);
+    assert_eq!(
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area()),
+        Some(ControlAction::RefreshCodex)
+    );
+
+    state.set_context_failures(vec!["ars".into()]);
+    state.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), area());
+    assert!(state.context_failure().is_none());
+    state.set_context_failures(vec!["ars".into()]);
+    assert!(state.context_failure().is_none());
+
+    state.set_context_failures(Vec::new());
+    state.set_context_failures(vec!["ars".into()]);
+    let (retry, _) = super::super::toast::actions(area());
+    assert_eq!(
+        state.handle_mouse(mouse(retry.x, retry.y), area()),
+        (true, Some(ControlAction::RefreshCodex))
+    );
+}
+
+#[test]
 fn refresh_keeps_the_selected_card_in_its_viewport() {
     let mut state = ControlState::default();
     let cards = (1..=6)

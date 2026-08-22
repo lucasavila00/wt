@@ -349,6 +349,32 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
 }
 
 #[test]
+fn failed_context_refresh_is_a_sanitized_retryable_toast() {
+    let backend = TestBackend::new(80, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    model.set_codex_context_failures(vec!["ars".into()]);
+
+    terminal
+        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_codex_context_failure_toast",
+        terminal.backend().buffer()
+    );
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(!rendered.contains("Permission denied"));
+    assert!(!rendered.contains("/home/wt/.codex"));
+}
+
+#[test]
 fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
     assert_eq!(
         refresh_title("Codex sessions", None),

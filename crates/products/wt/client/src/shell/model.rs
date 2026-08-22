@@ -64,6 +64,7 @@ pub(super) enum InputRoute {
     Consumed,
     World,
     OpenCodex(Box<CodexOpenTarget>),
+    RefreshCodex,
     Command(ControlCommand),
 }
 
@@ -169,6 +170,10 @@ impl ShellModel {
         area: Rect,
     ) -> bool {
         self.control.set_codex(codex, updated_at, area)
+    }
+
+    pub(super) fn set_codex_context_failures(&mut self, contexts: Vec<String>) {
+        self.control.set_context_failures(contexts);
     }
 
     pub(super) fn resize(&mut self, area: Rect) {
@@ -355,6 +360,7 @@ fn route(action: ControlAction) -> InputRoute {
     match action {
         ControlAction::Command(command) => InputRoute::Command(command),
         ControlAction::OpenCodex(target) => InputRoute::OpenCodex(target),
+        ControlAction::RefreshCodex => InputRoute::RefreshCodex,
     }
 }
 
