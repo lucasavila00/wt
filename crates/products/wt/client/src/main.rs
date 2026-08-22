@@ -11,6 +11,7 @@ use wt_client::inventory::{self, ContextInstance};
 use wt_client::transport::ContextError;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
+mod code;
 mod create;
 mod git_author;
 mod reports;
@@ -40,6 +41,8 @@ enum Command {
     Start { name: String },
     /// Stop a retained world.
     Stop { name: String },
+    /// Open a world in VS Code Remote-SSH.
+    Code { name: String },
     /// Synchronize SSH aliases and connect to a world.
     Ssh { name: String },
     /// Open the persistent world terminal workspace.
@@ -158,6 +161,7 @@ fn run() -> Result<()> {
                 context.name, world_name, instance.status
             );
         }
+        Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
         Command::Shell => shell::run(&config, test_server)?,
         Command::Sync => {
