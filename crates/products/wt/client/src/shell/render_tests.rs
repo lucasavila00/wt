@@ -526,18 +526,26 @@ fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
 fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
     let mut state = ControlState::default();
     state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
-    state.finish_worlds_refresh(Err("ars: request timed out after 60s".into()));
+    state.finish_worlds_refresh(Err(vec![
+        "context ars could not be queried: request timed out after 60s".into(),
+        "context lab could not be queried: connection refused".into(),
+    ]));
     assert_eq!(
-        worlds_refresh_title(
+        refresh_title(
+            "Worlds",
             state.worlds_updated_at(),
             state.worlds_refresh_failure()
         ),
-        "Worlds · Refresh failed: ars: request timed out after 60s · Showing data from 2026-08-22T19:29:38Z"
+        "Worlds · Last updated 2026-08-22T19:29:38Z · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused"
     );
 
     state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
     assert_eq!(
-        worlds_refresh_title(state.worlds_updated_at(), state.worlds_refresh_failure()),
+        refresh_title(
+            "Worlds",
+            state.worlds_updated_at(),
+            state.worlds_refresh_failure()
+        ),
         "Worlds · Last updated 2026-08-22T19:30:00Z"
     );
 }

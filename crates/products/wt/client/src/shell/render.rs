@@ -14,7 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 mod title;
-use title::{refresh_title, worlds_refresh_title};
+use title::refresh_title;
 
 pub(super) fn draw(
     frame: &mut Frame<'_>,
@@ -280,12 +280,11 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
     let state = model.control();
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(worlds_refresh_title(
-            state.worlds_updated_at(),
-            state.worlds_refresh_failure(),
-        ));
+    let block = Block::new().borders(Borders::ALL).title(refresh_title(
+        "Worlds",
+        state.worlds_updated_at(),
+        state.worlds_refresh_failure(),
+    ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let creating = creation

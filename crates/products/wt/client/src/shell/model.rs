@@ -171,7 +171,7 @@ impl ShellModel {
         self.control.show_worlds();
     }
 
-    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, String>) {
+    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
         self.control.finish_worlds_refresh(result);
     }
 

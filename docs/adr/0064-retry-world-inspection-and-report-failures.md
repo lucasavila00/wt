@@ -21,13 +21,13 @@ delay, so one previously failed world cannot repeatedly stall every inventory
 request.
 
 If a Worlds refresh fails, the UI retains the last complete snapshot and does
-not advance its freshness time. The title changes to `Worlds · Refresh failed:
-<reason> · Showing data from <timestamp>`. The reason identifies the affected
-context and uses the concise, sanitized transport summary rather than multiline
-diagnostic details. The warning is confined to that title line: cards and the
-rest of the layout retain their existing content and interaction. Before any
-snapshot has succeeded, the same title reports the refresh failure without
-inventing a timestamp.
+not advance its freshness time. Worlds and Codex use the same title component
+and failure shape: `<panel> · Last updated <timestamp> · Sync failed: <reason>`.
+Before any snapshot has succeeded, the title uses `Updating…` in place of the
+timestamp. Reasons identify the affected contexts and use concise, sanitized
+transport summaries joined with `; ` rather than multiline diagnostic details.
+The warning is confined to that title line; cards and the rest of the layout
+retain their existing content and interaction.
 
 The UI does not show an intermediate `Retrying…` state because the list protocol
 does not expose inspection-attempt events. A later complete refresh clears the

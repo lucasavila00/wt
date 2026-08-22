@@ -191,7 +191,7 @@ pub(super) struct ControlState {
     pub(super) open_failure: Option<CodexOpenTarget>,
     pub(super) context_failure: Option<Vec<String>>,
     worlds_updated_at: Option<String>,
-    worlds_refresh_failure: Option<String>,
+    worlds_refresh_failure: Option<Vec<String>>,
     codex_updated_at: Option<String>,
 }
 
@@ -238,7 +238,7 @@ impl ControlState {
         self.worlds_updated_at.as_deref()
     }
 
-    pub(super) fn worlds_refresh_failure(&self) -> Option<&str> {
+    pub(super) fn worlds_refresh_failure(&self) -> Option<&[String]> {
         self.worlds_refresh_failure.as_deref()
     }
 
@@ -246,7 +246,7 @@ impl ControlState {
         self.codex_updated_at.as_deref()
     }
 
-    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, String>) {
+    pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
         match result {
             Ok(updated_at) => {
                 self.worlds_updated_at = Some(updated_at);

@@ -154,8 +154,8 @@ fn run_loop(
                 &runtime.refresh.updates,
                 runtime.refresh.generation.load(Ordering::Relaxed),
             ) {
-                if let Some(error) = snapshot.failure {
-                    model.finish_worlds_refresh(Err(error));
+                if !snapshot.failures.is_empty() {
+                    model.finish_worlds_refresh(Err(snapshot.failures));
                     redraw = true;
                 } else if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
                     let worlds = shell_worlds(&snapshot.instances);

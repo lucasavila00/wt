@@ -17,7 +17,7 @@ pub(super) struct WorldRefresh {
 pub(super) struct WorldSnapshot {
     pub(super) generation: u64,
     pub(super) instances: Vec<inventory::ContextInstance>,
-    pub(super) failure: Option<String>,
+    pub(super) failures: Vec<String>,
 }
 
 pub(super) struct CodexRefresh {
@@ -54,23 +54,22 @@ impl WorldRefresh {
                 if worker_cancelled.load(Ordering::Relaxed) {
                     break;
                 }
-                let failure = report.failures.first().map(|failure| {
-                    let more = report.failures.len() - 1;
-                    format!(
-                        "{}: {}{}",
-                        failure.context,
-                        failure.summary(),
-                        if more == 0 {
-                            String::new()
-                        } else {
-                            format!(" (+{more} more)")
-                        }
-                    )
-                });
+                let failures = report
+                    .failures
+                    .into_iter()
+                    .map(|failure| {
+                        failure
+                            .to_string()
+                            .lines()
+                            .next()
+                            .unwrap_or_default()
+                            .to_owned()
+                    })
+                    .collect();
                 match updates_tx.try_send(WorldSnapshot {
                     generation,
                     instances: report.instances,
-                    failure,
+                    failures,
                 }) {
                     Ok(()) | Err(TrySendError::Full(_)) => {}
                     Err(TrySendError::Disconnected(_)) => break,
