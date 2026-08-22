@@ -10,12 +10,18 @@ use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorke
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod codex;
+mod codex_catalog;
 mod gateway;
 mod lifecycle;
 mod reports;
 #[cfg(test)]
 mod tests;
 pub use gateway::AgentToolGateway;
+
+pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<String>, String> {
+    codex_catalog::refresh(store, root)
+}
+
 pub struct Service<W, G> {
     store: Store,
     worker: W,

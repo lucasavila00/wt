@@ -48,6 +48,36 @@ pub struct CodexSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_user_message_at_unix_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_agent_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_agent_message_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rollout_updated_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli_version: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub turn_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub command_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub file_change_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub input_tokens: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cached_input_tokens: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub output_tokens: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reasoning_output_tokens: u64,
     pub observations: Vec<CodexSessionObservation>,
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }

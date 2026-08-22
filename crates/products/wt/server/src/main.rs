@@ -71,6 +71,30 @@ fn run_server() -> Result<()> {
     store
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
+    log_codex_catalog_warnings(
+        wt_server::service::refresh_codex_session_catalog(
+            &store,
+            Path::new(wt_server::CODEX_SESSIONS_PATH),
+        )
+        .map_err(anyhow::Error::msg)?,
+    );
+    let catalog_database = state.database_path();
+    std::thread::Builder::new()
+        .name("wt-codex-session-catalog".to_owned())
+        .spawn(move || loop {
+            match Store::open(&catalog_database).and_then(|store| {
+                wt_server::service::refresh_codex_session_catalog(
+                    &store,
+                    Path::new(wt_server::CODEX_SESSIONS_PATH),
+                )
+                .map_err(wt_workload_registry::StoreError::Registry)
+            }) {
+                Ok(warnings) => log_codex_catalog_warnings(warnings),
+                Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        })
+        .context("start Codex session catalog refresh")?;
     let operations = Operations::default();
     let capacity_limit = wt_workload_registry::CapacityConfig::load()
         .map_err(anyhow::Error::msg)?
@@ -100,6 +124,12 @@ fn run_server() -> Result<()> {
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
         handle_daemon_request(&context, request, progress)
     })
+}
+
+fn log_codex_catalog_warnings(warnings: Vec<String>) {
+    for warning in warnings {
+        eprintln!("wt-server: Codex session discovery: {warning}");
+    }
 }
 
 struct DaemonContext {

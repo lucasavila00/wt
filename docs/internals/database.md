@@ -8,6 +8,11 @@ disk, resources, reservation state, SSH endpoint, and gateway grant.
 `codex_session_reports` stores the latest per-world Codex observations. Both
 are deleted with their world.
 
+`codex_session_catalog` is a rebuildable index of the shared Codex rollout
+tree. It stores bounded session summaries, aggregate activity and token counts,
+and the byte offset needed to parse only newly appended rollout records. The
+rollout JSONL files remain the canonical session history.
+
 World insertion and capacity reservation happen in one immediate transaction.
 CPU, RAM, and disk admission is therefore atomic. Stopped worlds reserve no CPU
 or RAM and count only current disk allocation; starting one reacquires its full
