@@ -109,4 +109,12 @@ fn prepare_client(harness: &KvmHarness) {
     )
     .unwrap();
     fs::set_permissions(wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let ssh = harness.config.install.binary_dir.join("ssh");
+    fs::write(
+        &ssh,
+        "#!/bin/sh\nexec /usr/bin/ssh -F \"$HOME/.ssh/config\" \"$@\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(ssh, fs::Permissions::from_mode(0o755)).unwrap();
 }

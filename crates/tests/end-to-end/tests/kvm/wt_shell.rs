@@ -17,6 +17,7 @@ pub(crate) fn create_world_with_defaults(screen: &mut Screen, name: &str) -> Res
         .press(Key::Enter)?
         .wait_for_text(name)?;
     wait_for_slow_text(screen, "RUNNING", Duration::from_secs(90))?;
+    screen.wait_for_text_gone("World creation")?;
     eprintln!("WT shell E2E: world {name} is running");
     Ok(())
 }
