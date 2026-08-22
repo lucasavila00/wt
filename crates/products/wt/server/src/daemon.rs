@@ -92,6 +92,7 @@ fn handle_stream(
 struct ProgressWriter<'a> {
     output: &'a mut dyn Write,
     pending: Vec<u8>,
+    disconnected: bool,
 }
 
 impl<'a> ProgressWriter<'a> {
@@ -99,6 +100,7 @@ impl<'a> ProgressWriter<'a> {
         Self {
             output,
             pending: Vec::new(),
+            disconnected: false,
         }
     }
 
@@ -107,14 +109,25 @@ impl<'a> ProgressWriter<'a> {
         if message.is_empty() {
             return Ok(());
         }
-        serde_json::to_writer(&mut self.output, &ApiProgress::new(message))?;
-        self.output.write_all(b"\n")?;
-        self.output.flush()
+        if self.disconnected {
+            return Ok(());
+        }
+        let result = serde_json::to_writer(&mut self.output, &ApiProgress::new(message))
+            .map_err(std::io::Error::other)
+            .and_then(|()| self.output.write_all(b"\n"))
+            .and_then(|()| self.output.flush());
+        if result.is_err() {
+            self.disconnected = true;
+        }
+        Ok(())
     }
 }
 
 impl Write for ProgressWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.disconnected {
+            return Ok(bytes.len());
+        }
         self.pending.extend_from_slice(bytes);
         while let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
             let line = self.pending.drain(..=end).collect::<Vec<_>>();
@@ -128,7 +141,14 @@ impl Write for ProgressWriter<'_> {
             let line = std::mem::take(&mut self.pending);
             self.emit(&line)?;
         }
-        self.output.flush()
+        if self.disconnected {
+            Ok(())
+        } else {
+            if self.output.flush().is_err() {
+                self.disconnected = true;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -175,6 +195,34 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
     use wt_control_protocol::{ApiRequest, ApiResponse, Operation, Response};
+
+    struct Disconnected;
+
+    impl Write for Disconnected {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+    }
+
+    #[test]
+    fn disconnected_progress_consumer_does_not_fail_the_worker() {
+        let mut output = Disconnected;
+        let mut progress = ProgressWriter::new(&mut output);
+
+        assert_eq!(
+            progress.write(b"creating disk\n").unwrap(),
+            b"creating disk\n".len()
+        );
+        assert_eq!(
+            progress.write(b"starting guest\n").unwrap(),
+            b"starting guest\n".len()
+        );
+        progress.flush().unwrap();
+    }
 
     #[test]
     fn one_connection_carries_one_request_and_response() {

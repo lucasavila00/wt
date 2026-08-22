@@ -13,7 +13,8 @@ use wt_agent_tool_gateway::{
     PROTOCOL_VERSION, VSOCK_PORT_ENV,
 };
 use wt_control_protocol::{
-    ApiRequest, ApiResponse, CreateInstance, InstanceName, Operation, Outcome, Response,
+    ApiProgress, ApiRequest, ApiResponse, CreateInstance, InstanceName, Operation, Outcome,
+    Response,
 };
 use wt_end_to_end_tests::cmd;
 use wt_server::ServerConfig;
@@ -367,8 +368,25 @@ pub(crate) fn call_api_result(
         .wait_with_output()
         .map_err(|error| error.to_string())?;
     ensure_success("call test server API", &output)?;
-    let response: ApiResponse =
-        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    let mut response = None;
+    for line in output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        if serde_json::from_slice::<ApiProgress>(line).is_ok() {
+            if response.is_some() {
+                return Err("test server returned progress after its final response".into());
+            }
+            continue;
+        }
+        let frame =
+            serde_json::from_slice::<ApiResponse>(line).map_err(|error| error.to_string())?;
+        if response.replace(frame).is_some() {
+            return Err("test server returned multiple API responses".into());
+        }
+    }
+    let response = response.ok_or("test server returned no API response")?;
     match response.outcome {
         Outcome::Ok { response } => Ok(*response),
         Outcome::Error { error } => Err(format!("{}: {}", error.code as u8, error.message)),
