@@ -16,6 +16,7 @@ install -m 0755 /var/tmp/wt-tools /usr/local/bin/wt-tools
 install -m 0755 /var/tmp/wt-codex-integration \
     /usr/local/bin/wt-codex-integration
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
+    PATH="$WT_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     /usr/local/bin/wt-codex-integration install
 
 dpkg-query -W -f='${Package}\t${Version}\n' \
