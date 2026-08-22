@@ -16,7 +16,6 @@ use nix::unistd::{Uid, User};
 use recipe::PackageVersions;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs;
 #[cfg(test)]
 use std::io::Write;
@@ -55,13 +54,9 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
-    build: wt_control_protocol::BuildIdentity,
+    commit: String,
     guest_identity: wt_retained_worlds::GuestIdentity,
-    source_sha256: String,
-    config_sha256: String,
-    inputs: BTreeMap<String, String>,
     golden_sha256: String,
-    tmux_sha256: String,
     packages: PackageVersions,
 }
 
@@ -82,7 +77,7 @@ pub(crate) fn ensure(
     match installed_image_state(
         installed.image.exists(),
         installed.manifest.exists(),
-        || verify_installed_image(input, &installed.image, &installed.manifest),
+        || verify_installed_image(&installed.image, &installed.manifest),
     ) {
         InstalledImageState::Reusable => {
             println!(
@@ -116,9 +111,9 @@ pub(crate) fn rebuild(
     Ok(())
 }
 
-pub(crate) fn verify(input: &InstallInput, server: &ServerConfig) -> Result<()> {
+pub(crate) fn verify(_input: &InstallInput, server: &ServerConfig) -> Result<()> {
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
-    verify_installed_image(input, &installed.image, &installed.manifest)?;
+    verify_installed_image(&installed.image, &installed.manifest)?;
     println!(
         "Verified retained golden image and provenance: {}",
         server.image.path.display()
@@ -277,7 +272,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .join(", ");
     println!("Validated retained image packages: {package_summary}");
 
-    let tmux_sha256 = finalize_reusable_image(runner, &paths)?;
+    finalize_reusable_image(runner, &paths)?;
     let tmux_version = runner.text(
         cmd!(
             "sudo",
@@ -339,13 +334,9 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     )?;
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
-        build: wt_control_protocol::BuildIdentity::current(),
+        commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
-        source_sha256: input.source_sha256().to_ascii_lowercase(),
-        config_sha256: image_config_sha(input),
-        inputs: retained_input_hashes(&spec)?,
         golden_sha256: sha_file(&paths.prepared)?,
-        tmux_sha256,
         packages,
     };
     let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
@@ -366,11 +357,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     Ok(())
 }
 
-pub(crate) fn verify_installed_image(
-    input: &InstallInput,
-    image_path: &Path,
-    manifest_path: &Path,
-) -> Result<()> {
+pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) -> Result<()> {
     let recipe = ImageRecipe::new();
     require_named_file(image_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
@@ -381,18 +368,7 @@ pub(crate) fn verify_installed_image(
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
     wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
         .map_err(anyhow::Error::msg)?;
-    let expected_inputs = retained_input_hashes(&BuildSpec {
-        name: BUILD_NAME,
-        recipe: RETAINED_IMAGE_BUILD,
-    })?;
-    if manifest.build != wt_control_protocol::BuildIdentity::current()
-        || manifest.source_sha256 != input.source_sha256().to_ascii_lowercase()
-        || manifest.config_sha256 != image_config_sha(input)
-        || manifest.inputs != expected_inputs
-        || !is_sha256(&manifest.tmux_sha256)
-    {
-        bail!("provenance does not match the current source or install input");
-    }
+    require_current_commit(&manifest.commit)?;
     recipe
         .validate_package_versions(&manifest.packages)
         .context("installed image package provenance differs")?;
@@ -403,23 +379,11 @@ pub(crate) fn verify_installed_image(
     )
 }
 
-fn retained_script_input_hashes(spec: &BuildSpec<'_>) -> BTreeMap<String, String> {
-    let inputs = HOST_INPUTS
-        .iter()
-        .map(|(_, guest_path, bytes)| (*guest_path, *bytes))
-        .collect::<Vec<_>>();
-    staged_input_hashes(spec, &inputs)
-}
-
-fn retained_input_hashes(spec: &BuildSpec<'_>) -> Result<BTreeMap<String, String>> {
-    let mut inputs = retained_script_input_hashes(spec);
-    for (name, guest_path) in GUEST_BINARY_INPUTS {
-        inputs.insert(
-            (*guest_path).to_owned(),
-            sha_file(&binaries::release_binary(name))?,
-        );
+fn require_current_commit(commit: &str) -> Result<()> {
+    if commit != wt_control_protocol::GIT_COMMIT_SHA {
+        bail!("image commit does not match the current WT commit");
     }
-    Ok(inputs)
+    Ok(())
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -467,10 +431,6 @@ pub(crate) fn sha_file(path: &Path) -> Result<String> {
     let mut digest = Sha256::new();
     std::io::copy(&mut file, &mut digest).with_context(|| format!("hash {}", path.display()))?;
     Ok(format!("{:x}", digest.finalize()))
-}
-
-pub(super) fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

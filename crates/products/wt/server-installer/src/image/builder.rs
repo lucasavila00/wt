@@ -2,7 +2,7 @@ mod contract;
 mod provenance;
 
 pub(super) use contract::validate_result_metadata;
-pub(super) use provenance::{image_config_sha, sha_bytes, stage_publication, staged_input_hashes};
+pub(super) use provenance::{sha_bytes, stage_publication};
 
 use contract::verify_retained_guest_contract;
 
@@ -305,7 +305,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     Ok(paths)
 }
 
-pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<String> {
+pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<()> {
     runner.run(
         cmd!(
             "sudo",
@@ -402,7 +402,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     if tmux_sha256.len() != 64 || !tmux_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         bail!("finalized image recorded an invalid tmux checksum");
     }
-    Ok(tmux_sha256)
+    Ok(())
 }
 
 pub(super) fn attach_console_tail(error: anyhow::Error, build_dir: &Path) -> anyhow::Error {
