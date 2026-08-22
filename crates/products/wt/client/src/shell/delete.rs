@@ -350,11 +350,11 @@ fn confirmation_event(event: &Event, area: Rect, choice: &mut ConfirmChoice) -> 
                 ConfirmChoice::Cancel => ConfirmationEvent::Cancel,
                 ConfirmChoice::Delete => ConfirmationEvent::Delete,
             },
-            KeyCode::Left | KeyCode::Up | KeyCode::BackTab => {
+            KeyCode::Left | KeyCode::Up => {
                 *choice = ConfirmChoice::Cancel;
                 ConfirmationEvent::Changed
             }
-            KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
+            KeyCode::Right | KeyCode::Down => {
                 *choice = ConfirmChoice::Delete;
                 ConfirmationEvent::Changed
             }
@@ -404,7 +404,7 @@ fn render_confirmation(
         layout.delete,
     );
     frame.render_widget(
-        Paragraph::new("Arrows/Tab: select · Enter: choose · Esc: cancel")
+        Paragraph::new("Arrows: select · Enter: choose · Esc: cancel")
             .alignment(Alignment::Center)
             .style(muted_style()),
         layout.footer,
@@ -634,23 +634,6 @@ mod tests {
             confirmation_event(&event, area, &mut ConfirmChoice::Cancel),
             ConfirmationEvent::Delete
         ));
-    }
-
-    #[test]
-    fn tab_moves_between_confirmation_buttons() {
-        let area = Rect::new(0, 0, 100, 30);
-        let mut choice = ConfirmChoice::Cancel;
-
-        assert!(matches!(
-            confirmation_event(&key(KeyCode::Tab), area, &mut choice),
-            ConfirmationEvent::Changed
-        ));
-        assert_eq!(choice, ConfirmChoice::Delete);
-        assert!(matches!(
-            confirmation_event(&key(KeyCode::BackTab), area, &mut choice),
-            ConfirmationEvent::Changed
-        ));
-        assert_eq!(choice, ConfirmChoice::Cancel);
     }
 
     #[test]

@@ -1,5 +1,9 @@
 use anyhow::{bail, Context as _, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
+};
+use crossterm::execute;
 use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Style};
@@ -316,9 +320,23 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     let mut flow = prepare(config, &used_names)?;
     let _signals = install_cancel_handlers()?;
     let mut terminal = ratatui::init();
+    if let Err(error) = execute!(
+        terminal.backend_mut(),
+        EnableBracketedPaste,
+        EnableMouseCapture
+    ) {
+        ratatui::restore();
+        return Err(error).context("enable terminal input for world creation");
+    }
     let result = run_loop(&mut terminal, &mut flow, config);
+    let input_result = execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        DisableBracketedPaste
+    )
+    .context("disable terminal input for world creation");
     ratatui::restore();
-    result
+    result.and_then(|created| input_result.map(|()| created))
 }
 
 pub(crate) fn prepare(config: &ClientConfig, used_names: &BTreeSet<String>) -> Result<Flow> {
