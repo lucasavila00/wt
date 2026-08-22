@@ -1,4 +1,4 @@
-# ADR 0062: Show message previews on Codex session cards
+# ADR 0063: Show message previews on Codex session cards
 
 - Status: Proposed; Date: 2026-08-22
 
