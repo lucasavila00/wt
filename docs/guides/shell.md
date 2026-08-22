@@ -17,8 +17,10 @@ clickable arrows beside the active world, change worlds, and `Up`, the ` WT`
 brand, the world label, or the `↑ ctrl` label opens the Control UI. Press `F5`
 or click elsewhere on the enabled navbar to return
 keyboard control to the world. Clickable navbar text is bold. `F6` closes `wt
-shell` from every view. Other keyboard input is forwarded to the active world,
-including while the navbar is enabled.
+shell` from every view. While the navbar is enabled, `F1` or `1` opens the
+command palette over the active Byobu session; it captures input until closed
+or a command starts its modal. Other keyboard input is forwarded to the active
+world.
 
 If an SSH process exits, its last terminal contents remain visible and a red
 bottom bar reports that the session ended. Press `Space` to reconnect that

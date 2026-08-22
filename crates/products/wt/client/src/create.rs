@@ -178,6 +178,15 @@ impl Flow {
 
     pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         self.form.render(frame, area);
+        self.render_status(frame, area);
+    }
+
+    pub(crate) fn render_overlay(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        self.form.render_overlay(frame, area);
+        self.render_status(frame, area);
+    }
+
+    fn render_status(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         let (title, message, help) = match &self.phase {
             Phase::Form => return,
             Phase::Creating { .. } => {

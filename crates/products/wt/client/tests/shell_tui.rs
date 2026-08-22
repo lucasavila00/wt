@@ -115,8 +115,10 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
         .type_text("new")?
         .press(Key::Enter)?
         .wait_for_text("Create world")?
+        .press(Key::Tab)?
         .press(Key::Enter)?
         .type_text("background")?
+        .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
@@ -140,8 +142,10 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .type_text("new")?
         .press(Key::Enter)?
         .wait_for_text("Create world")?
+        .press(Key::Tab)?
         .press(Key::Enter)?
         .type_text("background")?
+        .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?
         .press(Key::Enter)?

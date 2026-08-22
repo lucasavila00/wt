@@ -322,28 +322,26 @@ fn dispatch_event(
                 }
                 return Ok(true);
             }
-            if model.mode() == Mode::Control {
-                if flows.creation_error.is_some()
-                    && matches!(
-                        key.code,
-                        crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
-                    )
-                {
-                    flows.creation_error.take();
-                    return Ok(true);
-                }
-                if let Some(flow) = flows.deletion.as_mut() {
-                    let action = flow.handle_event(&Event::Key(key), area, runtime.config);
-                    let _ = apply_deletion_action(
-                        action,
-                        &mut flows.deletion,
-                        sessions,
-                        model,
-                        runtime.refresh,
-                        area,
-                    )?;
-                    return Ok(true);
-                }
+            if flows.creation_error.is_some()
+                && matches!(
+                    key.code,
+                    crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
+                )
+            {
+                flows.creation_error.take();
+                return Ok(true);
+            }
+            if let Some(flow) = flows.deletion.as_mut() {
+                let action = flow.handle_event(&Event::Key(key), area, runtime.config);
+                let _ = apply_deletion_action(
+                    action,
+                    &mut flows.deletion,
+                    sessions,
+                    model,
+                    runtime.refresh,
+                    area,
+                )?;
+                return Ok(true);
             }
             match model.handle_key(key, area) {
                 InputRoute::World => {
@@ -367,23 +365,23 @@ fn dispatch_event(
             Ok(true)
         }
         Event::Paste(text)
-            if model.mode() == Mode::Control
-                && flows
-                    .creation
-                    .as_ref()
-                    .is_some_and(|flow| flow.blocks_input()) =>
+            if flows
+                .creation
+                .as_ref()
+                .is_some_and(|flow| flow.blocks_input()) =>
         {
             if let Some(flow) = flows.creation.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
             Ok(true)
         }
-        Event::Paste(text) if model.mode() == Mode::Control && flows.deletion.is_some() => {
+        Event::Paste(text) if flows.deletion.is_some() => {
             if let Some(flow) = flows.deletion.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
             Ok(true)
         }
+        Event::Paste(_) if model.control().palette().is_open() => Ok(true),
         Event::Paste(text) if model.mode() == Mode::World => {
             if sessions.closed_message(model.active()).is_some() {
                 return Ok(true);
@@ -392,11 +390,31 @@ fn dispatch_event(
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
-        Event::Mouse(mouse) if model.mode().forwards_mouse() && mouse.row == area.y => {
+        Event::Mouse(mouse) if flows.deletion.is_some() => {
+            if let Some(flow) = flows.deletion.as_mut() {
+                let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
+                let _ = apply_deletion_action(
+                    action,
+                    &mut flows.deletion,
+                    sessions,
+                    model,
+                    runtime.refresh,
+                    area,
+                )?;
+            }
+            Ok(true)
+        }
+        Event::Mouse(mouse)
+            if model.mode().forwards_mouse()
+                && !model.control().palette().is_open()
+                && mouse.row == area.y =>
+        {
             let (changed, _) = model.handle_mouse(mouse, area);
             Ok(changed)
         }
-        Event::Mouse(mouse) if model.mode().forwards_mouse() => {
+        Event::Mouse(mouse)
+            if model.mode().forwards_mouse() && !model.control().palette().is_open() =>
+        {
             if sessions.closed_message(model.active()).is_some() {
                 return Ok(false);
             }
@@ -412,7 +430,9 @@ fn dispatch_event(
             }
             Ok(false)
         }
-        Event::Mouse(mouse) if model.mode() == Mode::Control => {
+        Event::Mouse(mouse)
+            if model.mode() == Mode::Control || model.control().palette().is_open() =>
+        {
             if let Some(flow) = flows.deletion.as_mut() {
                 let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
                 let _ = apply_deletion_action(
