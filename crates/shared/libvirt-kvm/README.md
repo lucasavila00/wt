@@ -4,7 +4,7 @@ Production libvirt/KVM backend.
 
 ## Owns
 
-- Domain, network, and independent qcow2 disk lifecycle.
+- Domain, network, and qcow2 overlay disk lifecycle.
 - Guest-agent readiness and bounded guest transport.
 - Machine inspection, start, stop, disk usage, and deletion.
 

@@ -39,5 +39,5 @@ images, services, generated configuration, grants, registry, and encrypted
 credentials. Neither command removes source credentials or installed host
 packages and binaries.
 
-Golden-image rebuilds affect only new worlds. Existing disks are independent
-and retain their current contents until recreated.
+Golden-image rebuilds affect only new worlds. Existing overlays retain their
+current contents and continue to use their retained image generation.

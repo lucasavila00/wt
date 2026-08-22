@@ -33,9 +33,9 @@ reserved for managed SSH.
 | `wt rm NAME` | Destroy the world |
 | `wt sync` | Rewrite managed SSH inventory |
 
-Each world has an independent disk file on the server. A running disk display
+Each world has a writable qcow2 overlay on the server. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports
-allocated size only. `wt stop` keeps the file and `wt rm` deletes it.
+allocated size only. `wt stop` keeps the overlay and `wt rm` deletes it.
 
 New worlds require at least one valid regular `~/.ssh/*.pub` file. Private keys
 are never sent to the server. Every world receives the workstation's global

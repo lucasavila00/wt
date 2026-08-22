@@ -13,5 +13,6 @@ Managed SSH provides two aliases:
 - `CONTEXT.WORLD` opens the persistent Byobu workspace.
 - `CONTEXT.WORLD-direct` opens a normal guest shell or runs a command directly.
 
-World disks are independent copies of the golden image. Stop/start preserves
-their data. Deleting a world revokes its Git grant and removes its disk.
+World disks are writable overlays backed by a retained golden-image generation.
+Stop/start preserves their data. Deleting a world revokes its Git grant and
+removes its overlay.

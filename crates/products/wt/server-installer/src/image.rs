@@ -83,7 +83,7 @@ pub(crate) fn ensure(
         }
         InstalledImageState::Replace(reason) => {
             println!("Replacing the installed retained golden image: {reason}");
-            println!("Existing worlds use independent disks and are unaffected.");
+            println!("Existing worlds remain backed by their retained image generations.");
             build_image(runner, input, server, server_bytes, &source, &byobu)?;
         }
     }

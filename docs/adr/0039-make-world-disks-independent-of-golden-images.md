@@ -1,6 +1,6 @@
 # ADR 0039: Make world disks independent of golden images
 
-- Status: Accepted
+- Status: Superseded by [ADR 0058](0058-restore-golden-image-backed-world-disks.md)
 - Date: 2026-08-16
 - Amended by: [ADR 0043](0043-own-retained-guest-foundation-in-shared-images.md)
 
