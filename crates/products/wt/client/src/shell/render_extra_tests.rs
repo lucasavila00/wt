@@ -1,0 +1,74 @@
+use super::*;
+use ratatui::{backend::TestBackend, Terminal};
+
+pub(super) fn now_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
+    let mut status = crate::shell::refresh_status::RefreshStatus::default();
+    assert_eq!(status.title("Codex sessions"), "Codex sessions · Updating…");
+    status.finish(Ok("2026-08-21T20:00:00Z".into()));
+    assert_eq!(
+        status.title("Codex sessions"),
+        "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+    );
+    status.set_failures(vec![
+        "context ars could not be queried: connection timed out".into(),
+    ]);
+    assert_eq!(
+        status.title("Codex sessions"),
+        "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
+    );
+}
+
+#[test]
+fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
+    let mut state = ControlState::default();
+    state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
+    state.finish_worlds_refresh(Err(vec![
+        "context ars could not be queried: request timed out after 60s".into(),
+        "context lab could not be queried: connection refused".into(),
+    ]));
+    assert_eq!(
+        state.worlds_refresh().title("Worlds"),
+        "Worlds · Last updated 2026-08-22T19:29:38Z · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused"
+    );
+
+    state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
+    assert_eq!(
+        state.worlds_refresh().title("Worlds"),
+        "Worlds · Last updated 2026-08-22T19:30:00Z"
+    );
+}
+
+#[test]
+fn empty_shell_renders_the_control_ui() {
+    let backend = TestBackend::new(64, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let model = ShellModel::new(Vec::new());
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
+}

@@ -67,6 +67,13 @@ impl SessionSet {
         self.sessions[index].parser.screen()
     }
 
+    pub(super) fn screens(&self) -> Vec<&vt100::Screen> {
+        self.sessions
+            .iter()
+            .map(|session| session.parser.screen())
+            .collect()
+    }
+
     pub(super) fn closed_message(&self, index: usize) -> Option<&str> {
         self.sessions[index].closed_message.as_deref()
     }
@@ -103,6 +110,13 @@ impl SessionSet {
     }
 
     pub(super) fn resize(&mut self, rows: u16, columns: u16) -> Result<()> {
+        if self
+            .sessions
+            .iter()
+            .all(|session| session.parser.screen().size() == (rows, columns))
+        {
+            return Ok(());
+        }
         let size = pty_size(rows, columns);
         for session in &mut self.sessions {
             if let Some(master) = session.master.as_ref() {

@@ -42,7 +42,18 @@ fn switcher_activates_the_world_bar() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
@@ -80,7 +91,18 @@ fn inactive_world_bar_is_dimmed() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -111,7 +133,18 @@ fn disabled_f5_override_emphasizes_the_top_bar() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
@@ -125,7 +158,18 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     model.set_test_server(true);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -142,7 +186,18 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 12));
     let parser = parser();
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
     let top = (0..80)
         .map(|column| {
@@ -172,7 +227,8 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
         .draw(|frame| {
             draw(
                 frame,
-                Some(parser.screen()),
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
                 Some("SSH session ended: Exited with code 255"),
                 &model,
                 None,
@@ -200,7 +256,18 @@ fn control_ui_has_activity_scaffolding() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
@@ -253,7 +320,18 @@ fn control_ui_shows_world_cards() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_world_cards", terminal.backend().buffer());
@@ -268,7 +346,18 @@ fn control_ui_opens_the_command_palette() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_command_palette", terminal.backend().buffer());
@@ -286,7 +375,18 @@ fn active_navbar_opens_the_command_palette_over_the_world() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -385,10 +485,78 @@ fn control_ui_shows_codex_session_cards() {
     let parser = parser();
 
     terminal
-        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
+}
+
+#[test]
+fn control_ui_shows_live_session_panes() {
+    let backend = TestBackend::new(100, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    let session_id = Uuid::from_u128(2);
+    model.set_codex(
+        vec![CodexCard {
+            identity: CodexCardIdentity::Observation {
+                context: "ars".into(),
+                session_id,
+                world_id: Uuid::from_u128(1),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            session_id: Some(session_id),
+            timestamp: Some(now_ms()),
+            latest_user_message: None,
+            kind: CodexCardKind::Observation {
+                world_id: Uuid::from_u128(1),
+                world_name: "dev".into(),
+                cwd: "/home/wt/wt".into(),
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                state: CodexSessionState::Working,
+                session_start_source: None,
+                target: ByobuTarget {
+                    tmux_session: "wt-host".into(),
+                    pane_id: "%1".into(),
+                },
+            },
+        }],
+        "2026-08-22T19:00:00Z".into(),
+        Rect::new(0, 0, 100, 18),
+    );
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
+    let mut live_parser = vt100::Parser::new(10, 91, 0);
+    live_parser.process(b"world output\r\n\x1b[31mred\x1b[0m");
+
+    terminal
+        .draw(|frame| {
+            super::super::live::draw(
+                frame,
+                frame.area(),
+                &[live_parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                &model,
+            )
+        })
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_control_live_sessions", terminal.backend().buffer());
 }
 
 #[test]
@@ -439,7 +607,18 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
     model.finish_codex_open(&target, None, true);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
@@ -493,72 +672,22 @@ fn failed_context_refresh_is_shown_in_the_title() {
     ]);
 
     terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
         .unwrap();
 
     insta::assert_debug_snapshot!(
         "shell_codex_context_failure_title",
         terminal.backend().buffer()
     );
-}
-
-#[test]
-fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
-    let mut status = crate::shell::refresh_status::RefreshStatus::default();
-    assert_eq!(status.title("Codex sessions"), "Codex sessions · Updating…");
-    status.finish(Ok("2026-08-21T20:00:00Z".into()));
-    assert_eq!(
-        status.title("Codex sessions"),
-        "Codex sessions · Last updated 2026-08-21T20:00:00Z"
-    );
-    status.set_failures(vec![
-        "context ars could not be queried: connection timed out".into(),
-    ]);
-    assert_eq!(
-        status.title("Codex sessions"),
-        "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
-    );
-}
-
-#[test]
-fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
-    let mut state = ControlState::default();
-    state.finish_worlds_refresh(Ok("2026-08-22T19:29:38Z".into()));
-    state.finish_worlds_refresh(Err(vec![
-        "context ars could not be queried: request timed out after 60s".into(),
-        "context lab could not be queried: connection refused".into(),
-    ]));
-    assert_eq!(
-        state.worlds_refresh().title("Worlds"),
-        "Worlds · Last updated 2026-08-22T19:29:38Z · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused"
-    );
-
-    state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));
-    assert_eq!(
-        state.worlds_refresh().title("Worlds"),
-        "Worlds · Last updated 2026-08-22T19:30:00Z"
-    );
-}
-
-#[test]
-fn empty_shell_renders_the_control_ui() {
-    let backend = TestBackend::new(64, 12);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let model = ShellModel::new(Vec::new());
-
-    terminal
-        .draw(|frame| draw(frame, None, None, &model, None, None, None))
-        .unwrap();
-
-    insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
-}
-
-fn now_ms() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap()
 }

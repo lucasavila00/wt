@@ -6,6 +6,32 @@ use wt_agent_tool_gateway::{
 };
 
 pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
+    let expected = inspect(session_id, tmux_session, pane_id)?;
+
+    let output = Command::new("/usr/bin/tmux")
+        .args([
+            "select-window",
+            "-t",
+            pane_id,
+            ";",
+            "select-pane",
+            "-t",
+            pane_id,
+        ])
+        .output()
+        .context("focus Codex Byobu target")?;
+    if !output.status.success() || !output.stdout.is_empty() {
+        bail!(
+            "could not focus Codex Byobu target: status {}; stdout {}; stderr {}",
+            output.status,
+            escaped(&output.stdout),
+            escaped(&output.stderr)
+        );
+    }
+    Ok(expected)
+}
+
+fn inspect(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
     if !valid_codex_tmux_session(tmux_session) {
         bail!("invalid Codex tmux session: {tmux_session}");
     }
@@ -37,26 +63,6 @@ pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Resu
         );
     }
 
-    let output = Command::new("/usr/bin/tmux")
-        .args([
-            "select-window",
-            "-t",
-            pane_id,
-            ";",
-            "select-pane",
-            "-t",
-            pane_id,
-        ])
-        .output()
-        .context("focus Codex Byobu target")?;
-    if !output.status.success() || !output.stdout.is_empty() {
-        bail!(
-            "could not focus Codex Byobu target: status {}; stdout {}; stderr {}",
-            output.status,
-            escaped(&output.stdout),
-            escaped(&output.stderr)
-        );
-    }
     Ok(expected)
 }
 

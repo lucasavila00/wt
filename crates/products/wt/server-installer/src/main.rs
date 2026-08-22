@@ -23,6 +23,12 @@ enum SetupCommand {
         #[arg(long)]
         config: PathBuf,
     },
+    /// Validate that an install input is explicitly safe for destructive E2E setup.
+    ValidateE2e {
+        /// Path to the E2E install input TOML.
+        #[arg(long)]
+        config: PathBuf,
+    },
     /// Install a complete local wt server from this source checkout.
     Install {
         /// Path to the install input TOML.
@@ -73,6 +79,10 @@ fn run() -> Result<()> {
         SetupCommand::Validate { config } => {
             server::validate(&config).context("configuration validation stopped")?;
             println!("Configuration is valid: {}", config.display());
+        }
+        SetupCommand::ValidateE2e { config } => {
+            server::validate_e2e(&config).context("E2E configuration validation stopped")?;
+            println!("E2E configuration is valid: {}", config.display());
         }
         SetupCommand::Install { config } => {
             server::install(&runner, &config).context("server installation stopped")?

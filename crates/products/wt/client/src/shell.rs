@@ -14,11 +14,14 @@ use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod activity;
 mod bar;
 mod codex;
 mod control;
 mod delete;
 mod input;
+mod live;
+mod live_focus;
 mod model;
 mod refresh;
 mod refresh_status;
@@ -58,6 +61,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(updated_at()));
     let focus = codex::FocusWorker::default();
+    let mut live_focus = live_focus::LiveFocus::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let runtime = ShellRuntime {
@@ -81,6 +85,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
+        &mut live_focus,
         &runtime,
         &shutdown,
     );
@@ -136,14 +141,26 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
+    live_focus: &mut live_focus::LiveFocus,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let mut redraw = true;
     let mut flows = ControlFlows::default();
     while !shutdown.load(Ordering::Relaxed) {
+        let area: Rect = terminal
+            .size()
+            .context("read wt shell terminal area")?
+            .into();
+        let (rows, columns) = session_viewport(model, area);
+        sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
+        if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+            live_focus.sync(model, sessions, runtime.focus);
+        } else {
+            live_focus.clear();
+        }
         for sequence in clipboard_writes {
             terminal
                 .backend_mut()
@@ -193,6 +210,10 @@ fn run_loop(
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
+            if !result.open_world {
+                live_focus.complete(&result.target, result.result.is_ok());
+                continue;
+            }
             match result.result {
                 Ok(()) => match model.focus_route(&result.target) {
                     Some((index, _)) if sessions.is_open(index) => {
@@ -235,7 +256,7 @@ fn run_loop(
             )?;
         }
         if redraw {
-            let screen = model.has_worlds().then(|| sessions.screen(model.active()));
+            let screens = sessions.screens();
             let closed_message = model
                 .has_worlds()
                 .then(|| sessions.closed_message(model.active()))
@@ -243,7 +264,8 @@ fn run_loop(
             terminal.draw(|frame| {
                 render::draw(
                     frame,
-                    screen,
+                    &screens,
+                    live_focus,
                     closed_message,
                     model,
                     flows.creation.as_ref(),
@@ -535,6 +557,14 @@ fn start_control_command(
 
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
+}
+
+fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
+    if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+        live::preview_size(area)
+    } else {
+        (world_rows(area.height), area.width)
+    }
 }
 
 fn world_area(area: Rect) -> Rect {

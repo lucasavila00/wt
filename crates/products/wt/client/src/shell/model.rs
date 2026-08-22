@@ -385,7 +385,7 @@ impl ShellModel {
         let accepted = self.control.finish_open(target, failed);
         if accepted
             && self.mode == Mode::Control
-            && self.control.activity() == super::control::Activity::Codex
+            && self.control.activity() != super::control::Activity::Worlds
             && !failed
         {
             let Some(world) = world else {

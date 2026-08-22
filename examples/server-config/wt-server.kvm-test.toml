@@ -1,4 +1,5 @@
 version = 1
+test_server = true
 
 [image]
 path = "/var/lib/wt/images/wt-retained-ubuntu-24.04-amd64.qcow2"

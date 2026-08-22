@@ -1,7 +1,6 @@
 use super::control::{
     codex_card_rects, command_palette_layout, control_areas, control_content_areas,
     world_card_rects, Activity, CodexCard, CodexCardKind, CommandPalette, ControlState,
-    ACTIVITY_BUTTON_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
@@ -14,9 +13,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
     frame: &mut Frame<'_>,
-    screen: Option<&vt100::Screen>,
+    screens: &[&vt100::Screen],
+    live_focus: &super::live_focus::LiveFocus,
     closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
@@ -31,7 +32,7 @@ pub(super) fn draw(
         }
     }
     if model.mode() == Mode::Control {
-        draw_control(frame, model, creation);
+        draw_control(frame, screens, live_focus, model, creation);
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
@@ -44,7 +45,7 @@ pub(super) fn draw(
         draw_test_server_banner(frame, model);
         return;
     }
-    let screen = screen.expect("world mode requires a world screen");
+    let screen = screens[model.active()];
     let world = world_area(frame.area());
     frame.render_widget(TerminalView(screen), world);
     draw_world_bar(frame, model);
@@ -196,15 +197,22 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     );
 }
 
-fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flow>) {
+fn draw_control(
+    frame: &mut Frame<'_>,
+    screens: &[&vt100::Screen],
+    live_focus: &super::live_focus::LiveFocus,
+    model: &ShellModel,
+    creation: Option<&Flow>,
+) {
     let area = frame.area();
     frame.render_widget(Clear, area);
     let (activity_bar, content) = control_areas(area);
-    draw_activity_bar(frame, activity_bar, model.control().activity());
+    super::activity::draw(frame, activity_bar, model.control().activity());
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
         Activity::Codex => draw_codex(frame, body, model.control()),
+        Activity::Live => super::live::draw(frame, body, screens, live_focus, model),
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
         (Activity::Worlds, true) => {
@@ -215,6 +223,12 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
             "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Codex, false) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+        }
+        (Activity::Live, true) => {
+            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+        }
+        (Activity::Live, false) => {
             "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
@@ -450,7 +464,7 @@ fn draw_codex_card(
     frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
 }
 
-fn card_title(card: &CodexCard) -> (String, Color) {
+pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
     let suffix = card
         .timestamp
         .map(relative_age)
@@ -597,33 +611,6 @@ pub(super) fn relative_age(timestamp: i64) -> String {
     }
 }
 
-fn draw_activity_bar(frame: &mut Frame<'_>, area: Rect, active: Activity) {
-    frame.render_widget(
-        Block::new()
-            .borders(Borders::RIGHT)
-            .border_style(Style::new()),
-        area,
-    );
-    for (index, (activity, icon)) in [(Activity::Codex, "󰚩"), (Activity::Worlds, "")]
-        .into_iter()
-        .enumerate()
-    {
-        let button = Rect::new(
-            area.x,
-            area.y.saturating_add(index as u16 * ACTIVITY_BUTTON_HEIGHT),
-            area.width.saturating_sub(1),
-            ACTIVITY_BUTTON_HEIGHT,
-        );
-        frame.render_widget(
-            Paragraph::new(icon).alignment(Alignment::Center),
-            Rect::new(button.x, button.y + 1, button.width, 1),
-        );
-        if activity == active {
-            frame.render_widget(Paragraph::new("▌"), Rect::new(button.x, button.y + 1, 1, 1));
-        }
-    }
-}
-
 fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandPalette) {
     if !palette.is_open() {
         return;
@@ -673,7 +660,7 @@ pub(super) fn muted_style() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
 
-fn selected_style(selected: bool) -> Style {
+pub(super) fn selected_style(selected: bool) -> Style {
     if selected {
         Style::new().add_modifier(Modifier::REVERSED)
     } else {
@@ -684,3 +671,9 @@ fn selected_style(selected: bool) -> Style {
 #[cfg(test)]
 #[path = "render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "render_extra_tests.rs"]
+mod extra_tests;
+#[cfg(test)]
+use extra_tests::now_ms;
