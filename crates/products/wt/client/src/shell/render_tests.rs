@@ -60,7 +60,7 @@ fn switcher_activates_the_world_bar() {
 }
 
 #[test]
-fn world_bar_uses_reverse_video() {
+fn inactive_world_bar_is_dimmed() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one", "local.two"]);
@@ -76,15 +76,13 @@ fn world_bar_uses_reverse_video() {
     let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
     assert_eq!(brand.fg, Some(Color::Reset));
     assert_eq!(brand.bg, Some(Color::Reset));
-    assert!(brand
-        .add_modifier
-        .contains(Modifier::BOLD | Modifier::REVERSED));
+    assert!(brand.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
+    assert!(!brand.add_modifier.contains(Modifier::REVERSED));
     let style = terminal.backend().buffer().cell((6, 0)).unwrap().style();
     assert_eq!(style.fg, Some(Color::Reset));
     assert_eq!(style.bg, Some(Color::Reset));
-    assert!(style
-        .add_modifier
-        .contains(Modifier::BOLD | Modifier::REVERSED));
+    assert!(style.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
+    assert!(!style.add_modifier.contains(Modifier::REVERSED));
 }
 
 #[test]

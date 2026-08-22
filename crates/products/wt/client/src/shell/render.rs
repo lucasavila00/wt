@@ -133,15 +133,13 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     } else {
         "F6: close "
     };
-    let style = Style::new().add_modifier(
-        Modifier::REVERSED
-            | Modifier::BOLD
-            | if disabled {
-                Modifier::UNDERLINED
-            } else {
-                Modifier::empty()
-            },
-    );
+    let style = Style::new().add_modifier(if disabled {
+        Modifier::BOLD | Modifier::REVERSED | Modifier::UNDERLINED
+    } else if active {
+        Modifier::BOLD | Modifier::REVERSED
+    } else {
+        Modifier::BOLD | Modifier::DIM
+    });
     let bar = Rect::new(frame.area().x, frame.area().y, frame.area().width, 1);
     let [previous, world, next] = super::bar::world_bar_controls(model, bar);
     let left = Rect::new(bar.x, bar.y, previous.x.saturating_sub(bar.x), 1);
