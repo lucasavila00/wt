@@ -60,9 +60,13 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         spec: ProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<GuestAccess, WorkerError> {
+        let creation_started = Instant::now();
+        let phase_started = Instant::now();
         let readiness_key = ReadinessKey::generate()?;
+        crate::write_creation_timing(log, "generate readiness key", phase_started.elapsed())?;
         let mut authorized_keys = spec.ssh_authorized_keys.to_vec();
         authorized_keys.push(readiness_key.public_key.clone());
+        let phase_started = Instant::now();
         let machine = self.provider.create(
             &MachineSpec {
                 provider_id: ProviderId::parse(spec.backend_id)?,
@@ -73,8 +77,12 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             },
             log,
         )?;
+        crate::write_creation_timing(log, "create and boot machine", phase_started.elapsed())?;
         let deadline = Instant::now() + self.readiness_timeout;
+        let phase_started = Instant::now();
         run_prepare(machine.transport.as_ref(), "wait", None, deadline, log)?;
+        crate::write_creation_timing(log, "wait for guest system", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         run_prepare(
             machine.transport.as_ref(),
             "access-policy",
@@ -82,6 +90,8 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             deadline,
             log,
         )?;
+        crate::write_creation_timing(log, "apply guest access policy", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.retained.provision(
             machine.transport.as_ref(),
             crate::retained::ProvisionSpec {
@@ -93,12 +103,18 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             deadline,
             log,
         )?;
+        crate::write_creation_timing(log, "configure retained guest", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         let access = inspect_machine(&machine, self.readiness_timeout, log)?;
+        crate::write_creation_timing(log, "inspect guest SSH", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         verify_login(
             access.ssh(),
             readiness_key.private_key(),
             readiness_key.path(),
         )?;
+        crate::write_creation_timing(log, "verify guest SSH login", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         run_prepare(
             machine.transport.as_ref(),
             "remove-key",
@@ -106,6 +122,8 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             Instant::now() + self.readiness_timeout,
             log,
         )?;
+        crate::write_creation_timing(log, "remove readiness key", phase_started.elapsed())?;
+        crate::write_creation_timing(log, "total server provisioning", creation_started.elapsed())?;
         Ok(access)
     }
 

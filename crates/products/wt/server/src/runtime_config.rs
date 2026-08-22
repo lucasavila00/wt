@@ -178,13 +178,9 @@ impl ServerConfig {
     pub fn retained_config(&self) -> wt_retained_worlds::RetainedConfig {
         wt_retained_worlds::RetainedConfig {
             agent_tools: wt_retained_worlds::AgentToolsConfig {
-                relay_binary: self.install.binary_dir.join("wt-agent-tool-gateway-relay"),
-                remote_binary: self.install.binary_dir.join("git-remote-wt-agent"),
-                cli_binary: self.install.binary_dir.join("wt-tools"),
                 provider_hosts: self.agent_tools_provider_hosts(),
                 vsock_port: self.agent_tools.vsock_port,
             },
-            wt_codex_integration_binary: self.install.binary_dir.join("wt-codex-integration"),
         }
     }
 

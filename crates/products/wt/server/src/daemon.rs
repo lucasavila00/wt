@@ -109,6 +109,7 @@ impl<'a> ProgressWriter<'a> {
         if message.is_empty() {
             return Ok(());
         }
+        eprintln!("wt-server: world creation progress: {message}");
         if self.disconnected {
             return Ok(());
         }

@@ -9,9 +9,9 @@ case "$vsock_port" in
     ''|*[!0-9]*) echo "invalid agent tool vsock port" >&2; exit 1 ;;
 esac
 
-install -m 0755 "$stage-relay" /usr/local/bin/wt-agent-tool-gateway-relay
-install -m 0755 "$stage-remote" /usr/local/bin/git-remote-wt-agent
-install -m 0755 "$stage-cli" /usr/local/bin/wt-tools
+test -x /usr/local/bin/wt-agent-tool-gateway-relay
+test -x /usr/local/bin/git-remote-wt-agent
+test -x /usr/local/bin/wt-tools
 install -d -m 0700 -o "$WT_USER" -g "$WT_USER" /var/lib/wt-agent-tool-gateway
 install -m 0600 -o "$WT_USER" -g "$WT_USER" "$stage-grant" /var/lib/wt-agent-tool-gateway/grant
 install -m 0600 -o "$WT_USER" -g "$WT_USER" \
@@ -42,8 +42,7 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 EOF
-rm -f "$stage-grant" "$stage-relay" "$stage-remote" "$stage-cli" \
-    "$stage-providers" "$stage-vsock-port"
+rm -f "$stage-grant" "$stage-providers" "$stage-vsock-port"
 systemctl daemon-reload
 if ! systemctl enable --now wt-agent-tool-gateway-relay.service; then
     systemctl status --no-pager --full wt-agent-tool-gateway-relay.service >&2 || true

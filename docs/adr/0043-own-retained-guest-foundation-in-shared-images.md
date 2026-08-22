@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-20
+- Amended by: [ADR 0059](0059-bake-static-guest-binaries-into-golden-images.md)
 
 The golden image owns the retained guest foundation:
 

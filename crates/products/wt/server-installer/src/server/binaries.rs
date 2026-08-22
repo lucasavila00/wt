@@ -14,7 +14,7 @@ const STATIC_BINARIES: [&str; 6] = [
     "wt-codex-integration",
 ];
 
-pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
+pub(super) fn build(runner: &impl Runner) -> Result<()> {
     runner.run(
         cmd!(
             "scripts/cargo",
@@ -26,6 +26,10 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         ),
         "build native wt-server",
     )?;
+    build_static(runner)
+}
+
+pub(super) fn build_static(runner: &impl Runner) -> Result<()> {
     runner.run(
         cmd!(
             "scripts/cargo",
@@ -43,6 +47,13 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         ),
         "build static WT binaries",
     )?;
+    for name in STATIC_BINARIES {
+        validate_static_binary(runner, &release_binary(name), name)?;
+    }
+    Ok(())
+}
+
+pub(super) fn install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     for name in [
         "wt-agent-tool-gateway",
         "wt-agent-tool-gateway-relay",
@@ -53,9 +64,6 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
         "wt-server",
     ] {
         let source = release_binary(name);
-        if STATIC_BINARIES.contains(&name) {
-            validate_static_binary(runner, &source, name)?;
-        }
         let destination = config.install.binary_dir.join(name);
         let temporary = config.install.binary_dir.join(format!(".{name}.wt-new"));
         if temporary.exists() {
@@ -67,7 +75,7 @@ pub(super) fn build_and_install(runner: &impl Runner, config: &ServerConfig) -> 
     Ok(())
 }
 
-fn release_binary(name: &str) -> PathBuf {
+pub(crate) fn release_binary(name: &str) -> PathBuf {
     if STATIC_BINARIES.contains(&name) {
         Path::new("target")
             .join(MUSL_TARGET)

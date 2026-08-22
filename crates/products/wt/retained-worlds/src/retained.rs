@@ -1,6 +1,5 @@
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_control_protocol::SshAccess;
@@ -16,7 +15,6 @@ pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
 pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-retained-agent-tools";
 pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex";
 
-const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../assets/world/shared/mount-codex.sh");
 const AGENT_TOOLS_STAGE: &str = "/tmp/wt-retained-agent-tools-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
@@ -52,9 +50,6 @@ impl GuestAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentToolsConfig {
-    pub relay_binary: PathBuf,
-    pub remote_binary: PathBuf,
-    pub cli_binary: PathBuf,
     pub provider_hosts: Vec<String>,
     pub vsock_port: u32,
 }
@@ -92,18 +87,6 @@ impl AgentToolsConfig {
                 "agent tool provider hosts must not contain duplicates",
             ));
         }
-        for (name, path) in [
-            ("agent tool relay", &self.relay_binary),
-            ("agent tool remote helper", &self.remote_binary),
-            ("agent tool CLI", &self.cli_binary),
-        ] {
-            if !path.is_file() {
-                return Err(WorkerError::new(format!(
-                    "{name} not found: {}",
-                    path.display()
-                )));
-            }
-        }
         Ok(())
     }
 
@@ -119,7 +102,6 @@ impl AgentToolsConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetainedConfig {
     pub agent_tools: AgentToolsConfig,
-    pub wt_codex_integration_binary: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -132,14 +114,7 @@ pub struct ProvisionSpec<'a> {
 
 impl RetainedConfig {
     pub fn validate(&self) -> Result<(), WorkerError> {
-        self.agent_tools.validate()?;
-        if !self.wt_codex_integration_binary.is_file() {
-            return Err(WorkerError::new(format!(
-                "wt-codex-integration not found: {}",
-                self.wt_codex_integration_binary.display()
-            )));
-        }
-        Ok(())
+        self.agent_tools.validate()
     }
 
     pub fn provision(
@@ -149,7 +124,10 @@ impl RetainedConfig {
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
+        let phase_started = Instant::now();
         self.install_access(transport, spec.authorized_keys, deadline, log)?;
+        crate::write_creation_timing(log, "install SSH access", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.install_git_author(
             transport,
             spec.git_user_name,
@@ -157,9 +135,13 @@ impl RetainedConfig {
             deadline,
             log,
         )?;
+        crate::write_creation_timing(log, "install Git author", phase_started.elapsed())?;
+        let phase_started = Instant::now();
         self.install_agent_tools(transport, spec.git_grant, deadline, log)?;
-        self.install_wt_codex_integration(transport, deadline, log)?;
-        self.mount_codex(transport, deadline, log)
+        crate::write_creation_timing(log, "configure agent tools", phase_started.elapsed())?;
+        let phase_started = Instant::now();
+        self.mount_codex(transport, deadline, log)?;
+        crate::write_creation_timing(log, "mount Codex state", phase_started.elapsed())
     }
 
     fn install_access(
@@ -193,22 +175,6 @@ impl RetainedConfig {
         self.agent_tools.validate()?;
         for (suffix, contents) in [
             ("grant", grant.as_bytes().to_vec()),
-            (
-                "relay",
-                std::fs::read(&self.agent_tools.relay_binary)
-                    .map_err(|error| WorkerError::new(format!("read agent tool relay: {error}")))?,
-            ),
-            (
-                "remote",
-                std::fs::read(&self.agent_tools.remote_binary).map_err(|error| {
-                    WorkerError::new(format!("read agent tool remote helper: {error}"))
-                })?,
-            ),
-            (
-                "cli",
-                std::fs::read(&self.agent_tools.cli_binary)
-                    .map_err(|error| WorkerError::new(format!("read agent tool CLI: {error}")))?,
-            ),
             (
                 "providers",
                 self.agent_tools.provider_hosts_file().into_bytes(),
@@ -261,54 +227,12 @@ impl RetainedConfig {
         run_helper(transport, GIT_AUTHOR_HELPER, &[], None, deadline, log)
     }
 
-    fn install_wt_codex_integration(
-        &self,
-        transport: &dyn GuestTransport,
-        deadline: Instant,
-        log: &mut dyn Write,
-    ) -> Result<(), WorkerError> {
-        let contents = std::fs::read(&self.wt_codex_integration_binary)
-            .map_err(|error| WorkerError::new(format!("read wt-codex-integration: {error}")))?;
-        transport
-            .write_file(&wt_libvirt_kvm::WriteFileRequest {
-                path: "/usr/local/bin/wt-codex-integration",
-                contents: &contents,
-                owner: "root",
-                group: "root",
-                mode: 0o755,
-                deadline,
-            })
-            .map_err(WorkerError::from)?;
-        run_helper(
-            transport,
-            "/usr/bin/env",
-            &[
-                "CODEX_HOME=/home/wt/.codex",
-                "/usr/local/bin/wt-codex-integration",
-                "install",
-            ],
-            None,
-            deadline,
-            log,
-        )
-    }
-
     pub fn mount_codex(
         &self,
         transport: &dyn GuestTransport,
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
-        transport
-            .write_file(&wt_libvirt_kvm::WriteFileRequest {
-                path: MOUNT_CODEX_HELPER,
-                contents: MOUNT_CODEX,
-                owner: "root",
-                group: "root",
-                mode: 0o755,
-                deadline,
-            })
-            .map_err(WorkerError::from)?;
         run_helper(transport, MOUNT_CODEX_HELPER, &[], None, deadline, log)
     }
 }
@@ -476,7 +400,6 @@ fn is_host_key_kind(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn canonicalizes_authorized_keys() {
@@ -501,9 +424,6 @@ mod tests {
     #[test]
     fn rejects_duplicate_agent_tools_hosts() {
         let config = AgentToolsConfig {
-            relay_binary: PathBuf::from("relay"),
-            remote_binary: PathBuf::from("remote"),
-            cli_binary: PathBuf::from("cli"),
             provider_hosts: vec!["github.com".to_owned(), "github.com".to_owned()],
             vsock_port: 18017,
         };

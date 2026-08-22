@@ -1,8 +1,8 @@
 # KVM
 
 `wt-libvirt-kvm` owns machine creation, inspection, start, stop, disk usage,
-and deletion. It creates independent qcow2 world disks and libvirt domains and
-uses the QEMU guest agent for bounded transport and readiness.
+and deletion. It creates qcow2 world overlays and libvirt domains and uses the
+QEMU guest agent for bounded transport and readiness.
 
 Every domain receives a deterministic MAC address derived from its provider
 ID. The golden image contains a generic DHCP network configuration keyed by
@@ -16,13 +16,16 @@ inside a temporary KVM guest. The final image contains Git, OpenSSH, QEMU guest
 support, Byobu, tmux, Codex, and WT's host and gateway helpers. Build-only
 packages and bootstrap state are removed before publication.
 
-The image has a provenance manifest and checksum. The provider rejects a world
-disk smaller than its template, then creates an independent qcow2 copy. Image
-replacement does not affect existing disks.
+The image has a provenance manifest and checksum that cover the static WT guest
+binaries. The provider rejects a world disk smaller than its template, then
+creates a qcow2 overlay backed by the server's pinned image generation. Image
+replacement affects only new worlds; old generations remain available to
+existing world overlays.
 
-The image owns `wt:wt` at UID/GID `1001:1001`, `/home/wt`, and the shared
-Byobu/tmux profile. Provisioning validates that foundation and applies SSH,
-Git, gateway, and Codex access.
+The image owns `wt:wt` at UID/GID `1001:1001`, `/home/wt`, the shared Byobu/tmux
+profile, and the static agent-tool and Codex-integration executables.
+Provisioning validates that foundation and applies only world-specific SSH,
+Git, gateway, and Codex state.
 
 ## Readiness
 

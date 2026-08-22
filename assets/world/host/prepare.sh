@@ -45,7 +45,7 @@ case "${1:-}" in
         chown "$WT_USER:$WT_USER" "$temporary"
         chmod 0600 "$temporary"
         mv -f "$temporary" "$file"
-        sync
+        sync "$file" "$(dirname "$file")"
         ;;
     *)
         echo "usage: wt-host-prepare wait|access-policy|remove-key" >&2
