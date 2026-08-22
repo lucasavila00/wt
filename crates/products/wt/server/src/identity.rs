@@ -87,6 +87,7 @@ fn validate_shared_root(path: &Path, metadata: &Metadata) -> Result<(), String> 
         metadata_kind(metadata),
         metadata.uid(),
         metadata.gid(),
+        metadata.mode() & 0o7777,
     )
 }
 
@@ -102,16 +103,35 @@ fn metadata_kind(metadata: &Metadata) -> &'static str {
     }
 }
 
-fn validate_shared_root_details(path: &Path, kind: &str, uid: u32, gid: u32) -> Result<(), String> {
-    if kind == "directory" && uid == SERVER_UID && gid == SERVER_GID {
-        return Ok(());
+fn validate_shared_root_details(
+    path: &Path,
+    kind: &str,
+    uid: u32,
+    gid: u32,
+    mode: u32,
+) -> Result<(), String> {
+    if kind != "directory" || uid != SERVER_UID || gid != SERVER_GID {
+        return Err(format!(
+            "WT shared root identity mismatch at {}: expected non-symlink directory owned by {SERVER_USER}:{SERVER_GROUP} (uid/gid={SERVER_UID}:{SERVER_GID}); actual type={kind} uid/gid={}:{}; {RECOVERY}",
+            path.display(),
+            uid,
+            gid,
+        ));
     }
-    Err(format!(
-        "WT shared root identity mismatch at {}: expected non-symlink directory owned by {SERVER_USER}:{SERVER_GROUP} (uid/gid={SERVER_UID}:{SERVER_GID}); actual type={kind} uid/gid={}:{}; {RECOVERY}",
-        path.display(),
-        uid,
-        gid,
-    ))
+    if shared_root_mode(path).is_some_and(|expected| mode != expected) {
+        return Err(format!(
+            "WT shared root mode mismatch at {}: expected mode=0700; actual mode={mode:04o}; {RECOVERY}",
+            path.display(),
+        ));
+    }
+    Ok(())
+}
+
+fn shared_root_mode(path: &Path) -> Option<u32> {
+    match path.to_str() {
+        Some(crate::CODEX_SESSIONS_PATH | crate::CODEX_AUTH_SHARE_DIR) => Some(0o700),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -173,9 +193,25 @@ mod tests {
                 "directory",
                 1000,
                 1000,
+                0o700,
             )
             .unwrap_err(),
             @"WT shared root identity mismatch at /home/wt/.codex/sessions: expected non-symlink directory owned by wt:wt (uid/gid=1001:1001); actual type=directory uid/gid=1000:1000; rebootstrap the WT server account before installing or starting WT"
+        );
+    }
+
+    #[test]
+    fn private_shared_root_mode_is_enforced() {
+        insta::assert_snapshot!(
+            validate_shared_root_details(
+                Path::new("/home/wt/.codex/sessions"),
+                "directory",
+                1001,
+                1001,
+                0o750,
+            )
+            .unwrap_err(),
+            @"WT shared root mode mismatch at /home/wt/.codex/sessions: expected mode=0700; actual mode=0750; rebootstrap the WT server account before installing or starting WT"
         );
     }
 

@@ -82,10 +82,17 @@ impl LibvirtProvider {
         }
         validate_worlds_dir(&config.worlds_dir, config.worlds_owner_uid)?;
         let disks_dir = config.worlds_dir.join("disks");
-        fs::create_dir_all(&disks_dir)
-            .map_err(|error| context("create disk node directory", error))?;
-        fs::set_permissions(&disks_dir, fs::Permissions::from_mode(0o2770))
-            .map_err(|error| context("set disk node directory permissions", error))?;
+        match fs::symlink_metadata(&disks_dir) {
+            Ok(_) => validate_worlds_storage_dir(&disks_dir, config.worlds_owner_uid)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&disks_dir)
+                    .map_err(|error| context("create disk node directory", error))?;
+                fs::set_permissions(&disks_dir, fs::Permissions::from_mode(WORLDS_MODE))
+                    .map_err(|error| context("set disk node directory permissions", error))?;
+                validate_worlds_storage_dir(&disks_dir, config.worlds_owner_uid)?;
+            }
+            Err(error) => return Err(context("inspect disk node directory", error)),
+        }
         let connection = LibvirtConnection::open()?;
         Network::lookup_by_name(&connection, &config.network)
             .map_err(|error| context("look up libvirt network", error))?;
@@ -230,6 +237,10 @@ impl LibvirtProvider {
         progress: &mut dyn Write,
     ) -> Result<Machine, WorkerError> {
         validate_worlds_dir(&self.config.worlds_dir, self.config.worlds_owner_uid)?;
+        validate_worlds_storage_dir(
+            &self.config.worlds_dir.join("disks"),
+            self.config.worlds_owner_uid,
+        )?;
         if spec.memory_mib == 0 || spec.vcpus == 0 || spec.disk_gib == 0 {
             return Err(WorkerError::new(
                 "machine CPU, memory, and disk resources must be greater than zero",
@@ -404,6 +415,49 @@ fn validate_worlds_dir_details(
         )));
     }
     Ok(())
+}
+
+fn validate_worlds_storage_dir(
+    path: &std::path::Path,
+    expected_uid: u32,
+) -> Result<(), WorkerError> {
+    let kvm = Group::from_name(WORLDS_GROUP)
+        .map_err(|error| context("look up host kvm group", error))?
+        .ok_or_else(|| WorkerError::new("required host group does not exist: kvm"))?;
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| context(&format!("inspect disk node directory {}", path.display()), error))?;
+    validate_worlds_storage_dir_details(
+        path,
+        expected_uid,
+        kvm.gid.as_raw(),
+        metadata.is_dir() && !metadata.file_type().is_symlink(),
+        metadata.uid(),
+        metadata.gid(),
+        metadata.mode() & 0o7777,
+    )
+}
+
+fn validate_worlds_storage_dir_details(
+    path: &std::path::Path,
+    expected_uid: u32,
+    expected_gid: u32,
+    is_directory: bool,
+    actual_uid: u32,
+    actual_gid: u32,
+    actual_mode: u32,
+) -> Result<(), WorkerError> {
+    if is_directory
+        && actual_uid == expected_uid
+        && actual_gid == expected_gid
+        && actual_mode == WORLDS_MODE
+    {
+        return Ok(());
+    }
+    Err(WorkerError::new(format!(
+        "disk node directory identity mismatch at {}: expected non-symlink directory uid={expected_uid} gid={expected_gid} ({WORLDS_GROUP}) mode={WORLDS_MODE:04o}; actual type={} uid={actual_uid} gid={actual_gid} mode={actual_mode:04o}",
+        path.display(),
+        if is_directory { "directory" } else { "other" },
+    )))
 }
 
 fn prepare_qemu_file_access(

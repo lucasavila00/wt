@@ -1,5 +1,5 @@
 use super::*;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::process::Stdio;
 
 #[test]
@@ -114,16 +114,13 @@ fn retained_host_lifecycle() {
         .unwrap(),
         "from-host\n"
     );
-    assert_eq!(
-        std::fs::metadata(
-            std::path::Path::new(wt_server::CODEX_SESSIONS_PATH).join(&codex_sessions.marker)
-        )
-        .unwrap()
-        .permissions()
-        .mode()
-            & 0o777,
-        0o600
-    );
+    let rollout_metadata = std::fs::metadata(
+        std::path::Path::new(wt_server::CODEX_SESSIONS_PATH).join(&codex_sessions.marker),
+    )
+    .unwrap();
+    assert_eq!(rollout_metadata.uid(), wt_retained_worlds::GUEST_UID);
+    assert_eq!(rollout_metadata.gid(), wt_retained_worlds::GUEST_GID);
+    assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 
     let stopped = timings.run("stop host", || harness.shutdown(&name));
