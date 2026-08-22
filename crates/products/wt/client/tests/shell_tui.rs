@@ -131,6 +131,33 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
 }
 
 #[test]
+fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("new")?
+        .press(Key::Enter)?
+        .wait_for_text("Create world")?
+        .press(Key::Enter)?
+        .type_text("background")?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .press(Key::Enter)?
+        .wait_for_text("Review")?
+        .press(Key::Enter)?
+        .wait_for_text("Waiting for the guest transport...")?
+        .click(97, 1)?
+        .wait_for_text_gone("Waiting for the guest transport...")?
+        .click(2, 1)?
+        .wait_for_text("No Codex sessions")?
+        .wait_for_text("Creation did not complete")?;
+    Ok(())
+}
+
+#[test]
 fn codex_sessions_refresh_after_startup() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;

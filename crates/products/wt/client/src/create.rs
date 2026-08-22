@@ -1,8 +1,9 @@
 use anyhow::{bail, Context as _, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind};
 use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ssh_key::{HashAlg, PublicKey};
 use std::collections::BTreeSet;
@@ -58,6 +59,7 @@ pub(crate) struct Flow {
     task: Option<Task>,
     world: Option<String>,
     resources: Option<String>,
+    progress_visible: bool,
 }
 
 impl Flow {
@@ -68,6 +70,7 @@ impl Flow {
             task: None,
             world: None,
             resources: None,
+            progress_visible: true,
         }
     }
 
@@ -90,6 +93,7 @@ impl Flow {
                             self.task = Some(task);
                             self.world = Some(world.clone());
                             self.resources = Some(resources.clone());
+                            self.progress_visible = true;
                             self.phase = Phase::Creating {
                                 world,
                                 resources,
@@ -117,6 +121,7 @@ impl Flow {
                         started: Instant::now(),
                         status: "WT is retrying world creation".into(),
                     };
+                    self.progress_visible = true;
                     FlowAction::None
                 }
                 KeyCode::Esc => {
@@ -207,6 +212,9 @@ impl Flow {
     }
 
     pub(crate) fn render_progress(&self, frame: &mut ratatui::Frame<'_>, outer: Rect) {
+        if !self.progress_visible {
+            return;
+        }
         let Phase::Creating {
             world,
             started,
@@ -221,22 +229,15 @@ impl Flow {
         const GRADIENT: [u8; 12] = [24, 25, 31, 37, 43, 42, 36, 30, 24, 60, 54, 53];
         let animation_tick = elapsed_duration.as_millis() as usize / 25;
         let spinner = ["", "", "", ""][(animation_tick / 2) % 4];
-        let width = 44.min(outer.width.saturating_sub(2));
-        if width < 24 || outer.height < 7 {
+        let Some(area) = progress_area(outer) else {
             return;
-        }
-        let height = 6;
-        let area = Rect::new(
-            outer.right().saturating_sub(1).saturating_sub(width),
-            outer.y.saturating_add(1),
-            width,
-            height,
-        );
+        };
         frame.render_widget(Clear, area);
         let block = Block::new()
             .borders(Borders::ALL)
             .border_style(Style::new().fg(Color::DarkGray))
-            .title(" World creation ");
+            .title(" World creation ")
+            .title(Line::from("×").alignment(Alignment::Right));
         frame.render_widget(block, area);
         frame.render_widget(
             Paragraph::new(format!("{spinner} {world}\n{status}\n{elapsed}s elapsed"))
@@ -247,6 +248,43 @@ impl Flow {
             area.inner(Margin::new(1, 1)),
         );
     }
+
+    pub(crate) fn handle_progress_mouse(&mut self, event: &Event, outer: Rect) -> bool {
+        if !self.progress_visible || !matches!(self.phase, Phase::Creating { .. }) {
+            return false;
+        }
+        let Event::Mouse(mouse) = event else {
+            return false;
+        };
+        let Some(area) = progress_area(outer) else {
+            return false;
+        };
+        let position = (mouse.column, mouse.row).into();
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            && progress_dismiss_area(area).contains(position)
+        {
+            self.progress_visible = false;
+            return true;
+        }
+        area.contains(position)
+    }
+}
+
+fn progress_area(outer: Rect) -> Option<Rect> {
+    let width = 44.min(outer.width.saturating_sub(2));
+    if width < 24 || outer.height < 7 {
+        return None;
+    }
+    Some(Rect::new(
+        outer.right().saturating_sub(1).saturating_sub(width),
+        outer.y.saturating_add(1),
+        width,
+        6,
+    ))
+}
+
+fn progress_dismiss_area(area: Rect) -> Rect {
+    Rect::new(area.right().saturating_sub(2), area.y, 1, 1)
 }
 
 pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
