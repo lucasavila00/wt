@@ -116,6 +116,7 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
         .press(Key::Enter)?
         .wait_for_text("Create world")?
         .press(Key::Enter)?
+        .wait_for_quiet(Duration::from_millis(50))?
         .type_text("background")?
         .press(Key::Enter)?
         .press(Key::Enter)?
@@ -141,6 +142,7 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .press(Key::Enter)?
         .wait_for_text("Create world")?
         .press(Key::Enter)?
+        .wait_for_quiet(Duration::from_millis(50))?
         .type_text("background")?
         .press(Key::Enter)?
         .press(Key::Enter)?

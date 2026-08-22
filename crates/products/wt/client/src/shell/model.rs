@@ -1,4 +1,4 @@
-use super::control::{CodexCard, CodexOpenTarget, ControlAction, ControlCommand, ControlState};
+use super::control::{CodexOpenTarget, ControlAction, ControlCommand, ControlState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use uuid::Uuid;
@@ -64,7 +64,6 @@ pub(super) enum InputRoute {
     Consumed,
     World,
     OpenCodex(Box<CodexOpenTarget>),
-    RefreshCodex,
     Command(ControlCommand),
 }
 
@@ -164,6 +163,9 @@ impl ShellModel {
     pub(super) fn control(&self) -> &ControlState {
         &self.control
     }
+    pub(super) fn control_mut(&mut self) -> &mut ControlState {
+        &mut self.control
+    }
 
     pub(super) fn show_worlds(&mut self) {
         self.control.show_worlds();
@@ -173,15 +175,17 @@ impl ShellModel {
         self.control.set_worlds_updated_at(updated_at);
     }
 
+    #[cfg(test)]
     pub(super) fn set_codex(
         &mut self,
-        codex: Vec<CodexCard>,
+        codex: Vec<super::control::CodexCard>,
         updated_at: String,
         area: Rect,
     ) -> bool {
         self.control.set_codex(codex, updated_at, area)
     }
 
+    #[cfg(test)]
     pub(super) fn set_codex_context_failures(&mut self, contexts: Vec<String>) {
         self.control.set_context_failures(contexts);
     }
@@ -383,7 +387,6 @@ fn route(action: ControlAction) -> InputRoute {
     match action {
         ControlAction::Command(command) => InputRoute::Command(command),
         ControlAction::OpenCodex(target) => InputRoute::OpenCodex(target),
-        ControlAction::RefreshCodex => InputRoute::RefreshCodex,
     }
 }
 

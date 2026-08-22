@@ -21,13 +21,13 @@ pub(super) enum CodexContextSnapshot {
         sessions: Vec<CodexSession>,
     },
     Failure {
-        context: String,
+        message: String,
     },
 }
 
 pub(super) struct CodexCards {
     pub(super) cards: Vec<CodexCard>,
-    pub(super) failed_contexts: Vec<String>,
+    pub(super) failures: Vec<String>,
 }
 
 impl ShellWorld {
@@ -92,8 +92,13 @@ pub(super) fn load_snapshots(
                     context: context.name.clone(),
                     sessions,
                 },
-                Err(_) => CodexContextSnapshot::Failure {
-                    context: context.name.clone(),
+                Err(error) => CodexContextSnapshot::Failure {
+                    message: error
+                        .to_string()
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned(),
                 },
             }
         })
@@ -102,7 +107,7 @@ pub(super) fn load_snapshots(
 
 pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld]) -> CodexCards {
     let mut cards = Vec::new();
-    let mut failed_contexts = Vec::new();
+    let mut failures = Vec::new();
     for snapshot in snapshots {
         match snapshot {
             CodexContextSnapshot::Sessions { context, sessions } => {
@@ -111,7 +116,7 @@ pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld])
                     Err(message) => cards.push(CodexCard::context_error(&context, message)),
                 }
             }
-            CodexContextSnapshot::Failure { context } => failed_contexts.push(context),
+            CodexContextSnapshot::Failure { message } => failures.push(message),
         }
     }
     cards.sort_by(|left, right| {
@@ -120,10 +125,7 @@ pub(super) fn cards(snapshots: Vec<CodexContextSnapshot>, worlds: &[ShellWorld])
             .then_with(|| Reverse(left.timestamp()).cmp(&Reverse(right.timestamp())))
             .then_with(|| left.identity.cmp(&right.identity))
     });
-    CodexCards {
-        cards,
-        failed_contexts,
-    }
+    CodexCards { cards, failures }
 }
 
 fn validate_context(
@@ -500,15 +502,18 @@ mod tests {
     }
 
     #[test]
-    fn query_failures_become_notifications_instead_of_cards() {
+    fn query_failures_preserve_the_error_instead_of_creating_cards() {
         let result = cards(
             vec![CodexContextSnapshot::Failure {
-                context: "ars".into(),
+                message: "context ars could not be queried: server rejected the request".into(),
             }],
             &[],
         );
 
         assert!(result.cards.is_empty());
-        assert_eq!(result.failed_contexts, ["ars"]);
+        assert_eq!(
+            result.failures,
+            ["context ars could not be queried: server rejected the request"]
+        );
     }
 }

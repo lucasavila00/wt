@@ -27,7 +27,6 @@ pub(super) struct CodexRefresh {
 }
 
 enum CodexRefreshCommand {
-    Refresh,
     Stop,
 }
 
@@ -107,7 +106,7 @@ impl CodexRefresh {
                     Err(TrySendError::Disconnected(_)) => break,
                 }
                 match command_rx.recv_timeout(REFRESH_INTERVAL) {
-                    Ok(CodexRefreshCommand::Refresh) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Ok(CodexRefreshCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                         break
                     }
@@ -120,10 +119,6 @@ impl CodexRefresh {
             commands,
             worker: Some(worker),
         }
-    }
-
-    pub(super) fn refresh(&self) {
-        let _ = self.commands.send(CodexRefreshCommand::Refresh);
     }
 }
 

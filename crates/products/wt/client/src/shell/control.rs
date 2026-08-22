@@ -178,7 +178,6 @@ pub(super) enum ControlCommand {
 pub(super) enum ControlAction {
     Command(ControlCommand),
     OpenCodex(Box<CodexOpenTarget>),
-    RefreshCodex,
 }
 
 #[derive(Debug)]
@@ -191,7 +190,6 @@ pub(super) struct ControlState {
     pub(super) opening: Option<CodexCardIdentity>,
     pub(super) open_failure: Option<CodexOpenTarget>,
     pub(super) context_failure: Option<Vec<String>>,
-    pub(super) dismissed_context_failure: Option<Vec<String>>,
     worlds_updated_at: Option<String>,
     codex_updated_at: Option<String>,
 }
@@ -207,7 +205,6 @@ impl Default for ControlState {
             opening: None,
             open_failure: None,
             context_failure: None,
-            dismissed_context_failure: None,
             worlds_updated_at: None,
             codex_updated_at: None,
         }
@@ -277,6 +274,20 @@ impl ControlState {
         true
     }
 
+    pub(super) fn apply_codex_refresh(
+        &mut self,
+        codex: Vec<CodexCard>,
+        failures: Vec<String>,
+        updated_at: String,
+        area: Rect,
+    ) -> bool {
+        self.set_context_failures(failures);
+        if self.context_failure().is_some() {
+            return true;
+        }
+        self.set_codex(codex, updated_at, area)
+    }
+
     pub(super) fn resize(&mut self, area: Rect) {
         self.keep_codex_selection_visible(area);
     }
@@ -287,16 +298,6 @@ impl ControlState {
                 KeyCode::Enter => return self.retry_open(),
                 KeyCode::Esc => {
                     self.open_failure = None;
-                    return None;
-                }
-                _ => {}
-            }
-        }
-        if self.context_failure.is_some() && key.modifiers == KeyModifiers::NONE {
-            match key.code {
-                KeyCode::Enter => return self.retry_context_refresh(),
-                KeyCode::Esc => {
-                    self.dismiss_context_failure();
                     return None;
                 }
                 _ => {}
@@ -352,20 +353,6 @@ impl ControlState {
             }
             if dismiss.contains(position) {
                 self.open_failure = None;
-                return (true, None);
-            }
-            if super::toast::area(area).contains(position) {
-                return (true, None);
-            }
-        }
-        if self.context_failure.is_some() {
-            let (retry, dismiss) = super::toast::actions(area);
-            let position = (mouse.column, mouse.row).into();
-            if retry.contains(position) {
-                return (true, self.retry_context_refresh());
-            }
-            if dismiss.contains(position) {
-                self.dismiss_context_failure();
                 return (true, None);
             }
             if super::toast::area(area).contains(position) {

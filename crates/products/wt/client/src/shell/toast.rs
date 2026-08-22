@@ -38,12 +38,7 @@ impl ControlState {
     }
 
     pub(super) fn set_context_failures(&mut self, contexts: Vec<String>) {
-        if contexts.is_empty() {
-            self.context_failure = None;
-            self.dismissed_context_failure = None;
-        } else if self.dismissed_context_failure.as_ref() != Some(&contexts) {
-            self.context_failure = Some(contexts);
-        }
+        self.context_failure = (!contexts.is_empty()).then_some(contexts);
     }
 
     pub(super) fn finish_open(&mut self, target: &CodexOpenTarget, failed: bool) -> bool {
@@ -59,15 +54,5 @@ impl ControlState {
         let target = self.open_failure.take()?;
         self.opening = Some(target.identity.clone());
         Some(ControlAction::OpenCodex(Box::new(target)))
-    }
-
-    pub(super) fn retry_context_refresh(&mut self) -> Option<ControlAction> {
-        self.context_failure.take()?;
-        self.dismissed_context_failure = None;
-        Some(ControlAction::RefreshCodex)
-    }
-
-    pub(super) fn dismiss_context_failure(&mut self) {
-        self.dismissed_context_failure = self.context_failure.take();
     }
 }
