@@ -14,7 +14,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use wt_git_smart_protocol::{
-    serve_git, successful_push_updates, write_packet, GitTarget, PushViolation, WritePolicy,
+    serve_git, successful_push_updates, write_packet, GitTarget, HostKeyPolicy, PushViolation,
+    WritePolicy,
 };
 use wt_tools::{self as api, ProviderKind};
 
@@ -34,7 +35,6 @@ pub enum Provider {
         port: Option<u16>,
         api_token_file: PathBuf,
         private_key_file: PathBuf,
-        known_hosts_file: PathBuf,
     },
     Local {
         host: String,
@@ -201,7 +201,6 @@ fn git_target<'a>(provider: &'a Provider, source: &'a GitSource) -> Result<GitTa
             user,
             port,
             private_key_file,
-            known_hosts_file,
             ..
         } => {
             if user != &source.user || port != &source.port {
@@ -212,7 +211,7 @@ fn git_target<'a>(provider: &'a Provider, source: &'a GitSource) -> Result<GitTa
                 user: &source.user,
                 port: source.port,
                 private_key_file,
-                known_hosts_file,
+                host_key_policy: HostKeyPolicy::AcceptAny,
                 path: &source.path,
             })
         }

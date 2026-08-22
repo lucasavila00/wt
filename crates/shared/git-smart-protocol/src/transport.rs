@@ -41,9 +41,14 @@ pub enum GitTarget<'a> {
         user: &'a str,
         port: Option<u16>,
         private_key_file: &'a Path,
-        known_hosts_file: &'a Path,
+        host_key_policy: HostKeyPolicy<'a>,
         path: &'a str,
     },
+}
+
+pub enum HostKeyPolicy<'a> {
+    AcceptAny,
+    Pinned(&'a Path),
 }
 
 impl GitTarget<'_> {
@@ -67,17 +72,15 @@ fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
             user,
             port,
             private_key_file,
-            known_hosts_file,
+            host_key_policy,
             path,
         } => {
             let mut command = Command::new("ssh");
             command
                 .arg("-i")
                 .arg(private_key_file)
-                .args(["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"])
-                .arg("-o")
-                .arg(format!("UserKnownHostsFile={}", known_hosts_file.display()))
-                .args(["-o", "StrictHostKeyChecking=yes"]);
+                .args(["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"]);
+            configure_host_key_policy(&mut command, host_key_policy);
             if let Some(port) = port {
                 command.args(["-p", &port.to_string()]);
             }
@@ -94,6 +97,34 @@ fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("start {}", service.command()))
+}
+
+fn configure_host_key_policy(command: &mut Command, policy: &HostKeyPolicy<'_>) {
+    match policy {
+        HostKeyPolicy::Pinned(path) => {
+            command
+                .arg("-o")
+                .arg(format!("UserKnownHostsFile={}", path.display()))
+                .args([
+                    "-o",
+                    "GlobalKnownHostsFile=/dev/null",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                ]);
+        }
+        HostKeyPolicy::AcceptAny => {
+            command.args([
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "GlobalKnownHostsFile=/dev/null",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "LogLevel=ERROR",
+            ]);
+        }
+    }
 }
 
 pub fn repository_refs(target: GitTarget<'_>) -> Result<Vec<(String, String)>> {
@@ -189,9 +220,9 @@ fn host_key_verification_error(provider_host: Option<&str>, detail: &str) -> Opt
     }
     Some(format!(
         "Git provider host key verification failed for {host}.\n\
-The SSH host key configured on the WT server does not match the provider.\n\
-Next step: ask the WT server operator to update this provider's `ssh_known_hosts_file` in the server install input and reinstall WT.\n\
-This cannot be repaired inside the world."
+The configured SSH host-key pin does not match the provider.\n\
+Update the known-hosts input for the service that launched this Git operation, then reinstall that service.\n\
+This cannot be repaired by the downstream Git client."
     ))
 }
 
@@ -349,9 +380,33 @@ mod tests {
 
         insta::assert_snapshot!(rendered, @r###"
         WT Git gateway failed: Git provider host key verification failed for github.com.
-        The SSH host key configured on the WT server does not match the provider.
-        Next step: ask the WT server operator to update this provider's `ssh_known_hosts_file` in the server install input and reinstall WT.
-        This cannot be repaired inside the world.: read Git packet header
+        The configured SSH host-key pin does not match the provider.
+        Update the known-hosts input for the service that launched this Git operation, then reinstall that service.
+        This cannot be repaired by the downstream Git client.: read Git packet header
         "###);
+    }
+
+    #[test]
+    fn unpinned_provider_hosts_never_read_or_write_known_hosts() {
+        let mut command = Command::new("ssh");
+        configure_host_key_policy(&mut command, &HostKeyPolicy::AcceptAny);
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            arguments,
+            [
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "GlobalKnownHostsFile=/dev/null",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "LogLevel=ERROR",
+            ]
+        );
     }
 }

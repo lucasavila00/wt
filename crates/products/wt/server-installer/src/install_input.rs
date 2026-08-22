@@ -51,7 +51,6 @@ pub(crate) struct AgentToolsProviderInstallConfig {
     pub api_token_file: PathBuf,
     pub ssh_private_key_file: PathBuf,
     pub ssh_public_key_file: PathBuf,
-    pub ssh_known_hosts_file: PathBuf,
 }
 
 impl InstallInput {
@@ -71,7 +70,6 @@ impl InstallInput {
                 ("api_token_file", &mut provider.api_token_file),
                 ("ssh_private_key_file", &mut provider.ssh_private_key_file),
                 ("ssh_public_key_file", &mut provider.ssh_public_key_file),
-                ("ssh_known_hosts_file", &mut provider.ssh_known_hosts_file),
             ] {
                 *path = expand_home(path, &format!("agent_tools.{kind}.{field}"))?;
             }
@@ -213,7 +211,6 @@ host = "github.com"
 api_token_file = "/tmp/github.token"
 ssh_private_key_file = "/tmp/id_ed25519"
 ssh_public_key_file = "/tmp/id_ed25519.pub"
-ssh_known_hosts_file = "/tmp/known_hosts"
 
 [guest]
 boot_timeout_seconds = 300

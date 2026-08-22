@@ -37,19 +37,6 @@ fn provider_config(temp: &Path, passphrase: &str) -> AgentToolsProviderInstallCo
     .unwrap();
     assert!(output.status.success());
     let public = private.with_extension("pub");
-    let public_text = fs::read_to_string(&public).unwrap();
-    let mut fields = public_text.split_whitespace();
-    let known_hosts = temp.join("known_hosts");
-    fs::write(
-        &known_hosts,
-        format!(
-            "github.com {} {}\n",
-            fields.next().unwrap(),
-            fields.next().unwrap()
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&known_hosts, fs::Permissions::from_mode(0o600)).unwrap();
     let token = temp.join("token");
     fs::write(&token, "test-token\n").unwrap();
     fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
@@ -58,7 +45,6 @@ fn provider_config(temp: &Path, passphrase: &str) -> AgentToolsProviderInstallCo
         api_token_file: token,
         ssh_private_key_file: private,
         ssh_public_key_file: public,
-        ssh_known_hosts_file: known_hosts,
     }
 }
 
@@ -210,7 +196,6 @@ host = "github.com"
 api_token_file = "/tmp/github.token"
 ssh_private_key_file = "/tmp/id_ed25519"
 ssh_public_key_file = "/tmp/id_ed25519.pub"
-ssh_known_hosts_file = "/tmp/known_hosts"
 [guest]
 boot_timeout_seconds = 30
 readiness_timeout_seconds = 30

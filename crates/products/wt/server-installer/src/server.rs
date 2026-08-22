@@ -112,7 +112,6 @@ struct PreparedProviderCredentials {
     kind: &'static str,
     api_token: tempfile::NamedTempFile,
     private_key: tempfile::NamedTempFile,
-    known_hosts: tempfile::NamedTempFile,
 }
 
 fn validate_agent_tools_files(input: &InstallInput) -> Result<()> {
@@ -159,7 +158,6 @@ fn prepare_provider_credentials(
         kind,
         api_token,
         private_key: ssh.private_key,
-        known_hosts: ssh.known_hosts,
     })
 }
 
@@ -172,7 +170,7 @@ fn provider_ssh_input<'a>(
         host: &provider.host,
         private_key_file: &provider.ssh_private_key_file,
         public_key_file: Some(&provider.ssh_public_key_file),
-        known_hosts_file: &provider.ssh_known_hosts_file,
+        known_hosts_file: None,
     }
 }
 
@@ -366,7 +364,6 @@ fn install_agent_tools_credentials(
         for (suffix, source) in [
             ("api-token", provider.api_token.path()),
             ("ssh-private-key", provider.private_key.path()),
-            ("ssh-known-hosts", provider.known_hosts.path()),
         ] {
             let credential = format!("{}-{suffix}", provider.kind);
             let destination =
@@ -520,13 +517,12 @@ fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> 
     for (kind, provider) in input.agent_tools.providers() {
         let token = format!("%d/{kind}-api-token");
         let key = format!("%d/{kind}-ssh-private-key");
-        let known_hosts = format!("%d/{kind}-ssh-known-hosts");
         command.push_str(&format!(" --{kind}-provider "));
         command.push_str(&systemd_quote(&format!(
-            "{}={token},{key},{known_hosts}",
+            "{}={token},{key}",
             provider.host
         )));
-        for suffix in ["api-token", "ssh-private-key", "ssh-known-hosts"] {
+        for suffix in ["api-token", "ssh-private-key"] {
             let id = format!("{kind}-{suffix}");
             credentials.push_str(&format!(
                 "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-agent-tool-gateway-{id}\n"

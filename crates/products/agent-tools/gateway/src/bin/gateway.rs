@@ -21,9 +21,9 @@ struct Cli {
     #[arg(long, value_parser = parse_local_provider)]
     local_provider: Vec<(String, PathBuf)>,
     #[arg(long, value_parser = parse_ssh_provider)]
-    github_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
+    github_provider: Option<(String, PathBuf, PathBuf)>,
     #[arg(long, value_parser = parse_ssh_provider)]
-    gitlab_provider: Option<(String, PathBuf, PathBuf, PathBuf)>,
+    gitlab_provider: Option<(String, PathBuf, PathBuf)>,
     #[arg(long)]
     transport_socket: Option<PathBuf>,
     #[arg(long)]
@@ -76,14 +76,13 @@ fn run() -> Result<()> {
         .into_iter()
         .filter_map(|(kind, provider)| provider.map(|provider| (kind, provider)))
         .map(
-            |(kind, (host, api_token_file, private_key_file, known_hosts_file))| Provider::Ssh {
+            |(kind, (host, api_token_file, private_key_file))| Provider::Ssh {
                 kind,
                 host,
                 user: "git".to_owned(),
                 port: None,
                 api_token_file,
                 private_key_file,
-                known_hosts_file,
             },
         ),
     );
@@ -213,23 +212,19 @@ fn parse_local_provider(value: &str) -> Result<(String, PathBuf), String> {
     Ok((host.to_owned(), path))
 }
 
-fn parse_ssh_provider(value: &str) -> Result<(String, PathBuf, PathBuf, PathBuf), String> {
+fn parse_ssh_provider(value: &str) -> Result<(String, PathBuf, PathBuf), String> {
     let (host, files) = value
         .split_once('=')
-        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
-    let (api_token, files) = files
+        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY".to_owned())?;
+    let (api_token, private_key) = files
         .split_once(',')
-        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
-    let (private_key, known_hosts) = files
-        .split_once(',')
-        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned())?;
-    if host.is_empty() || api_token.is_empty() || private_key.is_empty() || known_hosts.is_empty() {
-        return Err("expected HOST=API_TOKEN,PRIVATE_KEY,KNOWN_HOSTS".to_owned());
+        .ok_or_else(|| "expected HOST=API_TOKEN,PRIVATE_KEY".to_owned())?;
+    if host.is_empty() || api_token.is_empty() || private_key.is_empty() {
+        return Err("expected HOST=API_TOKEN,PRIVATE_KEY".to_owned());
     }
     Ok((
         host.to_owned(),
         PathBuf::from(api_token),
         PathBuf::from(private_key),
-        PathBuf::from(known_hosts),
     ))
 }

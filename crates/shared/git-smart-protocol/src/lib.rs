@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub use packet::{push_uses_sideband, successful_push_updates, write_packet};
 pub use policy::{validate_push, PushViolation, WritePolicy};
-pub use transport::{repository_refs, serve_git, DuplexStream, GitTarget};
+pub use transport::{repository_refs, serve_git, DuplexStream, GitTarget, HostKeyPolicy};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum GitService {

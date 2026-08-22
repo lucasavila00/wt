@@ -196,7 +196,11 @@ fn install(runner: &impl Runner, path: &Path) -> Result<()> {
         )?;
         sudo_install_owned(
             runner,
-            credential.known_hosts.path(),
+            credential
+                .known_hosts
+                .as_ref()
+                .context("prepared Git proxy credentials have no known-hosts file")?
+                .path(),
             &directory.join("known_hosts"),
             PROXY_USER,
             PROXY_GROUP,
@@ -303,7 +307,7 @@ fn credential_input(provider: &InstallProvider) -> SshCredentialInput<'_> {
         host: &provider.host,
         private_key_file: &provider.private_key_file,
         public_key_file: None,
-        known_hosts_file: &provider.known_hosts_file,
+        known_hosts_file: Some(&provider.known_hosts_file),
     }
 }
 
