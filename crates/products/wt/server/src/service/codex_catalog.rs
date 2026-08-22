@@ -213,16 +213,15 @@ fn apply_record(entry: &mut CodexSessionCatalogEntry, record: &Value) {
                 bounded_metadata(payload.get("model"), 128).or_else(|| entry.model.take());
         }
         Some("event_msg") => apply_event(entry, payload, record_timestamp(record)),
-        Some("response_item") => {
+        Some("response_item")
             if payload.get("type").and_then(Value::as_str) == Some("message")
-                && payload.get("role").and_then(Value::as_str) == Some("user")
-            {
-                if let Some(message) = normalized_message_text(payload, "input_text") {
-                    entry.title.get_or_insert_with(|| title_from(&message));
-                    if let Some(timestamp) = record_timestamp(record) {
-                        entry.latest_user_message = Some(message);
-                        entry.latest_user_message_at_unix_ms = Some(timestamp);
-                    }
+                && payload.get("role").and_then(Value::as_str) == Some("user") =>
+        {
+            if let Some(message) = normalized_message_text(payload, "input_text") {
+                entry.title.get_or_insert_with(|| title_from(&message));
+                if let Some(timestamp) = record_timestamp(record) {
+                    entry.latest_user_message = Some(message);
+                    entry.latest_user_message_at_unix_ms = Some(timestamp);
                 }
             }
         }
