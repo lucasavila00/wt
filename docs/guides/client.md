@@ -1,5 +1,9 @@
 # Client and SSH
 
+WT worlds are retained Ubuntu guests created from a server's verified golden
+image. Each world has a persistent Byobu workspace and keeps its disk until it
+is removed.
+
 The client reads `~/.wt/config.toml`:
 
 ```toml
@@ -35,7 +39,8 @@ reserved for managed SSH.
 
 Each world has a writable qcow2 overlay on the server. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports
-allocated size only. `wt stop` keeps the overlay and `wt rm` deletes it.
+allocated size only. `wt stop` keeps the overlay. `wt rm` deletes it and
+revokes the world's scoped Git grant.
 
 New worlds require at least one valid regular `~/.ssh/*.pub` file. Private keys
 are never sent to the server. Every world receives the workstation's global

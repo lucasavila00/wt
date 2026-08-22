@@ -29,5 +29,5 @@ It does not install or change the server.
 scripts/cargo run -p wt-client -- --help
 ```
 
-User-visible behavior: [Worlds](../../docs/worlds/README.md). Transport and SSH
-generation: [Client and SSH](../../docs/guides/client.md).
+User-visible behavior, transport, and SSH generation:
+[Client and SSH](../../../../docs/guides/client.md).
