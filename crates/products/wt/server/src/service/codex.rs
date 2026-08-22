@@ -9,16 +9,6 @@ use wt_workload_registry::CodexSessionCatalogEntry;
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub(super) fn list_codex_sessions(&self, owner: &str) -> Result<Response, ApiError> {
-        let warnings = super::codex_catalog::refresh(&self.store, &self.codex_sessions_path)
-            .map_err(|error| {
-                ApiError::new(
-                    ErrorCode::Internal,
-                    format!("refresh Codex session catalog: {error}"),
-                )
-            })?;
-        for warning in warnings {
-            eprintln!("wt-server: Codex session discovery: {warning}");
-        }
         let rollouts = self
             .store
             .list_codex_session_catalog()

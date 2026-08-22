@@ -1,10 +1,12 @@
 CREATE TABLE codex_session_catalog (
     session_id TEXT PRIMARY KEY NOT NULL,
     rollout_path TEXT UNIQUE NOT NULL,
+    rollout_file_identity TEXT NOT NULL,
     rollout_length BIGINT NOT NULL,
     scan_offset BIGINT NOT NULL,
     created_at_unix_ms BIGINT,
     rollout_updated_at_unix_ms BIGINT NOT NULL,
+    rollout_modified_at_unix_ns BIGINT NOT NULL,
     title TEXT,
     title_from_user_message BOOL NOT NULL,
     latest_user_message TEXT,

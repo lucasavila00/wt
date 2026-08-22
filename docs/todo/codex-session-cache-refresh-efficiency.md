@@ -1,9 +1,8 @@
-# Avoid rewriting every cached Codex session on every refresh
+# Avoid scanning every Codex rollout on every refresh
 
-The catalog parses only new rollout bytes, but the two-second worker and each
-inventory request still walk every rollout path and upsert unchanged rows.
+The catalog worker now owns normal refreshes, inventory reads the SQLite
+snapshot, and unchanged entries are not rewritten. It still recursively walks
+every rollout path every two seconds to discover changes.
 
-Make the background worker the normal refresh owner, write only entries whose
-file identity, length, or complete-record offset changed, and let inventory
-reads report cache freshness instead of repeating the full refresh. Preserve a
-bounded recovery path when the worker has not warmed the catalog.
+Replace polling with a bounded filesystem-notification or debounce design while
+preserving startup warm-up and recovery after missed notifications.

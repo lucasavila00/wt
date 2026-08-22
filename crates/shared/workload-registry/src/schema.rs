@@ -4,10 +4,12 @@ diesel::table! {
     codex_session_catalog (session_id) {
         session_id -> Text,
         rollout_path -> Text,
+        rollout_file_identity -> Text,
         rollout_length -> BigInt,
         scan_offset -> BigInt,
         created_at_unix_ms -> Nullable<BigInt>,
         rollout_updated_at_unix_ms -> BigInt,
+        rollout_modified_at_unix_ns -> BigInt,
         title -> Nullable<Text>,
         title_from_user_message -> Bool,
         latest_user_message -> Nullable<Text>,

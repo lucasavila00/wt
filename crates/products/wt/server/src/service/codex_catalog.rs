@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,6 +14,8 @@ use wt_workload_registry::{CodexSessionCatalogEntry, Store};
 
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 const MAX_MESSAGE_PREVIEW_BYTES: usize = 640;
+const MAX_ROLLOUT_RECORD_BYTES: usize = 4 * 1024 * 1024;
+const MAX_REFRESH_WARNINGS: usize = 32;
 
 pub(super) fn refresh(store: &Store, root: &Path) -> Result<Vec<String>, String> {
     let _refresh = refresh_lock()
@@ -38,17 +41,22 @@ pub(super) fn refresh(store: &Store, root: &Path) -> Result<Vec<String>, String>
     for path in paths {
         let path_text = path.to_string_lossy().into_owned();
         match update_rollout(&path, cached.get(&path_text)) {
-            Ok(Some(entry)) => {
+            Ok(Some(update)) => {
                 retained.insert(path_text);
-                if let Err(error) = store.upsert_codex_session_catalog(&entry) {
-                    warnings.push(format!("cache {}: {error}", path.display()));
+                for warning in update.warnings {
+                    add_warning(&mut warnings, warning);
+                }
+                if update.changed {
+                    if let Err(error) = store.upsert_codex_session_catalog(&update.entry) {
+                        add_warning(&mut warnings, format!("cache {}: {error}", path.display()));
+                    }
                 }
             }
             Ok(None) => {}
             Err(error) if error == "subagent" => {}
             Err(error) => {
                 retained.insert(path_text);
-                warnings.push(format!("skip {}: {error}", path.display()));
+                add_warning(&mut warnings, format!("skip {}: {error}", path.display()));
             }
         }
     }
@@ -56,6 +64,14 @@ pub(super) fn refresh(store: &Store, root: &Path) -> Result<Vec<String>, String>
         .retain_codex_session_catalog_paths(&retained)
         .map_err(|error| error.to_string())?;
     Ok(warnings)
+}
+
+fn add_warning(warnings: &mut Vec<String>, warning: String) {
+    if warnings.len() < MAX_REFRESH_WARNINGS {
+        warnings.push(warning);
+    } else if warnings.len() == MAX_REFRESH_WARNINGS {
+        warnings.push("additional Codex session catalog warnings suppressed".into());
+    }
 }
 
 fn refresh_lock() -> &'static Mutex<()> {
@@ -87,19 +103,26 @@ fn collect_rollouts(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), St
 fn update_rollout(
     path: &Path,
     cached: Option<&CodexSessionCatalogEntry>,
-) -> Result<Option<CodexSessionCatalogEntry>, String> {
+) -> Result<Option<RolloutUpdate>, String> {
     let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
     let length = metadata.len();
-    let modified = unix_time_from(metadata.modified().map_err(|error| error.to_string())?)?;
+    let modification_time = metadata.modified().map_err(|error| error.to_string())?;
+    let modified = unix_time_from(modification_time)?;
+    let modified_nanos = unix_nanos_from(modification_time)?;
+    let file_identity = format!("{}:{}", metadata.dev(), metadata.ino());
     if let Some(cached) = cached {
-        if cached.rollout_length == length && cached.rollout_updated_at_unix_ms == modified {
-            return Ok(Some(cached.clone()));
+        if cached.rollout_file_identity == file_identity
+            && cached.rollout_length == length
+            && cached.rollout_modified_at_unix_ns == modified_nanos
+        {
+            return Ok(Some(RolloutUpdate::unchanged(cached.clone())));
         }
     }
     let can_append = cached.is_some_and(|entry| {
-        entry.rollout_length <= length
+        entry.rollout_file_identity == file_identity
+            && entry.rollout_length < length
             && entry.scan_offset <= length
-            && entry.rollout_updated_at_unix_ms <= modified
+            && entry.rollout_modified_at_unix_ns <= modified_nanos
     });
     let mut entry = if can_append {
         cached.cloned().expect("checked cached entry")
@@ -110,25 +133,33 @@ fn update_rollout(
     reader
         .seek(SeekFrom::Start(entry.scan_offset))
         .map_err(|error| error.to_string())?;
+    let mut warnings = Vec::new();
     loop {
         let start = reader
             .stream_position()
             .map_err(|error| error.to_string())?;
-        let mut line = String::new();
-        let read = reader
-            .read_line(&mut line)
-            .map_err(|error| error.to_string())?;
-        if read == 0 {
-            break;
-        }
-        if !line.ends_with('\n') {
-            reader
-                .seek(SeekFrom::Start(start))
-                .map_err(|error| error.to_string())?;
-            break;
-        }
-        if let Ok(record) = serde_json::from_str::<Value>(&line) {
-            apply_record(&mut entry, &record);
+        match read_complete_record(&mut reader)? {
+            RecordRead::Eof => break,
+            RecordRead::Partial => {
+                reader
+                    .seek(SeekFrom::Start(start))
+                    .map_err(|error| error.to_string())?;
+                break;
+            }
+            RecordRead::Oversized => add_warning(
+                &mut warnings,
+                format!("skip {}: rollout record at byte {start} exceeds {MAX_ROLLOUT_RECORD_BYTES} bytes", path.display()),
+            ),
+            RecordRead::Complete(line) => {
+                if let Ok(record) = serde_json::from_slice::<Value>(&line) {
+                    apply_record(&mut entry, &record);
+                } else {
+                    add_warning(
+                        &mut warnings,
+                        format!("skip {}: invalid rollout record at byte {start}", path.display()),
+                    );
+                }
+            }
         }
         entry.scan_offset = reader
             .stream_position()
@@ -136,7 +167,90 @@ fn update_rollout(
     }
     entry.rollout_length = length;
     entry.rollout_updated_at_unix_ms = modified;
-    Ok(Some(entry))
+    entry.rollout_modified_at_unix_ns = modified_nanos;
+    entry.rollout_file_identity = file_identity;
+    Ok(Some(RolloutUpdate {
+        changed: true,
+        entry,
+        warnings,
+    }))
+}
+
+struct RolloutUpdate {
+    changed: bool,
+    entry: CodexSessionCatalogEntry,
+    warnings: Vec<String>,
+}
+
+impl RolloutUpdate {
+    fn unchanged(entry: CodexSessionCatalogEntry) -> Self {
+        Self {
+            changed: false,
+            entry,
+            warnings: Vec::new(),
+        }
+    }
+}
+
+enum RecordRead {
+    Eof,
+    Partial,
+    Complete(Vec<u8>),
+    Oversized,
+}
+
+fn read_complete_record(reader: &mut BufReader<File>) -> Result<RecordRead, String> {
+    let mut line = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().map_err(|error| error.to_string())?;
+        if buffer.is_empty() {
+            return Ok(if line.is_empty() {
+                RecordRead::Eof
+            } else {
+                RecordRead::Partial
+            });
+        }
+        let length = buffer
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(buffer.len(), |index| index + 1);
+        if line.len().saturating_add(length) > MAX_ROLLOUT_RECORD_BYTES {
+            let complete = buffer[length - 1] == b'\n';
+            reader.consume(length);
+            if complete {
+                return Ok(RecordRead::Oversized);
+            }
+            return Ok(if discard_record_remainder(reader)? {
+                RecordRead::Oversized
+            } else {
+                RecordRead::Partial
+            });
+        }
+        line.extend_from_slice(&buffer[..length]);
+        let complete = line.ends_with(b"\n");
+        reader.consume(length);
+        if complete {
+            return Ok(RecordRead::Complete(line));
+        }
+    }
+}
+
+fn discard_record_remainder(reader: &mut BufReader<File>) -> Result<bool, String> {
+    loop {
+        let buffer = reader.fill_buf().map_err(|error| error.to_string())?;
+        if buffer.is_empty() {
+            return Ok(false);
+        }
+        let length = buffer
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(buffer.len(), |index| index + 1);
+        let complete = length <= buffer.len() && buffer[length - 1] == b'\n';
+        reader.consume(length);
+        if complete {
+            return Ok(true);
+        }
+    }
 }
 
 fn new_entry(path: &Path) -> Result<CodexSessionCatalogEntry, String> {
@@ -149,6 +263,9 @@ fn new_entry(path: &Path) -> Result<CodexSessionCatalogEntry, String> {
         .map_err(|error| error.to_string())?;
     if first.is_empty() {
         return Err("rollout is empty".into());
+    }
+    if !first.ends_with('\n') {
+        return Err("first rollout record is incomplete".into());
     }
     if first.len() as u64 > MAX_SESSION_META_BYTES {
         return Err("first rollout record is too large".into());
@@ -172,10 +289,12 @@ fn new_entry(path: &Path) -> Result<CodexSessionCatalogEntry, String> {
     Ok(CodexSessionCatalogEntry {
         session_id,
         rollout_path: path.to_string_lossy().into_owned(),
+        rollout_file_identity: String::new(),
         rollout_length: 0,
         scan_offset: 0,
         created_at_unix_ms: None,
         rollout_updated_at_unix_ms: 0,
+        rollout_modified_at_unix_ns: 0,
         title: None,
         title_from_user_message: false,
         latest_user_message: None,
@@ -366,6 +485,15 @@ fn unix_time_from(time: SystemTime) -> Result<i64, String> {
     .map_err(|_| "timestamp is too large".to_owned())
 }
 
+fn unix_nanos_from(time: SystemTime) -> Result<i64, String> {
+    i64::try_from(
+        time.duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos(),
+    )
+    .map_err(|_| "timestamp is too large".to_owned())
+}
+
 #[derive(Deserialize)]
 struct SessionRecord {
     #[serde(rename = "type")]
@@ -472,5 +600,92 @@ mod tests {
         fs::remove_file(rollout).unwrap();
         refresh(&store, temp.path()).unwrap();
         assert!(store.list_codex_session_catalog().unwrap().is_empty());
+    }
+
+    #[test]
+    fn rebuilds_when_a_rollout_path_is_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let first_id = Uuid::new_v4();
+        let replacement_id = Uuid::new_v4();
+        let rollout = temp.path().join("rollout-main.jsonl");
+        fs::write(
+            &rollout,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{first_id}\",\"source\":{{}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        refresh(&store, temp.path()).unwrap();
+
+        let replacement = temp.path().join("rollout-replacement.jsonl");
+        fs::write(
+            &replacement,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{replacement_id}\",\"source\":{{}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        fs::rename(replacement, &rollout).unwrap();
+
+        refresh(&store, temp.path()).unwrap();
+        let sessions = store.list_codex_session_catalog().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, replacement_id);
+    }
+
+    #[test]
+    fn rebuilds_when_a_rollout_is_rewritten_in_place() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let first_id = Uuid::new_v4();
+        let replacement_id = Uuid::new_v4();
+        let rollout = temp.path().join("rollout-main.jsonl");
+        let record = |session_id| {
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\",\"source\":{{}}}}}}\n"
+            )
+        };
+        fs::write(&rollout, record(first_id)).unwrap();
+        refresh(&store, temp.path()).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        fs::write(&rollout, record(replacement_id)).unwrap();
+        refresh(&store, temp.path()).unwrap();
+
+        let sessions = store.list_codex_session_catalog().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, replacement_id);
+    }
+
+    #[test]
+    fn skips_oversized_records_and_continues_to_later_records() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let rollout = temp.path().join("rollout-main.jsonl");
+        fs::write(
+            &rollout,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\",\"source\":{{}}}}}}\n",
+                Uuid::new_v4()
+            ),
+        )
+        .unwrap();
+        let mut file = fs::OpenOptions::new().append(true).open(&rollout).unwrap();
+        writeln!(file, "{}", "x".repeat(MAX_ROLLOUT_RECORD_BYTES + 1)).unwrap();
+        writeln!(
+            file,
+            "{{\"timestamp\":\"2026-08-22T10:03:00Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"AgentMessage\",\"content\":[{{\"type\":\"Text\",\"text\":\"Still indexed\"}}]}}}}}}"
+        )
+        .unwrap();
+
+        let warnings = refresh(&store, temp.path()).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("exceeds"));
+        let session = store.list_codex_session_catalog().unwrap().remove(0);
+        assert_eq!(
+            session.latest_agent_message.as_deref(),
+            Some("Still indexed")
+        );
     }
 }

@@ -8,10 +8,12 @@ use uuid::Uuid;
 pub struct CodexSessionCatalogEntry {
     pub session_id: Uuid,
     pub rollout_path: String,
+    pub rollout_file_identity: String,
     pub rollout_length: u64,
     pub scan_offset: u64,
     pub created_at_unix_ms: Option<i64>,
     pub rollout_updated_at_unix_ms: i64,
+    pub rollout_modified_at_unix_ns: i64,
     pub title: Option<String>,
     pub title_from_user_message: bool,
     pub latest_user_message: Option<String>,
@@ -37,10 +39,12 @@ pub type CodexSessionCatalogInput = CodexSessionCatalogEntry;
 struct CatalogRow<'a> {
     session_id: String,
     rollout_path: &'a str,
+    rollout_file_identity: &'a str,
     rollout_length: i64,
     scan_offset: i64,
     created_at_unix_ms: Option<i64>,
     rollout_updated_at_unix_ms: i64,
+    rollout_modified_at_unix_ns: i64,
     title: Option<&'a str>,
     title_from_user_message: bool,
     latest_user_message: Option<&'a str>,
@@ -65,10 +69,12 @@ struct CatalogRow<'a> {
 struct StoredCatalogRow {
     session_id: String,
     rollout_path: String,
+    rollout_file_identity: String,
     rollout_length: i64,
     scan_offset: i64,
     created_at_unix_ms: Option<i64>,
     rollout_updated_at_unix_ms: i64,
+    rollout_modified_at_unix_ns: i64,
     title: Option<String>,
     title_from_user_message: bool,
     latest_user_message: Option<String>,
@@ -94,17 +100,26 @@ impl Registry {
     ) -> Result<(), RegistryError> {
         let row = CatalogRow::try_from(entry)?;
         self.immediate_transaction(|connection| {
+            diesel::delete(
+                codex_session_catalog::table
+                    .filter(codex_session_catalog::rollout_path.eq(row.rollout_path))
+                    .filter(codex_session_catalog::session_id.ne(&row.session_id)),
+            )
+            .execute(connection)?;
             diesel::insert_into(codex_session_catalog::table)
                 .values(&row)
                 .on_conflict(codex_session_catalog::session_id)
                 .do_update()
                 .set((
                     codex_session_catalog::rollout_path.eq(row.rollout_path),
+                    codex_session_catalog::rollout_file_identity.eq(row.rollout_file_identity),
                     codex_session_catalog::rollout_length.eq(row.rollout_length),
                     codex_session_catalog::scan_offset.eq(row.scan_offset),
                     codex_session_catalog::created_at_unix_ms.eq(row.created_at_unix_ms),
                     codex_session_catalog::rollout_updated_at_unix_ms
                         .eq(row.rollout_updated_at_unix_ms),
+                    codex_session_catalog::rollout_modified_at_unix_ns
+                        .eq(row.rollout_modified_at_unix_ns),
                     codex_session_catalog::title.eq(row.title),
                     codex_session_catalog::title_from_user_message.eq(row.title_from_user_message),
                     codex_session_catalog::latest_user_message.eq(row.latest_user_message),
@@ -169,10 +184,12 @@ impl<'a> TryFrom<&'a CodexSessionCatalogEntry> for CatalogRow<'a> {
         Ok(Self {
             session_id: value.session_id.to_string(),
             rollout_path: &value.rollout_path,
+            rollout_file_identity: &value.rollout_file_identity,
             rollout_length: number(value.rollout_length, "rollout length")?,
             scan_offset: number(value.scan_offset, "scan offset")?,
             created_at_unix_ms: value.created_at_unix_ms,
             rollout_updated_at_unix_ms: value.rollout_updated_at_unix_ms,
+            rollout_modified_at_unix_ns: value.rollout_modified_at_unix_ns,
             title: value.title.as_deref(),
             title_from_user_message: value.title_from_user_message,
             latest_user_message: value.latest_user_message.as_deref(),
@@ -204,10 +221,12 @@ impl TryFrom<StoredCatalogRow> for CodexSessionCatalogEntry {
             session_id: Uuid::parse_str(&row.session_id)
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             rollout_path: row.rollout_path,
+            rollout_file_identity: row.rollout_file_identity,
             rollout_length: unsigned(row.rollout_length, "rollout length")?,
             scan_offset: unsigned(row.scan_offset, "scan offset")?,
             created_at_unix_ms: row.created_at_unix_ms,
             rollout_updated_at_unix_ms: row.rollout_updated_at_unix_ms,
+            rollout_modified_at_unix_ns: row.rollout_modified_at_unix_ns,
             title: row.title,
             title_from_user_message: row.title_from_user_message,
             latest_user_message: row.latest_user_message,
