@@ -23,10 +23,12 @@ pub(super) fn draw(
     creation_error: Option<&str>,
     deletion: Option<&delete::Flow>,
 ) {
-    if let Some(creation) = creation.filter(|flow| flow.blocks_input()) {
-        creation.render(frame, frame.area());
-        draw_test_server_banner(frame, model);
-        return;
+    if model.mode() == Mode::Control {
+        if let Some(creation) = creation.filter(|flow| flow.blocks_input()) {
+            creation.render(frame, frame.area());
+            draw_test_server_banner(frame, model);
+            return;
+        }
     }
     if model.mode() == Mode::Control {
         draw_control(frame, model, creation);
@@ -50,7 +52,18 @@ pub(super) fn draw(
         draw_closed_session_bar(frame, message);
     }
     if let Some(creation) = creation {
-        creation.render_progress(frame, frame.area());
+        if creation.blocks_input() {
+            creation.render_overlay(frame, frame.area());
+        } else {
+            creation.render_progress(frame, frame.area());
+        }
+    }
+    draw_command_palette(frame, world, model.control().palette());
+    if let Some(error) = creation_error {
+        draw_creation_error(frame, error);
+    }
+    if let Some(deletion) = deletion {
+        deletion.render(frame, frame.area());
     }
     match model.mode() {
         Mode::World if closed_message.is_none() => {

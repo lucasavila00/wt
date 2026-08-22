@@ -195,6 +195,12 @@ impl ShellModel {
             self.should_quit = true;
             return InputRoute::Consumed;
         }
+        if self.mode == Mode::Switcher && self.control.palette().is_open() {
+            return self
+                .control
+                .handle_key(key, area)
+                .map_or(InputRoute::Consumed, route);
+        }
         if key.code == KeyCode::F(5) && key.modifiers == KeyModifiers::SHIFT && self.has_worlds() {
             self.f5_disabled = !self.f5_disabled;
             if self.f5_disabled {
@@ -227,6 +233,10 @@ impl ShellModel {
                 }
                 KeyCode::Up => {
                     self.mode = Mode::Control;
+                    InputRoute::Consumed
+                }
+                KeyCode::Char('1') | KeyCode::F(1) if key.modifiers == KeyModifiers::NONE => {
+                    self.control.handle_key(key, area);
                     InputRoute::Consumed
                 }
                 _ => InputRoute::World,
@@ -276,6 +286,10 @@ impl ShellModel {
         mouse: MouseEvent,
         area: Rect,
     ) -> (bool, Option<InputRoute>) {
+        if self.control.palette().is_open() {
+            let (changed, action) = self.control.handle_mouse(mouse, area);
+            return (changed, action.map(route));
+        }
         if mouse.kind == MouseEventKind::Down(MouseButton::Left)
             && mouse.row == area.y
             && mouse.column >= area.x
@@ -392,6 +406,10 @@ fn route(action: ControlAction) -> InputRoute {
 mod focus_tests;
 
 #[cfg(test)]
+#[path = "model_navbar_tests.rs"]
+mod navbar_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use uuid::Uuid;
@@ -455,13 +473,6 @@ mod tests {
             InputRoute::Consumed
         );
         assert_eq!(model.mode(), Mode::Switcher);
-    }
-
-    #[test]
-    fn shell_starts_in_control_mode() {
-        let model = ShellModel::new(vec![world("one")]);
-
-        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
@@ -529,18 +540,6 @@ mod tests {
             InputRoute::Consumed
         );
         assert_eq!(model.active(), 1);
-        assert_eq!(model.mode(), Mode::Switcher);
-    }
-
-    #[test]
-    fn switcher_forwards_unadvertised_keys_to_the_world() {
-        let mut model = model();
-        model.handle_key(key(KeyCode::F(5)), area());
-
-        assert_eq!(
-            model.handle_key(key(KeyCode::Char('x')), area()),
-            InputRoute::World
-        );
         assert_eq!(model.mode(), Mode::Switcher);
     }
 

@@ -179,7 +179,17 @@ impl Form {
     }
 
     pub(crate) fn render(&self, frame: &mut Frame<'_>, outer: Rect) {
-        frame.render_widget(Clear, outer);
+        self.render_inner(frame, outer, true);
+    }
+
+    pub(crate) fn render_overlay(&self, frame: &mut Frame<'_>, outer: Rect) {
+        self.render_inner(frame, outer, false);
+    }
+
+    fn render_inner(&self, frame: &mut Frame<'_>, outer: Rect, clear_outer: bool) {
+        if clear_outer {
+            frame.render_widget(Clear, outer);
+        }
         let width = 82.min(outer.width);
         let height = 20.min(outer.height);
         let area = Rect::new(

@@ -275,6 +275,27 @@ fn control_ui_opens_the_command_palette() {
 }
 
 #[test]
+fn active_navbar_opens_the_command_palette_over_the_world() {
+    let backend = TestBackend::new(80, 16);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["local.one"]);
+    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 16));
+    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 16));
+    press(&mut model, KeyCode::F(1), Rect::new(0, 0, 80, 16));
+    assert!(model.control().palette().is_open());
+    let parser = parser();
+
+    terminal
+        .draw(|frame| draw(frame, Some(parser.screen()), None, &model, None, None, None))
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_active_navbar_command_palette",
+        terminal.backend().buffer()
+    );
+}
+
+#[test]
 fn control_ui_shows_codex_session_cards() {
     let backend = TestBackend::new(100, 22);
     let mut terminal = Terminal::new(backend).unwrap();

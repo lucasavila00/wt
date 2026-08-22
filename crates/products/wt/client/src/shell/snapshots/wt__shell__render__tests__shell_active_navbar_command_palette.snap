@@ -1,0 +1,42 @@
+---
+source: crates/products/wt/client/src/shell/render_tests.rs
+expression: terminal.backend().buffer()
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 80, height: 16 },
+    content: [
+        "  WT  F5: disable navbar← PREV  local.one (1/1) NEXT →       ↑ ctrl F6: close ",
+        "world output                                                                    ",
+        "red                                                                             ",
+        "                                                                                ",
+        "            ┌Command Palette───────────────────────────────────────┐            ",
+        "            │> █                                                   │            ",
+        "            │──────────────────────────────────────────────────────│            ",
+        "            │ World: New                                          │            ",
+        "            │  World: Delete...                                    │            ",
+        "            │                                                      │            ",
+        "            │                                                      │            ",
+        "            │↑/↓ select · Enter run · Esc close                    │            ",
+        "            └──────────────────────────────────────────────────────┘            ",
+        "                                                                                ",
+        "                                                                                ",
+        "                                                                                ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 6, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 25, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 56, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 63, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 69, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 2, fg: Indexed(1), bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 67, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+        x: 67, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 67, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}
