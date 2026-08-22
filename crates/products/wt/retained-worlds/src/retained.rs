@@ -1,14 +1,26 @@
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{CaptureRequest, GuestTransport, RunRequest, WorkerError};
 
-pub const GUEST_USER: &str = "wt";
-pub const GUEST_HOME: &str = "/home/wt";
-pub const GUEST_UID: u32 = 1001;
-pub const GUEST_GID: u32 = 1001;
+pub const WT_IDENTITY: WtIdentity = WtIdentity {
+    user: "wt",
+    group: "wt",
+    uid: 1001,
+    gid: 1001,
+    home: "/home/wt",
+};
+pub const GUEST_USER: &str = WT_IDENTITY.user;
+pub const GUEST_GROUP: &str = WT_IDENTITY.group;
+pub const GUEST_HOME: &str = WT_IDENTITY.home;
+pub const GUEST_UID: u32 = WT_IDENTITY.uid;
+pub const GUEST_GID: u32 = WT_IDENTITY.gid;
+pub const GUEST_IDENTITY: GuestIdentity = WT_IDENTITY.numeric();
 pub const GUEST_SSH_PORT: u16 = 22;
 pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-retained-access";
 pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
@@ -18,6 +30,67 @@ pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex
 const AGENT_TOOLS_STAGE: &str = "/tmp/wt-retained-agent-tools-";
 const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WtIdentity {
+    pub user: &'static str,
+    pub group: &'static str,
+    pub uid: u32,
+    pub gid: u32,
+    pub home: &'static str,
+}
+
+impl WtIdentity {
+    pub const fn numeric(self) -> GuestIdentity {
+        GuestIdentity {
+            uid: self.uid,
+            gid: self.gid,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuestIdentity {
+    pub uid: u32,
+    pub gid: u32,
+}
+
+#[derive(Deserialize)]
+struct PinnedImageManifest {
+    guest_identity: GuestIdentity,
+}
+
+pub fn validate_guest_identity(actual: GuestIdentity) -> Result<(), WorkerError> {
+    if actual == GUEST_IDENTITY {
+        return Ok(());
+    }
+    Err(WorkerError::new(format!(
+        "retained image guest identity mismatch: expected UID/GID {}:{}, got {}:{}",
+        GUEST_IDENTITY.uid, GUEST_IDENTITY.gid, actual.uid, actual.gid
+    )))
+}
+
+pub fn verify_pinned_image_identity(image: &Path) -> Result<(), WorkerError> {
+    let manifest = image_manifest_path(image);
+    let bytes = fs::read(&manifest).map_err(|error| {
+        WorkerError::new(format!(
+            "read pinned image manifest {}: {error}",
+            manifest.display()
+        ))
+    })?;
+    let manifest: PinnedImageManifest = serde_json::from_slice(&bytes).map_err(|error| {
+        WorkerError::new(format!(
+            "parse pinned image manifest {}: {error}",
+            manifest.display()
+        ))
+    })?;
+    validate_guest_identity(manifest.guest_identity)
+}
+
+pub(crate) fn image_manifest_path(image: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.manifest.json", image.display()))
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GuestAccess {

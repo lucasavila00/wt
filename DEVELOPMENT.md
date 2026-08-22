@@ -12,7 +12,9 @@ From a root shell in a WT checkout:
 scripts/bootstrap-server-user
 ```
 
-Reconnect as `wt` before continuing.
+Bootstrap reserves `wt:wt` at UID/GID `1001:1001` and refuses existing account,
+numeric-ID, or `/home/wt` ownership conflicts. Reconnect as `wt` before
+continuing; server installation rejects any other effective identity.
 
 ## Install the server
 

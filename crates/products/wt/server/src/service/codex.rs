@@ -206,20 +206,44 @@ fn read_rollout(path: &Path) -> Result<Option<Rollout>, String> {
     let modified = fs::metadata(path)
         .and_then(|metadata| metadata.modified())
         .map_err(|error| error.to_string())?;
-    let title = reader
+    let mut title = None;
+    let mut legacy_title = None;
+    for line in reader
         .take(MAX_SESSION_TITLE_SCAN_BYTES)
         .lines()
         .map_while(Result::ok)
-        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-        .find_map(session_title);
+    {
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(value) = session_title(&record) {
+            title = Some(value);
+            break;
+        }
+        if legacy_title.is_none() {
+            legacy_title = legacy_session_title(&record);
+        }
+    }
     Ok(Some(Rollout {
         session_id,
         updated_at_unix_ms: unix_time_from(modified)?,
-        title,
+        title: title.or(legacy_title),
     }))
 }
 
-fn session_title(record: Value) -> Option<String> {
+fn session_title(record: &Value) -> Option<String> {
+    let payload = record.get("payload")?;
+    let item = payload.get("item")?;
+    if record.get("type")?.as_str()? != "event_msg"
+        || payload.get("type")?.as_str()? != "item_completed"
+        || item.get("type")?.as_str()? != "UserMessage"
+    {
+        return None;
+    }
+    normalized_message_text(item, "text")
+}
+
+fn legacy_session_title(record: &Value) -> Option<String> {
     let payload = record.get("payload")?;
     if record.get("type")?.as_str()? != "response_item"
         || payload.get("type")?.as_str()? != "message"
@@ -227,11 +251,15 @@ fn session_title(record: Value) -> Option<String> {
     {
         return None;
     }
-    let text = payload
+    normalized_message_text(payload, "input_text")
+}
+
+fn normalized_message_text(message: &Value, content_type: &str) -> Option<String> {
+    let text = message
         .get("content")?
         .as_array()?
         .iter()
-        .filter(|item| item.get("type").and_then(Value::as_str) == Some("input_text"))
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some(content_type))
         .filter_map(|item| item.get("text").and_then(Value::as_str))
         .collect::<Vec<_>>()
         .join(" ");
@@ -318,6 +346,29 @@ mod tests {
             rollouts[0].title.as_deref(),
             Some("Improve the session cards")
         );
+    }
+
+    #[test]
+    fn completed_user_message_wins_over_injected_user_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let session_id = Uuid::new_v4();
+        fs::write(
+            temp.path().join("rollout-main.jsonl"),
+            format!(
+                concat!(
+                    "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{}\",\"source\":{{}}}}}}\n",
+                    "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"AGENTS.md instructions\"}}]}}}}\n",
+                    "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"UserMessage\",\"content\":[{{\"type\":\"text\",\"text\":\"Fix  session\\n titles\"}}]}}}}}}\n"
+                ),
+                session_id
+            ),
+        )
+        .unwrap();
+
+        let (rollouts, warnings) = discover_rollouts(temp.path()).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(rollouts[0].title.as_deref(), Some("Fix session titles"));
     }
 
     #[test]

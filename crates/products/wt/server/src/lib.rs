@@ -1,10 +1,15 @@
 pub mod config;
 pub mod daemon;
+pub mod identity;
 pub mod image_generation;
 pub mod operations;
 pub mod runtime_config;
 pub mod service;
 
+pub use identity::{
+    validate_process_identity, validate_shared_roots, SERVER_GID, SERVER_GROUP, SERVER_HOME,
+    SERVER_UID, SERVER_USER,
+};
 pub use runtime_config::{
     AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
     ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV, CODEX_AUTH_PATH,

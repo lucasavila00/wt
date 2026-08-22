@@ -100,6 +100,7 @@ mod tests {
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
             worlds_dir: PathBuf::from("/var/lib/libvirt/images/wt"),
+            worlds_owner_uid: 1001,
             network: "default & private".to_owned(),
             boot_timeout: Duration::from_secs(300),
             codex_mounts,

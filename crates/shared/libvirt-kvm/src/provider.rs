@@ -2,6 +2,7 @@ use crate::{GuestTransport, TransportError};
 
 use std::fmt;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
@@ -70,6 +71,7 @@ impl fmt::Debug for Machine {
 }
 
 pub trait MachineProvider: Clone + Send + Sync + 'static {
+    fn image_path(&self) -> &Path;
     fn create(&self, spec: &MachineSpec, progress: &mut dyn Write) -> Result<Machine, WorkerError>;
     fn inspect(&self, provider_id: &ProviderId) -> Result<MachineInspection, WorkerError>;
     fn start(&self, provider_id: &ProviderId) -> Result<Machine, WorkerError>;

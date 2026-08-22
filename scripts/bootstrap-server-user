@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-server_user=wt
-server_group=wt
-server_home=/home/wt
+repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=../assets/server/wt-identity.sh
+source "$repository_root/assets/server/wt-identity.sh"
+
+server_user=$WT_IDENTITY_USER
+server_group=$WT_IDENTITY_GROUP
+server_uid=$WT_IDENTITY_UID
+server_gid=$WT_IDENTITY_GID
+server_home=$WT_IDENTITY_HOME
 authorized_keys_source=/root/.ssh/authorized_keys
 authorized_keys_destination=$server_home/.ssh/authorized_keys
 sudoers_path=/etc/sudoers.d/wt-server
@@ -21,6 +27,60 @@ if ! command -v visudo >/dev/null; then
     echo "sudo is required" >&2
     exit 1
 fi
+group_entry=$(getent group "$server_group" || true)
+if [[ -n $group_entry ]]; then
+    IFS=: read -r _ _ actual_gid _ <<<"$group_entry"
+    if [[ $actual_gid != "$server_gid" ]]; then
+        echo "WT server group mismatch: expected group=$server_group gid=$server_gid; actual group=$server_group gid=$actual_gid" >&2
+        exit 1
+    fi
+fi
+gid_entry=$(getent group "$server_gid" || true)
+if [[ -n $gid_entry ]]; then
+    IFS=: read -r actual_group _ actual_gid _ <<<"$gid_entry"
+    if [[ $actual_group != "$server_group" ]]; then
+        echo "WT server group mismatch: expected group=$server_group gid=$server_gid; actual group=$actual_group gid=$actual_gid" >&2
+        exit 1
+    fi
+fi
+
+user_entry=$(getent passwd "$server_user" || true)
+if [[ -n $user_entry ]]; then
+    IFS=: read -r _ _ actual_uid actual_gid _ user_home user_shell <<<"$user_entry"
+    if [[ $actual_uid != "$server_uid" || $actual_gid != "$server_gid" ]]; then
+        echo "WT server user mismatch: expected user=$server_user uid=$server_uid gid=$server_gid; actual user=$server_user uid=$actual_uid gid=$actual_gid" >&2
+        exit 1
+    fi
+    if [[ $user_home != "$server_home" || $user_shell != /bin/bash ]]; then
+        echo "existing user $server_user must have home $server_home and shell /bin/bash" >&2
+        exit 1
+    fi
+    if [[ $(passwd --status "$server_user" | awk '{print $2}') != L ]]; then
+        echo "existing user $server_user must have password authentication locked" >&2
+        exit 1
+    fi
+fi
+uid_entry=$(getent passwd "$server_uid" || true)
+if [[ -n $uid_entry ]]; then
+    IFS=: read -r actual_user _ actual_uid actual_gid _ _ _ <<<"$uid_entry"
+    if [[ $actual_user != "$server_user" ]]; then
+        echo "WT server user mismatch: expected user=$server_user uid=$server_uid gid=$server_gid; actual user=$actual_user uid=$actual_uid gid=$actual_gid" >&2
+        exit 1
+    fi
+fi
+
+if [[ -e $server_home || -L $server_home ]]; then
+    if [[ -L $server_home || ! -d $server_home ]]; then
+        echo "WT server home must be a regular directory: $server_home" >&2
+        exit 1
+    fi
+    read -r actual_uid actual_gid < <(stat --format='%u %g' "$server_home")
+    if [[ $actual_uid != "$server_uid" || $actual_gid != "$server_gid" ]]; then
+        echo "directory ownership mismatch at $server_home: expected uid=$server_uid gid=$server_gid; actual uid=$actual_uid gid=$actual_gid" >&2
+        exit 1
+    fi
+fi
+
 if [[ ! -s $authorized_keys_source ]]; then
     echo "$authorized_keys_source must contain an SSH public key" >&2
     exit 1
@@ -30,49 +90,39 @@ if ! ssh-keygen -l -f "$authorized_keys_source" >/dev/null; then
     exit 1
 fi
 
-if getent group "$server_group" >/dev/null; then
-    group_gid=$(getent group "$server_group" | cut -d: -f3)
-else
-    groupadd "$server_group"
-    group_gid=$(getent group "$server_group" | cut -d: -f3)
+if [[ -z $group_entry ]]; then
+    groupadd --gid "$server_gid" "$server_group"
+fi
+if [[ -z $user_entry ]]; then
+    useradd --create-home --uid "$server_uid" --gid "$server_gid" --shell /bin/bash "$server_user"
 fi
 
-if getent passwd "$server_user" >/dev/null; then
-    IFS=: read -r _ _ _ user_gid _ user_home user_shell < <(getent passwd "$server_user")
-    if [[ $user_gid != "$group_gid" || $user_home != "$server_home" || $user_shell != /bin/bash ]]; then
-        echo "existing user $server_user must have primary group $server_group, home $server_home, and shell /bin/bash" >&2
-        exit 1
-    fi
-    if [[ $(passwd --status "$server_user" | awk '{print $2}') != L ]]; then
-        echo "existing user $server_user must have password authentication locked" >&2
-        exit 1
-    fi
-else
-    useradd --create-home --gid "$server_group" --shell /bin/bash "$server_user"
-fi
-
-if [[ -d $server_home/.ssh ]]; then
-    read -r ssh_owner ssh_group ssh_mode < <(stat --format='%U %G %a' "$server_home/.ssh")
-    if [[ $ssh_owner != "$server_user" || $ssh_group != "$server_group" || $ssh_mode != 700 ]]; then
-        echo "directory drift at $server_home/.ssh: expected $server_user:$server_group, mode=0700" >&2
+if [[ -L $server_home/.ssh ]]; then
+    echo "WT SSH path must be a regular directory: $server_home/.ssh" >&2
+    exit 1
+elif [[ -d $server_home/.ssh ]]; then
+    read -r ssh_uid ssh_gid ssh_mode < <(stat --format='%u %g %a' "$server_home/.ssh")
+    if [[ $ssh_uid != "$server_uid" || $ssh_gid != "$server_gid" || $ssh_mode != 700 ]]; then
+        echo "directory drift at $server_home/.ssh: expected uid=$server_uid gid=$server_gid mode=0700; actual uid=$ssh_uid gid=$ssh_gid mode=0$ssh_mode" >&2
         exit 1
     fi
 else
-    install -d -o "$server_user" -g "$server_group" -m 0700 "$server_home/.ssh"
+    install -d -o "$server_uid" -g "$server_gid" -m 0700 "$server_home/.ssh"
 fi
 
 if [[ -e $authorized_keys_destination ]]; then
-    if [[ ! -f $authorized_keys_destination ]] || ! cmp --silent "$authorized_keys_source" "$authorized_keys_destination"; then
+    if [[ -L $authorized_keys_destination || ! -f $authorized_keys_destination ]] ||
+        ! cmp --silent "$authorized_keys_source" "$authorized_keys_destination"; then
         echo "authorized keys conflict at $authorized_keys_destination; refusing to overwrite" >&2
         exit 1
     fi
-    read -r keys_owner keys_group keys_mode < <(stat --format='%U %G %a' "$authorized_keys_destination")
-    if [[ $keys_owner != "$server_user" || $keys_group != "$server_group" || $keys_mode != 600 ]]; then
-        echo "file drift at $authorized_keys_destination: expected $server_user:$server_group, mode=0600" >&2
+    read -r keys_uid keys_gid keys_mode < <(stat --format='%u %g %a' "$authorized_keys_destination")
+    if [[ $keys_uid != "$server_uid" || $keys_gid != "$server_gid" || $keys_mode != 600 ]]; then
+        echo "file drift at $authorized_keys_destination: expected uid=$server_uid gid=$server_gid mode=0600; actual uid=$keys_uid gid=$keys_gid mode=0$keys_mode" >&2
         exit 1
     fi
 else
-    install -o "$server_user" -g "$server_group" -m 0600 \
+    install -o "$server_uid" -g "$server_gid" -m 0600 \
         "$authorized_keys_source" "$authorized_keys_destination"
 fi
 

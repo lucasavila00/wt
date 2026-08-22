@@ -161,9 +161,10 @@ pub(super) struct BuildEnvironment<'a> {
 impl BuildEnvironment<'_> {
     pub(super) fn render(&self) -> String {
         format!(
-        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
         self.kind,
         wt_retained_worlds::GUEST_USER,
+        wt_retained_worlds::GUEST_GROUP,
         wt_retained_worlds::GUEST_UID,
         wt_retained_worlds::GUEST_GID,
         wt_retained_worlds::GUEST_HOME,
@@ -222,6 +223,7 @@ mod tests {
             @r###"
 WT_IMAGE_KIND='host'
 WT_USER='wt'
+WT_GROUP='wt'
 WT_UID='1001'
 WT_GID='1001'
 WT_HOME='/home/wt'

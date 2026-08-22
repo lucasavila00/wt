@@ -173,8 +173,7 @@ fn service_unit_drift_requires_a_runtime_reset() {
 }
 
 #[test]
-fn services_use_the_expected_users() {
-    let user = User::from_uid(Uid::effective()).unwrap().unwrap();
+fn services_use_the_canonical_identity() {
     let input = toml::from_str::<InstallInput>(
         r#"
 version = 1
@@ -206,10 +205,7 @@ binary_dir = "/opt/wt bin"
     )
     .unwrap();
     let server = input.materialize();
-    let unit = String::from_utf8(server_service(&user, &server)).unwrap();
-    let unit = unit
-        .replace(&user.dir.display().to_string(), "[HOME]")
-        .replace(&format!("User={}", user.name), "User=[USER]");
+    let unit = String::from_utf8(server_service(&server)).unwrap();
     insta::assert_snapshot!(unit, @r###"
     [Unit]
     Description=WT control-plane daemon
@@ -219,8 +215,9 @@ binary_dir = "/opt/wt bin"
 
     [Service]
     Type=simple
-    User=[USER]
-    Environment="HOME=[HOME]"
+    User=wt
+    Group=wt
+    Environment="HOME=/home/wt"
     Environment="WT_AGENT_TOOL_VSOCK_PORT=18017"
     ExecStart="/opt/wt bin/wt-server" serve
     Restart=on-failure
@@ -231,17 +228,16 @@ binary_dir = "/opt/wt bin"
     [Install]
     WantedBy=multi-user.target
     "###);
-    let codex_auth = String::from_utf8(codex_auth_service(&user)).unwrap();
-    let codex_auth = codex_auth
-        .replace(&user.dir.display().to_string(), "[HOME]")
-        .replace(&format!("User={}", user.name), "User=[USER]");
+    let codex_auth = String::from_utf8(codex_auth_service()).unwrap();
     insta::assert_snapshot!(codex_auth, @r###"
     [Unit]
     Description=Refresh the WT Codex authentication share
 
     [Service]
     Type=oneshot
-    Environment="HOME=[HOME]"
+    User=wt
+    Group=wt
+    Environment="HOME=/home/wt"
     ExecStart=/usr/local/libexec/wt-codex-integration-auth-share
     UMask=0077
     "###);
@@ -256,9 +252,6 @@ binary_dir = "/opt/wt bin"
     [Install]
     WantedBy=multi-user.target
     "###);
-    let gateway = String::from_utf8(gateway_service(&user, &input, &server)).unwrap();
-    let gateway = gateway
-        .replace(&user.dir.display().to_string(), "[HOME]")
-        .replace(&format!("User={}", user.name), "User=[USER]");
+    let gateway = String::from_utf8(gateway_service(&input, &server)).unwrap();
     insta::assert_snapshot!("gateway_service", gateway);
 }

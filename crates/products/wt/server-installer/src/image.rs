@@ -54,6 +54,7 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
+    guest_identity: wt_retained_worlds::GuestIdentity,
     source_sha256: String,
     config_sha256: String,
     inputs: BTreeMap<String, String>,
@@ -337,6 +338,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
 
     println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
+        guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         source_sha256: input.source_sha256().to_ascii_lowercase(),
         config_sha256: image_config_sha(input),
         inputs: retained_input_hashes(&spec)?,
@@ -367,6 +369,8 @@ pub(crate) fn verify_installed_image(
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
+    wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
+        .map_err(anyhow::Error::msg)?;
     let expected_inputs = retained_input_hashes(&BuildSpec {
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,

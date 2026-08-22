@@ -7,7 +7,6 @@ use crate::install_input::{
     InstallInput,
 };
 use anyhow::{bail, Context, Result};
-use nix::unistd::{Uid, User};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 #[cfg(test)]
@@ -21,7 +20,7 @@ use wt_installer_support::{
     temporary_credential, validate_ssh_files, PassphrasePrompt, Runner, SshCredentialInput,
     TerminalPassphrasePrompt,
 };
-use wt_server::{ServerConfig, SERVER_CONFIG_PATH};
+use wt_server::{ServerConfig, SERVER_CONFIG_PATH, SERVER_GROUP, SERVER_HOME, SERVER_USER};
 use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 #[cfg(test)]
 use zeroize::Zeroizing;
@@ -97,7 +96,8 @@ pub(crate) fn verify_images(runner: &impl Runner, input_path: &Path) -> Result<(
 }
 
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
-    host::prepare_state(runner, config)
+    host::prepare_state(runner, config)?;
+    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)
 }
 
 fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8>)> {
@@ -206,10 +206,7 @@ fn success_message(input_path: &Path) -> String {
 }
 
 fn require_server_user() -> Result<()> {
-    if Uid::effective().is_root() {
-        bail!("run as the server user, not with sudo");
-    }
-    Ok(())
+    wt_server::validate_process_identity().map_err(anyhow::Error::msg)
 }
 
 fn require_workspace() -> Result<()> {
@@ -399,15 +396,12 @@ fn install_services(
     server: &ServerConfig,
     replace_runtime: bool,
 ) -> Result<()> {
-    let user = User::from_uid(Uid::effective())
-        .context("look up server user")?
-        .context("server user does not exist")?;
     install_codex_auth_helper(runner)?;
     install_service_unit(
         runner,
         "wt-codex-integration-auth",
         Path::new(CODEX_AUTH_SERVICE_PATH),
-        &codex_auth_service(&user),
+        &codex_auth_service(),
         replace_runtime,
     )?;
     install_service_unit(
@@ -421,14 +415,14 @@ fn install_services(
         runner,
         "wt-agent-tool-gateway",
         Path::new(GATEWAY_SERVICE_PATH),
-        &gateway_service(&user, input, server),
+        &gateway_service(input, server),
         replace_runtime,
     )?;
     install_service_unit(
         runner,
         "wt-server",
         Path::new(SERVER_SERVICE_PATH),
-        &server_service(&user, server),
+        &server_service(server),
         replace_runtime,
     )?;
     runner.run(
@@ -458,7 +452,7 @@ fn install_codex_auth_helper(runner: &impl Runner) -> Result<()> {
         "create system helper directory",
     )?;
     let local = Path::new("target/wt-codex-integration-auth-share.install");
-    fs::write(local, host::CODEX_AUTH_SHARE).context("stage Codex auth share helper")?;
+    fs::write(local, host::codex_auth_share()).context("stage Codex auth share helper")?;
     let temporary = Path::new("/usr/local/libexec/.wt-codex-integration-auth-share.wt-new");
     sudo_install(runner, local, temporary, 0o755)?;
     sudo_move(runner, temporary, Path::new(CODEX_AUTH_HELPER_PATH))?;
@@ -510,7 +504,7 @@ fn service_unit_needs_replacement(
     )
 }
 
-fn gateway_service(user: &User, input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
+fn gateway_service(input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
     let executable = server.install.binary_dir.join("wt-agent-tool-gateway");
     let mut command = systemd_quote(&executable.display().to_string());
     let mut credentials = String::new();
@@ -535,6 +529,7 @@ After=network-online.target\n\
 [Service]\n\
 Type=simple\n\
 User={}\n\
+Group={}\n\
 Environment={}\n\
 Environment={}\n\
 {}\n\
@@ -548,8 +543,9 @@ UMask=0077\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target\n",
-        user.name,
-        systemd_quote(&format!("HOME={}", user.dir.display())),
+        SERVER_USER,
+        SERVER_GROUP,
+        systemd_quote(&format!("HOME={SERVER_HOME}")),
         systemd_quote(&format!(
             "{}={}",
             wt_server::AGENT_TOOL_VSOCK_PORT_ENV,
@@ -561,7 +557,7 @@ WantedBy=multi-user.target\n",
     .into_bytes()
 }
 
-fn server_service(user: &User, server: &ServerConfig) -> Vec<u8> {
+fn server_service(server: &ServerConfig) -> Vec<u8> {
     let executable = server.install.binary_dir.join("wt-server");
     format!(
         "[Unit]\n\
@@ -573,6 +569,7 @@ After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-co
 [Service]\n\
 Type=simple\n\
 User={}\n\
+Group={}\n\
 Environment={}\n\
 Environment={}\n\
 ExecStart={} serve\n\
@@ -583,8 +580,9 @@ UMask=0077\n\
 \n\
 [Install]\n\
 WantedBy=multi-user.target\n",
-        user.name,
-        systemd_quote(&format!("HOME={}", user.dir.display())),
+        SERVER_USER,
+        SERVER_GROUP,
+        systemd_quote(&format!("HOME={SERVER_HOME}")),
         systemd_quote(&format!(
             "{}={}",
             wt_server::AGENT_TOOL_VSOCK_PORT_ENV,
@@ -595,17 +593,21 @@ WantedBy=multi-user.target\n",
     .into_bytes()
 }
 
-fn codex_auth_service(user: &User) -> Vec<u8> {
+fn codex_auth_service() -> Vec<u8> {
     format!(
         "[Unit]\n\
 Description=Refresh the WT Codex authentication share\n\
 \n\
 [Service]\n\
 Type=oneshot\n\
+User={}\n\
+Group={}\n\
 Environment={}\n\
 ExecStart={}\n\
 UMask=0077\n",
-        systemd_quote(&format!("HOME={}", user.dir.display())),
+        SERVER_USER,
+        SERVER_GROUP,
+        systemd_quote(&format!("HOME={SERVER_HOME}")),
         CODEX_AUTH_HELPER_PATH,
     )
     .into_bytes()
