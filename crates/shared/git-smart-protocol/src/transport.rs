@@ -46,7 +46,16 @@ pub enum GitTarget<'a> {
     },
 }
 
-fn spawn_git(target: GitTarget<'_>, service: GitService) -> Result<Child> {
+impl GitTarget<'_> {
+    fn provider_host(&self) -> Option<&str> {
+        match self {
+            Self::Local { .. } => None,
+            Self::Ssh { host, .. } => Some(host),
+        }
+    }
+}
+
+fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
     let mut command = match target {
         GitTarget::Local { repositories, path } => {
             let mut command = Command::new(service.command());
@@ -88,7 +97,7 @@ fn spawn_git(target: GitTarget<'_>, service: GitService) -> Result<Child> {
 }
 
 pub fn repository_refs(target: GitTarget<'_>) -> Result<Vec<(String, String)>> {
-    let mut child = spawn_git(target, GitService::UploadPack)?;
+    let mut child = spawn_git(&target, GitService::UploadPack)?;
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
     let mut advertisement = Vec::new();
@@ -107,7 +116,7 @@ pub fn repository_refs(target: GitTarget<'_>) -> Result<Vec<(String, String)>> {
         if detail.is_empty() {
             return Err(error).context("read Git repository advertisement");
         }
-        return Err(error).context(format!("Git provider said: {detail}"));
+        return Err(error).context(provider_error_context(target.provider_host(), detail));
     }
     let refs = packet_lines(&advertisement)?
         .filter_map(|line| {
@@ -129,10 +138,11 @@ pub fn serve_git<S: DuplexStream>(
     rejection_message: Option<&dyn Fn(&PushViolation) -> String>,
     push_message: Option<PushResultMessage<'_>>,
 ) -> Result<()> {
-    let mut child = spawn_git(target, service)?;
-    forward_advertisement(&mut child, stream)?;
+    let mut child = spawn_git(&target, service)?;
+    let provider_host = target.provider_host();
+    forward_advertisement(&mut child, stream, provider_host)?;
     if service == GitService::UploadPack {
-        return bridge_child(stream, child, None);
+        return bridge_child(stream, child, None, provider_host);
     }
 
     let policy = policy.context("receive-pack needs a write policy")?;
@@ -161,7 +171,28 @@ pub fn serve_git<S: DuplexStream>(
         child,
         (sideband && push_message.is_some())
             .then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
+        provider_host,
     )
+}
+
+fn provider_error_context(provider_host: Option<&str>, detail: &str) -> String {
+    host_key_verification_error(provider_host, detail)
+        .unwrap_or_else(|| format!("Git provider said: {detail}"))
+}
+
+fn host_key_verification_error(provider_host: Option<&str>, detail: &str) -> Option<String> {
+    let host = provider_host?;
+    if !detail.contains("REMOTE HOST IDENTIFICATION HAS CHANGED!")
+        && !detail.contains("Host key verification failed.")
+    {
+        return None;
+    }
+    Some(format!(
+        "Git provider host key verification failed for {host}.\n\
+The SSH host key configured on the WT server does not match the provider.\n\
+Next step: ask the WT server operator to update this provider's `ssh_known_hosts_file` in the server install input and reinstall WT.\n\
+This cannot be repaired inside the world."
+    ))
 }
 
 fn capture_stderr(mut stderr: impl Read) -> Vec<u8> {
@@ -197,6 +228,7 @@ fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
     push_message: Option<ResponseMessage<'_>>,
+    provider_host: Option<&str>,
 ) -> Result<()> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
@@ -248,6 +280,9 @@ fn bridge_child<S: DuplexStream>(
         let detail = String::from_utf8_lossy(&stderr);
         let detail = detail.trim();
         if !detail.is_empty() {
+            if let Some(error) = host_key_verification_error(provider_host, detail) {
+                bail!(error);
+            }
             bail!("Git provider failed with {status}: {detail}");
         }
         bail!("Git provider failed with {status}");
@@ -255,7 +290,11 @@ fn bridge_child<S: DuplexStream>(
     Ok(())
 }
 
-fn forward_advertisement(child: &mut Child, stream: &mut impl Write) -> Result<()> {
+fn forward_advertisement(
+    child: &mut Child,
+    stream: &mut impl Write,
+    provider_host: Option<&str>,
+) -> Result<()> {
     let result = copy_packet_section(
         child.stdout.as_mut().context("Git service has no stdout")?,
         stream,
@@ -267,7 +306,7 @@ fn forward_advertisement(child: &mut Child, stream: &mut impl Write) -> Result<(
         let detail = String::from_utf8_lossy(&stderr);
         let detail = detail.trim();
         if !detail.is_empty() {
-            return Err(error).context(format!("Git provider said: {detail}"));
+            return Err(error).context(provider_error_context(provider_host, detail));
         }
         return Err(error).context("read Git provider response");
     }
@@ -288,5 +327,31 @@ fn tolerate_stream_close(result: std::io::Result<u64>) -> std::io::Result<()> {
             Ok(())
         }
         Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_key_failure_hides_host_credentials_and_addresses_the_operator() {
+        let openssh = concat!(
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n",
+            "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n",
+            "Offending key in /run/credentials/wt-agent-tool-gateway.service/github-ssh-known-hosts:1\n",
+            "  remove with: ssh-keygen -f '/run/credentials/wt-agent-tool-gateway.service/github-ssh-known-hosts' -R 'github.com'\n",
+            "Host key verification failed."
+        );
+        let error = anyhow::anyhow!("read Git packet header")
+            .context(provider_error_context(Some("github.com"), openssh));
+        let rendered = format!("WT Git gateway failed: {error:#}");
+
+        insta::assert_snapshot!(rendered, @r###"
+        WT Git gateway failed: Git provider host key verification failed for github.com.
+        The SSH host key configured on the WT server does not match the provider.
+        Next step: ask the WT server operator to update this provider's `ssh_known_hosts_file` in the server install input and reinstall WT.
+        This cannot be repaired inside the world.: read Git packet header
+        "###);
     }
 }

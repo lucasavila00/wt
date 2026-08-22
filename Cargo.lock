@@ -4015,6 +4015,7 @@ name = "wt-git-smart-protocol"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "insta",
  "serde",
 ]
 
