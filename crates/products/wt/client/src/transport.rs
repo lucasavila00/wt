@@ -69,12 +69,14 @@ pub fn call(
     }
 }
 
-pub fn server_info(context: &Context) -> std::result::Result<bool, ContextError> {
+pub fn server_info(
+    context: &Context,
+) -> std::result::Result<(bool, wt_control_protocol::BuildIdentity), ContextError> {
     match call(
         context,
         &ApiRequest::new(wt_control_protocol::Operation::ServerInfo),
     )? {
-        Response::ServerInfo { test_server } => Ok(test_server),
+        Response::ServerInfo { test_server, build } => Ok((test_server, build)),
         _ => Err(wrong_response(context, "server info")),
     }
 }

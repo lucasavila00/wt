@@ -174,3 +174,15 @@ fn explains_required_git_author_value() {
         @"global Git user.email is required; configure it with `git config --global user.email VALUE`"
     );
 }
+
+#[test]
+fn reports_build_identity_mismatches() {
+    let client = wt_control_protocol::BuildIdentity {
+        version: "1.0.0".to_owned(),
+        commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+    };
+    let mut server = client.clone();
+    assert_eq!(build_status(&client, &server), "match");
+    server.commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned();
+    assert_eq!(build_status(&client, &server), "MISMATCH");
+}

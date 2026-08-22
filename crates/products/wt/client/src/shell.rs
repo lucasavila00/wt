@@ -25,6 +25,7 @@ mod render;
 mod session;
 mod terminal_view;
 mod toast;
+mod world_card;
 
 use control::ControlCommand;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};

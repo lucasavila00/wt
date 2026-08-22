@@ -24,7 +24,7 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"operation":"server_info"'*)
-    printf '%s\n' "{\"protocol_version\":9,\"outcome\":\"ok\",\"response\":{\"response\":\"server_info\",\"test_server\":${WT_FIXTURE_TEST_SERVER:-false}}}"
+    printf '%s\n' "{\"protocol_version\":9,\"outcome\":\"ok\",\"response\":{\"response\":\"server_info\",\"test_server\":${WT_FIXTURE_TEST_SERVER:-false},\"build\":{\"version\":\"test\",\"commit\":\"0000000000000000000000000000000000000000\"}}}"
     ;;
   *'"operation":"list"'*)
     printf '%s\n' '{"protocol_version":9,"outcome":"ok","response":{"response":"instances","instances":[{"id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}]}}'

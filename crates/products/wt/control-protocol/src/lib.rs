@@ -16,6 +16,35 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u32 = 9;
+pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
+pub const BUILD_DESCRIPTION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("WT_GIT_COMMIT_SHA"),
+    ")"
+);
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BuildIdentity {
+    pub version: String,
+    pub commit: String,
+}
+
+impl BuildIdentity {
+    pub fn current() -> Self {
+        Self {
+            version: BUILD_VERSION.to_owned(),
+            commit: GIT_COMMIT_SHA.to_owned(),
+        }
+    }
+}
+
+impl fmt::Display for BuildIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} ({})", self.version, self.commit)
+    }
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiProgress {
     pub protocol_version: u32,
@@ -152,6 +181,7 @@ pub enum Outcome {
 pub enum Response {
     ServerInfo {
         test_server: bool,
+        build: BuildIdentity,
     },
     Instance {
         instance: Box<Instance>,
@@ -595,7 +625,13 @@ mod tests {
     #[test]
     fn server_info_has_a_stable_shape() {
         let request = ApiRequest::new(Operation::ServerInfo);
-        let response = ApiResponse::ok(Response::ServerInfo { test_server: true });
+        let response = ApiResponse::ok(Response::ServerInfo {
+            test_server: true,
+            build: BuildIdentity {
+                version: "1.2.3".to_owned(),
+                commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            },
+        });
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
@@ -607,7 +643,11 @@ mod tests {
             "outcome": "ok",
             "response": {
               "response": "server_info",
-              "test_server": true
+              "test_server": true,
+              "build": {
+                "version": "1.2.3",
+                "commit": "0123456789abcdef0123456789abcdef01234567"
+              }
             }
           }
         ]

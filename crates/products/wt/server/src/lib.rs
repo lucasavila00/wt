@@ -41,7 +41,10 @@ pub fn handle_request_with_progress<
     }
 
     if request.operation == wt_control_protocol::Operation::ServerInfo {
-        return ApiResponse::ok(wt_control_protocol::Response::ServerInfo { test_server });
+        return ApiResponse::ok(wt_control_protocol::Response::ServerInfo {
+            test_server,
+            build: wt_control_protocol::BuildIdentity::current(),
+        });
     }
 
     match service.execute_with_progress(owner, request.operation, progress) {

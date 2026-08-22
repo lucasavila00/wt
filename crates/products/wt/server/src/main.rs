@@ -12,7 +12,7 @@ use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-server")]
+#[command(name = "wt-server", version = wt_control_protocol::BUILD_DESCRIPTION)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -66,6 +66,10 @@ fn run_server() -> Result<()> {
     wt_server::validate_shared_roots().map_err(anyhow::Error::msg)?;
     let owner = wt_server::SERVER_USER.to_owned();
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
+    eprintln!(
+        "wt-server starting: {}",
+        wt_control_protocol::BuildIdentity::current()
+    );
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
     store
