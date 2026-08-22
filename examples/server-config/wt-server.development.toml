@@ -3,7 +3,7 @@ version = 1
 
 [capacity]
 version = 1
-limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }
+limits = { vcpus = 12, memory_mib = 32768, disk_gib = 238 }
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
