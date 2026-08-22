@@ -1,4 +1,7 @@
 pub(crate) mod binaries;
+mod validation;
+
+pub(crate) use validation::{validate, validate_e2e};
 
 use crate::host;
 use crate::image;
@@ -68,22 +71,6 @@ pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     install_services(runner, &input, &server, replace_runtime)?;
     println!("\n{}", success_message(input_path));
     Ok(())
-}
-
-pub(crate) fn validate(input_path: &Path) -> Result<()> {
-    let (input, _, _) = load_install_input(input_path)?;
-    validate_agent_tools_files(&input)
-}
-
-pub(crate) fn validate_e2e(input_path: &Path) -> Result<()> {
-    let (input, _, _) = load_install_input(input_path)?;
-    if !input.test_server {
-        bail!(
-            "refusing destructive E2E setup: {} has test_server = false",
-            input_path.display()
-        );
-    }
-    validate_agent_tools_files(&input)
 }
 
 pub(crate) fn image(runner: &impl Runner, input_path: &Path, rebuild: bool) -> Result<()> {
