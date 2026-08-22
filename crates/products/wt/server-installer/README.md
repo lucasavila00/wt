@@ -24,12 +24,12 @@ wt-server-installer image rebuild --config PATH
 
 ## Executable compatibility
 
-`scripts/install-server` builds the setup tool and every installed WT
-executable except `wt-server` as static `x86_64-unknown-linux-musl` binaries.
-Setup verifies installed artifacts have no ELF interpreter or GLIBC symbol
-requirement. This covers the CLI, agent tool gateway and relay, and Git helpers.
-`wt-server` is the deliberate exception: it is built for the
-Ubuntu GNU target because it links the host's supported libvirt ABI.
+`scripts/install-server` builds the setup tool and `wt-server` for the Ubuntu
+GNU target because both link the host's supported libvirt ABI. Every other
+installed WT executable is built as a static `x86_64-unknown-linux-musl`
+binary. Setup verifies those installed artifacts have no ELF interpreter or
+GLIBC symbol requirement. This covers the CLI, agent tool gateway and relay,
+and Git helpers.
 
 `PATH` is the install input. It is not the runtime config. Setup accepts matching
 installed state and fails on drift or partial state.

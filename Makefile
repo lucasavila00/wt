@@ -35,6 +35,7 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
+	scripts/cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
 	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
 	$(MAKE) clear
 	scripts/cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
