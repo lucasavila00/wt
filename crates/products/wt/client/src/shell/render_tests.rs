@@ -208,7 +208,7 @@ fn control_ui_has_activity_scaffolding() {
 
 #[test]
 fn control_ui_shows_world_cards() {
-    let backend = TestBackend::new(100, 17);
+    let backend = TestBackend::new(100, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev", "lab.broken"]);
     model.worlds_mut()[0].resources = "4 CPU · 8G · 12.3G/64G disk".into();
@@ -216,8 +216,40 @@ fn control_ui_shows_world_cards() {
     model.worlds_mut()[1].status = InstanceStatus::Error;
     model.worlds_mut()[1].resources = "2 CPU · 4G · 8G/32G disk".into();
     model.worlds_mut()[1].detail = "host preparation failed; run `wt rm lab.broken`".into();
+    let session_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+    model.set_codex(
+        vec![CodexCard {
+            identity: CodexCardIdentity::Observation {
+                context: "ars".into(),
+                session_id,
+                world_id: Uuid::from_u128(1),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            session_id: Some(session_id),
+            timestamp: Some(now_ms()),
+            latest_user_message: Some("Add checkout details to world cards".into()),
+            kind: CodexCardKind::Observation {
+                world_id: Uuid::from_u128(1),
+                world_name: "dev".into(),
+                cwd: "/home/wt/wt".into(),
+                repository_root: Some("/home/wt/wt".into()),
+                repository_url: Some("git@github.com:acme/wt.git".into()),
+                git_branch: Some("wt/world-card-sessions".into()),
+                state: CodexSessionState::Working,
+                session_start_source: None,
+                target: ByobuTarget {
+                    tmux_session: "wt-host".into(),
+                    pane_id: "%1".into(),
+                },
+            },
+        }],
+        "2026-08-21T23:26:52Z".into(),
+        Rect::new(0, 0, 100, 25),
+    );
     model.set_worlds_updated_at("2026-08-21T23:26:52Z".into());
-    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 17));
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 25));
     let parser = parser();
 
     terminal

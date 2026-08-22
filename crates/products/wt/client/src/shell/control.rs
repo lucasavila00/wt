@@ -8,7 +8,7 @@ pub(super) const COMMANDS: [ControlCommand; 2] =
 pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
 pub(super) const CODEX_CARD_HEIGHT: u16 = 8;
-pub(super) const WORLD_CARD_HEIGHT: u16 = 6;
+pub(super) const WORLD_CARD_HEIGHT: u16 = 10;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum CodexCardIdentity {

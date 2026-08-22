@@ -292,6 +292,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 name,
                 resources,
                 None,
+                &[],
                 false,
                 "Creation in progress",
             );
@@ -314,6 +315,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             &world.name,
             &world.resources,
             (world.detail != "-").then_some(world.detail.as_str()),
+            &super::world_card::codex_lines(world, model.control().codex()),
             index == model.active(),
             "Enter or click to open",
         );
@@ -330,6 +332,7 @@ fn draw_world_card(
     name: &str,
     resources: &str,
     detail: Option<&str>,
+    codex: &[Line<'static>],
     selected: bool,
     footer: &str,
 ) {
@@ -350,6 +353,7 @@ fn draw_world_card(
     if let Some(detail) = detail {
         lines.push(Line::from(detail.to_owned()));
     }
+    lines.extend_from_slice(codex);
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
     frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
@@ -527,7 +531,7 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
     }
 }
 
-fn repository_name(url: &str) -> Option<&str> {
+pub(super) fn repository_name(url: &str) -> Option<&str> {
     url.trim_end_matches(".git")
         .rsplit(['/', ':'])
         .find(|part| !part.is_empty())
@@ -558,7 +562,7 @@ fn wrapped_line_count(value: &str, width: u16) -> usize {
     lines
 }
 
-fn relative_age(timestamp: i64) -> String {
+pub(super) fn relative_age(timestamp: i64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
@@ -658,7 +662,7 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
     );
 }
 
-fn muted_style() -> Style {
+pub(super) fn muted_style() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
 
