@@ -38,7 +38,7 @@ e2e-tests:
 	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
 	$(MAKE) clear
 	scripts/cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
-	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored
+	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
 	@printf '\nWT E2E test server remains installed on this host.\n'
 
 install-client:

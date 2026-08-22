@@ -36,7 +36,7 @@ fn shell_creates_and_deletes_a_real_world() {
         &["shell"],
         harness.temp.path(),
         &environment,
-        Duration::from_secs(180),
+        Duration::from_secs(10),
     )
     .unwrap();
 
@@ -79,6 +79,16 @@ fn prepare_client(harness: &KvmHarness) {
     fs::write(
         harness.temp.path().join(".gitconfig"),
         "[user]\n\tname = WT E2E\n\temail = wt@example.invalid\n",
+    )
+    .unwrap();
+    fs::copy(
+        &harness.git.guest_key,
+        harness.temp.path().join(".ssh/id_ed25519"),
+    )
+    .unwrap();
+    fs::set_permissions(
+        harness.temp.path().join(".ssh/id_ed25519"),
+        fs::Permissions::from_mode(0o600),
     )
     .unwrap();
     fs::copy(
