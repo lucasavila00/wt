@@ -43,6 +43,9 @@ phase "installing terminal tools"
 
 phase "installing Codex"
 /bin/sh /var/tmp/wt-install-codex.sh
+
+phase "installing Diffo"
+/bin/sh /var/tmp/wt-install-diffo.sh
 install -d -m 0755 /usr/local/share /usr/local/libexec
 printf "WT_USER='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
     "$WT_USER" "$WT_UID" "$WT_GID" "$WT_HOME" \

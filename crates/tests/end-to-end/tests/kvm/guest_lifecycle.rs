@@ -33,7 +33,7 @@ fn retained_host_lifecycle() {
             "systemctl is-active --quiet wt-agent-tool-gateway-relay.service; ",
             "test ! -e /workspace; ",
             "! command -v docker; ! command -v node; ! command -v npm; ",
-            "command -v git codex wt-tools"
+            "command -v git codex diffo wt-tools"
         ),
         "verify slim golden host image",
     );
