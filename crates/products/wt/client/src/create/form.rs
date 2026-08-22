@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -174,6 +174,28 @@ impl Form {
         Action::None
     }
 
+    pub(crate) fn handle_mouse(&mut self, mouse: MouseEvent, outer: Rect) -> Action {
+        if self.stage != Stage::Fields || mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+            return Action::None;
+        }
+        let layout = form_layout(outer, self.fields().len());
+        let position = (mouse.column, mouse.row).into();
+        if !layout.fields.contains(position) {
+            return Action::None;
+        }
+        let focus = usize::from(mouse.row.saturating_sub(layout.fields.y));
+        if focus > OK_FOCUS {
+            return Action::None;
+        }
+        self.focus = focus;
+        self.error = None;
+        if focus == OK_FOCUS {
+            self.advance()
+        } else {
+            Action::None
+        }
+    }
+
     pub(crate) fn render(&self, frame: &mut Frame<'_>, outer: Rect) {
         self.render_inner(frame, outer, true);
     }
@@ -186,14 +208,8 @@ impl Form {
         if clear_outer {
             frame.render_widget(Clear, outer);
         }
-        let width = 82.min(outer.width);
-        let height = 20.min(outer.height);
-        let area = Rect::new(
-            outer.x + outer.width.saturating_sub(width) / 2,
-            outer.y + outer.height.saturating_sub(height) / 2,
-            width,
-            height,
-        );
+        let layout = form_layout(outer, self.fields().len());
+        let area = layout.modal;
         frame.render_widget(
             Block::new().borders(Borders::ALL).title("Create world"),
             area,
@@ -208,14 +224,7 @@ impl Form {
 
     fn render_fields(&self, frame: &mut Frame<'_>, area: Rect) {
         let fields = self.fields();
-        let rows = Layout::vertical([
-            Constraint::Length((fields.len() + 1) as u16),
-            Constraint::Length(1),
-            Constraint::Min(2),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(area);
+        let rows = form_sections(area, fields.len());
         let mut lines = fields
             .iter()
             .enumerate()
@@ -420,6 +429,38 @@ impl Form {
     }
 }
 
+struct FormLayout {
+    modal: Rect,
+    fields: Rect,
+}
+
+fn form_layout(outer: Rect, field_count: usize) -> FormLayout {
+    let width = 82.min(outer.width);
+    let height = 20.min(outer.height);
+    let modal = Rect::new(
+        outer.x + outer.width.saturating_sub(width) / 2,
+        outer.y + outer.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    let inner = modal.inner(Margin::new(2, 1));
+    FormLayout {
+        modal,
+        fields: form_sections(inner, field_count)[0],
+    }
+}
+
+fn form_sections(area: Rect, field_count: usize) -> std::rc::Rc<[Rect]> {
+    Layout::vertical([
+        Constraint::Length((field_count + 1) as u16),
+        Constraint::Length(1),
+        Constraint::Min(2),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(area)
+}
+
 fn muted_style() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
@@ -569,6 +610,46 @@ mod tests {
             Action::None
         ));
         assert_eq!(form.stage, Stage::Review);
+    }
+
+    #[test]
+    fn ok_button_is_directly_clickable() {
+        let mut form = form();
+        let area = Rect::new(0, 0, 100, 30);
+        let button = form_layout(area, HOST_FIELDS.len()).fields;
+
+        assert!(matches!(
+            form.handle_mouse(
+                MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: button.x + 3,
+                    row: button.y + OK_FOCUS as u16,
+                    modifiers: KeyModifiers::NONE,
+                },
+                area,
+            ),
+            Action::None
+        ));
+        assert_eq!(form.stage, Stage::Review);
+    }
+
+    #[test]
+    fn clicking_a_field_moves_keyboard_focus_to_it() {
+        let mut form = form();
+        let area = Rect::new(0, 0, 100, 30);
+        let fields = form_layout(area, HOST_FIELDS.len()).fields;
+
+        let _ = form.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: fields.x,
+                row: fields.y + 1,
+                modifiers: KeyModifiers::NONE,
+            },
+            area,
+        );
+
+        assert_eq!(form.focus, 1);
     }
 
     #[test]
