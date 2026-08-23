@@ -1,5 +1,9 @@
 use super::Activity;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Position, Rect},
+    Frame,
+};
 
 pub(in crate::shell) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(in crate::shell) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
@@ -7,6 +11,136 @@ pub(in crate::shell) const CODEX_CARD_HEIGHT: u16 = 8;
 pub(in crate::shell) const WORLD_CARD_HEIGHT: u16 = 10;
 pub(in crate::shell) const CARD_COLUMNS: usize = 2;
 pub(in crate::shell) const CARD_GAP: u16 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::shell) struct CardGrid {
+    pub(in crate::shell) viewport: Rect,
+    pub(in crate::shell) content_height: usize,
+    pub(in crate::shell) scroll: usize,
+    card_height: u16,
+    card_width: u16,
+    card_gap: u16,
+    count: usize,
+}
+
+impl CardGrid {
+    pub(in crate::shell) fn card_size(self) -> (u16, u16) {
+        (self.card_height, self.card_width)
+    }
+
+    pub(in crate::shell) fn maximum_scroll(self) -> usize {
+        self.content_height
+            .saturating_sub(usize::from(self.viewport.height))
+    }
+
+    pub(in crate::shell) fn cards(self) -> impl Iterator<Item = CardPlacement> {
+        (0..self.count).filter_map(move |index| {
+            let row = index / CARD_COLUMNS;
+            let column = index % CARD_COLUMNS;
+            let content_y = row.saturating_mul(usize::from(self.card_height + self.card_gap));
+            let content_bottom = content_y.saturating_add(usize::from(self.card_height));
+            let viewport_bottom = self
+                .scroll
+                .saturating_add(usize::from(self.viewport.height));
+            if content_bottom <= self.scroll || content_y >= viewport_bottom {
+                return None;
+            }
+            let x = u16::try_from(column)
+                .unwrap_or(u16::MAX)
+                .saturating_mul(self.card_width.saturating_add(self.card_gap));
+            let width = self.card_width.min(self.viewport.width.saturating_sub(x));
+            if width == 0 {
+                return None;
+            }
+            Some(CardPlacement {
+                index,
+                x,
+                content_y,
+                width,
+                height: self.card_height,
+            })
+        })
+    }
+
+    pub(in crate::shell) fn card_at(self, column: u16, row: u16) -> Option<usize> {
+        if !self.viewport.contains(Position::new(column, row)) {
+            return None;
+        }
+        let x = column.saturating_sub(self.viewport.x);
+        let content_y =
+            usize::from(row.saturating_sub(self.viewport.y)).saturating_add(self.scroll);
+        self.cards().find_map(|card| {
+            let in_x = x >= card.x && x < card.x.saturating_add(card.width);
+            let in_y = content_y >= card.content_y
+                && content_y < card.content_y.saturating_add(usize::from(card.height));
+            (in_x && in_y).then_some(card.index)
+        })
+    }
+
+    #[cfg(test)]
+    pub(in crate::shell) fn card_rect(self, index: usize) -> Option<Rect> {
+        let card = self.cards().find(|card| card.index == index)?;
+        let source_y = self.scroll.saturating_sub(card.content_y);
+        let target_y = card.content_y.saturating_sub(self.scroll);
+        let height = usize::from(card.height)
+            .saturating_sub(source_y)
+            .min(usize::from(self.viewport.height).saturating_sub(target_y));
+        Some(Rect::new(
+            self.viewport.x.saturating_add(card.x),
+            self.viewport
+                .y
+                .saturating_add(u16::try_from(target_y).unwrap_or(u16::MAX)),
+            card.width,
+            u16::try_from(height).unwrap_or(u16::MAX),
+        ))
+    }
+
+    pub(in crate::shell) fn render_card(
+        self,
+        frame: &mut Frame<'_>,
+        card: CardPlacement,
+        render: impl FnOnce(Rect, &mut Buffer),
+    ) {
+        let area = Rect::new(0, 0, card.width, card.height);
+        let mut card_buffer = Buffer::empty(area);
+        render(area, &mut card_buffer);
+
+        let source_y = self.scroll.saturating_sub(card.content_y);
+        let target_y = card.content_y.saturating_sub(self.scroll);
+        let visible_height = usize::from(card.height)
+            .saturating_sub(source_y)
+            .min(usize::from(self.viewport.height).saturating_sub(target_y));
+        let target_x = self.viewport.x.saturating_add(card.x);
+        let target_y = self
+            .viewport
+            .y
+            .saturating_add(u16::try_from(target_y).unwrap_or(u16::MAX));
+        let source_y = u16::try_from(source_y).unwrap_or(u16::MAX);
+        for y in 0..u16::try_from(visible_height).unwrap_or(u16::MAX) {
+            for x in 0..card.width {
+                let Some(source) = card_buffer.cell(Position::new(x, source_y.saturating_add(y)))
+                else {
+                    continue;
+                };
+                if let Some(target) = frame.buffer_mut().cell_mut(Position::new(
+                    target_x.saturating_add(x),
+                    target_y.saturating_add(y),
+                )) {
+                    *target = source.clone();
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::shell) struct CardPlacement {
+    pub(in crate::shell) index: usize,
+    x: u16,
+    content_y: usize,
+    width: u16,
+    height: u16,
+}
 
 pub(in crate::shell) fn control_areas(area: Rect) -> (Rect, Rect) {
     let columns = Layout::horizontal([Constraint::Length(ACTIVITY_BAR_WIDTH), Constraint::Min(0)])
@@ -20,100 +154,78 @@ pub(in crate::shell) fn control_content_areas(area: Rect) -> (Rect, Rect) {
     (rows[0], rows[1])
 }
 
-pub(in crate::shell) fn codex_card_rects(
+pub(in crate::shell) fn card_grid(
     area: Rect,
-    offset: usize,
+    scroll: usize,
     count: usize,
-) -> Vec<(usize, Rect)> {
-    card_grid_rects(area, offset, count, CODEX_CARD_HEIGHT, CARD_GAP)
+    card_height: u16,
+) -> CardGrid {
+    card_grid_with_gap(area, scroll, count, card_height, CARD_GAP)
 }
 
-pub(in crate::shell) fn card_grid_rects(
+pub(in crate::shell) fn card_grid_with_gap(
     area: Rect,
-    offset: usize,
+    scroll: usize,
     count: usize,
     card_height: u16,
     card_gap: u16,
-) -> Vec<(usize, Rect)> {
+) -> CardGrid {
     let (body, _) = control_content_areas(area);
     let viewport = body;
-    if viewport.is_empty() {
-        return Vec::new();
+    let rows = count.div_ceil(CARD_COLUMNS);
+    let content_height = rows
+        .saturating_mul(usize::from(card_height + card_gap))
+        .saturating_sub(usize::from(card_gap));
+    let overflowing = content_height > usize::from(viewport.height);
+    let viewport_width = viewport.width.saturating_sub(u16::from(overflowing));
+    let viewport = Rect::new(viewport.x, viewport.y, viewport_width, viewport.height);
+    let card_width = (viewport_width.saturating_sub(card_gap) / 2).max(1);
+    let maximum = content_height.saturating_sub(usize::from(viewport.height));
+    CardGrid {
+        viewport,
+        content_height,
+        scroll: scroll.min(maximum),
+        card_height,
+        card_width,
+        card_gap,
+        count,
     }
-    let visible = card_grid_visible(area, card_height, card_gap);
-    let viewport_width = viewport.width.saturating_sub(u16::from(count > visible));
-    let viewport_right = viewport.x.saturating_add(viewport_width);
-    let width = (viewport_width.saturating_sub(card_gap) / 2).max(1);
-    (offset..count.min(offset.saturating_add(visible)))
-        .enumerate()
-        .map(|(position, index)| {
-            let row = position / CARD_COLUMNS;
-            let column = position % CARD_COLUMNS;
-            let x = viewport.x + u16::try_from(column).unwrap_or(u16::MAX) * (width + card_gap);
-            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * (card_height + card_gap);
-            (
-                index,
-                Rect::new(
-                    x,
-                    y,
-                    width.min(viewport_right.saturating_sub(x)),
-                    card_height.min(viewport.bottom().saturating_sub(y)),
-                ),
-            )
-        })
-        .collect()
-}
-
-pub(in crate::shell) fn world_card_rects(
-    area: Rect,
-    selected: usize,
-    count: usize,
-) -> Vec<(usize, Rect)> {
-    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT, CARD_GAP).max(1);
-    let offset = selected / visible * visible;
-    card_grid_rects(area, offset, count, WORLD_CARD_HEIGHT, CARD_GAP)
-}
-
-pub(in crate::shell) fn card_grid_visible(area: Rect, card_height: u16, card_gap: u16) -> usize {
-    let (body, _) = control_content_areas(area);
-    usize::from(body.height.div_ceil(card_height + card_gap)) * CARD_COLUMNS
 }
 
 pub(in crate::shell) fn world_card_at_position(
     area: Rect,
-    selected: usize,
+    scroll: usize,
     count: usize,
     column: u16,
     row: u16,
 ) -> Option<usize> {
-    world_card_rects(area, selected, count)
-        .into_iter()
-        .find(|(_, rect)| rect.contains((column, row).into()))
-        .map(|(index, _)| index)
+    card_grid(area, scroll, count, WORLD_CARD_HEIGHT).card_at(column, row)
 }
 
-pub(in crate::shell) fn codex_visible_cards(area: Rect, activity: Activity) -> usize {
-    if activity == Activity::Live {
-        return super::super::live::visible(area);
-    }
-    card_grid_visible(area, CODEX_CARD_HEIGHT, CARD_GAP)
+pub(in crate::shell) fn codex_card_grid(
+    area: Rect,
+    activity: Activity,
+    scroll: usize,
+    count: usize,
+) -> CardGrid {
+    let (height, gap) = if activity == Activity::Live {
+        (
+            super::super::live::CARD_HEIGHT,
+            super::super::live::CARD_GAP,
+        )
+    } else {
+        (CODEX_CARD_HEIGHT, CARD_GAP)
+    };
+    card_grid_with_gap(area, scroll, count, height, gap)
 }
 
 pub(in crate::shell) fn session_card_at_position(
     area: Rect,
     activity: Activity,
-    offset: usize,
+    scroll: usize,
     count: usize,
     column: u16,
     row: u16,
 ) -> Option<usize> {
-    let rects = if activity == Activity::Live {
-        super::super::live::card_rects(area, offset, count)
-    } else {
-        codex_card_rects(area, offset, count)
-    };
-    rects
-        .into_iter()
-        .find(|(_, rect)| rect.contains((column, row).into()))
-        .map(|(index, _)| index)
+    codex_card_grid(area, activity, scroll, count).card_at(column, row)
 }

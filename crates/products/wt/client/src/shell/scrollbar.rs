@@ -1,13 +1,11 @@
 use ratatui::{
-    layout::{Margin, Position, Rect},
+    layout::{Position, Rect},
     style::Style,
     symbols::{block, line},
     Frame,
 };
 
-use super::control::{
-    card_grid_visible, control_content_areas, CARD_GAP, CODEX_CARD_HEIGHT, WORLD_CARD_HEIGHT,
-};
+use super::control::{control_content_areas, CardGrid};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScrollbarGeometry {
@@ -17,7 +15,7 @@ struct ScrollbarGeometry {
 
 pub(super) fn area(area: Rect) -> Rect {
     let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
+    let viewport = body;
     Rect::new(
         viewport.right().saturating_sub(1),
         viewport.y,
@@ -26,14 +24,11 @@ pub(super) fn area(area: Rect) -> Rect {
     )
 }
 
-pub(super) fn render(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    content_length: usize,
-    viewport_length: usize,
-    position: usize,
-    style: Style,
-) {
+pub(super) fn render(frame: &mut Frame<'_>, grid: CardGrid, style: Style) {
+    let area = area(frame.area());
+    let content_length = grid.content_height;
+    let viewport_length = usize::from(grid.viewport.height);
+    let position = grid.scroll;
     if area.is_empty() || viewport_length >= content_length {
         return;
     }
@@ -57,32 +52,24 @@ pub(super) fn render(
     }
 }
 
-pub(super) fn render_world_cards(
-    frame: &mut Frame<'_>,
-    count: usize,
-    selected: usize,
-    style: Style,
-) {
-    let viewport = card_grid_visible(frame.area(), WORLD_CARD_HEIGHT, CARD_GAP).max(1);
-    render(
-        frame,
-        area(frame.area()),
-        count,
-        viewport,
-        selected / viewport * viewport,
-        style,
-    );
+pub(super) fn position_at(area: Rect, column: u16, row: u16, maximum: usize) -> Option<usize> {
+    let track = self::area(area);
+    if maximum == 0 || !track.contains(Position::new(column, row)) {
+        return None;
+    }
+    Some(position_for_row(track, row, maximum))
 }
 
-pub(super) fn render_codex_cards(frame: &mut Frame<'_>, count: usize, offset: usize, style: Style) {
-    render(
-        frame,
-        area(frame.area()),
-        count,
-        card_grid_visible(frame.area(), CODEX_CARD_HEIGHT, CARD_GAP).max(1),
-        offset,
-        style,
-    );
+pub(super) fn drag_position(area: Rect, row: u16, maximum: usize) -> usize {
+    position_for_row(self::area(area), row, maximum)
+}
+
+fn position_for_row(track: Rect, row: u16, maximum: usize) -> usize {
+    if track.height <= 1 {
+        return 0;
+    }
+    usize::from(row.saturating_sub(track.y).min(track.height - 1)) * maximum
+        / usize::from(track.height - 1)
 }
 
 fn scrollbar_geometry(

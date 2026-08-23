@@ -40,8 +40,9 @@ help menu; `Esc` closes it.
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
 background. All activities use a two-column card grid. Arrow keys select cards,
-the mouse wheel scrolls them by row, and `Enter` or left click opens the selected
-world or live Codex pane. Opening a Codex pane uses a short control SSH
+the mouse wheel scrolls the grid by one terminal row without changing selection,
+and `Enter` or left click opens the selected world or live Codex pane. Opening a
+Codex pane uses a short control SSH
 connection; it does not replace any world's playback connection.
 
 World creation and deletion continue in the background after their forms are
