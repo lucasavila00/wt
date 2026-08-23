@@ -43,9 +43,25 @@ enum HookEventName {
 
 #[derive(Default, Deserialize, Serialize)]
 struct PaneEventOrder {
+    current_session: Option<Uuid>,
     current_generation: u64,
     next_sequence: u64,
-    session_generations: BTreeMap<Uuid, u64>,
+    #[serde(rename = "session_generations", default, skip_serializing)]
+    legacy_session_generations: BTreeMap<Uuid, u64>,
+}
+
+impl PaneEventOrder {
+    fn migrate_legacy(&mut self) {
+        if self.current_session.is_none() {
+            let mut candidates = self
+                .legacy_session_generations
+                .iter()
+                .filter(|(_, generation)| **generation == self.current_generation)
+                .map(|(session_id, _)| *session_id);
+            self.current_session = candidates.next().filter(|_| candidates.next().is_none());
+        }
+        self.legacy_session_generations.clear();
+    }
 }
 
 fn session_start_source(raw: String) -> CodexSessionStartSource {
@@ -226,24 +242,21 @@ fn pane_event_order_at(
     } else {
         serde_json::from_str(&contents).context("decode Codex hook order")?
     };
-    let generation = match order.session_generations.get(&session_id) {
-        Some(generation) => *generation,
-        None if order.current_generation == 0 => {
-            order.current_generation = 1;
-            order.session_generations.insert(session_id, 1);
-            1
+    order.migrate_legacy();
+    let generation = match event {
+        HookEventName::SessionStart if order.current_session == Some(session_id) => {
+            order.current_generation
         }
-        None if matches!(event, HookEventName::SessionStart) => {
+        HookEventName::SessionStart => {
             order.current_generation = order
                 .current_generation
                 .checked_add(1)
                 .context("Codex pane generation overflow")?;
-            order
-                .session_generations
-                .insert(session_id, order.current_generation);
+            order.current_session = Some(session_id);
             order.current_generation
         }
-        None => 0,
+        _ if order.current_session == Some(session_id) => order.current_generation,
+        _ => 0,
     };
     order.next_sequence = order
         .next_sequence
@@ -325,16 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_hook_returns_a_continue_response() {
-        assert_eq!(
-            successful_hook_output(HookEventName::Stop),
-            Some(r#"{"continue":true}"#)
-        );
-        assert_eq!(successful_hook_output(HookEventName::SessionEnd), None);
-    }
-
-    #[test]
-    fn assigns_a_stable_generation_and_monotonic_sequence_per_pane() {
+    fn assigns_a_new_generation_when_a_session_returns_to_a_pane() {
         let temp = tempfile::tempdir().unwrap();
         let first = Uuid::new_v4();
         let replacement = Uuid::new_v4();
@@ -354,7 +358,47 @@ mod tests {
         );
         assert_eq!(
             pane_event_order_at(temp.path(), "1", first, HookEventName::Stop).unwrap(),
-            (1, 4)
+            (0, 4)
         );
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", first, HookEventName::SessionStart).unwrap(),
+            (3, 5)
+        );
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", first, HookEventName::Stop).unwrap(),
+            (3, 6)
+        );
+    }
+
+    #[test]
+    fn migrates_legacy_pane_state_for_the_current_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        let current = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
+        fs::write(
+            temp.path().join("1.json"),
+            format!(
+                r#"{{"current_generation":2,"next_sequence":7,"session_generations":{{"{first}":1,"{current}":2}}}}"#
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", current, HookEventName::Stop).unwrap(),
+            (2, 8)
+        );
+        insta::assert_snapshot!(
+            fs::read_to_string(temp.path().join("1.json")).unwrap(),
+            @r#"{"current_session":"22222222-2222-4222-8222-222222222222","current_generation":2,"next_sequence":8}"#
+        );
+    }
+
+    #[test]
+    fn stop_hook_returns_a_continue_response() {
+        assert_eq!(
+            successful_hook_output(HookEventName::Stop),
+            Some(r#"{"continue":true}"#)
+        );
+        assert_eq!(successful_hook_output(HookEventName::SessionEnd), None);
     }
 }
