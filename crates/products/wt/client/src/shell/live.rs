@@ -204,4 +204,13 @@ mod tests {
         assert_eq!(rects.len(), 3);
         assert!(rects.windows(2).all(|pair| pair[1].1.y > pair[0].1.y));
     }
+
+    #[test]
+    fn live_cards_reserve_a_scrollbar_column_only_when_overflowing() {
+        let area = Rect::new(0, 0, 399, 40);
+        let fitting = card_rects(area, 0, 4);
+        let overflowing = card_rects(area, 0, 5);
+
+        assert_eq!(overflowing[0].1.width + 1, fitting[0].1.width);
+    }
 }

@@ -314,6 +314,14 @@ fn resize_keeps_the_selected_card_in_its_viewport() {
     assert_eq!(state.codex_offset(), 5);
 }
 
+#[test]
+fn world_cards_reserve_a_scrollbar_column_only_when_overflowing() {
+    let fitting = world_card_rects(area(), 0, 1);
+    let overflowing = world_card_rects(area(), 0, 3);
+
+    assert_eq!(overflowing[0].1.width + 1, fitting[0].1.width);
+}
+
 fn live_card(index: u128, pane_id: &str) -> CodexCard {
     let session_id = Uuid::from_u128(index);
     let world_id = Uuid::from_u128(100 + index);

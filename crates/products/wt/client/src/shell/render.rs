@@ -84,7 +84,6 @@ pub(super) fn draw(
     }
     draw_test_server_banner(frame, model);
 }
-
 fn draw_test_server_banner(frame: &mut Frame<'_>, model: &ShellModel) {
     if !model.test_server() {
         return;
@@ -202,7 +201,6 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
         right,
     );
 }
-
 fn draw_control(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
@@ -295,7 +293,6 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         retry,
     );
 }
-
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
     let state = model.control();
     let block = Block::new()
