@@ -67,22 +67,26 @@ impl GitProviderApi for GitlabApi {
                 )?;
                 self.read_refreshed_change_request(scope)
             }
-            ProviderCommand::MarkChangeRequestReady | ProviderCommand::MarkChangeRequestDraft => {
+            ProviderCommand::MarkChangeRequestReady { confirm_merged }
+            | ProviderCommand::MarkChangeRequestDraft { confirm_merged } => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 set_change_request_draft(
                     &self.http,
                     scope.project,
                     merge_request_number,
-                    matches!(command, ProviderCommand::MarkChangeRequestDraft),
+                    matches!(command, ProviderCommand::MarkChangeRequestDraft { .. }),
                 )?;
                 self.read_refreshed_change_request(scope)
             }
-            ProviderCommand::AddChangeRequestComment { body } => {
+            ProviderCommand::AddChangeRequestComment {
+                body,
+                confirm_merged,
+            } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .merge_request_id
                     .context("merge request has no ID")?;
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
@@ -101,9 +105,13 @@ impl GitProviderApi for GitlabApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            ProviderCommand::EditChangeRequest { title, body } => {
+            ProviderCommand::EditChangeRequest {
+                title,
+                body,
+                confirm_merged,
+            } => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
@@ -129,8 +137,12 @@ impl GitProviderApi for GitlabApi {
                     .context("merge request disappeared")?
                     .threads,
             )),
-            ProviderCommand::ReplyToReviewThread { thread, body } => {
-                let snapshot = self.require_change_request(scope)?;
+            ProviderCommand::ReplyToReviewThread {
+                thread,
+                body,
+                confirm_merged,
+            } => {
+                let snapshot = self.require_confirmed_change_request(scope, *confirm_merged)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let id = snapshot
                     .merge_request_id
@@ -153,8 +165,12 @@ impl GitProviderApi for GitlabApi {
                     "Reply added.".to_owned(),
                 ))
             }
-            ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
-                let snapshot = self.require_change_request(scope)?;
+            ProviderCommand::SetReviewThreadResolved {
+                thread,
+                resolved,
+                confirm_merged,
+            } => {
+                let snapshot = self.require_confirmed_change_request(scope, *confirm_merged)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
@@ -221,12 +237,13 @@ impl GitProviderApi for GitlabApi {
             ProviderCommand::WaitForReviewOrCiChange => {
                 crate::api::wait_for_review_or_ci_change(self, scope)
             }
-            ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
+            ProviderCommand::CloseChangeRequest { confirm_merged }
+            | ProviderCommand::ReopenChangeRequest { confirm_merged } => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .merge_request_number
                     .context("merge request has no number")?;
-                let state = if matches!(command, ProviderCommand::CloseChangeRequest) {
+                let state = if matches!(command, ProviderCommand::CloseChangeRequest { .. }) {
                     gitlab_update_merge_request::MergeRequestNewState::CLOSED
                 } else {
                     gitlab_update_merge_request::MergeRequestNewState::OPEN

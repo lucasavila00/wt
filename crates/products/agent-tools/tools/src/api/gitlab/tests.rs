@@ -4,6 +4,7 @@ use crate::api::test_server::{serve, ExpectedRequest};
 mod branch_lookup;
 mod cli_snapshots;
 mod draft;
+mod merged;
 
 const MERGE_REQUEST_RESPONSE: &str = r#"{
     "data": {
@@ -246,6 +247,7 @@ fn stable_review_handle_selects_its_discussion_after_reordering() {
             &ProviderCommand::ReplyToReviewThread {
                 thread: ReviewThreadHandle::new("gid://gitlab/Discussion/abcdef123456-target"),
                 body: "Fixed.".to_owned(),
+                confirm_merged: false,
             },
         )
         .unwrap();

@@ -60,23 +60,31 @@ pub enum ConflictState {
 pub enum ProviderCommand {
     ReadCurrentStatus,
     OpenChangeRequest,
-    MarkChangeRequestReady,
-    MarkChangeRequestDraft,
+    MarkChangeRequestReady {
+        confirm_merged: bool,
+    },
+    MarkChangeRequestDraft {
+        confirm_merged: bool,
+    },
     AddChangeRequestComment {
         body: String,
+        confirm_merged: bool,
     },
     EditChangeRequest {
         title: Option<String>,
         body: Option<String>,
+        confirm_merged: bool,
     },
     ReadReviewThreads,
     ReplyToReviewThread {
         thread: ReviewThreadHandle,
         body: String,
+        confirm_merged: bool,
     },
     SetReviewThreadResolved {
         thread: ReviewThreadHandle,
         resolved: bool,
+        confirm_merged: bool,
     },
     ReadCiJobs,
     ReadCiJobLog {
@@ -89,8 +97,12 @@ pub enum ProviderCommand {
         job: CiJobHandle,
     },
     WaitForReviewOrCiChange,
-    CloseChangeRequest,
-    ReopenChangeRequest,
+    CloseChangeRequest {
+        confirm_merged: bool,
+    },
+    ReopenChangeRequest {
+        confirm_merged: bool,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

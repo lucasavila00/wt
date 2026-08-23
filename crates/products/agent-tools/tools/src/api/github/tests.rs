@@ -196,6 +196,58 @@ fn merged_pull_request_remains_visible() {
 }
 
 #[test]
+fn current_context_mutations_require_confirmation_for_merged_pull_requests() {
+    let response =
+        leak_fixture(PULL_REQUEST_RESPONSE.replace("\"state\": \"OPEN\"", "\"state\": \"MERGED\""));
+    let commands = [
+        ProviderCommand::MarkChangeRequestReady {
+            confirm_merged: false,
+        },
+        ProviderCommand::MarkChangeRequestDraft {
+            confirm_merged: false,
+        },
+        ProviderCommand::AddChangeRequestComment {
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        ProviderCommand::EditChangeRequest {
+            title: Some("Better title".to_owned()),
+            body: None,
+            confirm_merged: false,
+        },
+        ProviderCommand::ReplyToReviewThread {
+            thread: ReviewThreadHandle::new("thread-1"),
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        ProviderCommand::SetReviewThreadResolved {
+            thread: ReviewThreadHandle::new("thread-1"),
+            resolved: true,
+            confirm_merged: false,
+        },
+        ProviderCommand::CloseChangeRequest {
+            confirm_merged: false,
+        },
+        ProviderCommand::ReopenChangeRequest {
+            confirm_merged: false,
+        },
+    ];
+
+    for command in commands {
+        let (base_url, server) = serve(vec![graphql_fixture(response)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider.execute_command(&scope(), &command).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MR #7 is already merged; rerun with `confirm_merged`: true to modify it"
+        );
+        server.join().unwrap().unwrap();
+    }
+}
+
+#[test]
 fn refuses_truncated_graphql_connections_instead_of_issuing_unsafe_handles() {
     let response = leak_fixture(PULL_REQUEST_RESPONSE.replacen(
         "\"hasNextPage\": false",
