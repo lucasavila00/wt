@@ -57,5 +57,6 @@ images, services, generated configuration, grants, registry, and encrypted
 credentials. Neither command removes source credentials or installed host
 packages and binaries.
 
-Golden-image rebuilds affect only new worlds. Existing overlays retain their
-current contents and continue to use their retained image generation.
+Publishing a rebuilt golden image does not rewrite existing world overlays.
+Each overlay still names its content-addressed backing-image generation, which
+must remain present and intact for that world to continue working.
