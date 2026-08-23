@@ -8,6 +8,9 @@ const PIPELINE: &str = r#"{"id":92,"status":"success","web_url":"https://gitlab.
 const JOB: &str = r#"{"id":45,"name":"test","status":"success","web_url":"https://gitlab.test/jobs/45","ref":"wt/fix-login","pipeline":{"id":92}}"#;
 const THREADS: &str = r#"{"data":{"project":{"mergeRequest":{"id":"gid://gitlab/MergeRequest/8","diffHeadSha":"abc123","discussions":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"gid://gitlab/Discussion/thread-8","resolved":false,"resolvable":true,"notes":{"pageInfo":{"hasNextPage":false},"nodes":[{"author":{"username":"reviewer"},"body":"Please clarify this.","url":"https://gitlab.test/thread/8","position":{"filePath":"src/lib.rs","newLine":12,"oldLine":null}}]}}]}}}}}"#;
 const NOTE: &str = r#"{"id":124,"body":"General feedback.","author":{"username":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
+const GATEWAY_NOTE: &str = r#"{"id":124,"body":"General feedback.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
+const CREATED_NOTE: &str = r#"{"id":125,"body":"Ready for another look.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
+const UPDATED_NOTE: &str = r#"{"id":124,"body":"Updated.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
 
 #[test]
 fn cli_commands_render_provider_results_as_json() {
@@ -101,6 +104,23 @@ fn cli_commands_render_provider_results_as_json() {
             },
         ),
         (
+            "edit_comment",
+            WtToolsCommand::EditComment {
+                mr: "8".into(),
+                comment: "124".into(),
+                body: "Updated.".to_owned(),
+                confirm_merged: false,
+            },
+        ),
+        (
+            "delete_comment",
+            WtToolsCommand::DeleteComment {
+                mr: "8".into(),
+                comment: "124".into(),
+                confirm_merged: false,
+            },
+        ),
+        (
             "reply_thread",
             WtToolsCommand::ReplyThread {
                 mr: "8".into(),
@@ -151,6 +171,17 @@ fn merged_merge_requests_require_confirmation_before_modification() {
         WtToolsCommand::CommentMr {
             mr: "8".into(),
             body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::EditComment {
+            mr: "8".into(),
+            comment: "124".into(),
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::DeleteComment {
+            mr: "8".into(),
+            comment: "124".into(),
             confirm_merged: false,
         },
         WtToolsCommand::ReplyThread {
@@ -318,6 +349,48 @@ fn show_comment_rejects_a_resolvable_review_note() {
     server.join().unwrap().unwrap();
 }
 
+#[test]
+fn comment_mutations_reject_a_resolvable_review_note_before_writing() {
+    let review_note = NOTE
+        .replace("\"resolvable\":false", "\"resolvable\":true")
+        .leak();
+    let commands = [
+        WtToolsCommand::EditComment {
+            mr: "8".into(),
+            comment: "124".into(),
+            body: "Updated.".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::DeleteComment {
+            mr: "8".into(),
+            comment: "124".into(),
+            confirm_merged: false,
+        },
+    ];
+
+    for command in commands {
+        let (base_url, server) = serve(vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                review_note,
+            ),
+        ]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_cli_command(&project_scope(), &command)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "comment 124 is not a general comment in MR 8"
+        );
+        server.join().unwrap().unwrap();
+    }
+}
+
 fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
     match command {
         WtToolsCommand::ShowMr { .. } => vec![
@@ -431,10 +504,38 @@ fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
         ],
         WtToolsCommand::CommentMr { .. } => vec![
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
-            graphql("GitlabReadMergeRequestByIid", THREADS),
-            graphql(
-                "GitlabAddMergeRequestComment",
-                r#"{"data":{"createNote":{"errors":[],"note":{"id":"note-2","url":null}}}}"#,
+            write(
+                "POST",
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes",
+                CREATED_NOTE,
+            ),
+        ],
+        WtToolsCommand::EditComment { .. } => vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                GATEWAY_NOTE,
+            ),
+            write(
+                "PUT",
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                UPDATED_NOTE,
+            ),
+        ],
+        WtToolsCommand::DeleteComment { .. } => vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                GATEWAY_NOTE,
+            ),
+            request(
+                "DELETE",
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                None,
+                "application/json",
+                "{}",
             ),
         ],
         WtToolsCommand::ReplyThread { .. } => vec![
@@ -476,6 +577,16 @@ fn get(path: &'static str, response_body: &'static str) -> ExpectedRequest {
 
 fn post(path: &'static str, response_body: &'static str) -> ExpectedRequest {
     request("POST", path, None, "application/json", response_body)
+}
+
+fn write(method: &'static str, path: &'static str, response_body: &'static str) -> ExpectedRequest {
+    request(
+        method,
+        path,
+        Some("\"body\":"),
+        "application/json",
+        response_body,
+    )
 }
 
 fn graphql(operation: &'static str, response_body: &'static str) -> ExpectedRequest {

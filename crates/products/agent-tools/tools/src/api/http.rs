@@ -111,6 +111,46 @@ impl ProviderHttpClient {
         Ok(())
     }
 
+    pub fn post_json<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.post(&url))
+            .send_json(body)
+            .with_context(|| connection_context("POST", &url))?;
+        let body = read_response(response, "POST", &url)?;
+        decode_json(&body, &url, "JSON")
+    }
+
+    pub fn patch_json<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.patch(&url))
+            .send_json(body)
+            .with_context(|| connection_context("PATCH", &url))?;
+        let body = read_response(response, "PATCH", &url)?;
+        decode_json(&body, &url, "JSON")
+    }
+
+    pub fn put_json<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.put(&url))
+            .send_json(body)
+            .with_context(|| connection_context("PUT", &url))?;
+        let body = read_response(response, "PUT", &url)?;
+        decode_json(&body, &url, "JSON")
+    }
+
+    pub fn delete(&self, path: &str) -> Result<()> {
+        let url = self.url(path);
+        let response = self
+            .authorize(self.agent.delete(&url))
+            .call()
+            .with_context(|| connection_context("DELETE", &url))?;
+        read_response(response, "DELETE", &url)?;
+        Ok(())
+    }
+
     fn authorize<T>(&self, request: ureq::RequestBuilder<T>) -> ureq::RequestBuilder<T> {
         let request = request
             .header("Accept", "application/json")

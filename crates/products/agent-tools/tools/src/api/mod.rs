@@ -410,10 +410,24 @@ fn attributed_comment(scope: &ProviderCommandScope<'_>, body: &str) -> String {
 }
 
 pub fn attributed_project_comment(scope: &ProviderProjectScope<'_>, body: &str) -> String {
-    format!(
-        "{body}\n\n— WT world `{}`",
-        scope.prefix.trim_end_matches('/')
-    )
+    format!("{body}\n\n{}", project_comment_attribution(scope))
+}
+
+pub fn require_project_comment_attribution(
+    scope: &ProviderProjectScope<'_>,
+    comment: &GeneralComment,
+) -> Result<()> {
+    if !comment
+        .body
+        .ends_with(&format!("\n\n{}", project_comment_attribution(scope)))
+    {
+        bail!("comment was not created through this WT gateway")
+    }
+    Ok(())
+}
+
+fn project_comment_attribution(scope: &ProviderProjectScope<'_>) -> String {
+    format!("— WT world `{}`", scope.prefix.trim_end_matches('/'))
 }
 
 #[cfg(test)]

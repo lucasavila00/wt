@@ -81,6 +81,8 @@ fn command_parser_accepts_only_valid_json_objects() {
         r#"{"action":"list_threads","mr":"7"}"#,
         r#"{"action":"list_comments","mr":"7"}"#,
         r#"{"action":"show_comment","mr":"7","comment":"123"}"#,
+        r#"{"action":"edit_comment","mr":"7","comment":"123","body":"Updated"}"#,
+        r#"{"action":"delete_comment","mr":"7","comment":"123"}"#,
         r#"{"action":"list_ci","commit":"abc1234"}"#,
         r#"{"action":"list_jobs","run":"91"}"#,
         r#"{"action":"log_job","job":"44"}"#,
@@ -134,6 +136,10 @@ fn command_parser_accepts_only_valid_json_objects() {
     .is_err());
     assert!(WtToolsCommand::parse(&[targeted(
         r#"{"action":"show_comment","mr":"7","comment":""}"#
+    )])
+    .is_err());
+    assert!(WtToolsCommand::parse(&[targeted(
+        r#"{"action":"edit_comment","mr":"7","comment":""}"#
     )])
     .is_err());
     assert_eq!(
