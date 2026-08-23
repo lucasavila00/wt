@@ -5,7 +5,7 @@ mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{
-    valid_codex_pane_id, valid_codex_tmux_session, ClientOperation, ClientRequest,
+    valid_codex_pane_id, valid_codex_tmux_session, ClientOperation, ClientRequest, CodexGitContext,
     CodexSessionEvent, CodexSessionEventKind, CodexSessionStartSource, CodexSessionStartSourceKind,
     ControlRequest, ControlResponse, Grant, TransportRequest, TransportResponse,
     CODEX_SESSION_PANE_OPTION, PROTOCOL_VERSION,

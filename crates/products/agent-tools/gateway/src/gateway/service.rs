@@ -83,7 +83,18 @@ impl Gateway {
             }
             ClientOperation::CodexSession { event } => {
                 let response = match self.store_codex_session_event(&event, &grant) {
-                    Ok(()) => TransportResponse::ok(),
+                    Ok(true) => TransportResponse::with_message("accepted"),
+                    Ok(false) => TransportResponse::with_message("ignored"),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
+                };
+                crate::write_json_line(&mut stream, &response)
+            }
+            ClientOperation::CodexGitContext { context } => {
+                let response = match self.store_codex_git_context(&context, &grant) {
+                    Ok(true) => TransportResponse::ok(),
+                    Ok(false) => {
+                        TransportResponse::error("Codex session Git context no longer matches")
+                    }
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
                 crate::write_json_line(&mut stream, &response)
@@ -95,7 +106,7 @@ impl Gateway {
         &self,
         event: &CodexSessionEvent,
         grant: &GrantRecord,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
         let (state, is_compacting) = match event.kind {
             CodexSessionEventKind::SessionStart
@@ -146,7 +157,29 @@ impl Gateway {
                     .map(|source| source.raw.as_str()),
             })
             .context("store Codex session report")
-            .map(|_| ())
+    }
+
+    pub(super) fn store_codex_git_context(
+        &self,
+        context: &crate::CodexGitContext,
+        grant: &GrantRecord,
+    ) -> Result<bool> {
+        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .update_codex_session_git_context(wt_workload_registry::CodexSessionGitContextInput {
+                world_id,
+                session_id: context.session_id,
+                cwd: &context.cwd,
+                tmux_session: &context.tmux_session,
+                pane_id: &context.pane_id,
+                pane_generation: context.pane_generation,
+                repository_root: context.repository_root.as_deref(),
+                repository_url: context.repository_url.as_deref(),
+                git_branch: context.git_branch.as_deref(),
+                error: context.error.as_deref(),
+            })
+            .context("store Codex session Git context")
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {

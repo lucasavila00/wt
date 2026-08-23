@@ -208,6 +208,8 @@ struct PullRequest {
     body: Option<String>,
     state: String,
     draft: bool,
+    #[serde(default)]
+    merged: bool,
     head: PullRequestRef,
     base: PullRequestRef,
     #[serde(default)]
@@ -269,7 +271,11 @@ fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {
         url: request.html_url,
         title: request.title,
         body: request.body,
-        state: request.state,
+        state: if request.merged {
+            "merged".to_owned()
+        } else {
+            request.state
+        },
         draft: request.draft,
         head: request.head.sha,
         base: request.base.reference,

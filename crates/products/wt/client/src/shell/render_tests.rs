@@ -259,6 +259,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
                 repository_root: Some("/home/wt/project".into()),
                 repository_url: Some("https://github.com/lucasavila00/wt".into()),
                 git_branch: Some("wt/ctx-timeout-toast".into()),
+                git_context_health: None,
                 state: CodexSessionState::Unknown,
                 is_compacting: false,
                 session_start_source: Some("compact".into()),
@@ -422,6 +423,7 @@ fn live_session_repository_is_card_chrome() {
                 repository_root: Some("/home/wt/wt".into()),
                 repository_url: Some("git@github.com:lucasavila00/wt.git".into()),
                 git_branch: Some("wt/live".into()),
+                git_context_health: None,
                 state: CodexSessionState::Working,
                 is_compacting: false,
                 session_start_source: None,
@@ -456,5 +458,5 @@ fn live_session_repository_is_card_chrome() {
             .collect::<String>()
     };
     assert_eq!(row(1), "│world output                                 │");
-    assert_eq!(row(13), "└───────────────────── github:lucasavila00/wt ┘");
+    assert_eq!(row(15), "└───────────────────── github:lucasavila00/wt ┘");
 }

@@ -360,7 +360,7 @@ fn live_activity_reuses_the_open_world_stream() -> Result<()> {
     fs::write(fixture.home.path().join("codex-active"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("Live sessions · Experimental")?
+        .wait_for_text("Live sessions")?
         .wait_for_text("session: local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;
     let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;

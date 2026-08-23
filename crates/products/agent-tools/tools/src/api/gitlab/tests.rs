@@ -4,6 +4,7 @@ use crate::api::test_server::{serve, ExpectedRequest};
 mod branch_lookup;
 mod cli_snapshots;
 mod draft;
+mod merged;
 
 const MERGE_REQUEST_RESPONSE: &str = r#"{
     "data": {
@@ -246,6 +247,7 @@ fn stable_review_handle_selects_its_discussion_after_reordering() {
             &ProviderCommand::ReplyToReviewThread {
                 thread: ReviewThreadHandle::new("gid://gitlab/Discussion/abcdef123456-target"),
                 body: "Fixed.".to_owned(),
+                confirm_merged: false,
             },
         )
         .unwrap();
@@ -555,11 +557,20 @@ fn write_scope_comes_from_provider_resource_metadata() {
         has_conflicts: false,
         detailed_merge_status: Some("mergeable".to_owned()),
     };
-    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
+    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request, false).is_err());
     request.source_branch = "wt/fix".to_owned();
-    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_ok());
+    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request, false).is_ok());
+    request.state = "merged".to_owned();
+    assert_eq!(
+        GitlabApi::require_writable_merge_request(&project_scope(), &request, false)
+            .unwrap_err()
+            .to_string(),
+        "MR 8 is already merged; rerun with `confirm_merged`: true to modify it"
+    );
+    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request, true).is_ok());
+    request.state = "opened".to_owned();
     request.source_project_id = Some(13);
-    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
+    assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request, false).is_err());
 }
 
 #[test]

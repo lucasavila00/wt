@@ -165,6 +165,25 @@ impl GitlabApi {
         Ok(snapshot)
     }
 
+    fn require_confirmed_change_request(
+        &self,
+        scope: &ProviderCommandScope<'_>,
+        confirm_merged: bool,
+    ) -> Result<GitlabChangeRequestSnapshot> {
+        let snapshot = self.require_change_request(scope)?;
+        let request = snapshot
+            .request
+            .as_ref()
+            .context("merge request disappeared")?;
+        if request.state == "merged" && !confirm_merged {
+            bail!(
+                "MR {} is already merged; rerun with `confirm_merged`: true to modify it",
+                request.handle
+            );
+        }
+        Ok(snapshot)
+    }
+
     fn read_refreshed_change_request(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -435,7 +454,14 @@ impl GitlabApi {
     pub(super) fn require_writable_merge_request(
         scope: &ProviderProjectScope<'_>,
         request: &MergeRequest,
+        confirm_merged: bool,
     ) -> Result<()> {
+        if request.state == "merged" && !confirm_merged {
+            bail!(
+                "MR {} is already merged; rerun with `confirm_merged`: true to modify it",
+                request.iid
+            );
+        }
         if !request.source_branch.starts_with(scope.prefix)
             || request.source_project_id.is_none()
             || request.source_project_id != request.target_project_id

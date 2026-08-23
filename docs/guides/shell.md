@@ -53,6 +53,10 @@ shell navigation remains available while either operation runs.
 Cards show activity, title, repository, branch, working directory, context,
 world, Byobu target, session, and report age. Inactive and saved-session cards
 explain why they cannot open.
+Git context is refreshed independently by the guest relay. `Git state
+unavailable: …` retains the last successful checkout details but marks them as
+stale; `Git state stale` means the relay has not refreshed its heartbeat for
+30 seconds. The card title age always remains lifecycle activity age.
 Malformed context data remains visible as an exact error. Failed world or Codex
 context queries leave existing cards intact and show the query error in red in
 the matching footer beside the last successful update time. Failed pane-open

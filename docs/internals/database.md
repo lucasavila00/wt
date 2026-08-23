@@ -9,6 +9,12 @@ gateway grant. World listings use creation order.
 `codex_session_reports` stores the latest per-world Codex observations. Both
 are deleted with their world.
 
+Each Codex observation keeps lifecycle receipt time separate from Git-context
+health. The guest relay updates repository metadata, Git check time, and a
+sanitized Git error only when the exact active session, working directory, and
+pane generation still match. A Git update never changes lifecycle ordering or
+activity age.
+
 `codex_session_catalog` is a rebuildable index of the shared Codex rollout
 tree. It stores bounded session summaries, aggregate activity and token counts,
 and the byte offset needed to parse only newly appended rollout records. The

@@ -1,5 +1,6 @@
 ---
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
+assertion_line: 35
 expression: wt_tools_help()
 ---
 wt-tools reads and changes explicitly identified Git provider resources and records
@@ -35,11 +36,17 @@ TYPESCRIPT COMMAND TYPE:
       | { action: "wait_run"; run: string; timeout_seconds?: number }
       | { action: "wait_job"; job: string; timeout_seconds?: number }
       | { action: "open_mr"; head: string; base: string }
-      | { action: "set_mr"; mr: string; state: ChangeRequestState }
-      | { action: "edit_mr"; mr: string; title?: string; body?: string }
-      | { action: "comment_mr"; mr: string; body: string }
-      | { action: "reply_thread"; mr: string; thread: string; body: string }
-      | { action: "set_thread"; mr: string; thread: string; resolved: boolean }
+      | { action: "set_mr"; mr: string; state: ChangeRequestState; confirm_merged?: boolean }
+      | { action: "edit_mr"; mr: string; title?: string; body?: string; confirm_merged?: boolean }
+      | { action: "comment_mr"; mr: string; body: string; confirm_merged?: boolean }
+      | { action: "reply_thread"; mr: string; thread: string; body: string; confirm_merged?: boolean }
+      | {
+          action: "set_thread";
+          mr: string;
+          thread: string;
+          resolved: boolean;
+          confirm_merged?: boolean;
+        }
       | { action: "retry_job"; job: string }
       | { action: "cancel_job"; job: string }
       | { action: "cancel_run"; run: string };

@@ -30,6 +30,27 @@ pub(in crate::shell) struct CodexOpenTarget {
 }
 
 #[derive(Clone, Debug)]
+pub(in crate::shell) struct GitContextHealth {
+    pub(in crate::shell) checked_at_unix_ms: Option<i64>,
+    pub(in crate::shell) error: Option<String>,
+}
+
+impl GitContextHealth {
+    pub(in crate::shell) fn warning(&self) -> Option<String> {
+        if let Some(error) = &self.error {
+            return Some(format!("Git state unavailable: {error}"));
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|duration| i64::try_from(duration.as_millis()).ok())?;
+        self.checked_at_unix_ms
+            .is_some_and(|checked| now.saturating_sub(checked) > 30_000)
+            .then(|| "Git state stale".into())
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(in crate::shell) enum CodexCardKind {
     Observation {
         world_id: Uuid,
@@ -38,6 +59,7 @@ pub(in crate::shell) enum CodexCardKind {
         repository_root: Option<String>,
         repository_url: Option<String>,
         git_branch: Option<String>,
+        git_context_health: Option<Box<GitContextHealth>>,
         state: CodexSessionState,
         is_compacting: bool,
         session_start_source: Option<String>,
