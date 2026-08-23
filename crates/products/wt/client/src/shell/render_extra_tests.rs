@@ -112,3 +112,49 @@ fn control_footer_shows_reserved_and_total_resources() {
         terminal.backend().buffer()
     );
 }
+
+#[test]
+fn running_world_without_a_codex_session_is_a_warning() {
+    let area = Rect::new(0, 0, 80, 12);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = ShellModel::new(vec![crate::shell::ShellWorld::test("local.idle", 1)]);
+    model.show_worlds();
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+    assert!(format!("{:?}", terminal.backend().buffer()).contains("RUNNING"));
+
+    model.set_codex(Vec::new(), "2026-08-23T12:00:00Z".into(), area);
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_idle_world_warning", terminal.backend().buffer());
+    let title = terminal.backend().buffer().cell((6, 0)).unwrap().style();
+    assert_eq!(title.fg, Some(Color::Yellow));
+    assert!(title.add_modifier.contains(Modifier::BOLD));
+}

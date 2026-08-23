@@ -2,6 +2,21 @@ use super::control::{CodexCard, CodexCardKind};
 use super::model::ShellWorld;
 use ratatui::text::{Line, Span};
 
+pub(super) fn has_active_codex_session(world: &ShellWorld, cards: &[CodexCard]) -> bool {
+    cards.iter().any(|card| {
+        matches!(
+            &card.kind,
+            CodexCardKind::Observation {
+                world_id,
+                state,
+                ..
+            } if *world_id == world.identity.id
+                && card.context == world.identity.context
+                && *state != wt_control_protocol::CodexSessionState::Inactive
+        )
+    })
+}
+
 pub(super) fn codex_lines(world: &ShellWorld, cards: &[CodexCard]) -> Vec<Line<'static>> {
     let mut observations = cards
         .iter()
