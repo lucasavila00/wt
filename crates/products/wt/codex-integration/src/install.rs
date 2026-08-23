@@ -83,7 +83,53 @@ command = '''wt-codex-integration report-hook'''
 type = "command"
 command = '''wt-codex-integration report-hook'''
 "#;
-const CONFIG: &str = r#"approval_policy = "never"
+const PRE_MODEL_DEFAULT_CONFIG: &str = r#"approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-tools world-prompt'''
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.PreCompact]]
+
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.PostCompact]]
+
+[[hooks.PostCompact.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+"#;
+const CONFIG: &str = r#"model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
+
+approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
 [[hooks.SessionStart]]
@@ -172,7 +218,8 @@ fn install_config(codex_home: &Path) -> Result<()> {
         Ok(contents)
             if contents == LEGACY_CONFIG.as_bytes()
                 || contents == PREVIOUS_CONFIG.as_bytes()
-                || contents == POST_COMPACT_CONFIG.as_bytes() => {}
+                || contents == POST_COMPACT_CONFIG.as_bytes()
+                || contents == PRE_MODEL_DEFAULT_CONFIG.as_bytes() => {}
         Ok(_) => bail!(
             "Codex configuration differs from WT's configuration: {}",
             path.display()
@@ -225,6 +272,9 @@ mod tests {
         insta::assert_snapshot!(
             fs::read_to_string(codex_home.join("config.toml")).unwrap(),
             @r###"
+        model = "gpt-5.6-terra"
+        model_reasoning_effort = "high"
+
         approval_policy = "never"
         sandbox_mode = "danger-full-access"
 
@@ -281,7 +331,12 @@ mod tests {
 
     #[test]
     fn config_install_upgrades_previous_wt_configs() {
-        for previous in [LEGACY_CONFIG, PREVIOUS_CONFIG, POST_COMPACT_CONFIG] {
+        for previous in [
+            LEGACY_CONFIG,
+            PREVIOUS_CONFIG,
+            POST_COMPACT_CONFIG,
+            PRE_MODEL_DEFAULT_CONFIG,
+        ] {
             let temp = tempdir().unwrap();
             let codex_home = temp.path().join(".codex");
             fs::create_dir_all(&codex_home).unwrap();
