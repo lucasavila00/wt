@@ -8,7 +8,7 @@ Every pull-request or merge-request comment created by `wt-tools` begins with
 this exact marker, with no preceding bytes:
 
 ```text
-<!-- wt-tools-comment -->
+**WT world agent comment**
 
 ```
 
@@ -32,7 +32,6 @@ is intended to guard.
 ## Consequences
 
 The gateway has a deterministic, provider-independent provenance boundary for
-comment mutation. Markers are visible in raw Markdown but not rendered by
-GitHub or GitLab, so they do not add reader-facing text. Callers can still list
-and show every general comment, while mutation remains limited to comments
-created under this policy.
+comment mutation, and readers can immediately see that the comment was created
+by a WT world agent. Callers can still list and show every general comment,
+while mutation remains limited to comments created under this policy.
