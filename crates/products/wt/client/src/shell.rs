@@ -31,6 +31,7 @@ mod render;
 mod screen_tracker;
 mod scrollbar;
 mod session;
+mod shutdown;
 mod terminal_view;
 mod toast;
 mod world_card;
@@ -40,6 +41,7 @@ use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
 use refresh::{take_current_snapshot, CodexRefresh, WorldRefresh};
 use session::SessionSet;
+use shutdown::{log_running_work, request_close};
 
 const BAR_HEIGHT: u16 = 1;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -106,7 +108,10 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     )
     .context("disable terminal input for wt shell");
     ratatui::restore();
-    result.and(input_result)
+    if let Ok(running) = &result {
+        log_running_work(running);
+    }
+    result.and(input_result).map(|_| ())
 }
 
 fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
@@ -150,7 +155,7 @@ fn run_loop(
     screen_tracker: &mut screen_tracker::CodexScreenTracker,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let mut redraw = true;
     let mut flows = ControlFlows::default();
     while !shutdown.load(Ordering::Relaxed) {
@@ -336,14 +341,14 @@ fn run_loop(
                 &mut flows,
             )?;
             if model.should_quit() {
-                return Ok(());
+                return Ok(flows.actions.running_work());
             }
             if !event::poll(Duration::ZERO).context("poll pending terminal input")? {
                 break;
             }
         }
     }
-    Ok(())
+    Ok(flows.actions.running_work())
 }
 
 fn dispatch_event(
@@ -354,6 +359,9 @@ fn dispatch_event(
     runtime: &ShellRuntime<'_>,
     flows: &mut ControlFlows,
 ) -> Result<bool> {
+    if request_close(&event, model, area) {
+        return Ok(true);
+    }
     let queue_panel_compact = flows.queue_panel_compact();
     if flows.queue_panel_visible()
         && flows
@@ -404,7 +412,7 @@ fn dispatch_event(
                 let _ = apply_creation_action(action, flows)?;
                 return Ok(true);
             }
-            if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
+            if key.code == crossterm::event::KeyCode::F(5) {
                 if model.handle_key(key, area) == InputRoute::World {
                     if sessions.closed_message(model.active()).is_some() {
                         return Ok(true);
@@ -556,6 +564,7 @@ fn dispatch_event(
         _ => Ok(false),
     }
 }
+
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
