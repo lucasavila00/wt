@@ -1,7 +1,6 @@
 mod provider;
 
 use super::*;
-use crate::api::require_unmerged_change_request;
 
 impl GithubApi {
     pub fn new(host: &str, token: &str) -> Result<Self> {
@@ -293,20 +292,6 @@ impl GithubApi {
         Ok(snapshot)
     }
 
-    fn require_mutable_change_request(
-        &self,
-        scope: &ProviderCommandScope<'_>,
-    ) -> Result<GithubChangeRequestSnapshot> {
-        let snapshot = self.require_change_request(scope)?;
-        require_unmerged_change_request(
-            snapshot
-                .request
-                .as_ref()
-                .context("pull request disappeared")?,
-        )?;
-        Ok(snapshot)
-    }
-
     fn read_refreshed_change_request(
         &self,
         scope: &ProviderCommandScope<'_>,
@@ -491,10 +476,11 @@ impl GithubApi {
     pub(super) fn require_writable_pull_request(
         scope: &ProviderProjectScope<'_>,
         request: &PullRequest,
+        confirm_merged: bool,
     ) -> Result<()> {
-        if request.merged {
+        if request.merged && !confirm_merged {
             bail!(
-                "MR {} is already merged; wt-tools refuses to modify it",
+                "MR {} is already merged; rerun with `confirm_merged`: true to modify it",
                 request.number
             );
         }

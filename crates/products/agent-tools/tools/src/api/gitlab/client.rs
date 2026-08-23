@@ -1,7 +1,6 @@
 mod provider;
 
 use super::*;
-use crate::api::require_unmerged_change_request;
 
 impl GitlabApi {
     pub fn new(host: &str, token: &str) -> Result<Self> {
@@ -163,20 +162,6 @@ impl GitlabApi {
         if snapshot.request.is_none() {
             bail!("the explicitly identified branch has no merge request");
         }
-        Ok(snapshot)
-    }
-
-    fn require_mutable_change_request(
-        &self,
-        scope: &ProviderCommandScope<'_>,
-    ) -> Result<GitlabChangeRequestSnapshot> {
-        let snapshot = self.require_change_request(scope)?;
-        require_unmerged_change_request(
-            snapshot
-                .request
-                .as_ref()
-                .context("merge request disappeared")?,
-        )?;
         Ok(snapshot)
     }
 
@@ -415,10 +400,11 @@ impl GitlabApi {
     pub(super) fn require_writable_merge_request(
         scope: &ProviderProjectScope<'_>,
         request: &MergeRequest,
+        confirm_merged: bool,
     ) -> Result<()> {
-        if request.state == "merged" {
+        if request.state == "merged" && !confirm_merged {
             bail!(
-                "MR {} is already merged; wt-tools refuses to modify it",
+                "MR {} is already merged; rerun with `confirm_merged`: true to modify it",
                 request.iid
             );
         }

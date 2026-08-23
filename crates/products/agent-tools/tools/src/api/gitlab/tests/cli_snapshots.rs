@@ -68,6 +68,7 @@ fn cli_commands_render_provider_results_as_json() {
             WtToolsCommand::SetMr {
                 mr: "8".into(),
                 state: ChangeRequestState::Closed,
+                confirm_merged: false,
             },
         ),
         (
@@ -76,6 +77,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 title: Some("Clarify login fix".to_owned()),
                 body: None,
+                confirm_merged: false,
             },
         ),
         (
@@ -83,6 +85,7 @@ fn cli_commands_render_provider_results_as_json() {
             WtToolsCommand::CommentMr {
                 mr: "8".into(),
                 body: "Ready for another look.".to_owned(),
+                confirm_merged: false,
             },
         ),
         (
@@ -91,6 +94,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 body: "Fixed.".to_owned(),
+                confirm_merged: false,
             },
         ),
         (
@@ -99,6 +103,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 resolved: true,
+                confirm_merged: false,
             },
         ),
     ];
@@ -118,30 +123,35 @@ fn cli_commands_render_provider_results_as_json() {
 }
 
 #[test]
-fn merged_merge_requests_cannot_be_modified() {
+fn merged_merge_requests_require_confirmation_before_modification() {
     let commands = [
         WtToolsCommand::SetMr {
             mr: "8".into(),
             state: ChangeRequestState::Closed,
+            confirm_merged: false,
         },
         WtToolsCommand::EditMr {
             mr: "8".into(),
             title: Some("Better title".to_owned()),
             body: None,
+            confirm_merged: false,
         },
         WtToolsCommand::CommentMr {
             mr: "8".into(),
             body: "Done".to_owned(),
+            confirm_merged: false,
         },
         WtToolsCommand::ReplyThread {
             mr: "8".into(),
             thread: "gid://gitlab/Discussion/thread-8".to_owned(),
             body: "Done".to_owned(),
+            confirm_merged: false,
         },
         WtToolsCommand::SetThread {
             mr: "8".into(),
             thread: "gid://gitlab/Discussion/thread-8".to_owned(),
             resolved: true,
+            confirm_merged: false,
         },
     ];
 
@@ -158,7 +168,7 @@ fn merged_merge_requests_cannot_be_modified() {
 
         assert_eq!(
             error.to_string(),
-            "MR 8 is already merged; wt-tools refuses to modify it"
+            "MR 8 is already merged; rerun with `confirm_merged`: true to modify it"
         );
         server.join().unwrap().unwrap();
     }

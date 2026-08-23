@@ -196,46 +196,6 @@ fn merged_pull_request_remains_visible() {
 }
 
 #[test]
-fn current_context_mutations_refuse_merged_pull_requests() {
-    let response =
-        leak_fixture(PULL_REQUEST_RESPONSE.replace("\"state\": \"OPEN\"", "\"state\": \"MERGED\""));
-    let commands = [
-        ProviderCommand::MarkChangeRequestReady,
-        ProviderCommand::MarkChangeRequestDraft,
-        ProviderCommand::AddChangeRequestComment {
-            body: "Done".to_owned(),
-        },
-        ProviderCommand::EditChangeRequest {
-            title: Some("Better title".to_owned()),
-            body: None,
-        },
-        ProviderCommand::ReplyToReviewThread {
-            thread: ReviewThreadHandle::new("thread-1"),
-            body: "Done".to_owned(),
-        },
-        ProviderCommand::SetReviewThreadResolved {
-            thread: ReviewThreadHandle::new("thread-1"),
-            resolved: true,
-        },
-        ProviderCommand::CloseChangeRequest,
-        ProviderCommand::ReopenChangeRequest,
-    ];
-
-    for command in commands {
-        let (base_url, server) = serve(vec![graphql_fixture(response)]);
-        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
-
-        let error = provider.execute_command(&scope(), &command).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "MR #7 is already merged; wt-tools refuses to modify it"
-        );
-        server.join().unwrap().unwrap();
-    }
-}
-
-#[test]
 fn refuses_truncated_graphql_connections_instead_of_issuing_unsafe_handles() {
     let response = leak_fixture(PULL_REQUEST_RESPONSE.replacen(
         "\"hasNextPage\": false",
@@ -490,6 +450,7 @@ fn refuses_a_thread_handle_from_another_pull_request() {
                 mr: "7".into(),
                 thread: "thread-from-another-mr".to_owned(),
                 body: "No".to_owned(),
+                confirm_merged: false,
             },
         )
         .unwrap_err();
@@ -528,16 +489,17 @@ fn write_scope_comes_from_provider_resource_metadata() {
         },
         mergeable: Some(true),
     };
-    assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_err());
+    assert!(GithubApi::require_writable_pull_request(&project_scope(), &request, false).is_err());
     request.head.reference = "wt/fix".to_owned();
-    assert!(GithubApi::require_writable_pull_request(&project_scope(), &request).is_ok());
+    assert!(GithubApi::require_writable_pull_request(&project_scope(), &request, false).is_ok());
     request.merged = true;
     assert_eq!(
-        GithubApi::require_writable_pull_request(&project_scope(), &request)
+        GithubApi::require_writable_pull_request(&project_scope(), &request, false)
             .unwrap_err()
             .to_string(),
-        "MR 7 is already merged; wt-tools refuses to modify it"
+        "MR 7 is already merged; rerun with `confirm_merged`: true to modify it"
     );
+    assert!(GithubApi::require_writable_pull_request(&project_scope(), &request, true).is_ok());
 }
 
 #[test]

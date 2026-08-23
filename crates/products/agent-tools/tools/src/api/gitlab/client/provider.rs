@@ -69,7 +69,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::MarkChangeRequestReady | ProviderCommand::MarkChangeRequestDraft => {
                 let merge_request_number = self
-                    .require_mutable_change_request(scope)?
+                    .require_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 set_change_request_draft(
@@ -82,7 +82,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::AddChangeRequestComment { body } => {
                 let id = self
-                    .require_mutable_change_request(scope)?
+                    .require_change_request(scope)?
                     .merge_request_id
                     .context("merge request has no ID")?;
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
@@ -103,7 +103,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::EditChangeRequest { title, body } => {
                 let merge_request_number = self
-                    .require_mutable_change_request(scope)?
+                    .require_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
@@ -130,7 +130,7 @@ impl GitProviderApi for GitlabApi {
                     .threads,
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
-                let snapshot = self.require_mutable_change_request(scope)?;
+                let snapshot = self.require_change_request(scope)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let id = snapshot
                     .merge_request_id
@@ -154,7 +154,7 @@ impl GitProviderApi for GitlabApi {
                 ))
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
-                let snapshot = self.require_mutable_change_request(scope)?;
+                let snapshot = self.require_change_request(scope)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
@@ -223,7 +223,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
                 let merge_request_number = self
-                    .require_mutable_change_request(scope)?
+                    .require_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 let state = if matches!(command, ProviderCommand::CloseChangeRequest) {
@@ -383,10 +383,14 @@ impl GitProviderApi for GitlabApi {
                 };
                 self.execute_command(&current, &ProviderCommand::OpenChangeRequest)
             }
-            WtToolsCommand::SetMr { mr, state } => {
+            WtToolsCommand::SetMr {
+                mr,
+                state,
+                confirm_merged,
+            } => {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
-                Self::require_writable_merge_request(scope, &request)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
                 match state {
                     ChangeRequestState::Ready | ChangeRequestState::Draft => {
                         set_change_request_draft(
@@ -422,10 +426,15 @@ impl GitProviderApi for GitlabApi {
                     self.read_merge_request(scope.project, mr_id)?,
                 )))
             }
-            WtToolsCommand::EditMr { mr, title, body } => {
+            WtToolsCommand::EditMr {
+                mr,
+                title,
+                body,
+                confirm_merged,
+            } => {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
-                Self::require_writable_merge_request(scope, &request)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
                     "api/graphql",
                     gitlab_update_merge_request::Variables {
@@ -445,10 +454,14 @@ impl GitProviderApi for GitlabApi {
                     self.read_merge_request(scope.project, mr_id)?,
                 )))
             }
-            WtToolsCommand::CommentMr { mr, body } => {
+            WtToolsCommand::CommentMr {
+                mr,
+                body,
+                confirm_merged,
+            } => {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
-                Self::require_writable_merge_request(scope, &request)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
                 let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
                     "api/graphql",
@@ -466,11 +479,16 @@ impl GitProviderApi for GitlabApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            WtToolsCommand::ReplyThread { mr, thread, body } => {
+            WtToolsCommand::ReplyThread {
+                mr,
+                thread,
+                body,
+                confirm_merged,
+            } => {
                 let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
-                Self::require_writable_merge_request(scope, &request)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
                 let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
                 let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabReplyToDiscussion>(
@@ -497,11 +515,12 @@ impl GitProviderApi for GitlabApi {
                 mr,
                 thread,
                 resolved,
+                confirm_merged,
             } => {
                 let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
-                Self::require_writable_merge_request(scope, &request)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
                 let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
                 let discussion = Self::discussion_id(&direct.discussions, &thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(

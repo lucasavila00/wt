@@ -146,6 +146,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
             WtToolsCommand::SetMr {
                 mr: "7".into(),
                 state: ChangeRequestState::Ready,
+                confirm_merged: false,
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
@@ -162,6 +163,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 mr: "7".into(),
                 title: Some("Better title".to_owned()),
                 body: None,
+                confirm_merged: false,
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
@@ -177,6 +179,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
             WtToolsCommand::CommentMr {
                 mr: "7".into(),
                 body: "Done".to_owned(),
+                confirm_merged: false,
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
@@ -192,6 +195,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 mr: "7".into(),
                 thread: "thread-7".to_owned(),
                 body: "Done".to_owned(),
+                confirm_merged: false,
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
@@ -208,6 +212,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 mr: "7".into(),
                 thread: "thread-7".to_owned(),
                 resolved: true,
+                confirm_merged: false,
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
@@ -292,31 +297,36 @@ fn merged_pull_requests_are_distinct_from_closed_requests() {
 }
 
 #[test]
-fn merged_pull_requests_cannot_be_modified() {
+fn merged_pull_requests_require_confirmation_before_modification() {
     let merged_pull_request = leak(PULL_REQUEST.replace(r#""merged":false"#, r#""merged":true"#));
     let commands = [
         WtToolsCommand::SetMr {
             mr: "7".into(),
             state: ChangeRequestState::Ready,
+            confirm_merged: false,
         },
         WtToolsCommand::EditMr {
             mr: "7".into(),
             title: Some("Better title".to_owned()),
             body: None,
+            confirm_merged: false,
         },
         WtToolsCommand::CommentMr {
             mr: "7".into(),
             body: "Done".to_owned(),
+            confirm_merged: false,
         },
         WtToolsCommand::ReplyThread {
             mr: "7".into(),
             thread: "thread-7".to_owned(),
             body: "Done".to_owned(),
+            confirm_merged: false,
         },
         WtToolsCommand::SetThread {
             mr: "7".into(),
             thread: "thread-7".to_owned(),
             resolved: true,
+            confirm_merged: false,
         },
     ];
 
@@ -331,10 +341,40 @@ fn merged_pull_requests_cannot_be_modified() {
 
         assert_eq!(
             error.to_string(),
-            "MR 7 is already merged; wt-tools refuses to modify it"
+            "MR 7 is already merged; rerun with `confirm_merged`: true to modify it"
         );
         server.join().unwrap().unwrap();
     }
+}
+
+#[test]
+fn confirmed_merged_pull_requests_can_be_modified() {
+    let merged_pull_request = leak(PULL_REQUEST.replace(r#""merged":false"#, r#""merged":true"#));
+    let (base_url, server) = serve(vec![
+        get("/repos/acme/widget/pulls/7", merged_pull_request),
+        graphql(
+            "GithubAddPullRequestComment",
+            r#"{"data":{"addComment":{"commentEdge":{"node":{"url":"https://github.test/comment/1"}}}}}"#,
+        ),
+    ]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let output = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::CommentMr {
+                mr: "7".into(),
+                body: "Done".to_owned(),
+                confirm_merged: true,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        output,
+        ProviderCommandOutput::Confirmation("Comment added.".to_owned())
+    );
+    server.join().unwrap().unwrap();
 }
 
 #[test]
