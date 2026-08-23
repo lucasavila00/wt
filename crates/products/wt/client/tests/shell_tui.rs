@@ -106,7 +106,7 @@ fn command_palette_opens_the_world_form_and_ok_is_clickable() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .press(Key::Function(1))?
         .wait_for_text("Command Palette")?
         .type_text("new")?
@@ -115,7 +115,7 @@ fn command_palette_opens_the_world_form_and_ok_is_clickable() -> Result<()> {
         .click(13, 11)?
         .wait_for_text("Review")?
         .press(Key::Escape)?
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .wait_for_text_gone("Create world")?;
     Ok(())
 }
@@ -125,7 +125,7 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .press(Key::Function(1))?
         .type_text("new")?
         .press(Key::Enter)?
@@ -155,7 +155,7 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .press(Key::Function(1))?
         .type_text("new")?
         .press(Key::Enter)?
@@ -185,7 +185,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .press(Key::Function(1))?
         .type_text("delete")?
         .press(Key::Enter)?
@@ -197,6 +197,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
         .wait_for_text("WT is deleting the world")?
         .wait_for_text("local.existing")?
         .press(Key::Tab)?
+        .press(Key::Tab)?
         .wait_for_text("Worlds")?
         .click(97, 1)?
         .wait_for_text_gone("WT is deleting the world")?;
@@ -207,7 +208,10 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
 fn codex_sessions_refresh_after_startup() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
-    screen.wait_for_text("No Codex sessions")?;
+    screen
+        .wait_for_text("No live Codex sessions")?
+        .press(Key::Tab)?
+        .wait_for_text("No Codex sessions")?;
     fs::write(fixture.home.path().join("codex-active"), "").unwrap();
     screen
         .wait_for_text("/home/wt/project")?
@@ -222,6 +226,7 @@ fn opening_a_codex_session_reuses_the_world_ssh_connection() -> Result<()> {
     fs::write(fixture.home.path().join("codex-active"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
+        .press(Key::Tab)?
         .wait_for_text("/home/wt/project")?
         .press(Key::Enter)?
         .wait_for_text("session: local.existing")?;
@@ -242,9 +247,6 @@ fn live_activity_reuses_the_open_world_stream() -> Result<()> {
     fs::write(fixture.home.path().join("codex-active"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("/home/wt/project")?
-        .press(Key::Tab)?
-        .press(Key::Tab)?
         .wait_for_text("Live sessions · Experimental")?
         .wait_for_text("session: local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;

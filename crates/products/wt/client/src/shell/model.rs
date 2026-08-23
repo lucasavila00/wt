@@ -2,8 +2,7 @@ use super::control::{CodexOpenTarget, ControlAction, ControlCommand, ControlStat
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use uuid::Uuid;
-use wt_control_protocol::InstanceName;
-use wt_control_protocol::InstanceStatus;
+use wt_control_protocol::{InstanceName, InstanceStatus};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -477,6 +476,7 @@ mod tests {
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::Tab), area());
+        model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());
         assert_eq!(model.active_world(), "three");
@@ -492,6 +492,7 @@ mod tests {
     #[test]
     fn command_palette_executes_from_the_worlds_activity() {
         let mut model = ShellModel::new(vec![world("one")]);
+        model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::F(1)), area());
         for character in "delete".chars() {

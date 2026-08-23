@@ -13,23 +13,7 @@ fn world_view_reserves_the_top_row() {
 #[test]
 fn live_activity_uses_the_compact_terminal_viewport() {
     let area = Rect::new(0, 0, 100, 30);
-    let mut model = ShellModel::new(vec!["local.one".into()]);
-    assert_eq!(session_viewport(&model, area), (29, 100));
-
-    model.handle_key(
-        crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        ),
-        area,
-    );
-    model.handle_key(
-        crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        ),
-        area,
-    );
+    let model = ShellModel::new(vec!["local.one".into()]);
 
     assert_eq!(session_viewport(&model, area), (10, 44));
     assert_eq!(

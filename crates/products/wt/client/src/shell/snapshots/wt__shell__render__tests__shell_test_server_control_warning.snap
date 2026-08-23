@@ -5,14 +5,14 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 12 },
     content: [
-        "    │┌Codex sessions · Updating…──────────────────────────── WT E2E TEST SERVER ",
-        "▌ 󰚩 ││                         Loading Codex sessions…                         │",
-        "    ││                                                                         │",
+        "    │┌Live sessions · Experimental────────────────────────── WT E2E TEST SERVER ",
+        "  󰚩 ││                         No live Codex sessions                          │",
+        "    ││               Start Codex in a world to see its pane here               │",
         "    ││                                                                         │",
         "   ││                                                                         │",
         "    ││                                                                         │",
         "    ││                                                                         │",
-        "  󰆍 ││                                                                         │",
+        "▌ 󰆍 ││                                                                         │",
         "    ││                                                                         │",
         "    ││                                                                         │",
         "    │└─────────────────────────────────────────────────────────────────────────┘",

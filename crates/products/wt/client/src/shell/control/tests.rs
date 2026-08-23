@@ -7,13 +7,13 @@ use wt_control_protocol::{ByobuTarget, CodexSessionState};
 #[test]
 fn tab_cycles_activities() {
     let mut state = ControlState::default();
+    assert_eq!(state.activity(), Activity::Live);
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     assert_eq!(state.activity(), Activity::Codex);
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     assert_eq!(state.activity(), Activity::Worlds);
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     assert_eq!(state.activity(), Activity::Live);
-    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
-    assert_eq!(state.activity(), Activity::Codex);
 }
 
 #[test]
@@ -73,6 +73,7 @@ fn card_navigation_opens_only_the_selected_live_location() {
         "2026-08-21T20:00:00Z".into(),
         area(),
     );
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert!(state
         .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
@@ -108,6 +109,7 @@ fn live_activity_excludes_sessions_that_are_not_open() {
         area(),
     );
 
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area());
     assert_eq!(state.selected(), Some(&state.codex()[1].identity));
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
@@ -129,6 +131,7 @@ fn live_activity_excludes_sessions_that_are_not_open() {
 #[test]
 fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
     let mut state = ControlState::default();
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.set_codex(
         vec![live_card(1, "%1"), live_card(2, "%2")],
         "2026-08-21T20:00:00Z".into(),
@@ -163,8 +166,6 @@ fn live_grid_click_and_keys_follow_two_column_geometry() {
         "2026-08-22T20:00:00Z".into(),
         area,
     );
-    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
-    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area);
     assert_eq!(state.selected(), Some(&state.codex()[2].identity));
     state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area);
@@ -282,6 +283,7 @@ fn failed_refresh_keeps_the_last_codex_snapshot_and_timestamp() {
 #[test]
 fn refresh_keeps_the_selected_card_in_its_viewport() {
     let mut state = ControlState::default();
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     let cards = (1..=6)
         .map(|index| live_card(index, &format!("%{index}")))
         .collect::<Vec<_>>();
@@ -301,6 +303,7 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
 fn resize_keeps_the_selected_card_in_its_viewport() {
     let mut state = ControlState::default();
     let tall = Rect::new(0, 0, 64, 40);
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), tall);
     state.set_codex(
         (1..=6)
             .map(|index| live_card(index, &format!("%{index}")))

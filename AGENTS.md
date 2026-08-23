@@ -81,9 +81,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   system prerequisites such as `curl`.
 - In a fresh Ubuntu guest, install the repository system prerequisites with
   `sudo apt-get update && sudo apt-get install -y shellcheck libvirt-dev`.
-  Install Node.js `24.19.0` with nvm using the repository's `.nvmrc`, then use
-  its npm `11.17.0` and run `npm ci` from the repository root. Do not install
-  Node.js or npm with apt. If Cargo compiled `virt-sys`
+  Use Node.js and npm only through NVM: source `$HOME/.nvm/nvm.sh`, then run
+  `nvm install` and `nvm use` using the repository's `.nvmrc` (Node `24.19.0`
+  with npm `11.17.0`), and run `npm ci` from the repository root. Do not
+  install Node.js or npm with apt. If Cargo compiled `virt-sys`
   before `libvirt-dev` was installed, run `cargo clean -p virt-sys` once so its
   native link metadata is regenerated.
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git access, and SSH access to guests.
