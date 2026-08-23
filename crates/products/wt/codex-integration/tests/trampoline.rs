@@ -120,7 +120,29 @@ fn version_does_not_require_background_preparation() {
         .path()
         .join(".codex/packages/standalone/current/bin/codex");
     fs::create_dir_all(real_codex.parent().unwrap()).unwrap();
-    fs::write(&real_codex, "#!/bin/sh\nprintf 'codex-cli 0.149.0\\n'\n").unwrap();
+    fs::write(
+        &real_codex,
+        r#"#!/bin/sh
+case "${1-}" in
+  --version) printf 'codex-cli 0.149.0\n' ;;
+  app-server)
+    while IFS= read -r line; do
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"jsonrpc":"2.0","id":1,"result":{"codexHome":"%s"}}\n' "$CODEX_HOME"
+          ;;
+        *'"method":"thread/list"'*)
+          id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+          printf '{"jsonrpc":"2.0","id":%s,"result":{"data":[],"nextCursor":null}}\n' "$id"
+          ;;
+      esac
+    done
+    ;;
+  *) exit 64 ;;
+esac
+"#,
+    )
+    .unwrap();
     fs::set_permissions(&real_codex, fs::Permissions::from_mode(0o755)).unwrap();
     let codex = temp.path().join("codex");
     symlink(env!("CARGO_BIN_EXE_wt-codex-integration"), &codex).unwrap();
@@ -141,7 +163,29 @@ fn background_worker_publishes_the_applied_generation_and_version() {
         .path()
         .join(".codex/packages/standalone/current/bin/codex");
     fs::create_dir_all(real_codex.parent().unwrap()).unwrap();
-    fs::write(&real_codex, "#!/bin/sh\nprintf 'codex-cli 0.149.0\\n'\n").unwrap();
+    fs::write(
+        &real_codex,
+        r#"#!/bin/sh
+case "${1-}" in
+  --version) printf 'codex-cli 0.149.0\n' ;;
+  app-server)
+    while IFS= read -r line; do
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"jsonrpc":"2.0","id":1,"result":{"codexHome":"%s"}}\n' "$CODEX_HOME"
+          ;;
+        *'"method":"thread/list"'*)
+          id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+          printf '{"jsonrpc":"2.0","id":%s,"result":{"data":[],"nextCursor":null}}\n' "$id"
+          ;;
+      esac
+    done
+    ;;
+  *) exit 64 ;;
+esac
+"#,
+    )
+    .unwrap();
     fs::set_permissions(&real_codex, fs::Permissions::from_mode(0o755)).unwrap();
     let state = temp.path().join(".local/state/wt");
     fs::create_dir_all(&state).unwrap();

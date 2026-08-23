@@ -9,6 +9,11 @@
 WT shares Codex session files across worlds. Each world has its own Codex database, which must be
 updated when shared history changes.
 
+The first background implementation parsed the shared rollout JSONL in every
+world to decide which thread IDs to import. That duplicated Codex's private
+file format. Codex `0.149.0` changed its user-message event shape, so the
+worker found no IDs, did no work, and incorrectly reported readiness.
+
 Today the `codex` wrapper does that work before starting Codex. It starts an app-server, waits 20
 seconds, and stops it if reconciliation is still running.
 
@@ -48,6 +53,14 @@ Session files remain shared and canonical. Databases, migrations, indexes, and c
 remain local to each world. A host Codex app-server is not used because it would update the host
 database, not a world's database.
 
+The guest does not parse rollout files. It asks its Codex app-server to list
+active and archived threads with `useStateDbOnly: false`, which makes Codex
+scan its rollout files and repair its metadata. It then makes the equivalent
+state-database-only requests and fails reconciliation if any scanned thread is
+missing. This is a Codex-owned definition of the sessions visible to its
+resume UI; WT does not claim to index arbitrary rollout files that Codex does
+not discover.
+
 ## Why this shape
 
 A lock prevents duplicate work, but it does not move reconciliation out of startup or keep a
@@ -55,6 +68,12 @@ timed-out backfill alive. It may support reconciliation, but it cannot own it.
 
 A timestamp says when something ran, not what completed. It cannot prove that a particular session
 catalog and Codex version were applied successfully.
+
+The Codex app-server identifies itself as experimental. Its generated schema
+describes `thread/list` and `useStateDbOnly` for the installed Codex version,
+but this is not a stable cross-version promise. Golden-image Codex upgrades
+therefore need a compatibility check against that version's schema and a real
+Codex reconciliation test.
 
 The server already sees the shared history and knows which worlds are running. Coordinating there
 avoids repeating that responsibility in every world while keeping Codex-owned state inside the VM.
@@ -70,3 +89,7 @@ that window return immediately with useful status.
 Failure in one world does not lock or corrupt another world's database. ADR 0060's guarantee changes
 from reconciling before every launch to keeping running worlds reconciled in the background and
 making readiness explicit.
+
+WT no longer has a second rollout parser to update when Codex changes its
+event schema. A change to the app-server's scan or state-only contract instead
+causes reconciliation to fail rather than silently reporting a no-op as ready.
