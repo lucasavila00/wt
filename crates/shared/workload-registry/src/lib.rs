@@ -1,4 +1,5 @@
 mod capacity;
+mod activity;
 mod codex_catalog;
 mod codex_sessions;
 mod reports;
@@ -7,6 +8,10 @@ mod store;
 
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
+};
+pub use activity::{
+    GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, WtToolsActivity,
+    WtToolsActivityInput, WtToolsActivityQuery, ACTIVITY_PAGE_SIZE,
 };
 pub use codex_catalog::{CodexSessionCatalogEntry, CodexSessionCatalogInput};
 pub use codex_sessions::{CodexSessionReport, CodexSessionReportInput, CodexSessionState};

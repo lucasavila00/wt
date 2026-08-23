@@ -79,12 +79,46 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    world_git_activity (id) {
+        id -> Integer,
+        world_id -> Text,
+        recorded_at_unix_ms -> BigInt,
+        kind -> Text,
+        provider_host -> Text,
+        repository -> Text,
+        git_service -> Nullable<Text>,
+        branch -> Nullable<Text>,
+        previous_oid -> Nullable<Text>,
+        new_oid -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    world_wt_tools_activity (id) {
+        id -> Integer,
+        world_id -> Text,
+        recorded_at_unix_ms -> BigInt,
+        provider_host -> Text,
+        repository -> Text,
+        action -> Text,
+        branch -> Nullable<Text>,
+        change_request -> Nullable<Text>,
+        request_json -> Text,
+        response_json -> Text,
+    }
+}
+
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(codex_session_reports -> worlds (world_id));
+diesel::joinable!(world_git_activity -> worlds (world_id));
+diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     agent_tool_reports,
     codex_session_catalog,
     codex_session_reports,
+    world_git_activity,
+    world_wt_tools_activity,
     worlds
 );
