@@ -30,13 +30,6 @@ test "$(readlink "$WT_HOME/.local/bin/codex")" = \
 test -x "$WT_HOME/.codex/packages/standalone/current/bin/codex"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.local/state/wt")" = \
     "$WT_UID:$WT_GID 700"
-test -f /etc/systemd/system/wt-codex-reconciliation.service
-test "$(stat -c '%u:%g %a' \
-    /etc/systemd/system/wt-codex-reconciliation.service)" = "0:0 644"
-test -f /etc/systemd/system/wt-codex-reconciliation.path
-test "$(readlink \
-    /etc/systemd/system/multi-user.target.wants/wt-codex-reconciliation.path)" = \
-    ../wt-codex-reconciliation.path
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
     /usr/local/bin/codex --version > /dev/null
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \

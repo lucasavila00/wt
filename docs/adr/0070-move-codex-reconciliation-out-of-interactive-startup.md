@@ -1,6 +1,6 @@
 # ADR 0070: Reconcile Codex sessions in the background
 
-- Status: Accepted
+- Status: Superseded by [ADR 0079](0079-synchronize-codex-history-before-startup.md)
 - Date: 2026-08-23
 - Amends: [ADR 0037](0037-use-a-fixed-codex-prelaunch-wrapper.md)
 

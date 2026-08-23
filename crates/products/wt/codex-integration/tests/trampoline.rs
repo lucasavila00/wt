@@ -1,32 +1,14 @@
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{symlink, PermissionsExt};
 use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
 
-const GENERATION: &str = "1111111111111111111111111111111111111111111111111111111111111111";
-
-fn run_codex(codex: &Path, home: &Path, ready: bool, ignore_checks: bool) {
-    let state = home.join(".local/state/wt");
-    fs::create_dir_all(&state).unwrap();
-    fs::write(
-        state.join("codex-reconciliation-desired"),
-        format!("{GENERATION}\n"),
-    )
-    .unwrap();
-    if ready {
-        fs::write(
-            state.join("codex-reconciliation-status.json"),
-            format!(
-                "{{\"state\":\"ready\",\"generation\":\"{GENERATION}\",\"codex_version\":\"codex-cli 0.149.0\"}}\n"
-            ),
-        )
-        .unwrap();
-    } else {
-        let _ = fs::remove_file(state.join("codex-reconciliation-status.json"));
-    }
+fn run_codex(codex: &Path, home: &Path, ignore_checks: bool) {
+    let sync_marker = home.join("sync-called");
+    let _ = fs::remove_file(&sync_marker);
 
     let mut command = Command::new("/bin/sh");
     command
@@ -54,29 +36,24 @@ fn run_codex(codex: &Path, home: &Path, ready: bool, ignore_checks: bool) {
         .unwrap();
     let run = child.wait_with_output().unwrap();
 
-    let blocked = !ready && !ignore_checks;
-    assert_eq!(run.status.code(), Some(if blocked { 1 } else { 23 }));
-    let expected_stdout = if blocked {
-        String::new()
-    } else {
-        format!(
-            "argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0077\nstdin=unchanged\npid={}\n",
-            home.display(),
-            pid
-        )
-    };
+    assert_eq!(run.status.code(), Some(23));
+    let expected_stdout = format!(
+        "{}argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0077\nstdin=unchanged\npid={}\n",
+        if ignore_checks {
+            ""
+        } else {
+            "Syncing shared Codex history before starting Codex. Set IGNORE_CODEX_WT_CHECKS=true to skip this synchronization.\n"
+        },
+        home.display(),
+        pid
+    );
     assert_eq!(String::from_utf8(run.stdout).unwrap(), expected_stdout);
-    let expected_stderr = if blocked {
-        "wt-codex-integration: Codex history preparation is pending; retry shortly or set IGNORE_CODEX_WT_CHECKS=true to start without synchronized history\n"
-            .to_owned()
-    } else {
-        "stderr=unchanged\n".to_owned()
-    };
-    assert_eq!(String::from_utf8(run.stderr).unwrap(), expected_stderr);
+    assert_eq!(sync_marker.exists(), !ignore_checks);
+    assert_eq!(String::from_utf8(run.stderr).unwrap(), "stderr=unchanged\n");
 }
 
 #[test]
-fn both_image_entrypoints_check_readiness_then_exec_the_fixed_real_codex() {
+fn both_image_entrypoints_synchronize_before_execing_the_fixed_real_codex() {
     let temp = tempfile::tempdir().unwrap();
     let real_codex = temp
         .path()
@@ -86,17 +63,31 @@ fn both_image_entrypoints_check_readiness_then_exec_the_fixed_real_codex() {
         &real_codex,
         concat!(
             "#!/bin/sh\n",
-            "if test \"${1-}\" = --version; then printf 'codex-cli 0.149.0\\n'; exit 0; fi\n",
-            "printf 'argc=%s\\n' \"$#\"\n",
-            "for arg do printf 'arg=[%s]\\n' \"$arg\"; done\n",
-            "printf 'env=%s\\n' \"$WT_CODEX_TEST_ENV\"\n",
-            "printf 'cwd=%s\\n' \"$PWD\"\n",
-            "printf 'umask=%s\\n' \"$(umask)\"\n",
-            "IFS= read -r input\n",
-            "printf 'stdin=%s\\n' \"$input\"\n",
-            "printf 'pid=%s\\n' \"$$\"\n",
-            "printf 'stderr=unchanged\\n' >&2\n",
-            "exit 23\n"
+            "case \"${1-}\" in\n",
+            "  --version) printf 'codex-cli 0.149.0\\n' ;;\n",
+            "  app-server)\n",
+            "    printf 'synced\\n' > \"$HOME/sync-called\"\n",
+            "    while IFS= read -r line; do\n",
+            "      case \"$line\" in\n",
+            "        *'\"method\":\"initialize\"'*)\n",
+            "          printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"codexHome\":\"%s\"}}\\n' \"$CODEX_HOME\" ;;\n",
+            "        *'\"method\":\"thread/list\"'*)\n",
+            "          id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
+            "          printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":[],\"nextCursor\":null}}\\n' \"$id\" ;;\n",
+            "      esac\n",
+            "    done ;;\n",
+            "  *)\n",
+            "    printf 'argc=%s\\n' \"$#\"\n",
+            "    for arg do printf 'arg=[%s]\\n' \"$arg\"; done\n",
+            "    printf 'env=%s\\n' \"$WT_CODEX_TEST_ENV\"\n",
+            "    printf 'cwd=%s\\n' \"$PWD\"\n",
+            "    printf 'umask=%s\\n' \"$(umask)\"\n",
+            "    IFS= read -r input\n",
+            "    printf 'stdin=%s\\n' \"$input\"\n",
+            "    printf 'pid=%s\\n' \"$$\"\n",
+            "    printf 'stderr=unchanged\\n' >&2\n",
+            "    exit 23 ;;\n",
+            "esac\n"
         ),
     )
     .unwrap();
@@ -110,13 +101,13 @@ fn both_image_entrypoints_check_readiness_then_exec_the_fixed_real_codex() {
     symlink(integration, user_bin.join("codex")).unwrap();
     symlink(integration, system_bin.join("codex")).unwrap();
 
-    run_codex(&user_bin.join("codex"), temp.path(), true, false);
-    run_codex(&system_bin.join("codex"), temp.path(), false, false);
-    run_codex(&system_bin.join("codex"), temp.path(), false, true);
+    run_codex(&user_bin.join("codex"), temp.path(), false);
+    run_codex(&system_bin.join("codex"), temp.path(), false);
+    run_codex(&system_bin.join("codex"), temp.path(), true);
 }
 
 #[test]
-fn version_does_not_require_background_preparation() {
+fn version_does_not_require_history_synchronization() {
     let temp = tempfile::tempdir().unwrap();
     let real_codex = temp
         .path()
@@ -190,71 +181,4 @@ fn stop_hook_continues_when_the_relay_rejects_the_report() {
     assert!(output.status.success());
     assert_eq!(output.stdout, b"{\"continue\":true}\n");
     assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn background_worker_publishes_the_applied_generation_and_version() {
-    let temp = tempfile::tempdir().unwrap();
-    let real_codex = temp
-        .path()
-        .join(".codex/packages/standalone/current/bin/codex");
-    fs::create_dir_all(real_codex.parent().unwrap()).unwrap();
-    fs::write(
-        &real_codex,
-        r#"#!/bin/sh
-case "${1-}" in
-  --version) printf 'codex-cli 0.149.0\n' ;;
-  app-server)
-    while IFS= read -r line; do
-      case "$line" in
-        *'"method":"initialize"'*)
-          printf '{"jsonrpc":"2.0","id":1,"result":{"codexHome":"%s"}}\n' "$CODEX_HOME"
-          ;;
-        *'"method":"thread/list"'*)
-          id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-          printf '{"jsonrpc":"2.0","id":%s,"result":{"data":[],"nextCursor":null}}\n' "$id"
-          ;;
-      esac
-    done
-    ;;
-  *) exit 64 ;;
-esac
-"#,
-    )
-    .unwrap();
-    fs::set_permissions(&real_codex, fs::Permissions::from_mode(0o755)).unwrap();
-    let state = temp.path().join(".local/state/wt");
-    fs::create_dir_all(&state).unwrap();
-    fs::write(
-        state.join("codex-reconciliation-desired"),
-        format!("{GENERATION}\n"),
-    )
-    .unwrap();
-
-    let output = Command::new(env!("CARGO_BIN_EXE_wt-codex-integration"))
-        .arg("reconcile-worker")
-        .env("HOME", temp.path())
-        .env("CODEX_HOME", temp.path().join(".codex"))
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        fs::read_to_string(state.join("codex-reconciliation-status.json")).unwrap(),
-        format!(
-            "{{\"state\":\"ready\",\"generation\":\"{GENERATION}\",\"codex_version\":\"codex-cli 0.149.0\"}}\n"
-        )
-    );
-    assert_eq!(fs::metadata(&state).unwrap().mode() & 0o777, 0o700);
-    assert_eq!(
-        fs::metadata(state.join("codex-reconciliation-status.json"))
-            .unwrap()
-            .mode()
-            & 0o777,
-        0o600
-    );
 }

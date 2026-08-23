@@ -1,4 +1,4 @@
-use crate::{GuestAccess, HostConfig, GUEST_GROUP, GUEST_USER};
+use crate::{GuestAccess, HostConfig};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,14 +8,10 @@ use uuid::Uuid;
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
     GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId,
-    RunRequest, WorkerError, WriteFileRequest,
+    RunRequest, WorkerError,
 };
 
 const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
-const CODEX_RECONCILIATION_DESIRED: &str = "/home/wt/.local/state/wt/codex-reconciliation-desired";
-const CODEX_RECONCILIATION_STAGED: &str =
-    "/home/wt/.local/state/wt/.codex-reconciliation-desired.next";
-const CODEX_RECONCILIATION_SERVICE: &str = "wt-codex-reconciliation.service";
 
 pub struct ProvisionSpec<'a> {
     pub backend_id: &'a str,
@@ -54,76 +50,6 @@ impl<P> Worker<P> {
             readiness_timeout,
             config,
         })
-    }
-}
-
-impl<P: MachineProvider> Worker<P> {
-    pub fn request_codex_reconciliation(
-        &self,
-        backend_id: &str,
-        generation: &str,
-    ) -> Result<bool, WorkerError> {
-        if generation.len() != 64
-            || !generation
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-        {
-            return Err(WorkerError::new(
-                "Codex catalog generation must be 64 lowercase hexadecimal characters",
-            ));
-        }
-        let machine = match self.provider.inspect(&ProviderId::parse(backend_id)?)? {
-            MachineInspection::Running(machine) => machine,
-            MachineInspection::Missing | MachineInspection::Stopped { .. } => return Ok(false),
-        };
-        let deadline = Instant::now() + self.readiness_timeout;
-        let desired = format!("{generation}\n");
-        machine.transport.write_file(&WriteFileRequest {
-            path: CODEX_RECONCILIATION_STAGED,
-            contents: desired.as_bytes(),
-            owner: GUEST_USER,
-            group: GUEST_GROUP,
-            mode: 0o600,
-            deadline,
-        })?;
-        let output = machine.transport.run(
-            &RunRequest {
-                executable: "/bin/mv",
-                args: &[
-                    "--force",
-                    "--",
-                    CODEX_RECONCILIATION_STAGED,
-                    CODEX_RECONCILIATION_DESIRED,
-                ],
-                stdin: None,
-                deadline,
-            },
-            &mut std::io::sink(),
-        )?;
-        if output.exit_code != 0 {
-            return Err(WorkerError::new(format!(
-                "publish Codex reconciliation request: exit code {}: {}",
-                output.exit_code,
-                String::from_utf8_lossy(&output.diagnostic_tail).trim()
-            )));
-        }
-        let output = machine.transport.run(
-            &RunRequest {
-                executable: "/usr/bin/systemctl",
-                args: &["start", "--no-block", CODEX_RECONCILIATION_SERVICE],
-                stdin: None,
-                deadline,
-            },
-            &mut std::io::sink(),
-        )?;
-        if output.exit_code != 0 {
-            return Err(WorkerError::new(format!(
-                "start Codex reconciliation: exit code {}: {}",
-                output.exit_code,
-                String::from_utf8_lossy(&output.diagnostic_tail).trim()
-            )));
-        }
-        Ok(true)
     }
 }
 
