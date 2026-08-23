@@ -28,7 +28,7 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     '
 
 phase "installing Node.js and nvm"
-runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" NODE_VERSION="$NODE_VERSION" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
         set -eu
@@ -37,8 +37,8 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
         test -n "$nvm_tag"
         git clone --depth 1 --branch "$nvm_tag" https://github.com/nvm-sh/nvm.git "$HOME/.nvm"
         . "$HOME/.nvm/nvm.sh"
-        nvm install node
-        nvm alias default node
+        nvm install "$NODE_VERSION"
+        nvm alias default "$NODE_VERSION"
     '
 
 phase "installing Python and uv"
@@ -83,9 +83,10 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
         set -eu
-        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck \
+            >/dev/null
         . "$HOME/.nvm/nvm.sh"
-        command -v nvm
+        command -v nvm >/dev/null
         {
             printf "cargo\t%s\n" "$(cargo --version)"
             printf "rustc\t%s\n" "$(rustc --version)"

@@ -11,9 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-const TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_SESSION_META_BYTES: u64 = 64 * 1024;
 
 pub(crate) fn reconcile() -> Result<()> {
@@ -32,7 +31,7 @@ fn reconcile_home(codex: &Path, home: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let mut server = AppServer::start(codex, home, TIMEOUT)?;
+    let mut server = AppServer::start(codex, home)?;
     let initialized: InitializeResult = server.call(
         "initialize",
         json!({
@@ -265,12 +264,11 @@ struct AppServer {
     output: mpsc::Receiver<ServerOutput>,
     stderr: Arc<Mutex<Vec<u8>>>,
     stderr_complete: mpsc::Receiver<()>,
-    deadline: Instant,
     next_id: u64,
 }
 
 impl AppServer {
-    fn start(codex: &Path, home: &Path, timeout: Duration) -> Result<Self> {
+    fn start(codex: &Path, home: &Path) -> Result<Self> {
         let mut child = Command::new(codex)
             .args(["app-server", "--stdio"])
             .env("CODEX_HOME", home)
@@ -322,7 +320,6 @@ impl AppServer {
             output,
             stderr,
             stderr_complete,
-            deadline: Instant::now() + timeout,
             next_id: 0,
         })
     }
@@ -342,12 +339,7 @@ impl AppServer {
             return Err(error);
         }
         loop {
-            let Some(remaining) = self.deadline.checked_duration_since(Instant::now()) else {
-                return Err(
-                    self.failure_with_stderr(format!("Codex app-server timed out during {method}"))
-                );
-            };
-            match self.output.recv_timeout(remaining) {
+            match self.output.recv() {
                 Ok(ServerOutput::Line(line)) => {
                     let Ok(response) = serde_json::from_str::<RpcResponse>(&line) else {
                         continue;
@@ -363,12 +355,7 @@ impl AppServer {
                 }
                 Ok(ServerOutput::Error(error)) => return Err(error.into()),
                 Ok(ServerOutput::Eof) => return Err(self.stopped_before_reply(method)),
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    return Err(self.failure_with_stderr(format!(
-                        "Codex app-server timed out during {method}"
-                    )));
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(mpsc::RecvError) => {
                     return Err(self.failure_with_stderr(format!(
                         "Codex app-server output closed during {method}"
                     )));

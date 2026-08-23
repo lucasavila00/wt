@@ -151,6 +151,10 @@ pub(super) const NCURSES_TERM_SHA256: &str =
 pub(super) const GHOSTTY_TERMINFO_SHA256: &str =
     "1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa";
 
+pub(super) fn node_version() -> &'static str {
+    include_str!("../../../../../../.nvmrc").trim()
+}
+
 pub(super) struct ImageRecipe {
     packages: PackageSet,
     development_tools: PackageSet,
@@ -203,6 +207,7 @@ impl ImageRecipe {
 
 pub(super) struct BuildEnvironment<'a> {
     pub(super) kind: &'a str,
+    pub(super) node_version: &'a str,
     pub(super) tmux_config_sha256: &'a str,
     pub(super) byobu_color_sha256: &'a str,
     pub(super) access_sha256: &'a str,
@@ -214,13 +219,14 @@ pub(super) struct BuildEnvironment<'a> {
 impl BuildEnvironment<'_> {
     pub(super) fn render(&self) -> String {
         format!(
-        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nNODE_VERSION='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
         self.kind,
         wt_retained_worlds::GUEST_USER,
         wt_retained_worlds::GUEST_GROUP,
         wt_retained_worlds::GUEST_UID,
         wt_retained_worlds::GUEST_GID,
         wt_retained_worlds::GUEST_HOME,
+        self.node_version,
         BYOBU_VERSION,
         BYOBU_SHA256,
         TMUX_VERSION,
@@ -265,6 +271,7 @@ mod tests {
         insta::assert_snapshot!(
             BuildEnvironment {
                 kind: "host",
+                node_version: "24.19.0",
                 tmux_config_sha256: "tmux-config-sha",
                 byobu_color_sha256: "byobu-color-sha",
                 access_sha256: "access-sha",
@@ -280,6 +287,7 @@ WT_GROUP='wt'
 WT_UID='1001'
 WT_GID='1001'
 WT_HOME='/home/wt'
+NODE_VERSION='24.19.0'
 BYOBU_VERSION='7.15-0ubuntu1'
 BYOBU_SHA256='7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc'
 TMUX_VERSION='3.6b'

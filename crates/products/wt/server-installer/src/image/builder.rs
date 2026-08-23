@@ -4,6 +4,7 @@ mod provenance;
 pub(super) use contract::validate_result_metadata;
 pub(super) use provenance::{sha_bytes, stage_publication};
 
+use super::timing::TimedRunner;
 use contract::verify_retained_guest_contract;
 
 use super::console::{wait_for_shutdown, ConsoleLog};
@@ -160,8 +161,7 @@ pub(super) fn run_kvm_build<R: Runner>(
 
     match source {
         BuildSource::CloudImage => {
-            println!("Creating expanded {IMAGE_KIND} image-build disk...");
-            runner.run(
+            runner.timed_run(
                 cmd!(
                     "qemu-img",
                     "create",
@@ -173,7 +173,7 @@ pub(super) fn run_kvm_build<R: Runner>(
                 ),
                 "create image build disk",
             )?;
-            runner.run(
+            runner.timed_run(
                 cmd!(
                     "sudo",
                     "virt-resize",
@@ -186,17 +186,16 @@ pub(super) fn run_kvm_build<R: Runner>(
             )?;
         }
         BuildSource::ReusableImage => {
-            println!("Copying cached {IMAGE_KIND} image-build disk...");
-            runner.run(
+            runner.timed_run(
                 cmd!(
-                    "qemu-img",
-                    "convert",
-                    "-O",
-                    "qcow2",
+                    "cp",
+                    "--reflink=auto",
+                    "--sparse=always",
+                    "--",
                     context.source,
                     &paths.disk
                 ),
-                "copy cached image build disk",
+                "clone cached image build disk",
             )?;
         }
     }
@@ -205,6 +204,7 @@ pub(super) fn run_kvm_build<R: Runner>(
         &environment,
         recipe::BuildEnvironment {
             kind: IMAGE_KIND,
+            node_version: recipe::node_version(),
             tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
             byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
@@ -283,11 +283,13 @@ pub(super) fn run_kvm_build<R: Runner>(
     customize
         .arg("--delete")
         .arg("/etc/netplan/50-cloud-init.yaml")
+        .arg("--mkdir")
+        .arg("/etc/cloud")
         .arg("--touch")
         .arg("/etc/cloud/cloud-init.disabled")
         .arg("--firstboot-command")
         .arg("/bin/sh /var/tmp/wt-image-build.sh");
-    runner.run(customize, "stage image build inputs")?;
+    runner.timed_run(customize, "stage image build inputs with libguestfs")?;
     fs::File::create_new(&paths.console).context("create image build console log")?;
     fs::set_permissions(&paths.console, fs::Permissions::from_mode(0o660))
         .context("set image build console log permissions")?;
@@ -345,7 +347,7 @@ pub(super) fn run_kvm_build<R: Runner>(
 }
 
 pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) -> Result<()> {
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-copy-out",
@@ -357,7 +359,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         "preserve pinned tmux across image sysprep",
     )?;
     println!("Finalizing {IMAGE_KIND} golden image for reuse (sysprep and sanitization)...");
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-sysprep",
@@ -370,7 +372,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     )?;
     let finalizer = paths.dir.join("finalize-image.sh");
     fs::write(&finalizer, FINALIZE_IMAGE).context("write image finalizer")?;
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-customize",
@@ -393,7 +395,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         ),
         "finalize reusable image",
     )?;
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-sysprep",
@@ -430,7 +432,7 @@ pub(super) fn finalize_development_tools_cache(
     paths: &BuildPaths,
 ) -> Result<()> {
     println!("Finalizing cached development tools image for reuse (sysprep and sanitization)...");
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-sysprep",
@@ -444,7 +446,7 @@ pub(super) fn finalize_development_tools_cache(
     let finalizer = paths.dir.join("finalize-development-tools-cache.sh");
     fs::write(&finalizer, FINALIZE_DEVELOPMENT_TOOLS_CACHE)
         .context("write development tools cache finalizer")?;
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-customize",
@@ -455,7 +457,7 @@ pub(super) fn finalize_development_tools_cache(
         ),
         "finalize cached development tools image",
     )?;
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "virt-sysprep",
@@ -513,7 +515,7 @@ fn start_kvm_build_guest(
     disk: &Path,
     console: &Path,
 ) -> Result<ConsoleLog> {
-    runner.run(
+    runner.timed_run(
         cmd!(
             "virt-install",
             "--connect",
