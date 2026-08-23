@@ -93,10 +93,7 @@ pub enum Operation {
     Get { name: InstanceName },
     Start { name: InstanceName },
     Stop { name: InstanceName },
-    Delete {
-        name: InstanceName,
-        expected_id: Uuid,
-    },
+    Delete { name: InstanceName, expected_id: Uuid },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListCodexSessions,
