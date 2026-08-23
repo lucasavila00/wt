@@ -23,7 +23,7 @@ case "${1:-}" in
             echo "image user $WT_USER must use uid=$WT_UID and gid=$WT_GID" >&2
             exit 1
         }
-        usermod --append --groups sudo "$WT_USER"
+        usermod --append --groups sudo,kvm "$WT_USER"
         sudoers=/run/wt-host-sudoers.wt-new
         rm -f "$sudoers"
         printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$WT_USER" > "$sudoers"
