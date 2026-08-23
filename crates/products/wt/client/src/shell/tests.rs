@@ -11,15 +11,29 @@ fn world_view_reserves_the_top_row() {
 }
 
 #[test]
-fn live_activity_uses_the_compact_terminal_viewport() {
+fn control_view_uses_the_compact_terminal_viewport() {
     let area = Rect::new(0, 0, 100, 30);
-    let model = ShellModel::new(vec!["local.one".into()]);
+    let mut model = ShellModel::new(vec!["local.one".into()]);
 
+    assert_eq!(session_viewport(&model, area), (13, 45));
+    model.show_worlds();
     assert_eq!(session_viewport(&model, area), (13, 45));
     assert_eq!(
         session_viewport(&model, Rect::new(0, 0, 400, 40)),
         (13, 195)
     );
+}
+
+#[test]
+fn world_view_uses_the_full_terminal_viewport() {
+    let area = Rect::new(0, 0, 100, 30);
+    let mut model = ShellModel::new(vec!["local.one".into()]);
+    model.handle_key(
+        crossterm::event::KeyEvent::new(crossterm::event::KeyCode::F(5), KeyModifiers::NONE),
+        area,
+    );
+
+    assert_eq!(session_viewport(&model, area), (29, 100));
 }
 
 #[test]

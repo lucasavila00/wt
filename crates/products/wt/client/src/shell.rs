@@ -59,8 +59,10 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     ssh::sync(config, &report.instances)?;
     let worlds = shell_worlds(&report.instances);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
-    let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
+    let area = Rect::new(0, 0, columns, rows);
+    let (session_rows, session_columns) = session_viewport(&model, area);
+    let mut sessions = SessionSet::start(model.worlds(), session_rows, session_columns)?;
     model.control_mut().set_capacity(report.capacity);
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
@@ -189,7 +191,8 @@ fn run_loop(
                         .size()
                         .context("read wt shell terminal area")?
                         .into();
-                    sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+                    let (rows, columns) = session_viewport(model, area);
+                    sessions.reconcile(&worlds, rows, columns)?;
                     model.reconcile_worlds(worlds);
                     model.control_mut().set_capacity(snapshot.capacity);
                     model.finish_worlds_refresh(Ok(refresh::updated_at()));
@@ -530,8 +533,10 @@ fn dispatch_event(
             Ok(true)
         }
         Event::Resize(columns, rows) => {
-            sessions.resize(world_rows(rows), columns)?;
-            model.resize(Rect::new(0, 0, columns, rows));
+            let area = Rect::new(0, 0, columns, rows);
+            model.resize(area);
+            let (rows, columns) = session_viewport(model, area);
+            sessions.resize(rows, columns)?;
             Ok(true)
         }
         _ => Ok(false),
@@ -542,7 +547,7 @@ fn world_rows(terminal_rows: u16) -> u16 {
 }
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
-    if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+    if model.mode() == Mode::Control {
         live::preview_size(area, model.control().live_codex().len())
     } else {
         (world_rows(area.height), area.width)
