@@ -89,6 +89,22 @@ fn provider_targets_are_validated_and_unambiguous() {
 }
 
 #[test]
+fn wt_tools_activity_metadata_uses_the_head_and_response_handle() {
+    let command = api::GitHostingCommand::OpenMr {
+        head: "wt/activity".into(),
+        base: "main".into(),
+    };
+    let metadata = service::wt_tools_activity_metadata(
+        &command,
+        r#"{"type":"change_request","data":{"handle":"42","head":"wt/activity"}}"#,
+    )
+    .unwrap();
+    insta::assert_snapshot!(format!("{} {:?} {:?}", metadata.0, metadata.1, metadata.2), @r###"
+    open_mr Some("wt/activity") Some("42")
+    "###);
+}
+
+#[test]
 fn world_prompt_does_not_require_a_checkout_or_provider_api() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = Gateway::open(GatewayConfig {

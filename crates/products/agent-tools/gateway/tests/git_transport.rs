@@ -1,9 +1,12 @@
+use diesel::prelude::*;
 use std::fs;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 use wt_agent_tool_gateway::{read_json_line, write_json_line, ControlRequest, ControlResponse};
+use wt_workload_registry::schema::worlds;
 
 struct Process(Option<Child>);
 
@@ -71,16 +74,22 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     let relay_socket = temp.path().join("relay.sock");
     let second_relay_socket = temp.path().join("second-relay.sock");
     let state = temp.path().join("state.json");
-    let mut gateway = spawn_gateway(&control, &transport, &state, &repositories);
+    let database = temp.path().join("instances.db");
+    let registry = wt_workload_registry::Registry::open(&database).unwrap();
+    let first_world = Uuid::new_v4();
+    let second_world = Uuid::new_v4();
+    insert_world(&registry, first_world, "first");
+    insert_world(&registry, second_world, "second");
+    let mut gateway = spawn_gateway(&control, &transport, &state, &database, &repositories);
     wait_for(&control);
     wait_for(&transport);
 
-    let response = reserve(&control, "world-1");
+    let response = reserve(&control, &first_world.to_string());
     assert!(response.ok, "{:?}", response.error);
     let grant = response.grant.unwrap();
-    let retry = reserve(&control, "world-1");
+    let retry = reserve(&control, &first_world.to_string());
     assert_eq!(retry.grant.as_ref(), Some(&grant));
-    let response = reserve(&control, "world-2");
+    let response = reserve(&control, &second_world.to_string());
     assert!(response.ok, "{:?}", response.error);
     let second_grant = response.grant.unwrap();
     let grant_file = temp.path().join("grant");
@@ -201,8 +210,31 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `wt/fix`"));
     assert_ref(&upstream, "refs/heads/wt/fix", false);
 
+    let updates = registry
+        .list_git_activity(
+            "alice",
+            wt_workload_registry::GitActivityQuery::Branch {
+                provider_host: "local.test".into(),
+                repository: "project".into(),
+                branch: "wt/fix".into(),
+                before_id: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(updates.len(), 4);
+    assert_eq!(updates[0].world_id, second_world);
+    assert_eq!(
+        updates[0].new_oid.as_deref(),
+        Some("0000000000000000000000000000000000000000")
+    );
+    assert_eq!(updates[3].world_id, first_world);
+    assert_eq!(
+        updates[3].previous_oid.as_deref(),
+        Some("0000000000000000000000000000000000000000")
+    );
+
     gateway.stop();
-    gateway = spawn_gateway(&control, &transport, &state, &repositories);
+    gateway = spawn_gateway(&control, &transport, &state, &database, &repositories);
     assert_success(&git_output(&checkout, &["fetch", "origin"], &relay_socket));
 
     let mut stream = UnixStream::connect(&control).unwrap();
@@ -227,13 +259,19 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
         &["fetch", "origin"],
         &second_relay_socket,
     ));
-    let replacement = reserve(&control, "world-3");
+    let replacement = reserve(&control, &Uuid::new_v4().to_string());
     assert!(replacement.ok, "{:?}", replacement.error);
     assert_ne!(replacement.grant.unwrap().token, original_token);
     drop(gateway);
 }
 
-fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &Path) -> Process {
+fn spawn_gateway(
+    control: &Path,
+    transport: &Path,
+    state: &Path,
+    database: &Path,
+    repositories: &Path,
+) -> Process {
     let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway"))
         .args([
             "--control-socket",
@@ -242,6 +280,8 @@ fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &
             transport.to_str().unwrap(),
             "--state-file",
             state.to_str().unwrap(),
+            "--database-path",
+            database.to_str().unwrap(),
             "--local-provider",
             &format!("local.test={}", repositories.display()),
             "--no-vsock",
@@ -253,6 +293,31 @@ fn spawn_gateway(control: &Path, transport: &Path, state: &Path, repositories: &
     wait_for_listener(control);
     wait_for_listener(transport);
     Process(Some(child))
+}
+
+fn insert_world(registry: &wt_workload_registry::Registry, id: Uuid, name: &str) {
+    registry
+        .transaction::<_, wt_workload_registry::RegistryError>(|connection| {
+            diesel::insert_into(worlds::table)
+                .values((
+                    worlds::id.eq(id.to_string()),
+                    worlds::backend_id.eq(format!("wt-{}", id.simple())),
+                    worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                    worlds::vcpus.eq(1_i64),
+                    worlds::memory_mib.eq(1024_i64),
+                    worlds::disk_gib.eq(10_i64),
+                    worlds::compute_reserved.eq(true),
+                    worlds::disk_reserved_gib.eq(10_i64),
+                    worlds::owner.eq("alice"),
+                    worlds::name.eq(name),
+                    worlds::status.eq("running"),
+                    worlds::setup_fingerprint.eq("fingerprint"),
+                    worlds::ssh_host_keys.eq("[]"),
+                ))
+                .execute(connection)?;
+            Ok(())
+        })
+        .unwrap();
 }
 
 fn reserve(control: &Path, world_id: &str) -> ControlResponse {

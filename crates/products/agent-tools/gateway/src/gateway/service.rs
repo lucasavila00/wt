@@ -312,8 +312,6 @@ impl Gateway {
             Some(&message),
         )?;
         if let Some(receive_pack) = result.receive_pack {
-            let registry = wt_workload_registry::Registry::open(&self.config.database_path)
-                .context("open WT registry")?;
             for update in successful_push_updates(
                 &receive_pack.commands,
                 &receive_pack.response,
@@ -324,7 +322,7 @@ impl Gateway {
                     .strip_prefix("refs/heads/")
                     .expect("validated successful push is a branch");
                 if let Err(error) =
-                    registry.insert_git_activity(wt_workload_registry::GitActivityInput {
+                    self.store_git_activity(wt_workload_registry::GitActivityInput {
                         world_id,
                         kind: wt_workload_registry::GitActivityKind::BranchUpdate,
                         provider_host: &source.host,
@@ -401,9 +399,8 @@ impl Gateway {
         let response_json = api::render_cli_command_output(output);
         let (action, branch, change_request) = wt_tools_activity_metadata(command, &response_json)?;
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .insert_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
+        if let Err(error) =
+            self.store_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
                 world_id,
                 provider_host: provider.host(),
                 repository: &repository,
@@ -413,8 +410,27 @@ impl Gateway {
                 request_json: &args[0],
                 response_json: &response_json,
             })
-            .context("store wt-tools activity")?;
+        {
+            eprintln!("wt-agent-tool-gateway: store wt-tools activity: {error}");
+        }
         Ok(response_json)
+    }
+
+    fn store_git_activity(&self, input: wt_workload_registry::GitActivityInput<'_>) -> Result<()> {
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .insert_git_activity(input)
+            .context("store Git activity")
+    }
+
+    fn store_wt_tools_activity(
+        &self,
+        input: wt_workload_registry::WtToolsActivityInput<'_>,
+    ) -> Result<()> {
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .insert_wt_tools_activity(input)
+            .context("store wt-tools activity")
     }
 }
 
@@ -469,7 +485,7 @@ pub(super) fn push_result_message(
     Ok(message)
 }
 
-fn wt_tools_activity_metadata(
+pub(super) fn wt_tools_activity_metadata(
     command: &api::GitHostingCommand,
     response_json: &str,
 ) -> Result<(String, Option<String>, Option<String>)> {

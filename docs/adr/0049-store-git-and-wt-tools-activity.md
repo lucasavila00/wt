@@ -1,6 +1,6 @@
 # ADR 0049: Store Git and wt-tools activity
 
-- Status: Proposed; Date: 2026-08-23
+- Status: Accepted; Date: 2026-08-23
 
 ## Decision
 
