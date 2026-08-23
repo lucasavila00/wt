@@ -67,7 +67,7 @@ impl Gateway {
                     &mut stream,
                     &TransportResponse::with_message(git_context_header(&source)),
                 )?;
-                if let Err(error) = self.serve_git(&mut stream, service, &source) {
+                if let Err(error) = self.serve_git(&mut stream, service, &source, &grant) {
                     let message = format!("ERR WT Git gateway failed: {error:#}\n");
                     let _ = write_packet(&mut stream, message.as_bytes());
                     let _ = stream.flush();
@@ -279,23 +279,65 @@ impl Gateway {
         stream: &mut S,
         service: GitService,
         source: &str,
+        grant: &GrantRecord,
     ) -> Result<()> {
         let source = parse_source(source)?;
         let provider = self.provider(&source.host)?;
         let policy = WritePolicy::new(format!("refs/heads/{BRANCH_PREFIX}"), [])?;
-        let repository = source.path.trim_end_matches(".git");
-        let provider_target = provider.api_kind().map(|kind| (kind, repository));
+        let repository = normalize_repository(&source.path);
+        let provider_target = provider.api_kind().map(|kind| (kind, repository.as_str()));
+        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .insert_git_activity(wt_workload_registry::GitActivityInput {
+                world_id,
+                kind: wt_workload_registry::GitActivityKind::Service,
+                provider_host: &source.host,
+                repository: &repository,
+                git_service: Some(service.command()),
+                branch: None,
+                previous_oid: None,
+                new_oid: None,
+            })
+            .context("store Git service activity")?;
         let message = |commands: &[u8], response: &[u8], sideband: bool| {
             push_result_message(provider_target, commands, response, sideband)
         };
-        serve_git(
+        let result = serve_git(
             stream,
             git_target(provider, &source)?,
             service,
             Some(&policy),
             Some(&push_rejection_message),
             Some(&message),
-        )
+        )?;
+        if let Some(receive_pack) = result.receive_pack {
+            for update in successful_push_updates(
+                &receive_pack.commands,
+                &receive_pack.response,
+                receive_pack.sideband,
+            )? {
+                let branch = update
+                    .reference
+                    .strip_prefix("refs/heads/")
+                    .expect("validated successful push is a branch");
+                if let Err(error) =
+                    self.store_git_activity(wt_workload_registry::GitActivityInput {
+                        world_id,
+                        kind: wt_workload_registry::GitActivityKind::BranchUpdate,
+                        provider_host: &source.host,
+                        repository: &repository,
+                        git_service: Some(service.command()),
+                        branch: Some(branch),
+                        previous_oid: Some(&update.previous_oid),
+                        new_oid: Some(&update.new_oid),
+                    })
+                {
+                    eprintln!("wt-agent-tool-gateway: store Git branch activity: {error}");
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn serve_cli(&self, args: &[String], grant: &GrantRecord) -> Result<String> {
@@ -323,7 +365,8 @@ impl Gateway {
             }
             api::WtToolsCommand::GitHosting { target, command } => (target, command),
         };
-        validate_repository(&target.repository)?;
+        let repository = normalize_repository(&target.repository);
+        validate_repository(&repository)?;
         let provider = self.cli_provider(target.provider)?;
         let api = match provider {
             Provider::Ssh {
@@ -340,7 +383,7 @@ impl Gateway {
         };
         let scope = api::ProviderProjectScope {
             host: provider.host(),
-            project: &target.repository,
+            project: &repository,
             prefix: BRANCH_PREFIX,
         };
         let output = match api_base {
@@ -353,7 +396,41 @@ impl Gateway {
             ),
             None => api::execute_cli_provider_command(kind, api_token_file, &scope, command),
         }?;
-        Ok(api::render_cli_command_output(output))
+        let response_json = api::render_cli_command_output(output);
+        let (action, branch, change_request) = wt_tools_activity_metadata(command, &response_json)?;
+        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+        if let Err(error) =
+            self.store_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
+                world_id,
+                provider_host: provider.host(),
+                repository: &repository,
+                action: &action,
+                branch: branch.as_deref(),
+                change_request: change_request.as_deref(),
+                request_json: &args[0],
+                response_json: &response_json,
+            })
+        {
+            eprintln!("wt-agent-tool-gateway: store wt-tools activity: {error}");
+        }
+        Ok(response_json)
+    }
+
+    fn store_git_activity(&self, input: wt_workload_registry::GitActivityInput<'_>) -> Result<()> {
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .insert_git_activity(input)
+            .context("store Git activity")
+    }
+
+    fn store_wt_tools_activity(
+        &self,
+        input: wt_workload_registry::WtToolsActivityInput<'_>,
+    ) -> Result<()> {
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .insert_wt_tools_activity(input)
+            .context("store wt-tools activity")
     }
 }
 
@@ -379,8 +456,12 @@ pub(super) fn push_result_message(
 ) -> Result<String> {
     let updates = successful_push_updates(commands, response, sideband)?;
     let mut message = String::new();
-    for (head, branch) in updates {
-        if head.bytes().all(|byte| byte == b'0') {
+    for update in updates {
+        let branch = update
+            .reference
+            .strip_prefix("refs/heads/")
+            .expect("validated successful push is a branch");
+        if update.new_oid.bytes().all(|byte| byte == b'0') {
             message.push_str(&format!("Deleted branch `{branch}`.\n"));
             continue;
         }
@@ -395,11 +476,55 @@ pub(super) fn push_result_message(
         });
         let list_ci = serde_json::json!({
             "target": { "provider": provider, "repository": repository },
-            "command": { "action": "list_ci", "commit": head },
+            "command": { "action": "list_ci", "commit": update.new_oid },
         });
         message.push_str(&format!(
             "Inspect its open MR with:\n  wt-tools '{show_mr}'\nIf that reports no open MR, run `wt-tools --help` and open one with an explicit base.\nInspect CI with:\n  wt-tools '{list_ci}'\n"
         ));
     }
     Ok(message)
+}
+
+pub(super) fn wt_tools_activity_metadata(
+    command: &api::GitHostingCommand,
+    response_json: &str,
+) -> Result<(String, Option<String>, Option<String>)> {
+    let (action, branch, change_request) = match command {
+        api::GitHostingCommand::ShowMr { mr } => ("show_mr", None, Some(mr.as_str())),
+        api::GitHostingCommand::ShowMrForBranch { branch } => {
+            ("show_mr_for_branch", Some(branch.as_str()), None)
+        }
+        api::GitHostingCommand::ShowRun { .. } => ("show_run", None, None),
+        api::GitHostingCommand::ShowJob { .. } => ("show_job", None, None),
+        api::GitHostingCommand::ListThreads { mr } => ("list_threads", None, Some(mr.as_str())),
+        api::GitHostingCommand::ListCi { .. } => ("list_ci", None, None),
+        api::GitHostingCommand::ListJobs { .. } => ("list_jobs", None, None),
+        api::GitHostingCommand::LogJob { .. } => ("log_job", None, None),
+        api::GitHostingCommand::WaitMr { mr, .. } => ("wait_mr", None, Some(mr.as_str())),
+        api::GitHostingCommand::WaitRun { .. } => ("wait_run", None, None),
+        api::GitHostingCommand::WaitJob { .. } => ("wait_job", None, None),
+        api::GitHostingCommand::OpenMr { head, .. } => ("open_mr", Some(head.as_str()), None),
+        api::GitHostingCommand::SetMr { mr, .. } => ("set_mr", None, Some(mr.as_str())),
+        api::GitHostingCommand::EditMr { mr, .. } => ("edit_mr", None, Some(mr.as_str())),
+        api::GitHostingCommand::CommentMr { mr, .. } => ("comment_mr", None, Some(mr.as_str())),
+        api::GitHostingCommand::ReplyThread { mr, .. } => ("reply_thread", None, Some(mr.as_str())),
+        api::GitHostingCommand::SetThread { mr, .. } => ("set_thread", None, Some(mr.as_str())),
+        api::GitHostingCommand::RetryJob { .. } => ("retry_job", None, None),
+        api::GitHostingCommand::CancelJob { .. } => ("cancel_job", None, None),
+        api::GitHostingCommand::CancelRun { .. } => ("cancel_run", None, None),
+    };
+    let response = serde_json::from_str::<serde_json::Value>(response_json)
+        .context("decode wt-tools response JSON")?;
+    let data = response.get("data");
+    let branch = branch.map(str::to_owned).or_else(|| {
+        data.and_then(|value| value.get("head"))?
+            .as_str()
+            .map(str::to_owned)
+    });
+    let change_request = change_request.map(str::to_owned).or_else(|| {
+        data.and_then(|value| value.get("handle"))?
+            .as_str()
+            .map(str::to_owned)
+    });
+    Ok((action.to_owned(), branch, change_request))
 }

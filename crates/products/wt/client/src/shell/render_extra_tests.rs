@@ -1,6 +1,12 @@
 use super::*;
 use ratatui::{backend::TestBackend, Terminal};
 
+#[test]
+fn selected_card_border_uses_the_navigation_color() {
+    assert_eq!(selected_card_border_style(true).fg, Some(Color::Blue));
+    assert_eq!(selected_card_border_style(false).fg, None);
+}
+
 pub(super) fn now_ms() -> i64 {
     i64::try_from(
         std::time::SystemTime::now()

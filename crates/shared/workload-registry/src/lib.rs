@@ -1,3 +1,4 @@
+mod activity;
 mod capacity;
 mod codex_catalog;
 mod codex_sessions;
@@ -5,6 +6,10 @@ mod reports;
 pub mod schema;
 mod store;
 
+pub use activity::{
+    GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, WtToolsActivity,
+    WtToolsActivityInput, WtToolsActivityQuery, ACTIVITY_PAGE_SIZE,
+};
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };

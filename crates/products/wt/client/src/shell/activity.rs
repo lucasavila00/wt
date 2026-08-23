@@ -34,7 +34,7 @@ pub(super) fn at_position(area: ratatui::layout::Rect, column: u16, row: u16) ->
 
 pub(super) fn draw(frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect, active: Activity) {
     use ratatui::layout::{Alignment, Rect};
-    use ratatui::style::Style;
+    use ratatui::style::{Color, Style};
     use ratatui::widgets::{Block, Borders, Paragraph};
 
     frame.render_widget(
@@ -58,12 +58,18 @@ pub(super) fn draw(frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect, 
             area.width.saturating_sub(1),
             super::control::ACTIVITY_BUTTON_HEIGHT,
         );
+        let active_style = (activity == active).then(|| Style::new().fg(Color::Blue));
         frame.render_widget(
-            Paragraph::new(icon).alignment(Alignment::Center),
+            Paragraph::new(icon)
+                .alignment(Alignment::Center)
+                .style(active_style.unwrap_or_default()),
             Rect::new(button.x, button.y + 1, button.width, 1),
         );
         if activity == active {
-            frame.render_widget(Paragraph::new("▌"), Rect::new(button.x, button.y + 1, 1, 1));
+            frame.render_widget(
+                Paragraph::new("▌").style(active_style.unwrap()),
+                Rect::new(button.x, button.y + 1, 1, 1),
+            );
         }
     }
 }

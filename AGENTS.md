@@ -94,6 +94,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   cache after its first build; do not restore a separate slim E2E image.
 - Use Rust for typed validation, state, and lifecycle decisions. Whole-flow POSIX
   shell assets are allowed for guest and server installation procedures.
+- Use terminal colors according to their UI meaning: blue for navigation
+  highlights such as active markers and selected-card borders, yellow for states
+  that need attention, red for errors, and green for successful or healthy
+  states. Keep essential meaning in text or symbols; color only reinforces it.
+  Text, list, and form selections may reverse terminal defaults for theme-safe
+  contrast as established by ADR 0038.
 - Match verification to the files changed. Documentation-only changes need no Rust
   checks. For shell scripts, run `bash -n` on the changed scripts and targeted
   behavior checks; run ShellCheck when available.

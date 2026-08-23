@@ -63,7 +63,8 @@ fn worst_case_ci_log_tail_fits_the_transport_header() {
 #[test]
 fn provider_targets_are_validated_and_unambiguous() {
     assert!(validate_repository("acme/widget").is_ok());
-    for invalid in ["", "/acme/widget", "acme/widget.git", "acme/../widget"] {
+    assert_eq!(normalize_repository("acme/widget.git"), "acme/widget");
+    for invalid in ["", "/acme/widget", "acme/../widget"] {
         assert!(validate_repository(invalid).is_err());
     }
 
@@ -85,6 +86,22 @@ fn provider_targets_are_validated_and_unambiguous() {
     .err()
     .unwrap();
     assert_eq!(error.to_string(), "duplicate GitHub API provider");
+}
+
+#[test]
+fn wt_tools_activity_metadata_uses_the_head_and_response_handle() {
+    let command = api::GitHostingCommand::OpenMr {
+        head: "wt/activity".into(),
+        base: "main".into(),
+    };
+    let metadata = service::wt_tools_activity_metadata(
+        &command,
+        r#"{"type":"change_request","data":{"handle":"42","head":"wt/activity"}}"#,
+    )
+    .unwrap();
+    insta::assert_snapshot!(format!("{} {:?} {:?}", metadata.0, metadata.1, metadata.2), @r###"
+    open_mr Some("wt/activity") Some("42")
+    "###);
 }
 
 #[test]
@@ -406,15 +423,16 @@ fn push_messages_cover_publish_delete_and_rejection() {
         response.extend_from_slice(b"0000");
         response
     };
-    assert_eq!(
-        successful_push_updates(
-            &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
-            &response("ok refs/heads/wt/fix-login"),
-            true,
-        )
-        .unwrap(),
-        vec![("a".repeat(40), "wt/fix-login".to_owned())]
-    );
+    let updates = successful_push_updates(
+        &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
+        &response("ok refs/heads/wt/fix-login"),
+        true,
+    )
+    .unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].previous_oid, "0".repeat(40));
+    assert_eq!(updates[0].new_oid, "a".repeat(40));
+    assert_eq!(updates[0].reference, "refs/heads/wt/fix-login");
     insta::assert_snapshot!(
         service::push_result_message(
             Some((ProviderKind::GitHub, "acme/widget")),
@@ -432,15 +450,14 @@ fn push_messages_cover_publish_delete_and_rejection() {
       wt-tools '{"command":{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"provider":"github","repository":"acme/widget"}}'
     "###
     );
-    assert_eq!(
-        successful_push_updates(
-            &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
-            &response("ok refs/heads/wt/fix-login"),
-            true,
-        )
-        .unwrap(),
-        vec![("0".repeat(40), "wt/fix-login".to_owned())]
-    );
+    let updates = successful_push_updates(
+        &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
+        &response("ok refs/heads/wt/fix-login"),
+        true,
+    )
+    .unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].new_oid, "0".repeat(40));
     assert!(successful_push_updates(
         &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
         &response("ng refs/heads/wt/fix-login protected branch"),

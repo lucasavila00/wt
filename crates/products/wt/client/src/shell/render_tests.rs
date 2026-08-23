@@ -192,6 +192,43 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
 }
 
 #[test]
+fn control_ui_has_activity_scaffolding() {
+    let backend = TestBackend::new(64, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let model = model(&["local.one"]);
+    assert_eq!(model.mode(), Mode::Control);
+    let parser = parser();
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    assert_eq!(
+        terminal.backend().buffer().cell((0, 7)).unwrap().fg,
+        Color::Blue
+    );
+    assert_eq!(
+        terminal.backend().buffer().cell((2, 7)).unwrap().fg,
+        Color::Blue
+    );
+    assert_eq!(
+        terminal.backend().buffer().cell((2, 1)).unwrap().fg,
+        Color::Reset
+    );
+}
+
+#[test]
 fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
     let backend = TestBackend::new(80, 18);
     let mut terminal = Terminal::new(backend).unwrap();

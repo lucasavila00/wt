@@ -674,7 +674,7 @@ pub(super) fn muted_style() -> Style {
 
 pub(super) fn selected_card_border_style(selected: bool) -> Style {
     if selected {
-        Style::new().fg(Color::Yellow)
+        Style::new().fg(Color::Blue)
     } else {
         Style::new()
     }
