@@ -70,6 +70,7 @@ fn card_navigation_opens_only_the_selected_live_location() {
         "2026-08-21T20:00:00Z".into(),
         area(),
     );
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert!(state
         .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), area())
@@ -105,6 +106,7 @@ fn live_activity_excludes_sessions_that_are_not_open() {
         area(),
     );
 
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     assert_eq!(state.selected(), Some(&state.codex()[1].identity));
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
