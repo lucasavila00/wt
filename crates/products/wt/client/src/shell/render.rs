@@ -36,11 +36,14 @@ pub(super) fn draw(
         if let Some(error) = creation_error {
             draw_creation_error(frame, error);
         }
-        if let Some(deletion) = deletion {
+        if let Some(deletion) = deletion.filter(|flow| flow.blocks_input()) {
             deletion.render(frame, frame.area());
         }
         if let Some(creation) = creation {
             creation.render_progress(frame, frame.area());
+        }
+        if let Some(deletion) = deletion {
+            deletion.render_progress(frame, frame.area());
         }
         draw_test_server_banner(frame, model);
         return;
@@ -63,8 +66,11 @@ pub(super) fn draw(
     if let Some(error) = creation_error {
         draw_creation_error(frame, error);
     }
-    if let Some(deletion) = deletion {
+    if let Some(deletion) = deletion.filter(|flow| flow.blocks_input()) {
         deletion.render(frame, frame.area());
+    }
+    if let Some(deletion) = deletion {
+        deletion.render_progress(frame, frame.area());
     }
     match model.mode() {
         Mode::World if closed_message.is_none() => {
