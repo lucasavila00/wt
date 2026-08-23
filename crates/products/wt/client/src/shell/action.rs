@@ -2,7 +2,7 @@ use super::action_queue::{ActionId, Intent, ShellActionQueue};
 use super::model::{ShellModel, ShellWorld};
 use super::refresh::WorldRefresh;
 use super::session::{SessionSet, StartTask};
-use super::{codex, delete, world_rows, ControlFlows, ShellRuntime};
+use super::{codex, delete, session_viewport, ControlFlows, ShellRuntime};
 use anyhow::Result;
 use ratatui::layout::Rect;
 
@@ -113,12 +113,11 @@ pub(super) fn start_next(
                 flows.action_error = Some("world is no longer available to reconnect".into());
                 return true;
             };
-            sessions
-                .start_reconnect(index, world_rows(area.height), area.width)
-                .map(|task| {
-                    flows.actions.update_phase(id, "Reconnecting world");
-                    Task::Reconnect { id, task }
-                })
+            let (rows, columns) = session_viewport(model, area);
+            sessions.start_reconnect(index, rows, columns).map(|task| {
+                flows.actions.update_phase(id, "Reconnecting world");
+                Task::Reconnect { id, task }
+            })
         }
     };
     match started {
@@ -159,7 +158,8 @@ pub(super) fn poll(
                     let world =
                         codex::ShellWorld::from_instance(&created.context, &created.instance);
                     refresh.invalidate();
-                    match sessions.start_world(&world, world_rows(area.height), area.width) {
+                    let (rows, columns) = session_viewport(model, area);
+                    match sessions.start_world(&world, rows, columns) {
                         Ok(session_task) => {
                             flows.actions.update_phase(*id, "Connecting world session");
                             *phase = CreatePhase::Connect {
@@ -217,7 +217,8 @@ pub(super) fn poll(
                     .filter(|world| world.identity != identity)
                     .cloned()
                     .collect::<Vec<_>>();
-                sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
+                let (rows, columns) = session_viewport(model, area);
+                sessions.reconcile(&worlds, rows, columns)?;
                 model.reconcile_worlds(worlds);
                 flows.actions.acknowledge(*id, true);
                 keep = false;
