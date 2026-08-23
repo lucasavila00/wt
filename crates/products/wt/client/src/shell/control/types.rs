@@ -39,6 +39,7 @@ pub(in crate::shell) enum CodexCardKind {
         repository_url: Option<String>,
         git_branch: Option<String>,
         state: CodexSessionState,
+        is_compacting: bool,
         session_start_source: Option<String>,
         target: ByobuTarget,
     },

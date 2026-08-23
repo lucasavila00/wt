@@ -333,6 +333,7 @@ fn validate_context(
                     repository_url: observation.repository_url,
                     git_branch: observation.git_branch,
                     state: observation.state,
+                    is_compacting: observation.is_compacting,
                     session_start_source: observation.session_start_source,
                     target: observation.target,
                 },
@@ -559,6 +560,7 @@ mod tests {
                 repository_url: Some("git@github.com:acme/project.git".into()),
                 git_branch: Some("wt/cards".into()),
                 state: CodexSessionState::NeedsAttention,
+                is_compacting: false,
                 session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),

@@ -40,6 +40,9 @@ diesel::table! {
         tmux_session -> Text,
         pane_id -> Text,
         state -> Text,
+        is_compacting -> Bool,
+        pane_generation -> BigInt,
+        pane_sequence -> BigInt,
         session_start_source -> Nullable<Text>,
         received_at_unix_ms -> BigInt,
     }

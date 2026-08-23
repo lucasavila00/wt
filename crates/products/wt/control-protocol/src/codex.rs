@@ -31,6 +31,8 @@ pub struct CodexSessionObservation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
     pub state: CodexSessionState,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_compacting: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_start_source: Option<String>,
     pub target: ByobuTarget,
@@ -80,4 +82,8 @@ pub struct CodexSession {
 
 fn is_zero(value: &u64) -> bool {
     *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
