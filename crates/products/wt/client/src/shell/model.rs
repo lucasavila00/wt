@@ -259,29 +259,15 @@ impl ShellModel {
                     if self.has_worlds()
                         && self.control.activity() == super::control::Activity::Worlds
                     {
-                        match key.code {
-                            KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
-                                self.active = self.active.saturating_sub(2);
-                                return InputRoute::Consumed;
-                            }
-                            KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
-                                self.active = (self.active + 2).min(self.worlds.len() - 1);
-                                return InputRoute::Consumed;
-                            }
-                            KeyCode::Left if key.modifiers == KeyModifiers::NONE => {
-                                self.active = self.active.saturating_sub(1);
-                                return InputRoute::Consumed;
-                            }
-                            KeyCode::Right if key.modifiers == KeyModifiers::NONE => {
-                                self.active = (self.active + 1).min(self.worlds.len() - 1);
-                                return InputRoute::Consumed;
-                            }
-                            KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
-                                self.control.close();
-                                self.mode = Mode::World;
-                                return InputRoute::Consumed;
-                            }
-                            _ => {}
+                        if key.modifiers == KeyModifiers::NONE
+                            && self.move_world_grid_selection(key.code)
+                        {
+                            return InputRoute::Consumed;
+                        }
+                        if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
+                            self.control.close();
+                            self.mode = Mode::World;
+                            return InputRoute::Consumed;
                         }
                     }
                     if let Some(action) = self.control.handle_key(key, area) {
@@ -419,6 +405,7 @@ mod focus_tests;
 #[cfg(test)]
 #[path = "model_navbar_tests.rs"]
 mod navbar_tests;
+mod world_grid;
 
 #[cfg(test)]
 mod tests {

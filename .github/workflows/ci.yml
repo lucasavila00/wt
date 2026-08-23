@@ -24,11 +24,13 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install Node.js dependencies
-        run: npm ci
+        run: |
+          npm install --global npm@11.17.0
+          npm ci
 
       - name: Run checks
         run: make ci
