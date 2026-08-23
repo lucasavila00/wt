@@ -1,4 +1,4 @@
-# ADR 0074: Open world actions from a context menu
+# ADR 0075: Open world actions from a context menu
 
 - Status: Accepted
 - Date: 2026-08-23
