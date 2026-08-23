@@ -47,13 +47,16 @@ WT parses known session-start sources while preserving the raw value. The shell
 renders that value with an unknown state, for example `unknown(startup)`.
 Compaction is a transient phase, not a lifecycle state: it preserves the
 previous lifecycle state and the shell adds a `COMPACTING` indicator until
-`PostCompact` clears it.
+`PostCompact` clears it. Because hooks are best-effort, the indicator also
+expires two minutes after the latest report that started or continued
+compaction.
 
 The guest assigns the sequence under a per-pane file lock before it sends the
 report. A new session gets a new generation; later
-events from an older session retain their original generation. The registry
-accepts only a lexicographically newer `(generation, sequence)` for a pane, so
-delayed or duplicate old events cannot overwrite its replacement.
+events from a session that is no longer current receive sentinel generation
+zero. The registry accepts only a lexicographically newer `(generation,
+sequence)` for a pane, so delayed or duplicate old events cannot overwrite its
+replacement.
 
 Use the existing authenticated guest relay and vsock path. Its grant supplies
 `world_id`; the hook cannot choose it. Hooks are short-timeout and fail-open.

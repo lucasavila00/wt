@@ -1,6 +1,24 @@
 use super::*;
 use diesel::prelude::*;
+use wt_git_smart_protocol::validate_push;
 use wt_workload_registry::schema::worlds;
+
+#[test]
+fn push_scope_allows_only_prefixed_heads() {
+    let command = |reference: &str| {
+        let payload = format!(
+            "{} {} {}\0report-status\n",
+            "0".repeat(40),
+            "a".repeat(40),
+            reference
+        );
+        format!("{:04x}{payload}0000", payload.len() + 4).into_bytes()
+    };
+    let policy = WritePolicy::new("refs/heads/wt/", []).unwrap();
+    assert!(validate_push(&command("refs/heads/wt/fix"), &policy).is_ok());
+    assert!(validate_push(&command("refs/heads/fix"), &policy).is_err());
+    assert!(validate_push(&command("refs/tags/v1"), &policy).is_err());
+}
 
 #[test]
 fn parses_supported_sources_without_shell_syntax() {

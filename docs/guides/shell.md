@@ -74,7 +74,8 @@ and their focus helper is current.
 An unknown observation includes its raw Codex session-start source when one was
 reported, such as `unknown(startup)`. During Codex compaction, the shell keeps
 the observed lifecycle state and adds a `COMPACTING` indicator until the
-compaction completes.
+compaction completes. The indicator expires after two minutes if WT does not
+receive the completion hook.
 
 The experimental live-session activity uses the same observed sessions but
 shows each session's state and report age around the persistent live terminal
