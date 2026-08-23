@@ -232,6 +232,7 @@ fn development_tool_install_reports_individual_progress() {
     installing Rust and Cargo
     installing Node.js and nvm
     installing Python and uv
+    configuring Node.js command path
     configuring Docker for the retained-world user
     recording installed development-tool versions
     "###);

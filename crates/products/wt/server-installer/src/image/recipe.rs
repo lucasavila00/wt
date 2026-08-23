@@ -16,6 +16,7 @@ const DEVELOPMENT_TOOL_PACKAGES: &[&str] = &[
     "pkg-config",
     "docker.io",
     "docker-compose-v2",
+    "shellcheck",
 ];
 const DEVELOPMENT_TOOLS: &[&str] = &[
     "cargo",
@@ -25,6 +26,9 @@ const DEVELOPMENT_TOOLS: &[&str] = &[
     "nvm",
     "node",
     "npm",
+    "npx",
+    "corepack",
+    "shellcheck",
     "uv",
     "docker",
     "docker-compose",
@@ -389,6 +393,10 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
     #[test]
     fn development_tool_provenance_is_required_only_when_enabled() {
         let enabled = ImageRecipe::new(true);
+        let packages = enabled
+            .parse_package_versions(&package_output(&enabled))
+            .unwrap();
+        assert_eq!(packages["shellcheck"], "1:2.3-4");
         let tools = enabled
             .parse_development_tool_versions(
                 &DEVELOPMENT_TOOLS
