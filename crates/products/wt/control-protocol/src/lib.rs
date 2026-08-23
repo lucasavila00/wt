@@ -172,6 +172,8 @@ pub enum Response {
     },
     Instances {
         instances: Vec<Instance>,
+        #[serde(default, skip_serializing_if = "ResourceCapacity::is_empty")]
+        capacity: ResourceCapacity,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         disk_usage_bytes: std::collections::BTreeMap<Uuid, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -189,6 +191,44 @@ pub enum Response {
     Deleted {
         name: InstanceName,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Resources {
+    pub vcpus: u64,
+    pub memory_mib: u64,
+    pub disk_gib: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceCapacity {
+    pub reserved: Resources,
+    pub total: Resources,
+}
+
+impl ResourceCapacity {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn saturating_add(self, other: Self) -> Self {
+        Self {
+            reserved: self.reserved.saturating_add(other.reserved),
+            total: self.total.saturating_add(other.total),
+        }
+    }
+}
+
+impl Resources {
+    fn saturating_add(self, other: Self) -> Self {
+        Self {
+            vcpus: self.vcpus.saturating_add(other.vcpus),
+            memory_mib: self.memory_mib.saturating_add(other.memory_mib),
+            disk_gib: self.disk_gib.saturating_add(other.disk_gib),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

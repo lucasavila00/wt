@@ -238,7 +238,24 @@ fn draw_control(
             "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
-    frame.render_widget(Paragraph::new(hint).style(muted_style()), footer);
+    let capacity = wt_client::inventory::format_capacity(model.control().capacity());
+    let capacity_width = capacity
+        .as_ref()
+        .map_or(0, |text| {
+            u16::try_from(text.chars().count() + 1).unwrap_or(u16::MAX)
+        })
+        .min(footer.width);
+    let [hints, resources] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(capacity_width)]).areas(footer);
+    frame.render_widget(Paragraph::new(hint).style(muted_style()), hints);
+    if let Some(capacity) = capacity {
+        frame.render_widget(
+            Paragraph::new(capacity)
+                .alignment(Alignment::Right)
+                .style(muted_style()),
+            resources,
+        );
+    }
     draw_command_palette(frame, content, model.control().palette());
     if model.control().open_failed() {
         draw_codex_toast(frame, area, model.control());
