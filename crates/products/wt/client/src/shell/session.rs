@@ -88,7 +88,7 @@ impl SessionSet {
             .checked_add(1)
             .expect("shell session token overflow");
         let world = self.sessions[index].world.clone();
-        let control_path = self.sessions[index].control_path.clone();
+        let control_path = self.control_path_for(token);
         match WorldSession::start_ssh(token, &world, control_path, rows, columns, &self.sender) {
             Ok(session) => self.sessions[index] = session,
             Err(error) => {
@@ -139,7 +139,7 @@ impl SessionSet {
             .next_token
             .checked_add(1)
             .expect("shell session token overflow");
-        let control_path = self.control_dir.path().join(world.identity.id.to_string());
+        let control_path = self.control_path_for(token);
         self.sessions.push(WorldSession::start_ssh(
             token,
             world,
@@ -159,6 +159,10 @@ impl SessionSet {
 
     pub(super) fn control_path(&self, index: usize) -> &Path {
         &self.sessions[index].control_path
+    }
+
+    fn control_path_for(&self, token: u64) -> PathBuf {
+        self.control_dir.path().join(token.to_string())
     }
 
     pub(super) fn reconcile(
@@ -451,6 +455,20 @@ fn pty_size(rows: u16, columns: u16) -> PtySize {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn every_playback_attempt_gets_a_distinct_control_path() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let sessions = SessionSet {
+            sessions: Vec::new(),
+            control_dir: tempfile::tempdir().unwrap(),
+            events: Some(events),
+            sender,
+            next_token: 0,
+        };
+
+        assert_ne!(sessions.control_path_for(1), sessions.control_path_for(2));
+    }
 
     #[test]
     fn hidden_sessions_keep_running_and_parsing_output() {

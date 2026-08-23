@@ -30,8 +30,10 @@ stream can display several panes simultaneously.
 - At 400 terminal columns and wider, show four columns and up to four rows.
   Below 400 columns, show one card per row.
 - When exactly one openable Codex target belongs to a world, validate and focus
-  its reported tmux pane when the live activity is entered. The existing world
-  stream then follows that shared tmux selection.
+  its reported tmux pane through the playback connection's control socket when
+  the live activity is entered. The existing world stream then follows that
+  shared tmux selection. This uses the same readiness gate and forbids the same
+  network fallback as opening from the Codex activity.
 - Do not auto-focus a world with multiple openable Codex targets. Its cards
   render the same world stream with an explicit warning that the user must open
   one card to choose a pane.
