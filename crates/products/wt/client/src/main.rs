@@ -119,8 +119,18 @@ fn run() -> Result<()> {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
             let response = wt_client::transport::call(
                 context,
+                &ApiRequest::new(Operation::Get {
+                    name: world_name.clone(),
+                }),
+            )?;
+            let Response::Instance { instance } = response else {
+                bail!("helper returned the wrong response while resolving delete");
+            };
+            let response = wt_client::transport::call(
+                context,
                 &ApiRequest::new(Operation::Delete {
                     name: world_name.clone(),
+                    expected_id: instance.id,
                 }),
             )?;
             let Response::Deleted { .. } = response else {

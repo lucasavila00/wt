@@ -1,6 +1,6 @@
 # ADR 0068: Queue shell actions
 
-- Status: Proposed; Date: 2026-08-23
+- Status: Accepted; Date: 2026-08-23
 - Amends: [ADR 0052](0052-add-a-world-and-session-tui.md) and
   [ADR 0053](0053-use-a-shared-world-creation-form.md)
 
@@ -20,7 +20,9 @@ means queue it.
 `wt shell` owns one in-memory FIFO `ShellActionQueue`. Each entry is a typed,
 immutable intent with a never-reused local ID, stable user-facing goal, and
 enough stable identity to avoid retargeting deferred work. Forms and pickers
-build intents; confirmation enqueues them. They do not own work.
+build intents; confirmation enqueues them. The queue resolves an intent only
+when it reaches the head. Delete carries the world UUID, which the server checks
+before deleting a name.
 
 Create/delete world, open/focus a Codex session, and reconnect world playback
 are the initial actions. Future lifecycle, synchronization, update, helper-backed,
@@ -38,16 +40,17 @@ The event loop already owns shell state, sessions, input, and rendering. A
 worker or coordinator cannot know that those updates succeeded without a second
 acknowledgement protocol and duplicate queue state.
 
-No user command handler starts an ad-hoc worker. Read-only form preparation and
-picker queries use their own background workers and never block the UI.
+No user command handler starts an ad-hoc worker. Inputs needed to open a form are
+loaded before the event loop; later I/O runs in workers.
 
 ### Presentation and recovery
 
 The queue is the only progress lifecycle. Its shared view shows the active goal
 and phase followed by waiting goals in FIFO order. A queued action can be
-removed. Each action defines its failure and cancellation behavior before it is
-added. Failed or uncertain work is never replayed automatically; it blocks the
-head until recovery or explicit discard completes.
+removed with its following tail. Each action defines its failure and cancellation
+behavior before it is added. Terminal failure, uncertainty, or cancellation
+clears the active action and its old tail; WT never replays them automatically.
+Entries added after cancellation begins form a new queue.
 
 An active action is cancellable only when it has end-to-end cancellation and
 acknowledgement. Provisioning does not yet have that contract, so closing its

@@ -1,3 +1,4 @@
+use super::clipboard::ClipboardRelay;
 use super::model::ShellWorld;
 use anyhow::{Context as _, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -20,6 +21,30 @@ pub(super) struct SessionSet {
     events: Option<Receiver<SessionEvent>>,
     sender: SyncSender<SessionEvent>,
     next_token: u64,
+}
+
+pub(super) struct StartTask {
+    identity: super::model::WorldIdentity,
+    result: Receiver<Result<WorldSession, String>>,
+}
+
+pub(super) struct StartedSession(WorldSession);
+
+impl StartTask {
+    pub(super) fn poll(&self) -> Option<Result<StartedSession, String>> {
+        match self.result.try_recv() {
+            Ok(Ok(session)) => Some(Ok(StartedSession(session))),
+            Ok(Err(error)) => Some(Err(error)),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Some(Err("world session worker stopped unexpectedly".into()))
+            }
+        }
+    }
+
+    pub(super) fn identity(&self) -> &super::model::WorldIdentity {
+        &self.identity
+    }
 }
 
 impl SessionSet {
@@ -81,21 +106,85 @@ impl SessionSet {
         self.sessions[index].closed_message.as_deref()
     }
 
-    pub(super) fn restart(&mut self, index: usize, rows: u16, columns: u16) {
+    pub(super) fn start_reconnect(
+        &mut self,
+        index: usize,
+        rows: u16,
+        columns: u16,
+    ) -> Result<StartTask> {
+        let world = self.sessions[index].world.clone();
+        self.start_world(&world, rows, columns)
+    }
+
+    pub(super) fn start_world(
+        &mut self,
+        world: &ShellWorld,
+        rows: u16,
+        columns: u16,
+    ) -> Result<StartTask> {
         let token = self.next_token;
         self.next_token = self
             .next_token
             .checked_add(1)
             .expect("shell session token overflow");
-        let world = self.sessions[index].world.clone();
+        let world = world.clone();
+        let identity = world.identity.clone();
         let control_path = self.control_path_for(token);
-        match WorldSession::start_ssh(token, &world, control_path, rows, columns, &self.sender) {
-            Ok(session) => self.sessions[index] = session,
-            Err(error) => {
-                self.sessions[index].closed_message =
-                    Some(format!("SSH reconnect failed: {error:#}"));
-            }
+        let output_sender = self.sender.clone();
+        let (sender, result) = mpsc::channel();
+        thread::Builder::new()
+            .name(format!("wt-shell-reconnect-{}", world.name))
+            .spawn(move || {
+                let started = WorldSession::start_ssh(
+                    token,
+                    &world,
+                    control_path.clone(),
+                    rows,
+                    columns,
+                    &output_sender,
+                )
+                .and_then(|mut session| {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+                    match super::codex::wait_for_control_master(
+                        &world.name,
+                        &control_path,
+                        deadline,
+                    ) {
+                        Ok(()) => Ok(session),
+                        Err(error) => {
+                            session.stop_without_joining_reader();
+                            Err(error)
+                        }
+                    }
+                })
+                .map_err(|error| format!("{error:#}"));
+                let _ = sender.send(started);
+            })?;
+        Ok(StartTask { identity, result })
+    }
+
+    pub(super) fn finish_reconnect(
+        &mut self,
+        identity: &super::model::WorldIdentity,
+        started: StartedSession,
+    ) -> bool {
+        let Some(index) = self
+            .sessions
+            .iter()
+            .position(|session| &session.world.identity == identity)
+        else {
+            return false;
+        };
+        self.sessions[index] = started.0;
+        true
+    }
+
+    pub(super) fn finish_add(&mut self, started: StartedSession) -> bool {
+        if self.world_index(&started.0.world).is_some() {
+            return false;
         }
+        self.sessions.push(started.0);
+        true
     }
 
     pub(super) fn write(&mut self, index: usize, bytes: &[u8]) -> Result<()> {
@@ -315,73 +404,6 @@ impl WorldSession {
         self.master.take();
         self.reader.take();
     }
-}
-
-#[derive(Default)]
-struct ClipboardRelay {
-    sequence: Vec<u8>,
-    state: ClipboardRelayState,
-}
-
-#[derive(Default)]
-enum ClipboardRelayState {
-    #[default]
-    Ground,
-    Escape,
-    Osc,
-}
-
-impl ClipboardRelay {
-    fn process(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
-        let mut writes = Vec::new();
-        for &byte in bytes {
-            match self.state {
-                ClipboardRelayState::Ground if byte == b'\x1b' => {
-                    self.sequence.push(byte);
-                    self.state = ClipboardRelayState::Escape;
-                }
-                ClipboardRelayState::Ground => {}
-                ClipboardRelayState::Escape if byte == b']' => {
-                    self.sequence.push(byte);
-                    self.state = ClipboardRelayState::Osc;
-                }
-                ClipboardRelayState::Escape if byte == b'\x1b' => {
-                    self.sequence.clear();
-                    self.sequence.push(byte);
-                }
-                ClipboardRelayState::Escape => {
-                    self.sequence.clear();
-                    self.state = ClipboardRelayState::Ground;
-                }
-                ClipboardRelayState::Osc => {
-                    self.sequence.push(byte);
-                    let terminated = byte == b'\x07'
-                        || (byte == b'\\'
-                            && self.sequence.get(self.sequence.len().saturating_sub(2))
-                                == Some(&b'\x1b'));
-                    if terminated {
-                        if is_clipboard_write(&self.sequence) {
-                            writes.push(std::mem::take(&mut self.sequence));
-                        } else {
-                            self.sequence.clear();
-                        }
-                        self.state = ClipboardRelayState::Ground;
-                    }
-                }
-            }
-        }
-        writes
-    }
-}
-
-fn is_clipboard_write(sequence: &[u8]) -> bool {
-    let Some(body) = sequence.strip_prefix(b"\x1b]52;") else {
-        return false;
-    };
-    let Some(separator) = body.iter().position(|byte| *byte == b';') else {
-        return false;
-    };
-    !body[separator + 1..].starts_with(b"?")
 }
 
 impl Drop for WorldSession {

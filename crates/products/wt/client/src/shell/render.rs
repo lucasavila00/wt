@@ -21,7 +21,7 @@ pub(super) fn draw(
     closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
-    creation_error: Option<&str>,
+    action_error: Option<&str>,
     deletion: Option<&delete::Flow>,
 ) {
     if model.mode() == Mode::Control {
@@ -33,17 +33,14 @@ pub(super) fn draw(
     }
     if model.mode() == Mode::Control {
         draw_control(frame, screens, live_focus, model, creation);
-        if let Some(error) = creation_error {
-            draw_creation_error(frame, error);
+        if let Some(error) = action_error {
+            draw_action_error(frame, error);
         }
-        if let Some(deletion) = deletion.filter(|flow| flow.blocks_input()) {
+        if let Some(deletion) = deletion {
             deletion.render(frame, frame.area());
         }
         if let Some(creation) = creation {
             creation.render_progress(frame, frame.area());
-        }
-        if let Some(deletion) = deletion {
-            deletion.render_progress(frame, frame.area());
         }
         draw_test_server_banner(frame, model);
         return;
@@ -63,14 +60,11 @@ pub(super) fn draw(
         }
     }
     draw_command_palette(frame, world, model.control().palette());
-    if let Some(error) = creation_error {
-        draw_creation_error(frame, error);
-    }
-    if let Some(deletion) = deletion.filter(|flow| flow.blocks_input()) {
-        deletion.render(frame, frame.area());
+    if let Some(error) = action_error {
+        draw_action_error(frame, error);
     }
     if let Some(deletion) = deletion {
-        deletion.render_progress(frame, frame.area());
+        deletion.render(frame, frame.area());
     }
     match model.mode() {
         Mode::World if closed_message.is_none() => {
@@ -109,7 +103,7 @@ fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
         Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
     );
 }
-fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
+fn draw_action_error(frame: &mut Frame<'_>, error: &str) {
     let outer = frame.area();
     let width = 70.min(outer.width);
     let height = 12.min(outer.height);
@@ -126,7 +120,7 @@ fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
             .block(
                 Block::new()
                     .borders(Borders::ALL)
-                    .title("World creation unavailable")
+                    .title("Action failed")
                     .title_bottom(" Enter/Esc close "),
             ),
         area,
