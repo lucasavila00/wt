@@ -143,6 +143,8 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
         .press(Key::Enter)?
         .wait_for_text("Waiting for the guest transport...")?
         .wait_for_text("local.background")?
+        .click(97, 1)?
+        .wait_for_text_gone("Waiting for the guest transport...")?
         .wait_for_text("PROVISIONING")?
         .wait_for_text("Creation in progress")?;
     Ok(())

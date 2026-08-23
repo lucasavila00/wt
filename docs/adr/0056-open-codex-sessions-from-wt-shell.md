@@ -3,7 +3,8 @@
 - Status: Proposed
 - Date: 2026-08-21
 
-The Codex activity renders one selectable card per observed session location.
+The Codex activity renders one selectable card per observed session location in
+a two-column grid.
 Identity includes context, session, world, tmux session, and pane. Cards sort by
 state, timestamp, and complete identity. Disabled and context-error cards state
 why they cannot open.

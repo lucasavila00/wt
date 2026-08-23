@@ -4,6 +4,24 @@ WT development requires Ubuntu 24.04 amd64, KVM, `sudo`, Git, OpenSSH client
 and server, and stable Rust through rustup. Run setup as a normal user, never
 as root.
 
+## Install development dependencies
+
+Install system dependencies with apt, but install Node.js and npm with nvm:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y shellcheck libvirt-dev
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm install
+nvm use
+npm ci
+```
+
+The repository pins Node.js `24.19.0` in `.nvmrc` and npm `11.17.0` in
+`package.json`. Do not install Node.js or npm with apt.
+
 ## Prepare a fresh server
 
 From a root shell in a WT checkout:

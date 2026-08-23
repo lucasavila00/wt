@@ -1,6 +1,11 @@
 {
   "name": "wt",
   "private": true,
+  "packageManager": "npm@11.17.0",
+  "engines": {
+    "node": "24.19.0",
+    "npm": "11.17.0"
+  },
   "workspaces": ["crates/products/agent-tools/tools/typescript"],
   "scripts": {
     "check:typescript": "npm run check --workspaces"
