@@ -2,7 +2,7 @@ use super::control::{card_grid_rects, card_grid_visible, control_content_areas, 
 use super::model::ShellModel;
 use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
-use ratatui::layout::{Alignment, Margin, Rect};
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -35,7 +35,7 @@ pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
 
 fn card_size(area: Rect, count: usize) -> Option<(u16, u16)> {
     let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
+    let viewport = body;
     if viewport.is_empty() {
         return None;
     }
@@ -62,17 +62,12 @@ pub(super) fn draw(
     model: &ShellModel,
 ) {
     let state = model.control();
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title("Live sessions · Experimental");
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
     let cards = state.live_codex();
     if cards.is_empty() {
         frame.render_widget(
             Paragraph::new("No live Codex sessions\nStart Codex in a world to see its pane here")
                 .alignment(Alignment::Center),
-            inner,
+            area,
         );
         return;
     }
@@ -157,8 +152,8 @@ mod tests {
         let area = Rect::new(0, 0, 100, 30);
         let rects = card_rects(area, 0, 6);
         assert_eq!(columns(area), 2);
-        assert_eq!(visible(area), 4);
-        assert_eq!(rects.len(), 4);
+        assert_eq!(visible(area), 6);
+        assert_eq!(rects.len(), 6);
         assert_eq!(rects[0].1.y, rects[1].1.y);
         assert_eq!(rects[1].1.x, rects[0].1.right());
         assert_eq!(rects[2].1.y, rects[0].1.bottom());

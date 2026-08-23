@@ -33,7 +33,9 @@ the workstation clipboard through `wt shell`.
 
 `wt shell` opens in the Control UI with Codex sessions selected. `Tab` cycles
 through Codex sessions, Worlds, and the experimental live-session activity.
-`F5` opens the active world when one is available.
+`F5` opens the active world when one is available. The active activity and its
+refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
+help menu; `Esc` closes it.
 
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
@@ -51,12 +53,13 @@ Cards show activity, title, repository, branch, working directory, context,
 world, Byobu target, session, and report age. Inactive and saved-session cards
 explain why they cannot open.
 Malformed context data remains visible as an exact error. Failed context
-queries leave existing cards intact and show the query error in the Codex title
+queries leave existing cards intact and show the query error in the Codex footer
 beside the last successful update time. Failed pane-open checks leave existing
 cards intact and show a persistent, sanitized notification with a bold,
 clickable `Retry` action; `Enter` retries and `Esc` dismisses it. WT does not
-guess another world or pane. The Worlds and Codex titles show when their latest
-snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
+guess another world or pane. The Worlds and Codex footer labels show when their
+latest snapshot was applied in UTC, or `Updating…` before the first snapshot
+arrives.
 
 Opening requires worlds provisioned by a WT version containing this feature.
 After upgrading WT, recreate older worlds so their relay records pane markers
