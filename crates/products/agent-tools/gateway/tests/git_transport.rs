@@ -210,18 +210,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `wt/fix`"));
     assert_ref(&upstream, "refs/heads/wt/fix", false);
 
-    let updates = registry
-        .list_git_activity(
-            "alice",
-            wt_workload_registry::GitActivityQuery::Branch {
-                provider_host: "local.test".into(),
-                repository: "project".into(),
-                branch: "wt/fix".into(),
-                before_id: None,
-            },
-        )
-        .unwrap();
-    assert_eq!(updates.len(), 4);
+    let updates = wait_for_branch_updates(&registry, 4);
     assert_eq!(updates[0].world_id, second_world);
     assert_eq!(
         updates[0].new_oid.as_deref(),
@@ -395,6 +384,35 @@ fn assert_ref(repository: &Path, reference: &str, exists: bool) {
         .output()
         .unwrap();
     assert_eq!(output.status.success(), exists, "{reference}");
+}
+
+fn wait_for_branch_updates(
+    registry: &wt_workload_registry::Registry,
+    expected_count: usize,
+) -> Vec<wt_workload_registry::GitActivity> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let updates = registry
+            .list_git_activity(
+                "alice",
+                wt_workload_registry::GitActivityQuery::Branch {
+                    provider_host: "local.test".into(),
+                    repository: "project".into(),
+                    branch: "wt/fix".into(),
+                    before_id: None,
+                },
+            )
+            .unwrap();
+        if updates.len() == expected_count {
+            return updates;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {expected_count} branch updates; found {}",
+            updates.len()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn git_stdout(directory: &Path, args: &[&str]) -> String {
