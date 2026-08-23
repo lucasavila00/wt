@@ -64,6 +64,11 @@ pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize,
     let columns = columns(area);
     let visible = visible(area);
     let (height, width) = card_size(area).unwrap_or((1, 1));
+    let content_rows = count.div_ceil(columns);
+    let viewport_rows = visible.div_ceil(columns).max(1);
+    let viewport_right = viewport
+        .right()
+        .saturating_sub(u16::from(content_rows > viewport_rows));
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(row, index)| {
@@ -76,7 +81,7 @@ pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize,
                 Rect::new(
                     x,
                     y,
-                    width.min(viewport.right().saturating_sub(x)),
+                    width.min(viewport_right.saturating_sub(x)),
                     height.min(viewport.bottom().saturating_sub(y)),
                 ),
             )
@@ -106,6 +111,17 @@ pub(super) fn draw(
         );
         return;
     }
+    let columns = columns(frame.area());
+    let content_rows = cards.len().div_ceil(columns);
+    let viewport_rows = visible(frame.area()).div_ceil(columns).max(1);
+    super::scrollbar::render(
+        frame,
+        super::scrollbar::area(frame.area()),
+        content_rows,
+        viewport_rows,
+        state.codex_offset() / columns,
+        muted_style(),
+    );
     for (index, rect) in card_rects(frame.area(), state.codex_offset(), cards.len()) {
         let card = cards[index];
         let (title, title_color) = card_title(card);

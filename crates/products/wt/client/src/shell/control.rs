@@ -593,6 +593,7 @@ fn session_card_rects(
         return Vec::new();
     }
     let visible = usize::from(viewport.height.div_ceil(card_height));
+    let width = viewport.width.saturating_sub(u16::from(count > visible));
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(row, index)| {
@@ -601,7 +602,7 @@ fn session_card_rects(
                 Rect::new(
                     viewport.x,
                     viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * card_height,
-                    viewport.width,
+                    width,
                     card_height.min(
                         viewport
                             .bottom()
@@ -621,6 +622,7 @@ pub(super) fn world_card_rects(area: Rect, selected: usize, count: usize) -> Vec
     }
     let visible = usize::from(viewport.height.div_ceil(WORLD_CARD_HEIGHT)).max(1);
     let offset = selected / visible * visible;
+    let width = viewport.width.saturating_sub(u16::from(count > visible));
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(row, index)| {
@@ -630,7 +632,7 @@ pub(super) fn world_card_rects(area: Rect, selected: usize, count: usize) -> Vec
                 Rect::new(
                     viewport.x,
                     y,
-                    viewport.width,
+                    width,
                     WORLD_CARD_HEIGHT.min(viewport.bottom().saturating_sub(y)),
                 ),
             )
@@ -655,12 +657,7 @@ fn codex_visible_cards(area: Rect, activity: Activity) -> usize {
     if activity == Activity::Live {
         return super::live::visible(area);
     }
-    let (body, _) = control_content_areas(area);
-    usize::from(
-        body.inner(Margin::new(1, 1))
-            .height
-            .div_ceil(CODEX_CARD_HEIGHT),
-    )
+    super::scrollbar::viewport_rows(area, CODEX_CARD_HEIGHT)
 }
 
 fn session_card_at_position(

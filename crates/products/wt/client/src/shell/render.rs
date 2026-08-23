@@ -315,6 +315,16 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         return;
     }
     let count = model.world_count() + usize::from(creating.is_some());
+    let viewport =
+        super::scrollbar::viewport_rows(frame.area(), super::control::WORLD_CARD_HEIGHT).max(1);
+    super::scrollbar::render(
+        frame,
+        super::scrollbar::area(frame.area()),
+        count,
+        viewport,
+        model.active() / viewport * viewport,
+        muted_style(),
+    );
     for (index, rect) in world_card_rects(frame.area(), model.active(), count) {
         if let Some((name, resources)) = creating.filter(|_| index == model.world_count()) {
             draw_world_card(
@@ -407,6 +417,16 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), inner);
         return;
     }
+    let viewport =
+        super::scrollbar::viewport_rows(frame.area(), super::control::CODEX_CARD_HEIGHT).max(1);
+    super::scrollbar::render(
+        frame,
+        super::scrollbar::area(frame.area()),
+        state.codex().len(),
+        viewport,
+        state.codex_offset(),
+        muted_style(),
+    );
     for (index, rect) in codex_card_rects(frame.area(), state.codex_offset(), state.codex().len()) {
         let card = &state.codex()[index];
         draw_codex_card(

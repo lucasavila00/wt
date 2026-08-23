@@ -27,11 +27,11 @@ mod model;
 mod refresh;
 mod refresh_status;
 mod render;
+mod scrollbar;
 mod session;
 mod terminal_view;
 mod toast;
 mod world_card;
-
 use control::ControlCommand;
 use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
