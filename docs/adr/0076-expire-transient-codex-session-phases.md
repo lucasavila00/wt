@@ -29,6 +29,9 @@ explicitly starts or continues the phase. Expiry is derived when reports are
 read; it does not require cleanup writes or a database migration, and existing
 stuck observations converge automatically.
 
+Deployment uses the normal `make clear` runtime reset, so hook-order files from
+the earlier generation format are not migrated.
+
 Pane generations remain the causal fence for lifecycle events. A session that
 returns to a pane receives a new generation, so current completion events are
 not rejected merely because the same session UUID occupied that pane before.
