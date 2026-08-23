@@ -401,16 +401,14 @@ fn install_services(
         cmd!("sudo", "systemctl", "daemon-reload"),
         "reload systemd units",
     )?;
-    for name in ["wts.service"] {
-        runner.run(
-            cmd!("sudo", "systemctl", "enable", name),
-            &format!("enable {name}"),
-        )?;
-        runner.run(
-            cmd!("sudo", "systemctl", "restart", name),
-            &format!("restart {name}"),
-        )?;
-    }
+    runner.run(
+        cmd!("sudo", "systemctl", "enable", "wts.service"),
+        "enable wts.service",
+    )?;
+    runner.run(
+        cmd!("sudo", "systemctl", "restart", "wts.service"),
+        "restart wts.service",
+    )?;
     Ok(())
 }
 
