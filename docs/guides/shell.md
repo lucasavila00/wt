@@ -40,8 +40,9 @@ help menu; `Esc` closes it.
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
 background. All activities use a two-column card grid. Arrow keys select cards,
-the mouse wheel scrolls them by row, and `Enter` or left click opens the selected
-world or live Codex pane. Opening a Codex pane uses a short control SSH
+the mouse wheel scrolls the grid by one terminal row without changing selection,
+and `Enter` or left click opens the selected world or live Codex pane. Opening a
+Codex pane uses a short control SSH
 connection; it does not replace any world's playback connection.
 
 World creation and deletion continue in the background after their forms are
@@ -66,7 +67,9 @@ After upgrading WT, recreate older worlds so their relay records pane markers
 and their focus helper is current.
 
 An unknown observation includes its raw Codex session-start source when one was
-reported, such as `unknown(compact)`.
+reported, such as `unknown(startup)`. During Codex compaction, the shell keeps
+the observed lifecycle state and adds a `COMPACTING` indicator until the
+compaction completes.
 
 The experimental live-session activity uses the same observed sessions but
 shows each session's state and report age around the persistent live terminal

@@ -1,4 +1,5 @@
 use super::*;
+use crate::CodexSessionStartSourceKind;
 
 impl Gateway {
     pub fn open(config: GatewayConfig) -> Result<Self> {
@@ -96,13 +97,33 @@ impl Gateway {
         grant: &GrantRecord,
     ) -> Result<()> {
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        let state = match event.kind {
-            CodexSessionEventKind::SessionStart => wt_workload_registry::CodexSessionState::Unknown,
-            CodexSessionEventKind::UserPromptSubmit => {
-                wt_workload_registry::CodexSessionState::Working
+        let (state, is_compacting) = match event.kind {
+            CodexSessionEventKind::SessionStart
+                if event
+                    .session_start_source
+                    .as_ref()
+                    .is_some_and(|source| source.kind == CodexSessionStartSourceKind::Compact) =>
+            {
+                (None, Some(true))
             }
-            CodexSessionEventKind::Stop => wt_workload_registry::CodexSessionState::NeedsAttention,
-            CodexSessionEventKind::SessionEnd => wt_workload_registry::CodexSessionState::Inactive,
+            CodexSessionEventKind::SessionStart => (
+                Some(wt_workload_registry::CodexSessionState::Unknown),
+                Some(false),
+            ),
+            CodexSessionEventKind::PreCompact => (None, Some(true)),
+            CodexSessionEventKind::PostCompact => (None, Some(false)),
+            CodexSessionEventKind::UserPromptSubmit => (
+                Some(wt_workload_registry::CodexSessionState::Working),
+                Some(false),
+            ),
+            CodexSessionEventKind::Stop => (
+                Some(wt_workload_registry::CodexSessionState::NeedsAttention),
+                Some(false),
+            ),
+            CodexSessionEventKind::SessionEnd => (
+                Some(wt_workload_registry::CodexSessionState::Inactive),
+                Some(false),
+            ),
         };
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
@@ -116,12 +137,16 @@ impl Gateway {
                 tmux_session: &event.tmux_session,
                 pane_id: &event.pane_id,
                 state,
+                is_compacting,
+                pane_generation: event.pane_generation,
+                pane_sequence: event.pane_sequence,
                 session_start_source: event
                     .session_start_source
                     .as_ref()
                     .map(|source| source.raw.as_str()),
             })
             .context("store Codex session report")
+            .map(|_| ())
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {

@@ -1,5 +1,7 @@
 use super::super::refresh_status::RefreshStatus;
-use super::layout::{codex_visible_cards, session_card_at_position, CARD_COLUMNS};
+use super::layout::{
+    card_grid, codex_card_grid, session_card_at_position, CARD_COLUMNS, WORLD_CARD_HEIGHT,
+};
 use super::{
     command_palette_layout, control_areas, Activity, CodexCard, CodexCardIdentity, CodexOpenTarget,
     CommandPalette, ControlAction, Help,
@@ -15,7 +17,9 @@ pub(in crate::shell) struct ControlState {
     help: Help,
     pub(super) codex: Vec<CodexCard>,
     pub(super) selected: Option<CodexCardIdentity>,
-    codex_offset: usize,
+    codex_scroll: usize,
+    world_scroll: usize,
+    scrollbar_drag: Option<Activity>,
     pub(in crate::shell) opening: Option<CodexCardIdentity>,
     pub(in crate::shell) open_failure: Option<CodexOpenTarget>,
     worlds_refresh: RefreshStatus,
@@ -31,7 +35,9 @@ impl Default for ControlState {
             help: Help::default(),
             codex: Vec::new(),
             selected: None,
-            codex_offset: 0,
+            codex_scroll: 0,
+            world_scroll: 0,
+            scrollbar_drag: None,
             opening: None,
             open_failure: None,
             worlds_refresh: RefreshStatus::default(),
@@ -92,8 +98,12 @@ impl ControlState {
         self.worlds_refresh.finish(result);
     }
 
-    pub(in crate::shell) fn codex_offset(&self) -> usize {
-        self.codex_offset
+    pub(in crate::shell) fn codex_scroll(&self) -> usize {
+        self.codex_scroll
+    }
+
+    pub(in crate::shell) fn world_scroll(&self) -> usize {
+        self.world_scroll
     }
 
     pub(in crate::shell) fn opening(&self) -> Option<&CodexCardIdentity> {
@@ -139,6 +149,39 @@ impl ControlState {
 
     pub(in crate::shell) fn resize(&mut self, area: Rect) {
         self.keep_codex_selection_visible(area);
+    }
+
+    pub(in crate::shell) fn scroll_worlds(&mut self, delta: isize, area: Rect, count: usize) {
+        let maximum = card_grid(area, self.world_scroll, count, WORLD_CARD_HEIGHT).maximum_scroll();
+        self.world_scroll = self.world_scroll.saturating_add_signed(delta).min(maximum);
+    }
+
+    pub(in crate::shell) fn keep_world_selection_visible(
+        &mut self,
+        area: Rect,
+        selected: usize,
+        count: usize,
+    ) {
+        self.world_scroll = reveal_card(
+            self.world_scroll,
+            selected,
+            card_grid(area, self.world_scroll, count, WORLD_CARD_HEIGHT),
+            WORLD_CARD_HEIGHT,
+            super::layout::CARD_GAP,
+        );
+    }
+
+    pub(in crate::shell) fn handle_world_scrollbar(
+        &mut self,
+        mouse: MouseEvent,
+        area: Rect,
+        count: usize,
+    ) -> bool {
+        if self.palette.is_open() || self.help.is_open() || self.open_failure.is_some() {
+            return false;
+        }
+        let maximum = card_grid(area, self.world_scroll, count, WORLD_CARD_HEIGHT).maximum_scroll();
+        self.handle_scrollbar(mouse, area, Activity::Worlds, maximum)
     }
 
     pub(in crate::shell) fn handle_key(
@@ -215,13 +258,28 @@ impl ControlState {
                 return (true, None);
             }
         }
+        if self.activity != Activity::Worlds
+            && !self.palette.is_open()
+            && self.open_failure.is_none()
+        {
+            let maximum = codex_card_grid(
+                area,
+                self.activity,
+                self.codex_scroll,
+                self.visible_codex_len(),
+            )
+            .maximum_scroll();
+            if self.handle_scrollbar(mouse, area, self.activity, maximum) {
+                return (true, None);
+            }
+        }
         match mouse.kind {
             MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
-                self.move_codex(-(super::super::live::columns(area) as isize), area);
+                self.scroll_codex(-1, area);
                 return (true, None);
             }
             MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
-                self.move_codex(super::super::live::columns(area) as isize, area);
+                self.scroll_codex(1, area);
                 return (true, None);
             }
             MouseEventKind::Down(MouseButton::Left) => {}
@@ -267,7 +325,7 @@ impl ControlState {
             if let Some(index) = session_card_at_position(
                 area,
                 self.activity,
-                self.codex_offset,
+                self.codex_scroll,
                 self.visible_codex_len(),
                 mouse.column,
                 mouse.row,
@@ -318,51 +376,96 @@ impl ControlState {
             .saturating_add_signed(delta)
             .min(identities.len().saturating_sub(1));
         self.selected = Some(identities[selected].clone());
-        let visible = codex_visible_cards(area, self.activity).max(1);
-        if self.activity != Activity::Worlds {
-            let columns = CARD_COLUMNS;
-            if selected < self.codex_offset {
-                self.codex_offset = selected / columns * columns;
-            } else if selected >= self.codex_offset.saturating_add(visible) {
-                self.codex_offset = (selected / columns + 1 - visible / columns) * columns;
-            }
-            return;
-        }
-        if selected < self.codex_offset {
-            self.codex_offset = selected;
-        } else if selected >= self.codex_offset.saturating_add(visible) {
-            self.codex_offset = selected + 1 - visible;
-        }
+        self.keep_codex_selection_visible(area);
     }
 
     fn keep_codex_selection_visible(&mut self, area: Rect) {
         let identities = self.visible_codex_identities();
-        let visible = codex_visible_cards(area, self.activity).max(1);
-        self.codex_offset = self
-            .codex_offset
-            .min(identities.len().saturating_sub(visible));
+        let grid = codex_card_grid(area, self.activity, self.codex_scroll, identities.len());
+        self.codex_scroll = self.codex_scroll.min(grid.maximum_scroll());
         let Some(selected) = self
             .selected
             .as_ref()
             .and_then(|selected| identities.iter().position(|identity| identity == selected))
         else {
-            self.codex_offset = 0;
+            self.codex_scroll = 0;
             return;
         };
-        if self.activity != Activity::Worlds {
-            let columns = CARD_COLUMNS;
-            self.codex_offset -= self.codex_offset % columns;
-            if selected < self.codex_offset {
-                self.codex_offset = selected / columns * columns;
-            } else if selected >= self.codex_offset.saturating_add(visible) {
-                self.codex_offset = (selected / columns + 1 - visible / columns) * columns;
-            }
-            return;
+        let (height, gap) = if self.activity == Activity::Live {
+            (
+                super::super::live::CARD_HEIGHT,
+                super::super::live::CARD_GAP,
+            )
+        } else {
+            (super::layout::CODEX_CARD_HEIGHT, super::layout::CARD_GAP)
+        };
+        self.codex_scroll = reveal_card(self.codex_scroll, selected, grid, height, gap);
+    }
+
+    fn scroll_codex(&mut self, delta: isize, area: Rect) {
+        let count = self.visible_codex_len();
+        let maximum =
+            codex_card_grid(area, self.activity, self.codex_scroll, count).maximum_scroll();
+        self.codex_scroll = self.codex_scroll.saturating_add_signed(delta).min(maximum);
+    }
+
+    fn handle_scrollbar(
+        &mut self,
+        mouse: MouseEvent,
+        area: Rect,
+        activity: Activity,
+        maximum: usize,
+    ) -> bool {
+        if mouse.kind == MouseEventKind::Up(MouseButton::Left)
+            && self.scrollbar_drag == Some(activity)
+        {
+            self.scrollbar_drag = None;
+            return true;
         }
-        if selected < self.codex_offset {
-            self.codex_offset = selected;
-        } else if selected >= self.codex_offset.saturating_add(visible) {
-            self.codex_offset = selected + 1 - visible;
+        let dragging = mouse.kind == MouseEventKind::Drag(MouseButton::Left)
+            && self.scrollbar_drag == Some(activity);
+        let pressed = mouse.kind == MouseEventKind::Down(MouseButton::Left);
+        if !dragging && !pressed {
+            return false;
         }
+        let position = if dragging {
+            super::super::scrollbar::drag_position(area, mouse.row, maximum)
+        } else {
+            let Some(position) =
+                super::super::scrollbar::position_at(area, mouse.column, mouse.row, maximum)
+            else {
+                return false;
+            };
+            position
+        };
+        if pressed {
+            self.scrollbar_drag = Some(activity);
+        }
+        if activity == Activity::Worlds {
+            self.world_scroll = position;
+        } else {
+            self.codex_scroll = position;
+        }
+        true
+    }
+}
+
+fn reveal_card(
+    scroll: usize,
+    index: usize,
+    grid: super::layout::CardGrid,
+    height: u16,
+    gap: u16,
+) -> usize {
+    let top = index / CARD_COLUMNS * usize::from(height + gap);
+    let bottom = top.saturating_add(usize::from(height));
+    if top < scroll {
+        top
+    } else if bottom > scroll.saturating_add(usize::from(grid.viewport.height)) {
+        bottom
+            .saturating_sub(usize::from(grid.viewport.height))
+            .min(grid.maximum_scroll())
+    } else {
+        scroll.min(grid.maximum_scroll())
     }
 }

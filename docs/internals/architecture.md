@@ -43,11 +43,9 @@ handling shared by the regular WT and standalone Git proxy installers.
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
-The installer optionally builds a developer-tool image variant through
-`image.development_tools`; it is not a runtime world setting. The default and
-KVM E2E image remain narrow, while an opted-in image owns current language
+The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved
-versions.
+versions. This is not a runtime world setting.
 
 Provisioning is intentionally restart-only. WT does not resume an interrupted
 sequence or repair partial guest state. Remove a failed world and create it

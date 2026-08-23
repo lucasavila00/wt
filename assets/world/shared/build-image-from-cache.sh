@@ -16,35 +16,8 @@ phase() {
     echo "WT_IMAGE_PHASE=$*" > /dev/ttyS0
 }
 
-phase "installing base operating-system packages"
-/bin/sh /var/tmp/wt-install-packages.sh \
-    openssh-server qemu-guest-agent tmux \
-    bison build-essential curl libevent-dev libncurses-dev pkg-config
-
-phase "configuring base operating-system services"
-systemctl enable --now qemu-guest-agent.service
-systemctl disable --now ssh.service ssh.socket
-if ! getent group "$WT_GROUP" >/dev/null; then
-    groupadd --gid "$WT_GID" "$WT_GROUP"
-fi
-if ! id "$WT_USER" >/dev/null 2>&1; then
-    useradd --uid "$WT_UID" --gid "$WT_GROUP" --create-home \
-        --home-dir "$WT_HOME" --shell /bin/bash "$WT_USER"
-fi
-test "$(id -u "$WT_USER")" = "$WT_UID"
-test "$(id -g "$WT_USER")" = "$WT_GID"
-test "$(getent passwd "$WT_USER" | cut -d: -f6)" = "$WT_HOME"
-printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
-sysctl --system
-test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
-
-if test "$WT_DEVELOPMENT_TOOLS" = true; then
-    phase "installing development packages (build tools, CLI utilities, and Docker)"
-    /bin/sh /var/tmp/wt-install-packages.sh \
-        bison build-essential cmake clang curl wget jq yq pkg-config \
-        docker.io docker-compose-v2 shellcheck
-    /bin/sh /var/tmp/wt-install-development-tools.sh
-fi
+phase "installing terminal build dependencies"
+/bin/sh /var/tmp/wt-install-packages.sh libevent-dev libncurses-dev
 
 phase "installing terminal tools"
 /bin/sh /var/tmp/wt-install-terminal.sh
@@ -80,27 +53,16 @@ printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
 phase "installing retained-world tools"
 /bin/sh /var/tmp/wt-retained-image-build.sh
 
-phase "removing image-build dependencies"
-DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y libevent-dev libncurses-dev
-if test "$WT_DEVELOPMENT_TOOLS" != true; then
-    DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
-        bison build-essential curl pkg-config
-fi
-DEBIAN_FRONTEND=noninteractive apt-get purge -y \
-    cloud-init cloud-initramfs-copymods cloud-initramfs-dyn-netconf
-DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y
-apt-get clean
-if test "$WT_DEVELOPMENT_TOOLS" = true; then
-    command -v cc gcc g++ make cmake clang pkg-config curl wget jq yq docker
-    docker compose version >/dev/null
-else
-    ! command -v cc
-    ! command -v gcc
-    ! command -v g++
-    ! command -v make
-    ! command -v curl
-fi
-! command -v cloud-init
+phase "validating cached development tools"
+test -f /var/lib/wt-image-development-tools
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+    PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -o pipefail -c '
+        . "$HOME/.nvm/nvm.sh"
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
+        command -v nvm
+        docker compose version >/dev/null
+    '
 
 phase "validating installed terminal tools"
 test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"
@@ -110,6 +72,9 @@ printf '%s  %s\n' "$GHOSTTY_TERMINFO_SHA256" \
 cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty
 TERM=ghostty tput colors >/dev/null
 TERM=xterm-ghostty tput colors >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
+    libevent-dev libncurses-dev
+apt-get clean
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
     /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-*

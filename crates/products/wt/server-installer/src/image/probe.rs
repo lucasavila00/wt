@@ -16,10 +16,10 @@ pub(super) fn verify_publication(
 ) -> Result<()> {
     println!("Probing retained guest identity through virtiofs...");
     wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
-    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)?;
+    wt_server::validate_shared_roots(server.codex_paths()).map_err(anyhow::Error::msg)?;
     let disk_id = uuid::Uuid::nil();
     let provider_id = ProviderId::parse(PROVIDER_ID).map_err(anyhow::Error::msg)?;
-    let marker = Path::new(wt_server::CODEX_SESSIONS_PATH).join(MARKER_NAME);
+    let marker = Path::new(server.codex_paths().sessions).join(MARKER_NAME);
     let world_dir = server.libvirt.worlds_dir.join(provider_id.as_str());
     let disk = server
         .libvirt

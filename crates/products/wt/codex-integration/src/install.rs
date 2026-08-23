@@ -15,6 +15,74 @@ sandbox_mode = "danger-full-access"
 type = "command"
 command = '''wt-tools world-prompt'''
 "#;
+const PREVIOUS_CONFIG: &str = r#"approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-tools world-prompt'''
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+"#;
+const POST_COMPACT_CONFIG: &str = r#"approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-tools world-prompt'''
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.PostCompact]]
+
+[[hooks.PostCompact.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.SessionEnd]]
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+"#;
 const CONFIG: &str = r#"approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
@@ -25,6 +93,18 @@ type = "command"
 command = '''wt-tools world-prompt'''
 
 [[hooks.SessionStart.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.PreCompact]]
+
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = '''wt-codex-integration report-hook'''
+
+[[hooks.PostCompact]]
+
+[[hooks.PostCompact.hooks]]
 type = "command"
 command = '''wt-codex-integration report-hook'''
 
@@ -89,7 +169,10 @@ fn install_config(codex_home: &Path) -> Result<()> {
     let path = codex_home.join("config.toml");
     match fs::read(&path) {
         Ok(contents) if contents == CONFIG.as_bytes() => return Ok(()),
-        Ok(contents) if contents == LEGACY_CONFIG.as_bytes() => {}
+        Ok(contents)
+            if contents == LEGACY_CONFIG.as_bytes()
+                || contents == PREVIOUS_CONFIG.as_bytes()
+                || contents == POST_COMPACT_CONFIG.as_bytes() => {}
         Ok(_) => bail!(
             "Codex configuration differs from WT's configuration: {}",
             path.display()
@@ -155,6 +238,18 @@ mod tests {
         type = "command"
         command = '''wt-codex-integration report-hook'''
 
+        [[hooks.PreCompact]]
+
+        [[hooks.PreCompact.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
+
+        [[hooks.PostCompact]]
+
+        [[hooks.PostCompact.hooks]]
+        type = "command"
+        command = '''wt-codex-integration report-hook'''
+
         [[hooks.UserPromptSubmit]]
 
         [[hooks.UserPromptSubmit.hooks]]
@@ -185,17 +280,19 @@ mod tests {
     }
 
     #[test]
-    fn config_install_upgrades_the_previous_wt_config() {
-        let temp = tempdir().unwrap();
-        let codex_home = temp.path().join(".codex");
-        fs::create_dir_all(&codex_home).unwrap();
-        fs::write(codex_home.join("config.toml"), LEGACY_CONFIG).unwrap();
+    fn config_install_upgrades_previous_wt_configs() {
+        for previous in [LEGACY_CONFIG, PREVIOUS_CONFIG, POST_COMPACT_CONFIG] {
+            let temp = tempdir().unwrap();
+            let codex_home = temp.path().join(".codex");
+            fs::create_dir_all(&codex_home).unwrap();
+            fs::write(codex_home.join("config.toml"), previous).unwrap();
 
-        install_config(&codex_home).unwrap();
+            install_config(&codex_home).unwrap();
 
-        assert_eq!(
-            fs::read_to_string(codex_home.join("config.toml")).unwrap(),
-            CONFIG
-        );
+            assert_eq!(
+                fs::read_to_string(codex_home.join("config.toml")).unwrap(),
+                CONFIG
+            );
+        }
     }
 }

@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
-use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
+use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, InstanceStatus};
 use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
@@ -63,9 +64,10 @@ fn reject_remote_test_server(test_server: bool, open_ssh: bool) -> Result<()> {
 
 fn run_server() -> Result<()> {
     wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
-    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)?;
-    let owner = wt_server::SERVER_USER.to_owned();
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
+    let codex_paths = server_config.codex_paths();
+    wt_server::validate_shared_roots(codex_paths).map_err(anyhow::Error::msg)?;
+    let owner = wt_server::SERVER_USER.to_owned();
     eprintln!(
         "wt-server starting: {}",
         wt_control_protocol::BuildIdentity::current()
@@ -76,34 +78,15 @@ fn run_server() -> Result<()> {
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
     log_codex_catalog_warnings(
-        wt_server::service::refresh_codex_session_catalog(
-            &store,
-            Path::new(wt_server::CODEX_SESSIONS_PATH),
-        )
-        .map_err(anyhow::Error::msg)?,
+        wt_server::service::refresh_codex_session_catalog(&store, Path::new(codex_paths.sessions))
+            .map_err(anyhow::Error::msg)?,
     );
-    let catalog_database = state.database_path();
-    std::thread::Builder::new()
-        .name("wt-codex-session-catalog".to_owned())
-        .spawn(move || loop {
-            match Store::open(&catalog_database).and_then(|store| {
-                wt_server::service::refresh_codex_session_catalog(
-                    &store,
-                    Path::new(wt_server::CODEX_SESSIONS_PATH),
-                )
-                .map_err(wt_workload_registry::StoreError::Registry)
-            }) {
-                Ok(warnings) => log_codex_catalog_warnings(warnings),
-                Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        })
-        .context("start Codex session catalog refresh")?;
     let operations = Operations::default();
     let capacity_limit = wt_workload_registry::CapacityConfig::load()
         .map_err(anyhow::Error::msg)?
         .limits;
     let test_server = server_config.test_server;
+    let codex_sessions = codex_paths.sessions;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server_config.retained_config();
@@ -113,6 +96,29 @@ fn run_server() -> Result<()> {
         retained,
     )
     .map_err(anyhow::Error::msg)?;
+    let catalog_database = state.database_path();
+    let catalog_sessions = codex_paths.sessions;
+    let catalog_owner = owner.clone();
+    let catalog_worker = host_worker.clone();
+    std::thread::Builder::new()
+        .name("wt-codex-session-catalog".to_owned())
+        .spawn(move || {
+            let mut requested = HashMap::new();
+            loop {
+                match maintain_codex_history(
+                    &catalog_database,
+                    catalog_sessions,
+                    &catalog_owner,
+                    &catalog_worker,
+                    &mut requested,
+                ) {
+                    Ok(warnings) => log_codex_catalog_warnings(warnings),
+                    Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        })
+        .context("start Codex session catalog refresh")?;
     let worker = host_worker;
     let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
     let context = DaemonContext {
@@ -123,11 +129,48 @@ fn run_server() -> Result<()> {
         owner,
         capacity_limit,
         test_server,
+        codex_sessions,
     };
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
         handle_daemon_request(&context, request, progress)
     })
+}
+
+fn maintain_codex_history(
+    database: &Path,
+    sessions: &str,
+    owner: &str,
+    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
+    requested: &mut HashMap<String, String>,
+) -> Result<Vec<String>> {
+    let store = Store::open(database).context("open instance registry")?;
+    let warnings = wt_server::service::refresh_codex_session_catalog(&store, Path::new(sessions))
+        .map_err(anyhow::Error::msg)?;
+    let generation =
+        wt_server::service::codex_session_catalog_generation(&store).map_err(anyhow::Error::msg)?;
+    let worlds = store.list(owner).context("list worlds")?;
+    let running = worlds
+        .iter()
+        .filter(|world| world.instance.status == InstanceStatus::Running)
+        .map(|world| world.backend_id.clone())
+        .collect::<HashSet<_>>();
+    requested.retain(|backend_id, _| running.contains(backend_id));
+    for backend_id in running {
+        if requested.get(&backend_id) == Some(&generation) {
+            continue;
+        }
+        match worker.request_codex_reconciliation(&backend_id, &generation) {
+            Ok(true) => {
+                requested.insert(backend_id, generation.clone());
+            }
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("wt-server: request Codex reconciliation in {backend_id}: {error}");
+            }
+        }
+    }
+    Ok(warnings)
 }
 
 fn log_codex_catalog_warnings(warnings: Vec<String>) {
@@ -144,6 +187,7 @@ struct DaemonContext {
     owner: String,
     capacity_limit: wt_workload_registry::Resources,
     test_server: bool,
+    codex_sessions: &'static str,
 }
 
 fn handle_daemon_request(
@@ -160,7 +204,8 @@ fn handle_daemon_request(
             context.gateway.clone(),
             context.operations.clone(),
             context.capacity_limit,
-        );
+        )
+        .with_codex_sessions_path(context.codex_sessions);
         Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
             &service,
             &context.owner,

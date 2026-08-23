@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+test -f /var/lib/wt-image-development-tools
+rm -rf /etc/cloud /var/lib/cloud /run/cloud-init
+rm -f /etc/netplan/50-cloud-init.yaml /var/log/cloud-init.log \
+    /var/log/cloud-init-output.log /var/lib/wt-image-result
+rm -rf /var/tmp/wt-*
+truncate -s 0 /etc/machine-id
+ln -sfn /etc/machine-id /var/lib/dbus/machine-id

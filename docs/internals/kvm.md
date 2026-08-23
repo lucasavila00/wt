@@ -27,12 +27,17 @@ profile, and the static agent-tool and Codex-integration executables.
 Provisioning validates that foundation and applies only world-specific SSH,
 Git, gateway, and Codex state.
 
-`image.development_tools` is an optional image-build input, off by default. It
-adds current Rust/Cargo, Go, Python/uv, Node.js/npm through NVM (with Node.js,
-npm, npx, and Corepack on the default command path), build tools, common CLI
-utilities including ShellCheck, and Docker/Compose; the finalized image records
-the exact resolved tool versions. KVM E2E leaves it disabled so its golden image
-stays narrow and does not repeat third-party language-runtime downloads.
+Every image includes current Rust/Cargo, Go, Python/uv, Node.js/nvm, build
+tools, CLI utilities including ShellCheck, and Docker/Compose. The finalized
+image records the exact resolved tool versions.
+
+The installer first builds a verified, fully sanitized cache image from the
+pinned Ubuntu source and development-tools policy. Golden-image rebuilds copy
+that cache, refresh WT-specific guest binaries, and publish a standalone image.
+The cache identity covers the source image, image size, and development-tools
+recipe. WT guest-layer and terminal changes rebuild only the final image. A
+cache change picks up newer upstream tool releases. KVM E2E reuses this cache
+after its first build in a checkout.
 
 ## Readiness
 
@@ -47,11 +52,13 @@ identity, or partial libvirt state fail closed.
 ## Full KVM E2E
 
 Full KVM E2E requires a host with the full KVM and libvirt prerequisites. Every
-run uses `make clear` to remove WT worlds and runtime state, installs the E2E
-server from the current checkout into the ordinary host paths, and leaves that
-marked test server installed. The Ubuntu source, verified golden image,
-downloads, Cargo artifacts, and build caches remain available. Image
-preparation rebuilds only when current provenance does not match the cache.
+run uses `make clear` with the isolated test Codex sessions path, removes WT
+worlds and runtime state, installs the E2E server from the current checkout
+into the ordinary host paths, and leaves that marked test server installed. It
+never reads or changes active Codex credentials or sessions. The Ubuntu source,
+verified golden image, downloads, Cargo artifacts, and build caches remain
+available. Image preparation rebuilds only when current provenance does not
+match the cache.
 
 The E2E host is a disposable environment with no production workload. Both
 runtime cleanup and full server removal are safe there; the normal test path

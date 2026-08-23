@@ -142,6 +142,7 @@ mod tests {
                 repository_url: None,
                 git_branch: None,
                 state: CodexSessionState::Working,
+                is_compacting: false,
                 session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),

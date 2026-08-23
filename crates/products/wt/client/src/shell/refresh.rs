@@ -21,6 +21,7 @@ pub(super) struct WorldSnapshot {
     pub(super) instances: Vec<inventory::ContextInstance>,
     pub(super) capacity: wt_control_protocol::ResourceCapacity,
     pub(super) failures: Vec<String>,
+    pub(super) ssh_sync_error: Option<String>,
 }
 
 pub(super) struct CodexRefresh {
@@ -65,7 +66,7 @@ impl WorldRefresh {
                 if worker_cancelled.load(Ordering::Relaxed) {
                     break;
                 }
-                let failures = report
+                let failures: Vec<String> = report
                     .failures
                     .into_iter()
                     .map(|failure| {
@@ -77,11 +78,19 @@ impl WorldRefresh {
                             .to_owned()
                     })
                     .collect();
+                let ssh_sync_error = if failures.is_empty() {
+                    wt_client::ssh::sync(&config, &report.instances)
+                        .err()
+                        .map(|error| format!("SSH inventory synchronization failed: {error:#}"))
+                } else {
+                    None
+                };
                 match updates_tx.try_send(WorldSnapshot {
                     generation,
                     instances: report.instances,
                     capacity: report.capacity,
                     failures,
+                    ssh_sync_error,
                 }) {
                     Ok(()) | Err(TrySendError::Full(_)) => {}
                     Err(TrySendError::Disconnected(_)) => break,

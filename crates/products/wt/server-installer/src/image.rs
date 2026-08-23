@@ -1,13 +1,16 @@
 mod builder;
+mod cache;
 mod console;
 mod probe;
 mod recipe;
+mod timing;
 
 #[cfg(test)]
 use console::{extract_phase_markers, progress_message, ConsoleLog};
 
 use self::builder::*;
 use self::recipe::ImageRecipe;
+use self::timing::{timed, TimedRunner};
 use crate::host;
 use crate::install_input::InstallInput;
 use crate::server::binaries;
@@ -33,6 +36,8 @@ use wt_server::ServerConfig;
 
 const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
+const DEVELOPMENT_TOOLS_CACHE_BUILD_NAME: &str = "wt-development-tools-cache-build";
+const DEVELOPMENT_TOOLS_CACHE_NAME: &str = "wt-development-tools.qcow2";
 const RETAINED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../assets/world/retained/build-image.sh");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
@@ -50,7 +55,6 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
     ("wt-tools", "/var/tmp/wt-tools"),
     ("wt-codex-integration", "/var/tmp/wt-codex-integration"),
 ];
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
@@ -58,7 +62,7 @@ struct ImageManifest {
     guest_identity: wt_retained_worlds::GuestIdentity,
     golden_sha256: String,
     packages: PackageVersions,
-    development_tools: Option<PackageVersions>,
+    development_tools: PackageVersions,
 }
 
 pub(crate) fn ensure(
@@ -78,13 +82,7 @@ pub(crate) fn ensure(
     match installed_image_state(
         installed.image.exists(),
         installed.manifest.exists(),
-        || {
-            verify_installed_image(
-                &installed.image,
-                &installed.manifest,
-                server.image.development_tools,
-            )
-        },
+        || verify_installed_image(&installed.image, &installed.manifest),
     ) {
         InstalledImageState::Reusable => {
             println!(
@@ -119,11 +117,7 @@ pub(crate) fn rebuild(
 
 pub(crate) fn verify(_input: &InstallInput, server: &ServerConfig) -> Result<()> {
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
-    verify_installed_image(
-        &installed.image,
-        &installed.manifest,
-        server.image.development_tools,
-    )?;
+    verify_installed_image(&installed.image, &installed.manifest)?;
     println!(
         "Verified retained golden image and provenance: {}",
         server.image.path.display()
@@ -203,7 +197,15 @@ fn build_image(
     println!("Building retained golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
 
-    if build_dir.exists() || domain_exists(runner, BUILD_NAME)? {
+    let cache_build_dir = server
+        .libvirt
+        .worlds_dir
+        .join(DEVELOPMENT_TOOLS_CACHE_BUILD_NAME);
+    if build_dir.exists()
+        || cache_build_dir.exists()
+        || domain_exists(runner, BUILD_NAME)?
+        || domain_exists(runner, DEVELOPMENT_TOOLS_CACHE_BUILD_NAME)?
+    {
         bail!("stale image build state exists for {BUILD_NAME}");
     }
     fs::create_dir(&build_dir).context("create image build directory")?;
@@ -236,11 +238,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let runner = context.runner;
     let input = context.input;
     let server = context.server;
-    let recipe = ImageRecipe::new(input.image.development_tools);
-    let spec = BuildSpec {
-        name: BUILD_NAME,
-        recipe: RETAINED_IMAGE_BUILD,
-    };
+    let recipe = ImageRecipe::new();
     let staged_paths = HOST_INPUTS
         .iter()
         .map(|(name, _, bytes)| {
@@ -263,8 +261,27 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
                 .map(|(source, guest_path)| StagedInput { source, guest_path }),
         )
         .collect::<Vec<_>>();
-    let paths = run_kvm_build(context, build_dir, &spec, &extra_inputs)?;
-    let package_output = runner.text(
+    let source = cache::ensure(context)?;
+    let spec = BuildSpec {
+        name: BUILD_NAME,
+        main_recipe: CACHED_IMAGE_BUILD,
+        retained_recipe: RETAINED_IMAGE_BUILD,
+    };
+    let cached_context = BuildContext {
+        runner: context.runner,
+        input: context.input,
+        server: context.server,
+        source: &source,
+        byobu: context.byobu,
+    };
+    let paths = run_kvm_build(
+        &cached_context,
+        build_dir,
+        &spec,
+        &extra_inputs,
+        BuildSource::ReusableImage,
+    )?;
+    let package_output = runner.timed_text(
         cmd!(
             "sudo",
             "virt-cat",
@@ -281,24 +298,20 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .collect::<Vec<_>>()
         .join(", ");
     println!("Validated retained image packages: {package_summary}");
-    let development_tools = if input.image.development_tools {
-        let output = runner.text(
-            cmd!(
-                "sudo",
-                "virt-cat",
-                "-a",
-                &paths.disk,
-                "/var/lib/wt-image-development-tools",
-            ),
-            "read installed guest development tool versions",
-        )?;
-        recipe.parse_development_tool_versions(&output)?
-    } else {
-        None
-    };
+    let development_tool_output = runner.timed_text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-image-development-tools",
+        ),
+        "read installed guest development tool versions",
+    )?;
+    let development_tools = recipe.parse_development_tool_versions(&development_tool_output)?;
 
     finalize_reusable_image(runner, &paths)?;
-    let tmux_version = runner.text(
+    let tmux_version = runner.timed_text(
         cmd!(
             "sudo",
             "virt-cat",
@@ -314,7 +327,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
             tmux_version.trim()
         );
     }
-    let finalized_package_output = runner.text(
+    let finalized_package_output = runner.timed_text(
         cmd!(
             "sudo",
             "virt-cat",
@@ -328,25 +341,25 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     if finalized_packages != packages {
         bail!("finalized image package versions changed during sanitization");
     }
-    if input.image.development_tools {
-        let output = runner.text(
-            cmd!(
-                "sudo",
-                "virt-cat",
-                "-a",
-                &paths.disk,
-                "/var/lib/wt-image-development-tools",
-            ),
-            "revalidate finalized guest development tool versions",
-        )?;
-        if recipe.parse_development_tool_versions(&output)? != development_tools {
-            bail!("finalized image development tool versions changed during sanitization");
-        }
+    let finalized_development_tool_output = runner.timed_text(
+        cmd!(
+            "sudo",
+            "virt-cat",
+            "-a",
+            &paths.disk,
+            "/var/lib/wt-image-development-tools",
+        ),
+        "revalidate finalized guest development tool versions",
+    )?;
+    if recipe.parse_development_tool_versions(&finalized_development_tool_output)?
+        != development_tools
+    {
+        bail!("finalized image development tool versions changed during sanitization");
     }
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
         .context("server user does not exist")?;
-    runner.run(
+    runner.timed_run(
         cmd!(
             "sudo",
             "chown",
@@ -355,8 +368,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         ),
         "restore image build disk ownership",
     )?;
-    println!("Compacting retained golden image...");
-    runner.run(
+    runner.timed_run(
         cmd!(
             "qemu-img",
             "convert",
@@ -368,20 +380,25 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         ),
         "compact golden image",
     )?;
-    runner.run(
+    runner.timed_run(
         cmd!("qemu-img", "check", &paths.prepared),
         "check golden image",
     )?;
-    println!("Hashing and publishing retained golden image...");
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
-        golden_sha256: sha_file(&paths.prepared)?,
+        golden_sha256: timed("hash compacted retained image", || {
+            sha_file(&paths.prepared)
+        })?,
         packages,
         development_tools,
     };
-    let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
-    if let Err(primary) = probe::verify_publication(input, server, publication.image_path()) {
+    let publication = timed("stage retained image publication", || {
+        stage_publication(runner, &paths.prepared, &server.image.path, &manifest)
+    })?;
+    if let Err(primary) = timed("probe retained image boot and shared identity", || {
+        probe::verify_publication(input, server, publication.image_path())
+    }) {
         return match publication.discard(runner) {
             Ok(()) => Err(primary),
             Err(cleanup) => Err(primary.context(format!(
@@ -398,12 +415,8 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     Ok(())
 }
 
-pub(crate) fn verify_installed_image(
-    image_path: &Path,
-    manifest_path: &Path,
-    development_tools: bool,
-) -> Result<()> {
-    let recipe = ImageRecipe::new(development_tools);
+pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) -> Result<()> {
+    let recipe = ImageRecipe::new();
     require_named_file(image_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(

@@ -183,6 +183,8 @@ impl ShellModel {
 
     pub(super) fn resize(&mut self, area: Rect) {
         self.control.resize(area);
+        self.control
+            .keep_world_selection_visible(area, self.active, self.worlds.len());
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
@@ -213,6 +215,11 @@ impl ShellModel {
                         if key.modifiers == KeyModifiers::NONE
                             && self.move_world_grid_selection(key.code)
                         {
+                            self.control.keep_world_selection_visible(
+                                area,
+                                self.active,
+                                self.worlds.len(),
+                            );
                             return InputRoute::Consumed;
                         }
                         if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
@@ -234,6 +241,15 @@ impl ShellModel {
         &mut self,
         mouse: MouseEvent,
         area: Rect,
+    ) -> (bool, Option<InputRoute>) {
+        self.handle_mouse_with_world_count(mouse, area, self.worlds.len())
+    }
+
+    pub(super) fn handle_mouse_with_world_count(
+        &mut self,
+        mouse: MouseEvent,
+        area: Rect,
+        world_card_count: usize,
     ) -> (bool, Option<InputRoute>) {
         if self.control.palette().is_open() {
             let (changed, action) = self.control.handle_mouse(mouse, area);
@@ -260,6 +276,13 @@ impl ShellModel {
         if self.mode != Mode::Control {
             return (false, None);
         }
+        if self.control.activity() == super::control::Activity::Worlds
+            && self
+                .control
+                .handle_world_scrollbar(mouse, area, world_card_count)
+        {
+            return (true, Some(InputRoute::Consumed));
+        }
         let (changed, action) = self.control.handle_mouse(mouse, area);
         if !changed
             && self.has_worlds()
@@ -267,11 +290,11 @@ impl ShellModel {
         {
             match mouse.kind {
                 crossterm::event::MouseEventKind::ScrollUp => {
-                    self.active = self.active.saturating_sub(2);
+                    self.control.scroll_worlds(-1, area, world_card_count);
                     return (true, Some(InputRoute::Consumed));
                 }
                 crossterm::event::MouseEventKind::ScrollDown => {
-                    self.active = (self.active + 2).min(self.worlds.len() - 1);
+                    self.control.scroll_worlds(1, area, world_card_count);
                     return (true, Some(InputRoute::Consumed));
                 }
                 _ => {}
@@ -280,7 +303,7 @@ impl ShellModel {
         if !changed && self.control.activity() == super::control::Activity::Worlds {
             let Some(index) = super::control::world_card_at_position(
                 area,
-                self.active,
+                self.control.world_scroll(),
                 self.worlds.len(),
                 mouse.column,
                 mouse.row,
@@ -403,6 +426,26 @@ mod tests {
         model.handle_key(key(KeyCode::Enter), area());
         assert_eq!(model.active_world(), "two");
         assert_eq!(model.mode(), Mode::World);
+    }
+
+    #[test]
+    fn provisioning_card_uses_the_same_scroll_bounds_as_rendering() {
+        let mut model = ShellModel::new(vec![
+            world("one"),
+            world("two"),
+            world("three"),
+            world("four"),
+        ]);
+        model.show_worlds();
+        let scroll = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 20,
+            row: 10,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        assert!(model.handle_mouse_with_world_count(scroll, area(), 5).0);
+        assert_eq!(model.control().world_scroll(), 1);
     }
 
     #[test]

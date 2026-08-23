@@ -30,18 +30,29 @@ Each `wt-server` combines a rollout catalog with lifecycle observations.
 Codex hooks are commands invoked by Codex at configured lifecycle events. WT
 installs hooks for these events:
 
-| Codex hook | State |
-| --- | --- |
-| `SessionStart` | `unknown` (with its raw start source) |
-| `UserPromptSubmit` | `working` |
-| `Stop` | `needs_attention` |
-| `SessionEnd` | `inactive` |
+| Codex hook | Lifecycle state | Compaction phase |
+| --- | --- | --- |
+| `SessionStart` | `unknown` (with its raw start source) | clear, except `compact` starts compaction |
+| `PreCompact` | unchanged | start |
+| `PostCompact` | unchanged | clear |
+| `UserPromptSubmit` | `working` | clear |
+| `Stop` | `needs_attention` | clear |
+| `SessionEnd` | `inactive` | clear |
 
 Every hook reports `session_id`, `cwd`, optional Git repository and branch
-context, `tmux_session`, and `%N` `pane_id`.
+context, `tmux_session`, `%N` `pane_id`, and a per-pane generation and sequence.
 The Byobu target is required and verified before forwarding.
 WT parses known session-start sources while preserving the raw value. The shell
-renders that value with an unknown state, for example `unknown(compact)`.
+renders that value with an unknown state, for example `unknown(startup)`.
+Compaction is a transient phase, not a lifecycle state: it preserves the
+previous lifecycle state and the shell adds a `COMPACTING` indicator until
+`PostCompact` clears it.
+
+The guest assigns the sequence under a per-pane file lock before it performs
+Git discovery or sends the report. A new session gets a new generation; later
+events from an older session retain their original generation. The registry
+accepts only a lexicographically newer `(generation, sequence)` for a pane, so
+delayed or duplicate old events cannot overwrite its replacement.
 
 Use the existing authenticated guest relay and vsock path. Its grant supplies
 `world_id`; the hook cannot choose it. Hooks are short-timeout and fail-open.
@@ -49,7 +60,7 @@ Use the existing authenticated guest relay and vsock path. Its grant supplies
 Store the latest observation per `(world_id, session_id)`:
 
 ```text
-session_id, world_id, cwd, state,
+session_id, world_id, cwd, state, is_compacting, pane_generation, pane_sequence,
 session_start_source, tmux_session, pane_id, received_at_unix_ms
 ```
 
@@ -61,7 +72,7 @@ cascades to its observations.
 ```text
 session { session_id, title?, rollout_updated_at_unix_ms?, observations[] }
 observation { world_id, world_name, cwd, repository_root?, repository_url?,
-              git_branch?, state, received_at_unix_ms,
+              git_branch?, state, is_compacting, received_at_unix_ms,
               target { tmux_session, pane_id } }
 ```
 

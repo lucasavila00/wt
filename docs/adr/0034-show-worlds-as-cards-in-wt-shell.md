@@ -22,8 +22,11 @@ guess. Context fetch failures are visible and no successfully decoded world is
 silently omitted. The panel retains the independent refresh timestamp defined
 by ADR 0032.
 
-Arrow keys move selection. The mouse wheel moves selection and its
-viewport. `Enter` or a left click opens the selected running world in its
+Arrow keys move selection and scroll only as needed to keep it visible. The
+mouse wheel moves the viewport by one terminal row without changing selection.
+Cards keep fixed positions in the grid and are clipped at the viewport edges;
+the scrollbar track supports clicking and dragging. `Enter` or a left click
+opens the selected running world in its
 existing full-screen playback view. Selection alone has no side effect.
 
 A world is openable only when its typed inventory identity maps to a live

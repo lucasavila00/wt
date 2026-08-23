@@ -13,6 +13,7 @@ use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod activity;
 mod codex;
 mod codex_catalog;
+mod codex_catalog_generation;
 mod gateway;
 mod lifecycle;
 mod reports;
@@ -22,6 +23,10 @@ pub use gateway::AgentToolGateway;
 
 pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<String>, String> {
     codex_catalog::refresh(store, root)
+}
+
+pub fn codex_session_catalog_generation(store: &Store) -> Result<String, String> {
+    codex_catalog_generation::generation(store)
 }
 
 const INSPECTION_RETRIES: usize = 6;
@@ -99,7 +104,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::Get { name } => self.get(owner, &name),
             Operation::Start { name } => self.start(owner, &name),
             Operation::Stop { name } => self.stop(owner, &name),
-            Operation::Delete { name } => self.delete(owner, &name),
+            Operation::Delete { name, expected_id } => self.delete(owner, &name, expected_id),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             Operation::ListCodexSessions => self.list_codex_sessions(owner),
@@ -436,12 +441,19 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         &self,
         owner: &str,
         name: &wt_control_protocol::InstanceName,
+        expected_id: Uuid,
     ) -> Result<Response, ApiError> {
         let _operation = self
             .operations
             .try_lock(owner, name)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
         let stored = self.store.get(owner, name).map_err(map_store_error)?;
+        if expected_id != stored.instance.id {
+            return Err(ApiError::new(
+                ErrorCode::Conflict,
+                "instance identity no longer matches the requested delete",
+            ));
+        }
         let gateway_grant_id = stored.gateway_grant_id.as_ref();
         if let Some(gateway_grant_id) = gateway_grant_id {
             self.gateway

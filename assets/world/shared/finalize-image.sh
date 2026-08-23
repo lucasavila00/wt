@@ -28,21 +28,28 @@ test "$(readlink /usr/local/bin/codex)" = \
 test "$(readlink "$WT_HOME/.local/bin/codex")" = \
     /usr/local/bin/wt-codex-integration
 test -x "$WT_HOME/.codex/packages/standalone/current/bin/codex"
+test "$(stat -c '%u:%g %a' "$WT_HOME/.local/state/wt")" = \
+    "$WT_UID:$WT_GID 700"
+test -f /etc/systemd/system/wt-codex-reconciliation.service
+test "$(stat -c '%u:%g %a' \
+    /etc/systemd/system/wt-codex-reconciliation.service)" = "0:0 644"
+test -f /etc/systemd/system/wt-codex-reconciliation.path
+test "$(readlink \
+    /etc/systemd/system/multi-user.target.wants/wt-codex-reconciliation.path)" = \
+    ../wt-codex-reconciliation.path
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
     /usr/local/bin/codex --version > /dev/null
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
     "$WT_HOME/.local/bin/codex" --version > /dev/null
-if test "$WT_DEVELOPMENT_TOOLS" = true; then
-    test -f /var/lib/wt-image-development-tools
-    runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
-        PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
-        bash -o pipefail -c '
-            command -v cargo rustc go python node npm npx corepack uv docker shellcheck
-            . "$HOME/.nvm/nvm.sh"
-            command -v nvm
-            docker compose version >/dev/null
-        '
-fi
+test -f /var/lib/wt-image-development-tools
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+    PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -o pipefail -c '
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
+        . "$HOME/.nvm/nvm.sh"
+        command -v nvm
+        docker compose version >/dev/null
+    '
 printf '%s  %s\n' "$ACCESS_SHA256" \
     /usr/local/libexec/wt-retained-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
