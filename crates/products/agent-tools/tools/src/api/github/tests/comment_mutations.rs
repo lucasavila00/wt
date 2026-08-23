@@ -38,7 +38,7 @@ fn comment_mutations_require_gateway_attribution_before_writing() {
 
         assert_eq!(
             error.to_string(),
-            "comment was not created through this WT gateway"
+            "comment is missing the WT world agent marker"
         );
         server.join().unwrap().unwrap();
     }

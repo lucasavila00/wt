@@ -402,32 +402,28 @@ pub fn provider_name(kind: ProviderKind) -> &'static str {
     }
 }
 
-fn attributed_comment(scope: &ProviderCommandScope<'_>, body: &str) -> String {
-    format!(
-        "{body}\n\n— WT world `{}`",
-        scope.prefix.trim_end_matches('/')
-    )
+const WT_TOOLS_COMMENT_MARKER: &str = "**Comment from a WT world agent**";
+
+fn attributed_comment(_scope: &ProviderCommandScope<'_>, body: &str) -> String {
+    marked_comment(body)
 }
 
-pub fn attributed_project_comment(scope: &ProviderProjectScope<'_>, body: &str) -> String {
-    format!("{body}\n\n{}", project_comment_attribution(scope))
+pub fn attributed_project_comment(_scope: &ProviderProjectScope<'_>, body: &str) -> String {
+    marked_comment(body)
 }
 
 pub fn require_project_comment_attribution(
-    scope: &ProviderProjectScope<'_>,
+    _scope: &ProviderProjectScope<'_>,
     comment: &GeneralComment,
 ) -> Result<()> {
-    if !comment
-        .body
-        .ends_with(&format!("\n\n{}", project_comment_attribution(scope)))
-    {
-        bail!("comment was not created through this WT gateway")
+    if !comment.body.starts_with(WT_TOOLS_COMMENT_MARKER) {
+        bail!("comment is missing the WT world agent marker")
     }
     Ok(())
 }
 
-fn project_comment_attribution(scope: &ProviderProjectScope<'_>) -> String {
-    format!("— WT world `{}`", scope.prefix.trim_end_matches('/'))
+fn marked_comment(body: &str) -> String {
+    format!("{WT_TOOLS_COMMENT_MARKER}\n\n{body}")
 }
 
 #[cfg(test)]

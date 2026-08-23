@@ -179,6 +179,34 @@ fn provider_resource_ids_are_positive_integer_strings() {
 }
 
 #[test]
+fn wt_tools_comment_marker_is_a_required_visible_prefix() {
+    let scope = ProviderProjectScope {
+        host: "github.test",
+        project: "acme/widget",
+        prefix: "wt/",
+    };
+    assert_eq!(
+        attributed_project_comment(&scope, "Done."),
+        "**Comment from a WT world agent**\n\nDone."
+    );
+
+    let comment = GeneralComment {
+        handle: GeneralCommentHandle::new("123"),
+        author: "agent".to_owned(),
+        body: "Done.\n\n**Comment from a WT world agent**".to_owned(),
+        url: "https://github.test/acme/widget/pull/7#issuecomment-123".to_owned(),
+        created_at: "2026-08-23T10:00:00Z".to_owned(),
+        updated_at: "2026-08-23T10:00:00Z".to_owned(),
+    };
+    assert_eq!(
+        require_project_comment_attribution(&scope, &comment)
+            .unwrap_err()
+            .to_string(),
+        "comment is missing the WT world agent marker"
+    );
+}
+
+#[test]
 fn review_output_includes_actionable_commands() {
     let threads = vec![ReviewThread {
         handle: ReviewThreadHandle::new("T:thread-1"),

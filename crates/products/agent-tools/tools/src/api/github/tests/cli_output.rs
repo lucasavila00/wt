@@ -6,9 +6,9 @@ const WORKFLOW_RUN: &str = r#"{"id":91,"name":"CI","event":"pull_request","statu
 const WORKFLOW_JOB: &str = r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#;
 const REVIEW_THREADS: &str = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"author":{"__typename":"User","login":"reviewer"},"body":"Please clarify this.","url":"https://github.test/thread/7"}]}}]}}}}}"#;
 const ISSUE_COMMENT: &str = r#"{"id":123,"body":"General feedback.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
-const GATEWAY_ISSUE_COMMENT: &str = r#"{"id":123,"body":"General feedback.\n\n— WT world `wt`","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
-const CREATED_ISSUE_COMMENT: &str = r#"{"id":124,"body":"Done.\n\n— WT world `wt`","html_url":"https://github.test/acme/widget/pull/7#issuecomment-124","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
-const UPDATED_ISSUE_COMMENT: &str = r#"{"id":123,"body":"Updated.\n\n— WT world `wt`","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
+const GATEWAY_ISSUE_COMMENT: &str = r#"{"id":123,"body":"**Comment from a WT world agent**\n\nGeneral feedback.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
+const CREATED_ISSUE_COMMENT: &str = r#"{"id":124,"body":"**Comment from a WT world agent**\n\nDone.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-124","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
+const UPDATED_ISSUE_COMMENT: &str = r#"{"id":123,"body":"**Comment from a WT world agent**\n\nUpdated.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
 
 #[test]
 fn cli_commands_render_complete_json_from_github_responses() {
@@ -267,7 +267,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
                 graphql("GithubReadPullRequestByNumber", REVIEW_THREADS),
                 graphql(
-                    "GithubReplyToReviewThread",
+                    "Comment from a WT world agent",
                     r#"{"data":{"addPullRequestReviewThreadReply":{"comment":{"url":"https://github.test/comment/2"}}}}"#,
                 ),
             ],
@@ -670,7 +670,7 @@ fn write(method: &'static str, path: &'static str, response_body: &'static str) 
         method,
         path,
         required_header: Some(("authorization", "Bearer fixture-token")),
-        body_contains: (method != "DELETE").then_some("\"body\":"),
+        body_contains: (method != "DELETE").then_some("Comment from a WT world agent"),
         response_content_type: "application/json",
         response_body,
     }

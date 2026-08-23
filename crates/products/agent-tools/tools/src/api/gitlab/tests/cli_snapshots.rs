@@ -8,9 +8,9 @@ const PIPELINE: &str = r#"{"id":92,"status":"success","web_url":"https://gitlab.
 const JOB: &str = r#"{"id":45,"name":"test","status":"success","web_url":"https://gitlab.test/jobs/45","ref":"wt/fix-login","pipeline":{"id":92}}"#;
 const THREADS: &str = r#"{"data":{"project":{"mergeRequest":{"id":"gid://gitlab/MergeRequest/8","diffHeadSha":"abc123","discussions":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"gid://gitlab/Discussion/thread-8","resolved":false,"resolvable":true,"notes":{"pageInfo":{"hasNextPage":false},"nodes":[{"author":{"username":"reviewer"},"body":"Please clarify this.","url":"https://gitlab.test/thread/8","position":{"filePath":"src/lib.rs","newLine":12,"oldLine":null}}]}}]}}}}}"#;
 const NOTE: &str = r#"{"id":124,"body":"General feedback.","author":{"username":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
-const GATEWAY_NOTE: &str = r#"{"id":124,"body":"General feedback.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
-const CREATED_NOTE: &str = r#"{"id":125,"body":"Ready for another look.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
-const UPDATED_NOTE: &str = r#"{"id":124,"body":"Updated.\n\n— WT world `wt`","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
+const GATEWAY_NOTE: &str = r#"{"id":124,"body":"**Comment from a WT world agent**\n\nGeneral feedback.","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
+const CREATED_NOTE: &str = r#"{"id":125,"body":"**Comment from a WT world agent**\n\nReady for another look.","author":{"username":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
+const UPDATED_NOTE: &str = r#"{"id":124,"body":"**Comment from a WT world agent**\n\nUpdated.","author":{"username":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z","system":false,"resolvable":false}"#;
 
 #[test]
 fn cli_commands_render_provider_results_as_json() {
@@ -542,7 +542,7 @@ fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
             get("/api/v4/projects/acme%2Fwidget/merge_requests/8", OPEN_MR),
             graphql("GitlabReadMergeRequestByIid", THREADS),
             graphql(
-                "GitlabReplyToDiscussion",
+                "Comment from a WT world agent",
                 r#"{"data":{"createNote":{"errors":[],"note":{"id":"note-2","url":null}}}}"#,
             ),
         ],
@@ -583,7 +583,7 @@ fn write(method: &'static str, path: &'static str, response_body: &'static str) 
     request(
         method,
         path,
-        Some("\"body\":"),
+        Some("Comment from a WT world agent"),
         "application/json",
         response_body,
     )

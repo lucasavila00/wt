@@ -5,7 +5,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
 {
   "data": {
     "author": "agent",
-    "body": "Updated.\n\n— WT world `wt`",
+    "body": "**Comment from a WT world agent**\n\nUpdated.",
     "created_at": "2026-08-22T10:00:00Z",
     "handle": "123",
     "updated_at": "2026-08-23T10:00:00Z",

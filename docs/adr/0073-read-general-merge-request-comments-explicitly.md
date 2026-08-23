@@ -39,9 +39,8 @@ valid provider comment ID to cross the requested merge-request boundary.
 its handle. Edit and delete perform the same direct lookup before modifying the
 comment, and require the existing writable `wt/*` MR scope plus explicit
 confirmation when the MR has merged. Provider credentials enforce who may
-change or delete a comment. The target must also retain the WT gateway
-attribution footer added on creation, so this surface cannot modify an
-unattributed provider comment.
+change or delete a comment. ADR 0075 defines the leading visible marker a
+target must retain, so this surface cannot modify an unmarked provider comment.
 
 ## Consequences
 
