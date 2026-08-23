@@ -181,6 +181,13 @@ fn retained_image_sets_codex_model_defaults() {
 }
 
 #[test]
+fn retained_image_grants_the_user_nested_kvm_access() {
+    let prepare = std::str::from_utf8(HOST_PREPARE).unwrap();
+
+    assert!(prepare.contains("usermod --append --groups sudo,kvm \"$WT_USER\""));
+}
+
+#[test]
 fn installed_image_drift_is_replaced_automatically() {
     assert_eq!(
         installed_image_state(false, false, || unreachable!()),

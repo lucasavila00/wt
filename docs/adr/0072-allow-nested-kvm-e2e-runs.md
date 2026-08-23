@@ -40,6 +40,13 @@ The bootstrap test will prove that the installer links the host libvirt ABI but
 will not validate the unrelated development configuration. The E2E target
 continues to prepare and validate its isolated test configuration explicitly.
 
+WT currently has one trusted user per world, and that user already has
+passwordless `sudo`. Grant the user membership in the guest `kvm` group by
+default so nested KVM is available without a manual permission repair. This
+does not reserve resources, install the E2E host tools, or make E2E automatic:
+`make e2e-tests` remains the explicit, preflight-gated operation. Do not add a
+separate world profile until routine nested E2E justifies its added complexity.
+
 Before treating nested runs as the normal workflow, try sharing build caches
 with the WT world. Measure at least Cargo registry/git data, Cargo target
 artifacts, downloaded Ubuntu and package artifacts, and the verified
@@ -60,7 +67,9 @@ default cache transport and ownership model.
 
 Undersized worlds fail quickly with an actionable resource report instead of
 spending minutes compiling first. Nested E2E remains opt-in because it consumes
-substantial host resources and depends on nested-virtualization support.
+substantial host resources and depends on nested-virtualization support. Default
+`kvm` group membership is convenience for the trusted single-user model, not an
+indication that ordinary worlds are provisioned for E2E.
 
 Cache sharing is intentionally unresolved by this proposal. Its measurements
 and concurrency behavior determine whether a later implementation can make
