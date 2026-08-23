@@ -12,7 +12,7 @@ disappear. A world refresh that cannot list every configured context leaves the
 last complete list in place.
 
 The dim control bar shows the active world and its position in the world list, along
-with command hints. `F5`, the ` WT` brand, the world label, or the `F5: ctrl`
+with command hints. `F5`, the ` WT` brand, the world label, or the `F5: dashboard`
 label opens the Control UI. Clickable control-bar text is bold. `F6` closes `wt
 shell` from every view. Other keyboard input is forwarded to the active world.
 

@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Span;
 
 pub(super) const BRAND_LABEL: &str = "  WT ";
-pub(super) const CONTROL_LABEL: &str = " F5: ctrl ";
+pub(super) const CONTROL_LABEL: &str = " F5: dashboard ";
 pub(super) const CLOSE_LABEL: &str = " F6: close ";
 
 pub(super) fn world_bar_brand(area: Rect) -> Rect {
