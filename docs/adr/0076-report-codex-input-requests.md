@@ -1,6 +1,6 @@
-# Proposed ADR: Let Codex tell WT when it is waiting for an answer
+# ADR 0076: Let Codex tell WT when it is waiting for an answer
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 
 ## Context
@@ -46,8 +46,8 @@ other startup prompts have no session identity and remain outside the session
 attention tracker.
 
 Until Codex exposes this event, WT cannot make this classification reliably.
-WT can use the tentative fallback proposed in
-[Detect quiet Codex sessions](adr-detect-possibly-stuck-codex-sessions.md).
+WT can use the tentative fallback defined in
+[ADR 0077](0077-detect-possibly-stuck-codex-sessions.md).
 
 ## Alternatives considered
 

@@ -1,6 +1,6 @@
-# Proposed ADR: Flag a quiet Codex session as possibly stuck
+# ADR 0077: Flag a quiet Codex session as possibly stuck
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 
 ## Context
