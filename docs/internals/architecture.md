@@ -53,6 +53,20 @@ The guest relay independently polls registered working directories for Git
 context and sends authenticated metadata updates to the host. Those updates
 cannot create, reorder, reactivate, or refresh a lifecycle observation.
 
+## Shell playback
+
+`wt shell` owns one SSH/PTY playback connection, reader thread, and `vt100`
+parser for each currently SSH-openable world. Reader threads feed one bounded
+event queue; the UI loop drains that queue and advances every parser whether a
+world is visible or active. Inventory reconciliation can add or remove a world,
+and reconnecting replaces its connection, parser, and stream identity.
+
+Codex observations identify the world, tmux session, and pane. The client uses
+that identity when selecting a Codex pane. Selection is shared with other tmux
+clients and can be changed by them. A world playback connection renders the
+pane currently active in the shared tmux window, regardless of which client
+selected it; it does not expose every pane in the world.
+
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved
 versions. This is not a runtime world setting.

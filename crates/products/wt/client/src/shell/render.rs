@@ -17,7 +17,7 @@ use ratatui::Frame;
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
@@ -32,7 +32,7 @@ pub(super) fn draw(
         }
     }
     if model.mode() == Mode::Control {
-        draw_control(frame, screens, live_focus, model, creation);
+        draw_control(frame, screens, screen_tracker, model, creation);
         if let Some(error) = action_error {
             draw_action_error(frame, error);
         }
@@ -159,7 +159,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 fn draw_control(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
     creation: Option<&Flow>,
 ) {
@@ -171,7 +171,7 @@ fn draw_control(
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
         Activity::Codex => draw_codex(frame, body, model.control()),
-        Activity::Live => super::live::draw(frame, body, screens, live_focus, model),
+        Activity::Live => super::live::draw(frame, body, screens, screen_tracker, model),
     }
     let (title, failure) = match model.control().activity() {
         Activity::Worlds => {

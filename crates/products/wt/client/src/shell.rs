@@ -24,11 +24,11 @@ mod delete;
 mod input;
 mod lifecycle;
 mod live;
-mod live_focus;
 mod model;
 mod refresh;
 mod refresh_status;
 mod render;
+mod screen_tracker;
 mod scrollbar;
 mod session;
 mod terminal_view;
@@ -69,7 +69,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let focus = codex::FocusWorker::default();
-    let mut live_focus = live_focus::LiveFocus::default();
+    let mut screen_tracker = screen_tracker::CodexScreenTracker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
@@ -95,7 +95,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        &mut live_focus,
+        &mut screen_tracker,
         &runtime,
         &shutdown,
     );
@@ -147,7 +147,7 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    live_focus: &mut live_focus::LiveFocus,
+    screen_tracker: &mut screen_tracker::CodexScreenTracker,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
@@ -162,13 +162,19 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        if model.mode() == Mode::Control
-            && model.control().activity() == control::Activity::Live
-            && !flows.actions.has_work()
-        {
-            live_focus.sync(model, sessions, runtime.focus);
-        } else {
-            live_focus.clear();
+        match screen_tracker::policy(
+            model.mode(),
+            model.control().activity(),
+            flows.actions.has_work(),
+        ) {
+            screen_tracker::Policy::Clear => screen_tracker.clear(),
+            screen_tracker::Policy::Pause => {
+                screen_tracker.sync_focus(model, sessions, runtime.focus);
+                redraw |= screen_tracker.pause_change_detection(model, sessions);
+            }
+            screen_tracker::Policy::Detect => {
+                redraw |= screen_tracker.detect_screen_changes(model, sessions);
+            }
         }
         for sequence in clipboard_writes {
             terminal
@@ -239,7 +245,7 @@ fn run_loop(
                     continue;
                 }
                 if focused_world.is_some() {
-                    live_focus.complete(&result.target, result.result.is_ok());
+                    screen_tracker.complete(&result.target, result.result.is_ok());
                 }
                 continue;
             }
@@ -295,7 +301,7 @@ fn run_loop(
                 render::draw(
                     frame,
                     &screens,
-                    live_focus,
+                    screen_tracker,
                     closed_message,
                     model,
                     flows.creation.as_ref(),
