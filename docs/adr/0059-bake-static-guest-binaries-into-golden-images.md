@@ -19,9 +19,8 @@ executables change with a WT release, not with an individual world.
 ## Decision
 
 Build and validate the four static executables before preparing the retained
-image. Include their SHA-256 digests in the image provenance manifest, install
-them root-owned with mode 0755, and verify their metadata and contents before
-publishing the image. Install and verify the Codex integration entrypoints
+image. Install them root-owned with mode 0755, and verify their metadata and
+contents before publishing the image. Install and verify the Codex integration entrypoints
 while building the image so their fixed topology is part of the same contract.
 
 World provisioning transfers only mutable, world-specific data: SSH access,
@@ -41,6 +40,7 @@ of worlds on a coherent generation.
   calls and the corresponding ownership and installation commands.
 - Release installation does more work before image publication, where it can be
   validated once and reused by every new world.
-- Golden images are coupled to a WT release through explicit binary hashes.
+- Golden images are coupled to a WT source revision through the commit recorded
+  in the manifest, as specified by ADR 0066.
 - Old image generations must remain available while world overlays reference
   them, including when their guest binaries differ from the current release.

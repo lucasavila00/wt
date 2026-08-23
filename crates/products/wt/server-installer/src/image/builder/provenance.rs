@@ -1,89 +1,8 @@
 use super::*;
 use crate::image::ImageManifest;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use wt_installer_support::{sudo_install, sudo_install_owned};
 use wt_server::image_generation::{current_path, generations_path, manifest_path};
-
-pub(in crate::image) fn staged_input_hashes(
-    spec: &BuildSpec<'_>,
-    extra_inputs: &[(&str, &[u8])],
-) -> BTreeMap<String, String> {
-    let environment = recipe::BuildEnvironment {
-        kind: IMAGE_KIND,
-        tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
-        byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
-        access_sha256: &sha_bytes(CONFIGURE_ACCESS),
-        git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
-        agent_tools_sha256: &sha_bytes(INSTALL_AGENT_TOOLS),
-        mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
-    }
-    .render();
-    let mut inputs = BTreeMap::from([
-        (
-            "/var/tmp/wt-byobu.deb".to_owned(),
-            recipe::BYOBU_SHA256.to_owned(),
-        ),
-        (
-            "/var/tmp/wt-image-build.env".to_owned(),
-            sha_bytes(environment.as_bytes()),
-        ),
-        (
-            "/var/tmp/wt-install-packages.sh".to_owned(),
-            sha_bytes(INSTALL_PACKAGES),
-        ),
-        (
-            "/var/tmp/wt-install-terminal.sh".to_owned(),
-            sha_bytes(INSTALL_TERMINAL),
-        ),
-        (
-            "/var/tmp/wt-install-codex.sh".to_owned(),
-            sha_bytes(INSTALL_CODEX),
-        ),
-        (
-            "/var/tmp/wt-install-diffo.sh".to_owned(),
-            sha_bytes(INSTALL_DIFFO),
-        ),
-        (
-            "/var/tmp/wt-image-build.sh".to_owned(),
-            sha_bytes(SHARED_IMAGE_BUILD),
-        ),
-        (
-            "/var/tmp/wt-retained-image-build.sh".to_owned(),
-            sha_bytes(spec.recipe),
-        ),
-        ("/var/tmp/wt-tmux.conf".to_owned(), sha_bytes(TMUX_CONFIG)),
-        ("/var/tmp/wt-byobu-color".to_owned(), sha_bytes(BYOBU_COLOR)),
-        (
-            "/var/tmp/wt-retained-access".to_owned(),
-            sha_bytes(CONFIGURE_ACCESS),
-        ),
-        (
-            "/var/tmp/wt-retained-git-author".to_owned(),
-            sha_bytes(CONFIGURE_GIT_AUTHOR),
-        ),
-        (
-            "/var/tmp/wt-retained-agent-tools".to_owned(),
-            sha_bytes(INSTALL_AGENT_TOOLS),
-        ),
-        (
-            "/var/tmp/wt-retained-mount-codex".to_owned(),
-            sha_bytes(MOUNT_CODEX),
-        ),
-        (
-            "offline:/wt-finalize-image.sh".to_owned(),
-            sha_bytes(FINALIZE_IMAGE),
-        ),
-        (
-            "offline:/etc/netplan/50-wt.yaml".to_owned(),
-            sha_bytes(NETWORK_CONFIG),
-        ),
-    ]);
-    for (path, bytes) in extra_inputs {
-        inputs.insert((*path).to_owned(), sha_bytes(bytes));
-    }
-    inputs
-}
 
 pub(in crate::image) struct PendingPublication {
     generation_temporary: Option<PathBuf>,
@@ -260,21 +179,6 @@ fn stage_generation(
         current_destination,
         link_target,
     })
-}
-
-pub(in crate::image) fn image_config_sha(input: &InstallInput) -> String {
-    let mut server = input.materialize();
-    server.test_server = false;
-    let mut bytes = crate::install_input::serialize_server_config(&server)
-        .expect("validated server configuration is serializable");
-    bytes.extend_from_slice(
-        format!(
-            "\nimage_memory_mib={}\nimage_vcpus={}\nimage_disk_gib={}\n",
-            input.image.build_memory_mib, input.image.build_vcpus, input.image.build_disk_gib
-        )
-        .as_bytes(),
-    );
-    sha_bytes(&bytes)
 }
 
 pub(in crate::image) fn sha_bytes(bytes: &[u8]) -> String {

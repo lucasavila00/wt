@@ -22,19 +22,15 @@ fn sha_validation_detects_drift() {
 #[test]
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
-        build: wt_control_protocol::BuildIdentity::current(),
+        commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
-        source_sha256: "source".to_owned(),
-        config_sha256: "config".to_owned(),
-        inputs: BTreeMap::new(),
         golden_sha256: "golden".to_owned(),
-        tmux_sha256: "tmux".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
     };
 
     let json = serde_json::to_value(manifest).unwrap();
     assert_eq!(json["packages"]["tmux"], "3.4-1");
-    assert_eq!(json["build"]["commit"], wt_control_protocol::GIT_COMMIT_SHA);
+    assert_eq!(json["commit"], wt_control_protocol::GIT_COMMIT_SHA);
     assert_eq!(json["guest_identity"]["uid"], 1001);
     assert_eq!(json["guest_identity"]["gid"], 1001);
 }
@@ -53,17 +49,13 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
     let prepared = directory.path().join("prepared.qcow2");
     let destination = directory.path().join("retained.qcow2");
     let manifest = ImageManifest {
-        build: wt_control_protocol::BuildIdentity::current(),
+        commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
         guest_identity: wt_retained_worlds::GuestIdentity {
             uid: 1000,
             gid: 1000,
         },
-        source_sha256: "source".to_owned(),
-        config_sha256: "config".to_owned(),
-        inputs: BTreeMap::new(),
         golden_sha256: "golden".to_owned(),
-        tmux_sha256: "tmux".to_owned(),
-        packages: BTreeMap::new(),
+        packages: Default::default(),
     };
 
     let error = stage_publication(&UnusedRunner, &prepared, &destination, &manifest)
@@ -75,31 +67,12 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
 }
 
 #[test]
-fn retained_manifest_tracks_host_assets() {
-    let inputs = retained_script_input_hashes(&BuildSpec {
-        name: BUILD_NAME,
-        recipe: RETAINED_IMAGE_BUILD,
-    });
-    let paths = inputs
-        .keys()
-        .filter(|path| path.starts_with("/var/tmp/wt-host-"))
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n");
-    insta::assert_snapshot!(paths, @r###"
-    /var/tmp/wt-host-prepare
-    /var/tmp/wt-host-shell
-    "###);
-}
-
-#[test]
-fn retained_manifest_tracks_the_diffo_installer() {
-    let inputs = retained_script_input_hashes(&BuildSpec {
-        name: BUILD_NAME,
-        recipe: RETAINED_IMAGE_BUILD,
-    });
-
-    assert!(inputs.contains_key("/var/tmp/wt-install-diffo.sh"));
+fn image_reuse_requires_the_current_commit() {
+    require_current_commit(wt_control_protocol::GIT_COMMIT_SHA).unwrap();
+    insta::assert_snapshot!(
+        require_current_commit("different-commit").unwrap_err().to_string(),
+        @"image commit does not match the current WT commit"
+    );
 }
 
 #[test]
@@ -138,20 +111,6 @@ fn installed_image_drift_is_replaced_automatically() {
             "the image and provenance manifest are not a complete pair".to_owned()
         )
     );
-}
-
-#[test]
-fn development_and_kvm_inputs_share_image_identity() {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..");
-    let load = |name| {
-        InstallInput::load_from(&workspace.join("examples/server-config").join(name)).unwrap()
-    };
-    let development = load("wt-server.development.toml");
-    let kvm = load("wt-server.kvm-e2e-install.toml");
-    let fingerprint = image_config_sha;
-
-    assert_eq!(development.source_sha256(), kvm.source_sha256());
-    assert_eq!(fingerprint(&development), fingerprint(&kvm));
 }
 
 #[test]

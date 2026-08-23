@@ -79,11 +79,11 @@ fn run_trampoline(args: Vec<OsString>) -> Result<()> {
             let diagnostic = format!("{error:#}");
             return match record_reconciliation_failure(&diagnostic) {
                 Ok(path) => Err(anyhow::anyhow!(
-                    "Codex reconciliation failed: {diagnostic}; full diagnostic recorded at {}",
+                    "Codex reconciliation failed: {diagnostic}; full diagnostic recorded at {}; set IGNORE_CODEX_WT_CHECKS=true to start Codex without reconciliation",
                     path.display()
                 )),
                 Err(log_error) => Err(anyhow::anyhow!(
-                    "Codex reconciliation failed: {diagnostic}; could not record diagnostic: {log_error:#}"
+                    "Codex reconciliation failed: {diagnostic}; could not record diagnostic: {log_error:#}; set IGNORE_CODEX_WT_CHECKS=true to start Codex without reconciliation"
                 )),
             };
         }
