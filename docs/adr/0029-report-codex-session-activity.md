@@ -39,17 +39,18 @@ installs hooks for these events:
 | `Stop` | `needs_attention` | clear |
 | `SessionEnd` | `inactive` | clear |
 
-Every hook reports `session_id`, `cwd`, optional Git repository and branch
-context, `tmux_session`, `%N` `pane_id`, and a per-pane generation and sequence.
-The Byobu target is required and verified before forwarding.
+Every hook reports only `session_id`, `cwd`, `tmux_session`, `%N` `pane_id`,
+and a per-pane generation and sequence. The Byobu target is required and
+verified before forwarding. The relay independently discovers and reports
+checkout state.
 WT parses known session-start sources while preserving the raw value. The shell
 renders that value with an unknown state, for example `unknown(startup)`.
 Compaction is a transient phase, not a lifecycle state: it preserves the
 previous lifecycle state and the shell adds a `COMPACTING` indicator until
 `PostCompact` clears it.
 
-The guest assigns the sequence under a per-pane file lock before it performs
-Git discovery or sends the report. A new session gets a new generation; later
+The guest assigns the sequence under a per-pane file lock before it sends the
+report. A new session gets a new generation; later
 events from an older session retain their original generation. The registry
 accepts only a lexicographically newer `(generation, sequence)` for a pane, so
 delayed or duplicate old events cannot overwrite its replacement.

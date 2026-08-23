@@ -192,6 +192,9 @@ fn handle(
 }
 
 fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
+    if matches!(operation, ClientOperation::CodexGitContext { .. }) {
+        bail!("Codex Git context is relay-internal");
+    }
     let ClientOperation::CodexSession { event } = operation else {
         return Ok(());
     };
@@ -370,7 +373,11 @@ struct GitContext {
 }
 
 fn git_context(cwd: &str) -> GitContext {
-    let root = match run_git(cwd, &["rev-parse", "--show-toplevel"]) {
+    let root = match run_git(
+        cwd,
+        &["rev-parse", "--show-toplevel"],
+        GitFailure::NotRepository,
+    ) {
         Ok(Some(root)) => root,
         Ok(None) => {
             return GitContext {
@@ -382,11 +389,15 @@ fn git_context(cwd: &str) -> GitContext {
         }
         Err(error) => return failed_git_context(error),
     };
-    let repository_url = match run_git(cwd, &["config", "--get", "remote.origin.url"]) {
+    let repository_url = match run_git(
+        cwd,
+        &["config", "--get", "remote.origin.url"],
+        GitFailure::MissingValue,
+    ) {
         Ok(value) => value,
         Err(error) => return failed_git_context(error),
     };
-    let git_branch = match run_git(cwd, &["branch", "--show-current"]) {
+    let git_branch = match run_git(cwd, &["branch", "--show-current"], GitFailure::Never) {
         Ok(value) => value,
         Err(error) => return failed_git_context(error),
     };
@@ -414,12 +425,19 @@ fn failed_git_context(error: anyhow::Error) -> GitContext {
     }
 }
 
-fn run_git(cwd: &str, arguments: &[&str]) -> Result<Option<String>> {
+#[derive(Clone, Copy)]
+enum GitFailure {
+    NotRepository,
+    MissingValue,
+    Never,
+}
+
+fn run_git(cwd: &str, arguments: &[&str], allowed_failure: GitFailure) -> Result<Option<String>> {
     let mut child = Command::new("/usr/bin/git")
         .args(["-C", cwd])
         .args(arguments)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .context("start Git state command")?;
     let deadline = Instant::now() + GIT_TIMEOUT;
@@ -438,9 +456,28 @@ fn run_git(cwd: &str, arguments: &[&str]) -> Result<Option<String>> {
         .context("Git state stdout unavailable")?
         .take(16 * 1024)
         .read_to_end(&mut output)?;
+    let mut error = Vec::new();
+    child
+        .stderr
+        .take()
+        .context("Git state stderr unavailable")?
+        .take(16 * 1024)
+        .read_to_end(&mut error)?;
     let status = child.wait()?;
     if !status.success() {
-        return Ok(None);
+        let error = String::from_utf8_lossy(&error);
+        let expected = match allowed_failure {
+            GitFailure::NotRepository => error.contains("not a git repository"),
+            GitFailure::MissingValue => status.code() == Some(1) && error.is_empty(),
+            GitFailure::Never => false,
+        };
+        if expected {
+            return Ok(None);
+        }
+        bail!(
+            "Git state command failed: status {status}; stderr {}",
+            escaped(error.as_bytes())
+        );
     }
     let value = String::from_utf8(output).context("Git state output was not UTF-8")?;
     Ok(Some(value.trim().to_owned()).filter(|value| !value.is_empty()))
@@ -518,9 +555,6 @@ mod tests {
         let event = wt_agent_tool_gateway::CodexSessionEvent {
             session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
             cwd: "/home/wt/project".into(),
-            repository_root: None,
-            repository_url: None,
-            git_branch: None,
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
             kind: CodexSessionEventKind::SessionEnd,
@@ -536,6 +570,25 @@ mod tests {
                 "set-option -p -u -t %1 @wt_codex_session_id".into(),
             )
         );
+    }
+
+    #[test]
+    fn rejects_git_context_from_the_public_relay() {
+        let error = validate_codex_target(&ClientOperation::CodexGitContext {
+            context: wt_agent_tool_gateway::CodexGitContext {
+                session_id: uuid::Uuid::new_v4(),
+                cwd: "/home/wt/project".into(),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+                pane_generation: 1,
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                error: None,
+            },
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "Codex Git context is relay-internal");
     }
 
     #[test]

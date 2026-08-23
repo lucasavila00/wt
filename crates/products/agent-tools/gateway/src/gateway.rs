@@ -176,8 +176,9 @@ fn parse_source(value: &str) -> Result<GitSource> {
         ),
         _ => (host_port, None),
     };
+    let host = host.to_ascii_lowercase();
     if user.is_empty()
-        || !valid_host(host)
+        || !valid_host(&host)
         || path.is_empty()
         || path.starts_with('/')
         || path
@@ -190,7 +191,7 @@ fn parse_source(value: &str) -> Result<GitSource> {
         bail!("invalid SSH Git source");
     }
     Ok(GitSource {
-        host: host.to_owned(),
+        host,
         user: user.to_owned(),
         port,
         path: path.to_owned(),
@@ -268,5 +269,7 @@ pub fn wt_tools_help() -> String {
     format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
 }
 
+#[cfg(test)]
+mod repository_state_tests;
 #[cfg(test)]
 mod tests;

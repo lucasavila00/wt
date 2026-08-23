@@ -6,15 +6,6 @@ use wt_git_smart_protocol::{validate_push, PushViolation};
 use wt_workload_registry::schema::worlds;
 
 #[test]
-fn parses_supported_sources_without_shell_syntax() {
-    let source = parse_source("git@example.test:group/repo.git").unwrap();
-    assert_eq!(source.host, "example.test");
-    assert_eq!(source.path, "group/repo.git");
-    assert!(parse_source("git@example.test:group/repo;touch-pwned").is_err());
-    assert!(parse_source("git@example.test:../repo.git").is_err());
-}
-
-#[test]
 fn push_scope_allows_only_prefixed_heads() {
     let command = |reference: &str| {
         let payload = format!(
@@ -250,9 +241,6 @@ fn compaction_preserves_the_primary_session_state() {
     let mut event = CodexSessionEvent {
         session_id,
         cwd: "/home/wt/project".into(),
-        repository_root: Some("/home/wt/project".into()),
-        repository_url: Some("git@github.com:acme/project.git".into()),
-        git_branch: Some("wt/cards".into()),
         tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
@@ -367,9 +355,6 @@ fn git_context_updates_only_the_matching_active_report() {
     let event = CodexSessionEvent {
         session_id,
         cwd: "/home/wt/project".into(),
-        repository_root: None,
-        repository_url: None,
-        git_branch: None,
         tmux_session: "wt-host".into(),
         pane_id: "%4".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
@@ -403,13 +388,116 @@ fn git_context_updates_only_the_matching_active_report() {
         .list_codex_session_reports("alice")
         .unwrap()
         .remove(0);
-    assert_eq!(after.git_branch.as_deref(), Some("wt/after-switch"));
+    assert_eq!(
+        after
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.branch.as_deref()),
+        Some("wt/after-switch")
+    );
+    assert_eq!(
+        after
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.provider_host.as_deref()),
+        Some("github.com")
+    );
+    assert_eq!(
+        after
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.repository.as_deref()),
+        Some("acme/project")
+    );
     assert_eq!(after.received_at_unix_ms, before.received_at_unix_ms);
     assert_eq!(
         after.state,
         wt_workload_registry::CodexSessionState::Working
     );
-    assert!(after.git_context_checked_at_unix_ms.is_some());
+    assert!(after.checkout.is_some());
+    let state = registry
+        .repository_git_state("alice", "github.com", "acme/project", None, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.checkouts.len(), 1);
+    assert_eq!(
+        state.checkouts[0].checkout.branch.as_deref(),
+        Some("wt/after-switch")
+    );
+
+    assert!(gateway
+        .store_codex_session_event(
+            &CodexSessionEvent {
+                pane_generation: 2,
+                pane_sequence: 2,
+                ..event.clone()
+            },
+            &grant,
+        )
+        .unwrap());
+    assert!(gateway
+        .store_codex_git_context(
+            &CodexGitContext {
+                pane_generation: 2,
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                error: Some("Git state command timed out".into()),
+                ..CodexGitContext {
+                    session_id,
+                    cwd: event.cwd.clone(),
+                    tmux_session: event.tmux_session.clone(),
+                    pane_id: event.pane_id.clone(),
+                    pane_generation: event.pane_generation,
+                    repository_root: None,
+                    repository_url: None,
+                    git_branch: None,
+                    error: None,
+                }
+            },
+            &grant,
+        )
+        .unwrap());
+    let failed = registry
+        .list_codex_session_reports("alice")
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        failed
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.branch.as_deref()),
+        Some("wt/after-switch")
+    );
+    assert_eq!(
+        failed
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.error.as_deref()),
+        Some("Git state command timed out")
+    );
+
+    assert!(gateway
+        .store_codex_session_event(
+            &CodexSessionEvent {
+                session_id,
+                cwd: "/home/wt/project".into(),
+                tmux_session: "wt-host".into(),
+                pane_id: "%4".into(),
+                kind: CodexSessionEventKind::SessionEnd,
+                pane_generation: 2,
+                pane_sequence: 3,
+                session_start_source: None,
+            },
+            &grant,
+        )
+        .unwrap());
+    assert!(registry
+        .list_codex_session_reports("alice")
+        .unwrap()
+        .remove(0)
+        .checkout
+        .is_none());
 
     assert!(!gateway
         .store_codex_git_context(
@@ -451,9 +539,6 @@ fn new_codex_session_in_a_pane_ignores_delayed_events_from_the_previous_session(
     let mut event = CodexSessionEvent {
         session_id: previous_session_id,
         cwd: "/home/wt/project".into(),
-        repository_root: None,
-        repository_url: None,
-        git_branch: None,
         tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,

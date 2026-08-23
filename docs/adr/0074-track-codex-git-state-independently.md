@@ -16,5 +16,5 @@ changing lifecycle state, order, or lifecycle receipt time.
 ## Consequences
 
 Branch switches appear without another Codex hook. Cards can warn when Git
-state is unavailable or stale while preserving activity age. Existing worlds
-retain lifecycle-hook snapshots until recreated with the updated relay.
+state is unavailable or stale while preserving activity age. The incompatible
+schema cutover is defined by ADR 0075 and requires `make clear`.

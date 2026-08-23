@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 pub const CODEX_SESSION_PANE_OPTION: &str = "@wt_codex_session_id";
 
 pub fn valid_codex_tmux_session(value: &str) -> bool {
@@ -104,12 +104,6 @@ pub struct CodexSessionStartSource {
 pub struct CodexSessionEvent {
     pub session_id: Uuid,
     pub cwd: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repository_root: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repository_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_branch: Option<String>,
     pub tmux_session: String,
     pub pane_id: String,
     pub kind: CodexSessionEventKind,

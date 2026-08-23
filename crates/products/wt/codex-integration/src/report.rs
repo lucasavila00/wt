@@ -123,9 +123,6 @@ fn report_hook_payload(payload: HookPayload) -> Result<()> {
     let event = CodexSessionEvent {
         session_id: payload.session_id,
         cwd: payload.cwd,
-        repository_root: None,
-        repository_url: None,
-        git_branch: None,
         tmux_session,
         pane_id,
         kind: event_kind(payload.hook_event_name),

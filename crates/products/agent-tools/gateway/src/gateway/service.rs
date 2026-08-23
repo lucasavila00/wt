@@ -1,6 +1,12 @@
 use super::*;
 use crate::CodexSessionStartSourceKind;
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct RepositoryTarget {
+    pub(super) provider_host: String,
+    pub(super) repository: String,
+}
+
 impl Gateway {
     pub fn open(config: GatewayConfig) -> Result<Self> {
         if config.providers.is_empty() {
@@ -142,9 +148,6 @@ impl Gateway {
                 world_id,
                 session_id: event.session_id,
                 cwd: &event.cwd,
-                repository_root: event.repository_root.as_deref(),
-                repository_url: event.repository_url.as_deref(),
-                git_branch: event.git_branch.as_deref(),
                 tmux_session: &event.tmux_session,
                 pane_id: &event.pane_id,
                 state,
@@ -165,6 +168,7 @@ impl Gateway {
         grant: &GrantRecord,
     ) -> Result<bool> {
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
+        let repository_target = self.resolve_checkout_repository(context.repository_url.as_deref());
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .update_codex_session_git_context(wt_workload_registry::CodexSessionGitContextInput {
@@ -177,9 +181,47 @@ impl Gateway {
                 repository_root: context.repository_root.as_deref(),
                 repository_url: context.repository_url.as_deref(),
                 git_branch: context.git_branch.as_deref(),
+                repository_target: repository_target.as_ref().map(|target| {
+                    wt_workload_registry::RepositoryTargetInput {
+                        provider_host: &target.provider_host,
+                        repository: &target.repository,
+                    }
+                }),
                 error: context.error.as_deref(),
             })
             .context("store Codex session Git context")
+    }
+
+    pub(super) fn resolve_checkout_repository(
+        &self,
+        remote: Option<&str>,
+    ) -> Option<RepositoryTarget> {
+        let remote = remote?;
+        let source = parse_source(remote).ok();
+        let (host, path) = if let Some(source) = source {
+            (source.host, source.path)
+        } else {
+            let rest = remote.strip_prefix("https://")?;
+            let (authority, path) = rest.split_once('/')?;
+            let host = authority
+                .split_once(':')
+                .map_or(authority, |(host, _)| host);
+            let host = host.to_ascii_lowercase();
+            if !valid_host(&host) {
+                return None;
+            }
+            (host, path.to_owned())
+        };
+        let provider = self
+            .config
+            .providers
+            .iter()
+            .find(|provider| provider.host().eq_ignore_ascii_case(&host))?;
+        validate_repository(&path).ok()?;
+        Some(RepositoryTarget {
+            provider_host: provider.host().to_owned(),
+            repository: normalize_repository(&path),
+        })
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {

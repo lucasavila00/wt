@@ -1,6 +1,22 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    codex_checkout_state (world_id, session_id, cwd) {
+        world_id -> Text,
+        session_id -> Text,
+        cwd -> Text,
+        repository_root -> Nullable<Text>,
+        repository_url -> Nullable<Text>,
+        repository_id -> Nullable<Integer>,
+        branch -> Nullable<Text>,
+        checked_at_unix_ms -> BigInt,
+        error -> Nullable<Text>,
+        pane_id -> Text,
+        pane_generation -> BigInt,
+    }
+}
+
+diesel::table! {
     codex_session_catalog (session_id) {
         session_id -> Text,
         rollout_path -> Text,
@@ -34,11 +50,6 @@ diesel::table! {
         world_id -> Text,
         session_id -> Text,
         cwd -> Text,
-        repository_root -> Nullable<Text>,
-        repository_url -> Nullable<Text>,
-        git_branch -> Nullable<Text>,
-        git_context_checked_at_unix_ms -> Nullable<BigInt>,
-        git_context_error -> Nullable<Text>,
         tmux_session -> Text,
         pane_id -> Text,
         state -> Text,
@@ -85,13 +96,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    repositories (id) {
+        id -> Integer,
+        provider_host -> Text,
+        repository -> Text,
+    }
+}
+
+diesel::table! {
     world_git_activity (id) {
         id -> Integer,
         world_id -> Text,
         recorded_at_unix_ms -> BigInt,
         kind -> Text,
-        provider_host -> Text,
-        repository -> Text,
+        repository_id -> Integer,
         git_service -> Nullable<Text>,
         branch -> Nullable<Text>,
         previous_oid -> Nullable<Text>,
@@ -104,8 +122,7 @@ diesel::table! {
         id -> Integer,
         world_id -> Text,
         recorded_at_unix_ms -> BigInt,
-        provider_host -> Text,
-        repository -> Text,
+        repository_id -> Integer,
         action -> Text,
         branch -> Nullable<Text>,
         change_request -> Nullable<Text>,
@@ -115,14 +132,20 @@ diesel::table! {
 }
 
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
+diesel::joinable!(codex_checkout_state -> repositories (repository_id));
+diesel::joinable!(codex_checkout_state -> worlds (world_id));
 diesel::joinable!(codex_session_reports -> worlds (world_id));
+diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
+diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
 diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     agent_tool_reports,
+    codex_checkout_state,
     codex_session_catalog,
     codex_session_reports,
+    repositories,
     world_git_activity,
     world_wt_tools_activity,
     worlds

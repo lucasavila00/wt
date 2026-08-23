@@ -7,7 +7,8 @@ mod reports;
 mod validation;
 
 pub use activity::{
-    GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
+    GitActivity, GitActivityKind, GitActivityQuery, RepositoryCheckoutState, RepositoryGitState,
+    RepositoryGitStateQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use create::{validate_create_resources, CreateInstance};
@@ -19,7 +20,7 @@ use thiserror::Error;
 use uuid::Uuid;
 pub use validation::{InstanceName, InvalidInstanceName};
 
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -103,6 +104,7 @@ pub enum Operation {
     ListCodexSessions,
     ListGitActivity { query: GitActivityQuery },
     ListWtToolsActivity { query: WtToolsActivityQuery },
+    RepositoryGitState { query: RepositoryGitStateQuery },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -170,6 +172,9 @@ pub enum Response {
     },
     WtToolsActivity {
         activity: Vec<WtToolsActivity>,
+    },
+    RepositoryGitState {
+        state: Box<RepositoryGitState>,
     },
     Deleted {
         name: InstanceName,
@@ -386,7 +391,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 10,
+                "protocol_version": 11,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -401,7 +406,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 10,
+                "protocol_version": 11,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -416,7 +421,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 10,
+                "protocol_version": 11,
                 "operation": "stop",
                 "name": "repo-feature"
             })
@@ -433,14 +438,14 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 10,
+                "protocol_version": 11,
                 "operation": "delete",
                 "name": "repo-feature",
                 "expected_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
         assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 10,
+            "protocol_version": 11,
             "operation": "delete",
             "name": "repo-feature"
         }))
@@ -536,7 +541,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 10,
+                "protocol_version": 11,
                 "operation": "list_codex_sessions"
             })
         );
@@ -552,7 +557,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 10,
+          "protocol_version": 11,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -587,7 +592,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 10,
+          "protocol_version": 11,
           "vcpus": 2
         }
         "###);
@@ -596,14 +601,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 10,
+            "protocol_version": 11,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 10,
+            "protocol_version": 11,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -631,7 +636,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 10,
+            "protocol_version": 11,
             "operation": "get",
             "name": "Not-Valid"
         }))
@@ -643,7 +648,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 10,
+          "protocol_version": 11,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -663,11 +668,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 10,
+            "protocol_version": 11,
             "operation": "server_info"
           },
           {
-            "protocol_version": 10,
+            "protocol_version": 11,
             "outcome": "ok",
             "response": {
               "response": "server_info",
