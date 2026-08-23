@@ -10,7 +10,9 @@ use crate::create::Flow;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+};
 use ratatui::Frame;
 
 #[allow(clippy::too_many_arguments)]
@@ -179,34 +181,23 @@ fn draw_control(
         Activity::Codex => draw_codex(frame, body, model.control()),
         Activity::Live => super::live::draw(frame, body, screens, live_focus, model),
     }
-    let hint = match (model.control().activity(), model.has_worlds()) {
-        (Activity::Worlds, true) => {
-            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
-        }
-        (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
-        (Activity::Codex, true) => {
-            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
-        }
-        (Activity::Codex, false) => {
-            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
-        }
-        (Activity::Live, true) => {
-            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
-        }
-        (Activity::Live, false) => {
-            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
-        }
+    let title = match model.control().activity() {
+        Activity::Worlds => model.control().worlds_refresh().title("Worlds"),
+        Activity::Codex => model.control().codex_refresh().title("Codex sessions"),
+        Activity::Live => "Live sessions · Experimental".to_owned(),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
-    let capacity_width = capacity
-        .as_ref()
-        .map_or(0, |text| {
-            u16::try_from(text.chars().count() + 1).unwrap_or(u16::MAX)
-        })
-        .min(footer.width);
-    let [hints, resources] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(capacity_width)]).areas(footer);
-    frame.render_widget(Paragraph::new(hint).style(muted_style()), hints);
+    let help = super::control::help_control_area(footer);
+    let capacity_width = capacity.as_ref().map_or(0, |text| {
+        u16::try_from(text.chars().count() + 1).unwrap_or(u16::MAX)
+    });
+    let [title_area, resources, help_area] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(capacity_width),
+        Constraint::Length(help.width),
+    ])
+    .areas(footer);
+    frame.render_widget(Paragraph::new(title).style(muted_style()), title_area);
     if let Some(capacity) = capacity {
         frame.render_widget(
             Paragraph::new(capacity)
@@ -215,7 +206,14 @@ fn draw_control(
             resources,
         );
     }
+    frame.render_widget(
+        Paragraph::new(super::control::HELP_CONTROL)
+            .alignment(Alignment::Right)
+            .style(Style::new().add_modifier(Modifier::BOLD)),
+        help_area,
+    );
     draw_command_palette(frame, content, model.control().palette());
+    draw_help(frame, content, model);
     if model.control().open_failed() {
         draw_codex_toast(frame, area, model.control());
     }
@@ -270,13 +268,42 @@ fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         retry,
     );
 }
-fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
-    let state = model.control();
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(state.worlds_refresh().title("Worlds"));
-    let inner = block.inner(area);
+
+fn draw_help(frame: &mut Frame<'_>, content: Rect, model: &ShellModel) {
+    let help = model.control().help();
+    if !help.is_open() {
+        return;
+    }
+    let width = 64.min(content.width);
+    let height = 14.min(content.height);
+    let area = Rect::new(
+        content.x + content.width.saturating_sub(width) / 2,
+        content.y + content.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    let block = Block::new().borders(Borders::ALL).title(" Help ");
+    let inner = block.inner(area).inner(Margin::new(2, 1));
     frame.render_widget(block, area);
+    let sections = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    let rows = help
+        .rows(model.control().activity(), model.has_worlds())
+        .into_iter()
+        .map(|(shortcut, action)| Row::new([Cell::from(shortcut), Cell::from(action)]));
+    frame.render_widget(
+        Table::new(rows, [Constraint::Length(20), Constraint::Min(0)])
+            .header(Row::new(["Shortcut", "Action"]))
+            .column_spacing(2),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new("Esc: close").style(muted_style()),
+        sections[1],
+    );
+}
+
+fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
     let creating = creation
         .and_then(Flow::creating_world)
         .filter(|(name, _)| model.worlds().iter().all(|world| world.name != *name));
@@ -284,7 +311,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         frame.render_widget(
             Paragraph::new("No worlds with SSH access\nCreate a world to get started")
                 .alignment(Alignment::Center),
-            inner,
+            area,
         );
         return;
     }
@@ -368,18 +395,13 @@ fn draw_world_card(
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(state.codex_refresh().title("Codex sessions"));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
     if state.codex().is_empty() {
         let message = if state.codex_refresh().updated_at().is_some() {
             "No Codex sessions\nStart Codex in a world to see its session here"
         } else {
             "Loading Codex sessions…"
         };
-        frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), inner);
+        frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), area);
         return;
     }
     super::scrollbar::render_codex_cards(

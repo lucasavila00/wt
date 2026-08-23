@@ -2,7 +2,7 @@ use super::super::refresh_status::RefreshStatus;
 use super::layout::{codex_visible_cards, session_card_at_position, CARD_COLUMNS};
 use super::{
     command_palette_layout, control_areas, Activity, CodexCard, CodexCardIdentity, CodexOpenTarget,
-    CommandPalette, ControlAction,
+    CommandPalette, ControlAction, Help,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -12,6 +12,7 @@ use wt_control_protocol::ResourceCapacity;
 pub(in crate::shell) struct ControlState {
     pub(super) activity: Activity,
     palette: CommandPalette,
+    help: Help,
     pub(super) codex: Vec<CodexCard>,
     pub(super) selected: Option<CodexCardIdentity>,
     codex_offset: usize,
@@ -27,6 +28,7 @@ impl Default for ControlState {
         Self {
             activity: Activity::Live,
             palette: CommandPalette::default(),
+            help: Help::default(),
             codex: Vec::new(),
             selected: None,
             codex_offset: 0,
@@ -51,6 +53,7 @@ impl ControlState {
     pub(in crate::shell) fn show_worlds(&mut self) {
         self.activity = Activity::Worlds;
         self.palette.close();
+        self.help.close();
     }
 
     pub(in crate::shell) fn activity(&self) -> Activity {
@@ -59,6 +62,10 @@ impl ControlState {
 
     pub(in crate::shell) fn palette(&self) -> &CommandPalette {
         &self.palette
+    }
+
+    pub(in crate::shell) fn help(&self) -> &Help {
+        &self.help
     }
 
     pub(in crate::shell) fn codex(&self) -> &[CodexCard] {
@@ -149,6 +156,14 @@ impl ControlState {
                 _ => {}
             }
         }
+        if self.help.is_open() {
+            if key.modifiers == KeyModifiers::NONE
+                && matches!(key.code, KeyCode::Char('2') | KeyCode::F(2) | KeyCode::Esc)
+            {
+                self.help.close();
+            }
+            return None;
+        }
         if self.palette.is_open() {
             return self.palette.handle_key(key).map(ControlAction::Command);
         }
@@ -162,6 +177,7 @@ impl ControlState {
                 self.keep_codex_selection_visible(area);
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
+            KeyCode::Char('2') | KeyCode::F(2) => self.help.toggle(),
             KeyCode::Up if self.activity != Activity::Worlds => {
                 self.move_codex(-(super::super::live::columns(area) as isize), area)
             }
@@ -186,8 +202,18 @@ impl ControlState {
         mouse: MouseEvent,
         area: Rect,
     ) -> (bool, Option<ControlAction>) {
+        if self.help.is_open() {
+            return (true, None);
+        }
         if self.palette.is_open() && mouse.kind != MouseEventKind::Down(MouseButton::Left) {
             return (true, None);
+        }
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+            let (_, footer) = super::control_content_areas(area);
+            if super::help_control_area(footer).contains((mouse.column, mouse.row).into()) {
+                self.help.toggle();
+                return (true, None);
+            }
         }
         match mouse.kind {
             MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
@@ -260,6 +286,7 @@ impl ControlState {
 
     pub(in crate::shell) fn close(&mut self) {
         self.palette.close();
+        self.help.close();
     }
 
     fn activate_selected(&mut self) -> Option<CodexOpenTarget> {

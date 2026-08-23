@@ -316,6 +316,32 @@ fn control_ui_opens_the_command_palette() {
 }
 
 #[test]
+fn control_ui_opens_help() {
+    let backend = TestBackend::new(64, 16);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["local.one"]);
+    press(&mut model, KeyCode::F(2), Rect::new(0, 0, 64, 16));
+    let parser = parser();
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    insta::assert_debug_snapshot!("shell_control_help", terminal.backend().buffer());
+}
+
+#[test]
 fn control_ui_shows_codex_session_cards() {
     let backend = TestBackend::new(100, 22);
     let mut terminal = Terminal::new(backend).unwrap();
