@@ -74,7 +74,7 @@ esac
         write_executable(&bin.join("wt-server"), &server);
         write_executable(
             &bin.join("ssh"),
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncase \"$*\" in\n  *'focus-pane'*'%1') printf 'wt-host:%%1:123e4567-e89b-12d3-a456-426614174000:0\\n' ;;\n  *) stty -echo; printf 'session: %s\\n' \"$2\"; exec cat ;;\nesac\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'focus-pane'*'%1') printf 'wt-host:%%1:123e4567-e89b-12d3-a456-426614174000:0\\n' ;;\n  *'-M -S'*) touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat ;;\n  *) exit 2 ;;\nesac\n",
         );
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -215,6 +215,26 @@ fn codex_sessions_refresh_after_startup() -> Result<()> {
 }
 
 #[test]
+fn opening_a_codex_session_reuses_the_world_ssh_connection() -> Result<()> {
+    let fixture = Fixture::new();
+    fs::write(fixture.home.path().join("codex-active"), "").unwrap();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("/home/wt/project")?
+        .press(Key::Enter)?
+        .wait_for_text("session: local.existing")?;
+
+    let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
+    let mut lines = calls.lines();
+    let playback = lines.next().unwrap();
+    let focus = lines.find(|line| line.contains("focus-pane")).unwrap();
+    assert!(playback.starts_with("-M -S "));
+    assert!(focus.contains("ProxyCommand=/bin/false"));
+    assert_eq!(control_path(playback), control_path(focus));
+    Ok(())
+}
+
+#[test]
 fn live_activity_reuses_the_open_world_stream() -> Result<()> {
     let fixture = Fixture::new();
     fs::write(fixture.home.path().join("codex-active"), "").unwrap();
@@ -227,6 +247,10 @@ fn live_activity_reuses_the_open_world_stream() -> Result<()> {
         .wait_for_text("session: local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;
     let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
+    let mut lines = calls.lines();
+    let playback = lines.next().unwrap();
+    let focus = lines.find(|line| line.contains("focus-pane")).unwrap();
+    assert_eq!(control_path(playback), control_path(focus));
     assert!(calls.contains("wt-codex-integration focus-pane"));
     assert!(calls.contains("123e4567-e89b-12d3-a456-426614174000 wt-host %1"));
     Ok(())
@@ -235,4 +259,12 @@ fn live_activity_reuses_the_open_world_stream() -> Result<()> {
 fn write_executable(path: &std::path::Path, contents: &str) {
     fs::write(path, contents).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn control_path(command: &str) -> &str {
+    let mut arguments = command.split_whitespace();
+    arguments
+        .find(|argument| *argument == "-S")
+        .and_then(|_| arguments.next())
+        .expect("SSH command has a control socket")
 }

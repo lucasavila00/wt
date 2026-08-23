@@ -2,6 +2,7 @@ use super::model::ShellWorld;
 use anyhow::{Context as _, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read as _, Write as _};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
 
@@ -15,6 +16,7 @@ enum SessionEvent {
 
 pub(super) struct SessionSet {
     sessions: Vec<WorldSession>,
+    control_dir: tempfile::TempDir,
     events: Option<Receiver<SessionEvent>>,
     sender: SyncSender<SessionEvent>,
     next_token: u64,
@@ -25,6 +27,7 @@ impl SessionSet {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut set = Self {
             sessions: Vec::with_capacity(worlds.len()),
+            control_dir: tempfile::tempdir().context("create SSH control socket directory")?,
             events: Some(events),
             sender: sender.clone(),
             next_token: 0,
@@ -85,7 +88,8 @@ impl SessionSet {
             .checked_add(1)
             .expect("shell session token overflow");
         let world = self.sessions[index].world.clone();
-        match WorldSession::start_ssh(token, &world, rows, columns, &self.sender) {
+        let control_path = self.control_path_for(token);
+        match WorldSession::start_ssh(token, &world, control_path, rows, columns, &self.sender) {
             Ok(session) => self.sessions[index] = session,
             Err(error) => {
                 self.sessions[index].closed_message =
@@ -135,9 +139,11 @@ impl SessionSet {
             .next_token
             .checked_add(1)
             .expect("shell session token overflow");
+        let control_path = self.control_path_for(token);
         self.sessions.push(WorldSession::start_ssh(
             token,
             world,
+            control_path,
             rows,
             columns,
             &self.sender,
@@ -149,6 +155,14 @@ impl SessionSet {
         self.sessions
             .get(index)
             .is_some_and(|session| session.closed_message.is_none())
+    }
+
+    pub(super) fn control_path(&self, index: usize) -> &Path {
+        &self.sessions[index].control_path
+    }
+
+    fn control_path_for(&self, token: u64) -> PathBuf {
+        self.control_dir.path().join(token.to_string())
     }
 
     pub(super) fn reconcile(
@@ -202,6 +216,7 @@ impl Drop for SessionSet {
 struct WorldSession {
     token: u64,
     world: ShellWorld,
+    control_path: PathBuf,
     name: String,
     parser: vt100::Parser,
     writer: Option<Box<dyn std::io::Write + Send>>,
@@ -216,18 +231,22 @@ impl WorldSession {
     fn start_ssh(
         token: u64,
         world: &ShellWorld,
+        control_path: PathBuf,
         rows: u16,
         columns: u16,
         sender: &SyncSender<SessionEvent>,
     ) -> Result<Self> {
         let mut command = CommandBuilder::new("ssh");
+        command.args(["-M", "-S"]);
+        command.arg(&control_path);
         command.args(["--", &world.name]);
-        Self::start(token, world, command, rows, columns, sender)
+        Self::start(token, world, control_path, command, rows, columns, sender)
     }
 
     fn start(
         token: u64,
         world: &ShellWorld,
+        control_path: PathBuf,
         command: CommandBuilder,
         rows: u16,
         columns: u16,
@@ -258,6 +277,7 @@ impl WorldSession {
         Ok(Self {
             token,
             world: world.clone(),
+            control_path,
             name: world.name.clone(),
             parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
             writer: Some(writer),
@@ -437,6 +457,20 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn every_playback_attempt_gets_a_distinct_control_path() {
+        let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
+        let sessions = SessionSet {
+            sessions: Vec::new(),
+            control_dir: tempfile::tempdir().unwrap(),
+            events: Some(events),
+            sender,
+            next_token: 0,
+        };
+
+        assert_ne!(sessions.control_path_for(1), sessions.control_path_for(2));
+    }
+
+    #[test]
     fn hidden_sessions_keep_running_and_parsing_output() {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut sessions = SessionSet {
@@ -444,6 +478,7 @@ mod tests {
                 fake_session(0, "one", &sender),
                 fake_session(1, "two", &sender),
             ],
+            control_dir: tempfile::tempdir().unwrap(),
             events: Some(events),
             sender,
             next_token: 2,
@@ -466,6 +501,7 @@ mod tests {
                 fake_session(0, "one", &sender),
                 fake_session(1, "two", &sender),
             ],
+            control_dir: tempfile::tempdir().unwrap(),
             events: Some(events),
             sender: sender.clone(),
             next_token: 2,
@@ -495,7 +531,16 @@ mod tests {
     fn fake_session(token: u64, name: &str, sender: &SyncSender<SessionEvent>) -> WorldSession {
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", r"stty -echo; printf '\033[2J\033[Hready'; cat"]);
-        WorldSession::start(token, &ShellWorld::from(name), command, 4, 20, sender).unwrap()
+        WorldSession::start(
+            token,
+            &ShellWorld::from(name),
+            PathBuf::new(),
+            command,
+            4,
+            20,
+            sender,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -506,6 +551,7 @@ mod tests {
                 fake_session(0, "one", &sender),
                 fake_session(1, "two", &sender),
             ],
+            control_dir: tempfile::tempdir().unwrap(),
             events: Some(events),
             sender,
             next_token: 2,
@@ -532,6 +578,7 @@ mod tests {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut sessions = SessionSet {
             sessions: vec![fake_session(0, "one", &sender)],
+            control_dir: tempfile::tempdir().unwrap(),
             events: Some(events),
             sender,
             next_token: 1,
@@ -551,9 +598,11 @@ mod tests {
         let world = ShellWorld::from("one");
         let mut command = CommandBuilder::new("/bin/sh");
         command.args(["-c", "exit 23"]);
-        let session = WorldSession::start(0, &world, command, 4, 20, &sender).unwrap();
+        let session =
+            WorldSession::start(0, &world, PathBuf::new(), command, 4, 20, &sender).unwrap();
         let mut sessions = SessionSet {
             sessions: vec![session],
+            control_dir: tempfile::tempdir().unwrap(),
             events: Some(events),
             sender,
             next_token: 1,
