@@ -222,20 +222,20 @@ fn draw_control(
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
         (Activity::Worlds, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
         (Activity::Codex, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Codex, false) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
         (Activity::Live, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Live, false) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());

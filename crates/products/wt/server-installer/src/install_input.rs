@@ -31,6 +31,8 @@ pub(crate) struct InstallImageConfig {
     pub build_memory_mib: u64,
     pub build_vcpus: u32,
     pub build_disk_gib: u64,
+    #[serde(default)]
+    pub development_tools: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,6 +116,7 @@ impl InstallInput {
             test_server: self.test_server,
             image: ImageConfig {
                 path: self.image.path.clone(),
+                development_tools: self.image.development_tools,
             },
             libvirt: self.libvirt.clone(),
             agent_tools: AgentToolsConfig {

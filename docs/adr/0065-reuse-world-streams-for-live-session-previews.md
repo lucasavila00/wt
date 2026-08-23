@@ -27,11 +27,12 @@ stream can display several panes simultaneously.
 - Keep every world SSH PTY running in control view. Resize all of them to the
   live grid's card viewport while the activity is visible, then restore the
   full world viewport when leaving it.
-- At 400 terminal columns and wider, show four columns and up to four rows.
-  Below 400 columns, show one card per row.
+- Show two equal-width columns and as many rows as fit in the terminal.
 - When exactly one openable Codex target belongs to a world, validate and focus
-  its reported tmux pane when the live activity is entered. The existing world
-  stream then follows that shared tmux selection.
+  its reported tmux pane through the playback connection's control socket when
+  the live activity is entered. The existing world stream then follows that
+  shared tmux selection. This uses the same readiness gate and forbids the same
+  network fallback as opening from the Codex activity.
 - Do not auto-focus a world with multiple openable Codex targets. Its cards
   render the same world stream with an explicit warning that the user must open
   one card to choose a pane.

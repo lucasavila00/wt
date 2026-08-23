@@ -38,6 +38,14 @@ printf 'kernel.perf_event_paranoid = -1\n' > /etc/sysctl.d/99-wt-profiling.conf
 sysctl --system
 test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
+if test "$WT_DEVELOPMENT_TOOLS" = true; then
+    phase "installing optional development tools"
+    /bin/sh /var/tmp/wt-install-packages.sh \
+        bison build-essential cmake clang curl wget jq yq pkg-config \
+        docker.io docker-compose-v2
+    /bin/sh /var/tmp/wt-install-development-tools.sh
+fi
+
 phase "installing terminal tools"
 /bin/sh /var/tmp/wt-install-terminal.sh
 
@@ -73,17 +81,25 @@ phase "installing retained-world tools"
 /bin/sh /var/tmp/wt-retained-image-build.sh
 
 phase "removing image-build dependencies"
-DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
-    bison build-essential curl libevent-dev libncurses-dev pkg-config
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y libevent-dev libncurses-dev
+if test "$WT_DEVELOPMENT_TOOLS" != true; then
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
+        bison build-essential curl pkg-config
+fi
 DEBIAN_FRONTEND=noninteractive apt-get purge -y \
     cloud-init cloud-initramfs-copymods cloud-initramfs-dyn-netconf
 DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y
 apt-get clean
-! command -v cc
-! command -v gcc
-! command -v g++
-! command -v make
-! command -v curl
+if test "$WT_DEVELOPMENT_TOOLS" = true; then
+    command -v cc gcc g++ make cmake clang pkg-config curl wget jq yq docker
+    docker compose version >/dev/null
+else
+    ! command -v cc
+    ! command -v gcc
+    ! command -v g++
+    ! command -v make
+    ! command -v curl
+fi
 ! command -v cloud-init
 
 phase "validating installed terminal tools"

@@ -1,5 +1,5 @@
 use super::super::refresh_status::RefreshStatus;
-use super::layout::{codex_visible_cards, session_card_at_position};
+use super::layout::{codex_visible_cards, session_card_at_position, CARD_COLUMNS};
 use super::{
     command_palette_layout, control_areas, Activity, CodexCard, CodexCardIdentity, CodexOpenTarget,
     CommandPalette, ControlAction,
@@ -163,13 +163,13 @@ impl ControlState {
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Up if self.activity != Activity::Worlds => {
-                self.move_codex(-(super::super::live::columns(area) as isize), area)
+                self.move_codex(-(CARD_COLUMNS as isize), area)
             }
             KeyCode::Down if self.activity != Activity::Worlds => {
-                self.move_codex(super::super::live::columns(area) as isize, area)
+                self.move_codex(CARD_COLUMNS as isize, area)
             }
-            KeyCode::Left if self.activity == Activity::Live => self.move_codex(-1, area),
-            KeyCode::Right if self.activity == Activity::Live => self.move_codex(1, area),
+            KeyCode::Left if self.activity != Activity::Worlds => self.move_codex(-1, area),
+            KeyCode::Right if self.activity != Activity::Worlds => self.move_codex(1, area),
             KeyCode::Enter if self.activity != Activity::Worlds => {
                 return self
                     .activate_selected()
@@ -191,11 +191,11 @@ impl ControlState {
         }
         match mouse.kind {
             MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
-                self.move_codex(-(super::super::live::columns(area) as isize), area);
+                self.move_codex(-(CARD_COLUMNS as isize), area);
                 return (true, None);
             }
             MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
-                self.move_codex(super::super::live::columns(area) as isize, area);
+                self.move_codex(CARD_COLUMNS as isize, area);
                 return (true, None);
             }
             MouseEventKind::Down(MouseButton::Left) => {}
@@ -292,8 +292,8 @@ impl ControlState {
             .min(identities.len().saturating_sub(1));
         self.selected = Some(identities[selected].clone());
         let visible = codex_visible_cards(area, self.activity).max(1);
-        if self.activity == Activity::Live {
-            let columns = super::super::live::columns(area);
+        if self.activity != Activity::Worlds {
+            let columns = CARD_COLUMNS;
             if selected < self.codex_offset {
                 self.codex_offset = selected / columns * columns;
             } else if selected >= self.codex_offset.saturating_add(visible) {
@@ -322,8 +322,8 @@ impl ControlState {
             self.codex_offset = 0;
             return;
         };
-        if self.activity == Activity::Live {
-            let columns = super::super::live::columns(area);
+        if self.activity != Activity::Worlds {
+            let columns = CARD_COLUMNS;
             self.codex_offset -= self.codex_offset % columns;
             if selected < self.codex_offset {
                 self.codex_offset = selected / columns * columns;

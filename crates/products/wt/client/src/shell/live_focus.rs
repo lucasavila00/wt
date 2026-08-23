@@ -48,7 +48,11 @@ impl LiveFocus {
                 continue;
             }
             self.states.insert(target.identity.clone(), Status::Pending);
-            worker.start_live(target, alias.to_owned());
+            worker.start_live(
+                target,
+                alias.to_owned(),
+                sessions.control_path(index).to_owned(),
+            );
         }
     }
 

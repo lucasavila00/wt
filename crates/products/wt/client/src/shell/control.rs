@@ -9,8 +9,8 @@ mod types;
 
 pub(super) use command::command_palette_layout;
 pub(super) use layout::{
-    codex_card_rects, control_areas, control_content_areas, world_card_at_position,
-    world_card_rects, ACTIVITY_BUTTON_HEIGHT,
+    card_grid_rects, card_grid_visible, codex_card_rects, control_areas, control_content_areas,
+    world_card_at_position, world_card_rects, ACTIVITY_BUTTON_HEIGHT, CARD_COLUMNS, CARD_GAP,
 };
 pub(super) use palette::CommandPalette;
 pub(super) use state::ControlState;
