@@ -1,6 +1,4 @@
-use super::control::{
-    card_grid_rects, card_grid_visible, control_content_areas, CARD_COLUMNS, CARD_GAP,
-};
+use super::control::{card_grid_rects, card_grid_visible, control_content_areas, CARD_COLUMNS};
 use super::model::ShellModel;
 use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
@@ -10,7 +8,8 @@ use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-pub(super) const CARD_HEIGHT: u16 = 12;
+pub(super) const CARD_HEIGHT: u16 = 14;
+const CARD_GAP: u16 = 0;
 // The card viewport clips this row, leaving Byobu's status bar out of the preview.
 const BYOBU_STATUS_ROWS: u16 = 1;
 
@@ -19,7 +18,7 @@ pub(super) fn columns(_area: Rect) -> usize {
 }
 
 pub(super) fn visible(area: Rect) -> usize {
-    card_grid_visible(area, CARD_HEIGHT)
+    card_grid_visible(area, CARD_HEIGHT, CARD_GAP)
 }
 
 pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
@@ -52,7 +51,7 @@ fn card_size(area: Rect, count: usize) -> Option<(u16, u16)> {
 }
 
 pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize, Rect)> {
-    card_grid_rects(area, offset, count, CARD_HEIGHT)
+    card_grid_rects(area, offset, count, CARD_HEIGHT, CARD_GAP)
 }
 
 pub(super) fn draw(
@@ -158,10 +157,11 @@ mod tests {
         let area = Rect::new(0, 0, 100, 30);
         let rects = card_rects(area, 0, 6);
         assert_eq!(columns(area), 2);
-        assert_eq!(visible(area), 6);
-        assert_eq!(rects.len(), 6);
+        assert_eq!(visible(area), 4);
+        assert_eq!(rects.len(), 4);
         assert_eq!(rects[0].1.y, rects[1].1.y);
-        assert!(rects[2].1.y > rects[0].1.y);
+        assert_eq!(rects[1].1.x, rects[0].1.right());
+        assert_eq!(rects[2].1.y, rects[0].1.bottom());
         assert_eq!(rects[0].1.width, rects[1].1.width);
         for (index, (_, rect)) in rects.iter().enumerate() {
             assert!(rect.width >= 1 && rect.height >= 1);
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn live_cards_reserve_a_scrollbar_column_only_when_overflowing() {
-        let area = Rect::new(0, 0, 100, 30);
+        let area = Rect::new(0, 0, 99, 30);
         let fitting = card_rects(area, 0, visible(area));
         let overflowing = card_rects(area, 0, visible(area) + 1);
 

@@ -25,7 +25,7 @@ pub(in crate::shell) fn codex_card_rects(
     offset: usize,
     count: usize,
 ) -> Vec<(usize, Rect)> {
-    card_grid_rects(area, offset, count, CODEX_CARD_HEIGHT)
+    card_grid_rects(area, offset, count, CODEX_CARD_HEIGHT, CARD_GAP)
 }
 
 pub(in crate::shell) fn card_grid_rects(
@@ -33,23 +33,24 @@ pub(in crate::shell) fn card_grid_rects(
     offset: usize,
     count: usize,
     card_height: u16,
+    card_gap: u16,
 ) -> Vec<(usize, Rect)> {
     let (body, _) = control_content_areas(area);
     let viewport = body.inner(Margin::new(1, 1));
     if viewport.is_empty() {
         return Vec::new();
     }
-    let visible = card_grid_visible(area, card_height);
+    let visible = card_grid_visible(area, card_height, card_gap);
     let viewport_width = viewport.width.saturating_sub(u16::from(count > visible));
     let viewport_right = viewport.x.saturating_add(viewport_width);
-    let width = (viewport_width.saturating_sub(CARD_GAP) / 2).max(1);
+    let width = (viewport_width.saturating_sub(card_gap) / 2).max(1);
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(position, index)| {
             let row = position / CARD_COLUMNS;
             let column = position % CARD_COLUMNS;
-            let x = viewport.x + u16::try_from(column).unwrap_or(u16::MAX) * (width + CARD_GAP);
-            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * (card_height + CARD_GAP);
+            let x = viewport.x + u16::try_from(column).unwrap_or(u16::MAX) * (width + card_gap);
+            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * (card_height + card_gap);
             (
                 index,
                 Rect::new(
@@ -68,17 +69,17 @@ pub(in crate::shell) fn world_card_rects(
     selected: usize,
     count: usize,
 ) -> Vec<(usize, Rect)> {
-    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT).max(1);
+    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT, CARD_GAP).max(1);
     let offset = selected / visible * visible;
-    card_grid_rects(area, offset, count, WORLD_CARD_HEIGHT)
+    card_grid_rects(area, offset, count, WORLD_CARD_HEIGHT, CARD_GAP)
 }
 
-pub(in crate::shell) fn card_grid_visible(area: Rect, card_height: u16) -> usize {
+pub(in crate::shell) fn card_grid_visible(area: Rect, card_height: u16, card_gap: u16) -> usize {
     let (body, _) = control_content_areas(area);
     usize::from(
         body.inner(Margin::new(1, 1))
             .height
-            .div_ceil(card_height + CARD_GAP),
+            .div_ceil(card_height + card_gap),
     ) * CARD_COLUMNS
 }
 
@@ -99,7 +100,7 @@ pub(in crate::shell) fn codex_visible_cards(area: Rect, activity: Activity) -> u
     if activity == Activity::Live {
         return super::super::live::visible(area);
     }
-    card_grid_visible(area, CODEX_CARD_HEIGHT)
+    card_grid_visible(area, CODEX_CARD_HEIGHT, CARD_GAP)
 }
 
 pub(in crate::shell) fn session_card_at_position(
