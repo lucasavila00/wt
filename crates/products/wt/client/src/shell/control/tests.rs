@@ -323,7 +323,7 @@ fn resize_keeps_the_selected_card_in_its_viewport() {
 #[test]
 fn world_cards_reserve_a_scrollbar_column_only_when_overflowing() {
     let area = Rect::new(0, 0, 100, 30);
-    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT);
+    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT, CARD_GAP);
     let fitting = world_card_rects(area, 0, visible);
     let overflowing = world_card_rects(area, 0, visible + 1);
 

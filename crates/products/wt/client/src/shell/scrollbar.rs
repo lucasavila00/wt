@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use super::control::{
-    card_grid_visible, control_content_areas, CODEX_CARD_HEIGHT, WORLD_CARD_HEIGHT,
+    card_grid_visible, control_content_areas, CARD_GAP, CODEX_CARD_HEIGHT, WORLD_CARD_HEIGHT,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,7 +63,7 @@ pub(super) fn render_world_cards(
     selected: usize,
     style: Style,
 ) {
-    let viewport = card_grid_visible(frame.area(), WORLD_CARD_HEIGHT).max(1);
+    let viewport = card_grid_visible(frame.area(), WORLD_CARD_HEIGHT, CARD_GAP).max(1);
     render(
         frame,
         area(frame.area()),
@@ -79,7 +79,7 @@ pub(super) fn render_codex_cards(frame: &mut Frame<'_>, count: usize, offset: us
         frame,
         area(frame.area()),
         count,
-        card_grid_visible(frame.area(), CODEX_CARD_HEIGHT).max(1),
+        card_grid_visible(frame.area(), CODEX_CARD_HEIGHT, CARD_GAP).max(1),
         offset,
         style,
     );
