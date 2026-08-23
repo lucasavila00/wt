@@ -187,7 +187,7 @@ pub fn serve_git<S: DuplexStream>(
     let provider_host = target.provider_host();
     forward_advertisement(&mut child, stream, provider_host)?;
     if service == GitService::UploadPack {
-        bridge_child(stream, child, None, provider_host)?;
+        bridge_child(stream, child, None, false, provider_host)?;
         return Ok(GitServeResult::default());
     }
 
@@ -217,6 +217,7 @@ pub fn serve_git<S: DuplexStream>(
         child,
         (sideband && push_message.is_some())
             .then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
+        true,
         provider_host,
     )?
     .expect("receive-pack response is captured");
@@ -282,6 +283,7 @@ fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
     push_message: Option<ResponseMessage<'_>>,
+    capture_response: bool,
     provider_host: Option<&str>,
 ) -> Result<Option<Vec<u8>>> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
@@ -295,21 +297,27 @@ fn bridge_child<S: DuplexStream>(
         result
     });
     let mut child_stdout = child.stdout.take().context("Git service has no stdout")?;
-    let response = if let Some(push_message) = push_message {
+    let response = if capture_response {
         let mut response = Vec::new();
         child_stdout
             .read_to_end(&mut response)
             .context("read Git response")?;
-        if let Some(body) = response.strip_suffix(b"0000") {
-            stream.write_all(body).context("forward Git response")?;
-            let message = push_message(&response)?;
-            if !message.is_empty() {
-                let mut packet = Vec::with_capacity(message.len() + 1);
-                packet.push(2);
-                packet.extend_from_slice(message.as_bytes());
-                write_packet(stream, &packet)?;
+        if let Some(push_message) = push_message {
+            if let Some(body) = response.strip_suffix(b"0000") {
+                stream.write_all(body).context("forward Git response")?;
+                let message = push_message(&response)?;
+                if !message.is_empty() {
+                    let mut packet = Vec::with_capacity(message.len() + 1);
+                    packet.push(2);
+                    packet.extend_from_slice(message.as_bytes());
+                    write_packet(stream, &packet)?;
+                }
+                stream.write_all(b"0000").context("finish Git response")?;
+            } else {
+                stream
+                    .write_all(&response)
+                    .context("forward Git response")?;
             }
-            stream.write_all(b"0000").context("finish Git response")?;
         } else {
             stream
                 .write_all(&response)
