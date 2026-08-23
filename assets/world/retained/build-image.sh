@@ -28,6 +28,6 @@ runuser --user "$WT_USER" -- ln -sfn /usr/local/bin/wt-codex-integration \
     if test "$WT_DEVELOPMENT_TOOLS" = true; then
         dpkg-query -W -f='${Package}\t${Version}\n' \
             bison build-essential cmake clang curl wget jq yq pkg-config \
-            docker.io docker-compose-v2
+            docker.io docker-compose-v2 shellcheck
     fi
 } | sort > /var/lib/wt-image-packages

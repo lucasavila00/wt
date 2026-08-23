@@ -51,6 +51,18 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
         "$HOME/.local/bin/uv" python install --default
     '
 
+phase "configuring Node.js command path"
+node_bin=$(runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+    PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -o pipefail -c '
+        . "$HOME/.nvm/nvm.sh"
+        dirname "$(command -v node)"
+    ')
+for tool in node npm npx corepack; do
+    test -x "$node_bin/$tool"
+    ln -sfn "$node_bin/$tool" "/usr/local/bin/$tool"
+done
+
 phase "configuring Docker for the retained-world user"
 usermod --append --groups docker "$WT_USER"
 cat >> "$WT_HOME/.bashrc" <<'EOF'
@@ -61,7 +73,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 if [[ $- == *i* && -z ${WT_DEVELOPMENT_TOOLS_ANNOUNCED:-} ]]; then
     export WT_DEVELOPMENT_TOOLS_ANNOUNCED=1
-    printf '%s\n' 'WT development tools: Rust/Cargo, Go, Python/uv, Node.js/nvm, build tools, CLI utilities, and Docker/Compose.'
+    printf '%s\n' 'WT development tools: Rust/Cargo, Go, Python/uv, Node.js/npm (via nvm), build tools, CLI utilities, and Docker/Compose.'
 fi
 EOF
 chown "$WT_USER:$WT_GROUP" "$WT_HOME/.bashrc"
@@ -71,7 +83,9 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
         set -eu
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
         . "$HOME/.nvm/nvm.sh"
+        command -v nvm
         {
             printf "cargo\t%s\n" "$(cargo --version)"
             printf "rustc\t%s\n" "$(rustc --version)"
@@ -80,6 +94,9 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
             printf "nvm\t%s\n" "$(nvm --version)"
             printf "node\t%s\n" "$(node --version)"
             printf "npm\t%s\n" "$(npm --version)"
+            printf "npx\t%s\n" "$(npx --version)"
+            printf "corepack\t%s\n" "$(corepack --version)"
+            printf "shellcheck\t%s\n" "$(shellcheck --version | grep -E "^version:" | cut -d: -f2 | tr -d " ")"
             printf "uv\t%s\n" "$(uv --version)"
             printf "docker\t%s\n" "$(docker --version)"
             printf "docker-compose\t%s\n" "$(docker compose version)"

@@ -8,7 +8,7 @@
 ## Context
 
 WT's retained golden image is shared by every new world. Current Rust/Cargo,
-Go, Python/uv, Node.js/nvm, build tools, CLI utilities, and Docker/Compose are
+Go, Python/uv, Node.js/npm through NVM, build tools, CLI utilities, and Docker/Compose are
 useful for development, but they add substantial download time and image size.
 The KVM E2E path creates images from scratch and must not pay that cost for
 tests that do not need those tools.
@@ -23,9 +23,10 @@ Add `image.development_tools`, defaulting to `false`, to the install and
 runtime image configuration. When enabled, the golden-image recipe installs:
 
 - current stable Rust/Cargo (including rustfmt and Clippy), Go, Python through
-  uv, and Node.js through nvm;
+  uv, and Node.js/npm through NVM, with Node.js, npm, npx, and Corepack on the
+  default command path;
 - `make`, CMake, GCC, Clang, and pkg-config;
-- curl, wget, jq, yq, Docker, and Docker Compose.
+- curl, wget, jq, yq, ShellCheck, Docker, and Docker Compose.
 
 The recipe obtains the current upstream releases while building, verifies the
 Go archive checksum published by go.dev, and records every resolved tool

@@ -42,7 +42,7 @@ if test "$WT_DEVELOPMENT_TOOLS" = true; then
     phase "installing development packages (build tools, CLI utilities, and Docker)"
     /bin/sh /var/tmp/wt-install-packages.sh \
         bison build-essential cmake clang curl wget jq yq pkg-config \
-        docker.io docker-compose-v2
+        docker.io docker-compose-v2 shellcheck
     /bin/sh /var/tmp/wt-install-development-tools.sh
 fi
 

@@ -28,10 +28,11 @@ Provisioning validates that foundation and applies only world-specific SSH,
 Git, gateway, and Codex state.
 
 `image.development_tools` is an optional image-build input, off by default. It
-adds current Rust/Cargo, Go, Python/uv, Node.js/nvm, build tools, common CLI
-utilities, and Docker/Compose; the finalized image records the exact resolved
-tool versions. KVM E2E leaves it disabled so its golden image stays narrow and
-does not repeat third-party language-runtime downloads.
+adds current Rust/Cargo, Go, Python/uv, Node.js/npm through NVM (with Node.js,
+npm, npx, and Corepack on the default command path), build tools, common CLI
+utilities including ShellCheck, and Docker/Compose; the finalized image records
+the exact resolved tool versions. KVM E2E leaves it disabled so its golden image
+stays narrow and does not repeat third-party language-runtime downloads.
 
 ## Readiness
 

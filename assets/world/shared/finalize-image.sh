@@ -37,8 +37,9 @@ if test "$WT_DEVELOPMENT_TOOLS" = true; then
     runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
         PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
         bash -o pipefail -c '
+            command -v cargo rustc go python node npm npx corepack uv docker shellcheck
             . "$HOME/.nvm/nvm.sh"
-            command -v cargo rustc go python nvm node npm uv docker
+            command -v nvm
             docker compose version >/dev/null
         '
 fi
