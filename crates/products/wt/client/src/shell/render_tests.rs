@@ -399,7 +399,7 @@ fn failed_worlds_refresh_is_shown_in_the_red_footer() {
 
 #[test]
 fn live_session_repository_is_card_chrome() {
-    let backend = TestBackend::new(100, 18);
+    let backend = TestBackend::new(100, 20);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev"]);
     let session_id = Uuid::from_u128(2);
@@ -434,7 +434,7 @@ fn live_session_repository_is_card_chrome() {
             },
         }],
         "2026-08-22T19:00:00Z".into(),
-        Rect::new(0, 0, 100, 18),
+        Rect::new(0, 0, 100, 20),
     );
     let mut live_parser = vt100::Parser::new(10, 91, 0);
     live_parser.process(b"world output");
@@ -458,5 +458,5 @@ fn live_session_repository_is_card_chrome() {
             .collect::<String>()
     };
     assert_eq!(row(1), "│world output                                 │");
-    assert_eq!(row(15), "└───────────────────── github:lucasavila00/wt ┘");
+    assert_eq!(row(17), "└───────────────────── github:lucasavila00/wt ┘");
 }

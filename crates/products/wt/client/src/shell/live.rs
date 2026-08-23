@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use ratatui::Frame;
 
-pub(super) const CARD_HEIGHT: u16 = 16;
+pub(super) const CARD_HEIGHT: u16 = 18;
 pub(super) const CARD_GAP: u16 = 0;
 // The card viewport clips this row, leaving Byobu's status bar out of the preview.
 const BYOBU_STATUS_ROWS: u16 = 1;
@@ -258,6 +258,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(columns(area), 2);
         assert_eq!(rects.len(), 4);
+        assert_eq!(rects[0].height, 18);
         assert_eq!(rects[0].y, rects[1].y);
         assert_eq!(rects[1].x, rects[0].right());
         assert_eq!(rects[2].y, rects[0].bottom());
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn live_cards_reserve_a_scrollbar_column_only_when_overflowing() {
-        let area = Rect::new(0, 0, 100, 34);
+        let area = Rect::new(0, 0, 100, 38);
         let fitting = card_grid_with_gap(area, 0, 4, CARD_HEIGHT, CARD_GAP);
         let overflowing = card_grid_with_gap(area, 0, 6, CARD_HEIGHT, CARD_GAP);
 
