@@ -48,13 +48,12 @@ impl From<&str> for ShellWorld {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
     World,
-    Switcher,
     Control,
 }
 
 impl Mode {
     pub(super) fn forwards_mouse(self) -> bool {
-        matches!(self, Self::World | Self::Switcher)
+        matches!(self, Self::World)
     }
 }
 
@@ -71,7 +70,6 @@ pub(super) struct ShellModel {
     worlds: Vec<ShellWorld>,
     active: usize,
     mode: Mode,
-    f5_disabled: bool,
     test_server: bool,
     control: ControlState,
     should_quit: bool,
@@ -83,7 +81,6 @@ impl ShellModel {
             worlds,
             active: 0,
             mode: Mode::Control,
-            f5_disabled: false,
             test_server: false,
             control: ControlState::default(),
             should_quit: false,
@@ -96,10 +93,6 @@ impl ShellModel {
 
     pub(super) fn active(&self) -> usize {
         self.active
-    }
-
-    pub(super) fn f5_disabled(&self) -> bool {
-        self.f5_disabled
     }
 
     pub(super) fn test_server(&self) -> bool {
@@ -149,7 +142,6 @@ impl ShellModel {
             .position(|world| Some(&world.identity) == active_identity.as_ref())
             .unwrap_or(0);
         if self.worlds.is_empty() {
-            self.f5_disabled = false;
             self.control.close();
             self.mode = Mode::Control;
         }
@@ -198,52 +190,12 @@ impl ShellModel {
             self.should_quit = true;
             return InputRoute::Consumed;
         }
-        if self.mode == Mode::Switcher && self.control.palette().is_open() {
-            return self
-                .control
-                .handle_key(key, area)
-                .map_or(InputRoute::Consumed, route);
-        }
-        if key.code == KeyCode::F(5) && key.modifiers == KeyModifiers::SHIFT && self.has_worlds() {
-            self.f5_disabled = !self.f5_disabled;
-            if self.f5_disabled {
-                self.control.close();
-                self.mode = Mode::World;
-            }
-            return InputRoute::Consumed;
-        }
-        if key.code == KeyCode::F(5) && self.f5_disabled {
-            return InputRoute::World;
-        }
         match self.mode {
             Mode::World if key.code == KeyCode::F(5) => {
-                self.mode = Mode::Switcher;
+                self.mode = Mode::Control;
                 InputRoute::Consumed
             }
             Mode::World => InputRoute::World,
-            Mode::Switcher => match key.code {
-                KeyCode::F(5) => {
-                    self.mode = Mode::World;
-                    InputRoute::Consumed
-                }
-                KeyCode::Left => {
-                    self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
-                    InputRoute::Consumed
-                }
-                KeyCode::Right => {
-                    self.active = (self.active + 1) % self.worlds.len();
-                    InputRoute::Consumed
-                }
-                KeyCode::Up => {
-                    self.mode = Mode::Control;
-                    InputRoute::Consumed
-                }
-                KeyCode::Char('1') | KeyCode::F(1) if key.modifiers == KeyModifiers::NONE => {
-                    self.control.handle_key(key, area);
-                    InputRoute::Consumed
-                }
-                _ => InputRoute::World,
-            },
             Mode::Control => {
                 if key.code == KeyCode::F(5) && self.has_worlds() {
                     self.control.close();
@@ -292,29 +244,16 @@ impl ShellModel {
             && mouse.column >= area.x
             && mouse.column < area.right()
             && self.has_worlds()
-            && self.mode != Mode::Control
+            && self.mode == Mode::World
         {
-            if self.f5_disabled {
-                self.f5_disabled = false;
-                self.mode = Mode::Switcher;
-            } else if self.mode == Mode::Switcher {
-                let [previous, world, next] = super::bar::world_bar_controls(self, area);
-                let brand = super::bar::world_bar_brand(area);
-                let control = super::bar::world_bar_control(area, next);
-                if previous.contains((mouse.column, mouse.row).into()) {
-                    self.active = self.active.checked_sub(1).unwrap_or(self.worlds.len() - 1);
-                } else if next.contains((mouse.column, mouse.row).into()) {
-                    self.active = (self.active + 1) % self.worlds.len();
-                } else if brand.contains((mouse.column, mouse.row).into())
-                    || world.contains((mouse.column, mouse.row).into())
-                    || control.contains((mouse.column, mouse.row).into())
-                {
-                    self.mode = Mode::Control;
-                } else {
-                    self.mode = Mode::World;
-                }
-            } else {
-                self.mode = Mode::Switcher;
+            let brand = super::bar::world_bar_brand(area);
+            let world = super::bar::world_bar_world(self, area);
+            let control = super::bar::world_bar_control(area);
+            if brand.contains((mouse.column, mouse.row).into())
+                || world.contains((mouse.column, mouse.row).into())
+                || control.contains((mouse.column, mouse.row).into())
+            {
+                self.mode = Mode::Control;
             }
             return (true, Some(InputRoute::Consumed));
         }
@@ -401,9 +340,6 @@ fn route(action: ControlAction) -> InputRoute {
 #[path = "model_focus_tests.rs"]
 mod focus_tests;
 
-#[cfg(test)]
-#[path = "model_navbar_tests.rs"]
-mod navbar_tests;
 mod world_grid;
 
 #[cfg(test)]
@@ -425,10 +361,6 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn shifted(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::SHIFT)
-    }
-
     #[test]
     fn world_mode_forwards_every_key_except_f5() {
         let mut model = model();
@@ -442,34 +374,18 @@ mod tests {
             model.handle_key(key(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
-        assert_eq!(model.mode(), Mode::Switcher);
+        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
-    fn shift_f5_disables_the_override_and_plain_f5_reaches_the_world() {
+    fn shift_f5_opens_control_instead_of_disabling_f5() {
         let mut model = model();
 
         assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5)), area()),
+            model.handle_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::SHIFT), area()),
             InputRoute::Consumed
         );
-        assert!(model.f5_disabled());
-        assert_eq!(model.mode(), Mode::World);
-        assert_eq!(
-            model.handle_key(key(KeyCode::F(5)), area()),
-            InputRoute::World
-        );
-
-        assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5)), area()),
-            InputRoute::Consumed
-        );
-        assert!(!model.f5_disabled());
-        assert_eq!(
-            model.handle_key(key(KeyCode::F(5)), area()),
-            InputRoute::Consumed
-        );
-        assert_eq!(model.mode(), Mode::Switcher);
+        assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
@@ -514,45 +430,29 @@ mod tests {
             model.handle_key(key(KeyCode::F(5)), area()),
             InputRoute::Consumed
         );
-        assert_eq!(
-            model.handle_key(shifted(KeyCode::F(5)), area()),
-            InputRoute::Consumed
-        );
-        assert!(!model.f5_disabled());
         assert_eq!(model.mode(), Mode::Control);
     }
 
     #[test]
-    fn switcher_cycles_worlds_without_leaving_the_bar() {
+    fn world_mode_forwards_navigation_keys_to_the_world() {
         let mut model = model();
-        model.handle_key(key(KeyCode::F(5)), area());
 
         assert_eq!(
             model.handle_key(key(KeyCode::Left), area()),
-            InputRoute::Consumed
-        );
-        assert_eq!(model.active(), 2);
-        assert_eq!(
-            model.handle_key(key(KeyCode::Right), area()),
-            InputRoute::Consumed
+            InputRoute::World
         );
         assert_eq!(
             model.handle_key(key(KeyCode::Right), area()),
-            InputRoute::Consumed
+            InputRoute::World
         );
-        assert_eq!(model.active(), 1);
-        assert_eq!(model.mode(), Mode::Switcher);
+        assert_eq!(model.active(), 0);
+        assert_eq!(model.mode(), Mode::World);
     }
 
     #[test]
-    fn up_opens_control_and_f5_closes_it() {
+    fn f5_opens_control_and_closes_the_palette() {
         let mut model = model();
         model.handle_key(key(KeyCode::F(5)), area());
-        assert_eq!(
-            model.handle_key(key(KeyCode::Up), area()),
-            InputRoute::Consumed
-        );
-
         assert_eq!(model.mode(), Mode::Control);
         assert_eq!(
             model.handle_key(key(KeyCode::Left), area()),
@@ -570,45 +470,18 @@ mod tests {
     }
 
     #[test]
-    fn f5_closes_the_switcher() {
-        let mut model = model();
-        model.handle_key(key(KeyCode::F(5)), area());
-        model.handle_key(key(KeyCode::F(5)), area());
-
-        assert_eq!(model.mode(), Mode::World);
-    }
-
-    #[test]
-    fn switcher_forwards_mouse_to_the_world() {
+    fn world_mode_forwards_mouse_to_the_world() {
         assert!(Mode::World.forwards_mouse());
-        assert!(Mode::Switcher.forwards_mouse());
         assert!(!Mode::Control.forwards_mouse());
-    }
-
-    #[test]
-    fn clicking_the_world_bar_activates_it_and_clicking_arrows_changes_worlds() {
-        let mut model = model();
-
-        assert!(model.handle_mouse(mouse(0, 0), area()).0);
-        assert_eq!(model.mode(), Mode::Switcher);
-        let [previous, _, _] = super::super::bar::world_bar_controls(&model, area());
-        assert_eq!(previous.width, 7);
-        model.handle_mouse(mouse(previous.right() - 1, previous.y), area());
-        assert_eq!(model.active(), 2);
-        let [_, _, next] = super::super::bar::world_bar_controls(&model, area());
-        assert_eq!(next.width, 7);
-        model.handle_mouse(mouse(next.x, next.y), area());
-        assert_eq!(model.active(), 0);
     }
 
     #[test]
     fn clicking_a_bold_control_target_opens_the_control_ui() {
         for target in ["brand", "world", "control"] {
             let mut model = model();
-            model.handle_mouse(mouse(0, 0), area());
-            let [_, world, next] = super::super::bar::world_bar_controls(&model, area());
+            let world = super::super::bar::world_bar_world(&model, area());
             let brand = super::super::bar::world_bar_brand(area());
-            let control = super::super::bar::world_bar_control(area(), next);
+            let control = super::super::bar::world_bar_control(area());
             let target = match target {
                 "brand" => brand,
                 "world" => world,
@@ -623,19 +496,8 @@ mod tests {
     }
 
     #[test]
-    fn clicking_a_disabled_world_bar_restores_the_override() {
-        let mut model = model();
-        model.handle_key(shifted(KeyCode::F(5)), area());
-
-        assert!(model.f5_disabled());
-        assert!(model.handle_mouse(mouse(0, 0), area()).0);
-        assert!(!model.f5_disabled());
-        assert_eq!(model.mode(), Mode::Switcher);
-    }
-
-    #[test]
     fn f6_closes_from_every_mode_without_forwarding() {
-        for mode in [Mode::World, Mode::Switcher, Mode::Control] {
+        for mode in [Mode::World, Mode::Control] {
             let mut model = model();
             model.mode = mode;
 
@@ -667,7 +529,6 @@ mod tests {
         model.reconcile_worlds(Vec::new());
 
         assert!(!model.has_worlds());
-        assert!(!model.f5_disabled());
         assert_eq!(model.mode(), Mode::Control);
     }
 
