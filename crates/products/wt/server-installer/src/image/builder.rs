@@ -302,7 +302,7 @@ pub(super) fn run_kvm_build<R: Runner>(
         "Building {} golden image in a temporary KVM guest (30-minute timeout)...",
         IMAGE_KIND
     );
-    wait_for_shutdown(runner, &mut console_log, spec.name, "Host")?;
+    wait_for_shutdown(runner, &mut console_log, spec.name, "Guest")?;
     undefine_build_domain(runner, spec.name)?;
 
     let marker = read_build_file(

@@ -12,7 +12,7 @@ fn guest_lifecycle() {
     let codex_auth_sha256 = assert_server_codex_auth_export(&harness.config);
     let codex_sessions = CodexSessionFixture::new(&name, &harness.config);
 
-    let created = timings.run("create host", || harness.create(&name));
+    let created = timings.run("create guest", || harness.create(&name));
     assert_eq!(created.status, InstanceStatus::Running);
     assert!(created.ssh.is_some());
     let grant_token = harness.grant_token_for(created.id);
@@ -106,7 +106,7 @@ fn guest_lifecycle() {
     run_guest(
         &harness,
         &name,
-        r#"test "$(wtg tools '{"command":{"action":"report_wt_tool_issue","description":"KVM host fixture"}}')" = '{"type":"confirmation","data":"Recorded wt-tools report for this world."}'"#,
+        r#"test "$(wtg tools '{"command":{"action":"report_wt_tool_issue","description":"KVM guest fixture"}}')" = '{"type":"confirmation","data":"Recorded wtg tools report for this world."}'"#,
         "use agent tool gateway",
     );
     assert_eq!(
@@ -135,7 +135,7 @@ fn guest_lifecycle() {
         &harness,
         &name,
         "set -eu; git -C /home/wt/project fetch origin; test -S /run/wt-agent-tool-gateway/gateway.sock; systemctl is-active --quiet wt-agent-tool-gateway-relay.service",
-        "verify host persistence after restart",
+        "verify guest persistence after restart",
     );
 
     harness.restart_gateway();
@@ -146,7 +146,7 @@ fn guest_lifecycle() {
         "verify gateway reconnection",
     );
 
-    timings.run("delete host", || harness.delete(&name));
+    timings.run("delete guest", || harness.delete(&name));
     harness.assert_grant_is_revoked(grant_token);
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
