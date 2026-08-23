@@ -69,7 +69,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::MarkChangeRequestReady | ProviderCommand::MarkChangeRequestDraft => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 set_change_request_draft(
@@ -82,7 +82,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::AddChangeRequestComment { body } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .merge_request_id
                     .context("merge request has no ID")?;
                 let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
@@ -103,7 +103,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::EditChangeRequest { title, body } => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 let data = self.http.execute_graphql::<GitlabUpdateMergeRequest>(
@@ -130,7 +130,7 @@ impl GitProviderApi for GitlabApi {
                     .threads,
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
-                let snapshot = self.require_change_request(scope)?;
+                let snapshot = self.require_mutable_change_request(scope)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let id = snapshot
                     .merge_request_id
@@ -154,7 +154,7 @@ impl GitProviderApi for GitlabApi {
                 ))
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
-                let snapshot = self.require_change_request(scope)?;
+                let snapshot = self.require_mutable_change_request(scope)?;
                 let discussion = Self::discussion_id(&snapshot.discussions, thread)?;
                 let data = self.http.execute_graphql::<GitlabSetDiscussionResolved>(
                     "api/graphql",
@@ -223,7 +223,7 @@ impl GitProviderApi for GitlabApi {
             }
             ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
                 let merge_request_number = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .merge_request_number
                     .context("merge request has no number")?;
                 let state = if matches!(command, ProviderCommand::CloseChangeRequest) {

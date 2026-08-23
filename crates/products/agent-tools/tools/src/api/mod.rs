@@ -110,6 +110,16 @@ pub struct ChangeRequestStatus {
     pub jobs: Vec<CiJob>,
 }
 
+fn require_unmerged_change_request(request: &ChangeRequestStatus) -> Result<()> {
+    if request.state == "merged" {
+        bail!(
+            "MR {} is already merged; wt-tools refuses to modify it",
+            request.handle
+        );
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewThread {
     pub handle: ReviewThreadHandle,

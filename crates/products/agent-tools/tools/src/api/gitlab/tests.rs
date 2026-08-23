@@ -4,6 +4,7 @@ use crate::api::test_server::{serve, ExpectedRequest};
 mod branch_lookup;
 mod cli_snapshots;
 mod draft;
+mod merged;
 
 const MERGE_REQUEST_RESPONSE: &str = r#"{
     "data": {
@@ -558,6 +559,14 @@ fn write_scope_comes_from_provider_resource_metadata() {
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
     request.source_branch = "wt/fix".to_owned();
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_ok());
+    request.state = "merged".to_owned();
+    assert_eq!(
+        GitlabApi::require_writable_merge_request(&project_scope(), &request)
+            .unwrap_err()
+            .to_string(),
+        "MR 8 is already merged; wt-tools refuses to modify it"
+    );
+    request.state = "opened".to_owned();
     request.source_project_id = Some(13);
     assert!(GitlabApi::require_writable_merge_request(&project_scope(), &request).is_err());
 }

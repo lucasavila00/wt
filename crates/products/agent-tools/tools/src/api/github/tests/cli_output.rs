@@ -1,7 +1,7 @@
 use super::*;
 use crate::api::render_cli_command_output;
 
-const PULL_REQUEST: &str = r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"closed","draft":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}},"mergeable":false}"#;
+const PULL_REQUEST: &str = r#"{"number":7,"node_id":"pull-request-7","html_url":"https://github.test/acme/widget/pull/7","title":"Fix login","body":"Fixes the login flow.","state":"closed","draft":false,"merged":false,"head":{"ref":"wt/fix-login","sha":"abc123","repo":{"full_name":"acme/widget"}},"base":{"ref":"main","sha":"def456","repo":{"full_name":"acme/widget"}},"mergeable":false}"#;
 const WORKFLOW_RUN: &str = r#"{"id":91,"name":"CI","event":"pull_request","status":"completed","conclusion":"success","html_url":"https://github.test/runs/91","head_sha":"abc123","head_branch":"wt/fix-login","head_repository":{"full_name":"acme/widget"}}"#;
 const WORKFLOW_JOB: &str = r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#;
 const REVIEW_THREADS: &str = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"author":{"__typename":"User","login":"reviewer"},"body":"Please clarify this.","url":"https://github.test/thread/7"}]}}]}}}}}"#;
@@ -249,6 +249,89 @@ fn cli_commands_render_complete_json_from_github_responses() {
         insta::assert_snapshot!(
             format!("github_cli_json__{name}"),
             serde_json::to_string_pretty(&value).unwrap()
+        );
+        server.join().unwrap().unwrap();
+    }
+}
+
+#[test]
+fn merged_pull_requests_are_distinct_from_closed_requests() {
+    let merged_pull_request = leak(PULL_REQUEST.replace(r#""merged":false"#, r#""merged":true"#));
+    let cases = [
+        (
+            WtToolsCommand::ShowMr { mr: "7".into() },
+            vec![
+                get("/repos/acme/widget/pulls/7", merged_pull_request),
+                get(
+                    "/repos/acme/widget/actions/runs?head_sha=abc123&per_page=100",
+                    r#"{"total_count":0,"workflow_runs":[]}"#,
+                ),
+            ],
+        ),
+        (
+            WtToolsCommand::WaitMr {
+                mr: "7".into(),
+                timeout_seconds: None,
+            },
+            vec![get("/repos/acme/widget/pulls/7", merged_pull_request)],
+        ),
+    ];
+
+    for (command, requests) in cases {
+        let (base_url, server) = serve(requests);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+        let output = provider
+            .execute_cli_command(&project_scope(), &command)
+            .unwrap();
+        let rendered = render_cli_command_output(output);
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+
+        assert_eq!(value["data"]["state"], "merged");
+        server.join().unwrap().unwrap();
+    }
+}
+
+#[test]
+fn merged_pull_requests_cannot_be_modified() {
+    let merged_pull_request = leak(PULL_REQUEST.replace(r#""merged":false"#, r#""merged":true"#));
+    let commands = [
+        WtToolsCommand::SetMr {
+            mr: "7".into(),
+            state: ChangeRequestState::Ready,
+        },
+        WtToolsCommand::EditMr {
+            mr: "7".into(),
+            title: Some("Better title".to_owned()),
+            body: None,
+        },
+        WtToolsCommand::CommentMr {
+            mr: "7".into(),
+            body: "Done".to_owned(),
+        },
+        WtToolsCommand::ReplyThread {
+            mr: "7".into(),
+            thread: "thread-7".to_owned(),
+            body: "Done".to_owned(),
+        },
+        WtToolsCommand::SetThread {
+            mr: "7".into(),
+            thread: "thread-7".to_owned(),
+            resolved: true,
+        },
+    ];
+
+    for command in commands {
+        let (base_url, server) =
+            serve(vec![get("/repos/acme/widget/pulls/7", merged_pull_request)]);
+        let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_cli_command(&project_scope(), &command)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MR 7 is already merged; wt-tools refuses to modify it"
         );
         server.join().unwrap().unwrap();
     }

@@ -63,7 +63,7 @@ impl GitProviderApi for GithubApi {
             }
             ProviderCommand::MarkChangeRequestReady => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubMarkPullRequestReady>(
@@ -74,7 +74,7 @@ impl GitProviderApi for GithubApi {
             }
             ProviderCommand::MarkChangeRequestDraft => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubMarkPullRequestDraft>(
@@ -85,7 +85,7 @@ impl GitProviderApi for GithubApi {
             }
             ProviderCommand::AddChangeRequestComment { body } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql
@@ -102,7 +102,7 @@ impl GitProviderApi for GithubApi {
             }
             ProviderCommand::EditChangeRequest { title, body } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubUpdatePullRequest>(
@@ -123,7 +123,7 @@ impl GitProviderApi for GithubApi {
                     .threads,
             )),
             ProviderCommand::ReplyToReviewThread { thread, body } => {
-                let snapshot = self.require_change_request(scope)?;
+                let snapshot = self.require_mutable_change_request(scope)?;
                 match Self::review_target(&snapshot, thread)? {
                     GithubReviewTarget::Thread(thread) => {
                         self.graphql.execute_graphql::<GithubReplyToReviewThread>(
@@ -150,7 +150,7 @@ impl GitProviderApi for GithubApi {
                 ))
             }
             ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
-                let snapshot = self.require_change_request(scope)?;
+                let snapshot = self.require_mutable_change_request(scope)?;
                 let GithubReviewTarget::Thread(thread) = Self::review_target(&snapshot, thread)?
                 else {
                     bail!(
@@ -229,7 +229,7 @@ impl GitProviderApi for GithubApi {
             }
             ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_mutable_change_request(scope)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 let state = if matches!(command, ProviderCommand::CloseChangeRequest) {

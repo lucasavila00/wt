@@ -118,6 +118,53 @@ fn cli_commands_render_provider_results_as_json() {
 }
 
 #[test]
+fn merged_merge_requests_cannot_be_modified() {
+    let commands = [
+        WtToolsCommand::SetMr {
+            mr: "8".into(),
+            state: ChangeRequestState::Closed,
+        },
+        WtToolsCommand::EditMr {
+            mr: "8".into(),
+            title: Some("Better title".to_owned()),
+            body: None,
+        },
+        WtToolsCommand::CommentMr {
+            mr: "8".into(),
+            body: "Done".to_owned(),
+        },
+        WtToolsCommand::ReplyThread {
+            mr: "8".into(),
+            thread: "gid://gitlab/Discussion/thread-8".to_owned(),
+            body: "Done".to_owned(),
+        },
+        WtToolsCommand::SetThread {
+            mr: "8".into(),
+            thread: "gid://gitlab/Discussion/thread-8".to_owned(),
+            resolved: true,
+        },
+    ];
+
+    for command in commands {
+        let (base_url, server) = serve(vec![get(
+            "/api/v4/projects/acme%2Fwidget/merge_requests/8",
+            MR,
+        )]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_cli_command(&project_scope(), &command)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MR 8 is already merged; wt-tools refuses to modify it"
+        );
+        server.join().unwrap().unwrap();
+    }
+}
+
+#[test]
 fn wait_timeouts_preserve_the_last_observed_state() {
     let cases = [
         (
