@@ -68,6 +68,7 @@ pub enum ClientOperation {
     Git { service: GitService, source: String },
     Cli { args: Vec<String> },
     CodexSession { event: CodexSessionEvent },
+    CodexGitContext { context: CodexGitContext },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -116,6 +117,24 @@ pub struct CodexSessionEvent {
     pub pane_sequence: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_start_source: Option<CodexSessionStartSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexGitContext {
+    pub session_id: Uuid,
+    pub cwd: String,
+    pub tmux_session: String,
+    pub pane_id: String,
+    pub pane_generation: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[cfg(test)]

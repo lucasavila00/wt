@@ -43,6 +43,11 @@ handling shared by the regular WT and standalone Git proxy installers.
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
+Codex lifecycle hooks report session identity, pane order, and activity only.
+The guest relay independently polls registered working directories for Git
+context and sends authenticated metadata updates to the host. Those updates
+cannot create, reorder, reactivate, or refresh a lifecycle observation.
+
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved
 versions. This is not a runtime world setting.

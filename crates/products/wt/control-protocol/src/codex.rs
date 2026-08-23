@@ -30,6 +30,10 @@ pub struct CodexSessionObservation {
     pub repository_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_context_checked_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_context_error: Option<String>,
     pub state: CodexSessionState,
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_compacting: bool,

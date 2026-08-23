@@ -1,4 +1,6 @@
-use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget};
+use super::control::{
+    CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget, GitContextHealth,
+};
 use super::model::ShellModel;
 pub(super) use super::model::ShellWorld;
 use super::session::SessionSet;
@@ -250,6 +252,24 @@ fn validate_context(
                     &session.session_id.to_string(),
                 ));
             }
+            if observation
+                .git_context_checked_at_unix_ms
+                .is_some_and(|timestamp| timestamp < 0)
+                || observation
+                    .git_context_error
+                    .as_deref()
+                    .is_some_and(|error| {
+                        error.is_empty()
+                            || error.len() > 1024
+                            || error.chars().any(char::is_control)
+                    })
+            {
+                return Err(invalid(
+                    context,
+                    "valid Git context health",
+                    &observation.cwd,
+                ));
+            }
             if !valid_cwd(&observation.cwd) {
                 return Err(invalid(
                     context,
@@ -332,6 +352,14 @@ fn validate_context(
                     repository_root: observation.repository_root,
                     repository_url: observation.repository_url,
                     git_branch: observation.git_branch,
+                    git_context_health: (observation.git_context_checked_at_unix_ms.is_some()
+                        || observation.git_context_error.is_some())
+                    .then(|| {
+                        Box::new(GitContextHealth {
+                            checked_at_unix_ms: observation.git_context_checked_at_unix_ms,
+                            error: observation.git_context_error,
+                        })
+                    }),
                     state: observation.state,
                     is_compacting: observation.is_compacting,
                     session_start_source: observation.session_start_source,
@@ -560,6 +588,8 @@ mod tests {
                 repository_root: Some("/home/wt/project".into()),
                 repository_url: Some("git@github.com:acme/project.git".into()),
                 git_branch: Some("wt/cards".into()),
+                git_context_checked_at_unix_ms: None,
+                git_context_error: None,
                 state: CodexSessionState::NeedsAttention,
                 is_compacting: false,
                 session_start_source: None,

@@ -42,6 +42,9 @@ reserved for managed SSH.
 `wt --version` prints the package version and full source commit SHA. A
 `MISMATCH` in `wt diagnostics` means the client and that server came from
 different commits, even when their control protocols remain compatible.
+Use the compatible client binary reported by `wt diagnostics` when investigating
+missing shell refreshes; a PATH-selected older client can mask otherwise healthy
+server state.
 
 Each world has a writable qcow2 overlay on the server. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports

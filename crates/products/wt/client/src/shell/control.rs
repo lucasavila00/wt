@@ -18,6 +18,7 @@ pub(super) use palette::CommandPalette;
 pub(super) use state::ControlState;
 pub(super) use types::{
     CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget, ControlAction, ControlCommand,
+    GitContextHealth,
 };
 
 #[cfg(test)]

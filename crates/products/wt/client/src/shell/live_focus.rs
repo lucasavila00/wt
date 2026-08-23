@@ -141,6 +141,7 @@ mod tests {
                 repository_root: None,
                 repository_url: None,
                 git_branch: None,
+                git_context_health: None,
                 state: CodexSessionState::Working,
                 is_compacting: false,
                 session_start_source: None,
