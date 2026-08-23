@@ -4,7 +4,7 @@ use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use ratatui::Frame;
@@ -33,7 +33,7 @@ pub(super) fn draw(
     frame: &mut Frame<'_>,
     area: Rect,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
@@ -57,7 +57,7 @@ pub(super) fn draw(
     for placement in grid.cards() {
         let card = cards[placement.index];
         grid.render_card(frame, placement, |rect, buffer| {
-            draw_card(buffer, rect, card, screens, live_focus, model)
+            draw_card(buffer, rect, card, screens, screen_tracker, model)
         });
     }
 }
@@ -67,23 +67,11 @@ fn draw_card(
     rect: Rect,
     card: &super::control::CodexCard,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
-    let (title, title_color) = card_title(card);
-    let title = match &card.kind {
-        super::control::CodexCardKind::Observation {
-            world_name,
-            git_branch,
-            ..
-        } => git_branch.as_ref().map_or_else(
-            || format!("{title} · {}.{world_name}", card.context),
-            |branch| format!("{title} · {}.{world_name} · {branch}", card.context),
-        ),
-        super::control::CodexCardKind::RolloutOnly
-        | super::control::CodexCardKind::ContextError { .. } => title,
-    };
+    let (title, title_color) = live_card_title(card, screen_tracker.is_stuck(card));
     let mut block = Block::new()
         .borders(Borders::ALL)
         .border_style(selected_card_border_style(
@@ -119,7 +107,7 @@ fn draw_card(
             .style(muted_style())
             .render(viewport, buffer);
     }
-    if let Some(warning) = live_focus.warning(card, state.codex()) {
+    if let Some(warning) = screen_tracker.warning(card, state.codex()) {
         let warning_area = Rect::new(
             viewport.x,
             viewport.bottom().saturating_sub(1),
@@ -131,6 +119,27 @@ fn draw_card(
             .style(Style::new().add_modifier(Modifier::REVERSED))
             .render(warning_area, buffer);
     }
+}
+
+fn live_card_title(card: &super::control::CodexCard, stuck: bool) -> (String, Color) {
+    let (title, title_color) = if stuck {
+        ("󰚩 POSSIBLY STUCK".into(), Color::Yellow)
+    } else {
+        card_title(card)
+    };
+    let title = match &card.kind {
+        super::control::CodexCardKind::Observation {
+            world_name,
+            git_branch,
+            ..
+        } => git_branch.as_ref().map_or_else(
+            || format!("{title} · {}.{world_name}", card.context),
+            |branch| format!("{title} · {}.{world_name} · {branch}", card.context),
+        ),
+        super::control::CodexCardKind::RolloutOnly
+        | super::control::CodexCardKind::ContextError { .. } => title,
+    };
+    (title, title_color)
 }
 
 fn card_repository(card: &super::control::CodexCard) -> Option<String> {
@@ -180,6 +189,49 @@ fn repository_identifier(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+    use wt_control_protocol::{ByobuTarget, CodexSessionState};
+
+    fn working_card() -> super::super::control::CodexCard {
+        let session_id = Uuid::from_u128(1);
+        super::super::control::CodexCard {
+            identity: super::super::control::CodexCardIdentity::Observation {
+                context: "local".into(),
+                session_id,
+                world_id: Uuid::from_u128(2),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "local".into(),
+            session_id: Some(session_id),
+            timestamp: Some(1),
+            latest_user_message: None,
+            kind: super::super::control::CodexCardKind::Observation {
+                world_id: Uuid::from_u128(2),
+                world_name: "world".into(),
+                cwd: "/home/wt".into(),
+                repository_root: None,
+                repository_url: None,
+                git_branch: Some("wt/change".into()),
+                git_context_health: None,
+                state: CodexSessionState::Working,
+                is_compacting: false,
+                session_start_source: None,
+                target: ByobuTarget {
+                    tmux_session: "wt-host".into(),
+                    pane_id: "%1".into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn stuck_title_uses_attention_color_and_keeps_location() {
+        let (title, color) = live_card_title(&working_card(), true);
+
+        assert_eq!(title, "󰚩 POSSIBLY STUCK · local.world · wt/change");
+        assert_eq!(color, Color::Yellow);
+    }
 
     #[test]
     fn repository_identifier_keeps_the_owner_and_name() {
