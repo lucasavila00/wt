@@ -489,21 +489,59 @@ impl GitProviderApi for GitlabApi {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_merge_request(scope.project, mr_id)?;
                 Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
-                let direct = self.read_merge_request_by_iid(scope.project, mr_id)?;
-                let data = self.http.execute_graphql::<GitlabAddMergeRequestComment>(
-                    "api/graphql",
-                    gitlab_add_merge_request_comment::Variables {
-                        id: NoteableID(direct.id.0),
-                        body: crate::api::attributed_project_comment(scope, body),
-                    },
+                let note = self.http.post_json(
+                    &format!(
+                        "api/v4/projects/{}/merge_requests/{mr_id}/notes",
+                        encoded_project(scope.project)
+                    ),
+                    &serde_json::json!({ "body": crate::api::attributed_project_comment(scope, body) }),
                 )?;
-                ensure_errors(
-                    data.create_note
-                        .context("GitLab returned no result")?
-                        .errors,
+                Ok(ProviderCommandOutput::GeneralComment(general_comment(
+                    note,
+                    &request.web_url,
+                )))
+            }
+            WtToolsCommand::EditComment {
+                mr,
+                comment,
+                body,
+                confirm_merged,
+            } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let comment_id = parse_resource_id(comment, "comment")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
+                let comment = self.show_general_comment(scope.project, mr_id, comment_id)?;
+                crate::api::require_project_comment_attribution(scope, &comment)?;
+                let note = self.http.put_json(
+                    &format!(
+                        "api/v4/projects/{}/merge_requests/{mr_id}/notes/{comment_id}",
+                        encoded_project(scope.project)
+                    ),
+                    &serde_json::json!({ "body": crate::api::attributed_project_comment(scope, body) }),
                 )?;
+                Ok(ProviderCommandOutput::GeneralComment(general_comment(
+                    note,
+                    &request.web_url,
+                )))
+            }
+            WtToolsCommand::DeleteComment {
+                mr,
+                comment,
+                confirm_merged,
+            } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let comment_id = parse_resource_id(comment, "comment")?;
+                let request = self.read_merge_request(scope.project, mr_id)?;
+                Self::require_writable_merge_request(scope, &request, *confirm_merged)?;
+                let comment = self.show_general_comment(scope.project, mr_id, comment_id)?;
+                crate::api::require_project_comment_attribution(scope, &comment)?;
+                self.http.delete(&format!(
+                    "api/v4/projects/{}/merge_requests/{mr_id}/notes/{comment_id}",
+                    encoded_project(scope.project)
+                ))?;
                 Ok(ProviderCommandOutput::Confirmation(
-                    "Comment added.".to_owned(),
+                    "Comment deleted.".to_owned(),
                 ))
             }
             WtToolsCommand::ReplyThread {

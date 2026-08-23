@@ -26,6 +26,8 @@ impl GitHostingCommand {
             | Self::ListThreads { mr, .. }
             | Self::ListComments { mr, .. }
             | Self::ShowComment { mr, .. }
+            | Self::EditComment { mr, .. }
+            | Self::DeleteComment { mr, .. }
             | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
@@ -53,8 +55,11 @@ impl GitHostingCommand {
                 bail!("edit_mr requires `title` or `body`");
             }
         }
-        if let Self::ShowComment { comment, .. } = self {
-            nonempty(comment, "comment ID")?;
+        match self {
+            Self::ShowComment { comment, .. }
+            | Self::EditComment { comment, .. }
+            | Self::DeleteComment { comment, .. } => nonempty(comment, "comment ID")?,
+            _ => {}
         }
         match self {
             Self::WaitMr {
@@ -81,6 +86,8 @@ impl GitHostingCommand {
             Self::ListThreads { .. } => "list merge request threads",
             Self::ListComments { .. } => "list merge request comments",
             Self::ShowComment { .. } => "show the merge request comment",
+            Self::EditComment { .. } => "edit the merge request comment",
+            Self::DeleteComment { .. } => "delete the merge request comment",
             Self::ListCi { .. } => "list CI for the commit",
             Self::ListJobs { .. } => "list jobs for the CI run",
             Self::LogJob { .. } => "read the CI job log",
@@ -110,6 +117,9 @@ impl GitHostingCommand {
             | Self::EditMr { mr, .. }
             | Self::CommentMr { mr, .. } => format!("mr {mr}"),
             Self::ShowComment { mr, comment } => format!("comment {comment} in mr {mr}"),
+            Self::EditComment { mr, comment, .. } | Self::DeleteComment { mr, comment, .. } => {
+                format!("comment {comment} in mr {mr}")
+            }
             Self::ReplyThread { mr, thread, .. } | Self::SetThread { mr, thread, .. } => {
                 format!("thread {thread} in mr {mr}")
             }

@@ -6,6 +6,9 @@ const WORKFLOW_RUN: &str = r#"{"id":91,"name":"CI","event":"pull_request","statu
 const WORKFLOW_JOB: &str = r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#;
 const REVIEW_THREADS: &str = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"author":{"__typename":"User","login":"reviewer"},"body":"Please clarify this.","url":"https://github.test/thread/7"}]}}]}}}}}"#;
 const ISSUE_COMMENT: &str = r#"{"id":123,"body":"General feedback.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
+const GATEWAY_ISSUE_COMMENT: &str = r#"{"id":123,"body":"**Comment from a WT world agent**\n\nGeneral feedback.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
+const CREATED_ISSUE_COMMENT: &str = r#"{"id":124,"body":"**Comment from a WT world agent**\n\nDone.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-124","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-23T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
+const UPDATED_ISSUE_COMMENT: &str = r#"{"id":123,"body":"**Comment from a WT world agent**\n\nUpdated.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"agent"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-23T10:00:00Z"}"#;
 
 #[test]
 fn cli_commands_render_complete_json_from_github_responses() {
@@ -206,10 +209,50 @@ fn cli_commands_render_complete_json_from_github_responses() {
             },
             vec![
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
-                graphql(
-                    "GithubAddPullRequestComment",
-                    r#"{"data":{"addComment":{"commentEdge":{"node":{"url":"https://github.test/comment/1"}}}}}"#,
+                write(
+                    "POST",
+                    "/repos/acme/widget/issues/7/comments",
+                    CREATED_ISSUE_COMMENT,
                 ),
+            ],
+        ),
+        (
+            "edit_comment",
+            WtToolsCommand::EditComment {
+                mr: "7".into(),
+                comment: "123".into(),
+                body: "Updated.".to_owned(),
+                confirm_merged: false,
+            },
+            vec![
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get(
+                    "/repos/acme/widget/issues/comments/123",
+                    GATEWAY_ISSUE_COMMENT,
+                ),
+                write(
+                    "PATCH",
+                    "/repos/acme/widget/issues/comments/123",
+                    UPDATED_ISSUE_COMMENT,
+                ),
+            ],
+        ),
+        (
+            "delete_comment",
+            WtToolsCommand::DeleteComment {
+                mr: "7".into(),
+                comment: "123".into(),
+                confirm_merged: false,
+            },
+            vec![
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get(
+                    "/repos/acme/widget/issues/comments/123",
+                    GATEWAY_ISSUE_COMMENT,
+                ),
+                write("DELETE", "/repos/acme/widget/issues/comments/123", "{}"),
             ],
         ),
         (
@@ -224,7 +267,7 @@ fn cli_commands_render_complete_json_from_github_responses() {
                 get("/repos/acme/widget/pulls/7", PULL_REQUEST),
                 graphql("GithubReadPullRequestByNumber", REVIEW_THREADS),
                 graphql(
-                    "GithubReplyToReviewThread",
+                    "Comment from a WT world agent",
                     r#"{"data":{"addPullRequestReviewThreadReply":{"comment":{"url":"https://github.test/comment/2"}}}}"#,
                 ),
             ],
@@ -339,6 +382,17 @@ fn merged_pull_requests_require_confirmation_before_modification() {
             body: "Done".to_owned(),
             confirm_merged: false,
         },
+        WtToolsCommand::EditComment {
+            mr: "7".into(),
+            comment: "123".into(),
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::DeleteComment {
+            mr: "7".into(),
+            comment: "123".into(),
+            confirm_merged: false,
+        },
         WtToolsCommand::ReplyThread {
             mr: "7".into(),
             thread: "thread-7".to_owned(),
@@ -375,9 +429,10 @@ fn confirmed_merged_pull_requests_can_be_modified() {
     let merged_pull_request = leak(PULL_REQUEST.replace(r#""merged":false"#, r#""merged":true"#));
     let (base_url, server) = serve(vec![
         get("/repos/acme/widget/pulls/7", merged_pull_request),
-        graphql(
-            "GithubAddPullRequestComment",
-            r#"{"data":{"addComment":{"commentEdge":{"node":{"url":"https://github.test/comment/1"}}}}}"#,
+        write(
+            "POST",
+            "/repos/acme/widget/issues/7/comments",
+            CREATED_ISSUE_COMMENT,
         ),
     ]);
     let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
@@ -393,10 +448,7 @@ fn confirmed_merged_pull_requests_can_be_modified() {
         )
         .unwrap();
 
-    assert_eq!(
-        output,
-        ProviderCommandOutput::Confirmation("Comment added.".to_owned())
-    );
+    assert!(matches!(output, ProviderCommandOutput::GeneralComment(_)));
     server.join().unwrap().unwrap();
 }
 
@@ -610,6 +662,17 @@ fn post(path: &'static str) -> ExpectedRequest {
         body_contains: None,
         response_content_type: "application/json",
         response_body: "{}",
+    }
+}
+
+fn write(method: &'static str, path: &'static str, response_body: &'static str) -> ExpectedRequest {
+    ExpectedRequest {
+        method,
+        path,
+        required_header: Some(("authorization", "Bearer fixture-token")),
+        body_contains: (method != "DELETE").then_some("Comment from a WT world agent"),
+        response_content_type: "application/json",
+        response_body,
     }
 }
 

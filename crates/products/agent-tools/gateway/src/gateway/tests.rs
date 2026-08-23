@@ -116,6 +116,23 @@ fn wt_tools_activity_metadata_uses_the_head_and_response_handle() {
             },
             "show_comment",
         ),
+        (
+            api::GitHostingCommand::EditComment {
+                mr: "7".into(),
+                comment: "123".into(),
+                body: "Updated".into(),
+                confirm_merged: false,
+            },
+            "edit_comment",
+        ),
+        (
+            api::GitHostingCommand::DeleteComment {
+                mr: "7".into(),
+                comment: "123".into(),
+                confirm_merged: false,
+            },
+            "delete_comment",
+        ),
     ] {
         assert_eq!(
             service::wt_tools_activity_metadata(&command, r#"{"type":"confirmation","data":"ok"}"#)

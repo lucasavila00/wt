@@ -81,6 +81,8 @@ fn command_parser_accepts_only_valid_json_objects() {
         r#"{"action":"list_threads","mr":"7"}"#,
         r#"{"action":"list_comments","mr":"7"}"#,
         r#"{"action":"show_comment","mr":"7","comment":"123"}"#,
+        r#"{"action":"edit_comment","mr":"7","comment":"123","body":"Updated"}"#,
+        r#"{"action":"delete_comment","mr":"7","comment":"123"}"#,
         r#"{"action":"list_ci","commit":"abc1234"}"#,
         r#"{"action":"list_jobs","run":"91"}"#,
         r#"{"action":"log_job","job":"44"}"#,
@@ -136,6 +138,10 @@ fn command_parser_accepts_only_valid_json_objects() {
         r#"{"action":"show_comment","mr":"7","comment":""}"#
     )])
     .is_err());
+    assert!(WtToolsCommand::parse(&[targeted(
+        r#"{"action":"edit_comment","mr":"7","comment":""}"#
+    )])
+    .is_err());
     assert_eq!(
         parsed_command(r#"{"action":"show_mr_for_branch","branch":"wt/fix"}"#),
         GitHostingCommand::ShowMrForBranch {
@@ -170,6 +176,34 @@ fn provider_resource_ids_are_positive_integer_strings() {
     assert_eq!(cli::parse_resource_id("7", "MR").unwrap(), 7);
     assert!(cli::parse_resource_id("0", "MR").is_err());
     assert!(cli::parse_resource_id("not-an-id", "MR").is_err());
+}
+
+#[test]
+fn wt_tools_comment_marker_is_a_required_visible_prefix() {
+    let scope = ProviderProjectScope {
+        host: "github.test",
+        project: "acme/widget",
+        prefix: "wt/",
+    };
+    assert_eq!(
+        attributed_project_comment(&scope, "Done."),
+        "**Comment from a WT world agent**\n\nDone."
+    );
+
+    let comment = GeneralComment {
+        handle: GeneralCommentHandle::new("123"),
+        author: "agent".to_owned(),
+        body: "Done.\n\n**Comment from a WT world agent**".to_owned(),
+        url: "https://github.test/acme/widget/pull/7#issuecomment-123".to_owned(),
+        created_at: "2026-08-23T10:00:00Z".to_owned(),
+        updated_at: "2026-08-23T10:00:00Z".to_owned(),
+    };
+    assert_eq!(
+        require_project_comment_attribution(&scope, &comment)
+            .unwrap_err()
+            .to_string(),
+        "comment is missing the WT world agent marker"
+    );
 }
 
 #[test]

@@ -16,6 +16,19 @@ export type GitHostingCommand =
   | { action: "list_threads"; mr: string }
   | { action: "list_comments"; mr: string }
   | { action: "show_comment"; mr: string; comment: string }
+  | {
+      action: "edit_comment";
+      mr: string;
+      comment: string;
+      body: string;
+      confirm_merged?: boolean;
+    }
+  | {
+      action: "delete_comment";
+      mr: string;
+      comment: string;
+      confirm_merged?: boolean;
+    }
   | { action: "list_ci"; commit: string }
   | { action: "list_jobs"; run: string }
   | { action: "log_job"; job: string }

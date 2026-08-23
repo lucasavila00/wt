@@ -486,19 +486,54 @@ impl GitProviderApi for GithubApi {
                 body,
                 confirm_merged,
             } => {
-                let request =
-                    self.read_pull_request(scope.project, parse_resource_id(mr, "MR")?)?;
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
                 Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
-                self.graphql
-                    .execute_graphql::<GithubAddPullRequestComment>(
-                        self.graphql_path,
-                        github_add_pull_request_comment::Variables {
-                            id: request.node_id,
-                            body: crate::api::attributed_project_comment(scope, body),
-                        },
-                    )?;
+                let comment = self.rest.post_json(
+                    &format!("{}repos/{}/issues/{mr_id}/comments", self.rest_prefix, scope.project),
+                    &serde_json::json!({ "body": crate::api::attributed_project_comment(scope, body) }),
+                )?;
+                Ok(ProviderCommandOutput::GeneralComment(general_comment(
+                    comment,
+                )))
+            }
+            WtToolsCommand::EditComment {
+                mr,
+                comment,
+                body,
+                confirm_merged,
+            } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let comment_id = parse_resource_id(comment, "comment")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
+                let comment = self.show_general_comment(scope.project, mr_id, comment_id)?;
+                crate::api::require_project_comment_attribution(scope, &comment)?;
+                let comment = self.rest.patch_json(
+                    &format!("{}repos/{}/issues/comments/{comment_id}", self.rest_prefix, scope.project),
+                    &serde_json::json!({ "body": crate::api::attributed_project_comment(scope, body) }),
+                )?;
+                Ok(ProviderCommandOutput::GeneralComment(general_comment(
+                    comment,
+                )))
+            }
+            WtToolsCommand::DeleteComment {
+                mr,
+                comment,
+                confirm_merged,
+            } => {
+                let mr_id = parse_resource_id(mr, "MR")?;
+                let comment_id = parse_resource_id(comment, "comment")?;
+                let request = self.read_pull_request(scope.project, mr_id)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
+                let comment = self.show_general_comment(scope.project, mr_id, comment_id)?;
+                crate::api::require_project_comment_attribution(scope, &comment)?;
+                self.rest.delete(&format!(
+                    "{}repos/{}/issues/comments/{comment_id}",
+                    self.rest_prefix, scope.project
+                ))?;
                 Ok(ProviderCommandOutput::Confirmation(
-                    "Comment added.".to_owned(),
+                    "Comment deleted.".to_owned(),
                 ))
             }
             WtToolsCommand::ReplyThread {

@@ -11,6 +11,14 @@ Expose general merge-request comments through two `wt-tools` operations:
 { action: "show_comment"; mr: string; comment: string }
 ```
 
+Their repository-scoped lifecycle is completed by:
+
+```text
+{ action: "comment_mr"; mr: string; body: string; confirm_merged?: boolean }
+{ action: "edit_comment"; mr: string; comment: string; body: string; confirm_merged?: boolean }
+{ action: "delete_comment"; mr: string; comment: string; confirm_merged?: boolean }
+```
+
 Each comment contains its provider-native numeric handle, author, body, URL,
 and provider `created_at` and `updated_at` timestamp strings. Missing authors
 are reported as `unknown`. GitHub handles are issue-comment database IDs, so a
@@ -27,6 +35,12 @@ notes are excluded. Discussion replies remain in `list_threads`.
 explicit repository and merge request. It therefore remains usable for an old
 linked comment without first listing the full history, and it cannot use a
 valid provider comment ID to cross the requested merge-request boundary.
+`comment_mr` and `edit_comment` return the resulting complete comment, including
+its handle. Edit and delete perform the same direct lookup before modifying the
+comment, and require the existing writable `wt/*` MR scope plus explicit
+confirmation when the MR has merged. Provider credentials enforce who may
+change or delete a comment. ADR 0075 defines the leading visible marker a
+target must retain, so this surface cannot modify an unmarked provider comment.
 
 ## Consequences
 
