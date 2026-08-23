@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
-use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, InstanceStatus};
+use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::daemon::{self, CONTROL_SOCKET_PATH};
@@ -103,25 +102,14 @@ fn run_server() -> Result<()> {
     .map_err(anyhow::Error::msg)?;
     let catalog_database = state.database_path();
     let catalog_sessions = codex_paths.sessions;
-    let catalog_owner = owner.clone();
-    let catalog_worker = guest_worker.clone();
     std::thread::Builder::new()
         .name("wt-codex-session-catalog".to_owned())
-        .spawn(move || {
-            let mut requested = HashMap::new();
-            loop {
-                match maintain_codex_history(
-                    &catalog_database,
-                    catalog_sessions,
-                    &catalog_owner,
-                    &catalog_worker,
-                    &mut requested,
-                ) {
-                    Ok(warnings) => log_codex_catalog_warnings(warnings),
-                    Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
-                }
-                std::thread::sleep(Duration::from_secs(2));
+        .spawn(move || loop {
+            match maintain_codex_session_catalog(&catalog_database, catalog_sessions) {
+                Ok(warnings) => log_codex_catalog_warnings(warnings),
+                Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
             }
+            std::thread::sleep(Duration::from_secs(2));
         })
         .context("start Codex session catalog refresh")?;
     let worker = guest_worker;
@@ -182,40 +170,10 @@ fn open_gateway(
     })
 }
 
-fn maintain_codex_history(
-    database: &Path,
-    sessions: &str,
-    owner: &str,
-    worker: &wt_guest::host::Worker<LibvirtProvider>,
-    requested: &mut HashMap<String, String>,
-) -> Result<Vec<String>> {
+fn maintain_codex_session_catalog(database: &Path, sessions: &str) -> Result<Vec<String>> {
     let store = Store::open(database).context("open instance registry")?;
-    let warnings = wt_server::service::refresh_codex_session_catalog(&store, Path::new(sessions))
-        .map_err(anyhow::Error::msg)?;
-    let generation =
-        wt_server::service::codex_session_catalog_generation(&store).map_err(anyhow::Error::msg)?;
-    let worlds = store.list(owner).context("list worlds")?;
-    let running = worlds
-        .iter()
-        .filter(|world| world.instance.status == InstanceStatus::Running)
-        .map(|world| world.backend_id.clone())
-        .collect::<HashSet<_>>();
-    requested.retain(|backend_id, _| running.contains(backend_id));
-    for backend_id in running {
-        if requested.get(&backend_id) == Some(&generation) {
-            continue;
-        }
-        match worker.request_codex_reconciliation(&backend_id, &generation) {
-            Ok(true) => {
-                requested.insert(backend_id, generation.clone());
-            }
-            Ok(false) => {}
-            Err(error) => {
-                eprintln!("wt-server: request Codex reconciliation in {backend_id}: {error}");
-            }
-        }
-    }
-    Ok(warnings)
+    wt_server::service::refresh_codex_session_catalog(&store, Path::new(sessions))
+        .map_err(anyhow::Error::msg)
 }
 
 fn log_codex_catalog_warnings(warnings: Vec<String>) {

@@ -1,8 +1,8 @@
-mod background;
 mod focus;
 mod install;
 mod reconcile;
 mod report;
+mod startup;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -21,9 +21,6 @@ struct Cli {
 enum Command {
     /// Ask Codex to discover shared session rollouts.
     Reconcile,
-    /// Run server-scheduled Codex session reconciliation.
-    #[command(hide = true)]
-    ReconcileWorker,
     /// Install WT's exact Codex user configuration.
     InstallConfig,
     /// Report a WT-managed Codex lifecycle hook.
@@ -58,10 +55,9 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
 
     match Cli::parse_from(args).command {
         Command::Reconcile => {
-            background::reconcile_manual()?;
+            startup::reconcile_manual()?;
             println!("Codex session index refreshed.");
         }
-        Command::ReconcileWorker => background::reconcile_worker()?,
         Command::InstallConfig => install::install_user_config()?,
         Command::ReportHook => report::report_hook()?,
         Command::FocusPane {
@@ -78,7 +74,10 @@ fn run_trampoline(args: Vec<OsString>) -> Result<()> {
     if std::env::var("IGNORE_CODEX_WT_CHECKS").as_deref() != Ok("true")
         && !is_version_request(&args)
     {
-        background::require_ready(&real_codex)?;
+        println!(
+            "Syncing shared Codex history before starting Codex. Set IGNORE_CODEX_WT_CHECKS=true to skip this synchronization."
+        );
+        startup::reconcile_before_start(&real_codex)?;
     }
 
     let argv0 = args.first().context("missing process name")?;

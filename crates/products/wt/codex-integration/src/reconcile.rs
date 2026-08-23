@@ -1,4 +1,3 @@
-use crate::install;
 use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -15,11 +14,6 @@ use std::time::{Duration, Instant};
 
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const RECONCILIATION_TIMEOUT: Duration = Duration::from_secs(270);
-
-pub(crate) fn reconcile() -> Result<()> {
-    let codex = install::real_codex()?;
-    reconcile_with_codex(&codex)
-}
 
 pub(crate) fn reconcile_with_codex(codex: &Path) -> Result<()> {
     let home = codex_home()?;
