@@ -63,6 +63,7 @@ fn local_mutation_invalidates_an_older_refresh() {
         .send(WorldSnapshot {
             generation: 4,
             instances: Vec::new(),
+            capacity: Default::default(),
             failures: Vec::new(),
         })
         .unwrap();

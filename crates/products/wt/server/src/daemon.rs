@@ -233,6 +233,7 @@ mod tests {
                 assert!(matches!(request.operation, Operation::List));
                 ApiResponse::ok(Response::Instances {
                     instances: vec![],
+                    capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
                     agent_tool_report_counts: Default::default(),
                 })
@@ -276,6 +277,7 @@ mod tests {
                 writeln!(progress, "Waiting for the guest transport...").unwrap();
                 ApiResponse::ok(Response::Instances {
                     instances: vec![],
+                    capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
                     agent_tool_report_counts: Default::default(),
                 })

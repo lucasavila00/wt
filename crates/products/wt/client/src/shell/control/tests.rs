@@ -1,5 +1,8 @@
 use super::*;
-use wt_control_protocol::ByobuTarget;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::Rect;
+use uuid::Uuid;
+use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
 #[test]
 fn tab_cycles_activities() {

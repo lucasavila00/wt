@@ -5,7 +5,9 @@ use ratatui::{
     Frame,
 };
 
-use super::control::control_content_areas;
+use super::control::{
+    card_grid_visible, control_content_areas, CODEX_CARD_HEIGHT, WORLD_CARD_HEIGHT,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScrollbarGeometry {
@@ -53,6 +55,34 @@ pub(super) fn render(
             cell.set_symbol(symbol).set_style(style);
         }
     }
+}
+
+pub(super) fn render_world_cards(
+    frame: &mut Frame<'_>,
+    count: usize,
+    selected: usize,
+    style: Style,
+) {
+    let viewport = card_grid_visible(frame.area(), WORLD_CARD_HEIGHT).max(1);
+    render(
+        frame,
+        area(frame.area()),
+        count,
+        viewport,
+        selected / viewport * viewport,
+        style,
+    );
+}
+
+pub(super) fn render_codex_cards(frame: &mut Frame<'_>, count: usize, offset: usize, style: Style) {
+    render(
+        frame,
+        area(frame.area()),
+        count,
+        card_grid_visible(frame.area(), CODEX_CARD_HEIGHT).max(1),
+        offset,
+        style,
+    );
 }
 
 fn scrollbar_geometry(

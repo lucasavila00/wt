@@ -1,5 +1,6 @@
 use super::*;
 use ratatui::{backend::TestBackend, Terminal};
+use wt_control_protocol::{ResourceCapacity, Resources};
 
 pub(super) fn now_ms() -> i64 {
     i64::try_from(
@@ -71,4 +72,43 @@ fn empty_shell_renders_the_control_ui() {
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
+}
+
+#[test]
+fn control_footer_shows_reserved_and_total_resources() {
+    let backend = TestBackend::new(160, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = ShellModel::new(vec!["local.one".into()]);
+    model.control_mut().set_capacity(ResourceCapacity {
+        reserved: Resources {
+            vcpus: 6,
+            memory_mib: 10_240,
+            disk_gib: 68,
+        },
+        total: Resources {
+            vcpus: 16,
+            memory_mib: 32_768,
+            disk_gib: 256,
+        },
+    });
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    insta::assert_debug_snapshot!(
+        "shell_control_resource_capacity",
+        terminal.backend().buffer()
+    );
 }

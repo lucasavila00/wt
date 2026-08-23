@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::inventory;
 
@@ -17,6 +19,7 @@ pub(super) struct WorldRefresh {
 pub(super) struct WorldSnapshot {
     pub(super) generation: u64,
     pub(super) instances: Vec<inventory::ContextInstance>,
+    pub(super) capacity: wt_control_protocol::ResourceCapacity,
     pub(super) failures: Vec<String>,
 }
 
@@ -29,6 +32,14 @@ pub(super) struct CodexRefresh {
 
 enum CodexRefreshCommand {
     Stop,
+}
+
+pub(super) fn updated_at() -> String {
+    OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .expect("zero is a valid nanosecond")
+        .format(&Rfc3339)
+        .expect("UTC timestamps support RFC 3339")
 }
 
 impl WorldRefresh {
@@ -69,6 +80,7 @@ impl WorldRefresh {
                 match updates_tx.try_send(WorldSnapshot {
                     generation,
                     instances: report.instances,
+                    capacity: report.capacity,
                     failures,
                 }) {
                     Ok(()) | Err(TrySendError::Full(_)) => {}

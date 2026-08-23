@@ -100,7 +100,6 @@ fn draw_test_server_banner(frame: &mut Frame<'_>, model: &ShellModel) {
         Rect::new(area.right().saturating_sub(width), area.y, width, 1),
     );
 }
-
 fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
     let area = frame.area();
     frame.render_widget(
@@ -110,7 +109,6 @@ fn draw_closed_session_bar(frame: &mut Frame<'_>, message: &str) {
         Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
     );
 }
-
 fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
     let outer = frame.area();
     let width = 70.min(outer.width);
@@ -134,7 +132,6 @@ fn draw_creation_error(frame: &mut Frame<'_>, error: &str) {
         area,
     );
 }
-
 fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
     let disabled = model.f5_disabled();
     let active = model.mode() == Mode::Switcher;
@@ -236,13 +233,29 @@ fn draw_control(
             "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
-    frame.render_widget(Paragraph::new(hint).style(muted_style()), footer);
+    let capacity = wt_client::inventory::format_capacity(model.control().capacity());
+    let capacity_width = capacity
+        .as_ref()
+        .map_or(0, |text| {
+            u16::try_from(text.chars().count() + 1).unwrap_or(u16::MAX)
+        })
+        .min(footer.width);
+    let [hints, resources] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(capacity_width)]).areas(footer);
+    frame.render_widget(Paragraph::new(hint).style(muted_style()), hints);
+    if let Some(capacity) = capacity {
+        frame.render_widget(
+            Paragraph::new(capacity)
+                .alignment(Alignment::Right)
+                .style(muted_style()),
+            resources,
+        );
+    }
     draw_command_palette(frame, content, model.control().palette());
     if model.control().open_failed() {
         draw_codex_toast(frame, area, model.control());
     }
 }
-
 fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     let toast = super::toast::area(area);
     let (retry, _) = super::toast::actions(area);
@@ -312,16 +325,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         return;
     }
     let count = model.world_count() + usize::from(creating.is_some());
-    let viewport =
-        super::control::card_grid_visible(frame.area(), super::control::WORLD_CARD_HEIGHT).max(1);
-    super::scrollbar::render(
-        frame,
-        super::scrollbar::area(frame.area()),
-        count,
-        viewport,
-        model.active() / viewport * viewport,
-        muted_style(),
-    );
+    super::scrollbar::render_world_cards(frame, count, model.active(), muted_style());
     for (index, rect) in world_card_rects(frame.area(), model.active(), count) {
         if let Some((name, resources)) = creating.filter(|_| index == model.world_count()) {
             draw_world_card(
@@ -414,13 +418,9 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), inner);
         return;
     }
-    let viewport =
-        super::control::card_grid_visible(frame.area(), super::control::CODEX_CARD_HEIGHT).max(1);
-    super::scrollbar::render(
+    super::scrollbar::render_codex_cards(
         frame,
-        super::scrollbar::area(frame.area()),
         state.codex().len(),
-        viewport,
         state.codex_offset(),
         muted_style(),
     );

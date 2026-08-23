@@ -9,8 +9,6 @@ use std::io::{IsTerminal as _, Write as _};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
@@ -60,8 +58,9 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut sessions = SessionSet::start(&worlds, world_rows(rows), columns)?;
     let mut model = ShellModel::new(worlds);
+    model.control_mut().set_capacity(report.capacity);
     model.set_test_server(test_server);
-    model.finish_worlds_refresh(Ok(updated_at()));
+    model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let focus = codex::FocusWorker::default();
     let mut live_focus = live_focus::LiveFocus::default();
     let refresh = WorldRefresh::start(config.clone());
@@ -123,13 +122,6 @@ struct ControlFlows {
     deletion: Option<delete::Flow>,
 }
 
-fn updated_at() -> String {
-    OffsetDateTime::now_utc()
-        .replace_nanosecond(0)
-        .expect("zero is a valid nanosecond")
-        .format(&Rfc3339)
-        .expect("UTC timestamps support RFC 3339")
-}
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
     let shutdown = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown))
@@ -185,7 +177,8 @@ fn run_loop(
                         .into();
                     sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
                     model.reconcile_worlds(worlds);
-                    model.finish_worlds_refresh(Ok(updated_at()));
+                    model.control_mut().set_capacity(snapshot.capacity);
+                    model.finish_worlds_refresh(Ok(refresh::updated_at()));
                     redraw = true;
                 }
             }
@@ -206,7 +199,7 @@ fn run_loop(
             redraw |= model.control_mut().apply_codex_refresh(
                 snapshot.cards,
                 snapshot.failures,
-                updated_at(),
+                refresh::updated_at(),
                 area,
             );
         }
