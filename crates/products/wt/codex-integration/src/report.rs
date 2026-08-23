@@ -90,15 +90,24 @@ pub(crate) fn report_hook() -> Result<()> {
     let payload: HookPayload = serde_json::from_reader(io::stdin()).context("decode Codex hook")?;
     let event_name = format!("{:?}", payload.hook_event_name);
     let session_id = payload.session_id;
-    let successful_output = successful_hook_output(payload.hook_event_name);
-    match report_hook_payload(payload) {
-        Ok(()) => {
-            clear_hook_error()?;
-            if let Some(output) = successful_output {
-                println!("{output}");
+    let output = successful_hook_output(payload.hook_event_name);
+    let result = report_hook_payload(payload);
+
+    if let Some(output) = output {
+        match result {
+            Ok(()) => {
+                let _ = clear_hook_error();
             }
-            Ok(())
+            Err(error) => {
+                let _ = record_hook_error(&event_name, session_id, &error);
+            }
         }
+        println!("{output}");
+        return Ok(());
+    }
+
+    match result {
+        Ok(()) => clear_hook_error(),
         Err(error) => {
             record_hook_error(&event_name, session_id, &error)?;
             Err(error)
@@ -133,7 +142,7 @@ fn report_hook_payload(payload: HookPayload) -> Result<()> {
         pane_sequence,
         session_start_source,
     };
-    let mut stream = UnixStream::connect(RELAY_SOCKET).context("connect to WT guest relay")?;
+    let mut stream = UnixStream::connect(test_socket()).context("connect to WT guest relay")?;
     stream.set_read_timeout(Some(TIMEOUT))?;
     stream.set_write_timeout(Some(TIMEOUT))?;
     write_json_line(
@@ -201,6 +210,16 @@ fn clear_hook_error() -> Result<()> {
 
 fn successful_hook_output(event: HookEventName) -> Option<&'static str> {
     matches!(event, HookEventName::Stop).then_some(r#"{"continue":true}"#)
+}
+
+fn test_socket() -> String {
+    if cfg!(debug_assertions) {
+        env::var("WT_AGENT_TOOL_TEST_SOCKET")
+            .ok()
+            .unwrap_or_else(|| RELAY_SOCKET.to_owned())
+    } else {
+        RELAY_SOCKET.to_owned()
+    }
 }
 
 fn pane_event_order(pane_id: &str, session_id: Uuid, event: HookEventName) -> Result<(u64, u64)> {
