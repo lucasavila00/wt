@@ -1,4 +1,4 @@
-# ADR 0077: Flag quiet Codex sessions as possibly stuck
+# ADR 0076: Flag quiet Codex sessions as possibly stuck
 
 - Status: Accepted
 - Date: 2026-08-23
