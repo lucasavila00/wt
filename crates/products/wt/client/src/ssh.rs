@@ -3,8 +3,9 @@ use crate::config::{validate_ssh_host, ClientConfig, ContextKind};
 use crate::inventory::{name_counts, ContextInstance};
 use crate::ssh_config;
 use anyhow::{bail, Context, Result};
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use nix::fcntl::{Flock, FlockArg};
+use std::fs::{self, OpenOptions};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use wt_control_protocol::InstanceStatus;
 
@@ -12,10 +13,30 @@ pub fn sync(client_config: &ClientConfig, instances: &[ContextInstance]) -> Resu
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .context("HOME is not set")?;
+    sync_in_home(&home, client_config, instances)
+}
+
+fn sync_in_home(
+    home: &Path,
+    client_config: &ClientConfig,
+    instances: &[ContextInstance],
+) -> Result<PathBuf> {
     let ssh_dir = home.join(".ssh");
     let managed_dir = ssh_dir.join("wt");
     ensure_directory(&ssh_dir)?;
     ensure_directory(&managed_dir)?;
+    let lock_path = managed_dir.join("inventory.lock");
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(&lock_path)
+        .with_context(|| format!("open {}", lock_path.display()))?;
+    let _lock = Flock::lock(lock_file, FlockArg::LockExclusive)
+        .map_err(|(_, error)| error)
+        .with_context(|| format!("lock {}", lock_path.display()))?;
     let config_path = managed_dir.join("config");
     let known_hosts_path = managed_dir.join("known_hosts");
     let main_config_path = ssh_dir.join("config");
@@ -144,6 +165,75 @@ mod tests {
     fn normalize_home(contents: &str, home: &Path) -> String {
         contents.replace(&home.display().to_string(), "[HOME]")
     }
+
+    fn instance(name: &str, host_key: &str) -> ContextInstance {
+        ContextInstance {
+            context: "local".into(),
+            agent_tool_report_count: 0,
+            disk_usage_bytes: None,
+            instance: Instance {
+                id: Uuid::new_v4(),
+                name: InstanceName::parse(name).unwrap(),
+                owner: "lucas".into(),
+                status: InstanceStatus::Running,
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
+                guest_ip: Some("192.0.2.2".into()),
+                last_error: None,
+                ssh: Some(SshAccess {
+                    user: "wt".into(),
+                    host: "192.0.2.2".into(),
+                    port: 22,
+                    host_keys: vec![format!("ssh-ed25519 {host_key} guest")],
+                }),
+            },
+        }
+    }
+
+    #[test]
+    fn concurrent_syncs_publish_one_inventory_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = local_config();
+        let inventories = (0..16)
+            .map(|index| vec![instance(&format!("world-{index}"), &format!("KEY{index}"))])
+            .collect::<Vec<_>>();
+        let barrier = std::sync::Barrier::new(inventories.len());
+
+        std::thread::scope(|scope| {
+            let threads = inventories
+                .iter()
+                .map(|inventory| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        sync_in_home(temp.path(), &config, inventory)
+                    })
+                })
+                .collect::<Vec<_>>();
+            for thread in threads {
+                thread.join().unwrap().unwrap();
+            }
+        });
+
+        let managed_dir = temp.path().join(".ssh/wt");
+        let published_config = fs::read_to_string(managed_dir.join("config")).unwrap();
+        let published_known_hosts = fs::read_to_string(managed_dir.join("known_hosts")).unwrap();
+        assert!((0..inventories.len()).any(|generation| {
+            published_config.contains(&format!("\nHost local.world-{generation}\n"))
+                && published_known_hosts.contains(&format!(
+                    "\nlocal.world-{generation} ssh-ed25519 KEY{generation}\n"
+                ))
+        }));
+        assert_eq!(
+            fs::metadata(managed_dir.join("inventory.lock"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
     #[test]
     fn sync_bootstraps_main_config_and_removes_stale_worlds() {
         let _lock = HOME_LOCK.lock().unwrap();
