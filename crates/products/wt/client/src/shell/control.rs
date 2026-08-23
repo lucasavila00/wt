@@ -4,6 +4,8 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
+mod live;
+
 pub(super) use super::activity::Activity;
 
 pub(super) const COMMANDS: [ControlCommand; 2] =
@@ -212,13 +214,6 @@ impl ControlState {
 
     pub(super) fn codex(&self) -> &[CodexCard] {
         &self.codex
-    }
-
-    pub(super) fn live_codex(&self) -> Vec<&CodexCard> {
-        self.codex
-            .iter()
-            .filter(|card| card.open_target().is_some())
-            .collect()
     }
 
     pub(super) fn selected(&self) -> Option<&CodexCardIdentity> {
@@ -488,39 +483,6 @@ impl ControlState {
             self.codex_offset = selected;
         } else if selected >= self.codex_offset.saturating_add(visible) {
             self.codex_offset = selected + 1 - visible;
-        }
-    }
-
-    fn visible_codex_identities(&self) -> Vec<CodexCardIdentity> {
-        if self.activity == Activity::Live {
-            self.live_codex()
-                .into_iter()
-                .map(|card| card.identity.clone())
-                .collect()
-        } else {
-            self.codex
-                .iter()
-                .map(|card| card.identity.clone())
-                .collect()
-        }
-    }
-
-    fn visible_codex_len(&self) -> usize {
-        if self.activity == Activity::Live {
-            self.live_codex().len()
-        } else {
-            self.codex.len()
-        }
-    }
-
-    fn select_first_visible_codex(&mut self) {
-        let identities = self.visible_codex_identities();
-        if !self
-            .selected
-            .as_ref()
-            .is_some_and(|selected| identities.contains(selected))
-        {
-            self.selected = identities.first().cloned();
         }
     }
 }
