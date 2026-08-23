@@ -5,7 +5,7 @@ use super::terminal_view::TerminalView;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use ratatui::Frame;
 
@@ -84,7 +84,7 @@ fn draw_card(
         super::control::CodexCardKind::RolloutOnly
         | super::control::CodexCardKind::ContextError { .. } => title,
     };
-    let block = Block::new()
+    let mut block = Block::new()
         .borders(Borders::ALL)
         .border_style(selected_card_border_style(
             state.selected() == Some(&card.identity),
@@ -93,6 +93,11 @@ fn draw_card(
             format!(" {title} "),
             Style::new().fg(title_color).add_modifier(Modifier::BOLD),
         ));
+    if let Some(repository) = card_repository(card) {
+        block = block.title_bottom(
+            Line::from(vec![Span::raw(" "), Span::raw(repository), Span::raw(" ")]).right_aligned(),
+        );
+    }
     let viewport = block.inner(rect);
     block.render(rect, buffer);
     let screen = match &card.kind {
@@ -128,9 +133,69 @@ fn draw_card(
     }
 }
 
+fn card_repository(card: &super::control::CodexCard) -> Option<String> {
+    let super::control::CodexCardKind::Observation {
+        repository_root,
+        repository_url,
+        ..
+    } = &card.kind
+    else {
+        return None;
+    };
+    repository_url
+        .as_deref()
+        .and_then(repository_identifier)
+        .or_else(|| {
+            repository_root
+                .as_deref()
+                .and_then(|root| std::path::Path::new(root).file_name()?.to_str())
+                .map(str::to_owned)
+        })
+}
+
+fn repository_identifier(url: &str) -> Option<String> {
+    let url = url.trim_end_matches('/').trim_end_matches(".git");
+    let remote = url.rsplit('@').next()?;
+    let (host, path) = if let Some(remote) = remote.strip_prefix("https://") {
+        remote.split_once('/')?
+    } else if let Some(remote) = remote.strip_prefix("http://") {
+        remote.split_once('/')?
+    } else {
+        remote.split_once(':')?
+    };
+    let mut components = path.rsplit('/');
+    let repository = components.next()?;
+    let owner = components.next()?;
+    if host.is_empty() || owner.is_empty() || repository.is_empty() {
+        return None;
+    }
+    let provider = match host {
+        "github.com" => "github",
+        "gitlab.com" => "gitlab",
+        host => host,
+    };
+    Some(format!("{provider}:{owner}/{repository}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_identifier_keeps_the_owner_and_name() {
+        assert_eq!(
+            repository_identifier("git@github.com:lucasavila00/wt.git"),
+            Some("github:lucasavila00/wt".into())
+        );
+        assert_eq!(
+            repository_identifier("https://github.com/lucasavila00/wt"),
+            Some("github:lucasavila00/wt".into())
+        );
+        assert_eq!(
+            repository_identifier("git@git.example.com:platform/wt.git"),
+            Some("git.example.com:platform/wt".into())
+        );
+    }
 
     #[test]
     fn layout_uses_two_equal_columns() {
