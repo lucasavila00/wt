@@ -61,13 +61,15 @@ fn reconcile_worker_at(directory: &Path) -> Result<()> {
 
     loop {
         let generation = read_generation(&directory.join(DESIRED_FILE))?;
-        write_status(
-            directory,
-            &Status::Reconciling {
-                generation: generation.clone(),
-                codex_version: version.clone(),
-            },
-        )?;
+        if should_publish_reconciling(directory, &generation)? {
+            write_status(
+                directory,
+                &Status::Reconciling {
+                    generation: generation.clone(),
+                    codex_version: version.clone(),
+                },
+            )?;
+        }
         if let Err(error) = reconcile::reconcile_with_codex(&codex) {
             let diagnostic = bounded(&format!("{error:#}"));
             write_status(
@@ -91,6 +93,27 @@ fn reconcile_worker_at(directory: &Path) -> Result<()> {
             return Ok(());
         }
     }
+}
+
+fn should_publish_reconciling(directory: &Path, generation: &str) -> Result<bool> {
+    let path = directory.join(STATUS_FILE);
+    let contents = match fs::read(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("read reconciliation status {}", path.display()))
+        }
+    };
+    let status: Status = serde_json::from_slice(&contents)
+        .with_context(|| format!("parse reconciliation status {}", path.display()))?;
+    Ok(!matches!(
+        status,
+        Status::Failed {
+            generation: failed_generation,
+            ..
+        } if failed_generation == generation
+    ))
 }
 
 fn require_ready_at(directory: &Path, codex_version: &str) -> Result<()> {
@@ -292,5 +315,23 @@ mod tests {
             .to_string()
             .replace(&temp.path().display().to_string(), "<STATE>");
         insta::assert_snapshot!(error, @"Codex history reconciliation failed: database refused migration; status: <STATE>/codex-reconciliation-status.json; set IGNORE_CODEX_WT_CHECKS=true to start without synchronized history");
+    }
+
+    #[test]
+    fn keeps_a_failure_visible_while_retrying_the_same_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        write_desired(temp.path(), FIRST);
+        write_status(
+            temp.path(),
+            &Status::Failed {
+                generation: FIRST.into(),
+                codex_version: "codex-cli 0.149.0".into(),
+                error: "Codex app-server did not reply".into(),
+            },
+        )
+        .unwrap();
+
+        assert!(!should_publish_reconciling(temp.path(), FIRST).unwrap());
+        assert!(should_publish_reconciling(temp.path(), SECOND).unwrap());
     }
 }

@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const RECONCILIATION_TIMEOUT: Duration = Duration::from_secs(270);
 
 pub(crate) fn reconcile() -> Result<()> {
     let codex = install::real_codex()?;
@@ -24,7 +27,21 @@ pub(crate) fn reconcile_with_codex(codex: &Path) -> Result<()> {
 }
 
 fn reconcile_home(codex: &Path, home: &Path) -> Result<()> {
-    let mut server = AppServer::start(codex, home)?;
+    reconcile_home_with_timeouts(codex, home, RESPONSE_TIMEOUT, RECONCILIATION_TIMEOUT)
+}
+
+fn reconcile_home_with_timeouts(
+    codex: &Path,
+    home: &Path,
+    response_timeout: Duration,
+    reconciliation_timeout: Duration,
+) -> Result<()> {
+    let mut server = AppServer::start(
+        codex,
+        home,
+        response_timeout,
+        Instant::now() + reconciliation_timeout,
+    )?;
     let initialized: InitializeResult = server.call(
         "initialize",
         json!({
@@ -123,11 +140,18 @@ struct AppServer {
     output: mpsc::Receiver<ServerOutput>,
     stderr: Arc<Mutex<Vec<u8>>>,
     stderr_complete: mpsc::Receiver<()>,
+    response_timeout: Duration,
+    deadline: Instant,
     next_id: u64,
 }
 
 impl AppServer {
-    fn start(codex: &Path, home: &Path) -> Result<Self> {
+    fn start(
+        codex: &Path,
+        home: &Path,
+        response_timeout: Duration,
+        deadline: Instant,
+    ) -> Result<Self> {
         let mut child = Command::new(codex)
             .args(["app-server", "--stdio"])
             .env("CODEX_HOME", home)
@@ -179,6 +203,8 @@ impl AppServer {
             output,
             stderr,
             stderr_complete,
+            response_timeout,
+            deadline,
             next_id: 0,
         })
     }
@@ -197,8 +223,15 @@ impl AppServer {
             }
             return Err(error);
         }
+        let response_deadline = Instant::now() + self.response_timeout;
         loop {
-            match self.output.recv() {
+            let timeout = response_deadline
+                .saturating_duration_since(Instant::now())
+                .min(self.deadline.saturating_duration_since(Instant::now()));
+            if timeout.is_zero() {
+                return Err(self.timeout_error(method));
+            }
+            match self.output.recv_timeout(timeout) {
                 Ok(ServerOutput::Line(line)) => {
                     let Ok(response) = serde_json::from_str::<RpcResponse>(&line) else {
                         continue;
@@ -214,7 +247,10 @@ impl AppServer {
                 }
                 Ok(ServerOutput::Error(error)) => return Err(error.into()),
                 Ok(ServerOutput::Eof) => return Err(self.stopped_before_reply(method)),
-                Err(mpsc::RecvError) => {
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(self.timeout_error(method));
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
                     return Err(self.failure_with_stderr(format!(
                         "Codex app-server output closed during {method}"
                     )));
@@ -268,6 +304,18 @@ impl AppServer {
 
     fn stopped_before_reply(&mut self, method: &str) -> anyhow::Error {
         self.failure_with_stderr(format!("Codex app-server stopped before {method} replied"))
+    }
+
+    fn timeout_error(&mut self, method: &str) -> anyhow::Error {
+        let message = if Instant::now() >= self.deadline {
+            format!("Codex session reconciliation exceeded its deadline during {method}")
+        } else {
+            format!(
+                "Codex app-server did not reply to {method} within {:?}",
+                self.response_timeout
+            )
+        };
+        self.failure_with_stderr(message)
     }
 
     fn failure_with_stderr(&mut self, message: String) -> anyhow::Error {
@@ -374,6 +422,46 @@ done
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    fn fake_unresponsive_codex(path: &Path, home: &Path) {
+        let script = format!(
+            r#"#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"codexHome":"{}"}}}}'
+      ;;
+    *'"method":"thread/list"'*) exec sleep 60 ;;
+  esac
+done
+"#,
+            home.display()
+        );
+        fs::write(path, script).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn fake_chatty_unresponsive_codex(path: &Path, home: &Path) {
+        let script = format!(
+            r#"#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"codexHome":"{}"}}}}'
+      ;;
+    *'"method":"thread/list"'*)
+      while :; do printf '%s\n' '{{"jsonrpc":"2.0","method":"codex/event"}}'; done
+      ;;
+  esac
+done
+"#,
+            home.display()
+        );
+        fs::write(path, script).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     #[test]
     fn asks_codex_to_scan_and_verify_active_and_archived_threads() {
         let temp = tempdir().unwrap();
@@ -427,6 +515,69 @@ done
         insta::assert_snapshot!(
             reconcile_home(&codex, &home).unwrap_err().to_string(),
             @"Codex did not index these active sessions: 33333333-3333-4333-8333-333333333333"
+        );
+    }
+
+    #[test]
+    fn fails_when_codex_app_server_stops_replying() {
+        let temp = tempdir().unwrap();
+        let home = temp.path().join("codex-home");
+        fs::create_dir(&home).unwrap();
+        let codex = temp.path().join("codex");
+        fake_unresponsive_codex(&codex, &home);
+
+        insta::assert_snapshot!(
+            reconcile_home_with_timeouts(
+                &codex,
+                &home,
+                Duration::from_millis(10),
+                Duration::from_secs(1),
+            )
+                .unwrap_err()
+                .to_string(),
+            @"Codex app-server did not reply to thread/list within 10ms"
+        );
+    }
+
+    #[test]
+    fn fails_when_codex_app_server_emits_unrelated_output() {
+        let temp = tempdir().unwrap();
+        let home = temp.path().join("codex-home");
+        fs::create_dir(&home).unwrap();
+        let codex = temp.path().join("codex");
+        fake_chatty_unresponsive_codex(&codex, &home);
+
+        insta::assert_snapshot!(
+            reconcile_home_with_timeouts(
+                &codex,
+                &home,
+                Duration::from_millis(10),
+                Duration::from_secs(1),
+            )
+            .unwrap_err()
+            .to_string(),
+            @"Codex app-server did not reply to thread/list within 10ms"
+        );
+    }
+
+    #[test]
+    fn fails_within_the_reconciliation_deadline() {
+        let temp = tempdir().unwrap();
+        let home = temp.path().join("codex-home");
+        fs::create_dir(&home).unwrap();
+        let codex = temp.path().join("codex");
+        fake_unresponsive_codex(&codex, &home);
+
+        insta::assert_snapshot!(
+            reconcile_home_with_timeouts(
+                &codex,
+                &home,
+                Duration::from_secs(1),
+                Duration::from_millis(10),
+            )
+            .unwrap_err()
+            .to_string(),
+            @"Codex session reconciliation exceeded its deadline during thread/list"
         );
     }
 
