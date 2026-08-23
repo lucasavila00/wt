@@ -30,28 +30,28 @@ phase "installing Diffo"
 install -d -m 0755 /usr/local/share /usr/local/libexec
 printf "WT_USER='%s'\nWT_GROUP='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
     "$WT_USER" "$WT_GROUP" "$WT_UID" "$WT_GID" "$WT_HOME" \
-    > /usr/local/share/wt-retained-contract
-chmod 0644 /usr/local/share/wt-retained-contract
+    > /usr/local/share/wt-host-contract
+chmod 0644 /usr/local/share/wt-host-contract
 install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf
-install -m 0755 /var/tmp/wt-retained-access /usr/local/libexec/wt-retained-access
-install -m 0755 /var/tmp/wt-retained-git-author \
-    /usr/local/libexec/wt-retained-git-author
-install -m 0755 /var/tmp/wt-retained-agent-tools /usr/local/libexec/wt-retained-agent-tools
-install -m 0755 /var/tmp/wt-retained-mount-codex \
-    /usr/local/libexec/wt-retained-mount-codex
+install -m 0755 /var/tmp/wt-host-access /usr/local/libexec/wt-host-access
+install -m 0755 /var/tmp/wt-host-git-author \
+    /usr/local/libexec/wt-host-git-author
+install -m 0755 /var/tmp/wt-host-agent-tools /usr/local/libexec/wt-host-agent-tools
+install -m 0755 /var/tmp/wt-host-mount-codex \
+    /usr/local/libexec/wt-host-mount-codex
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
     /usr/local/share/wt-tmux.conf | sha256sum --check --strict
 printf '%s  %s\n' "$ACCESS_SHA256" \
-    /usr/local/libexec/wt-retained-access | sha256sum --check --strict
+    /usr/local/libexec/wt-host-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
-    /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
+    /usr/local/libexec/wt-host-git-author | sha256sum --check --strict
 printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
-    /usr/local/libexec/wt-retained-agent-tools | sha256sum --check --strict
+    /usr/local/libexec/wt-host-agent-tools | sha256sum --check --strict
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
-    /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
+    /usr/local/libexec/wt-host-mount-codex | sha256sum --check --strict
 
-phase "installing retained-world tools"
-/bin/sh /var/tmp/wt-retained-image-build.sh
+phase "installing host-world tools"
+/bin/sh /var/tmp/wt-host-image-build.sh
 
 phase "validating cached development tools"
 test -f /var/lib/wt-image-development-tools

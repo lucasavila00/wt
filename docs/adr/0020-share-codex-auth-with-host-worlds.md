@@ -1,4 +1,4 @@
-# ADR 0020: Make Codex a required retained-world integration
+# ADR 0020: Make Codex a required host-world integration
 
 - Status: Accepted
 - Date: 2026-08-21

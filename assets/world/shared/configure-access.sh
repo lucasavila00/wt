@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-retained-contract
+. /usr/local/share/wt-host-contract
 
 test "$(id -u "$WT_USER")" = "$WT_UID"
 test "$(id -g "$WT_USER")" = "$WT_GID"

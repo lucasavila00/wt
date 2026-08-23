@@ -25,14 +25,25 @@ pub(crate) fn isolated_test_images(
         .tempdir_in("/var/tmp")
         .unwrap();
     fs::set_permissions(images.path(), fs::Permissions::from_mode(0o755)).unwrap();
-    let retained = images.path().join("retained.qcow2");
+    let host_image = images.path().join("host.qcow2");
     run(
-        cmd!("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", installed, &retained,),
+        cmd!(
+            "qemu-img",
+            "create",
+            "-q",
+            "-f",
+            "qcow2",
+            "-F",
+            "qcow2",
+            "-b",
+            installed,
+            &host_image,
+        ),
         "create isolated KVM test image",
     );
-    fs::set_permissions(&retained, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&host_image, fs::Permissions::from_mode(0o644)).unwrap();
     let installed_manifest = format!("{}.manifest.json", installed.display());
-    let isolated_manifest = format!("{}.manifest.json", retained.display());
+    let isolated_manifest = format!("{}.manifest.json", host_image.display());
     fs::copy(installed_manifest, isolated_manifest).unwrap();
     let inputs = [
         (
@@ -41,7 +52,7 @@ pub(crate) fn isolated_test_images(
         ),
         (
             workspace.join("assets/world/shared/install-agent-tools.sh"),
-            "/usr/local/libexec/wt-retained-agent-tools",
+            "/usr/local/libexec/wt-host-agent-tools",
         ),
         (
             binary_dir.join("wt-agent-tool-gateway-relay"),
@@ -63,7 +74,7 @@ pub(crate) fn isolated_test_images(
         "virt-customize",
         "--no-network",
         "-a",
-        &retained
+        &host_image
     );
     for (source, guest_path) in &inputs {
         customize
@@ -77,6 +88,6 @@ pub(crate) fn isolated_test_images(
         customize,
         "install current guest assets in isolated test image",
     );
-    fs::set_permissions(&retained, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&host_image, fs::Permissions::from_mode(0o644)).unwrap();
     images
 }

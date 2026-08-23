@@ -5,7 +5,7 @@
 
 ## Context
 
-WT's retained golden image is shared by every new world. Current Rust/Cargo,
+WT's host golden image is shared by every new world. Current Rust/Cargo,
 Go, Python/uv, Node.js/npm through NVM, build tools, CLI utilities, and Docker/Compose are
 useful for development, but they add substantial download time and image size.
 The KVM E2E path creates images from scratch and must not pay that cost for
@@ -41,5 +41,5 @@ and KVM E2E install inputs leave the option disabled.
   world provisioning or downloading tools per world.
 - Default image creation and KVM E2E remain narrow and avoid third-party
   language-runtime downloads.
-- Enabling or disabling the option creates a distinct retained image
+- Enabling or disabling the option creates a distinct host image
   generation; existing worlds continue to use their current generation.

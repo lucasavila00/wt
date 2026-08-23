@@ -8,5 +8,5 @@ Production libvirt/KVM backend.
 - Guest-agent readiness and bounded guest transport.
 - Machine inspection, start, stop, disk usage, and deletion.
 
-The retained-world crate owns provisioning and readiness after the machine is
+The host-world crate owns provisioning and readiness after the machine is
 available.

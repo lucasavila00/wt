@@ -89,11 +89,11 @@ fn run_server() -> Result<()> {
     let codex_sessions = codex_paths.sessions;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
-    let retained = server_config.retained_config();
-    let host_worker = wt_retained_worlds::host::Worker::new(
+    let host_config = server_config.host_config();
+    let host_worker = wt_host_world::host::Worker::new(
         provider,
         Duration::from_secs(server_config.guest.readiness_timeout_seconds),
-        retained,
+        host_config,
     )
     .map_err(anyhow::Error::msg)?;
     let catalog_database = state.database_path();
@@ -141,7 +141,7 @@ fn maintain_codex_history(
     database: &Path,
     sessions: &str,
     owner: &str,
-    worker: &wt_retained_worlds::host::Worker<LibvirtProvider>,
+    worker: &wt_host_world::host::Worker<LibvirtProvider>,
     requested: &mut HashMap<String, String>,
 ) -> Result<Vec<String>> {
     let store = Store::open(database).context("open instance registry")?;
@@ -182,7 +182,7 @@ fn log_codex_catalog_warnings(warnings: Vec<String>) {
 struct DaemonContext {
     state: StateConfig,
     operations: Operations,
-    worker: wt_retained_worlds::host::Worker<LibvirtProvider>,
+    worker: wt_host_world::host::Worker<LibvirtProvider>,
     gateway: wt_agent_tool_gateway::ControlClient,
     owner: String,
     capacity_limit: wt_workload_registry::Resources,

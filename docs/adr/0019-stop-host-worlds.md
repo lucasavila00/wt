@@ -1,4 +1,4 @@
-# ADR 0019: Stop retained worlds
+# ADR 0019: Stop host worlds
 
 - Status: Accepted
 - Date: 2026-08-20

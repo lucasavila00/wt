@@ -11,7 +11,7 @@ operator recipe.
 
 ## Images
 
-`wt-server-installer` builds one retained image from the pinned Ubuntu source
+`wt-server-installer` builds one host image from the pinned Ubuntu source
 inside a temporary KVM guest. The final image contains Git, OpenSSH, QEMU guest
 support, Byobu, tmux, Codex, and WT's host and gateway helpers. Build-only
 packages and bootstrap state are removed before publication.

@@ -4,11 +4,11 @@ use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
-pub const SERVER_USER: &str = wt_retained_worlds::WT_IDENTITY.user;
-pub const SERVER_GROUP: &str = wt_retained_worlds::WT_IDENTITY.group;
-pub const SERVER_UID: u32 = wt_retained_worlds::WT_IDENTITY.uid;
-pub const SERVER_GID: u32 = wt_retained_worlds::WT_IDENTITY.gid;
-pub const SERVER_HOME: &str = wt_retained_worlds::WT_IDENTITY.home;
+pub const SERVER_USER: &str = wt_host_world::WT_IDENTITY.user;
+pub const SERVER_GROUP: &str = wt_host_world::WT_IDENTITY.group;
+pub const SERVER_UID: u32 = wt_host_world::WT_IDENTITY.uid;
+pub const SERVER_GID: u32 = wt_host_world::WT_IDENTITY.gid;
+pub const SERVER_HOME: &str = wt_host_world::WT_IDENTITY.home;
 
 const RECOVERY: &str = "rebootstrap the WT server account before installing or starting WT";
 

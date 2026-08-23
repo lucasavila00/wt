@@ -1,6 +1,6 @@
 # wt-agent-tool-gateway
 
-Scoped Git transport for retained worlds.
+Scoped Git transport for host worlds.
 
 The host gateway owns provider credentials and grants. The guest relay carries
 requests over vsock. `git-remote-wt-agent` and `wt-tools` expose the allowed Git

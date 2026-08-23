@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-retained-contract
+. /usr/local/share/wt-host-contract
 
 case "${1:-}" in
     wait)

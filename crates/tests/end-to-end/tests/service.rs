@@ -101,7 +101,7 @@ fn worlds_share_capacity() {
 }
 
 #[test]
-fn failed_create_is_retained_until_delete() {
+fn failed_create_is_preserved_until_delete() {
     let temp = TempDir::new().unwrap();
     let worker = Worker {
         provision_error: true,

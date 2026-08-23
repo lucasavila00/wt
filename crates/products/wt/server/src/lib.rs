@@ -20,7 +20,7 @@ pub use runtime_config::{
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentToolGateway>(
+pub fn handle_request<W: wt_host_world::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
@@ -28,10 +28,7 @@ pub fn handle_request<W: wt_retained_worlds::WorldWorker, G: service::AgentToolG
     handle_request_with_progress(service, owner, request, false, &mut std::io::sink())
 }
 
-pub fn handle_request_with_progress<
-    W: wt_retained_worlds::WorldWorker,
-    G: service::AgentToolGateway,
->(
+pub fn handle_request_with_progress<W: wt_host_world::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

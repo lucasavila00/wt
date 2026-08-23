@@ -23,7 +23,7 @@ fn sha_validation_detects_drift() {
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_retained_worlds::GUEST_IDENTITY,
+        guest_identity: wt_host_world::GUEST_IDENTITY,
         golden_sha256: "golden".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
         development_tools: Default::default(),
@@ -90,7 +90,7 @@ fn development_tools_cache_finalizer_needs_no_final_image_assets() {
     let finalizer = std::str::from_utf8(builder::FINALIZE_DEVELOPMENT_TOOLS_CACHE).unwrap();
 
     assert!(finalizer.contains("/var/lib/wt-image-development-tools"));
-    for final_asset in ["wt-tmux", "codex", "wt-retained"] {
+    for final_asset in ["wt-tmux", "codex", "wt-host"] {
         assert!(!finalizer.contains(final_asset));
     }
 }
@@ -123,10 +123,10 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
 
     let directory = tempfile::tempdir().unwrap();
     let prepared = directory.path().join("prepared.qcow2");
-    let destination = directory.path().join("retained.qcow2");
+    let destination = directory.path().join("host.qcow2");
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_retained_worlds::GuestIdentity {
+        guest_identity: wt_host_world::GuestIdentity {
             uid: 1000,
             gid: 1000,
         },
@@ -139,7 +139,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
         .err()
         .unwrap();
 
-    insta::assert_snapshot!(error.to_string(), @"retained image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+    insta::assert_snapshot!(error.to_string(), @"host image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
     assert!(!prepared.with_extension("manifest.json").exists());
 }
 
@@ -153,7 +153,7 @@ fn image_reuse_requires_the_current_commit() {
 }
 
 #[test]
-fn retained_image_owns_static_guest_binaries() {
+fn host_image_owns_static_guest_binaries() {
     let inputs = GUEST_BINARY_INPUTS
         .iter()
         .map(|(name, path)| format!("{name}\t{path}"))
@@ -169,7 +169,7 @@ fn retained_image_owns_static_guest_binaries() {
 }
 
 #[test]
-fn retained_image_sets_codex_model_defaults() {
+fn host_image_sets_codex_model_defaults() {
     insta::assert_snapshot!(
         std::str::from_utf8(CODEX_REQUIREMENTS).unwrap(),
         @r###"
@@ -181,7 +181,7 @@ fn retained_image_sets_codex_model_defaults() {
 }
 
 #[test]
-fn retained_image_grants_the_user_nested_kvm_access() {
+fn host_image_grants_the_user_nested_kvm_access() {
     let prepare = std::str::from_utf8(HOST_PREPARE).unwrap();
 
     assert!(prepare.contains("usermod --append --groups sudo,kvm \"$WT_USER\""));
@@ -289,11 +289,11 @@ fn console_reader_opens_the_replaced_log() {
 #[test]
 fn progress_output_is_phase_based() {
     let message = progress_message(
-        "Retained",
+        "Host",
         "installing base operating-system packages",
         Duration::from_secs(60),
     );
-    insta::assert_snapshot!(message, @"Retained image build: installing base operating-system packages (elapsed=60s)");
+    insta::assert_snapshot!(message, @"Host image build: installing base operating-system packages (elapsed=60s)");
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn development_tool_install_reports_individual_progress() {
     installing Node.js and nvm
     installing Python and uv
     configuring Node.js command path
-    configuring Docker for the retained-world user
+    configuring Docker for the host-world user
     recording installed development-tool versions
     "###);
 }

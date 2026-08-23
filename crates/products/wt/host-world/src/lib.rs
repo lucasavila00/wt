@@ -12,11 +12,11 @@ macro_rules! cmd {
     }};
 }
 
+mod guest;
 pub mod host;
-mod retained;
 
+pub use guest::*;
 pub use host::{ProvisionSpec, WorldInspection};
-pub use retained::*;
 
 fn write_creation_timing(
     log: &mut dyn Write,

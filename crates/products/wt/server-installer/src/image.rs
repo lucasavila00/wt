@@ -38,10 +38,9 @@ const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const DEVELOPMENT_TOOLS_CACHE_BUILD_NAME: &str = "wt-development-tools-cache-build";
 const DEVELOPMENT_TOOLS_CACHE_NAME: &str = "wt-development-tools.qcow2";
-const RETAINED_IMAGE_BUILD: &[u8] =
-    include_bytes!("../../../../../assets/world/retained/build-image.sh");
+const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../../assets/world/host/build-image.sh");
 const CODEX_REQUIREMENTS: &[u8] =
-    include_bytes!("../../../../../assets/world/retained/codex-requirements.toml");
+    include_bytes!("../../../../../assets/world/host/codex-requirements.toml");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
 const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/prepare.sh");
 const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
@@ -61,7 +60,7 @@ const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
     commit: String,
-    guest_identity: wt_retained_worlds::GuestIdentity,
+    guest_identity: wt_host_world::GuestIdentity,
     golden_sha256: String,
     packages: PackageVersions,
     development_tools: PackageVersions,
@@ -88,7 +87,7 @@ pub(crate) fn ensure(
     ) {
         InstalledImageState::Reusable => {
             println!(
-                "Reusing verified retained golden image: {}",
+                "Reusing verified host golden image: {}",
                 server.image.path.display()
             );
         }
@@ -96,7 +95,7 @@ pub(crate) fn ensure(
             build_image(runner, input, server, &source, &byobu)?;
         }
         InstalledImageState::Replace(reason) => {
-            println!("Replacing the installed retained golden image: {reason}");
+            println!("Replacing the installed host golden image: {reason}");
             build_image(runner, input, server, &source, &byobu)?;
         }
     }
@@ -121,7 +120,7 @@ pub(crate) fn verify(_input: &InstallInput, server: &ServerConfig) -> Result<()>
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
     verify_installed_image(&installed.image, &installed.manifest)?;
     println!(
-        "Verified retained golden image and provenance: {}",
+        "Verified host golden image and provenance: {}",
         server.image.path.display()
     );
     Ok(())
@@ -196,7 +195,7 @@ fn build_image(
     source: &Path,
     byobu: &Path,
 ) -> Result<()> {
-    println!("Building retained golden image from verified source inputs.");
+    println!("Building host golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
 
     let cache_build_dir = server
@@ -245,7 +244,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .iter()
         .map(|(name, _, bytes)| {
             let path = build_dir.join(name);
-            fs::write(&path, bytes).context("stage retained image input")?;
+            fs::write(&path, bytes).context("stage host image input")?;
             Ok(path)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -273,7 +272,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let spec = BuildSpec {
         name: BUILD_NAME,
         main_recipe: CACHED_IMAGE_BUILD,
-        retained_recipe: RETAINED_IMAGE_BUILD,
+        host_recipe: HOST_IMAGE_BUILD,
     };
     let cached_context = BuildContext {
         runner: context.runner,
@@ -305,7 +304,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .map(|(name, version)| format!("{name}={version}"))
         .collect::<Vec<_>>()
         .join(", ");
-    println!("Validated retained image packages: {package_summary}");
+    println!("Validated host image packages: {package_summary}");
     let development_tool_output = runner.timed_text(
         cmd!(
             "sudo",
@@ -394,17 +393,15 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     )?;
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_retained_worlds::GUEST_IDENTITY,
-        golden_sha256: timed("hash compacted retained image", || {
-            sha_file(&paths.prepared)
-        })?,
+        guest_identity: wt_host_world::GUEST_IDENTITY,
+        golden_sha256: timed("hash compacted host image", || sha_file(&paths.prepared))?,
         packages,
         development_tools,
     };
-    let publication = timed("stage retained image publication", || {
+    let publication = timed("stage host image publication", || {
         stage_publication(runner, &paths.prepared, &server.image.path, &manifest)
     })?;
-    if let Err(primary) = timed("probe retained image boot and shared identity", || {
+    if let Err(primary) = timed("probe host image boot and shared identity", || {
         probe::verify_publication(input, server, publication.image_path())
     }) {
         return match publication.discard(runner) {
@@ -417,7 +414,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(
-        "Published retained golden image: {}",
+        "Published host golden image: {}",
         server.image.path.display()
     );
     Ok(())
@@ -432,8 +429,7 @@ pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) ->
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
-        .map_err(anyhow::Error::msg)?;
+    wt_host_world::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
     require_current_commit(&manifest.commit)?;
     recipe
         .validate_package_versions(&manifest.packages)

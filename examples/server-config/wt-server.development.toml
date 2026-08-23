@@ -9,7 +9,7 @@ limits = { vcpus = 20, memory_mib = 32768, disk_gib = 238 }
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"
 source_sha256 = "5fa5b05e5ec239858c4531485d6023b0896448c2df7c63b34f8dae6ea6051a44"
-path = "/var/lib/wt/images/wt-retained-ubuntu-24.04-amd64.qcow2"
+path = "/var/lib/wt/images/wt-host-ubuntu-24.04-amd64.qcow2"
 build_memory_mib = 8192
 build_vcpus = 8
 build_disk_gib = 32

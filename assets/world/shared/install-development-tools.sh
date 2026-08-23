@@ -63,7 +63,7 @@ for tool in node npm npx corepack; do
     ln -sfn "$node_bin/$tool" "/usr/local/bin/$tool"
 done
 
-phase "configuring Docker for the retained-world user"
+phase "configuring Docker for the host-world user"
 usermod --append --groups docker "$WT_USER"
 cat >> "$WT_HOME/.bashrc" <<'EOF'
 

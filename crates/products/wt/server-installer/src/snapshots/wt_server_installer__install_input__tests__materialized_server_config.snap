@@ -6,7 +6,7 @@ version = 1
 test_server = false
 
 [image]
-path = "/var/lib/wt/images/retained.qcow2"
+path = "/var/lib/wt/images/host.qcow2"
 
 [libvirt]
 network = "default"

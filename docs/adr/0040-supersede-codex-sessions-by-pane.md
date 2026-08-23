@@ -5,7 +5,7 @@
 ## Problem
 
 Codex `/reset` starts a new session in the existing Byobu pane but does not
-reliably report `SessionEnd` for the previous session. WT therefore retained
+reliably report `SessionEnd` for the previous session. WT therefore kept
 the previous session's `working` or `needs_attention` state after the new
 session had started.
 

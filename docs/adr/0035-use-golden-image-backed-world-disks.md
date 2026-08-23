@@ -24,7 +24,7 @@ it does not rewrite existing overlays.
 
 - World disk creation is an effectively constant-time metadata operation.
 - Existing worlds keep their contents across image publication and server
-  restart because their overlays name a specific retained generation.
+  restart because their overlays name a specific pinned generation.
 - A world disk is not self-contained. Moving it requires its backing image or
   an explicit flattening operation.
 - Image-generation cleanup requires reference discovery or an explicit

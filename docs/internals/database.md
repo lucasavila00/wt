@@ -2,7 +2,7 @@
 
 WT uses SQLite through Diesel at `~/.local/state/wt/instances.db`.
 
-`worlds` stores retained ownership, name, creation time, status, request
+`worlds` stores world ownership, name, creation time, status, request
 fingerprint, backend, disk, resources, reservation state, SSH endpoint, and
 gateway grant. World listings use creation order.
 `agent_tool_reports` stores `wt-tools` feedback and

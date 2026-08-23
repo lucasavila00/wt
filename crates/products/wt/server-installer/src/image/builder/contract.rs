@@ -1,30 +1,27 @@
 use super::*;
 use crate::server::binaries;
 
-pub(in crate::image) fn verify_retained_guest_contract(
-    runner: &impl Runner,
-    disk: &Path,
-) -> Result<()> {
+pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path) -> Result<()> {
     let contract = runner.text(
         cmd!(
             "sudo",
             "virt-cat",
             "-a",
             disk,
-            "/usr/local/share/wt-retained-contract"
+            "/usr/local/share/wt-host-contract"
         ),
-        "inspect finalized retained guest contract",
+        "inspect finalized guest contract",
     )?;
     let expected_contract = format!(
         "WT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\n",
-        wt_retained_worlds::GUEST_USER,
-        wt_retained_worlds::GUEST_GROUP,
-        wt_retained_worlds::GUEST_UID,
-        wt_retained_worlds::GUEST_GID,
-        wt_retained_worlds::GUEST_HOME,
+        wt_host_world::GUEST_USER,
+        wt_host_world::GUEST_GROUP,
+        wt_host_world::GUEST_UID,
+        wt_host_world::GUEST_GID,
+        wt_host_world::GUEST_HOME,
     );
     if contract != expected_contract {
-        bail!("finalized image retained guest contract differs from policy");
+        bail!("finalized image guest contract differs from policy");
     }
 
     let binary_listing = runner.text(
@@ -68,16 +65,16 @@ pub(in crate::image) fn verify_retained_guest_contract(
     )?;
     let expected_user = format!(
         "{}:x:{}:{}:",
-        wt_retained_worlds::GUEST_USER,
-        wt_retained_worlds::GUEST_UID,
-        wt_retained_worlds::GUEST_GID
+        wt_host_world::GUEST_USER,
+        wt_host_world::GUEST_UID,
+        wt_host_world::GUEST_GID
     );
-    let expected_home = format!(":{}:", wt_retained_worlds::GUEST_HOME);
+    let expected_home = format!(":{}:", wt_host_world::GUEST_HOME);
     if !passwd
         .lines()
         .any(|line| line.starts_with(&expected_user) && line.contains(&expected_home))
     {
-        bail!("finalized image does not contain the required retained guest user");
+        bail!("finalized image does not contain the required guest user");
     }
     let group = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/etc/group"),
@@ -85,11 +82,11 @@ pub(in crate::image) fn verify_retained_guest_contract(
     )?;
     let expected_group = format!(
         "{}:x:{}:",
-        wt_retained_worlds::GUEST_GROUP,
-        wt_retained_worlds::GUEST_GID
+        wt_host_world::GUEST_GROUP,
+        wt_host_world::GUEST_GID
     );
     if !group.lines().any(|line| line == expected_group) {
-        bail!("finalized image does not contain the required retained guest group");
+        bail!("finalized image does not contain the required guest group");
     }
 
     let color = runner.output(cmd!(
@@ -97,10 +94,10 @@ pub(in crate::image) fn verify_retained_guest_contract(
         "virt-cat",
         "-a",
         disk,
-        format!("{}/.byobu/color", wt_retained_worlds::GUEST_HOME)
+        format!("{}/.byobu/color", wt_host_world::GUEST_HOME)
     ))?;
     if !color.status.success() || color.stdout != BYOBU_COLOR {
-        bail!("finalized image retained guest Byobu color differs from policy");
+        bail!("finalized image guest Byobu color differs from policy");
     }
     let listing = runner.text(
         cmd!(
@@ -111,11 +108,11 @@ pub(in crate::image) fn verify_retained_guest_contract(
             "--uids",
             "-a",
             disk,
-            wt_retained_worlds::GUEST_HOME
+            wt_host_world::GUEST_HOME
         ),
-        "inspect finalized retained guest home",
+        "inspect finalized guest home",
     )?;
-    let color_path = format!("{}/.byobu/color", wt_retained_worlds::GUEST_HOME);
+    let color_path = format!("{}/.byobu/color", wt_host_world::GUEST_HOME);
     let fields = listing
         .lines()
         .find(|line| line.ends_with(&format!(" {color_path}")))
@@ -124,12 +121,10 @@ pub(in crate::image) fn verify_retained_guest_contract(
     if fields.len() < 6
         || fields[0] != "-"
         || fields[1] != "0644"
-        || fields[3] != wt_retained_worlds::GUEST_UID.to_string()
-        || fields[4] != wt_retained_worlds::GUEST_GID.to_string()
+        || fields[3] != wt_host_world::GUEST_UID.to_string()
+        || fields[4] != wt_host_world::GUEST_GID.to_string()
     {
-        bail!(
-            "finalized retained guest Byobu color must be owned by the guest user with mode 0644"
-        );
+        bail!("finalized guest Byobu color must be owned by the guest user with mode 0644");
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::{GuestAccess, RetainedConfig, GUEST_GROUP, GUEST_USER};
+use crate::{GuestAccess, HostConfig, GUEST_GROUP, GUEST_USER};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -39,20 +39,20 @@ pub enum WorldInspection {
 pub struct Worker<P> {
     provider: P,
     readiness_timeout: Duration,
-    retained: RetainedConfig,
+    config: HostConfig,
 }
 
 impl<P> Worker<P> {
     pub fn new(
         provider: P,
         readiness_timeout: Duration,
-        retained: RetainedConfig,
+        config: HostConfig,
     ) -> Result<Self, WorkerError> {
-        retained.validate()?;
+        config.validate()?;
         Ok(Self {
             provider,
             readiness_timeout,
-            retained,
+            config,
         })
     }
 }
@@ -165,9 +165,9 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         )?;
         crate::write_creation_timing(log, "apply guest access policy", phase_started.elapsed())?;
         let phase_started = Instant::now();
-        self.retained.provision(
+        self.config.provision(
             machine.transport.as_ref(),
-            crate::retained::ProvisionSpec {
+            crate::guest::ProvisionSpec {
                 authorized_keys: &authorized_keys,
                 git_user_name: spec.git_user_name,
                 git_user_email: spec.git_user_email,
@@ -176,7 +176,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             deadline,
             log,
         )?;
-        crate::write_creation_timing(log, "configure retained guest", phase_started.elapsed())?;
+        crate::write_creation_timing(log, "configure guest", phase_started.elapsed())?;
         let phase_started = Instant::now();
         let access = inspect_machine(&machine, self.readiness_timeout, log)?;
         crate::write_creation_timing(log, "inspect guest SSH", phase_started.elapsed())?;
@@ -225,7 +225,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
             Instant::now() + self.readiness_timeout,
             &mut std::io::sink(),
         )?;
-        self.retained.mount_codex(
+        self.config.mount_codex(
             machine.transport.as_ref(),
             Instant::now() + self.readiness_timeout,
             &mut std::io::sink(),
@@ -431,9 +431,9 @@ mod tests {
     #[test]
     fn identity_mismatch_fails_before_machine_creation() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         fs::write(
-            crate::retained::image_manifest_path(&image),
+            crate::guest::image_manifest_path(&image),
             r#"{"guest_identity":{"uid":1000,"gid":1000}}"#,
         )
         .unwrap();
@@ -444,7 +444,7 @@ mod tests {
                 create_calls: Arc::clone(&create_calls),
             },
             Duration::from_secs(1),
-            RetainedConfig {
+            HostConfig {
                 agent_tools: crate::AgentToolsConfig {
                     provider_hosts: vec!["github.com".to_owned()],
                     vsock_port: 18017,
@@ -469,6 +469,6 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-        insta::assert_snapshot!(error.to_string(), @"retained image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+        insta::assert_snapshot!(error.to_string(), @"host image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
     }
 }

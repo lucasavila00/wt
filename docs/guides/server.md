@@ -10,7 +10,7 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
-verified retained-world golden image. Every image contains Git, OpenSSH, QEMU
+verified host world golden image. Every image contains Git, OpenSSH, QEMU
 guest support, Byobu, tmux, Codex, Diffo, WT's host helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
 and Docker with Compose.
@@ -28,7 +28,7 @@ current selection.
 
 WT bakes these settings into each golden image at
 `/etc/codex/requirements.toml`; their repository source is
-[assets/world/retained/codex-requirements.toml](../../assets/world/retained/codex-requirements.toml).
+[assets/world/host/codex-requirements.toml](../../assets/world/host/codex-requirements.toml).
 Change that source and rebuild the image instead of editing a world. Existing
 world overlays retain their current backing image, so they do not receive a
 changed default.
@@ -40,7 +40,7 @@ each world.
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wt-server --version`
 prints the package version and full source commit SHA. The same identity is
-recorded in retained-image provenance and logged when the server starts.
+recorded in host-image provenance and logged when the server starts.
 
 Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
 limits are materialized at `/etc/wt/capacity.toml`.

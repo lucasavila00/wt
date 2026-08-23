@@ -23,4 +23,4 @@ exists.
 
 The image recipe installs and verifies the links. Per-world provisioning does
 not replace or repair the image-owned entrypoints. Remove a world with damaged
-Codex integration and create it again from a verified retained image.
+Codex integration and create it again from a verified host image.
