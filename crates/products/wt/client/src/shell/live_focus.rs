@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wt_control_protocol::CodexSessionState;
 
+const STUCK_AFTER: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Status {
     Pending,
@@ -255,7 +257,7 @@ impl QuietSession {
 
 impl Default for LiveFocus {
     fn default() -> Self {
-        Self::new(Duration::from_secs(30))
+        Self::new(STUCK_AFTER)
     }
 }
 

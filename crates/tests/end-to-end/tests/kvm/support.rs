@@ -337,7 +337,6 @@ pub(crate) fn count_disks(worlds_dir: &Path) -> usize {
 
 pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Result<(), String> {
     let client_config = wt_client::config::ClientConfig {
-        shell: Default::default(),
         contexts: vec![wt_client::config::Context {
             name: "local".into(),
             kind: wt_client::config::ContextKind::BareMetalLocal,

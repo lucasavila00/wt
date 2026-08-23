@@ -69,8 +69,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let focus = codex::FocusWorker::default();
-    let mut live_focus =
-        live_focus::LiveFocus::new(Duration::from_secs(config.shell.codex_stuck_after_seconds));
+    let mut live_focus = live_focus::LiveFocus::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));

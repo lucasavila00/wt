@@ -3,25 +3,9 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_CODEX_STUCK_AFTER_SECONDS: u64 = 30;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClientConfig {
     pub contexts: Vec<Context>,
-    pub shell: ShellConfig,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShellConfig {
-    pub codex_stuck_after_seconds: u64,
-}
-
-impl Default for ShellConfig {
-    fn default() -> Self {
-        Self {
-            codex_stuck_after_seconds: DEFAULT_CODEX_STUCK_AFTER_SECONDS,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,22 +25,6 @@ pub enum ContextKind {
 struct ConfigFile {
     version: u32,
     contexts: Vec<ContextFile>,
-    #[serde(default)]
-    shell: ShellConfigFile,
-}
-
-#[derive(Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct ShellConfigFile {
-    codex_stuck_after_seconds: u64,
-}
-
-impl Default for ShellConfigFile {
-    fn default() -> Self {
-        Self {
-            codex_stuck_after_seconds: DEFAULT_CODEX_STUCK_AFTER_SECONDS,
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -86,9 +54,6 @@ impl ClientConfig {
         if file.contexts.is_empty() {
             bail!("client config must contain at least one context");
         }
-        if file.shell.codex_stuck_after_seconds == 0 {
-            bail!("shell.codex_stuck_after_seconds must be greater than zero");
-        }
         let mut names = HashSet::new();
         let mut contexts = Vec::with_capacity(file.contexts.len());
         for entry in file.contexts {
@@ -105,12 +70,7 @@ impl ClientConfig {
             }
             contexts.push(Context { name, kind });
         }
-        Ok(Self {
-            contexts,
-            shell: ShellConfig {
-                codex_stuck_after_seconds: file.shell.codex_stuck_after_seconds,
-            },
-        })
+        Ok(Self { contexts })
     }
 
     pub fn context(&self, name: &str) -> Option<&Context> {
@@ -162,28 +122,12 @@ mod tests {
         .unwrap();
         let config = ClientConfig::load_from(&path).unwrap();
         assert_eq!(config.contexts.len(), 2);
-        assert_eq!(config.shell.codex_stuck_after_seconds, 30);
         assert_eq!(
             config.contexts[1].kind,
             ContextKind::BareMetalSsh {
                 host: "wt-lab".into()
             }
         );
-    }
-
-    #[test]
-    fn loads_shell_stuck_threshold() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("config.toml");
-        std::fs::write(
-            &path,
-            "version = 1\n[shell]\ncodex_stuck_after_seconds = 45\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
-        )
-        .unwrap();
-
-        let config = ClientConfig::load_from(&path).unwrap();
-
-        assert_eq!(config.shell.codex_stuck_after_seconds, 45);
     }
 
     #[test]
@@ -196,7 +140,6 @@ mod tests {
             "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"-bad\"\n",
             "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"wt lab\"\n",
             "version = 1\n[[contexts]]\nname = \"lab\"\nkind = \"bare_metal_ssh\"\nhost = \"jump-one,jump-two\"\n",
-            "version = 1\n[shell]\ncodex_stuck_after_seconds = 0\n[[contexts]]\nname = \"local\"\nkind = \"bare_metal_local\"\n",
         ] {
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().join("config.toml");
