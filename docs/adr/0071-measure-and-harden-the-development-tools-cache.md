@@ -9,10 +9,10 @@
 The first real KVM runs exposed two problems.
 
 The warm-build log said it was copying the cache for more than two minutes. That
-message covered several operations, so it did not show where the time went. A
-direct measurement put the 5.2 GiB `qemu-img convert` at 16 seconds and the cache
-hash at 3 seconds on this host. The failed cold and warm runs ended at different
-stages, so their total times cannot be compared yet.
+message covered several operations, so it did not show where the time went. An
+instrumented warm KVM build showed that cloning the 5.2 GiB allocated, 32 GiB
+virtual cache with `qemu-img convert` took 126.2 seconds. Final-image compaction
+took another 173.7 seconds.
 
 The cache also had correctness gaps:
 
@@ -60,8 +60,10 @@ cache. The warm build must reuse it without changing its checksum or manifest.
 Both builds must publish a standalone final image and pass the real-world tool,
 sanitization, provenance, and boot-probe checks.
 
-Record the phase timings from both runs. The cache is justified by the time it
-removes from the measured cold path, not by total `make e2e-tests` wall time.
+On the KVM test host, the reflink change reduced the cache clone from 126.2
+seconds to less than 0.1 seconds. The complete warm image build fell from 487.3
+seconds to 339.7 seconds. The cache and manifest checksums were unchanged, and
+both published images had no backing file.
 
 ## Consequences
 
