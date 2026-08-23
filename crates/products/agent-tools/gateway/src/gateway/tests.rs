@@ -63,7 +63,8 @@ fn worst_case_ci_log_tail_fits_the_transport_header() {
 #[test]
 fn provider_targets_are_validated_and_unambiguous() {
     assert!(validate_repository("acme/widget").is_ok());
-    for invalid in ["", "/acme/widget", "acme/widget.git", "acme/../widget"] {
+    assert_eq!(normalize_repository("acme/widget.git"), "acme/widget");
+    for invalid in ["", "/acme/widget", "acme/../widget"] {
         assert!(validate_repository(invalid).is_err());
     }
 
