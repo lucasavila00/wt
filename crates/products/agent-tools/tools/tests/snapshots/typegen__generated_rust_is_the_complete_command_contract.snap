@@ -1,5 +1,6 @@
 ---
 source: crates/products/agent-tools/tools/tests/typegen.rs
+assertion_line: 8
 expression: "codegen::generate(\"wt-tools-command.ts\", CONTRACT.to_owned()).unwrap()"
 ---
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -83,6 +84,8 @@ pub enum GitHostingCommand {
     SetMr {
         mr: String,
         state: ChangeRequestState,
+        #[serde(default)]
+        confirm_merged: bool,
     },
     #[serde(rename = "edit_mr")]
     EditMr {
@@ -91,23 +94,31 @@ pub enum GitHostingCommand {
         title: Option<String>,
         #[serde(default)]
         body: Option<String>,
+        #[serde(default)]
+        confirm_merged: bool,
     },
     #[serde(rename = "comment_mr")]
     CommentMr {
         mr: String,
         body: String,
+        #[serde(default)]
+        confirm_merged: bool,
     },
     #[serde(rename = "reply_thread")]
     ReplyThread {
         mr: String,
         thread: String,
         body: String,
+        #[serde(default)]
+        confirm_merged: bool,
     },
     #[serde(rename = "set_thread")]
     SetThread {
         mr: String,
         thread: String,
         resolved: bool,
+        #[serde(default)]
+        confirm_merged: bool,
     },
     #[serde(rename = "retry_job")]
     RetryJob {
