@@ -1,5 +1,5 @@
 use super::Activity;
-use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 
 pub(in crate::shell) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(in crate::shell) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
@@ -36,7 +36,7 @@ pub(in crate::shell) fn card_grid_rects(
     card_gap: u16,
 ) -> Vec<(usize, Rect)> {
     let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
+    let viewport = body;
     if viewport.is_empty() {
         return Vec::new();
     }
@@ -76,11 +76,7 @@ pub(in crate::shell) fn world_card_rects(
 
 pub(in crate::shell) fn card_grid_visible(area: Rect, card_height: u16, card_gap: u16) -> usize {
     let (body, _) = control_content_areas(area);
-    usize::from(
-        body.inner(Margin::new(1, 1))
-            .height
-            .div_ceil(card_height + card_gap),
-    ) * CARD_COLUMNS
+    usize::from(body.height.div_ceil(card_height + card_gap)) * CARD_COLUMNS
 }
 
 pub(in crate::shell) fn world_card_at_position(

@@ -15,7 +15,7 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -85,6 +85,7 @@ impl ApiRequest {
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
+#[rustfmt::skip]
 pub enum Operation {
     ServerInfo,
     Create(CreateInstance),
@@ -92,7 +93,10 @@ pub enum Operation {
     Get { name: InstanceName },
     Start { name: InstanceName },
     Stop { name: InstanceName },
-    Delete { name: InstanceName },
+    Delete {
+        name: InstanceName,
+        expected_id: Uuid,
+    },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListCodexSessions,
@@ -403,7 +407,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 9,
+                "protocol_version": 10,
                 "operation": "get",
                 "name": "repo-feature"
             })
@@ -418,7 +422,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 9,
+                "protocol_version": 10,
                 "operation": "start",
                 "name": "repo-feature"
             })
@@ -433,11 +437,35 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 9,
+                "protocol_version": 10,
                 "operation": "stop",
                 "name": "repo-feature"
             })
         );
+    }
+
+    #[test]
+    fn delete_request_carries_the_expected_world_id() {
+        let expected_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+        let request = ApiRequest::new(Operation::Delete {
+            name: InstanceName::parse("repo-feature").unwrap(),
+            expected_id,
+        });
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocol_version": 10,
+                "operation": "delete",
+                "name": "repo-feature",
+                "expected_id": "123e4567-e89b-12d3-a456-426614174000"
+            })
+        );
+        assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
+            "protocol_version": 10,
+            "operation": "delete",
+            "name": "repo-feature"
+        }))
+        .is_err());
     }
 
     #[test]
@@ -469,6 +497,7 @@ mod tests {
                 repository_url: Some("git@github.com:acme/project.git".into()),
                 git_branch: Some("wt/session-cards".into()),
                 state: CodexSessionState::Unknown,
+                is_compacting: true,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
@@ -507,6 +536,7 @@ mod tests {
               "repository_url": "git@github.com:acme/project.git",
               "git_branch": "wt/session-cards",
               "state": "unknown",
+              "is_compacting": true,
               "session_start_source": "compact",
               "target": {
                 "tmux_session": "wt-host",
@@ -524,7 +554,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 9,
+                "protocol_version": 10,
                 "operation": "list_codex_sessions"
             })
         );
@@ -540,7 +570,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 9,
+          "protocol_version": 10,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -575,7 +605,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create",
-          "protocol_version": 9,
+          "protocol_version": 10,
           "vcpus": 2
         }
         "###);
@@ -584,14 +614,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 9,
+            "protocol_version": 10,
             "operation": "create",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 9,
+            "protocol_version": 10,
             "operation": "create",
             "name": "repo-feature",
             "git_user_name": "",
@@ -619,7 +649,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 9,
+            "protocol_version": 10,
             "operation": "get",
             "name": "Not-Valid"
         }))
@@ -631,7 +661,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 9,
+          "protocol_version": 10,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -651,11 +681,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 9,
+            "protocol_version": 10,
             "operation": "server_info"
           },
           {
-            "protocol_version": 9,
+            "protocol_version": 10,
             "outcome": "ok",
             "response": {
               "response": "server_info",

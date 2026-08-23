@@ -139,8 +139,11 @@ fn run(
                         capacity,
                     )))
                     .is_err()
-                    || retries.recv() != Ok(true)
                 {
+                    return;
+                }
+                if retries.recv() != Ok(true) {
+                    finish(events, Err("world creation cancelled".into()));
                     return;
                 }
             }

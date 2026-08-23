@@ -12,8 +12,11 @@ use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
+mod action;
+mod action_queue;
 mod activity;
 mod bar;
+mod clipboard;
 mod codex;
 mod control;
 mod delete;
@@ -65,11 +68,13 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let mut live_focus = live_focus::LiveFocus::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
+    let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
         refresh: &refresh,
         codex_refresh: &codex_refresh,
         focus: &focus,
+        git_author: &git_author,
     };
     let shutdown = install_signal_handlers()?;
     let mut terminal = ratatui::init();
@@ -113,13 +118,16 @@ struct ShellRuntime<'a> {
     refresh: &'a WorldRefresh,
     codex_refresh: &'a CodexRefresh,
     focus: &'a codex::FocusWorker,
+    git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
 
 #[derive(Default)]
 struct ControlFlows {
     creation: Option<crate::create::Flow>,
-    creation_error: Option<String>,
+    action_error: Option<String>,
     deletion: Option<delete::Flow>,
+    actions: action_queue::ShellActionQueue,
+    task: Option<action::Task>,
 }
 
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
@@ -150,7 +158,10 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
+        if model.mode() == Mode::Control
+            && model.control().activity() == control::Activity::Live
+            && !flows.actions.has_work()
+        {
             live_focus.sync(model, sessions, runtime.focus);
         } else {
             live_focus.clear();
@@ -161,7 +172,7 @@ fn run_loop(
                 .write_all(&sequence)
                 .context("relay world clipboard write")?;
         }
-        if flows.deletion.is_none() {
+        if !flows.actions.has_work() {
             if let Some(snapshot) = take_current_snapshot(
                 &runtime.refresh.updates,
                 runtime.refresh.generation.load(Ordering::Relaxed),
@@ -169,7 +180,10 @@ fn run_loop(
                 if !snapshot.failures.is_empty() {
                     model.finish_worlds_refresh(Err(snapshot.failures));
                     redraw = true;
-                } else if ssh::sync(runtime.config, &snapshot.instances).is_ok() {
+                } else if let Some(error) = snapshot.ssh_sync_error {
+                    model.finish_worlds_refresh(Err(vec![error]));
+                    redraw = true;
+                } else {
                     let worlds = shell_worlds(&snapshot.instances);
                     let area: Rect = terminal
                         .size()
@@ -182,26 +196,32 @@ fn run_loop(
                     redraw = true;
                 }
             }
+        } else {
+            let _ = runtime.refresh.updates.try_iter().last();
         }
-        if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
-            let live_worlds = model
-                .worlds()
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| sessions.is_open(*index))
-                .map(|(_, world)| world.clone())
-                .collect::<Vec<_>>();
-            let area = terminal
-                .size()
-                .context("read wt shell terminal area")?
-                .into();
-            let snapshot = codex::cards(snapshot, &live_worlds);
-            redraw |= model.control_mut().apply_codex_refresh(
-                snapshot.cards,
-                snapshot.failures,
-                refresh::updated_at(),
-                area,
-            );
+        if !flows.actions.has_work() {
+            if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
+                let live_worlds = model
+                    .worlds()
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| sessions.is_open(*index))
+                    .map(|(_, world)| world.clone())
+                    .collect::<Vec<_>>();
+                let area = terminal
+                    .size()
+                    .context("read wt shell terminal area")?
+                    .into();
+                let snapshot = codex::cards(snapshot, &live_worlds);
+                redraw |= model.control_mut().apply_codex_refresh(
+                    snapshot.cards,
+                    snapshot.failures,
+                    refresh::updated_at(),
+                    area,
+                );
+            }
+        } else {
+            let _ = runtime.codex_refresh.updates.try_iter().last();
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
@@ -210,9 +230,32 @@ fn run_loop(
                 .map(|(index, _)| index)
                 .filter(|index| sessions.control_path(*index) == result.control_path);
             if !result.open_world {
+                if flows.actions.has_work() {
+                    continue;
+                }
                 if focused_world.is_some() {
                     live_focus.complete(&result.target, result.result.is_ok());
                 }
+                continue;
+            }
+            if let Some(action_id) = result.action_id {
+                if !flows.actions.is_active(action_id)
+                    || !flows
+                        .task
+                        .as_ref()
+                        .is_some_and(|task| task.is_focus(action_id))
+                {
+                    continue;
+                }
+                let succeeded = result.result.is_ok()
+                    && focused_world.is_some_and(|index| sessions.is_open(index));
+                match result.result {
+                    Ok(()) => model.finish_codex_open(&result.target, focused_world, !succeeded),
+                    Err(_) => model.finish_codex_open(&result.target, None, true),
+                }
+                flows.actions.acknowledge(action_id, succeeded);
+                flows.task = None;
+                redraw = true;
                 continue;
             }
             match result.result {
@@ -225,37 +268,18 @@ fn run_loop(
                 Err(_) => model.finish_codex_open(&result.target, None, true),
             }
         }
-        if let Some(action) = flows.creation.as_mut().map(crate::create::Flow::poll) {
-            redraw |= apply_creation_action(
-                action,
-                &mut flows.creation,
-                &mut flows.creation_error,
-                sessions,
-                model,
-                runtime.refresh,
-                terminal
-                    .size()
-                    .context("read wt shell terminal area")?
-                    .into(),
-            )?;
-        }
-        redraw |= flows
-            .creation
-            .as_ref()
-            .is_some_and(|flow| !flow.blocks_input());
-        if let Some(action) = flows.deletion.as_mut().map(delete::Flow::poll) {
-            redraw |= apply_deletion_action(
-                action,
-                &mut flows.deletion,
-                sessions,
-                model,
-                runtime.refresh,
-                terminal
-                    .size()
-                    .context("read wt shell terminal area")?
-                    .into(),
-            )?;
-        }
+        redraw |= action::poll(
+            &mut flows,
+            sessions,
+            model,
+            runtime.refresh,
+            terminal
+                .size()
+                .context("read wt shell terminal area")?
+                .into(),
+        )?;
+        redraw |= action::start_next(&mut flows, sessions, model, runtime, area);
+        redraw |= action::apply_removed(&mut flows.actions, model);
         if redraw {
             let screens = sessions.screens();
             let closed_message = model
@@ -270,9 +294,17 @@ fn run_loop(
                     closed_message,
                     model,
                     flows.creation.as_ref(),
-                    flows.creation_error.as_deref(),
+                    flows.action_error.as_deref(),
                     flows.deletion.as_ref(),
-                )
+                );
+                if flows.queue_panel_visible() {
+                    flows
+                        .actions
+                        .render(frame, frame.area(), flows.queue_panel_compact());
+                }
+                if let Some(task) = &flows.task {
+                    task.render_overlay(frame);
+                }
             })?;
             redraw = false;
         }
@@ -311,6 +343,15 @@ fn dispatch_event(
     runtime: &ShellRuntime<'_>,
     flows: &mut ControlFlows,
 ) -> Result<bool> {
+    let queue_panel_compact = flows.queue_panel_compact();
+    if flows.queue_panel_visible()
+        && flows
+            .actions
+            .handle_mouse(&event, area, queue_panel_compact)
+    {
+        let _ = action::apply_removed(&mut flows.actions, model);
+        return Ok(true);
+    }
     if let Some(flow) = flows.creation.as_mut() {
         if flow.handle_progress_mouse(&event, area) {
             return Ok(true);
@@ -318,22 +359,9 @@ fn dispatch_event(
         if flow.blocks_input() {
             if let Event::Mouse(mouse) = event {
                 let action = flow.handle_mouse(mouse, area);
-                let _ = apply_creation_action(
-                    action,
-                    &mut flows.creation,
-                    &mut flows.creation_error,
-                    sessions,
-                    model,
-                    runtime.refresh,
-                    area,
-                )?;
+                let _ = apply_creation_action(action, flows)?;
                 return Ok(true);
             }
-        }
-    }
-    if let Some(flow) = flows.deletion.as_mut() {
-        if flow.handle_progress_mouse(&event, area) {
-            return Ok(true);
         }
     }
     match event {
@@ -342,20 +370,27 @@ fn dispatch_event(
                 && sessions.closed_message(model.active()).is_some()
                 && key.code == crossterm::event::KeyCode::Char(' ')
             {
-                sessions.restart(model.active(), world_rows(area.height), area.width);
+                let identity = model.worlds()[model.active()].identity.clone();
+                flows
+                    .actions
+                    .enqueue(action_queue::Intent::Reconnect(identity));
+                return Ok(true);
+            }
+            let active_creation_action = flows
+                .task
+                .as_mut()
+                .and_then(action::Task::blocking_create_mut)
+                .map(|(id, flow)| (id, flow.handle_key(key, runtime.config)));
+            if let Some((id, action)) = active_creation_action {
+                if matches!(action, crate::create::FlowAction::Cancelling) {
+                    flows.actions.begin_cancellation(id);
+                    let _ = action::apply_removed(&mut flows.actions, model);
+                }
                 return Ok(true);
             }
             if let Some(flow) = flows.creation.as_mut().filter(|flow| flow.blocks_input()) {
                 let action = flow.handle_key(key, runtime.config);
-                let _ = apply_creation_action(
-                    action,
-                    &mut flows.creation,
-                    &mut flows.creation_error,
-                    sessions,
-                    model,
-                    runtime.refresh,
-                    area,
-                )?;
+                let _ = apply_creation_action(action, flows)?;
                 return Ok(true);
             }
             if matches!(key.code, crossterm::event::KeyCode::F(5 | 6)) {
@@ -370,25 +405,18 @@ fn dispatch_event(
                 }
                 return Ok(true);
             }
-            if flows.creation_error.is_some()
+            if flows.action_error.is_some()
                 && matches!(
                     key.code,
                     crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Esc
                 )
             {
-                flows.creation_error.take();
+                flows.action_error.take();
                 return Ok(true);
             }
-            if let Some(flow) = flows.deletion.as_mut().filter(|flow| flow.blocks_input()) {
+            if let Some(flow) = flows.deletion.as_mut() {
                 let action = flow.handle_event(&Event::Key(key), area, runtime.config);
-                let _ = apply_deletion_action(
-                    action,
-                    &mut flows.deletion,
-                    sessions,
-                    model,
-                    runtime.refresh,
-                    area,
-                )?;
+                let _ = apply_deletion_action(action, flows)?;
                 return Ok(true);
             }
             match model.handle_key(key, area) {
@@ -402,32 +430,24 @@ fn dispatch_event(
                     }
                 }
                 InputRoute::Command(command) => {
-                    start_control_command(command, runtime.config, runtime.refresh, model, flows);
+                    start_control_command(command, runtime, model, flows);
                 }
                 InputRoute::OpenCodex(target) => {
-                    runtime.focus.start_for_session(sessions, model, *target)
+                    flows
+                        .actions
+                        .enqueue(action_queue::Intent::OpenCodex(*target));
                 }
                 InputRoute::Consumed => {}
             }
             Ok(true)
         }
-        Event::Paste(text)
-            if flows
-                .creation
-                .as_ref()
-                .is_some_and(|flow| flow.blocks_input()) =>
-        {
+        Event::Paste(text) if flows.creation.as_ref().is_some() => {
             if let Some(flow) = flows.creation.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
             Ok(true)
         }
-        Event::Paste(text)
-            if flows
-                .deletion
-                .as_ref()
-                .is_some_and(|flow| flow.blocks_input()) =>
-        {
+        Event::Paste(text) if flows.deletion.as_ref().is_some() => {
             if let Some(flow) = flows.deletion.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
@@ -442,22 +462,10 @@ fn dispatch_event(
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
-        Event::Mouse(mouse)
-            if flows
-                .deletion
-                .as_ref()
-                .is_some_and(|flow| flow.blocks_input()) =>
-        {
-            if let Some(flow) = flows.deletion.as_mut().filter(|flow| flow.blocks_input()) {
+        Event::Mouse(mouse) if flows.deletion.as_ref().is_some() => {
+            if let Some(flow) = flows.deletion.as_mut() {
                 let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
-                let _ = apply_deletion_action(
-                    action,
-                    &mut flows.deletion,
-                    sessions,
-                    model,
-                    runtime.refresh,
-                    area,
-                )?;
+                let _ = apply_deletion_action(action, flows)?;
             }
             Ok(true)
         }
@@ -492,26 +500,17 @@ fn dispatch_event(
         {
             if let Some(flow) = flows.deletion.as_mut() {
                 let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
-                let _ = apply_deletion_action(
-                    action,
-                    &mut flows.deletion,
-                    sessions,
-                    model,
-                    runtime.refresh,
-                    area,
-                )?;
+                let _ = apply_deletion_action(action, flows)?;
             } else {
                 let (changed, route) = model.handle_mouse(mouse, area);
                 match route {
-                    Some(InputRoute::Command(command)) => start_control_command(
-                        command,
-                        runtime.config,
-                        runtime.refresh,
-                        model,
-                        flows,
-                    ),
+                    Some(InputRoute::Command(command)) => {
+                        start_control_command(command, runtime, model, flows)
+                    }
                     Some(InputRoute::OpenCodex(target)) => {
-                        runtime.focus.start_for_session(sessions, model, *target)
+                        flows
+                            .actions
+                            .enqueue(action_queue::Intent::OpenCodex(*target));
                     }
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
@@ -568,103 +567,87 @@ fn world_mouse(
 fn start_creation(
     command: ControlCommand,
     config: &ClientConfig,
-    refresh: &WorldRefresh,
+    git_author: &Result<crate::git_author::GitAuthor, String>,
     model: &ShellModel,
-    creation: &mut Option<crate::create::Flow>,
-    error: &mut Option<String>,
+    flows: &mut ControlFlows,
 ) {
     match command {
         ControlCommand::NewWorld => {}
         ControlCommand::DeleteWorld => unreachable!("delete is handled separately"),
     }
-    let used_names = model
+    let mut used_names = model
         .worlds()
         .iter()
         .map(|world| world.instance_name.to_string())
-        .collect();
-    match crate::create::prepare(config, &used_names) {
-        Ok(flow) => {
-            refresh.invalidate();
-            *creation = Some(flow);
-            *error = None;
+        .collect::<std::collections::BTreeSet<_>>();
+    used_names.extend(flows.actions.create_names().map(str::to_owned));
+    let author = match git_author {
+        Ok(author) => author.clone(),
+        Err(error) => {
+            flows.action_error = Some(error.clone());
+            return;
         }
-        Err(cause) => *error = Some(format!("{cause:#}")),
+    };
+    match crate::create::prepare_with_author(config, author, &used_names) {
+        Ok(flow) => {
+            flows.creation = Some(flow);
+            flows.action_error = None;
+        }
+        Err(cause) => flows.action_error = Some(format!("{cause:#}")),
     }
 }
 
 fn apply_creation_action(
     action: crate::create::FlowAction,
-    creation: &mut Option<crate::create::Flow>,
-    error: &mut Option<String>,
-    sessions: &mut SessionSet,
-    model: &mut ShellModel,
-    refresh: &WorldRefresh,
-    area: ratatui::layout::Rect,
+    flows: &mut ControlFlows,
 ) -> Result<bool> {
     match action {
         crate::create::FlowAction::None => Ok(false),
-        crate::create::FlowAction::Changed => {
-            if creation
-                .as_ref()
-                .and_then(crate::create::Flow::creating_world)
-                .is_some()
-            {
-                model.show_worlds();
-            }
+        crate::create::FlowAction::Changed => Ok(true),
+        crate::create::FlowAction::Submit(input) => {
+            flows.actions.enqueue(action_queue::Intent::Create(input));
+            flows.creation.take();
             Ok(true)
         }
         crate::create::FlowAction::Cancel => {
-            creation.take();
+            flows.creation.take();
             Ok(true)
+        }
+        crate::create::FlowAction::Cancelling => {
+            unreachable!("a creation form cannot be cancelling")
         }
         crate::create::FlowAction::Failed(message) => {
-            creation.take();
-            *error = Some(message);
+            flows.creation.take();
+            flows.action_error = Some(message);
             Ok(true)
         }
-        crate::create::FlowAction::Created(created) => {
-            let world = codex::ShellWorld::from_instance(&created.context, &created.instance);
-            refresh.invalidate();
-            if model.world_index(&world.identity).is_none() {
-                sessions.add_world(&world, world_rows(area.height), area.width)?;
-                let mut worlds = model.worlds().to_vec();
-                worlds.push(world);
-                model.reconcile_worlds(worlds);
-            }
-            creation.take();
+        crate::create::FlowAction::Created(_) => unreachable!("a form cannot create a world"),
+    }
+}
+
+fn apply_deletion_action(action: delete::FlowAction, flows: &mut ControlFlows) -> Result<bool> {
+    match action {
+        delete::FlowAction::None => Ok(false),
+        delete::FlowAction::Changed => Ok(true),
+        delete::FlowAction::Submit(world) => {
+            flows.actions.enqueue(action_queue::Intent::Delete(*world));
+            flows.deletion.take();
+            Ok(true)
+        }
+        delete::FlowAction::Cancel => {
+            flows.deletion.take();
             Ok(true)
         }
     }
 }
 
-fn apply_deletion_action(
-    action: delete::FlowAction,
-    deletion: &mut Option<delete::Flow>,
-    sessions: &mut SessionSet,
-    model: &mut ShellModel,
-    refresh: &WorldRefresh,
-    area: Rect,
-) -> Result<bool> {
-    match action {
-        delete::FlowAction::None => Ok(false),
-        delete::FlowAction::Changed => Ok(true),
-        delete::FlowAction::Cancel => {
-            deletion.take();
-            Ok(true)
-        }
-        delete::FlowAction::Deleted(identity) => {
-            refresh.invalidate();
-            let worlds = model
-                .worlds()
-                .iter()
-                .filter(|world| world.identity != identity)
-                .cloned()
-                .collect::<Vec<_>>();
-            sessions.reconcile(&worlds, world_rows(area.height), area.width)?;
-            model.reconcile_worlds(worlds);
-            deletion.take();
-            Ok(true)
-        }
+impl ControlFlows {
+    fn queue_panel_visible(&self) -> bool {
+        !self.task.as_ref().is_some_and(action::Task::blocks_input)
+    }
+
+    fn queue_panel_compact(&self) -> bool {
+        self.creation.is_some() || self.deletion.is_some()
     }
 }
 

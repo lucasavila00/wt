@@ -26,6 +26,33 @@ fn f1_and_one_open_the_command_palette() {
 }
 
 #[test]
+fn f2_and_two_toggle_help_and_block_activity_navigation() {
+    for code in [KeyCode::F(2), KeyCode::Char('2')] {
+        let mut state = ControlState::default();
+        state.handle_key(KeyEvent::new(code, KeyModifiers::NONE), area());
+        assert!(state.help().is_open());
+        state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
+        assert_eq!(state.activity(), Activity::Live);
+        state.handle_key(KeyEvent::new(code, KeyModifiers::NONE), area());
+        assert!(!state.help().is_open());
+    }
+}
+
+#[test]
+fn help_footer_control_is_clickable() {
+    let mut state = ControlState::default();
+    let area = area();
+    let (_, footer) = control_content_areas(area);
+    let help = help_control_area(footer);
+
+    assert_eq!(
+        state.handle_mouse(mouse(help.x, help.y), area),
+        (true, None)
+    );
+    assert!(state.help().is_open());
+}
+
+#[test]
 fn palette_filters_selects_and_returns_commands() {
     let mut state = ControlState::default();
     state.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), area());
@@ -292,11 +319,11 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     }
     let selected = state.selected().cloned();
-    assert_eq!(state.codex_offset(), 2);
+    assert_eq!(state.codex_offset(), 0);
 
     assert!(state.set_codex(cards, "2026-08-21T20:00:05Z".into(), area()));
     assert_eq!(state.selected(), selected.as_ref());
-    assert_eq!(state.codex_offset(), 2);
+    assert_eq!(state.codex_offset(), 0);
 }
 
 #[test]
@@ -355,6 +382,7 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
             repository_url: None,
             git_branch: None,
             state: CodexSessionState::Working,
+            is_compacting: false,
             session_start_source: None,
             target: ByobuTarget {
                 tmux_session: "wt-host".into(),
