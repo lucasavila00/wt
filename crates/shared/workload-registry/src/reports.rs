@@ -2,7 +2,7 @@ use crate::schema::{agent_tool_reports, worlds};
 use crate::{Registry, RegistryError};
 use diesel::prelude::*;
 use std::collections::BTreeMap;
-use uuid::Uuid;
+use wt_world::WorldId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentToolReportKind {
@@ -37,7 +37,7 @@ impl AgentToolReportKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentToolReport {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub world_name: String,
     pub kind: AgentToolReportKind,
     pub description: String,
@@ -62,7 +62,7 @@ struct AgentToolReportRow {
 impl Registry {
     pub fn insert_agent_tool_report(
         &self,
-        world_id: Uuid,
+        world_id: WorldId,
         kind: AgentToolReportKind,
         description: &str,
     ) -> Result<(), RegistryError> {
@@ -102,7 +102,9 @@ impl Registry {
                 .into_iter()
                 .map(|row| {
                     Ok(AgentToolReport {
-                        world_id: Uuid::parse_str(&row.world_id)
+                        world_id: row
+                            .world_id
+                            .parse::<WorldId>()
                             .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
                         world_name: row.world_name,
                         kind: AgentToolReportKind::parse(&row.kind)?,
@@ -116,7 +118,7 @@ impl Registry {
     pub fn agent_tool_report_counts(
         &self,
         owner: &str,
-    ) -> Result<BTreeMap<Uuid, u64>, RegistryError> {
+    ) -> Result<BTreeMap<WorldId, u64>, RegistryError> {
         let reports = self.list_agent_tool_reports(owner)?;
         let mut counts = BTreeMap::new();
         for report in reports {
@@ -129,7 +131,7 @@ impl Registry {
         self.read(|connection| {
             let world_ids = worlds::table
                 .filter(worlds::owner.eq(owner))
-                .select(worlds::id);
+                .select(worlds::world_id);
             let deleted = diesel::delete(
                 agent_tool_reports::table.filter(agent_tool_reports::world_id.eq_any(world_ids)),
             )
@@ -185,7 +187,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
         let error = registry
-            .insert_agent_tool_report(Uuid::new_v4(), AgentToolReportKind::Issue, "  \n")
+            .insert_agent_tool_report(WorldId::new(), AgentToolReportKind::Issue, "  \n")
             .unwrap_err();
         assert_eq!(
             error.to_string(),
@@ -193,15 +195,13 @@ mod tests {
         );
     }
 
-    fn insert_world(registry: &Registry, owner: &str, name: &str) -> Uuid {
-        let id = Uuid::new_v4();
+    fn insert_world(registry: &Registry, owner: &str, name: &str) -> WorldId {
+        let world_id = WorldId::new();
         registry
             .transaction::<_, RegistryError>(|connection| {
                 diesel::insert_into(worlds::table)
                     .values((
-                        worlds::id.eq(id.to_string()),
-                        worlds::backend_id.eq(format!("wt-{}", id.simple())),
-                        worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                        worlds::world_id.eq(world_id.to_string()),
                         worlds::vcpus.eq(1_i64),
                         worlds::memory_mib.eq(1024_i64),
                         worlds::disk_gib.eq(10_i64),
@@ -217,6 +217,6 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        id
+        world_id
     }
 }

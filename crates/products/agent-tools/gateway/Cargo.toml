@@ -26,6 +26,7 @@ path = "src/bin/wt-tools.rs"
 wt-git-smart-protocol = { workspace = true }
 wt-tools = { workspace = true }
 wt-workload-registry = { workspace = true }
+wt-world = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

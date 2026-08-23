@@ -3,9 +3,8 @@ use std::sync::{
     Arc, Condvar, Mutex,
 };
 use tempfile::TempDir;
-use uuid::Uuid;
-use wt_control_protocol::{CreateInstance, InstanceName};
-use wt_guest::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
+use wt_control_protocol::{CreateWorld, WorldId, WorldName};
+use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
 use wt_server::operations::Operations;
 use wt_server::service::{AgentToolGateway, Service};
@@ -18,7 +17,8 @@ pub(crate) struct Worker {
     pub(crate) inspections: Arc<AtomicUsize>,
     pub(crate) starts: Arc<AtomicUsize>,
     pub(crate) stops: Arc<AtomicUsize>,
-    pub(crate) destroyed_disks: Arc<Mutex<Vec<Uuid>>>,
+    pub(crate) destroyed_disks: Arc<Mutex<Vec<WorldId>>>,
+    pub(crate) provisioned_disks: Arc<Mutex<Vec<WorldId>>>,
     pub(crate) host_git_grants: Arc<Mutex<Vec<String>>>,
     pub(crate) provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     pub(crate) missing: bool,
@@ -39,7 +39,7 @@ pub(crate) struct UnavailableGateway {
 }
 
 impl AgentToolGateway for Gateway {
-    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String> {
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         Ok(wt_agent_tool_gateway::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
@@ -52,7 +52,7 @@ impl AgentToolGateway for Gateway {
 }
 
 impl AgentToolGateway for UnavailableGateway {
-    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String> {
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         Ok(wt_agent_tool_gateway::Grant {
             id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
@@ -68,10 +68,11 @@ impl AgentToolGateway for UnavailableGateway {
 impl WorldWorker for Worker {
     fn provision(
         &self,
-        spec: ProvisionSpec<'_>,
+        spec: WorldProvisionSpec<'_>,
         _log: &mut dyn std::io::Write,
     ) -> Result<GuestAccess, WorkerError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
+        self.provisioned_disks.lock().unwrap().push(spec.world_id);
         if let Some(gate) = &self.provision_gate {
             let (ready, wake) = &**gate;
             let mut released = ready.lock().unwrap();
@@ -89,13 +90,13 @@ impl WorldWorker for Worker {
         Ok(world())
     }
 
-    fn destroy(&self, _backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
+    fn destroy(&self, world_id: WorldId) -> Result<(), WorkerError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
-        self.destroyed_disks.lock().unwrap().push(disk_id);
+        self.destroyed_disks.lock().unwrap().push(world_id);
         Ok(())
     }
 
-    fn inspect(&self, _backend_id: &str) -> Result<WorldInspection, WorkerError> {
+    fn inspect(&self, _world_id: WorldId) -> Result<WorldInspection, WorkerError> {
         self.inspections.fetch_add(1, Ordering::SeqCst);
         if self.missing {
             return Ok(WorldInspection::Missing);
@@ -115,13 +116,13 @@ impl WorldWorker for Worker {
         Ok(WorldInspection::Running(inspected))
     }
 
-    fn start(&self, _backend_id: &str) -> Result<GuestAccess, WorkerError> {
+    fn start(&self, _world_id: WorldId) -> Result<GuestAccess, WorkerError> {
         self.starts.fetch_add(1, Ordering::SeqCst);
         self.is_stopped.store(false, Ordering::SeqCst);
         Ok(world())
     }
 
-    fn stop(&self, _backend_id: &str) -> Result<(), WorkerError> {
+    fn stop(&self, _world_id: WorldId) -> Result<(), WorkerError> {
         self.stops.fetch_add(1, Ordering::SeqCst);
         if self.stop_error {
             Err(WorkerError::new("shutdown timed out"))
@@ -131,7 +132,7 @@ impl WorldWorker for Worker {
         }
     }
 
-    fn disk_usage(&self, _disk_id: Uuid) -> Result<u64, WorkerError> {
+    fn disk_usage(&self, _world_id: WorldId) -> Result<u64, WorkerError> {
         Ok(self.disk_usage_bytes)
     }
 }
@@ -140,9 +141,9 @@ fn world() -> GuestAccess {
     GuestAccess::from_guest_ip("192.0.2.2", vec!["ssh-ed25519 AAAATEST guest".into()])
 }
 
-pub(crate) fn create(name: &str) -> CreateInstance {
-    CreateInstance {
-        name: InstanceName::parse(name).unwrap(),
+pub(crate) fn create(name: &str) -> CreateWorld {
+    CreateWorld {
+        name: WorldName::parse(name).unwrap(),
         vcpus: 1,
         memory_mib: 1024,
         disk_gib: 8,
@@ -153,7 +154,7 @@ pub(crate) fn create(name: &str) -> CreateInstance {
 
 pub(crate) fn service(temp: &TempDir, worker: Worker) -> Service<Worker, Gateway> {
     Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker,
         Gateway,
         Operations::default(),

@@ -2,11 +2,10 @@ use super::*;
 use std::os::unix::fs::MetadataExt;
 use std::time::{Duration, Instant};
 use wt_libvirt_kvm::{
-    GuestTransport, LibvirtProvider, MachineInspection, MachineProvider, MachineSpec, ProviderId,
-    RunRequest,
+    GuestTransport, LibvirtProvider, MachineInspection, MachineProvider, MachineSpec, RunRequest,
 };
+use wt_world::WorldId;
 
-const PROVIDER_ID: &str = "wt-00000000000000000000000000000000";
 const MARKER_NAME: &str = ".wt-image-publication-probe";
 
 pub(super) fn verify_publication(
@@ -17,20 +16,9 @@ pub(super) fn verify_publication(
     println!("Probing guest identity through virtiofs...");
     wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
     wt_server::validate_shared_roots(server.codex_paths()).map_err(anyhow::Error::msg)?;
-    let disk_id = uuid::Uuid::nil();
-    let provider_id = ProviderId::parse(PROVIDER_ID).map_err(anyhow::Error::msg)?;
+    let world_id = WorldId::from(uuid::Uuid::nil());
     let marker = Path::new(server.codex_paths().sessions).join(MARKER_NAME);
-    let world_dir = server.libvirt.worlds_dir.join(provider_id.as_str());
-    let disk = server
-        .libvirt
-        .worlds_dir
-        .join("disks")
-        .join(format!("{disk_id}.qcow2"));
-    for (label, path) in [
-        ("marker", marker.as_path()),
-        ("world directory", world_dir.as_path()),
-        ("disk", disk.as_path()),
-    ] {
+    for (label, path) in [("marker", marker.as_path())] {
         match fs::symlink_metadata(path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Ok(_) => bail!(
@@ -49,14 +37,13 @@ pub(super) fn verify_publication(
     let mut machine_config = server.machine_config();
     machine_config.image = image.to_path_buf();
     let provider = LibvirtProvider::new(machine_config).map_err(anyhow::Error::msg)?;
-    match provider.inspect(&provider_id) {
+    match provider.inspect(world_id) {
         Ok(MachineInspection::Missing) => {}
         Ok(other) => bail!("stale shared identity probe machine exists: {other:?}"),
         Err(error) => bail!("inspect shared identity probe machine: {error}"),
     }
     let spec = MachineSpec {
-        provider_id: provider_id.clone(),
-        disk_id,
+        world_id,
         memory_mib: input.image.build_memory_mib,
         vcpus: input.image.build_vcpus,
         disk_gib: input.image.build_disk_gib,
@@ -93,13 +80,7 @@ pub(super) fn verify_publication(
         )?;
         validate_marker(&marker, &expected_contents)
     })();
-    let cleanup = cleanup(
-        &provider,
-        &provider_id,
-        disk_id,
-        &marker,
-        &expected_contents,
-    );
+    let cleanup = cleanup(&provider, world_id, &marker, &expected_contents);
     match (result, cleanup) {
         (Ok(()), Ok(())) => {
             println!("Validated host/guest virtiofs identity with a private 0600 file.");
@@ -115,8 +96,7 @@ pub(super) fn verify_publication(
 
 fn cleanup(
     provider: &LibvirtProvider,
-    provider_id: &ProviderId,
-    disk_id: uuid::Uuid,
+    world_id: WorldId,
     marker: &Path,
     expected_contents: &[u8],
 ) -> Result<()> {
@@ -141,7 +121,7 @@ fn cleanup(
             .push("shared identity probe marker type changed; refusing to remove it".to_owned()),
         Err(error) => failures.push(format!("inspect shared identity probe marker: {error}")),
     }
-    if let Err(error) = provider.delete(provider_id, disk_id) {
+    if let Err(error) = provider.delete(world_id) {
         failures.push(error.to_string());
     }
     if failures.is_empty() {

@@ -19,7 +19,7 @@ pub use codex_sessions::{
     CodexSessionState, RepositoryCheckoutState, RepositoryGitState,
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
-pub use store::{Store, StoreError, StoredInstance};
+pub use store::{Store, StoreError, StoredWorld};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -177,18 +177,16 @@ fn to_u64(value: i64, field: &'static str) -> Result<u64, RegistryError> {
 mod tests {
     use super::*;
     use crate::schema::worlds;
-    use uuid::Uuid;
+    use wt_world::WorldId;
 
-    fn insert_world(registry: &Registry, resources: Resources, limit: Resources) -> Uuid {
-        let id = Uuid::new_v4();
+    fn insert_world(registry: &Registry, resources: Resources, limit: Resources) -> WorldId {
+        let world_id = WorldId::new();
         registry
             .immediate_transaction::<_, RegistryError>(|connection| {
                 capacity::ensure_capacity(connection, resources, limit)?;
                 diesel::insert_into(worlds::table)
                     .values((
-                        worlds::id.eq(id.to_string()),
-                        worlds::backend_id.eq(format!("wt-{}", id.simple())),
-                        worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                        worlds::world_id.eq(world_id.to_string()),
                         worlds::vcpus.eq(to_i64(resources.vcpus, "vcpus")?),
                         worlds::memory_mib.eq(to_i64(resources.memory_mib, "memory_mib")?),
                         worlds::disk_gib.eq(to_i64(resources.disk_gib, "disk_gib")?),
@@ -196,7 +194,7 @@ mod tests {
                         worlds::disk_reserved_gib
                             .eq(to_i64(resources.disk_gib, "disk_reserved_gib")?),
                         worlds::owner.eq("owner"),
-                        worlds::name.eq(format!("world-{}", id.simple())),
+                        worlds::name.eq(format!("world-{world_id}")),
                         worlds::status.eq("running"),
                         worlds::setup_fingerprint.eq("fingerprint"),
                         worlds::ssh_host_keys.eq("[]"),
@@ -205,7 +203,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        id
+        world_id
     }
 
     #[test]

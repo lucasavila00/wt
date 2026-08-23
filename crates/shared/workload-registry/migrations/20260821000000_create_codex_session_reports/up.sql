@@ -1,5 +1,5 @@
 CREATE TABLE codex_session_reports (
-    world_id      TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    world_id      TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     session_id    TEXT NOT NULL,
     cwd           TEXT NOT NULL CHECK (length(cwd) > 0),
     tmux_session  TEXT NOT NULL CHECK (tmux_session = 'wt-host'),

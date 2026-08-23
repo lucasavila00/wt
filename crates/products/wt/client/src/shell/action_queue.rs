@@ -285,7 +285,7 @@ mod tests {
     fn reconnect(id: u128) -> Intent {
         Intent::Reconnect(WorldIdentity {
             context: "local".into(),
-            id: Uuid::from_u128(id),
+            world_id: Uuid::from_u128(id).into(),
         })
     }
 

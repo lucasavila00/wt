@@ -211,12 +211,12 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     assert_ref(&upstream, "refs/heads/wt/fix", false);
 
     let updates = wait_for_branch_updates(&registry, 4);
-    assert_eq!(updates[0].world_id, second_world);
+    assert_eq!(updates[0].world_id, second_world.into());
     assert_eq!(
         updates[0].new_oid.as_deref(),
         Some("0000000000000000000000000000000000000000")
     );
-    assert_eq!(updates[3].world_id, first_world);
+    assert_eq!(updates[3].world_id, first_world.into());
     assert_eq!(
         updates[3].previous_oid.as_deref(),
         Some("0000000000000000000000000000000000000000")
@@ -289,9 +289,7 @@ fn insert_world(registry: &wt_workload_registry::Registry, id: Uuid, name: &str)
         .transaction::<_, wt_workload_registry::RegistryError>(|connection| {
             diesel::insert_into(worlds::table)
                 .values((
-                    worlds::id.eq(id.to_string()),
-                    worlds::backend_id.eq(format!("wt-{}", id.simple())),
-                    worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                    worlds::world_id.eq(id.to_string()),
                     worlds::vcpus.eq(1_i64),
                     worlds::memory_mib.eq(1024_i64),
                     worlds::disk_gib.eq(10_i64),

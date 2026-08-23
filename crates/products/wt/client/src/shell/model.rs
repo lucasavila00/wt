@@ -4,22 +4,21 @@ use crossterm::event::KeyCode;
 #[cfg(test)]
 use crossterm::event::{KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use uuid::Uuid;
-use wt_control_protocol::{InstanceName, InstanceStatus};
+use wt_control_protocol::{WorldId, WorldName, WorldStatus};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
     pub(super) context: String,
-    pub(super) id: Uuid,
+    pub(super) world_id: WorldId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ShellWorld {
     pub(super) identity: WorldIdentity,
     pub(super) name: String,
-    pub(super) instance_name: InstanceName,
+    pub(super) world_name: WorldName,
     pub(super) control_alias: String,
-    pub(super) status: InstanceStatus,
+    pub(super) status: WorldStatus,
     pub(super) resources: String,
     pub(super) detail: String,
 }
@@ -33,15 +32,13 @@ impl From<&str> for ShellWorld {
                     .split_once('.')
                     .map_or("local", |(context, _)| context)
                     .into(),
-                id: Uuid::new_v4(),
+                world_id: WorldId::new(),
             },
             name: name.into(),
-            instance_name: InstanceName::parse(
-                name.split_once('.').map_or(name, |(_, instance)| instance),
-            )
-            .unwrap(),
+            world_name: WorldName::parse(name.split_once('.').map_or(name, |(_, world)| world))
+                .unwrap(),
             control_alias: format!("{name}-direct"),
-            status: InstanceStatus::Running,
+            status: WorldStatus::Running,
             resources: "2 CPU · 4G · 1G/32G disk".into(),
             detail: "-".into(),
         }
@@ -199,7 +196,8 @@ impl ShellModel {
             .iter()
             .enumerate()
             .find(|(_, world)| {
-                world.identity.context == target.context && world.identity.id == target.world_id
+                world.identity.context == target.context
+                    && world.identity.world_id == target.world_id
             })
             .map(|(index, world)| (index, world.control_alias.as_str()))
     }

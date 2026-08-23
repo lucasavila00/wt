@@ -1,12 +1,12 @@
 use uuid::Uuid;
-use wt_control_protocol::{ByobuTarget, CodexSessionState};
+use wt_control_protocol::{ByobuTarget, CodexSessionState, WorldId};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(in crate::shell) enum CodexCardIdentity {
     Observation {
         context: String,
         session_id: Uuid,
-        world_id: Uuid,
+        world_id: WorldId,
         tmux_session: String,
         pane_id: String,
     },
@@ -24,7 +24,7 @@ pub(in crate::shell) struct CodexOpenTarget {
     pub(in crate::shell) identity: CodexCardIdentity,
     pub(in crate::shell) context: String,
     pub(in crate::shell) session_id: Uuid,
-    pub(in crate::shell) world_id: Uuid,
+    pub(in crate::shell) world_id: WorldId,
     pub(in crate::shell) tmux_session: String,
     pub(in crate::shell) pane_id: String,
 }
@@ -53,7 +53,7 @@ impl GitContextHealth {
 #[derive(Clone, Debug)]
 pub(in crate::shell) enum CodexCardKind {
     Observation {
-        world_id: Uuid,
+        world_id: WorldId,
         world_name: String,
         cwd: String,
         repository_root: Option<String>,

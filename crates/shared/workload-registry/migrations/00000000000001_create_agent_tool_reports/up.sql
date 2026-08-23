@@ -1,6 +1,6 @@
 CREATE TABLE agent_tool_reports (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    world_id    TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    world_id    TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     kind        TEXT NOT NULL CHECK (kind IN ('bug', 'issue', 'improvement', 'feature_request')),
     description TEXT NOT NULL CHECK (length(trim(description)) > 0)
 );

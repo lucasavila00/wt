@@ -14,21 +14,19 @@ pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, St
             Color::Yellow,
             "IDLE · NO ACTIVE CODEX SESSION".to_owned(),
         ),
-        (wt_control_protocol::InstanceStatus::Running, false) => {
+        (wt_control_protocol::WorldStatus::Running, false) => {
             ("󰐊", Color::Green, "RUNNING".to_owned())
         }
-        (wt_control_protocol::InstanceStatus::Provisioning, false) => {
+        (wt_control_protocol::WorldStatus::Provisioning, false) => {
             ("󰔟", Color::Yellow, "PROVISIONING".to_owned())
         }
-        (wt_control_protocol::InstanceStatus::Stopped, false) => {
+        (wt_control_protocol::WorldStatus::Stopped, false) => {
             ("󰅖", Color::Reset, "STOPPED".to_owned())
         }
-        (wt_control_protocol::InstanceStatus::Destroying, false) => {
+        (wt_control_protocol::WorldStatus::Destroying, false) => {
             ("󰩹", Color::Yellow, "DESTROYING".to_owned())
         }
-        (wt_control_protocol::InstanceStatus::Error, false) => {
-            ("󰅚", Color::Red, "ERROR".to_owned())
-        }
+        (wt_control_protocol::WorldStatus::Error, false) => ("󰅚", Color::Red, "ERROR".to_owned()),
     }
 }
 
@@ -40,7 +38,7 @@ pub(super) fn has_active_codex_session(world: &ShellWorld, cards: &[CodexCard]) 
                 world_id,
                 state,
                 ..
-            } if *world_id == world.identity.id
+            } if *world_id == world.identity.world_id
                 && card.context == world.identity.context
                 && *state != wt_control_protocol::CodexSessionState::Inactive
         )
@@ -63,14 +61,15 @@ pub(super) fn codex_lines(world: &ShellWorld, cards: &[CodexCard]) -> Vec<Line<'
             else {
                 return None;
             };
-            (*world_id == world.identity.id && card.context == world.identity.context).then_some((
-                card,
-                cwd,
-                repository_root,
-                repository_url,
-                git_branch,
-                state,
-            ))
+            (*world_id == world.identity.world_id && card.context == world.identity.context)
+                .then_some((
+                    card,
+                    cwd,
+                    repository_root,
+                    repository_url,
+                    git_branch,
+                    state,
+                ))
         })
         .collect::<Vec<_>>();
     observations.sort_by(|left, right| {

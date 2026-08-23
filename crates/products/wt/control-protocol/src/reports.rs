@@ -1,7 +1,7 @@
-use crate::InstanceName;
+use crate::WorldName;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
+use wt_world::WorldId;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,8 +27,8 @@ impl fmt::Display for AgentToolReportKind {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentToolReport {
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+    pub world_id: WorldId,
+    pub world_name: WorldName,
     pub kind: AgentToolReportKind,
     pub description: String,
 }

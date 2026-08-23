@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 use tempfile::TempDir;
-use wt_control_protocol::{CapacityResource, InstanceName, InstanceStatus, Operation, Response};
+use wt_control_protocol::{CapacityResource, Operation, Response, WorldName, WorldStatus};
 use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_workload_registry::Store;
@@ -19,33 +19,117 @@ fn create_returns_a_running_host_and_reuses_an_identical_request() {
     let worker = Worker::default();
     let service = service(&temp, worker.clone());
 
-    let Response::Instance { instance } = service
-        .execute("tester", Operation::Create(create("sample")))
+    let Response::World { world } = service
+        .execute("tester", Operation::CreateWorld(create("sample")))
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Running);
-    assert_eq!(instance.vcpus, 1);
-    assert_eq!(instance.memory_mib, 1024);
-    assert_eq!(instance.disk_gib, 8);
-    assert!(instance.ssh.is_some());
+    assert_eq!(world.status, WorldStatus::Running);
+    assert_eq!(world.vcpus, 1);
+    assert_eq!(world.memory_mib, 1024);
+    assert_eq!(world.disk_gib, 8);
+    assert!(world.ssh.is_some());
+    assert_eq!(
+        worker.provisioned_disks.lock().unwrap().as_slice(),
+        &[world.world_id]
+    );
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
     assert_eq!(worker.host_git_grants.lock().unwrap().len(), 1);
 
-    let Response::Instance { instance: retry } = service
-        .execute("tester", Operation::Create(create("sample")))
+    let Response::World { world: retry } = service
+        .execute("tester", Operation::CreateWorld(create("sample")))
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(retry.id, instance.id);
+    assert_eq!(retry.world_id, world.world_id);
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
 
     let mut changed = create("sample");
     changed.memory_mib += 1;
     let error = service
-        .execute("tester", Operation::Create(changed))
+        .execute("tester", Operation::CreateWorld(changed))
+        .unwrap_err();
+    assert_eq!(error.code, wt_control_protocol::ErrorCode::Conflict);
+}
+
+#[test]
+fn rename_keeps_the_world_uuid_and_disk_across_a_restart() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let service = service(&temp, worker.clone());
+    let Response::World { world: created } = service
+        .execute("tester", Operation::CreateWorld(create("before")))
+        .unwrap()
+    else {
+        panic!()
+    };
+
+    let Response::World { world: renamed } = service
+        .execute(
+            "tester",
+            Operation::RenameWorld {
+                world_id: created.world_id,
+                new_name: WorldName::parse("after").unwrap(),
+            },
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(renamed.world_id, created.world_id);
+    assert_eq!(renamed.name.as_str(), "after");
+    assert!(Store::open(&temp.path().join("worlds.db"))
+        .unwrap()
+        .get_owned_by_name("tester", &WorldName::parse("before").unwrap())
+        .is_err());
+
+    service
+        .execute(
+            "tester",
+            Operation::StopWorld {
+                world_id: renamed.world_id,
+            },
+        )
+        .unwrap();
+    let Response::World { world: restarted } = service
+        .execute(
+            "tester",
+            Operation::StartWorld {
+                world_id: renamed.world_id,
+            },
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(restarted.world_id, created.world_id);
+
+    service
+        .execute(
+            "tester",
+            Operation::DeleteWorld {
+                world_id: created.world_id,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        worker.destroyed_disks.lock().unwrap().as_slice(),
+        &[created.world_id]
+    );
+}
+
+#[test]
+fn world_names_are_unique_across_owners() {
+    let temp = TempDir::new().unwrap();
+    let service = service(&temp, Worker::default());
+    service
+        .execute("first", Operation::CreateWorld(create("shared")))
+        .unwrap();
+
+    let error = service
+        .execute("second", Operation::CreateWorld(create("shared")))
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Conflict);
 }
@@ -55,17 +139,17 @@ fn get_reconciles_only_the_requested_world() {
     let temp = TempDir::new().unwrap();
     let worker = Worker::default();
     service(&temp, worker.clone())
-        .execute("tester", Operation::Create(create("first")))
+        .execute("tester", Operation::CreateWorld(create("first")))
         .unwrap();
     service(&temp, worker.clone())
-        .execute("tester", Operation::Create(create("second")))
+        .execute("tester", Operation::CreateWorld(create("second")))
         .unwrap();
 
     service(&temp, worker.clone())
         .execute(
             "tester",
-            Operation::Get {
-                name: InstanceName::parse("first").unwrap(),
+            Operation::GetWorld {
+                name: WorldName::parse("first").unwrap(),
             },
         )
         .unwrap();
@@ -77,7 +161,7 @@ fn get_reconciles_only_the_requested_world() {
 fn worlds_share_capacity() {
     let temp = TempDir::new().unwrap();
     let service = Service::with_capacity_limit(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         Worker::default(),
         Gateway,
         Operations::default(),
@@ -88,13 +172,13 @@ fn worlds_share_capacity() {
         },
     );
     service
-        .execute("tester", Operation::Create(create("first")))
+        .execute("tester", Operation::CreateWorld(create("first")))
         .unwrap();
     service
-        .execute("tester", Operation::Create(create("second")))
+        .execute("tester", Operation::CreateWorld(create("second")))
         .unwrap();
     let error = service
-        .execute("tester", Operation::Create(create("third")))
+        .execute("tester", Operation::CreateWorld(create("third")))
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Capacity);
     assert_eq!(error.capacity.unwrap().resource, CapacityResource::Memory);
@@ -108,42 +192,36 @@ fn failed_create_is_preserved_until_delete() {
         ..Worker::default()
     };
     let service = service(&temp, worker.clone());
-    let name = InstanceName::parse("sample").unwrap();
+    let name = WorldName::parse("sample").unwrap();
 
     let error = service
-        .execute("tester", Operation::Create(create(name.as_str())))
+        .execute("tester", Operation::CreateWorld(create(name.as_str())))
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
     assert_eq!(
-        Store::open(&temp.path().join("instances.db"))
+        Store::open(&temp.path().join("worlds.db"))
             .unwrap()
-            .get("tester", &name)
+            .get_owned_by_name("tester", &name)
             .unwrap()
-            .instance
+            .world
             .status,
-        InstanceStatus::Error
+        WorldStatus::Error
     );
 
-    let expected_id = Store::open(&temp.path().join("instances.db"))
+    let world_id = Store::open(&temp.path().join("worlds.db"))
         .unwrap()
-        .get("tester", &name)
+        .get_owned_by_name("tester", &name)
         .unwrap()
-        .instance
-        .id;
+        .world
+        .world_id;
     service
-        .execute(
-            "tester",
-            Operation::Delete {
-                name: name.clone(),
-                expected_id,
-            },
-        )
+        .execute("tester", Operation::DeleteWorld { world_id })
         .unwrap();
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
     assert!(matches!(
-        Store::open(&temp.path().join("instances.db"))
+        Store::open(&temp.path().join("worlds.db"))
             .unwrap()
-            .get("tester", &name),
+            .get_owned_by_name("tester", &name),
         Err(wt_workload_registry::StoreError::NotFound)
     ));
 }
@@ -151,22 +229,22 @@ fn failed_create_is_preserved_until_delete() {
 #[test]
 fn delete_keeps_registry_until_gateway_revocation_succeeds() {
     let temp = TempDir::new().unwrap();
-    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let store = Store::open(&temp.path().join("worlds.db")).unwrap();
     let worker = Worker::default();
-    let Response::Instance { instance } = Service::new(
+    let Response::World { world } = Service::new(
         store,
         worker.clone(),
         Gateway,
         Operations::default(),
         u64::MAX,
     )
-    .execute("tester", Operation::Create(create("sample")))
+    .execute("tester", Operation::CreateWorld(create("sample")))
     .unwrap() else {
         panic!()
     };
     let gateway = UnavailableGateway::default();
     let service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker,
         gateway.clone(),
         Operations::default(),
@@ -176,35 +254,34 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
     let error = service
         .execute(
             "tester",
-            Operation::Delete {
-                name: InstanceName::parse("sample").unwrap(),
-                expected_id: instance.id,
+            Operation::DeleteWorld {
+                world_id: world.world_id,
             },
         )
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
     assert_eq!(gateway.revocations.load(Ordering::SeqCst), 1);
-    assert!(Store::open(&temp.path().join("instances.db"))
+    assert!(Store::open(&temp.path().join("worlds.db"))
         .unwrap()
-        .get("tester", &InstanceName::parse("sample").unwrap())
+        .get_owned_by_name("tester", &WorldName::parse("sample").unwrap())
         .is_ok());
 }
 
 #[test]
-fn delete_rejects_a_stale_world_id_without_side_effects() {
+fn delete_rejects_an_unknown_world_id_without_side_effects() {
     let temp = TempDir::new().unwrap();
     let worker = Worker::default();
     let create_service = service(&temp, worker.clone());
-    let name = InstanceName::parse("sample").unwrap();
-    let Response::Instance { instance } = create_service
-        .execute("tester", Operation::Create(create(name.as_str())))
+    let name = WorldName::parse("sample").unwrap();
+    let Response::World { world } = create_service
+        .execute("tester", Operation::CreateWorld(create(name.as_str())))
         .unwrap()
     else {
         panic!()
     };
     let gateway = UnavailableGateway::default();
     let service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker.clone(),
         gateway.clone(),
         Operations::default(),
@@ -214,24 +291,23 @@ fn delete_rejects_a_stale_world_id_without_side_effects() {
     let error = service
         .execute(
             "tester",
-            Operation::Delete {
-                name: name.clone(),
-                expected_id: uuid::Uuid::new_v4(),
+            Operation::DeleteWorld {
+                world_id: wt_control_protocol::WorldId::new(),
             },
         )
         .unwrap_err();
 
-    assert_eq!(error.code, wt_control_protocol::ErrorCode::Conflict);
+    assert_eq!(error.code, wt_control_protocol::ErrorCode::NotFound);
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
     assert_eq!(gateway.revocations.load(Ordering::SeqCst), 0);
     assert_eq!(
-        Store::open(&temp.path().join("instances.db"))
+        Store::open(&temp.path().join("worlds.db"))
             .unwrap()
-            .get("tester", &name)
+            .get_owned_by_name("tester", &name)
             .unwrap()
-            .instance
-            .id,
-        instance.id
+            .world
+            .world_id,
+        world.world_id
     );
 }
 
@@ -249,15 +325,15 @@ fn reconciliation_marks_missing_or_changed_worlds_as_error() {
     ] {
         let temp = TempDir::new().unwrap();
         service(&temp, Worker::default())
-            .execute("tester", Operation::Create(create("sample")))
+            .execute("tester", Operation::CreateWorld(create("sample")))
             .unwrap();
-        let Response::Instances { instances, .. } = service(&temp, worker)
-            .execute("tester", Operation::List)
+        let Response::Worlds { worlds, .. } = service(&temp, worker)
+            .execute("tester", Operation::ListWorlds)
             .unwrap()
         else {
             panic!()
         };
-        assert_eq!(instances[0].status, InstanceStatus::Error);
+        assert_eq!(worlds[0].status, WorldStatus::Error);
     }
 }
 
@@ -265,28 +341,28 @@ fn reconciliation_marks_missing_or_changed_worlds_as_error() {
 fn reconciliation_recovers_an_errored_world_that_is_healthy_again() {
     let temp = TempDir::new().unwrap();
     service(&temp, Worker::default())
-        .execute("tester", Operation::Create(create("sample")))
+        .execute("tester", Operation::CreateWorld(create("sample")))
         .unwrap();
 
-    let Response::Instances { instances, .. } = service(
+    let Response::Worlds { worlds, .. } = service(
         &temp,
         Worker {
             changed_guest_identity: true,
             ..Worker::default()
         },
     )
-    .execute("tester", Operation::List)
+    .execute("tester", Operation::ListWorlds)
     .unwrap() else {
         panic!()
     };
-    assert_eq!(instances[0].status, InstanceStatus::Error);
+    assert_eq!(worlds[0].status, WorldStatus::Error);
 
-    let Response::Instances { instances, .. } = service(&temp, Worker::default())
-        .execute("tester", Operation::List)
+    let Response::Worlds { worlds, .. } = service(&temp, Worker::default())
+        .execute("tester", Operation::ListWorlds)
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(instances[0].status, InstanceStatus::Running);
-    assert_eq!(instances[0].last_error, None);
+    assert_eq!(worlds[0].status, WorldStatus::Running);
+    assert_eq!(worlds[0].last_error, None);
 }

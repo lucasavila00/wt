@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::Duration;
 use wt_client::config::ClientConfig;
-use wt_control_protocol::{ApiRequest, CreateInstance, Operation, Outcome, Response};
+use wt_control_protocol::{ApiRequest, CreateWorld, Operation, Outcome, Response};
 
 use super::{capacity_message, Created, Input};
 
@@ -28,7 +28,7 @@ impl Task {
             .context("selected context is missing")?
             .clone();
         let context_name = context.name.clone();
-        let request = CreateInstance {
+        let request = CreateWorld {
             name: input.name,
             vcpus: input.vcpus,
             memory_mib: input.memory_mib,
@@ -74,14 +74,14 @@ fn run(
     config: ClientConfig,
     context: wt_client::config::Context,
     context_name: String,
-    request: CreateInstance,
+    request: CreateWorld,
     events: &Sender<TaskEvent>,
     retries: &Receiver<bool>,
 ) {
     loop {
         let outcome = match wt_client::transport::call_outcome_with_progress(
             &context,
-            &ApiRequest::new(Operation::Create(request.clone())),
+            &ApiRequest::new(Operation::CreateWorld(request.clone())),
             |message| {
                 let _ = events.send(TaskEvent::Progress(message));
             },
@@ -99,21 +99,21 @@ fn run(
         };
         match outcome {
             Outcome::Ok { response } => {
-                let Response::Instance { instance } = *response else {
+                let Response::World { world } = *response else {
                     finish(
                         events,
                         Err("helper returned the wrong response to create".into()),
                     );
                     return;
                 };
-                let instance = *instance;
+                let world = *world;
                 let _ = events.send(TaskEvent::Progress(
                     "World created; opening SSH access".into(),
                 ));
                 if let Err(error) = sync_inventory_after_create(&config, events).with_context(|| {
                     format!(
                         "world {}.{} was created, but SSH was not opened\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
-                        context_name, instance.name, context_name, instance.name
+                        context_name, world.name, context_name, world.name
                     )
                 }) {
                     finish(events, Err(format!("{error:#}")));
@@ -123,7 +123,7 @@ fn run(
                     events,
                     Ok(Created {
                         context: context_name,
-                        instance,
+                        world,
                     }),
                 );
                 return;

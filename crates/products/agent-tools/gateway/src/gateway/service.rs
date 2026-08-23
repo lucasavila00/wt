@@ -151,7 +151,7 @@ impl Gateway {
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .upsert_codex_session_report(wt_workload_registry::CodexSessionReportInput {
-                world_id,
+                world_id: world_id.into(),
                 session_id: event.session_id,
                 cwd: &event.cwd,
                 tmux_session: &event.tmux_session,
@@ -178,7 +178,7 @@ impl Gateway {
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .update_codex_session_git_context(wt_workload_registry::CodexSessionGitContextInput {
-                world_id,
+                world_id: world_id.into(),
                 session_id: context.session_id,
                 cwd: &context.cwd,
                 tmux_session: &context.tmux_session,
@@ -371,7 +371,7 @@ impl Gateway {
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .insert_git_activity(wt_workload_registry::GitActivityInput {
-                world_id,
+                world_id: world_id.into(),
                 kind: wt_workload_registry::GitActivityKind::Service,
                 provider_host: &source.host,
                 repository: &repository,
@@ -412,7 +412,7 @@ impl Gateway {
                     .expect("validated successful push is a branch");
                 if let Err(error) =
                     self.store_git_activity(wt_workload_registry::GitActivityInput {
-                        world_id,
+                        world_id: world_id.into(),
                         kind: wt_workload_registry::GitActivityKind::BranchUpdate,
                         provider_host: &source.host,
                         repository: &repository,
@@ -446,7 +446,7 @@ impl Gateway {
                     Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
                 wt_workload_registry::Registry::open(&self.config.database_path)
                     .context("open WT registry")?
-                    .insert_agent_tool_report(world_id, kind, description)
+                    .insert_agent_tool_report(world_id.into(), kind, description)
                     .context("store agent tool report")?;
                 return Ok(api::render_cli_confirmation(
                     "Recorded wtg tools report for this world.",
@@ -490,7 +490,7 @@ impl Gateway {
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
         if let Err(error) =
             self.store_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
-                world_id,
+                world_id: world_id.into(),
                 provider_host: provider.host(),
                 repository: &repository,
                 action: &action,

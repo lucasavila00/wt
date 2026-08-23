@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 #[cfg(test)]
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
-use wt_client::inventory::ContextInstance;
-use wt_control_protocol::{CodexSession, Instance};
+use wt_client::inventory::ContextWorld;
+use wt_control_protocol::{CodexSession, World};
 
 #[derive(Debug)]
 pub(super) enum CodexContextSnapshot {
@@ -36,28 +36,28 @@ pub(super) struct CodexCards {
 }
 
 impl ShellWorld {
-    pub(super) fn from_inventory(item: &ContextInstance) -> Self {
-        let mut world = Self::from_instance(&item.context, &item.instance);
+    pub(super) fn from_inventory(item: &ContextWorld) -> Self {
+        let mut world = Self::from_world(&item.context, &item.world);
         world.resources =
-            wt_client::inventory::format_resources(&item.instance, item.disk_usage_bytes);
+            wt_client::inventory::format_resources(&item.world, item.disk_usage_bytes);
         world.detail = wt_client::inventory::format_detail(item);
         world
     }
 
-    pub(super) fn from_instance(context: &str, instance: &Instance) -> Self {
-        let qualified_name = format!("{context}.{}", instance.name);
+    pub(super) fn from_world(context: &str, world: &World) -> Self {
+        let qualified_name = format!("{context}.{}", world.name);
         let control_alias = format!("{qualified_name}-direct");
         Self {
             identity: super::model::WorldIdentity {
                 context: context.into(),
-                id: instance.id,
+                world_id: world.world_id,
             },
             name: qualified_name,
-            instance_name: instance.name.clone(),
+            world_name: world.name.clone(),
             control_alias,
-            status: instance.status,
-            resources: wt_client::inventory::format_resources(instance, None),
-            detail: instance.last_error.as_deref().unwrap_or("-").into(),
+            status: world.status,
+            resources: wt_client::inventory::format_resources(world, None),
+            detail: world.last_error.as_deref().unwrap_or("-").into(),
         }
     }
 
@@ -67,12 +67,12 @@ impl ShellWorld {
         Self {
             identity: super::model::WorldIdentity {
                 context: context.into(),
-                id: Uuid::from_u128(index),
+                world_id: Uuid::from_u128(index).into(),
             },
             name: name.into(),
-            instance_name: wt_control_protocol::InstanceName::parse(world_name).unwrap(),
+            world_name: wt_control_protocol::WorldName::parse(world_name).unwrap(),
             control_alias: format!("{name}-direct"),
-            status: wt_control_protocol::InstanceStatus::Running,
+            status: wt_control_protocol::WorldStatus::Running,
             resources: "2 CPU · 4G · 1G/32G disk".into(),
             detail: "-".into(),
         }
@@ -300,7 +300,8 @@ fn validate_context(
             let matching_worlds = worlds
                 .iter()
                 .filter(|world| {
-                    world.identity.context == context && world.identity.id == observation.world_id
+                    world.identity.context == context
+                        && world.identity.world_id == observation.world_id
                 })
                 .collect::<Vec<_>>();
             let [world] = matching_worlds.as_slice() else {
@@ -310,7 +311,7 @@ fn validate_context(
                     &observation.world_id.to_string(),
                 ));
             };
-            if world.instance_name.as_str() != observation.world_name.as_str() {
+            if world.world_name.as_str() != observation.world_name.as_str() {
                 return Err(invalid(
                     context,
                     "world_name matches inventory world_id",
@@ -347,7 +348,7 @@ fn validate_context(
                 latest_user_message: session.latest_user_message.clone(),
                 kind: CodexCardKind::Observation {
                     world_id: observation.world_id,
-                    world_name: world.instance_name.to_string(),
+                    world_name: world.world_name.to_string(),
                     cwd: observation.cwd,
                     repository_root: observation.repository_root,
                     repository_url: observation.repository_url,
@@ -558,9 +559,7 @@ pub(super) fn wait_for_control_master(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wt_control_protocol::{
-        ByobuTarget, CodexSessionObservation, CodexSessionState, InstanceName,
-    };
+    use wt_control_protocol::{ByobuTarget, CodexSessionObservation, CodexSessionState, WorldName};
 
     fn session(world: &ShellWorld, cwd: &str) -> CodexSession {
         CodexSession {
@@ -583,8 +582,8 @@ mod tests {
             output_tokens: 0,
             reasoning_output_tokens: 0,
             observations: vec![CodexSessionObservation {
-                world_id: world.identity.id,
-                world_name: world.instance_name.clone(),
+                world_id: world.identity.world_id,
+                world_name: world.world_name.clone(),
                 cwd: cwd.into(),
                 repository_root: Some("/home/wt/project".into()),
                 repository_url: Some("git@github.com:acme/project.git".into()),
@@ -626,7 +625,7 @@ mod tests {
     fn rejects_world_name_and_tmux_mismatches() {
         let world = ShellWorld::test("ars.dev", 1);
         let mut wrong_name = session(&world, "/home/wt/project");
-        wrong_name.observations[0].world_name = InstanceName::parse("other").unwrap();
+        wrong_name.observations[0].world_name = WorldName::parse("other").unwrap();
         insta::assert_snapshot!(
             validate_context("ars", vec![wrong_name], std::slice::from_ref(&world)).unwrap_err(),
             @"context ars: failed invariant world_name matches inventory world_id; value other"

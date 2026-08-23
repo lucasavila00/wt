@@ -230,9 +230,9 @@ mod tests {
         let (client, server) = UnixStream::pair().unwrap();
         let thread = std::thread::spawn(move || {
             handle_stream(server, &|request, _| {
-                assert!(matches!(request.operation, Operation::List));
-                ApiResponse::ok(Response::Instances {
-                    instances: vec![],
+                assert!(matches!(request.operation, Operation::ListWorlds));
+                ApiResponse::ok(Response::Worlds {
+                    worlds: vec![],
                     capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
                     agent_tool_report_counts: Default::default(),
@@ -240,16 +240,16 @@ mod tests {
             })
             .unwrap();
         });
-        serde_json::to_writer(&client, &ApiRequest::new(Operation::List)).unwrap();
+        serde_json::to_writer(&client, &ApiRequest::new(Operation::ListWorlds)).unwrap();
         client.shutdown(std::net::Shutdown::Write).unwrap();
         let response: ApiResponse = serde_json::from_reader(client).unwrap();
         let wt_control_protocol::Outcome::Ok { response } = response.outcome else {
             panic!("expected successful response");
         };
-        let Response::Instances { instances, .. } = *response else {
-            panic!("expected instances response");
+        let Response::Worlds { worlds, .. } = *response else {
+            panic!("expected worlds response");
         };
-        assert!(instances.is_empty());
+        assert!(worlds.is_empty());
         thread.join().unwrap();
     }
 
@@ -275,8 +275,8 @@ mod tests {
         let thread = std::thread::spawn(move || {
             handle_stream(server, &|_, progress| {
                 writeln!(progress, "Waiting for the guest transport...").unwrap();
-                ApiResponse::ok(Response::Instances {
-                    instances: vec![],
+                ApiResponse::ok(Response::Worlds {
+                    worlds: vec![],
                     capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
                     agent_tool_report_counts: Default::default(),
@@ -284,7 +284,7 @@ mod tests {
             })
             .unwrap();
         });
-        serde_json::to_writer(&mut client, &ApiRequest::new(Operation::List)).unwrap();
+        serde_json::to_writer(&mut client, &ApiRequest::new(Operation::ListWorlds)).unwrap();
         client.shutdown(std::net::Shutdown::Write).unwrap();
         let lines = BufReader::new(client)
             .lines()

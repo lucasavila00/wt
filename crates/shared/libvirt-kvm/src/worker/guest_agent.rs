@@ -2,8 +2,8 @@
 
 use super::lookup_domain;
 use crate::{
-    validate_executable, validate_file_path, CaptureRequest, CapturedOutput, GuestTransport,
-    ProviderId, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
+    validate_executable, validate_file_path, CaptureRequest, CapturedOutput, DomainName,
+    GuestTransport, RunOutput, RunRequest, StreamKind, TransportError, WriteFileRequest,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -19,16 +19,16 @@ const EXEC_POLL_DELAYS_MS: [u64; 5] = [50, 100, 200, 400, 500];
 
 #[derive(Clone, Debug)]
 pub(super) struct QemuGuestTransport {
-    provider_id: ProviderId,
+    domain_name: DomainName,
 }
 
 impl QemuGuestTransport {
-    pub(super) fn new(provider_id: ProviderId) -> Self {
-        Self { provider_id }
+    pub(super) fn new(domain_name: DomainName) -> Self {
+        Self { domain_name }
     }
 
     fn domain(&self) -> Result<Domain, TransportError> {
-        lookup_domain(&self.provider_id)
+        lookup_domain(&self.domain_name)
             .map_err(|error| TransportError::Transport(error.to_string()))
     }
 }

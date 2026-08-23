@@ -134,19 +134,18 @@ fn start_worker(config: &ClientConfig, world: &ShellWorld) -> Result<Receiver<Re
         .ok_or_else(|| {
             anyhow::anyhow!("context {} is no longer configured", world.identity.context)
         })?;
-    let name = world.instance_name.clone();
-    let expected_id = world.identity.id;
+    let world_id = world.identity.world_id;
     let (sender, receiver) = mpsc::sync_channel(1);
     thread::Builder::new()
         .name(format!("wt-shell-delete-{}", world.name))
         .spawn(move || {
             let result = wt_client::transport::call(
                 &context,
-                &ApiRequest::new(Operation::Delete { name, expected_id }),
+                &ApiRequest::new(Operation::DeleteWorld { world_id }),
             )
             .map_err(anyhow::Error::from)
             .and_then(|response| match response {
-                Response::Deleted { .. } => Ok(()),
+                Response::WorldDeleted { .. } => Ok(()),
                 _ => bail!("helper returned the wrong response to delete"),
             });
             let _ = sender.send(result);

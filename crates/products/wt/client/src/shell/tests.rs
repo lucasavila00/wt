@@ -82,7 +82,7 @@ fn local_mutation_invalidates_an_older_refresh() {
     sender
         .send(WorldSnapshot {
             generation: 4,
-            instances: Vec::new(),
+            worlds: Vec::new(),
             capacity: Default::default(),
             failures: Vec::new(),
             ssh_sync_error: None,

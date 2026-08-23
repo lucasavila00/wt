@@ -11,6 +11,7 @@ serde = { workspace = true }
 ssh-key = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
+wt-world = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]

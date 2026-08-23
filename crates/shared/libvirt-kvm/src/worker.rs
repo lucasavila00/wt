@@ -7,7 +7,7 @@ mod provider;
 mod world;
 
 use crate::cmd;
-use crate::{Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId, WorkerError};
+use crate::{DomainName, Machine, MachineInspection, MachineProvider, MachineSpec, WorkerError};
 use crate::{MachineConfig, LIBVIRT_URI};
 use image::{read_virtual_size as read_image_virtual_size, validate_disk_size};
 use network::{domain_ip, network_address};
@@ -25,6 +25,7 @@ use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::error::ErrorNumber;
 use virt::network::Network;
+use wt_world::WorldId;
 
 const GUEST_AGENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const GUEST_IP_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -108,43 +109,44 @@ impl LibvirtProvider {
         network_address(&connection, &self.config.network)
     }
 
-    fn wait_for_agent(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+    fn wait_for_agent(&self, domain_name: &DomainName) -> Result<(), WorkerError> {
         let deadline = Instant::now() + self.config.boot_timeout;
         loop {
-            let domain = lookup_domain(provider_id)?;
+            let domain = lookup_domain(domain_name)?;
             let error = match domain.qemu_agent_command(r#"{"execute":"guest-ping"}"#, 5, 0) {
                 Ok(_) => return Ok(()),
                 Err(error) => error,
             };
             if Instant::now() >= deadline {
                 return Err(WorkerError::new(format!(
-                    "timed out waiting for QEMU guest agent in domain {provider_id}; last libvirt error: {error}"
+                    "timed out waiting for QEMU guest agent in domain {domain_name}; last libvirt error: {error}"
                 )));
             }
             std::thread::sleep(GUEST_AGENT_POLL_INTERVAL);
         }
     }
 
-    fn wait_for_ip(&self, provider_id: &ProviderId) -> Result<String, WorkerError> {
+    fn wait_for_ip(&self, domain_name: &DomainName) -> Result<String, WorkerError> {
         let deadline = Instant::now() + self.config.boot_timeout;
         loop {
-            if let Some(ip) = domain_ip(provider_id)? {
+            if let Some(ip) = domain_ip(domain_name)? {
                 return Ok(ip);
             }
             if Instant::now() >= deadline {
                 return Err(WorkerError::new(format!(
-                    "timed out waiting for IP for domain {provider_id}"
+                    "timed out waiting for IP for domain {domain_name}"
                 )));
             }
             std::thread::sleep(GUEST_IP_POLL_INTERVAL);
         }
     }
 
-    fn machine(&self, provider_id: &ProviderId, guest_ip: String) -> Machine {
+    fn machine(&self, world_id: WorldId, guest_ip: String) -> Machine {
+        let domain_name = DomainName::for_world(world_id);
         Machine {
-            provider_id: provider_id.clone(),
+            world_id,
             guest_ip,
-            transport: Arc::new(guest_agent::QemuGuestTransport::new(provider_id.clone())),
+            transport: Arc::new(guest_agent::QemuGuestTransport::new(domain_name)),
         }
     }
 
@@ -154,10 +156,11 @@ impl LibvirtProvider {
         disk: &std::path::Path,
         network_enabled: bool,
     ) -> Result<(), WorkerError> {
-        let directory = self.config.worlds_dir.join(spec.provider_id.as_str());
+        let domain_name = DomainName::for_world(spec.world_id);
+        let directory = self.config.worlds_dir.join(domain_name.as_str());
         fs::create_dir(&directory).map_err(|error| context("create machine directory", error))?;
         prepare_qemu_file_access(&directory, disk)?;
-        let xml = world::domain_xml(&spec.provider_id, disk, &self.config, spec, network_enabled);
+        let xml = world::domain_xml(&domain_name, disk, &self.config, spec, network_enabled);
         let connection = LibvirtConnection::open()?;
         let domain = Domain::define_xml(&connection, &xml)
             .map_err(|error| context("define KVM domain", error))?;
@@ -167,9 +170,9 @@ impl LibvirtProvider {
         Ok(())
     }
 
-    fn remove_domain(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
+    fn remove_domain(&self, domain_name: &DomainName) -> Result<(), WorkerError> {
         let connection = LibvirtConnection::open()?;
-        let domain = match Domain::lookup_by_name(&connection, provider_id.as_str()) {
+        let domain = match Domain::lookup_by_name(&connection, domain_name.as_str()) {
             Ok(domain) => domain,
             Err(error) if error.code() == ErrorNumber::NoDomain => return Ok(()),
             Err(error) => return Err(context("look up libvirt domain", error)),
@@ -187,8 +190,8 @@ impl LibvirtProvider {
             .map_err(|error| context("undefine domain", error))
     }
 
-    fn remove_files(&self, provider_id: &ProviderId) -> Result<(), WorkerError> {
-        let directory = self.config.worlds_dir.join(provider_id.as_str());
+    fn remove_files(&self, domain_name: &DomainName) -> Result<(), WorkerError> {
+        let directory = self.config.worlds_dir.join(domain_name.as_str());
         match fs::remove_dir_all(&directory) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -196,8 +199,8 @@ impl LibvirtProvider {
         }
     }
 
-    fn remove_disk(&self, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
-        let path = world::disk_path(&self.config.worlds_dir, disk_id);
+    fn remove_disk(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        let path = world::disk_path(&self.config.worlds_dir, world_id);
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -205,22 +208,23 @@ impl LibvirtProvider {
         }
     }
 
-    fn allocated_disk_bytes(&self, disk_id: uuid::Uuid) -> Result<u64, WorkerError> {
-        let path = world::disk_path(&self.config.worlds_dir, disk_id);
+    fn allocated_disk_bytes(&self, world_id: WorldId) -> Result<u64, WorkerError> {
+        let path = world::disk_path(&self.config.worlds_dir, world_id);
         allocated_bytes(&path)
     }
 
-    fn cleanup(&self, provider_id: &ProviderId, disk_id: uuid::Uuid) -> Result<(), WorkerError> {
-        if let Err(error) = self.remove_domain(provider_id) {
+    fn cleanup(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        let domain_name = DomainName::for_world(world_id);
+        if let Err(error) = self.remove_domain(&domain_name) {
             return Err(WorkerError::new(format!(
                 "delete libvirt machine: {error}; kept machine files and disk because domain removal failed"
             )));
         }
         let mut errors = Vec::new();
-        if let Err(error) = self.remove_files(provider_id) {
+        if let Err(error) = self.remove_files(&domain_name) {
             errors.push(error.to_string());
         }
-        if let Err(error) = self.remove_disk(disk_id) {
+        if let Err(error) = self.remove_disk(world_id) {
             errors.push(error.to_string());
         }
         if errors.is_empty() {
@@ -249,9 +253,10 @@ impl LibvirtProvider {
             ));
         }
         validate_disk_size(spec.disk_gib, self.image_virtual_size)?;
-        writeln!(progress, "Creating KVM guest {}...", spec.provider_id)
+        let domain_name = DomainName::for_world(spec.world_id);
+        writeln!(progress, "Creating KVM guest {domain_name}...")
             .map_err(|error| context("write machine progress", error))?;
-        let disk = world::disk_path(&self.config.worlds_dir, spec.disk_id);
+        let disk = world::disk_path(&self.config.worlds_dir, spec.world_id);
         let phase_started = Instant::now();
         run(
             create_overlay_command(&self.config.image, &disk, spec.disk_gib),
@@ -264,14 +269,14 @@ impl LibvirtProvider {
         writeln!(progress, "Waiting for the guest transport...")
             .map_err(|error| context("write machine progress", error))?;
         let phase_started = Instant::now();
-        self.wait_for_agent(&spec.provider_id)?;
+        self.wait_for_agent(&domain_name)?;
         write_creation_timing(progress, "wait for guest agent", phase_started.elapsed())?;
         let phase_started = Instant::now();
-        let guest_ip = self.wait_for_ip(&spec.provider_id)?;
+        let guest_ip = self.wait_for_ip(&domain_name)?;
         write_creation_timing(progress, "wait for guest IP", phase_started.elapsed())?;
         writeln!(progress, "Machine transport ready at {guest_ip}.")
             .map_err(|error| context("write machine progress", error))?;
-        Ok(self.machine(&spec.provider_id, guest_ip))
+        Ok(self.machine(spec.world_id, guest_ip))
     }
 }
 
@@ -331,9 +336,9 @@ fn shutdown_reason(reason: i32) -> Option<&'static str> {
     }
 }
 
-pub(super) fn lookup_domain(provider_id: &ProviderId) -> Result<Domain, WorkerError> {
+pub(super) fn lookup_domain(domain_name: &DomainName) -> Result<Domain, WorkerError> {
     let connection = LibvirtConnection::open()?;
-    Domain::lookup_by_name(&connection, provider_id.as_str())
+    Domain::lookup_by_name(&connection, domain_name.as_str())
         .map_err(|error| context("look up libvirt domain", error))
 }
 

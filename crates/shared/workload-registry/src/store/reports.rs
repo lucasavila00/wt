@@ -3,7 +3,7 @@ use crate::{
     AgentToolReport, CodexSessionCatalogEntry, CodexSessionCatalogInput, CodexSessionReport,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use uuid::Uuid;
+use wt_world::WorldId;
 
 impl Store {
     pub fn upsert_codex_session_catalog(
@@ -45,7 +45,10 @@ impl Store {
             .map_err(map_registry_error)
     }
 
-    pub fn agent_tool_report_counts(&self, owner: &str) -> Result<BTreeMap<Uuid, u64>, StoreError> {
+    pub fn agent_tool_report_counts(
+        &self,
+        owner: &str,
+    ) -> Result<BTreeMap<WorldId, u64>, StoreError> {
         self.registry
             .agent_tool_report_counts(owner)
             .map_err(map_registry_error)

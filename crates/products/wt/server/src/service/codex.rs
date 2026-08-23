@@ -2,7 +2,7 @@ use super::{map_store_error, AgentToolGateway, Service};
 use std::collections::BTreeMap;
 use wt_control_protocol::{
     ApiError, ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, ErrorCode,
-    InstanceName, Response,
+    Response, WorldName,
 };
 use wt_guest::WorldWorker;
 use wt_workload_registry::CodexSessionCatalogEntry;
@@ -63,7 +63,7 @@ fn merge_sessions(
             .or_insert_with(|| empty_session(report.session_id));
         session.observations.push(CodexSessionObservation {
             world_id: report.world_id,
-            world_name: InstanceName::parse(report.world_name).map_err(|error| {
+            world_name: WorldName::parse(report.world_name).map_err(|error| {
                 ApiError::new(
                     ErrorCode::Internal,
                     format!("invalid session world: {error}"),
@@ -159,7 +159,7 @@ mod tests {
         let sessions = merge_sessions(
             Vec::new(),
             vec![wt_workload_registry::CodexSessionReport {
-                world_id: Uuid::new_v4(),
+                world_id: Uuid::new_v4().into(),
                 world_name: "example".into(),
                 session_id,
                 cwd: "/home/wt/project".into(),
@@ -197,7 +197,7 @@ mod tests {
             .into_iter()
             .map(|(world_name, pane_id, received_at_unix_ms)| {
                 wt_workload_registry::CodexSessionReport {
-                    world_id: Uuid::new_v4(),
+                    world_id: Uuid::new_v4().into(),
                     world_name: world_name.into(),
                     session_id,
                     cwd: "/home/wt/project".into(),

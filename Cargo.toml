@@ -15,6 +15,7 @@ members = [
     "crates/shared/workload-registry",
     "crates/shared/git-smart-protocol",
     "crates/shared/installer-support",
+    "crates/shared/world",
     "crates/tests/end-to-end",
     "crates/tests/repository-checks",
 ]
@@ -40,6 +41,7 @@ wt-libvirt-kvm = { path = "crates/shared/libvirt-kvm" }
 wt-guest = { path = "crates/products/wt/guest" }
 wt-server = { path = "crates/products/wt/server" }
 wt-workload-registry = { path = "crates/shared/workload-registry" }
+wt-world = { path = "crates/shared/world" }
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 cliclack = "0.5.4"

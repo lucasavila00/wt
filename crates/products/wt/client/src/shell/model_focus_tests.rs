@@ -33,7 +33,7 @@ fn model_with_open_card() -> ShellModel {
     ]);
     model.handle_key(key(KeyCode::F(5)), area());
     let session_id = Uuid::from_u128(10);
-    let world_id = Uuid::from_u128(2);
+    let world_id = wt_control_protocol::WorldId::from(Uuid::from_u128(2));
     let target = ByobuTarget {
         tmux_session: "wt-host".into(),
         pane_id: "%1".into(),

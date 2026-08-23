@@ -3902,6 +3902,7 @@ dependencies = [
  "wt-git-smart-protocol",
  "wt-tools",
  "wt-workload-registry",
+ "wt-world",
 ]
 
 [[package]]
@@ -3956,6 +3957,7 @@ dependencies = [
  "ssh-key",
  "thiserror 2.0.18",
  "uuid",
+ "wt-world",
  "zeroize",
 ]
 
@@ -4036,6 +4038,7 @@ dependencies = [
  "uuid",
  "wt-control-protocol",
  "wt-libvirt-kvm",
+ "wt-world",
 ]
 
 [[package]]
@@ -4064,6 +4067,7 @@ dependencies = [
  "thiserror 2.0.18",
  "uuid",
  "virt",
+ "wt-world",
 ]
 
 [[package]]
@@ -4097,6 +4101,7 @@ dependencies = [
  "wt-libvirt-kvm",
  "wt-tools",
  "wt-workload-registry",
+ "wt-world",
 ]
 
 [[package]]
@@ -4120,6 +4125,7 @@ dependencies = [
  "wt-libvirt-kvm",
  "wt-server",
  "wt-workload-registry",
+ "wt-world",
  "zeroize",
 ]
 
@@ -4155,6 +4161,15 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "uuid",
  "wt-control-protocol",
+ "wt-world",
+]
+
+[[package]]
+name = "wt-world"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "uuid",
 ]
 
 [[package]]

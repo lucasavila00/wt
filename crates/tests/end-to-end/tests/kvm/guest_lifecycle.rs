@@ -13,9 +13,9 @@ fn guest_lifecycle() {
     let codex_sessions = CodexSessionFixture::new(&name, &harness.config);
 
     let created = timings.run("create guest", || harness.create(&name));
-    assert_eq!(created.status, InstanceStatus::Running);
+    assert_eq!(created.status, WorldStatus::Running);
     assert!(created.ssh.is_some());
-    let grant_token = harness.grant_token_for(created.id);
+    let grant_token = harness.grant_token_for(created.world_id);
     harness.sync_inventory();
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
@@ -126,10 +126,10 @@ fn guest_lifecycle() {
     assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 
-    let stopped = timings.run("stop guest", || harness.shutdown(&name));
-    assert_eq!(stopped.status, InstanceStatus::Stopped);
-    let restarted = timings.run("restart guest", || harness.start(&name));
-    assert_eq!(restarted.status, InstanceStatus::Running);
+    let stopped = timings.run("stop guest", || harness.shutdown(created.world_id));
+    assert_eq!(stopped.status, WorldStatus::Stopped);
+    let restarted = timings.run("restart guest", || harness.start(created.world_id));
+    assert_eq!(restarted.status, WorldStatus::Running);
     harness.sync_inventory();
     run_guest(
         &harness,

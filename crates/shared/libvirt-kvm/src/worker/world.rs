@@ -3,26 +3,26 @@
 use crate::MachineConfig;
 use std::path::{Path, PathBuf};
 
-pub(super) fn disk_path(root: &Path, disk_id: uuid::Uuid) -> PathBuf {
-    root.join("disks").join(format!("{disk_id}.qcow2"))
+pub(super) fn disk_path(root: &Path, world_id: wt_world::WorldId) -> PathBuf {
+    root.join("disks").join(format!("{world_id}.qcow2"))
 }
 
 pub(super) fn domain_xml(
-    provider_id: &crate::ProviderId,
+    domain_name: &crate::DomainName,
     disk_path: &Path,
     config: &MachineConfig,
     spec: &crate::MachineSpec,
     network_enabled: bool,
 ) -> String {
     let disk_path = disk_path.to_string_lossy();
-    let name = quick_xml::escape::escape(provider_id.as_str());
+    let name = quick_xml::escape::escape(domain_name.as_str());
     let disk = quick_xml::escape::escape(disk_path.as_ref());
     let network = quick_xml::escape::escape(&config.network);
     let architecture = quick_xml::escape::escape(crate::GUEST_ARCHITECTURE);
     let machine = quick_xml::escape::escape(crate::GUEST_MACHINE);
     let memory_mib = spec.memory_mib;
     let vcpus = spec.vcpus;
-    let mac = mac_address(provider_id);
+    let mac = mac_address(domain_name);
     let memory_backing = if config.shared_mounts.is_none() {
         String::new()
     } else {
@@ -82,8 +82,8 @@ pub(super) fn domain_xml(
     )
 }
 
-fn mac_address(provider_id: &crate::ProviderId) -> String {
-    let suffix = &provider_id.as_str()[3..];
+fn mac_address(domain_name: &crate::DomainName) -> String {
+    let suffix = &domain_name.as_str()[3..];
     format!(
         "52:54:00:{}:{}:{}",
         &suffix[0..2],
@@ -99,7 +99,10 @@ mod tests {
     use std::time::Duration;
 
     fn test_domain_xml(shared_mounts: Option<SharedMounts>) -> String {
-        let provider_id = crate::ProviderId::parse("wt-0123456789abcdef0123456789abcdef").unwrap();
+        let world_id = wt_world::WorldId::from(
+            uuid::Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").unwrap(),
+        );
+        let domain_name = crate::DomainName::for_world(world_id);
         let config = MachineConfig {
             image: PathBuf::from("/var/lib/wt/images/golden.qcow2"),
             worlds_dir: PathBuf::from("/var/lib/libvirt/images/wt"),
@@ -109,14 +112,13 @@ mod tests {
             shared_mounts,
         };
         let spec = crate::MachineSpec {
-            provider_id: provider_id.clone(),
-            disk_id: uuid::Uuid::nil(),
+            world_id,
             memory_mib: 4096,
             vcpus: 4,
             disk_gib: 32,
         };
         domain_xml(
-            &provider_id,
+            &domain_name,
             Path::new("/var/lib/libvirt/images/wt/disks/world & head.qcow2"),
             &config,
             &spec,

@@ -4,8 +4,10 @@ use super::model::{Mode, ShellModel};
 use super::session::SessionSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
+#[cfg(test)]
 use uuid::Uuid;
 use wt_control_protocol::CodexSessionState;
+use wt_control_protocol::WorldId;
 
 const STUCK_AFTER: Duration = Duration::from_secs(30);
 
@@ -312,7 +314,7 @@ fn eligible_detection(
     card: &CodexCard,
     model: &ShellModel,
     sessions: &SessionSet,
-    counts: &BTreeMap<(String, Uuid), usize>,
+    counts: &BTreeMap<(String, WorldId), usize>,
 ) -> Option<EligibleDetection> {
     let CodexCardKind::Observation {
         world_id,
@@ -331,7 +333,7 @@ fn eligible_detection(
         return None;
     }
     let index = model.worlds().iter().position(|world| {
-        world.identity.context == card.context && world.identity.id == *world_id
+        world.identity.context == card.context && world.identity.world_id == *world_id
     })?;
     if !sessions.is_open(index) {
         return None;
@@ -343,7 +345,7 @@ fn eligible_detection(
     })
 }
 
-fn active_world_counts(model: &ShellModel) -> BTreeMap<(String, Uuid), usize> {
+fn active_world_counts(model: &ShellModel) -> BTreeMap<(String, WorldId), usize> {
     world_counts(
         &model
             .control()
@@ -399,7 +401,7 @@ impl Default for CodexScreenTracker {
     }
 }
 
-fn world_counts(targets: &[CodexOpenTarget]) -> BTreeMap<(String, Uuid), usize> {
+fn world_counts(targets: &[CodexOpenTarget]) -> BTreeMap<(String, WorldId), usize> {
     let mut counts = BTreeMap::new();
     for target in targets {
         *counts.entry(world_key(target)).or_default() += 1;
@@ -407,7 +409,7 @@ fn world_counts(targets: &[CodexOpenTarget]) -> BTreeMap<(String, Uuid), usize> 
     counts
 }
 
-fn world_key(target: &CodexOpenTarget) -> (String, Uuid) {
+fn world_key(target: &CodexOpenTarget) -> (String, WorldId) {
     (target.context.clone(), target.world_id)
 }
 
@@ -422,7 +424,7 @@ mod tests {
             identity: CodexCardIdentity::Observation {
                 context: "local".into(),
                 session_id,
-                world_id: Uuid::from_u128(1),
+                world_id: Uuid::from_u128(1).into(),
                 tmux_session: "wt-host".into(),
                 pane_id: format!("%{session_id}"),
             },
@@ -431,7 +433,7 @@ mod tests {
             timestamp: Some(1),
             latest_user_message: None,
             kind: CodexCardKind::Observation {
-                world_id: Uuid::from_u128(1),
+                world_id: Uuid::from_u128(1).into(),
                 world_name: "world".into(),
                 cwd: "/home/wt".into(),
                 repository_root: None,

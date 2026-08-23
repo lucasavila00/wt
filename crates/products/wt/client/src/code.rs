@@ -13,15 +13,15 @@ pub(super) fn open(config: &ClientConfig, target: &str) -> Result<()> {
         ));
     }
 
-    let selected = inventory::resolve(&report.instances, target)?;
+    let selected = inventory::resolve(&report.worlds, target)?;
     if !ssh::has_alias(selected) {
         bail!(
             "world {} has no managed SSH alias in status {}",
             selected.qualified_name(),
-            selected.instance.status
+            selected.world.status
         );
     }
-    ssh::sync(config, &report.instances)?;
+    ssh::sync(config, &report.worlds)?;
 
     let authority = format!("ssh-remote+{}-direct", selected.qualified_name());
     let status = Command::new("code")

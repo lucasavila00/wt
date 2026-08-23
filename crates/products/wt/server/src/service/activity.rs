@@ -1,9 +1,9 @@
 use super::{map_store_error, Service, WorldWorker};
 use crate::service::AgentToolGateway;
 use wt_control_protocol::{
-    ApiError, GitActivity, GitActivityKind, GitActivityQuery, InstanceName,
-    RepositoryCheckoutState, RepositoryGitState, RepositoryGitStateQuery, Response,
-    WtToolsActivity, WtToolsActivityQuery,
+    ApiError, GitActivity, GitActivityKind, GitActivityQuery, RepositoryCheckoutState,
+    RepositoryGitState, RepositoryGitStateQuery, Response, WorldName, WtToolsActivity,
+    WtToolsActivityQuery,
 };
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -216,7 +216,7 @@ fn map_wt_tools_activity(
     })
 }
 
-fn parse_world_name(name: String) -> Result<InstanceName, ApiError> {
-    InstanceName::parse(name)
+fn parse_world_name(name: String) -> Result<WorldName, ApiError> {
+    WorldName::parse(name)
         .map_err(|error| ApiError::new(wt_control_protocol::ErrorCode::Internal, error.to_string()))
 }

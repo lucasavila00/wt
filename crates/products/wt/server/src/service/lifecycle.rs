@@ -1,45 +1,47 @@
 use super::{map_store_error, AgentToolGateway, Service};
-use wt_control_protocol::{ApiError, ErrorCode, InstanceName, InstanceStatus, Response};
+use wt_control_protocol::{ApiError, ErrorCode, Response, WorldId, WorldStatus};
 use wt_guest::WorldWorker;
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
-    pub(super) fn stop(&self, owner: &str, name: &InstanceName) -> Result<Response, ApiError> {
+    pub(super) fn stop(&self, owner: &str, world_id: WorldId) -> Result<Response, ApiError> {
+        let stored = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?;
         let _operation = self
             .operations
-            .try_lock(owner, name)
-            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
+            .try_lock_world(world_id)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
         self.reconcile(&stored)?;
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        if stored.instance.status == InstanceStatus::Stopped {
-            return Ok(Response::Instance {
-                instance: Box::new(stored.instance),
+        let stored = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?;
+        if stored.world.status == WorldStatus::Stopped {
+            return Ok(Response::World {
+                world: Box::new(stored.world),
             });
         }
-        if stored.instance.status != InstanceStatus::Running {
+        if stored.world.status != WorldStatus::Running {
             return Err(ApiError::new(
                 ErrorCode::Conflict,
-                format!("world is {}; expected running", stored.instance.status),
+                format!("world is {}; expected running", stored.world.status),
             ));
         }
         self.worker
-            .stop(&stored.backend_id)
+            .stop(world_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("stop world: {error}")))?;
         let disk_usage_bytes = self.disk_usage(&stored)?;
         self.store
-            .mark_stopped(
-                stored.instance.id,
-                "guest stopped (requested)",
-                disk_usage_bytes,
-            )
+            .mark_stopped(world_id, "guest stopped (requested)", disk_usage_bytes)
             .map_err(map_store_error)?;
-        let instance = self
+        let world = self
             .store
-            .get(owner, name)
+            .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?
-            .instance;
-        Ok(Response::Instance {
-            instance: Box::new(instance),
+            .world;
+        Ok(Response::World {
+            world: Box::new(world),
         })
     }
 }

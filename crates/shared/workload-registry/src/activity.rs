@@ -3,7 +3,7 @@ use crate::{Registry, RegistryError};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use std::time::{SystemTime, UNIX_EPOCH};
-use uuid::Uuid;
+use wt_world::WorldId;
 
 pub const ACTIVITY_PAGE_SIZE: i64 = 200;
 
@@ -34,7 +34,7 @@ impl GitActivityKind {
 
 #[derive(Clone, Debug)]
 pub struct GitActivityInput<'a> {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub kind: GitActivityKind,
     pub provider_host: &'a str,
     pub repository: &'a str,
@@ -53,7 +53,7 @@ pub struct RepositoryTargetInput<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GitActivity {
     pub id: u64,
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub world_name: String,
     pub recorded_at_unix_ms: u64,
     pub kind: GitActivityKind,
@@ -68,7 +68,7 @@ pub struct GitActivity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GitActivityQuery {
     World {
-        world_id: Uuid,
+        world_id: WorldId,
         before_id: Option<u64>,
     },
     Repository {
@@ -86,7 +86,7 @@ pub enum GitActivityQuery {
 
 #[derive(Clone, Debug)]
 pub struct WtToolsActivityInput<'a> {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub provider_host: &'a str,
     pub repository: &'a str,
     pub action: &'a str,
@@ -99,7 +99,7 @@ pub struct WtToolsActivityInput<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WtToolsActivity {
     pub id: u64,
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub world_name: String,
     pub recorded_at_unix_ms: u64,
     pub provider_host: String,
@@ -114,7 +114,7 @@ pub struct WtToolsActivity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WtToolsActivityQuery {
     World {
-        world_id: Uuid,
+        world_id: WorldId,
         before_id: Option<u64>,
     },
     Repository {
@@ -438,7 +438,9 @@ impl TryFrom<GitActivityRow> for GitActivity {
         Ok(Self {
             id: u64::try_from(row.id)
                 .map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
-            world_id: Uuid::parse_str(&row.world_id)
+            world_id: row
+                .world_id
+                .parse::<WorldId>()
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             world_name: row.world_name,
             recorded_at_unix_ms: u64::try_from(row.recorded_at_unix_ms)
@@ -461,7 +463,9 @@ impl TryFrom<WtToolsActivityRow> for WtToolsActivity {
         Ok(Self {
             id: u64::try_from(row.id)
                 .map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
-            world_id: Uuid::parse_str(&row.world_id)
+            world_id: row
+                .world_id
+                .parse::<WorldId>()
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             world_name: row.world_name,
             recorded_at_unix_ms: u64::try_from(row.recorded_at_unix_ms)

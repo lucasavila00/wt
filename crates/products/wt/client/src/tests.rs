@@ -1,17 +1,15 @@
 use super::*;
 use uuid::Uuid;
-use wt_control_protocol::{
-    Capacity, CapacityResource, Instance, InstanceName, InstanceStatus, SshAccess,
-};
+use wt_control_protocol::{Capacity, CapacityResource, SshAccess, World, WorldName, WorldStatus};
 
-fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
-    ContextInstance {
+fn item(context: &str, name: &str, status: WorldStatus) -> ContextWorld {
+    ContextWorld {
         context: context.to_owned(),
         agent_tool_report_count: 0,
         disk_usage_bytes: None,
-        instance: Instance {
-            id: Uuid::new_v4(),
-            name: InstanceName::parse(name).unwrap(),
+        world: World {
+            world_id: Uuid::new_v4().into(),
+            name: WorldName::parse(name).unwrap(),
             owner: "tester".to_owned(),
             status,
             vcpus: 2,
@@ -25,19 +23,19 @@ fn item(context: &str, name: &str, status: InstanceStatus) -> ContextInstance {
 }
 
 #[test]
-fn formats_aligned_instance_columns_without_tabs() {
-    let provisioning = item("local", "host-manual", InstanceStatus::Provisioning);
-    let mut running = item("remote-lab", "a", InstanceStatus::Running);
-    running.instance.memory_mib = 1536;
-    running.instance.guest_ip = Some("192.0.2.10".to_owned());
-    running.instance.ssh = Some(SshAccess {
+fn formats_aligned_world_columns_without_tabs() {
+    let provisioning = item("local", "host-manual", WorldStatus::Provisioning);
+    let mut running = item("remote-lab", "a", WorldStatus::Running);
+    running.world.memory_mib = 1536;
+    running.world.guest_ip = Some("192.0.2.10".to_owned());
+    running.world.ssh = Some(SshAccess {
         user: "wt".to_owned(),
         host: "192.0.2.10".to_owned(),
         port: 2222,
         host_keys: Vec::new(),
     });
 
-    let output = format_instances(&[provisioning, running]);
+    let output = format_worlds(&[provisioning, running]);
 
     insta::assert_snapshot!(output, @r###"
     CONTEXT     NAME         STATUS        RESOURCES              DETAIL
@@ -49,15 +47,15 @@ fn formats_aligned_instance_columns_without_tabs() {
 
 #[test]
 fn formats_header_for_empty_inventory() {
-    insta::assert_snapshot!(format_instances(&[]), @"CONTEXT  NAME  STATUS  RESOURCES  DETAIL");
+    insta::assert_snapshot!(format_worlds(&[]), @"CONTEXT  NAME  STATUS  RESOURCES  DETAIL");
 }
 
 #[test]
 fn formats_reconciliation_error_details() {
-    let mut failed = item("local", "broken", InstanceStatus::Error);
-    failed.instance.last_error = Some("SSH endpoint identity mismatch".to_owned());
+    let mut failed = item("local", "broken", WorldStatus::Error);
+    failed.world.last_error = Some("SSH endpoint identity mismatch".to_owned());
 
-    insta::assert_snapshot!(format_instances(&[failed]), @r###"
+    insta::assert_snapshot!(format_worlds(&[failed]), @r###"
     CONTEXT  NAME    STATUS  RESOURCES         DETAIL
     local    broken  error   2 CPU · 4G · 32G  SSH endpoint identity mismatch; run `wt rm local.broken`
     "###);
@@ -65,11 +63,11 @@ fn formats_reconciliation_error_details() {
 
 #[test]
 fn formats_stopped_world_with_recovery_commands() {
-    let mut stopped = item("ars", "mt3", InstanceStatus::Stopped);
-    stopped.instance.last_error = Some("guest stopped (crashed)".to_owned());
+    let mut stopped = item("ars", "mt3", WorldStatus::Stopped);
+    stopped.world.last_error = Some("guest stopped (crashed)".to_owned());
     stopped.disk_usage_bytes = Some(1536 * 1024 * 1024);
 
-    insta::assert_snapshot!(format_instances(&[stopped]), @r###"
+    insta::assert_snapshot!(format_worlds(&[stopped]), @r###"
     CONTEXT  NAME  STATUS   RESOURCES               DETAIL
     ars      mt3   stopped  2 CPU · 4G · 1.5G disk  guest stopped (crashed); run `wt start ars.mt3` or `wt rm ars.mt3`
     "###);
@@ -77,10 +75,10 @@ fn formats_stopped_world_with_recovery_commands() {
 
 #[test]
 fn ls_points_to_wt_tools_reports_without_changing_world_status() {
-    let mut running = item("local", "work", InstanceStatus::Running);
+    let mut running = item("local", "work", WorldStatus::Running);
     running.agent_tool_report_count = 2;
 
-    insta::assert_snapshot!(format_instances(&[running]), @r###"
+    insta::assert_snapshot!(format_worlds(&[running]), @r###"
     CONTEXT  NAME  STATUS   RESOURCES         DETAIL
     local    work  running  2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
     "###);
@@ -91,7 +89,7 @@ fn explains_memory_capacity() {
     insta::assert_snapshot!(
         create::capacity_message(
             "ars",
-            &wt_control_protocol::InstanceName::parse("mt3").unwrap(),
+            &wt_control_protocol::WorldName::parse("mt3").unwrap(),
             &Capacity {
                 resource: CapacityResource::Memory,
                 total: 32_000,

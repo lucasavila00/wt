@@ -1,8 +1,12 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use wt_control_protocol::InstanceName;
+use wt_control_protocol::{WorldId, WorldName};
 
-type OperationKey = (String, InstanceName);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum OperationKey {
+    Create(WorldName),
+    World(WorldId),
+}
 type OperationState = (Mutex<HashSet<OperationKey>>, Condvar);
 
 #[derive(Clone, Debug, Default)]
@@ -17,8 +21,8 @@ pub struct OperationGuard {
 }
 
 impl Operations {
-    pub fn lock(&self, owner: &str, name: &InstanceName) -> OperationGuard {
-        let key = (owner.to_owned(), name.clone());
+    pub fn lock_create(&self, name: &WorldName) -> OperationGuard {
+        let key = OperationKey::Create(name.clone());
         let (active, wake) = &*self.state;
         let mut active = lock_unpoisoned(active);
         while active.contains(&key) {
@@ -31,8 +35,8 @@ impl Operations {
         }
     }
 
-    pub fn try_lock(&self, owner: &str, name: &InstanceName) -> Option<OperationGuard> {
-        let key = (owner.to_owned(), name.clone());
+    pub fn try_lock_world(&self, world_id: WorldId) -> Option<OperationGuard> {
+        let key = OperationKey::World(world_id);
         let (active, _) = &*self.state;
         let mut active = lock_unpoisoned(active);
         if !active.insert(key.clone()) {

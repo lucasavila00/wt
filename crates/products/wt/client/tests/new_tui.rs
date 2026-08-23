@@ -111,7 +111,7 @@ fn enter_validates_before_advancing() -> Result<()> {
         .press(Key::Enter)?
         .type_text("_")?
         .press(Key::Enter)?
-        .wait_for_text("invalid instance name")?;
+        .wait_for_text("invalid world name")?;
     Ok(())
 }
 
@@ -151,7 +151,7 @@ fn replace_server_with_request_log(home: &Path, requests: &Path) {
     fs::write(
         &server,
         format!(
-            "#!/bin/sh\nrequest=$(cat)\nprintf '%s\\n' \"$request\" >> '{}'\nprintf '%s\\n' '{{\"protocol_version\":11,\"outcome\":\"ok\",\"response\":{{\"response\":\"server_info\",\"test_server\":false,\"build\":{{\"version\":\"test\",\"commit\":\"0000000000000000000000000000000000000000\"}}}}}}'\n",
+            "#!/bin/sh\nrequest=$(cat)\nprintf '%s\\n' \"$request\" >> '{}'\nprintf '%s\\n' '{{\"protocol_version\":13,\"outcome\":\"ok\",\"response\":{{\"response\":\"server_info\",\"test_server\":false,\"build\":{{\"version\":\"test\",\"commit\":\"0000000000000000000000000000000000000000\"}}}}}}'\n",
             requests.display()
         ),
     )

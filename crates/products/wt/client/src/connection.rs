@@ -16,15 +16,15 @@ pub fn ssh(config: &ClientConfig, target: &str) -> Result<()> {
         bail!(message);
     }
 
-    let selected = inventory::resolve(&report.instances, target)?;
+    let selected = inventory::resolve(&report.worlds, target)?;
     if !ssh::has_alias(selected) {
         bail!(
             "world {} has no managed SSH alias in status {}",
             selected.qualified_name(),
-            selected.instance.status
+            selected.world.status
         );
     }
-    ssh::sync(config, &report.instances)?;
+    ssh::sync(config, &report.worlds)?;
 
     let qualified = selected.qualified_name();
     Err(Command::new("ssh").args(["--", &qualified]).exec())

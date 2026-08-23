@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn assert_terminal_stack(harness: &KvmHarness, name: &InstanceName) {
+pub(crate) fn assert_terminal_stack(harness: &KvmHarness, name: &WorldName) {
     let output = guest_command(
         harness,
         name,
