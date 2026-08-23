@@ -73,7 +73,7 @@ pub(in crate::image) fn stage_publication(
     image_destination: &Path,
     manifest: &ImageManifest,
 ) -> Result<PendingPublication> {
-    wt_host_world::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
+    wt_guest::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
     let local_manifest = prepared.with_extension("manifest.json");
     let manifest_bytes = serde_json::to_vec_pretty(manifest)?;
     fs::write(&local_manifest, &manifest_bytes).context("write image manifest")?;

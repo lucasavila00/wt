@@ -50,7 +50,7 @@ printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
     /usr/local/libexec/wt-host-mount-codex | sha256sum --check --strict
 
-phase "installing host-world tools"
+phase "installing guest tools"
 /bin/sh /var/tmp/wt-host-image-build.sh
 
 phase "validating cached development tools"

@@ -329,8 +329,8 @@ pub(super) fn run_kvm_build<R: Runner>(
     let expected = format!(
         "kind={}\nstatus=ready\nwt_uid={}\nwt_gid={}\n",
         IMAGE_KIND,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
     );
     if marker != expected {
         bail!(

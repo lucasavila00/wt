@@ -11,11 +11,12 @@ name = "wt-server"
 path = "src/main.rs"
 
 [dependencies]
-wt-host-world = { workspace = true }
+wt-guest = { workspace = true }
 wt-agent-tool-gateway = { workspace = true }
 wt-control-protocol = { workspace = true }
 wt-libvirt-kvm = { workspace = true }
 wt-workload-registry = { workspace = true }
+wt-tools = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }

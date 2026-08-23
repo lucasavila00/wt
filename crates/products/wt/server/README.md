@@ -11,7 +11,7 @@ does not cancel world provisioning.
 
 ## Owns
 
-- Create, list, get, start, stop, and delete operations for host worlds.
+- Create, list, get, start, stop, and delete operations for guests.
 - Host lifecycle dispatch.
 - SQLite world, capacity, and disk registry.
 - In-memory coordination of concurrent world operations.

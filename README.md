@@ -1,6 +1,6 @@
 # wt
 
-WT runs Ubuntu host worlds on KVM. Each world boots from a verified golden
+WT runs Ubuntu guests on KVM. Each world boots from a verified golden
 image with persistent storage, managed SSH, Codex integration, and scoped Git
 access.
 

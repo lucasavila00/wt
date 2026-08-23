@@ -53,7 +53,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let codex_sessions = server.codex_paths().sessions;
     let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
     let host_config = server.host_config();
-    let worker = wt_host_world::host::Worker::new(
+    let worker = wt_guest::host::Worker::new(
         provider,
         Duration::from_secs(server.guest.readiness_timeout_seconds),
         host_config,

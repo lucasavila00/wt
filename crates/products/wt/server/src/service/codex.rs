@@ -4,7 +4,7 @@ use wt_control_protocol::{
     ApiError, ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, ErrorCode,
     InstanceName, Response,
 };
-use wt_host_world::WorldWorker;
+use wt_guest::WorldWorker;
 use wt_workload_registry::CodexSessionCatalogEntry;
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {

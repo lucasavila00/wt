@@ -14,11 +14,11 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
     )?;
     let expected_contract = format!(
         "WT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\n",
-        wt_host_world::GUEST_USER,
-        wt_host_world::GUEST_GROUP,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
-        wt_host_world::GUEST_HOME,
+        wt_guest::GUEST_USER,
+        wt_guest::GUEST_GROUP,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
+        wt_guest::GUEST_HOME,
     );
     if contract != expected_contract {
         bail!("finalized image guest contract differs from policy");
@@ -52,7 +52,7 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
         if !output.status.success() {
             bail!("finalized image does not contain {guest_path}");
         }
-        let expected = fs::read(binaries::release_binary(name))
+        let expected = fs::read(binaries::guest_binary())
             .with_context(|| format!("read built guest binary {name}"))?;
         if output.stdout != expected {
             bail!("finalized image guest binary differs: {guest_path}");
@@ -65,11 +65,11 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
     )?;
     let expected_user = format!(
         "{}:x:{}:{}:",
-        wt_host_world::GUEST_USER,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID
+        wt_guest::GUEST_USER,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID
     );
-    let expected_home = format!(":{}:", wt_host_world::GUEST_HOME);
+    let expected_home = format!(":{}:", wt_guest::GUEST_HOME);
     if !passwd
         .lines()
         .any(|line| line.starts_with(&expected_user) && line.contains(&expected_home))
@@ -82,8 +82,8 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
     )?;
     let expected_group = format!(
         "{}:x:{}:",
-        wt_host_world::GUEST_GROUP,
-        wt_host_world::GUEST_GID
+        wt_guest::GUEST_GROUP,
+        wt_guest::GUEST_GID
     );
     if !group.lines().any(|line| line == expected_group) {
         bail!("finalized image does not contain the required guest group");
@@ -94,7 +94,7 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
         "virt-cat",
         "-a",
         disk,
-        format!("{}/.byobu/color", wt_host_world::GUEST_HOME)
+        format!("{}/.byobu/color", wt_guest::GUEST_HOME)
     ))?;
     if !color.status.success() || color.stdout != BYOBU_COLOR {
         bail!("finalized image guest Byobu color differs from policy");
@@ -108,11 +108,11 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
             "--uids",
             "-a",
             disk,
-            wt_host_world::GUEST_HOME
+            wt_guest::GUEST_HOME
         ),
         "inspect finalized guest home",
     )?;
-    let color_path = format!("{}/.byobu/color", wt_host_world::GUEST_HOME);
+    let color_path = format!("{}/.byobu/color", wt_guest::GUEST_HOME);
     let fields = listing
         .lines()
         .find(|line| line.ends_with(&format!(" {color_path}")))
@@ -121,8 +121,8 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
     if fields.len() < 6
         || fields[0] != "-"
         || fields[1] != "0644"
-        || fields[3] != wt_host_world::GUEST_UID.to_string()
-        || fields[4] != wt_host_world::GUEST_GID.to_string()
+        || fields[3] != wt_guest::GUEST_UID.to_string()
+        || fields[4] != wt_guest::GUEST_GID.to_string()
     {
         bail!("finalized guest Byobu color must be owned by the guest user with mode 0644");
     }

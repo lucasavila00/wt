@@ -47,20 +47,12 @@ const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
     ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
 ];
-const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
-    (
-        "wt-agent-tool-gateway-relay",
-        "/var/tmp/wt-agent-tool-gateway-relay",
-    ),
-    ("git-remote-wt-agent", "/var/tmp/wt-git-remote-agent"),
-    ("wt-tools", "/var/tmp/wt-tools"),
-    ("wt-codex-integration", "/var/tmp/wt-codex-integration"),
-];
+const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[("wt", "/var/tmp/wt-guest")];
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
     commit: String,
-    guest_identity: wt_host_world::GuestIdentity,
+    guest_identity: wt_guest::GuestIdentity,
     golden_sha256: String,
     packages: PackageVersions,
     development_tools: PackageVersions,
@@ -252,7 +244,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     fs::write(&codex_requirements, CODEX_REQUIREMENTS).context("stage Codex requirements")?;
     let guest_binary_inputs = GUEST_BINARY_INPUTS
         .iter()
-        .map(|(name, guest_path)| (binaries::release_binary(name), *guest_path))
+        .map(|(_, guest_path)| (binaries::guest_binary(), *guest_path))
         .collect::<Vec<_>>();
     let extra_inputs = staged_paths
         .iter()
@@ -393,7 +385,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     )?;
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_host_world::GUEST_IDENTITY,
+        guest_identity: wt_guest::GUEST_IDENTITY,
         golden_sha256: timed("hash compacted host image", || sha_file(&paths.prepared))?,
         packages,
         development_tools,
@@ -429,7 +421,7 @@ pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) ->
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    wt_host_world::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
+    wt_guest::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
     require_current_commit(&manifest.commit)?;
     recipe
         .validate_package_versions(&manifest.packages)

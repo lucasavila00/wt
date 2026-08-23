@@ -23,7 +23,7 @@ fn sha_validation_detects_drift() {
 fn image_manifest_records_structured_package_versions() {
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_host_world::GUEST_IDENTITY,
+        guest_identity: wt_guest::GUEST_IDENTITY,
         golden_sha256: "golden".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
         development_tools: Default::default(),
@@ -126,7 +126,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
     let destination = directory.path().join("host.qcow2");
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_host_world::GuestIdentity {
+        guest_identity: wt_guest::GuestIdentity {
             uid: 1000,
             gid: 1000,
         },
@@ -161,10 +161,7 @@ fn host_image_owns_static_guest_binaries() {
         .join("\n");
 
     insta::assert_snapshot!(inputs, @r###"
-    wt-agent-tool-gateway-relay	/var/tmp/wt-agent-tool-gateway-relay
-    git-remote-wt-agent	/var/tmp/wt-git-remote-agent
-    wt-tools	/var/tmp/wt-tools
-    wt-codex-integration	/var/tmp/wt-codex-integration
+    wt	/var/tmp/wt-guest
     "###);
 }
 
@@ -328,7 +325,7 @@ fn development_tool_install_reports_individual_progress() {
     installing Node.js and nvm
     installing Python and uv
     configuring Node.js command path
-    configuring Docker for the host-world user
+    configuring Docker for the guest user
     recording installed development-tool versions
     "###);
 }

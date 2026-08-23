@@ -50,15 +50,16 @@ struct TrackerState {
     sessions: BTreeMap<uuid::Uuid, Registration>,
 }
 
+#[allow(dead_code)]
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run_from(std::env::args_os()) {
         eprintln!("wt-agent-tool-gateway-relay: {error:#}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let cli = Cli::parse();
+pub fn run_from(args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>) -> Result<()> {
+    let cli = Cli::parse_from(args);
     let vsock_port = resolve_vsock_port(cli.vsock_port)?;
     let token = fs::read_to_string(&cli.grant_file)
         .with_context(|| format!("read {}", cli.grant_file.display()))?;

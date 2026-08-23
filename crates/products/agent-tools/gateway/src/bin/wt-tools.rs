@@ -8,6 +8,7 @@ use wt_agent_tool_gateway::{
 
 const SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
 
+#[allow(dead_code)]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let plain_text = matches!(args.as_slice(), [arg] if matches!(arg.as_str(), "help" | "--help" | "-h" | "world-prompt"));
@@ -21,11 +22,12 @@ fn main() {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn render_error(message: &str) -> serde_json::Value {
     serde_json::json!({ "error": { "message": message } })
 }
 
-fn run(args: Vec<String>) -> Result<()> {
+pub fn run(args: Vec<String>) -> Result<()> {
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(

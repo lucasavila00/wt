@@ -121,8 +121,8 @@ fn host_world_lifecycle() {
         std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_sessions.marker),
     )
     .unwrap();
-    assert_eq!(rollout_metadata.uid(), wt_host_world::GUEST_UID);
-    assert_eq!(rollout_metadata.gid(), wt_host_world::GUEST_GID);
+    assert_eq!(rollout_metadata.uid(), wt_guest::GUEST_UID);
+    assert_eq!(rollout_metadata.gid(), wt_guest::GUEST_GID);
     assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 

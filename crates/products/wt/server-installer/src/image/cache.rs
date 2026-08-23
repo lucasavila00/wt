@@ -154,11 +154,11 @@ pub(super) fn identity(
 fn guest_identity() -> String {
     format!(
         "{}:{}:{}:{}:{}",
-        wt_host_world::GUEST_USER,
-        wt_host_world::GUEST_GROUP,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
-        wt_host_world::GUEST_HOME,
+        wt_guest::GUEST_USER,
+        wt_guest::GUEST_GROUP,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
+        wt_guest::GUEST_HOME,
     )
 }
 

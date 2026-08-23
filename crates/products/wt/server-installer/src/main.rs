@@ -68,20 +68,22 @@ enum ImageCommand {
     },
 }
 
+#[allow(dead_code)]
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run_from(std::env::args_os()) {
         eprintln!("\n{}", failure_message(&error));
         std::process::exit(1);
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn failure_message(error: &anyhow::Error) -> String {
     format!("WT server setup failed: {error:#}")
 }
 
-fn run() -> Result<()> {
+pub fn run_from(args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>) -> Result<()> {
     let runner = SystemRunner;
-    match Cli::parse().command {
+    match Cli::parse_from(args).command {
         SetupCommand::Validate { config } => {
             server::validate(&config).context("configuration validation stopped")?;
             println!("Configuration is valid: {}", config.display());

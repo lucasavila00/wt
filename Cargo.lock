@@ -3926,7 +3926,11 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "uuid",
  "vt100",
+ "wt-agent-tool-gateway",
+ "wt-codex-integration",
  "wt-control-protocol",
+ "wt-server",
+ "wt-server-installer",
 ]
 
 [[package]]
@@ -4093,6 +4097,7 @@ dependencies = [
  "wt-control-protocol",
  "wt-host-world",
  "wt-libvirt-kvm",
+ "wt-tools",
  "wt-workload-registry",
 ]
 

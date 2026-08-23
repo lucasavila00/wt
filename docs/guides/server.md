@@ -10,7 +10,7 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
-verified host world golden image. Every image contains Git, OpenSSH, QEMU
+verified guest golden image. Every image contains Git, OpenSSH, QEMU
 guest support, Byobu, tmux, Codex, Diffo, WT's host helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
 and Docker with Compose.

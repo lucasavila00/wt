@@ -44,8 +44,8 @@ pub(crate) fn assert_server_codex_auth_export(config: &wt_server::ServerConfig) 
         (export_metadata.dev(), export_metadata.ino())
     );
     for metadata in [&source_metadata, &export_metadata, &directory_metadata] {
-        assert_eq!(metadata.uid(), wt_host_world::GUEST_UID);
-        assert_eq!(metadata.gid(), wt_host_world::GUEST_GID);
+        assert_eq!(metadata.uid(), wt_guest::GUEST_UID);
+        assert_eq!(metadata.gid(), wt_guest::GUEST_GID);
     }
     assert_eq!(source_metadata.mode() & 0o777, 0o600);
     assert_eq!(export_metadata.mode() & 0o777, 0o600);
@@ -82,7 +82,7 @@ pub(crate) fn verify_codex_auth_rotation(
     let deadline = Instant::now() + Duration::from_secs(10);
     while fs::metadata(auth).unwrap().ino() == old_server_inode
         || sha256_file(auth) != sha256_file(&export)
-        || fs::metadata(auth).unwrap().gid() != wt_host_world::GUEST_GID
+        || fs::metadata(auth).unwrap().gid() != wt_guest::GUEST_GID
         || fs::metadata(auth).unwrap().mode() & 0o777 != 0o600
     {
         assert!(

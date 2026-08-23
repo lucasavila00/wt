@@ -54,6 +54,16 @@ impl Gateway {
         }
     }
 
+    pub fn reserve_grant(&self, world_id: Uuid) -> Result<Grant> {
+        self.reserve(&world_id.to_string())?
+            .grant
+            .context("gateway reserve response has no grant")
+    }
+
+    pub fn revoke_grant(&self, grant_id: &str) -> Result<()> {
+        self.revoke(grant_id).map(|_| ())
+    }
+
     pub fn handle_transport<S: DuplexStream>(&self, mut stream: S) -> Result<()> {
         let request: TransportRequest = crate::read_json_line(&mut stream)?;
         let result = self.authorize(&request);

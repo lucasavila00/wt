@@ -1,6 +1,6 @@
 # Client and SSH
 
-WT host worlds are persistent Ubuntu guests created from a server's verified golden
+WT guests are persistent Ubuntu guests created from a server's verified golden
 image. Each world has a persistent Byobu workspace and keeps its disk until it
 is removed.
 

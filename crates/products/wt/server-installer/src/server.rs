@@ -29,13 +29,6 @@ use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 use zeroize::Zeroizing;
 
 const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
-const GATEWAY_SERVICE_PATH: &str = "/etc/systemd/system/wt-agent-tool-gateway.service";
-const CODEX_AUTH_SERVICE_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.service";
-const CODEX_AUTH_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-codex-integration-auth.path";
-const CODEX_AUTH_HELPER_PATH: &str = "/usr/local/libexec/wt-codex-integration-auth-share";
-const SSH_KEYS_SERVICE_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.service";
-const SSH_KEYS_PATH_UNIT_PATH: &str = "/etc/systemd/system/wt-ssh-authorized-keys.path";
-const SSH_KEYS_HELPER_PATH: &str = "/usr/local/libexec/wt-ssh-authorized-keys-share";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
@@ -201,7 +194,7 @@ fn phase_message(message: &str) -> String {
 
 fn success_message(input_path: &Path) -> String {
     format!(
-        "WT server is ready.\nConfig: {}\nServices started: wt-server, wt-agent-tool-gateway\nNext: configure a WT client, then run `wt new`.",
+        "WT server is ready.\nConfig: {}\nService started: wt-server\nNext: configure a WT client, then run `wt new`.",
         input_path.display()
     )
 }
@@ -365,7 +358,7 @@ fn install_agent_tools_credentials(
         ] {
             let credential = format!("{}-{suffix}", provider.kind);
             let destination =
-                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-agent-tool-gateway-{credential}"));
+                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-server-{credential}"));
             let temporary = destination.with_extension("wt-new");
             if temporary.exists() {
                 bail!(
@@ -397,74 +390,18 @@ fn install_services(
     server: &ServerConfig,
     replace_runtime: bool,
 ) -> Result<()> {
-    install_share_helper(
-        runner,
-        "wt-codex-integration-auth-share",
-        &host::codex_auth_share(),
-        "Codex auth",
-    )?;
-    install_share_helper(
-        runner,
-        "wt-ssh-authorized-keys-share",
-        &host::ssh_authorized_keys_share(),
-        "SSH authorized keys",
-    )?;
-    install_service_unit(
-        runner,
-        "wt-codex-integration-auth",
-        Path::new(CODEX_AUTH_SERVICE_PATH),
-        &codex_auth_service(server),
-        replace_runtime,
-    )?;
-    install_service_unit(
-        runner,
-        "wt-codex-integration-auth-path",
-        Path::new(CODEX_AUTH_PATH_UNIT_PATH),
-        &shared_file_path_unit(
-            "Codex authentication",
-            server.codex_paths().auth,
-            "wt-codex-integration-auth.service",
-        ),
-        replace_runtime,
-    )?;
-    install_service_unit(
-        runner,
-        "wt-ssh-authorized-keys",
-        Path::new(SSH_KEYS_SERVICE_PATH),
-        &shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH, &[]),
-        replace_runtime,
-    )?;
-    install_service_unit(
-        runner,
-        "wt-ssh-authorized-keys-path",
-        Path::new(SSH_KEYS_PATH_UNIT_PATH),
-        &ssh_keys_path_unit(),
-        replace_runtime,
-    )?;
-    install_service_unit(
-        runner,
-        "wt-agent-tool-gateway",
-        Path::new(GATEWAY_SERVICE_PATH),
-        &gateway_service(input, server),
-        replace_runtime,
-    )?;
     install_service_unit(
         runner,
         "wt-server",
         Path::new(SERVER_SERVICE_PATH),
-        &server_service(server),
+        &server_service(input, server),
         replace_runtime,
     )?;
     runner.run(
         cmd!("sudo", "systemctl", "daemon-reload"),
         "reload systemd units",
     )?;
-    for name in [
-        "wt-codex-integration-auth.path",
-        "wt-ssh-authorized-keys.path",
-        "wt-agent-tool-gateway.service",
-        "wt-server.service",
-    ] {
+    for name in ["wt-server.service"] {
         runner.run(
             cmd!("sudo", "systemctl", "enable", name),
             &format!("enable {name}"),
@@ -474,29 +411,6 @@ fn install_services(
             &format!("restart {name}"),
         )?;
     }
-    Ok(())
-}
-
-fn install_share_helper(
-    runner: &impl Runner,
-    name: &str,
-    script: &[u8],
-    description: &str,
-) -> Result<()> {
-    runner.run(
-        cmd!("sudo", "install", "-d", "-m", "0755", "/usr/local/libexec"),
-        "create system helper directory",
-    )?;
-    let local = Path::new("target").join(format!("{name}.install"));
-    fs::write(&local, script).with_context(|| format!("stage {description} share helper"))?;
-    let temporary = Path::new("/usr/local/libexec").join(format!(".{name}.wt-new"));
-    sudo_install(runner, &local, &temporary, 0o755)?;
-    sudo_move(
-        runner,
-        &temporary,
-        &Path::new("/usr/local/libexec").join(name),
-    )?;
-    let _ = fs::remove_file(&local);
     Ok(())
 }
 
@@ -544,27 +458,22 @@ fn service_unit_needs_replacement(
     )
 }
 
-fn gateway_service(input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt-agent-tool-gateway");
-    let mut command = systemd_quote(&executable.display().to_string());
+fn server_service(input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
+    let executable = server.install.binary_dir.join("wt");
     let mut credentials = String::new();
-    for (kind, provider) in input.agent_tools.providers() {
-        let token = format!("%d/{kind}-api-token");
-        let key = format!("%d/{kind}-ssh-private-key");
-        command.push_str(&format!(" --{kind}-provider "));
-        command.push_str(&systemd_quote(&format!("{}={token},{key}", provider.host)));
+    for (kind, _) in input.agent_tools.providers() {
         for suffix in ["api-token", "ssh-private-key"] {
             let id = format!("{kind}-{suffix}");
             credentials.push_str(&format!(
-                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-agent-tool-gateway-{id}\n"
+                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-server-{id}\n"
             ));
         }
     }
     format!(
         "[Unit]\n\
-Description=WT agent tool gateway\n\
+Description=WT host daemon\n\
 Wants=network-online.target\n\
-After=network-online.target\n\
+After=network-online.target libvirtd.service\n\
 \n\
 [Service]\n\
 Type=simple\n\
@@ -573,9 +482,9 @@ Group={}\n\
 Environment={}\n\
 Environment={}\n\
 {}\n\
-ExecStart={}\n\
+ExecStart={} server serve\n\
 Restart=on-failure\n\
-RuntimeDirectory=wt-agent-tool-gateway\n\
+RuntimeDirectory=wt\n\
 RuntimeDirectoryMode=0700\n\
 StateDirectory=wt/agent-tools\n\
 StateDirectoryMode=0700\n\
@@ -592,102 +501,7 @@ WantedBy=multi-user.target\n",
             server.agent_tools.vsock_port
         )),
         credentials.trim_end(),
-        command,
-    )
-    .into_bytes()
-}
-
-fn server_service(server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt-server");
-    format!(
-        "[Unit]\n\
-Description=WT control-plane daemon\n\
-Requires=wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
-Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path wt-ssh-authorized-keys.path\n\
-After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service wt-ssh-authorized-keys.service\n\
-\n\
-[Service]\n\
-Type=simple\n\
-User={}\n\
-Group={}\n\
-Environment={}\n\
-Environment={}\n\
-ExecStart={} serve\n\
-Restart=on-failure\n\
-RuntimeDirectory=wt\n\
-RuntimeDirectoryMode=0700\n\
-UMask=0077\n\
-\n\
-[Install]\n\
-WantedBy=multi-user.target\n",
-        SERVER_USER,
-        SERVER_GROUP,
-        systemd_quote(&format!("HOME={SERVER_HOME}")),
-        systemd_quote(&format!(
-            "{}={}",
-            wt_server::AGENT_TOOL_VSOCK_PORT_ENV,
-            server.agent_tools.vsock_port
-        )),
         systemd_quote(&executable.display().to_string()),
-    )
-    .into_bytes()
-}
-
-fn codex_auth_service(server: &ServerConfig) -> Vec<u8> {
-    let paths = server.codex_paths();
-    shared_file_service(
-        "Codex authentication",
-        CODEX_AUTH_HELPER_PATH,
-        &[paths.auth, paths.auth_share],
-    )
-}
-
-fn shared_file_service(description: &str, helper: &str, args: &[&str]) -> Vec<u8> {
-    let command = if args.is_empty() {
-        helper.to_owned()
-    } else {
-        std::iter::once(systemd_quote(helper))
-            .chain(args.iter().map(|arg| systemd_quote(arg)))
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    format!(
-        "[Unit]\n\
-Description=Refresh the WT {description} share\n\
-\n\
-[Service]\n\
-Type=oneshot\n\
-User={}\n\
-Group={}\n\
-Environment={}\n\
-ExecStart={command}\n\
-UMask=0077\n",
-        SERVER_USER,
-        SERVER_GROUP,
-        systemd_quote(&format!("HOME={SERVER_HOME}")),
-    )
-    .into_bytes()
-}
-
-fn ssh_keys_path_unit() -> Vec<u8> {
-    shared_file_path_unit(
-        "SSH authorized keys",
-        &format!("{SERVER_HOME}/.ssh/authorized_keys"),
-        "wt-ssh-authorized-keys.service",
-    )
-}
-
-fn shared_file_path_unit(description: &str, path: &str, unit: &str) -> Vec<u8> {
-    format!(
-        "[Unit]\n\
-Description=Watch the WT {description} file\n\
-\n\
-[Path]\n\
-PathChanged={path}\n\
-Unit={unit}\n\
-\n\
-[Install]\n\
-WantedBy=multi-user.target\n",
     )
     .into_bytes()
 }
