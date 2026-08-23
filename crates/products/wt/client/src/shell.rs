@@ -25,11 +25,11 @@ mod model;
 mod refresh;
 mod refresh_status;
 mod render;
+mod scrollbar;
 mod session;
 mod terminal_view;
 mod toast;
 mod world_card;
-
 use control::ControlCommand;
 use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
@@ -533,7 +533,7 @@ fn world_rows(terminal_rows: u16) -> u16 {
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
     if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
-        live::preview_size(area)
+        live::preview_size(area, model.control().live_codex().len())
     } else {
         (world_rows(area.height), area.width)
     }

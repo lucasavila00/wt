@@ -40,7 +40,9 @@ pub(in crate::shell) fn card_grid_rects(
         return Vec::new();
     }
     let visible = card_grid_visible(area, card_height);
-    let width = (viewport.width.saturating_sub(CARD_GAP) / 2).max(1);
+    let viewport_width = viewport.width.saturating_sub(u16::from(count > visible));
+    let viewport_right = viewport.x.saturating_add(viewport_width);
+    let width = (viewport_width.saturating_sub(CARD_GAP) / 2).max(1);
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
         .map(|(position, index)| {
@@ -53,7 +55,7 @@ pub(in crate::shell) fn card_grid_rects(
                 Rect::new(
                     x,
                     y,
-                    width.min(viewport.right().saturating_sub(x)),
+                    width.min(viewport_right.saturating_sub(x)),
                     card_height.min(viewport.bottom().saturating_sub(y)),
                 ),
             )

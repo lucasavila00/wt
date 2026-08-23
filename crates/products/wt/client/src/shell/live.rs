@@ -20,8 +20,8 @@ pub(super) fn visible(area: Rect) -> usize {
     card_grid_visible(area, CARD_HEIGHT)
 }
 
-pub(super) fn preview_size(area: Rect) -> (u16, u16) {
-    card_size(area).map_or((1, 1), |(height, width)| {
+pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
+    card_size(area, count).map_or((1, 1), |(height, width)| {
         (
             height.saturating_sub(2).max(1),
             width.saturating_sub(2).max(1),
@@ -29,7 +29,7 @@ pub(super) fn preview_size(area: Rect) -> (u16, u16) {
     })
 }
 
-fn card_size(area: Rect) -> Option<(u16, u16)> {
+fn card_size(area: Rect, count: usize) -> Option<(u16, u16)> {
     let (body, _) = control_content_areas(area);
     let viewport = body.inner(Margin::new(1, 1));
     if viewport.is_empty() {
@@ -37,7 +37,12 @@ fn card_size(area: Rect) -> Option<(u16, u16)> {
     }
     Some((
         CARD_HEIGHT.min(viewport.height),
-        (viewport.width.saturating_sub(CARD_GAP) / 2).max(1),
+        (viewport
+            .width
+            .saturating_sub(u16::from(count > visible(area)))
+            .saturating_sub(CARD_GAP)
+            / 2)
+        .max(1),
     ))
 }
 
@@ -67,6 +72,14 @@ pub(super) fn draw(
         );
         return;
     }
+    super::scrollbar::render(
+        frame,
+        super::scrollbar::area(frame.area()),
+        cards.len(),
+        visible(frame.area()).max(1),
+        state.codex_offset(),
+        muted_style(),
+    );
     for (index, rect) in card_rects(frame.area(), state.codex_offset(), cards.len()) {
         let card = cards[index];
         let (title, title_color) = card_title(card);
@@ -148,5 +161,15 @@ mod tests {
         let rects = card_rects(area, 2, 6);
         assert_eq!(rects[0].0, 2);
         assert_eq!(rects[0].1.y, rects[1].1.y);
+    }
+
+    #[test]
+    fn live_cards_reserve_a_scrollbar_column_only_when_overflowing() {
+        let area = Rect::new(0, 0, 100, 30);
+        let fitting = card_rects(area, 0, visible(area));
+        let overflowing = card_rects(area, 0, visible(area) + 1);
+
+        assert!(overflowing[1].1.right() <= super::super::scrollbar::area(area).x);
+        assert!(overflowing[1].1.right() < fitting[1].1.right());
     }
 }
