@@ -11,7 +11,7 @@ Cross-crate tests. This package contains no production code.
 The workspace suite skips the ignored real-system lifecycle test:
 
 ```text
-scripts/cargo test --workspace
+cargo test --workspace
 ```
 
 Run the complete lifecycle on a full Ubuntu/KVM WT server:

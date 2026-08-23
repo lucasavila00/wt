@@ -1,11 +1,5 @@
 # AGENTS.md
 
-> [!WARNING]
-> **Never run unrestricted Rust builds or tests.** The repository-wide settings
-> in `.cargo/config.toml` cap Cargo build jobs and Rust test
-> threads at four. Keep those limits in place and do not override or raise them;
-> tooling that bypasses Cargo configuration must enforce an equivalent maximum.
-
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.

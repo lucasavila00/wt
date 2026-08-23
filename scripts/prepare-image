@@ -26,4 +26,4 @@ fi
 config=$(realpath "$2")
 
 cd "$root"
-scripts/cargo run --release -p wt-server-installer -- image rebuild --config "$config"
+cargo run --release -p wt-server-installer -- image rebuild --config "$config"

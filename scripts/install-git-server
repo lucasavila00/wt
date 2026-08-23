@@ -83,7 +83,7 @@ cd "$root"
 show_phase "Building the setup tool and proxy"
 setup_binary=target/x86_64-unknown-linux-musl/release/wt-git-proxy-installer
 proxy_binary=target/x86_64-unknown-linux-musl/release/wt-git-proxy
-scripts/cargo build --quiet --locked --release --target x86_64-unknown-linux-musl \
+cargo build --quiet --locked --release --target x86_64-unknown-linux-musl \
     -p wt-git-proxy-installer -p wt-git-proxy
 if readelf --program-headers --wide "$setup_binary" | grep -q INTERP ||
     readelf --version-info --wide "$setup_binary" | grep -q GLIBC_; then

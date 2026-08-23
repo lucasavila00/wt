@@ -26,5 +26,5 @@ It does not install or change the server.
 ## Run
 
 ```text
-scripts/cargo run -p wt-client -- --help
+cargo run -p wt-client -- --help
 ```

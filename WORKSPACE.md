@@ -19,9 +19,9 @@ owns the supported machine implementation and transport contract.
 Useful commands:
 
 ```text
-scripts/cargo check --workspace
-scripts/cargo run -p wt-client -- --help
-scripts/cargo run -p wt-server -- --help
-scripts/cargo run -p wt-server-installer -- --help
+cargo check --workspace
+cargo run -p wt-client -- --help
+cargo run -p wt-server -- --help
+cargo run -p wt-server-installer -- --help
 make install-git-server CONFIG=path/to/config.toml
 ```
