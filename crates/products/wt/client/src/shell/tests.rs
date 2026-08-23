@@ -15,12 +15,12 @@ fn control_view_uses_the_compact_terminal_viewport() {
     let area = Rect::new(0, 0, 100, 30);
     let mut model = ShellModel::new(vec!["local.one".into()]);
 
-    assert_eq!(session_viewport(&model, area), (13, 45));
+    assert_eq!(session_viewport(&model, area), (15, 45));
     model.show_worlds();
-    assert_eq!(session_viewport(&model, area), (13, 45));
+    assert_eq!(session_viewport(&model, area), (15, 45));
     assert_eq!(
         session_viewport(&model, Rect::new(0, 0, 400, 40)),
-        (13, 195)
+        (15, 195)
     );
 }
 
