@@ -15,8 +15,11 @@ fn live_activity_uses_the_compact_terminal_viewport() {
     let area = Rect::new(0, 0, 100, 30);
     let model = ShellModel::new(vec!["local.one".into()]);
 
-    assert_eq!(session_viewport(&model, area), (10, 91));
-    assert_eq!(session_viewport(&model, Rect::new(0, 0, 400, 40)), (6, 95));
+    assert_eq!(session_viewport(&model, area), (10, 44));
+    assert_eq!(
+        session_viewport(&model, Rect::new(0, 0, 400, 40)),
+        (10, 194)
+    );
 }
 
 #[test]

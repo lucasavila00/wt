@@ -23,6 +23,8 @@ use wt_server::ServerConfig;
 
 const INSTALL_PACKAGES: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-packages.sh");
+const INSTALL_DEVELOPMENT_TOOLS: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/install-development-tools.sh");
 const INSTALL_TERMINAL: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-terminal.sh");
 const INSTALL_CODEX: &[u8] =
@@ -131,6 +133,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let network_config = build_dir.join("network.yaml");
     let environment = build_dir.join("build.env");
     let install_packages = build_dir.join("install-packages.sh");
+    let install_development_tools = build_dir.join("install-development-tools.sh");
     let install_terminal = build_dir.join("install-terminal.sh");
     let install_codex = build_dir.join("install-codex.sh");
     let install_diffo = build_dir.join("install-diffo.sh");
@@ -178,11 +181,14 @@ pub(super) fn run_kvm_build<R: Runner>(
             git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
             agent_tools_sha256: &sha_bytes(INSTALL_AGENT_TOOLS),
             mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
+            development_tools: input.image.development_tools,
         }
         .render(),
     )
     .context("write image build environment")?;
     fs::write(&install_packages, INSTALL_PACKAGES).context("write package installer")?;
+    fs::write(&install_development_tools, INSTALL_DEVELOPMENT_TOOLS)
+        .context("write development tools installer")?;
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
@@ -206,6 +212,10 @@ pub(super) fn run_kvm_build<R: Runner>(
         (
             install_packages.as_path(),
             "/var/tmp/wt-install-packages.sh",
+        ),
+        (
+            install_development_tools.as_path(),
+            "/var/tmp/wt-install-development-tools.sh",
         ),
         (
             install_terminal.as_path(),

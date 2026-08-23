@@ -16,7 +16,7 @@ Buffer {
         "    ││                                                         │",
         "    ││                                                         │",
         "    │└─────────────────────────────────────────────────────────┘",
-        "    │[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activ",
+        "    │[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: ac",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

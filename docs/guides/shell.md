@@ -47,10 +47,10 @@ through Codex sessions, Worlds, and the experimental live-session activity.
 
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
-background. In either activity, `Up` and `Down` select cards, the mouse wheel
-scrolls them, and `Enter` or left click opens the selected world or live Codex
-pane. Opening a Codex pane uses a short control SSH connection; it does not
-replace any world's playback connection.
+background. All activities use a two-column card grid. Arrow keys select cards,
+the mouse wheel scrolls them by row, and `Enter` or left click opens the selected
+world or live Codex pane. Opening a Codex pane uses a short control SSH
+connection; it does not replace any world's playback connection.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;
@@ -77,15 +77,14 @@ reported, such as `unknown(compact)`.
 
 The experimental live-session activity uses the same observed sessions but
 shows each session's state and report age around the persistent live terminal
-stream WT already maintains for its world. At 400 terminal columns and wider,
-previews use a four-column by four-row grid; narrower terminals use one card per
-row. WT temporarily resizes world playback terminals to the smaller preview
-viewport while this activity is visible and restores the full-screen size when
-it is left. Arrow keys, the mouse wheel, `Enter`, and clicking navigate or open
-the previews. When a world has one live Codex session, WT focuses that session's
-reported pane on entry. Cards for multiple live sessions in one world share its
-one stream and show a warning; open a card to choose the pane in the full world
-view.
+stream WT already maintains for its world. Previews use a two-column grid with
+as many rows as fit in the terminal. WT temporarily resizes world playback
+terminals to the smaller preview viewport while this activity is visible and
+restores the full-screen size when it is left. Arrow keys, the mouse wheel,
+`Enter`, and clicking navigate or open the previews. When a world has one live
+Codex session, WT focuses that session's reported pane on entry. Cards for
+multiple live sessions in one world share its one stream and show a warning;
+open a card to choose the pane in the full world view.
 
 Known terminal-compatibility gaps are TODOs to fix:
 
