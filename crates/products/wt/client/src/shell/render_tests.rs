@@ -456,5 +456,5 @@ fn live_session_repository_is_card_chrome() {
             .collect::<String>()
     };
     assert_eq!(row(1), "│world output                                 │");
-    assert_eq!(row(13), "└───────────────────── github:lucasavila00/wt ┘");
+    assert_eq!(row(15), "└───────────────────── github:lucasavila00/wt ┘");
 }
