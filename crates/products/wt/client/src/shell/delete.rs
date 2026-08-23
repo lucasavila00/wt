@@ -47,6 +47,15 @@ impl Flow {
         }
     }
 
+    pub(super) fn confirm(world: ShellWorld) -> Self {
+        Self {
+            phase: Phase::Confirm {
+                world,
+                choice: ConfirmChoice::Cancel,
+            },
+        }
+    }
+
     pub(super) fn handle_event(
         &mut self,
         event: &Event,

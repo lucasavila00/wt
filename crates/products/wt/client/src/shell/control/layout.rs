@@ -202,6 +202,35 @@ pub(in crate::shell) fn world_card_at_position(
     card_grid(area, scroll, count, WORLD_CARD_HEIGHT).card_at(column, row)
 }
 
+pub(in crate::shell) fn world_card_action_at_position(
+    area: Rect,
+    scroll: usize,
+    count: usize,
+    action_width: u16,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    let grid = card_grid(area, scroll, count, WORLD_CARD_HEIGHT);
+    if !grid.viewport.contains(Position::new(column, row)) {
+        return None;
+    }
+    grid.cards().find_map(|card| {
+        let top = card.content_y.checked_sub(grid.scroll)?;
+        let top = grid
+            .viewport
+            .y
+            .saturating_add(u16::try_from(top).unwrap_or(u16::MAX));
+        let right = grid
+            .viewport
+            .x
+            .saturating_add(card.x)
+            .saturating_add(card.width)
+            .saturating_sub(1);
+        let left = right.saturating_sub(action_width);
+        (row == top && column >= left && column < right).then_some(card.index)
+    })
+}
+
 pub(in crate::shell) fn codex_card_grid(
     area: Rect,
     activity: Activity,

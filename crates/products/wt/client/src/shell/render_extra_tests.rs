@@ -114,3 +114,117 @@ fn running_world_without_a_codex_session_is_a_warning() {
     assert_eq!(title.fg, Some(Color::Yellow));
     assert!(title.add_modifier.contains(Modifier::BOLD));
 }
+
+#[test]
+fn world_card_has_a_top_right_menu_button() {
+    let area = Rect::new(0, 0, 120, 12);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = ShellModel::new(vec![crate::shell::ShellWorld::test("ars.calm-wombat", 1)]);
+    model.show_worlds();
+    model.set_codex(Vec::new(), "2026-08-23T12:00:00Z".into(), area);
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    let card = card_grid(area, 0, 1, WORLD_CARD_HEIGHT)
+        .card_rect(0)
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let rendered = (card.y..card.bottom())
+        .map(|row| {
+            (card.x..card.right())
+                .map(|column| buffer.cell((column, row)).unwrap().symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(rendered, @"
+    ┌ 󰚩 IDLE · NO ACTIVE CODEX SESSION ───────────── … Menu ┐
+    │ars.calm-wombat                                        │
+    │2 CPU · 4G · 1G/32G disk                               │
+    │                                                       │
+    │                                                       │
+    │                                                       │
+    │                                                       │
+    │                                                       │
+    │Enter or click to open                                 │
+    └───────────────────────────────────────────────────────┘
+    ");
+}
+
+#[test]
+fn world_menu_matches_the_command_palette_style() {
+    let area = Rect::new(0, 0, 120, 12);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = ShellModel::new(vec![crate::shell::ShellWorld::test("ars.calm-wombat", 1)]);
+    model.show_worlds();
+    let card = card_grid(area, 0, 1, WORLD_CARD_HEIGHT)
+        .card_rect(0)
+        .unwrap();
+    model.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: card.right() - 2,
+            row: card.y,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        area,
+    );
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    let (menu, _, _, results, _) = super::super::world_menu::menu_layout(area);
+    let buffer = terminal.backend().buffer();
+    let rendered = (menu.y..menu.bottom())
+        .map(|row| {
+            (menu.x..menu.right())
+                .map(|column| buffer.cell((column, row)).unwrap().symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(rendered, @"
+    ┌World Menu──────────────────────────────────────────────────────────┐
+    │ars.calm-wombat                                                     │
+    │────────────────────────────────────────────────────────────────────│
+    │ Delete                                                            │
+    │                                                                    │
+    │                                                                    │
+    │                                                                    │
+    │Enter run · Esc close                                               │
+    └────────────────────────────────────────────────────────────────────┘
+    ");
+    assert!(buffer
+        .cell((results.x + 2, results.y))
+        .unwrap()
+        .style()
+        .add_modifier
+        .contains(Modifier::REVERSED));
+}

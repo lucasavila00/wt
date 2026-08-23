@@ -1,6 +1,6 @@
 # ADR 0074: Open world actions from a context menu
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 
 ## Decision
