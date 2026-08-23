@@ -169,6 +169,18 @@ fn retained_image_owns_static_guest_binaries() {
 }
 
 #[test]
+fn retained_image_sets_codex_model_defaults() {
+    insta::assert_snapshot!(
+        std::str::from_utf8(CODEX_REQUIREMENTS).unwrap(),
+        @r###"
+    [models.new_thread]
+    model = "gpt-5.6-terra"
+    model_reasoning_effort = "high"
+    "###
+    );
+}
+
+#[test]
 fn installed_image_drift_is_replaced_automatically() {
     assert_eq!(
         installed_image_state(false, false, || unreachable!()),
