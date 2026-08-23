@@ -89,6 +89,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Current system: Ubuntu 24.04 amd64 servers, local and OpenSSH client contexts, libvirt/KVM, Git access, and SSH access to guests.
 - Guest SSH and OpenSSH transport to `wt-server` are in scope; runtime environment overrides and emulation fallback are not.
 - Keep `wt-server` slim. Host setup belongs in `wt-server-installer`. Real-system tests belong in `wt-end-to-end-tests`.
+- `image.development_tools` is an explicit, default-off golden-image option.
+  Keep it disabled in KVM E2E inputs so normal E2E does not download current
+  language runtimes or container tooling.
 - Use Rust for typed validation, state, and lifecycle decisions. Whole-flow POSIX
   shell assets are allowed for guest and server installation procedures.
 - Match verification to the files changed. Documentation-only changes need no Rust
