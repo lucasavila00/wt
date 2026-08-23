@@ -329,19 +329,37 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             continue;
         }
         let world = &model.worlds()[index];
-        let (icon, color) = match world.status {
-            wt_control_protocol::InstanceStatus::Running => ("󰐊", Color::Green),
-            wt_control_protocol::InstanceStatus::Provisioning => ("󰔟", Color::Yellow),
-            wt_control_protocol::InstanceStatus::Stopped => ("󰅖", Color::Reset),
-            wt_control_protocol::InstanceStatus::Destroying => ("󰩹", Color::Yellow),
-            wt_control_protocol::InstanceStatus::Error => ("󰅚", Color::Red),
+        let idle = world.status == wt_control_protocol::InstanceStatus::Running
+            && model.control().codex_refresh().updated_at().is_some()
+            && !super::world_card::has_active_codex_session(world, model.control().codex());
+        let (icon, color, status) = match (world.status, idle) {
+            (_, true) => (
+                "󰚩",
+                Color::Yellow,
+                "IDLE · NO ACTIVE CODEX SESSION".to_owned(),
+            ),
+            (wt_control_protocol::InstanceStatus::Running, false) => {
+                ("󰐊", Color::Green, "RUNNING".to_owned())
+            }
+            (wt_control_protocol::InstanceStatus::Provisioning, false) => {
+                ("󰔟", Color::Yellow, "PROVISIONING".to_owned())
+            }
+            (wt_control_protocol::InstanceStatus::Stopped, false) => {
+                ("󰅖", Color::Reset, "STOPPED".to_owned())
+            }
+            (wt_control_protocol::InstanceStatus::Destroying, false) => {
+                ("󰩹", Color::Yellow, "DESTROYING".to_owned())
+            }
+            (wt_control_protocol::InstanceStatus::Error, false) => {
+                ("󰅚", Color::Red, "ERROR".to_owned())
+            }
         };
         draw_world_card(
             frame,
             rect,
             icon,
             color,
-            &world.status.to_string().to_uppercase(),
+            &status,
             &world.name,
             &world.resources,
             (world.detail != "-").then_some(world.detail.as_str()),
