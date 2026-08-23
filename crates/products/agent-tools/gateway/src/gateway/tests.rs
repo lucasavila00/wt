@@ -2,7 +2,7 @@ use super::*;
 use crate::CodexGitContext;
 use crate::{CodexSessionStartSource, CodexSessionStartSourceKind};
 use diesel::prelude::*;
-use wt_git_smart_protocol::PushViolation;
+use wt_git_smart_protocol::{write_packet, PushViolation};
 use wt_workload_registry::schema::worlds;
 
 #[test]

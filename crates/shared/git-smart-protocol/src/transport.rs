@@ -279,6 +279,38 @@ fn copy_unbuffered(mut from: impl Read, mut to: impl Write) -> std::io::Result<u
     }
 }
 
+fn forward_receive_pack_response(
+    stream: &mut impl Write,
+    response: &[u8],
+    push_message: ResponseMessage<'_>,
+) -> Result<()> {
+    let Some(body) = response.strip_suffix(b"0000") else {
+        return stream.write_all(response).context("forward Git response");
+    };
+    let Ok(message) = push_message(response) else {
+        return stream
+            .write_all(response)
+            .context("forward Git response without optional diagnostics");
+    };
+    if message.is_empty() {
+        return stream.write_all(response).context("forward Git response");
+    }
+    let mut forwarded = Vec::with_capacity(response.len() + message.len() + 5);
+    forwarded.extend_from_slice(body);
+    let mut packet = Vec::with_capacity(message.len() + 1);
+    packet.push(2);
+    packet.extend_from_slice(message.as_bytes());
+    if write_packet(&mut forwarded, &packet).is_err() {
+        return stream
+            .write_all(response)
+            .context("forward Git response without optional diagnostics");
+    }
+    forwarded.extend_from_slice(b"0000");
+    stream
+        .write_all(&forwarded)
+        .context("forward Git response with optional diagnostics")
+}
+
 fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
@@ -303,21 +335,7 @@ fn bridge_child<S: DuplexStream>(
             .read_to_end(&mut response)
             .context("read Git response")?;
         if let Some(push_message) = push_message {
-            if let Some(body) = response.strip_suffix(b"0000") {
-                stream.write_all(body).context("forward Git response")?;
-                let message = push_message(&response)?;
-                if !message.is_empty() {
-                    let mut packet = Vec::with_capacity(message.len() + 1);
-                    packet.push(2);
-                    packet.extend_from_slice(message.as_bytes());
-                    write_packet(stream, &packet)?;
-                }
-                stream.write_all(b"0000").context("finish Git response")?;
-            } else {
-                stream
-                    .write_all(&response)
-                    .context("forward Git response")?;
-            }
+            forward_receive_pack_response(stream, &response, push_message)?;
         } else {
             stream
                 .write_all(&response)
@@ -445,5 +463,58 @@ mod tests {
                 "LogLevel=ERROR",
             ]
         );
+    }
+
+    #[test]
+    fn optional_push_diagnostic_failure_preserves_provider_framing() {
+        let response = b"000a\x01ok hi0000";
+        let mut forwarded = Vec::new();
+        forward_receive_pack_response(&mut forwarded, response, &|_| {
+            bail!("cannot render optional push diagnostics")
+        })
+        .unwrap();
+
+        assert_eq!(forwarded, response);
+    }
+
+    #[test]
+    fn optional_push_diagnostic_is_inserted_before_the_terminal_flush() {
+        let response = b"000a\x01ok hi0000";
+        let mut forwarded = Vec::new();
+        forward_receive_pack_response(&mut forwarded, response, &|_| Ok("published\n".into()))
+            .unwrap();
+
+        assert_eq!(forwarded, b"000a\x01ok hi000f\x02published\n0000");
+    }
+
+    #[test]
+    fn empty_optional_push_diagnostic_preserves_provider_framing() {
+        let response = b"000a\x01ok hi0000";
+        let mut forwarded = Vec::new();
+        forward_receive_pack_response(&mut forwarded, response, &|_| Ok(String::new())).unwrap();
+
+        assert_eq!(forwarded, response);
+    }
+
+    #[test]
+    fn response_without_terminal_flush_is_forwarded_unchanged() {
+        let response = b"000a\x01ok hi";
+        let mut forwarded = Vec::new();
+        forward_receive_pack_response(&mut forwarded, response, &|_| {
+            bail!("callback must not be called")
+        })
+        .unwrap();
+
+        assert_eq!(forwarded, response);
+    }
+
+    #[test]
+    fn oversized_optional_push_diagnostic_preserves_provider_framing() {
+        let response = b"000a\x01ok hi0000";
+        let mut forwarded = Vec::new();
+        forward_receive_pack_response(&mut forwarded, response, &|_| Ok("x".repeat(65_520)))
+            .unwrap();
+
+        assert_eq!(forwarded, response);
     }
 }

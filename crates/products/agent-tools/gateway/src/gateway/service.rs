@@ -83,12 +83,8 @@ impl Gateway {
                     &mut stream,
                     &TransportResponse::with_message(git_context_header(&source)),
                 )?;
-                if let Err(error) = self.serve_git(&mut stream, service, &source, &grant) {
-                    let message = format!("ERR WT Git gateway failed: {error:#}\n");
-                    let _ = write_packet(&mut stream, message.as_bytes());
-                    let _ = stream.flush();
-                }
-                Ok(())
+                self.serve_git(&mut stream, service, &source, &grant)
+                    .context("serve Git request")
             }
             ClientOperation::Cli { args } => {
                 let response = match self.serve_cli(&args, &grant) {
@@ -397,11 +393,19 @@ impl Gateway {
             Some(&message),
         )?;
         if let Some(receive_pack) = result.receive_pack {
-            for update in successful_push_updates(
+            let updates = successful_push_updates(
                 &receive_pack.commands,
                 &receive_pack.response,
                 receive_pack.sideband,
-            )? {
+            );
+            let updates = match updates {
+                Ok(updates) => updates,
+                Err(error) => {
+                    eprintln!("wt-agent-tool-gateway: inspect successful Git push: {error:#}");
+                    Vec::new()
+                }
+            };
+            for update in updates {
                 let branch = update
                     .reference
                     .strip_prefix("refs/heads/")
