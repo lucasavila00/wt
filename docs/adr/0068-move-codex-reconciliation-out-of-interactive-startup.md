@@ -1,6 +1,6 @@
 # ADR 0068: Reconcile Codex sessions in the background
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 - Amends: [ADR 0060](0060-use-a-fixed-codex-prelaunch-wrapper.md)
 

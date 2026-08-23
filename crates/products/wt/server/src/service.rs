@@ -23,6 +23,10 @@ pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<S
     codex_catalog::refresh(store, root)
 }
 
+pub fn codex_session_catalog_generation(store: &Store) -> Result<String, String> {
+    codex_catalog::generation(store)
+}
+
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
 
