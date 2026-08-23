@@ -163,10 +163,10 @@ impl ControlState {
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Up if self.activity != Activity::Worlds => {
-                self.move_codex(-(CARD_COLUMNS as isize), area)
+                self.move_codex(-(super::super::live::columns(area) as isize), area)
             }
             KeyCode::Down if self.activity != Activity::Worlds => {
-                self.move_codex(CARD_COLUMNS as isize, area)
+                self.move_codex(super::super::live::columns(area) as isize, area)
             }
             KeyCode::Left if self.activity != Activity::Worlds => self.move_codex(-1, area),
             KeyCode::Right if self.activity != Activity::Worlds => self.move_codex(1, area),
@@ -191,11 +191,11 @@ impl ControlState {
         }
         match mouse.kind {
             MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
-                self.move_codex(-(CARD_COLUMNS as isize), area);
+                self.move_codex(-(super::super::live::columns(area) as isize), area);
                 return (true, None);
             }
             MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
-                self.move_codex(CARD_COLUMNS as isize, area);
+                self.move_codex(super::super::live::columns(area) as isize, area);
                 return (true, None);
             }
             MouseEventKind::Down(MouseButton::Left) => {}

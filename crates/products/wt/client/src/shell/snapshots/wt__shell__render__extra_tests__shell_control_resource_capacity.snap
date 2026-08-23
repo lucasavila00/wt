@@ -1,5 +1,6 @@
 ---
 source: crates/products/wt/client/src/shell/render_extra_tests.rs
+assertion_line: 110
 expression: terminal.backend().buffer()
 ---
 Buffer {
@@ -16,7 +17,7 @@ Buffer {
         "    ││                                                                                                                                                         │",
         "    ││                                                                                                                                                         │",
         "    │└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
-        "    │[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]                                       CPU 6/16 · RAM 10G/32G · Disk 68G/256G",
+        "    │[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]                                    CPU 6/16 · RAM 10G/32G · Disk 68G/256G",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
