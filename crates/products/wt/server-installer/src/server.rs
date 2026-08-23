@@ -413,18 +413,22 @@ fn install_services(
 }
 
 fn remove_obsolete_services(runner: &impl Runner) -> Result<()> {
-    runner.run(
-        cmd!(
-            "sudo",
-            "systemctl",
-            "disable",
-            "--now",
+    for (name, path) in [
+        (
             "wt-agent-tool-gateway.service",
-            "wt-codex-integration-auth.path",
-            "wt-ssh-authorized-keys.path",
+            "/etc/systemd/system/wt-agent-tool-gateway.service",
         ),
-        "disable superseded WT services",
-    )?;
+        (
+            "wt-codex-integration-auth.path",
+            "/etc/systemd/system/wt-codex-integration-auth.path",
+        ),
+        (
+            "wt-ssh-authorized-keys.path",
+            "/etc/systemd/system/wt-ssh-authorized-keys.path",
+        ),
+    ] {
+        disable_obsolete_unit(runner, name, Path::new(path))?;
+    }
     runner.run(
         cmd!(
             "sudo",
@@ -437,8 +441,22 @@ fn remove_obsolete_services(runner: &impl Runner) -> Result<()> {
             "/etc/systemd/system/wt-ssh-authorized-keys.path",
             "/usr/local/libexec/wt-codex-integration-auth-share",
             "/usr/local/libexec/wt-ssh-authorized-keys-share",
+            "/etc/systemd/system/multi-user.target.wants/wt-agent-tool-gateway.service",
+            "/etc/systemd/system/multi-user.target.wants/wt-codex-integration-auth.path",
+            "/etc/systemd/system/multi-user.target.wants/wt-ssh-authorized-keys.path",
         ),
         "remove superseded WT services",
+    )
+}
+
+fn disable_obsolete_unit(runner: &impl Runner, name: &str, path: &Path) -> Result<()> {
+    let output = runner.output(cmd!("sudo", "systemctl", "disable", "--now", name))?;
+    if output.status.success() || !path.exists() {
+        return Ok(());
+    }
+    bail!(
+        "disable superseded WT service {name}: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
     )
 }
 
