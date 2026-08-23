@@ -281,7 +281,7 @@ mod tests {
             }
             .render(),
             @r###"
-WT_IMAGE_KIND='host'
+WT_IMAGE_KIND='guest'
 WT_USER='wt'
 WT_GROUP='wt'
 WT_UID='1001'

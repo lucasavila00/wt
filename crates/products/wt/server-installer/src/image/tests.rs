@@ -139,7 +139,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
         .err()
         .unwrap();
 
-    insta::assert_snapshot!(error.to_string(), @"host image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+    insta::assert_snapshot!(error.to_string(), @"guest image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
     assert!(!prepared.with_extension("manifest.json").exists());
 }
 
@@ -161,7 +161,7 @@ fn host_image_owns_static_guest_binaries() {
         .join("\n");
 
     insta::assert_snapshot!(inputs, @r###"
-    wt	/var/tmp/wt-guest
+    wtg	/var/tmp/wtg
     "###);
 }
 
@@ -179,7 +179,7 @@ fn host_image_sets_codex_model_defaults() {
 
 #[test]
 fn host_image_grants_the_user_nested_kvm_access() {
-    let prepare = std::str::from_utf8(HOST_PREPARE).unwrap();
+    let prepare = std::str::from_utf8(GUEST_PREPARE).unwrap();
 
     assert!(prepare.contains("usermod --append --groups sudo,kvm \"$WT_USER\""));
 }
@@ -290,7 +290,7 @@ fn progress_output_is_phase_based() {
         "installing base operating-system packages",
         Duration::from_secs(60),
     );
-    insta::assert_snapshot!(message, @"Host image build: installing base operating-system packages (elapsed=60s)");
+    insta::assert_snapshot!(message, @"Guest image build: installing base operating-system packages (elapsed=60s)");
 }
 
 #[test]

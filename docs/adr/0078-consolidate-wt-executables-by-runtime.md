@@ -1,65 +1,64 @@
 # ADR 0078: Consolidate WT executables by runtime
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 
 ## Context
 
-The WT installer currently publishes seven executable files:
+The WT installer published seven executable files:
 `wt-agent-tool-gateway`, `wt-agent-tool-gateway-relay`,
-`git-remote-wt-agent`, `wt-tools`, `wt`, `wt-codex-integration`, and
-`wt-server`. Most select a mode of the same installed WT release. Separate
-files multiply build, validation, image-contract, installation, and upgrade
-bookkeeping without making those modes more isolated at runtime.
+`git-remote-wt-agent`, `wtg tools`, `wt`, `wt-codex-integration`, and
+`wt-server`. Most selected a mode of the same installed WT release. Separate
+files multiplied build, validation, image-contract, installation, and upgrade
+bookkeeping without isolating those modes at runtime.
 
-Some separation is real. The host server links the supported host libvirt ABI,
-while guest tools must be static executables that work in golden images.
+Three compatibility and audience boundaries are real. The user-facing client
+must run without server or guest dependencies. The server links the supported
+libvirt ABI. Guest tools must be static executables that work in golden images.
 External programs also require particular command names: Git discovers a
 remote helper by name, and the Codex wrapper must occupy the `codex` command.
 
 ## Decision
 
-Build and install one WT executable per runtime compatibility boundary:
+Install three WT executables with distinct names:
 
-- a host GNU executable containing the CLI, server, and host installation
-  commands; and
-- a static musl guest executable containing the relay, Git remote-helper,
-  agent tools, and Codex integration commands.
+| Executable | Runtime | Commands |
+|------------|---------|----------|
+| `wt` | user workstation | client and terminal workspace |
+| `wts` | WT server | control daemon, API bridge, setup, and image management |
+| `wtg` | WT guest | relay, agent tools, and Codex integration |
 
-Both executables use the `wt` command tree. Long-running or internal entrypoints
-are explicit subcommands, such as `wt server`, `wt guest relay`, and
-`wt codex ...`; user-facing agent-tool operations remain under a single
-`wt tools` command family. Command parsing dispatches into typed Rust library
-code rather than spawning another WT executable.
+`wts` is a GNU executable linked to the server's libvirt ABI. `wtg` is a
+static musl executable baked into each guest image. `wt` remains the
+user-facing client and does not acquire server or guest commands.
 
-Install extra names only where an external invocation contract requires them.
-Those names are symlinks to the runtime's `wt` executable, which dispatches by
-its invoked name:
+Long-running and internal entrypoints are explicit subcommands: `wts serve`,
+`wtg relay`, `wtg tools`, and `wtg codex ...`. Command parsing dispatches
+into typed Rust library code instead of spawning another WT executable.
+
+Install extra guest names only where an external invocation contract requires
+one. They are symlinks to `wtg`, which dispatches by its invoked name:
 
 - `git-remote-wt-agent` for Git's remote-helper discovery; and
 - `codex` at the two supported wrapper locations for Codex prelaunch behavior.
 
-Systemd and WT-owned callers use `wt` with an explicit subcommand and do not
-receive compatibility aliases. Do not retain the current executable names as
-general compatibility shims; this is an installation contract change and is
-deployed as one coherent server and golden-image generation.
+Do not retain the former executable names as general compatibility shims. This
+is an installation contract change deployed as one coherent server and guest
+image generation.
 
 The standalone Git proxy and its installer remain separate release
 executables. They form an independently installable product with different
 configuration and credentials, as established by ADR 0016. Development-only
-and test executables are outside this decision.
+test executables are outside this decision.
 
 ## Consequences
 
-- A normal WT installation has one host program, one guest program in each
-  image, and only protocol-required symlink entrypoints.
-- One command tree makes installed capabilities discoverable and gives version
-  and diagnostics commands a single release identity.
-- Build and installer code still produces two artifacts because static guest
-  portability and host libvirt linkage are incompatible requirements.
-- Updating either artifact requires validating all of its command modes.
-  Internal module boundaries and targeted tests remain even though executable
-  packaging is consolidated.
-- Scripts, service units, image contracts, and documentation must migrate
-  atomically; old worlds continue to use the executable embedded in their
+- The executable name states where it runs: client `wt`, server `wts`, or
+  guest `wtg`.
+- A normal server installation publishes `wts`; a guest image contains one
+  `wtg` file plus the two protocol-required symlinks.
+- Updating `wts` or `wtg` requires validating all of its command modes.
+  Internal module boundaries and targeted tests remain.
+- Scripts, service units, image contracts, and documentation migrate
+  atomically; old guests continue to use the executable embedded in their
   original image generation.

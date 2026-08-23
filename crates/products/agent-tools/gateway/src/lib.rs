@@ -1,15 +1,15 @@
 extern crate self as wt_agent_tool_gateway;
 
 mod gateway;
-mod protocol;
-mod stream;
-mod vsock;
 #[path = "bin/git-remote-wt-agent.rs"]
 pub mod git_remote_command;
+mod protocol;
 #[path = "bin/relay.rs"]
 pub mod relay_command;
+mod stream;
 #[path = "bin/wt-tools.rs"]
 pub mod tools_command;
+mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{

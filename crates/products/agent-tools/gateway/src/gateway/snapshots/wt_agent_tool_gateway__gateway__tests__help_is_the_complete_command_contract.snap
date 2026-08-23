@@ -2,12 +2,12 @@
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
 expression: wt_tools_help()
 ---
-wt-tools reads and changes explicitly identified Git provider resources and records
-feedback about wt-tools itself. It accepts exactly one JSON command object and
+wtg tools reads and changes explicitly identified Git provider resources and records
+feedback about wtg tools itself. It accepts exactly one JSON command object and
 rejects unknown fields.
 
 USAGE:
-wt-tools '<JSON>'
+wtg tools '<JSON>'
 
 TYPESCRIPT COMMAND TYPE:
     /** State transition accepted by the set_mr command. */
@@ -76,12 +76,12 @@ TYPESCRIPT COMMAND TYPE:
       | { command: WtToolsFeedbackCommand };
 
 EXAMPLE:
-wt-tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"}}'
+wtg tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"}}'
 
 `show_mr_for_branch` returns the single open MR from the named branch in the target
 repository. It fails when there is no match or multiple matches.
 
-The four wt-tools feedback actions omit `target` and store feedback against this world
+The four wtg tools feedback actions omit `target` and store feedback against this world
 without contacting the Git provider.
 
 Provider operations return one JSON result or error object. Help remains

@@ -23,7 +23,7 @@ fn main() {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-fn render_error(message: &str) -> serde_json::Value {
+pub fn render_error(message: &str) -> serde_json::Value {
     serde_json::json!({ "error": { "message": message } })
 }
 

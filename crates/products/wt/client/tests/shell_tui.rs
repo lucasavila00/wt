@@ -101,7 +101,7 @@ esac
             "@PROTOCOL_VERSION@",
             &wt_control_protocol::PROTOCOL_VERSION.to_string(),
         );
-        write_executable(&bin.join("wt-server"), &server);
+        write_executable(&bin.join("wts"), &server);
         write_executable(
             &bin.join("ssh"),
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'focus-pane'*'%1') printf 'wt-host:%%1:123e4567-e89b-12d3-a456-426614174000:0\\n' ;;\n  *'-M -S'*)\n    if test \"$target\" = local.first && test -f \"$HOME/success-creates\"; then\n      while ! test -f \"$HOME/release-first-ssh\"; do sleep 0.05; done\n    fi\n    touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat\n    ;;\n  *) exit 2 ;;\nesac\n",

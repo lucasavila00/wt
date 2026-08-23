@@ -58,7 +58,9 @@ fn main() {
     }
 }
 
-pub fn run_from(args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>) -> Result<()> {
+pub fn run_from(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<()> {
     let cli = Cli::parse_from(args);
     let vsock_port = resolve_vsock_port(cli.vsock_port)?;
     let token = fs::read_to_string(&cli.grant_file)

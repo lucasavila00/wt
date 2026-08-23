@@ -22,13 +22,13 @@ pub const GUEST_UID: u32 = WT_IDENTITY.uid;
 pub const GUEST_GID: u32 = WT_IDENTITY.gid;
 pub const GUEST_IDENTITY: GuestIdentity = WT_IDENTITY.numeric();
 pub const GUEST_SSH_PORT: u16 = 22;
-pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-host-access";
-pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-host-git-author";
-pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-host-agent-tools";
-pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-host-mount-codex";
+pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-guest-access";
+pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-guest-git-author";
+pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-guest-agent-tools";
+pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-guest-mount-codex";
 
-const AGENT_TOOLS_STAGE: &str = "/tmp/wt-host-agent-tools-";
-const GIT_AUTHOR_STAGE: &str = "/tmp/wt-host-git-author-";
+const AGENT_TOOLS_STAGE: &str = "/tmp/wt-guest-agent-tools-";
+const GIT_AUTHOR_STAGE: &str = "/tmp/wt-guest-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,7 +66,7 @@ pub fn validate_guest_identity(actual: GuestIdentity) -> Result<(), WorkerError>
         return Ok(());
     }
     Err(WorkerError::new(format!(
-        "host image guest identity mismatch: expected UID/GID {}:{}, got {}:{}",
+        "guest image guest identity mismatch: expected UID/GID {}:{}, got {}:{}",
         GUEST_IDENTITY.uid, GUEST_IDENTITY.gid, actual.uid, actual.gid
     )))
 }

@@ -1,7 +1,6 @@
 ---
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
-assertion_line: 44
 expression: cli_unavailable()
 ---
-wt-tools: provider API commands are not available for this project.
+wtg tools: provider API commands are not available for this project.
 Normal Git fetch, pull, and push are available.

@@ -113,7 +113,7 @@ fn setup_messages_explain_the_operation() {
     insta::assert_snapshot!(success_message(Path::new("./server.toml")), @"
     WT server is ready.
     Config: ./server.toml
-    Services started: wt-server, wt-agent-tool-gateway
+    Service started: wts
     Next: configure a WT client, then run `wt new`.
     ");
 }
@@ -161,14 +161,14 @@ fn config_drift_message_explains_recovery() {
 
 #[test]
 fn service_unit_drift_requires_a_runtime_reset() {
-    let path = Path::new("/etc/systemd/system/wt-server.service");
+    let path = Path::new("/etc/systemd/system/wts.service");
     assert!(!service_unit_needs_replacement(path, b"same", b"same", false).unwrap());
     assert!(service_unit_needs_replacement(path, b"old", b"new", true).unwrap());
     insta::assert_snapshot!(
         service_unit_needs_replacement(path, b"old", b"new", false)
             .unwrap_err()
             .to_string(),
-        @"service unit drift at /etc/systemd/system/wt-server.service; run make clear before reinstalling"
+        @"service unit drift at /etc/systemd/system/wts.service; run make clear before reinstalling"
     );
 }
 
@@ -205,13 +205,12 @@ binary_dir = "/opt/wt bin"
     )
     .unwrap();
     let server = input.materialize();
-    let unit = String::from_utf8(server_service(&server)).unwrap();
+    let unit = String::from_utf8(server_service(&input, &server)).unwrap();
     insta::assert_snapshot!(unit, @r###"
     [Unit]
-    Description=WT control-plane daemon
-    Requires=wt-codex-integration-auth.service wt-ssh-authorized-keys.service
-    Wants=network-online.target wt-agent-tool-gateway.service wt-codex-integration-auth.path wt-ssh-authorized-keys.path
-    After=network-online.target libvirtd.service wt-agent-tool-gateway.service wt-codex-integration-auth.service wt-ssh-authorized-keys.service
+    Description=WT server daemon
+    Wants=network-online.target
+    After=network-online.target libvirtd.service
 
     [Service]
     Type=simple
@@ -219,62 +218,17 @@ binary_dir = "/opt/wt bin"
     Group=wt
     Environment="HOME=/home/wt"
     Environment="WT_AGENT_TOOL_VSOCK_PORT=18017"
-    ExecStart="/opt/wt bin/wt-server" serve
+    LoadCredentialEncrypted=github-api-token:/etc/credstore.encrypted/wts-github-api-token
+    LoadCredentialEncrypted=github-ssh-private-key:/etc/credstore.encrypted/wts-github-ssh-private-key
+    ExecStart="/opt/wt bin/wts" serve
     Restart=on-failure
     RuntimeDirectory=wt
     RuntimeDirectoryMode=0700
+    StateDirectory=wt/agent-tools
+    StateDirectoryMode=0700
     UMask=0077
 
     [Install]
     WantedBy=multi-user.target
     "###);
-    let codex_auth = String::from_utf8(codex_auth_service(&server)).unwrap();
-    insta::assert_snapshot!(codex_auth, @r###"
-    [Unit]
-    Description=Refresh the WT Codex authentication share
-
-    [Service]
-    Type=oneshot
-    User=wt
-    Group=wt
-    Environment="HOME=/home/wt"
-    ExecStart="/usr/local/libexec/wt-codex-integration-auth-share" "/home/wt/.codex/auth.json" "/home/wt/.codex/.wt-auth"
-    UMask=0077
-    "###);
-    insta::assert_snapshot!(String::from_utf8(shared_file_path_unit("Codex authentication", server.codex_paths().auth, "wt-codex-integration-auth.service")).unwrap(), @r###"
-    [Unit]
-    Description=Watch the WT Codex authentication file
-
-    [Path]
-    PathChanged=/home/wt/.codex/auth.json
-    Unit=wt-codex-integration-auth.service
-
-    [Install]
-    WantedBy=multi-user.target
-    "###);
-    insta::assert_snapshot!(String::from_utf8(shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH, &[])).unwrap(), @r###"
-    [Unit]
-    Description=Refresh the WT SSH authorized keys share
-
-    [Service]
-    Type=oneshot
-    User=wt
-    Group=wt
-    Environment="HOME=/home/wt"
-    ExecStart=/usr/local/libexec/wt-ssh-authorized-keys-share
-    UMask=0077
-    "###);
-    insta::assert_snapshot!(String::from_utf8(ssh_keys_path_unit()).unwrap(), @r###"
-    [Unit]
-    Description=Watch the WT SSH authorized keys file
-
-    [Path]
-    PathChanged=/home/wt/.ssh/authorized_keys
-    Unit=wt-ssh-authorized-keys.service
-
-    [Install]
-    WantedBy=multi-user.target
-    "###);
-    let gateway = String::from_utf8(gateway_service(&input, &server)).unwrap();
-    insta::assert_snapshot!("gateway_service", gateway);
 }

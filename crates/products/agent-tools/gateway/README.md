@@ -3,7 +3,7 @@
 Scoped Git transport for guests.
 
 The host gateway owns provider credentials and grants. The guest relay carries
-requests over vsock. `git-remote-wt-agent` and `wt-tools` expose the allowed Git
+requests over vsock. `git-remote-wt-agent` and `wtg tools` expose the allowed Git
 and provider operations inside guests.
 
 The same authenticated relay carries advisory Codex session observations into

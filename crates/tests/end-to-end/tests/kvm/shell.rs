@@ -87,7 +87,7 @@ fn prepare_client(harness: &KvmHarness) {
     )
     .unwrap();
 
-    let wrapper = harness.config.install.binary_dir.join("wt-server");
+    let wrapper = harness.config.install.binary_dir.join("wts");
     fs::write(
         &wrapper,
         format!(

@@ -42,8 +42,8 @@ case-insensitive, but aliases, redirects, and renames stay distinct until an exp
 The catalog is historical identity data, not current provider configuration or authorization, and is not deleted.
 
 Replace both activity tables' `provider_host` and `repository` with `repository_id INTEGER NOT NULL
-REFERENCES repositories(id)`. The Git gateway and `wt-tools` resolve or create the catalog row in the same
-transaction as their append-only activity record. Their provenance, raw `wt-tools` JSON, and operation time stay.
+REFERENCES repositories(id)`. The Git gateway and `wtg tools` resolve or create the catalog row in the same
+transaction as their append-only activity record. Their provenance, raw `wtg tools` JSON, and operation time stay.
 
 Move the five checkout columns out of `codex_session_reports` into `codex_checkout_state`; `cwd` remains on
 the lifecycle report. The relay is the only checkout-state writer. It transactionally accepts an update only

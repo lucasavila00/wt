@@ -51,12 +51,12 @@ const INSTALL_AGENT_TOOLS: &[u8] =
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
 const NETWORK_CONFIG: &[u8] = b"network:\n  version: 2\n  ethernets:\n    primary:\n      match:\n        name: \"en*\"\n      dhcp4: true\n      dhcp-identifier: mac\n";
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
-pub(super) const IMAGE_KIND: &str = "host";
+pub(super) const IMAGE_KIND: &str = "guest";
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
     pub(super) main_recipe: &'a [u8],
-    pub(super) host_recipe: &'a [u8],
+    pub(super) guest_recipe: &'a [u8],
 }
 
 pub(super) struct BuildPaths {
@@ -151,7 +151,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_codex = build_dir.join("install-codex.sh");
     let install_diffo = build_dir.join("install-diffo.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
-    let host_recipe = build_dir.join("host-build-image.sh");
+    let guest_recipe = build_dir.join("guest-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
     let byobu_color = build_dir.join("byobu-color");
     let configure_access = build_dir.join("configure-access.sh");
@@ -222,7 +222,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
     fs::write(&shared_recipe, spec.main_recipe).context("write image recipe")?;
-    fs::write(&host_recipe, spec.host_recipe).context("write host image recipe")?;
+    fs::write(&guest_recipe, spec.guest_recipe).context("write guest image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
     fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
@@ -253,19 +253,19 @@ pub(super) fn run_kvm_build<R: Runner>(
         (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
         (install_diffo.as_path(), "/var/tmp/wt-install-diffo.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
-        (host_recipe.as_path(), "/var/tmp/wt-host-image-build.sh"),
+        (guest_recipe.as_path(), "/var/tmp/wt-guest-image-build.sh"),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
         (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
-        (configure_access.as_path(), "/var/tmp/wt-host-access"),
+        (configure_access.as_path(), "/var/tmp/wt-guest-access"),
         (
             configure_git_author.as_path(),
-            "/var/tmp/wt-host-git-author",
+            "/var/tmp/wt-guest-git-author",
         ),
         (
             install_agent_tools.as_path(),
-            "/var/tmp/wt-host-agent-tools",
+            "/var/tmp/wt-guest-agent-tools",
         ),
-        (mount_codex.as_path(), "/var/tmp/wt-host-mount-codex"),
+        (mount_codex.as_path(), "/var/tmp/wt-guest-mount-codex"),
         (network_config.as_path(), "/etc/netplan/50-wt.yaml"),
     ] {
         customize

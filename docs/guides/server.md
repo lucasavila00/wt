@@ -28,7 +28,7 @@ current selection.
 
 WT bakes these settings into each golden image at
 `/etc/codex/requirements.toml`; their repository source is
-[assets/world/host/codex-requirements.toml](../../assets/world/host/codex-requirements.toml).
+[assets/world/guest/codex-requirements.toml](../../assets/world/guest/codex-requirements.toml).
 Change that source and rebuild the image instead of editing a world. Existing
 world overlays retain their current backing image, so they do not receive a
 changed default.
@@ -38,7 +38,7 @@ but user configuration, databases, indexes, logs, and locks remain local to
 each world.
 
 Installation requires a clean checkout: staged, unstaged, and untracked files
-are all rejected before a production build starts. `wt-server --version`
+are all rejected before a production build starts. `wts --version`
 prints the package version and full source commit SHA. The same identity is
 recorded in host-image provenance and logged when the server starts.
 
@@ -46,7 +46,7 @@ Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
 limits are materialized at `/etc/wt/capacity.toml`.
 
 Request-initialization failures are recorded in the server journal. Inspect
-them with `journalctl -u wt-server.service` when a client reports a context
+them with `journalctl -u wts.service` when a client reports a context
 refresh failure.
 
 The installer creates the server-backed Codex sessions directory and a

@@ -164,7 +164,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     let diagnostics = String::from_utf8_lossy(&published.stderr);
     assert!(diagnostics.contains("This is a WT-managed development environment"));
     assert!(diagnostics.contains("Published branch `wt/fix`"));
-    assert!(diagnostics.contains("wt-tools --help"));
+    assert!(diagnostics.contains("wtg tools --help"));
     assert_ref(&upstream, "refs/heads/wt/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();

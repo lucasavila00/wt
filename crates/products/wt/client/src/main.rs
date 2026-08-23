@@ -64,54 +64,7 @@ fn main() {
     }
 }
 
-fn run_from(mut args: Vec<std::ffi::OsString>) -> Result<()> {
-    #[cfg(feature = "guest")]
-    if invoked_as(&args, "codex") {
-        return wt_codex_integration::run(args);
-    }
-    #[cfg(feature = "guest")]
-    if invoked_as(&args, "git-remote-wt-agent") {
-        return wt_agent_tool_gateway::git_remote_command::run_from(
-            args.drain(1..)
-                .map(|arg| arg.into_string().map_err(|_| anyhow::anyhow!("Git helper arguments must be UTF-8")))
-                .collect::<Result<Vec<_>>>()?,
-        );
-    }
-    #[cfg(feature = "host")]
-    if subcommand_is(&args, "server") {
-        args.remove(1);
-        args[0] = "wt server".into();
-        return wt_server::run_from(args);
-    }
-    #[cfg(feature = "host")]
-    if subcommand_is(&args, "server-setup") {
-        args.remove(1);
-        args[0] = "wt server-setup".into();
-        return wt_server_installer::run_from(args);
-    }
-    #[cfg(feature = "guest")]
-    if subcommand_is(&args, "tools") {
-        return wt_agent_tool_gateway::tools_command::run(
-            args.drain(2..)
-                .map(|arg| arg.into_string().map_err(|_| anyhow::anyhow!("tool arguments must be UTF-8")))
-                .collect::<Result<Vec<_>>>()?,
-        );
-    }
-    #[cfg(feature = "guest")]
-    if args.get(1).is_some_and(|arg| arg == "guest")
-        && args.get(2).is_some_and(|arg| arg == "relay")
-    {
-        args.drain(1..3);
-        args[0] = "wt guest relay".into();
-        return wt_agent_tool_gateway::relay_command::run_from(args);
-    }
-    #[cfg(feature = "guest")]
-    if subcommand_is(&args, "codex") {
-        args.remove(1);
-        args[0] = "wt codex".into();
-        return wt_codex_integration::run(args);
-    }
-
+fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
     let command = Cli::parse_from(args).command;
     let config = ClientConfig::load()?;
     let test_server = local_test_server(&config);
@@ -232,18 +185,6 @@ fn run_from(mut args: Vec<std::ffi::OsString>) -> Result<()> {
         Command::Diagnostics => print_diagnostics(&config),
     }
     Ok(())
-}
-
-#[cfg(feature = "guest")]
-fn invoked_as(args: &[std::ffi::OsString], name: &str) -> bool {
-    args.first()
-        .and_then(|arg| std::path::Path::new(arg).file_name())
-        .is_some_and(|arg| arg == name)
-}
-
-#[allow(dead_code)]
-fn subcommand_is(args: &[std::ffi::OsString], name: &str) -> bool {
-    args.get(1).is_some_and(|arg| arg == name)
 }
 
 fn local_test_server(config: &ClientConfig) -> bool {

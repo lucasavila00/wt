@@ -27,10 +27,9 @@ fn install_server_bootstraps_a_native_libvirt_installer() {
     let workspace = workspace();
     let install_script = std::fs::read_to_string(workspace.join("scripts/install-server"))
         .expect("read scripts/install-server");
-    assert!(install_script.contains("setup_binary=target/release/wt-server-installer"));
-    assert!(
-        install_script.contains("cargo build --quiet --locked --release -p wt-server-installer")
-    );
+    assert!(install_script.contains("setup_binary=target/release/wts"));
+    assert!(install_script
+        .contains("cargo build --quiet --locked --release -p wt-server-installer --bin wts"));
     assert!(!install_script.contains("--target x86_64-unknown-linux-musl -p wt-server-installer"));
 
     run(Command::new("cargo").current_dir(&workspace).args([
@@ -40,9 +39,11 @@ fn install_server_bootstraps_a_native_libvirt_installer() {
         "--release",
         "-p",
         "wt-server-installer",
+        "--bin",
+        "wts",
     ]));
 
-    let installer = workspace.join("target/release/wt-server-installer");
+    let installer = workspace.join("target/release/wts");
     let dynamic = run(Command::new("readelf")
         .args(["--dynamic", "--wide"])
         .arg(&installer));

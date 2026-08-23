@@ -445,7 +445,7 @@ impl Gateway {
                     .insert_agent_tool_report(world_id, kind, description)
                     .context("store agent tool report")?;
                 return Ok(api::render_cli_confirmation(
-                    "Recorded wt-tools report for this world.",
+                    "Recorded wtg tools report for this world.",
                 ));
             }
             api::WtToolsCommand::GitHosting { target, command } => (target, command),
@@ -496,7 +496,7 @@ impl Gateway {
                 response_json: &response_json,
             })
         {
-            eprintln!("wt-agent-tool-gateway: store wt-tools activity: {error}");
+            eprintln!("wt-agent-tool-gateway: store wtg tools activity: {error}");
         }
         Ok(response_json)
     }
@@ -515,7 +515,7 @@ impl Gateway {
         wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .insert_wt_tools_activity(input)
-            .context("store wt-tools activity")
+            .context("store wtg tools activity")
     }
 }
 
@@ -552,7 +552,7 @@ pub(super) fn push_result_message(
         }
         message.push_str(&format!("Published branch `{branch}`.\n"));
         let Some((provider, repository)) = provider_target else {
-            message.push_str("Run `wt-tools --help` for explicit provider commands.\n");
+            message.push_str("Run `wtg tools --help` for explicit provider commands.\n");
             continue;
         };
         let show_mr = serde_json::json!({
@@ -564,7 +564,7 @@ pub(super) fn push_result_message(
             "command": { "action": "list_ci", "commit": update.new_oid },
         });
         message.push_str(&format!(
-            "Inspect its open MR with:\n  wt-tools '{show_mr}'\nIf that reports no open MR, run `wt-tools --help` and open one with an explicit base.\nInspect CI with:\n  wt-tools '{list_ci}'\n"
+            "Inspect its open MR with:\n  wtg tools '{show_mr}'\nIf that reports no open MR, run `wtg tools --help` and open one with an explicit base.\nInspect CI with:\n  wtg tools '{list_ci}'\n"
         ));
     }
     Ok(message)
@@ -605,7 +605,7 @@ pub(super) fn wt_tools_activity_metadata(
         api::GitHostingCommand::CancelRun { .. } => ("cancel_run", None, None),
     };
     let response = serde_json::from_str::<serde_json::Value>(response_json)
-        .context("decode wt-tools response JSON")?;
+        .context("decode wtg tools response JSON")?;
     let data = response.get("data");
     let branch = branch.map(str::to_owned).or_else(|| {
         data.and_then(|value| value.get("head"))?

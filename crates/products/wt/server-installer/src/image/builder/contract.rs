@@ -8,7 +8,7 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
             "virt-cat",
             "-a",
             disk,
-            "/usr/local/share/wt-host-contract"
+            "/usr/local/share/wt-guest-contract"
         ),
         "inspect finalized guest contract",
     )?;
@@ -58,6 +58,16 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
             bail!("finalized image guest binary differs: {guest_path}");
         }
     }
+    for alias in ["codex", "git-remote-wt-agent"] {
+        let path = format!("/usr/local/bin/{alias}");
+        let expected = format!(" {path} -> /usr/local/bin/wtg");
+        if !binary_listing
+            .lines()
+            .any(|line| line.starts_with("l 0777 ") && line.ends_with(&expected))
+        {
+            bail!("finalized image guest alias differs: {path}");
+        }
+    }
 
     let passwd = runner.text(
         cmd!("sudo", "virt-cat", "-a", disk, "/etc/passwd"),
@@ -80,11 +90,7 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
         cmd!("sudo", "virt-cat", "-a", disk, "/etc/group"),
         "inspect finalized guest groups",
     )?;
-    let expected_group = format!(
-        "{}:x:{}:",
-        wt_guest::GUEST_GROUP,
-        wt_guest::GUEST_GID
-    );
+    let expected_group = format!("{}:x:{}:", wt_guest::GUEST_GROUP, wt_guest::GUEST_GID);
     if !group.lines().any(|line| line == expected_group) {
         bail!("finalized image does not contain the required guest group");
     }
@@ -160,10 +166,10 @@ mod tests {
 
     #[test]
     fn binary_metadata_ignores_symlinks_that_target_the_binary() {
-        let guest_path = "/usr/local/bin/wt-codex-integration";
+        let guest_path = "/usr/local/bin/wtg";
         let listing = concat!(
-            "l 0777 39 0 0 /usr/local/bin/codex -> /usr/local/bin/wt-codex-integration\n",
-            "- 0755 123 0 0 /usr/local/bin/wt-codex-integration\n",
+            "l 0777 39 0 0 /usr/local/bin/codex -> /usr/local/bin/wtg\n",
+            "- 0755 123 0 0 /usr/local/bin/wtg\n",
         );
         let fields = metadata_fields(listing, guest_path);
 

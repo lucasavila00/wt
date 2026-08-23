@@ -9,9 +9,9 @@ WT: WT gives you read access to every repository available to the Git gateway.
 WT: This checkout is project group/project and its configured base is main.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
 WT: write branches under wt/ in any available repository.
-WT: wt-tools uses explicit provider resource types and IDs; it does not infer
+WT: wtg tools uses explicit provider resource types and IDs; it does not infer
 WT: resources from the current checkout.
-WT: Run wt-tools --help to discover every available command.
+WT: Run wtg tools --help to discover every available command.
 WT:
 WT: Branches pushed from a WT world must start with wt/.
 WT: Rename the current branch before pushing:

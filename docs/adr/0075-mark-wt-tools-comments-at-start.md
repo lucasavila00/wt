@@ -1,10 +1,10 @@
-# ADR 0075: Mark wt-tools comments at their start
+# ADR 0075: Mark wtg tools comments at their start
 
 - Status: Accepted; Date: 2026-08-23
 
 ## Decision
 
-Every pull-request or merge-request comment created by `wt-tools` begins with
+Every pull-request or merge-request comment created by `wtg tools` begins with
 this exact marker, with no preceding bytes:
 
 ```text
@@ -25,7 +25,7 @@ the replacement body; it does not allow the caller to remove, move, or
 duplicate the marker.
 
 Existing comments that have only the earlier WT attribution footer, or no
-marker, are not editable or deletable through `wt-tools`. The gateway does not
+marker, are not editable or deletable through `wtg tools`. The gateway does not
 try to migrate them because doing so would require the very mutation this rule
 is intended to guard.
 

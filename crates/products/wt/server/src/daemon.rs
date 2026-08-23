@@ -30,11 +30,11 @@ fn daemon_connection_error(socket_path: &Path, error: std::io::Error) -> anyhow:
     match error.kind() {
         std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => anyhow::anyhow!(
             "wt-server daemon is unavailable at {path}: {error}\n\
-             check `systemctl status wt-server.service` and `journalctl -u wt-server.service`"
+             check `systemctl status wts.service` and `journalctl -u wts.service`"
         ),
         std::io::ErrorKind::PermissionDenied => anyhow::anyhow!(
             "permission denied connecting to wt-server daemon at {path}: {error}\n\
-             run the command as the user that owns wt-server.service and {path}"
+             run the command as the user that owns wts.service and {path}"
         ),
         _ => anyhow::Error::new(error).context(format!("connect to wt-server daemon at {path}")),
     }
@@ -322,7 +322,7 @@ mod tests {
             error.replace(&temp.path().display().to_string(), "[TEMP]"),
             @r###"
             wt-server daemon is unavailable at [TEMP]/missing.sock: No such file or directory (os error 2)
-            check `systemctl status wt-server.service` and `journalctl -u wt-server.service`
+            check `systemctl status wts.service` and `journalctl -u wts.service`
             "###
         );
     }

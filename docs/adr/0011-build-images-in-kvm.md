@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-14
 
-The installer builds the host golden image in a temporary KVM guest from a
+The installer builds the guest golden image in a temporary KVM guest from a
 pinned Ubuntu source image. Rust owns disk, domain, progress, timeout,
 sanitization, provenance, publication, and cleanup. Reviewable shell assets own
 the whole-machine installation procedure.

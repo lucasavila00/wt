@@ -5,7 +5,7 @@
 ## Problem
 
 World provisioning copied four immutable musl executables into every new guest:
-the agent-tool relay, Git remote helper, `wt-tools`, and Codex integration.
+the agent-tool relay, Git remote helper, `wtg tools`, and Codex integration.
 Those files were sent as base64 data through synchronous QEMU guest-agent RPCs
 in 48 KiB chunks. The transfer and installation took approximately 18.6 seconds
 even though the files were already built and every world started from a golden

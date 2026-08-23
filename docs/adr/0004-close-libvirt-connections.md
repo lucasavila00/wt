@@ -29,11 +29,11 @@ inside the connection owner's lifetime where practical. A libvirt object may
 temporarily retain its own connection reference; closing WT's reference and
 then dropping the object must still release the connection.
 
-Do not raise `LimitNOFILE` in `wt-server.service`. Do not add connection-limit
+Do not raise `LimitNOFILE` in `wts.service`. Do not add connection-limit
 configuration. Keep opening short-lived connections for individual operations
 rather than sharing a connection across concurrent server requests.
 
-Restart `wt-server.service` when deploying the fix. Restarting releases
+Restart `wts.service` when deploying the fix. Restarting releases
 descriptors already leaked by the old process; subsequent operations close
 their connections normally.
 

@@ -461,8 +461,7 @@ fn start_hint(context: &Context) -> String {
 fn retry_hint(context: &Context) -> String {
     match &context.kind {
         ContextKind::BareMetalLocal => {
-            "retry the command; if it fails again, check `systemctl status wt-server.service`"
-                .to_owned()
+            "retry the command; if it fails again, check `systemctl status wts.service`".to_owned()
         }
         ContextKind::BareMetalSsh { host } => {
             format!("retry the command; if it fails again, check `ssh {host}`")
@@ -473,11 +472,10 @@ fn retry_hint(context: &Context) -> String {
 fn server_hint(context: &Context) -> String {
     match &context.kind {
         ContextKind::BareMetalLocal => {
-            "check `systemctl status wt-server.service` and `journalctl -u wt-server.service`"
-                .to_owned()
+            "check `systemctl status wts.service` and `journalctl -u wts.service`".to_owned()
         }
         ContextKind::BareMetalSsh { host } => {
-            format!("check `ssh {host}` and `ssh {host} systemctl status wt-server.service`")
+            format!("check `ssh {host}` and `ssh {host} systemctl status wts.service`")
         }
     }
 }
@@ -499,8 +497,8 @@ pub fn format_api_error(error: &ApiError) -> String {
 
 fn helper_command(context: &Context) -> Command {
     match &context.kind {
-        ContextKind::BareMetalLocal => cmd!("wt-server", "api"),
-        ContextKind::BareMetalSsh { host } => cmd!("ssh", "--", host, "wt-server", "api"),
+        ContextKind::BareMetalLocal => cmd!("wts", "api"),
+        ContextKind::BareMetalSsh { host } => cmd!("ssh", "--", host, "wts", "api"),
     }
 }
 
@@ -529,7 +527,7 @@ mod tests {
             kind: ContextKind::BareMetalLocal,
         };
         let command = helper_command(&local);
-        assert_eq!(command.get_program(), OsStr::new("wt-server"));
+        assert_eq!(command.get_program(), OsStr::new("wts"));
         assert_eq!(command.get_args().collect::<Vec<_>>(), [OsStr::new("api")]);
 
         let remote = Context {
@@ -545,7 +543,7 @@ mod tests {
             [
                 OsStr::new("--"),
                 OsStr::new("wt-lab"),
-                OsStr::new("wt-server"),
+                OsStr::new("wts"),
                 OsStr::new("api")
             ]
         );

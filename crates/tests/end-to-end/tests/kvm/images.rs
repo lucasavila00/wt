@@ -47,26 +47,14 @@ pub(crate) fn isolated_test_images(
     fs::copy(installed_manifest, isolated_manifest).unwrap();
     let inputs = [
         (
-            workspace.join("assets/world/host/prepare.sh"),
-            "/usr/local/libexec/wt-host-prepare",
+            workspace.join("assets/world/guest/prepare.sh"),
+            "/usr/local/libexec/wt-guest-prepare",
         ),
         (
             workspace.join("assets/world/shared/install-agent-tools.sh"),
-            "/usr/local/libexec/wt-host-agent-tools",
+            "/usr/local/libexec/wt-guest-agent-tools",
         ),
-        (
-            binary_dir.join("wt-agent-tool-gateway-relay"),
-            "/usr/local/bin/wt-agent-tool-gateway-relay",
-        ),
-        (
-            binary_dir.join("git-remote-wt-agent"),
-            "/usr/local/bin/git-remote-wt-agent",
-        ),
-        (binary_dir.join("wt-tools"), "/usr/local/bin/wt-tools"),
-        (
-            binary_dir.join("wt-codex-integration"),
-            "/usr/local/bin/wt-codex-integration",
-        ),
+        (binary_dir.join("wtg"), "/usr/local/bin/wtg"),
     ];
     let mut customize = cmd!(
         "sudo",

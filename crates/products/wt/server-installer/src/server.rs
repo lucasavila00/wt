@@ -28,7 +28,7 @@ use wt_workload_registry::{CapacityConfig, CAPACITY_CONFIG_PATH};
 #[cfg(test)]
 use zeroize::Zeroizing;
 
-const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wt-server.service";
+const SERVER_SERVICE_PATH: &str = "/etc/systemd/system/wts.service";
 const CREDENTIAL_DIRECTORY: &str = "/etc/credstore.encrypted";
 pub(crate) fn install(runner: &impl Runner, input_path: &Path) -> Result<()> {
     phase("Validating the installation");
@@ -194,7 +194,7 @@ fn phase_message(message: &str) -> String {
 
 fn success_message(input_path: &Path) -> String {
     format!(
-        "WT server is ready.\nConfig: {}\nService started: wt-server\nNext: configure a WT client, then run `wt new`.",
+        "WT server is ready.\nConfig: {}\nService started: wts\nNext: configure a WT client, then run `wt new`.",
         input_path.display()
     )
 }
@@ -357,8 +357,7 @@ fn install_agent_tools_credentials(
             ("ssh-private-key", provider.private_key.path()),
         ] {
             let credential = format!("{}-{suffix}", provider.kind);
-            let destination =
-                Path::new(CREDENTIAL_DIRECTORY).join(format!("wt-server-{credential}"));
+            let destination = Path::new(CREDENTIAL_DIRECTORY).join(format!("wts-{credential}"));
             let temporary = destination.with_extension("wt-new");
             if temporary.exists() {
                 bail!(
@@ -390,9 +389,10 @@ fn install_services(
     server: &ServerConfig,
     replace_runtime: bool,
 ) -> Result<()> {
+    remove_obsolete_services(runner)?;
     install_service_unit(
         runner,
-        "wt-server",
+        "wts",
         Path::new(SERVER_SERVICE_PATH),
         &server_service(input, server),
         replace_runtime,
@@ -401,7 +401,7 @@ fn install_services(
         cmd!("sudo", "systemctl", "daemon-reload"),
         "reload systemd units",
     )?;
-    for name in ["wt-server.service"] {
+    for name in ["wts.service"] {
         runner.run(
             cmd!("sudo", "systemctl", "enable", name),
             &format!("enable {name}"),
@@ -412,6 +412,36 @@ fn install_services(
         )?;
     }
     Ok(())
+}
+
+fn remove_obsolete_services(runner: &impl Runner) -> Result<()> {
+    runner.run(
+        cmd!(
+            "sudo",
+            "systemctl",
+            "disable",
+            "--now",
+            "wt-agent-tool-gateway.service",
+            "wt-codex-integration-auth.path",
+            "wt-ssh-authorized-keys.path",
+        ),
+        "disable superseded WT services",
+    )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "rm",
+            "-f",
+            "/etc/systemd/system/wt-agent-tool-gateway.service",
+            "/etc/systemd/system/wt-codex-integration-auth.service",
+            "/etc/systemd/system/wt-codex-integration-auth.path",
+            "/etc/systemd/system/wt-ssh-authorized-keys.service",
+            "/etc/systemd/system/wt-ssh-authorized-keys.path",
+            "/usr/local/libexec/wt-codex-integration-auth-share",
+            "/usr/local/libexec/wt-ssh-authorized-keys-share",
+        ),
+        "remove superseded WT services",
+    )
 }
 
 fn install_service_unit(
@@ -459,19 +489,19 @@ fn service_unit_needs_replacement(
 }
 
 fn server_service(input: &InstallInput, server: &ServerConfig) -> Vec<u8> {
-    let executable = server.install.binary_dir.join("wt");
+    let executable = server.install.binary_dir.join("wts");
     let mut credentials = String::new();
     for (kind, _) in input.agent_tools.providers() {
         for suffix in ["api-token", "ssh-private-key"] {
             let id = format!("{kind}-{suffix}");
             credentials.push_str(&format!(
-                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wt-server-{id}\n"
+                "LoadCredentialEncrypted={id}:{CREDENTIAL_DIRECTORY}/wts-{id}\n"
             ));
         }
     }
     format!(
         "[Unit]\n\
-Description=WT host daemon\n\
+Description=WT server daemon\n\
 Wants=network-online.target\n\
 After=network-online.target libvirtd.service\n\
 \n\
@@ -482,7 +512,7 @@ Group={}\n\
 Environment={}\n\
 Environment={}\n\
 {}\n\
-ExecStart={} server serve\n\
+ExecStart={} serve\n\
 Restart=on-failure\n\
 RuntimeDirectory=wt\n\
 RuntimeDirectoryMode=0700\n\

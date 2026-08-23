@@ -634,10 +634,10 @@ fn push_messages_cover_publish_delete_and_rejection() {
         @r###"
     Published branch `wt/fix-login`.
     Inspect its open MR with:
-      wt-tools '{"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"},"target":{"provider":"github","repository":"acme/widget"}}'
-    If that reports no open MR, run `wt-tools --help` and open one with an explicit base.
+      wtg tools '{"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"},"target":{"provider":"github","repository":"acme/widget"}}'
+    If that reports no open MR, run `wtg tools --help` and open one with an explicit base.
     Inspect CI with:
-      wt-tools '{"command":{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"provider":"github","repository":"acme/widget"}}'
+      wtg tools '{"command":{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"provider":"github","repository":"acme/widget"}}'
     "###
     );
     let updates = successful_push_updates(

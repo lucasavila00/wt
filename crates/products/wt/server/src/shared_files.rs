@@ -1,4 +1,4 @@
-use crate::{CodexPaths, SERVER_GID, SERVER_HOME, SERVER_UID};
+use crate::{CodexPaths, SERVER_GID, SERVER_UID};
 use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -59,6 +59,7 @@ struct Publication {
 
 impl Publication {
     fn publish_if_changed(&self) -> Result<()> {
+        self.prepare()?;
         if fs::read(&self.source).ok() == fs::read(&self.destination).ok() {
             return Ok(());
         }
@@ -66,28 +67,15 @@ impl Publication {
     }
 
     fn publish(&self) -> Result<()> {
-        validate_source(self)?;
-        validate_share(&self.share)?;
-        if self.normalize_source_mode {
-            fs::set_permissions(&self.source, fs::Permissions::from_mode(0o600))
-                .with_context(|| format!("protect {}", self.source.display()))?;
-        }
-        if self.validate_ssh_keys {
-            let status = std::process::Command::new("/usr/bin/ssh-keygen")
-                .args(["-l", "-f"])
-                .arg(&self.source)
-                .status()
-                .with_context(|| format!("validate {}", self.source.display()))?;
-            if !status.success() {
-                bail!("{} does not contain valid SSH public keys", self.source.display());
-            }
-        }
+        self.prepare()?;
         loop {
             let contents = fs::read(&self.source)
                 .with_context(|| format!("read {}", self.source.display()))?;
-            let temporary = self
-                .share
-                .join(format!(".{}.wt-new-{}", self.label.replace(' ', "-"), std::process::id()));
+            let temporary = self.share.join(format!(
+                ".{}.wt-new-{}",
+                self.label.replace(' ', "-"),
+                std::process::id()
+            ));
             match fs::remove_file(&temporary) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -110,13 +98,41 @@ impl Publication {
             }
         }
     }
+
+    fn prepare(&self) -> Result<()> {
+        validate_source(self)?;
+        validate_share(&self.share)?;
+        if self.normalize_source_mode {
+            fs::set_permissions(&self.source, fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("protect {}", self.source.display()))?;
+        }
+        if self.validate_ssh_keys {
+            let status = std::process::Command::new("/usr/bin/ssh-keygen")
+                .args(["-l", "-f"])
+                .arg(&self.source)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .with_context(|| format!("validate {}", self.source.display()))?;
+            if !status.success() {
+                bail!(
+                    "{} does not contain valid SSH public keys",
+                    self.source.display()
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 fn validate_source(publication: &Publication) -> Result<()> {
     let metadata = fs::symlink_metadata(&publication.source)
         .with_context(|| format!("inspect {}", publication.source.display()))?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        bail!("{} must be a regular, non-symlink file", publication.source.display());
+        bail!(
+            "{} must be a regular, non-symlink file",
+            publication.source.display()
+        );
     }
     if metadata.uid() != SERVER_UID || metadata.gid() != SERVER_GID {
         bail!(
@@ -147,4 +163,66 @@ fn validate_share(path: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn publication(root: &Path) -> Publication {
+        let source = root.join("source");
+        let share = root.join("share");
+        fs::write(&source, "first\n").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::create_dir(&share).unwrap();
+        fs::set_permissions(&share, fs::Permissions::from_mode(0o700)).unwrap();
+        Publication {
+            label: "test",
+            source,
+            destination: share.join("published"),
+            share,
+            nonempty: false,
+            validate_ssh_keys: false,
+            normalize_source_mode: true,
+        }
+    }
+
+    #[test]
+    fn publication_is_atomic_and_tracks_source_changes() {
+        if nix::unistd::Uid::effective().as_raw() != SERVER_UID
+            || nix::unistd::Gid::effective().as_raw() != SERVER_GID
+        {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let publication = publication(temp.path());
+        publication.publish().unwrap();
+        assert_eq!(fs::read_to_string(&publication.destination).unwrap(), "first\n");
+        assert_eq!(
+            fs::metadata(&publication.destination).unwrap().mode() & 0o7777,
+            0o600
+        );
+        assert_eq!(fs::metadata(&publication.source).unwrap().mode() & 0o7777, 0o600);
+
+        fs::write(&publication.source, "second\n").unwrap();
+        publication.publish_if_changed().unwrap();
+        assert_eq!(fs::read_to_string(&publication.destination).unwrap(), "second\n");
+    }
+
+    #[test]
+    fn source_symlinks_are_rejected() {
+        if nix::unistd::Uid::effective().as_raw() != SERVER_UID
+            || nix::unistd::Gid::effective().as_raw() != SERVER_GID
+        {
+            return;
+        }
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let publication = publication(temp.path());
+        let target = temp.path().join("target");
+        fs::write(&target, "secret").unwrap();
+        fs::remove_file(&publication.source).unwrap();
+        symlink(target, &publication.source).unwrap();
+        assert!(publication.publish().is_err());
+    }
 }

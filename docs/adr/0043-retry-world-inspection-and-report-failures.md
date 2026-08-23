@@ -30,8 +30,8 @@ than multiline diagnostic details. The warning is confined to that footer line;
 cards and the rest of the layout retain their existing content and interaction.
 
 The server writes the full cause of a request-initialization failure to the
-`wt-server.service` journal before returning its API error. Operators inspect
-it with `journalctl -u wt-server.service`; the interactive UI keeps only the
+`wts.service` journal before returning its API error. Operators inspect
+it with `journalctl -u wts.service`; the interactive UI keeps only the
 concise refresh summary.
 
 The UI does not show an intermediate `Retrying…` state because the list protocol

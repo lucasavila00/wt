@@ -20,9 +20,9 @@ WT: WT gives you read access to every repository available to the Git gateway.
 WT: This checkout is project $project and its configured base is $base.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
 WT: write branches under $prefix in any available repository.
-WT: wt-tools uses explicit provider resource types and IDs; it does not infer
+WT: wtg tools uses explicit provider resource types and IDs; it does not infer
 WT: resources from the current checkout.
-WT: Run wt-tools --help to discover every available command.
+WT: Run wtg tools --help to discover every available command.
 WT:
 EOF
 
@@ -45,7 +45,7 @@ commit)
 WT: Commit created on $branch.
 WT: Publish it with:
 WT:   git push
-WT: After pushing, use the explicit wt-tools commands printed by the Git gateway.
+WT: After pushing, use the explicit wtg tools commands printed by the Git gateway.
 EOF
     ;;
 *)

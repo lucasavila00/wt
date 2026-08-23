@@ -1,5 +1,7 @@
 extern crate self as wt_server;
 
+#[path = "main.rs"]
+mod command;
 pub mod config;
 pub mod daemon;
 pub mod identity;
@@ -8,8 +10,6 @@ pub mod operations;
 pub mod runtime_config;
 pub mod service;
 pub mod shared_files;
-#[path = "main.rs"]
-mod command;
 
 pub use command::run_from;
 

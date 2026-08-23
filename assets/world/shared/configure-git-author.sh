@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-host-contract
+. /usr/local/share/wt-guest-contract
 
-stage=/tmp/wt-host-git-author
+stage=/tmp/wt-guest-git-author
 name=$(cat "$stage-name")
 email=$(cat "$stage-email")
 test -n "$name"

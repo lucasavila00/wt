@@ -76,7 +76,7 @@ pub(super) fn ensure<R: Runner>(context: &BuildContext<'_, R>) -> Result<PathBuf
             &BuildSpec {
                 name: DEVELOPMENT_TOOLS_CACHE_BUILD_NAME,
                 main_recipe: DEVELOPMENT_TOOLS_CACHE_BUILD,
-                host_recipe: b"",
+                guest_recipe: b"",
             },
             &[],
             BuildSource::CloudImage,

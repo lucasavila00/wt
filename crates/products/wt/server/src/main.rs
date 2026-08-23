@@ -14,7 +14,7 @@ use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-server", version = wt_control_protocol::BUILD_DESCRIPTION)]
+#[command(name = "wts", version = wt_control_protocol::BUILD_DESCRIPTION)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -36,7 +36,9 @@ fn main() {
     }
 }
 
-pub fn run_from(args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>) -> Result<()> {
+pub fn run_from(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<()> {
     match Cli::parse_from(args).command {
         Command::Api => run_api(),
         Command::Serve => run_server(),
@@ -141,24 +143,37 @@ fn run_server() -> Result<()> {
     })
 }
 
-fn open_gateway(config: &ServerConfig, database_path: &Path) -> Result<wt_agent_tool_gateway::Gateway> {
+fn open_gateway(
+    config: &ServerConfig,
+    database_path: &Path,
+) -> Result<wt_agent_tool_gateway::Gateway> {
     let credentials = std::env::var_os("CREDENTIALS_DIRECTORY")
         .map(PathBuf::from)
         .context("CREDENTIALS_DIRECTORY is not set")?;
     let providers = [
-        (wt_tools::ProviderKind::GitHub, "github", config.agent_tools.github.as_ref()),
-        (wt_tools::ProviderKind::GitLab, "gitlab", config.agent_tools.gitlab.as_ref()),
+        (
+            wt_tools::ProviderKind::GitHub,
+            "github",
+            config.agent_tools.github.as_ref(),
+        ),
+        (
+            wt_tools::ProviderKind::GitLab,
+            "gitlab",
+            config.agent_tools.gitlab.as_ref(),
+        ),
     ]
     .into_iter()
     .filter_map(|(kind, name, provider)| provider.map(|provider| (kind, name, provider)))
-    .map(|(kind, name, provider)| wt_agent_tool_gateway::Provider::Ssh {
-        kind,
-        host: provider.host.clone(),
-        user: "git".to_owned(),
-        port: None,
-        api_token_file: credentials.join(format!("{name}-api-token")),
-        private_key_file: credentials.join(format!("{name}-ssh-private-key")),
-    })
+    .map(
+        |(kind, name, provider)| wt_agent_tool_gateway::Provider::Ssh {
+            kind,
+            host: provider.host.clone(),
+            user: "git".to_owned(),
+            port: None,
+            api_token_file: credentials.join(format!("{name}-api-token")),
+            private_key_file: credentials.join(format!("{name}-ssh-private-key")),
+        },
+    )
     .collect();
     wt_agent_tool_gateway::Gateway::open(wt_agent_tool_gateway::GatewayConfig {
         state_file: PathBuf::from("/var/lib/wt/agent-tools/state.json"),

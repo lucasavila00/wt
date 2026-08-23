@@ -1,4 +1,4 @@
-# ADR 0027: Make wt-tools targets explicit
+# ADR 0027: Make wtg tools targets explicit
 
 - Status: Accepted; Date: 2026-08-21
 
@@ -7,11 +7,11 @@
 Every provider operation requires a `target` and `command`; feedback operations omit `target`.
 
 ```text
-wt-tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr","mr":"7"}}'
-wt-tools '{"target":{"provider":"gitlab","repository":"acme/widget"},"command":{"action":"list_ci","commit":"abc1234"}}'
+wtg tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr","mr":"7"}}'
+wtg tools '{"target":{"provider":"gitlab","repository":"acme/widget"},"command":{"action":"list_ci","commit":"abc1234"}}'
 ```
 
-`wt-tools` will stop reading `remote.origin.url`. The gateway will validate the
+`wtg tools` will stop reading `remote.origin.url`. The gateway will validate the
 repository and map `provider` only to its installer-configured host, endpoint, and
 credential. Requests cannot supply connection or credential values.
 ## Consequences

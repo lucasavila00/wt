@@ -8,10 +8,16 @@ const MUSL_TARGET: &str = "x86_64-unknown-linux-musl";
 pub(super) fn build(runner: &impl Runner) -> Result<()> {
     runner.run(
         cmd!(
-            "cargo", "build", "--quiet", "--release", "-p", "wt-client",
-            "--features", "host", "--bin", "wt",
+            "cargo",
+            "build",
+            "--quiet",
+            "--release",
+            "-p",
+            "wt-server-installer",
+            "--bin",
+            "wts",
         ),
-        "build host wt",
+        "build wts",
     )?;
     build_static(runner)
 }
@@ -31,32 +37,44 @@ pub(super) fn build_static(runner: &impl Runner) -> Result<()> {
             "--features",
             "guest",
             "--bin",
-            "wt",
+            "wtg",
         ),
-        "build static guest wt",
+        "build static wtg",
     )?;
-    validate_static_binary(runner, &guest_binary(), "wt")?;
+    validate_static_binary(runner, &guest_binary(), "wtg")?;
     Ok(())
 }
 
 pub(super) fn install(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
-    let source = host_binary();
-    let destination = config.install.binary_dir.join("wt");
-    let temporary = config.install.binary_dir.join(".wt.wt-new");
+    let source = server_binary();
+    let destination = config.install.binary_dir.join("wts");
+    let temporary = config.install.binary_dir.join(".wts.wt-new");
     if temporary.exists() {
         bail!("stale binary install file exists: {}", temporary.display());
     }
     sudo_install(runner, &source, &temporary, 0o755)?;
     sudo_move(runner, &temporary, &destination)?;
+    let obsolete = [
+        "wt-agent-tool-gateway",
+        "wt-agent-tool-gateway-relay",
+        "git-remote-wt-agent",
+        "wt-tools",
+        "wt-codex-integration",
+        "wt-server",
+    ]
+    .map(|name| config.install.binary_dir.join(name));
+    let mut command = std::process::Command::new("sudo");
+    command.arg("rm").arg("-f").args(obsolete);
+    runner.run(command, "remove superseded WT binaries")?;
     Ok(())
 }
 
 pub(crate) fn guest_binary() -> PathBuf {
-    Path::new("target").join(MUSL_TARGET).join("release/wt")
+    Path::new("target").join(MUSL_TARGET).join("release/wtg")
 }
 
-fn host_binary() -> PathBuf {
-    Path::new("target/release/wt").to_owned()
+fn server_binary() -> PathBuf {
+    Path::new("target/release/wts").to_owned()
 }
 
 fn validate_static_binary(runner: &impl Runner, path: &Path, name: &str) -> Result<()> {
@@ -86,9 +104,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn runtime_boundaries_have_distinct_wt_binaries() {
-        assert_eq!(guest_binary(), Path::new("target/x86_64-unknown-linux-musl/release/wt"));
-        assert_eq!(host_binary(), Path::new("target/release/wt"));
+    fn runtime_boundaries_have_distinct_binary_names() {
+        assert_eq!(
+            guest_binary(),
+            Path::new("target/x86_64-unknown-linux-musl/release/wtg")
+        );
+        assert_eq!(server_binary(), Path::new("target/release/wts"));
     }
 
     #[test]

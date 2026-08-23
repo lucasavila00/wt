@@ -2,4 +2,4 @@
 source: crates/products/agent-tools/gateway/src/gateway/tests.rs
 expression: output
 ---
-{"type":"confirmation","data":"Recorded wt-tools report for this world."}
+{"type":"confirmation","data":"Recorded wtg tools report for this world."}

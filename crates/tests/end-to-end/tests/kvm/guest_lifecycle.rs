@@ -41,7 +41,7 @@ fn host_world_lifecycle() {
             "command -v git codex diffo wt-tools; ",
             "codex --version >/dev/null"
         ),
-        "verify golden host image",
+        "verify golden guest image",
     );
 
     let mut byobu = cmd!(

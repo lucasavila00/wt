@@ -86,7 +86,7 @@ struct GrantRecord {
 }
 
 fn cli_unavailable() -> String {
-    "wt-tools: provider API commands are not available for this project.\nNormal Git fetch, pull, and push are available.\n".to_owned()
+    "wtg tools: provider API commands are not available for this project.\nNormal Git fetch, pull, and push are available.\n".to_owned()
 }
 
 fn valid_host(value: &str) -> bool {
@@ -109,16 +109,16 @@ remote: WT gives you read access to every repository available to this gateway.\
 remote: This Git operation is for project {project}.\n\
 remote: Use normal Git for commits, fetches, pulls, and pushes.\n\
 remote: Every WT world can write branches under {BRANCH_PREFIX}.\n\
-remote: wt-tools uses explicit provider resource types and IDs; it does not infer\n\
+remote: wtg tools uses explicit provider resource types and IDs; it does not infer\n\
 remote: resources from the current checkout.\n\
-remote: Run wt-tools --help to discover every available command.\n\
+remote: Run wtg tools --help to discover every available command.\n\
 remote:\n"
     )
 }
 
 fn world_prompt() -> String {
     format!(
-        "This process runs as the non-root `wt` user inside a disposable Ubuntu 24.04 WT KVM guest. The guest is the security boundary, so installing system packages, compilers, package managers, language runtimes, and test dependencies is allowed. Use `sudo apt-get update` and `sudo apt-get install -y PACKAGE` to install missing system prerequisites. If Rust tooling is missing, install stable Rust as the normal user with rustup, not apt, then source `$HOME/.cargo/env` and add the rustfmt and clippy components. If other required tooling is missing, install it instead of skipping validation. System-level changes inside the guest are acceptable. Run the repository's normal build, lint, typecheck, and test workflow whenever practical.\n\nThis environment has wt-tools installed for pull or merge request, review, and CI operations; run wt-tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
+        "This process runs as the non-root `wt` user inside a disposable Ubuntu 24.04 WT KVM guest. The guest is the security boundary, so installing system packages, compilers, package managers, language runtimes, and test dependencies is allowed. Use `sudo apt-get update` and `sudo apt-get install -y PACKAGE` to install missing system prerequisites. If Rust tooling is missing, install stable Rust as the normal user with rustup, not apt, then source `$HOME/.cargo/env` and add the rustfmt and clippy components. If other required tooling is missing, install it instead of skipping validation. System-level changes inside the guest are acceptable. Run the repository's normal build, lint, typecheck, and test workflow whenever practical.\n\nThis environment has wtg tools installed for pull or merge request, review, and CI operations; run wtg tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
     )
 }
 
@@ -226,24 +226,24 @@ fn git_target<'a>(provider: &'a Provider, source: &'a GitSource) -> Result<GitTa
 }
 
 const HELP_PREFIX: &str = "\
-wt-tools reads and changes explicitly identified Git provider resources and records\n\
-feedback about wt-tools itself. It accepts exactly one JSON command object and\n\
+wtg tools reads and changes explicitly identified Git provider resources and records\n\
+feedback about wtg tools itself. It accepts exactly one JSON command object and\n\
 rejects unknown fields.\n\
 \n\
 USAGE:\n\
-    wt-tools '<JSON>'\n\
+    wtg tools '<JSON>'\n\
 \n\
 TYPESCRIPT COMMAND TYPE:\n";
 
 const HELP_SUFFIX: &str = "\
 \n\
 EXAMPLE:\n\
-    wt-tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
+    wtg tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch in the target\n\
 repository. It fails when there is no match or multiple matches.\n\
 \n\
-The four wt-tools feedback actions omit `target` and store feedback against this world\n\
+The four wtg tools feedback actions omit `target` and store feedback against this world\n\
 without contacting the Git provider.\n\
 \n\
 Provider operations return one JSON result or error object. Help remains\n\

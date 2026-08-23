@@ -30,28 +30,28 @@ phase "installing Diffo"
 install -d -m 0755 /usr/local/share /usr/local/libexec
 printf "WT_USER='%s'\nWT_GROUP='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
     "$WT_USER" "$WT_GROUP" "$WT_UID" "$WT_GID" "$WT_HOME" \
-    > /usr/local/share/wt-host-contract
-chmod 0644 /usr/local/share/wt-host-contract
+    > /usr/local/share/wt-guest-contract
+chmod 0644 /usr/local/share/wt-guest-contract
 install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf
-install -m 0755 /var/tmp/wt-host-access /usr/local/libexec/wt-host-access
-install -m 0755 /var/tmp/wt-host-git-author \
-    /usr/local/libexec/wt-host-git-author
-install -m 0755 /var/tmp/wt-host-agent-tools /usr/local/libexec/wt-host-agent-tools
-install -m 0755 /var/tmp/wt-host-mount-codex \
-    /usr/local/libexec/wt-host-mount-codex
+install -m 0755 /var/tmp/wt-guest-access /usr/local/libexec/wt-guest-access
+install -m 0755 /var/tmp/wt-guest-git-author \
+    /usr/local/libexec/wt-guest-git-author
+install -m 0755 /var/tmp/wt-guest-agent-tools /usr/local/libexec/wt-guest-agent-tools
+install -m 0755 /var/tmp/wt-guest-mount-codex \
+    /usr/local/libexec/wt-guest-mount-codex
 printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
     /usr/local/share/wt-tmux.conf | sha256sum --check --strict
 printf '%s  %s\n' "$ACCESS_SHA256" \
-    /usr/local/libexec/wt-host-access | sha256sum --check --strict
+    /usr/local/libexec/wt-guest-access | sha256sum --check --strict
 printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
-    /usr/local/libexec/wt-host-git-author | sha256sum --check --strict
+    /usr/local/libexec/wt-guest-git-author | sha256sum --check --strict
 printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
-    /usr/local/libexec/wt-host-agent-tools | sha256sum --check --strict
+    /usr/local/libexec/wt-guest-agent-tools | sha256sum --check --strict
 printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
-    /usr/local/libexec/wt-host-mount-codex | sha256sum --check --strict
+    /usr/local/libexec/wt-guest-mount-codex | sha256sum --check --strict
 
 phase "installing guest tools"
-/bin/sh /var/tmp/wt-host-image-build.sh
+/bin/sh /var/tmp/wt-guest-image-build.sh
 
 phase "validating cached development tools"
 test -f /var/lib/wt-image-development-tools
@@ -77,7 +77,7 @@ DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
 apt-get clean
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
-    /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-*
+    /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-guest-*
 printf 'kind=%s\nstatus=ready\nwt_uid=%s\nwt_gid=%s\n' \
     "$WT_IMAGE_KIND" "$WT_UID" "$WT_GID" \
     > /var/lib/wt-image-result

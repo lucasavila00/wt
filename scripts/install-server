@@ -91,8 +91,8 @@ rustup target add x86_64-unknown-linux-musl
 
 cd "$root"
 show_phase "Building the setup tool"
-setup_binary=target/release/wt-server-installer
-cargo build --quiet --locked --release -p wt-server-installer
+setup_binary=target/release/wts
+cargo build --quiet --locked --release -p wt-server-installer --bin wts
 
 show_phase "Validating the install input"
 "$setup_binary" validate --config "$config"

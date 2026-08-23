@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use wt_installer_support::SystemRunner;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-server-installer")]
+#[command(name = "wts", version = wt_control_protocol::BUILD_DESCRIPTION)]
 struct Cli {
     #[command(subcommand)]
     command: SetupCommand,
@@ -81,7 +81,9 @@ fn failure_message(error: &anyhow::Error) -> String {
     format!("WT server setup failed: {error:#}")
 }
 
-pub fn run_from(args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>) -> Result<()> {
+pub fn run_from(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<()> {
     let runner = SystemRunner;
     match Cli::parse_from(args).command {
         SetupCommand::Validate { config } => {

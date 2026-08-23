@@ -6,10 +6,10 @@ Its runner, secure file installation, path handling, and SSH credential logic
 come from `wt-installer-support`, which is also used by the standalone Git proxy setup.
 
 ```text
-wt-server-installer validate --config PATH
-wt-server-installer install --config PATH
-wt-server-installer image build --config PATH
-wt-server-installer image rebuild --config PATH
+wts validate --config PATH
+wts install --config PATH
+wts image build --config PATH
+wts image rebuild --config PATH
 ```
 
 ## Owns
@@ -20,17 +20,15 @@ wt-server-installer image rebuild --config PATH
   drift checks.
 - Guest image build, provenance, and verification.
 - A verified development-tools image cache used only by opted-in golden-image builds.
-- `wt` and `wt-server` binary installation.
-- `wt-server.service` installation and startup under the installing user.
+- `wts` binary installation.
+- `wts.service` installation and startup under the installing user.
 
 ## Executable compatibility
 
-`scripts/install-server` builds the setup tool and `wt-server` for the Ubuntu
-GNU target because both link the host's supported libvirt ABI. Every other
-installed WT executable is built as a static `x86_64-unknown-linux-musl`
-binary. Setup verifies those installed artifacts have no ELF interpreter or
-GLIBC symbol requirement. This covers the CLI, agent tool gateway and relay,
-and Git helpers.
+`scripts/install-server` builds `wts` for the Ubuntu GNU target because it links
+the server's supported libvirt ABI. It builds `wtg` as a static
+`x86_64-unknown-linux-musl` guest binary and verifies that artifact has no ELF
+interpreter or GLIBC symbol requirement.
 
 `PATH` is the install input. It is not the runtime config. Setup accepts matching
 installed state and fails on drift or partial state.

@@ -3929,8 +3929,6 @@ dependencies = [
  "wt-agent-tool-gateway",
  "wt-codex-integration",
  "wt-control-protocol",
- "wt-server",
- "wt-server-installer",
 ]
 
 [[package]]
@@ -3978,7 +3976,7 @@ dependencies = [
  "wt-client",
  "wt-control-protocol",
  "wt-git-proxy",
- "wt-host-world",
+ "wt-guest",
  "wt-libvirt-kvm",
  "wt-server",
  "wt-workload-registry",
@@ -4027,7 +4025,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-host-world"
+name = "wt-guest"
 version = "0.0.0"
 dependencies = [
  "insta",
@@ -4095,7 +4093,7 @@ dependencies = [
  "uuid",
  "wt-agent-tool-gateway",
  "wt-control-protocol",
- "wt-host-world",
+ "wt-guest",
  "wt-libvirt-kvm",
  "wt-tools",
  "wt-workload-registry",
@@ -4117,7 +4115,7 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "uuid",
  "wt-control-protocol",
- "wt-host-world",
+ "wt-guest",
  "wt-installer-support",
  "wt-libvirt-kvm",
  "wt-server",

@@ -10,7 +10,7 @@ after a session is selected or created.
 
 ## Decision
 
-The host golden image owns this fixed command topology:
+The guest golden image owns this fixed command topology:
 
 ```text
 /home/wt/.local/bin/codex -> /usr/local/bin/wt-codex-integration

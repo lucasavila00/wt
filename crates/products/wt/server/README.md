@@ -3,7 +3,7 @@
 Owner-scoped control-plane daemon for one KVM server.
 
 Systemd runs `wt-server serve` as the installed server user. It listens only on
-the mode-`0600` Unix socket `/run/wt/server.sock`. `wt` invokes `wt-server api`
+the mode-`0600` Unix socket `/run/wt/server.sock`. `wt` invokes `wts api`
 locally or through OpenSSH; that command bridges one JSON request, zero or more
 line-delimited progress events, and exactly one final response between stdio
 and the daemon. Progress delivery is best-effort and a disconnected observer
@@ -12,7 +12,9 @@ does not cancel world provisioning.
 ## Owns
 
 - Create, list, get, start, stop, and delete operations for guests.
-- Host lifecycle dispatch.
+- Guest lifecycle dispatch.
+- In-process Git and provider gateway service.
+- Codex-auth and SSH-key publication.
 - SQLite world, capacity, and disk registry.
 - In-memory coordination of concurrent world operations.
 - Reconciliation after worker failure.

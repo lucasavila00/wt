@@ -17,7 +17,7 @@ Host local.same
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='local.same' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.same' /usr/local/bin/wt-guest-shell
 
 Host local.same-direct
   HostName 192.0.2.2
@@ -46,7 +46,7 @@ Host lab.same
   KbdInteractiveAuthentication no
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.same' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.same' /usr/local/bin/wt-guest-shell
 
 Host lab.same-direct
   HostName 192.0.2.2
