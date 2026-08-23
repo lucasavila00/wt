@@ -573,7 +573,7 @@ done
                 &codex,
                 &home,
                 Duration::from_secs(1),
-                Duration::from_millis(10),
+                Duration::from_secs(1),
             )
             .unwrap_err()
             .to_string(),
