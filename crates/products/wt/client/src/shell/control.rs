@@ -4,6 +4,8 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use uuid::Uuid;
 use wt_control_protocol::{ByobuTarget, CodexSessionState};
 
+mod live;
+
 pub(super) use super::activity::Activity;
 
 pub(super) const COMMANDS: [ControlCommand; 2] =
@@ -259,6 +261,7 @@ impl ControlState {
             .or_else(|| codex.first().map(|card| card.identity.clone()));
         self.codex = codex;
         self.selected = selected;
+        self.select_first_visible_codex();
         self.keep_codex_selection_visible(area);
         self.codex_refresh.finish(Ok(updated_at));
         true
@@ -302,6 +305,7 @@ impl ControlState {
         match key.code {
             KeyCode::Tab => {
                 self.activity = self.activity.next();
+                self.select_first_visible_codex();
                 self.keep_codex_selection_visible(area);
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
@@ -373,6 +377,7 @@ impl ControlState {
         }
         if let Some(activity) = super::activity::at_position(area, mouse.column, mouse.row) {
             self.activity = activity;
+            self.select_first_visible_codex();
             self.keep_codex_selection_visible(area);
             return (true, None);
         }
@@ -384,11 +389,11 @@ impl ControlState {
                 area,
                 self.activity,
                 self.codex_offset,
-                self.codex.len(),
+                self.visible_codex_len(),
                 mouse.column,
                 mouse.row,
             ) {
-                self.selected = Some(self.codex[index].identity.clone());
+                self.selected = Some(self.visible_codex_identities()[index].clone());
                 return (
                     true,
                     self.activate_selected()
@@ -420,22 +425,19 @@ impl ControlState {
     }
 
     fn move_codex(&mut self, delta: isize, area: Rect) {
-        if self.codex.is_empty() || self.opening.is_some() {
+        let identities = self.visible_codex_identities();
+        if identities.is_empty() || self.opening.is_some() {
             return;
         }
         let current = self
             .selected
             .as_ref()
-            .and_then(|selected| {
-                self.codex
-                    .iter()
-                    .position(|card| &card.identity == selected)
-            })
+            .and_then(|selected| identities.iter().position(|identity| identity == selected))
             .unwrap_or_default();
         let selected = current
             .saturating_add_signed(delta)
-            .min(self.codex.len().saturating_sub(1));
-        self.selected = Some(self.codex[selected].identity.clone());
+            .min(identities.len().saturating_sub(1));
+        self.selected = Some(identities[selected].clone());
         let visible = codex_visible_cards(area, self.activity).max(1);
         if self.activity == Activity::Live {
             let columns = super::live::columns(area);
@@ -454,15 +456,16 @@ impl ControlState {
     }
 
     fn keep_codex_selection_visible(&mut self, area: Rect) {
+        let identities = self.visible_codex_identities();
         let visible = codex_visible_cards(area, self.activity).max(1);
         self.codex_offset = self
             .codex_offset
-            .min(self.codex.len().saturating_sub(visible));
-        let Some(selected) = self.selected.as_ref().and_then(|selected| {
-            self.codex
-                .iter()
-                .position(|card| &card.identity == selected)
-        }) else {
+            .min(identities.len().saturating_sub(visible));
+        let Some(selected) = self
+            .selected
+            .as_ref()
+            .and_then(|selected| identities.iter().position(|identity| identity == selected))
+        else {
             self.codex_offset = 0;
             return;
         };

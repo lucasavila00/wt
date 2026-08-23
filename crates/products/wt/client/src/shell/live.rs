@@ -1,6 +1,6 @@
 use super::control::control_content_areas;
 use super::model::ShellModel;
-use super::render::{card_title, muted_style, selected_style};
+use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
 use ratatui::layout::{Alignment, Margin, Rect};
 use ratatui::style::{Modifier, Style};
@@ -97,7 +97,8 @@ pub(super) fn draw(
         .title("Live sessions · Experimental");
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    if state.codex().is_empty() {
+    let cards = state.live_codex();
+    if cards.is_empty() {
         frame.render_widget(
             Paragraph::new("No live Codex sessions\nStart Codex in a world to see its pane here")
                 .alignment(Alignment::Center),
@@ -105,12 +106,14 @@ pub(super) fn draw(
         );
         return;
     }
-    for (index, rect) in card_rects(frame.area(), state.codex_offset(), state.codex().len()) {
-        let card = &state.codex()[index];
+    for (index, rect) in card_rects(frame.area(), state.codex_offset(), cards.len()) {
+        let card = cards[index];
         let (title, title_color) = card_title(card);
         let block = Block::new()
             .borders(Borders::ALL)
-            .style(selected_style(state.selected() == Some(&card.identity)))
+            .border_style(selected_card_border_style(
+                state.selected() == Some(&card.identity),
+            ))
             .title(Span::styled(
                 format!(" {title} "),
                 Style::new().fg(title_color).add_modifier(Modifier::BOLD),

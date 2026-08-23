@@ -89,6 +89,41 @@ fn card_navigation_opens_only_the_selected_live_location() {
 }
 
 #[test]
+fn live_activity_excludes_sessions_that_are_not_open() {
+    let mut state = ControlState::default();
+    let first = live_card(1, "%1");
+    let inactive = inactive_card(2, "%2");
+    let second = live_card(3, "%3");
+    state.set_codex(
+        vec![
+            first.clone(),
+            inactive,
+            CodexCard::rollout_only("ars", Uuid::from_u128(4), 4, None),
+            second.clone(),
+        ],
+        "2026-08-21T20:00:00Z".into(),
+        area(),
+    );
+
+    state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    assert_eq!(state.selected(), Some(&state.codex()[1].identity));
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
+    state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
+
+    assert_eq!(state.live_codex().len(), 2);
+    assert_eq!(state.selected(), Some(&first.identity));
+    state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    assert_eq!(state.selected(), Some(&second.identity));
+
+    state.set_codex(
+        vec![first.clone(), inactive_card(3, "%3")],
+        "2026-08-21T20:00:05Z".into(),
+        area(),
+    );
+    assert_eq!(state.selected(), Some(&first.identity));
+}
+
+#[test]
 fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
     let mut state = ControlState::default();
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
@@ -311,6 +346,15 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
             },
         },
     }
+}
+
+fn inactive_card(index: u128, pane_id: &str) -> CodexCard {
+    let mut card = live_card(index, pane_id);
+    let CodexCardKind::Observation { state, .. } = &mut card.kind else {
+        unreachable!()
+    };
+    *state = wt_control_protocol::CodexSessionState::Inactive;
+    card
 }
 
 fn mouse(column: u16, row: u16) -> MouseEvent {

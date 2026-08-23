@@ -364,10 +364,9 @@ fn draw_world_card(
     selected: bool,
     footer: &str,
 ) {
-    let card_style = selected_style(selected);
     let block = Block::new()
         .borders(Borders::ALL)
-        .style(card_style)
+        .border_style(selected_card_border_style(selected))
         .title(Span::styled(
             format!(" {icon} {status} "),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
@@ -422,10 +421,9 @@ fn draw_codex_card(
     selected: bool,
 ) {
     let (title, title_color) = card_title(card);
-    let card_style = selected_style(selected);
     let block = Block::new()
         .borders(Borders::ALL)
-        .style(card_style)
+        .border_style(selected_card_border_style(selected))
         .title(Span::styled(
             format!(" {title} "),
             Style::new().fg(title_color).add_modifier(Modifier::BOLD),
@@ -645,7 +643,7 @@ fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandP
     };
     let list = List::new(items)
         .highlight_symbol(" ")
-        .highlight_style(selected_style(true));
+        .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
     let mut state = ListState::default().with_selected(
         (!commands.is_empty()).then_some(palette.selected().min(commands.len().saturating_sub(1))),
     );
@@ -660,9 +658,9 @@ pub(super) fn muted_style() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
 
-pub(super) fn selected_style(selected: bool) -> Style {
+pub(super) fn selected_card_border_style(selected: bool) -> Style {
     if selected {
-        Style::new().add_modifier(Modifier::REVERSED)
+        Style::new().fg(Color::Yellow)
     } else {
         Style::new()
     }
