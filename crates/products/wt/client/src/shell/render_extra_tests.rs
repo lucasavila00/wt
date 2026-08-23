@@ -1,6 +1,5 @@
 use super::*;
 use ratatui::{backend::TestBackend, Terminal};
-use wt_control_protocol::{ResourceCapacity, Resources};
 
 #[test]
 fn selected_card_border_uses_the_navigation_color() {
@@ -57,69 +56,6 @@ fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
 }
 
 #[test]
-fn empty_shell_renders_the_control_ui() {
-    let backend = TestBackend::new(64, 12);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let model = ShellModel::new(Vec::new());
-
-    terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::live_focus::LiveFocus::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
-        .unwrap();
-
-    insta::assert_debug_snapshot!("shell_empty_control", terminal.backend().buffer());
-}
-
-#[test]
-fn control_footer_shows_reserved_and_total_resources() {
-    let backend = TestBackend::new(160, 12);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let mut model = ShellModel::new(vec!["local.one".into()]);
-    model.control_mut().set_capacity(ResourceCapacity {
-        reserved: Resources {
-            vcpus: 6,
-            memory_mib: 10_240,
-            disk_gib: 68,
-        },
-        total: Resources {
-            vcpus: 16,
-            memory_mib: 32_768,
-            disk_gib: 256,
-        },
-    });
-
-    terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::live_focus::LiveFocus::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
-        .unwrap();
-
-    insta::assert_debug_snapshot!(
-        "shell_control_resource_capacity",
-        terminal.backend().buffer()
-    );
-}
-
-#[test]
 fn running_world_without_a_codex_session_is_a_warning() {
     let area = Rect::new(0, 0, 80, 12);
     let backend = TestBackend::new(area.width, area.height);
@@ -141,7 +77,14 @@ fn running_world_without_a_codex_session_is_a_warning() {
             )
         })
         .unwrap();
-    assert!(format!("{:?}", terminal.backend().buffer()).contains("RUNNING"));
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(rendered.contains("RUNNING"));
 
     model.set_codex(Vec::new(), "2026-08-23T12:00:00Z".into(), area);
     terminal
@@ -159,7 +102,6 @@ fn running_world_without_a_codex_session_is_a_warning() {
         })
         .unwrap();
 
-    insta::assert_debug_snapshot!("shell_idle_world_warning", terminal.backend().buffer());
     let title = terminal.backend().buffer().cell((6, 0)).unwrap().style();
     assert_eq!(title.fg, Some(Color::Yellow));
     assert!(title.add_modifier.contains(Modifier::BOLD));

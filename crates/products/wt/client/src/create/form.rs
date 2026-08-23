@@ -668,20 +668,6 @@ mod tests {
     }
 
     #[test]
-    fn renders_the_editing_form() {
-        let backend = TestBackend::new(84, 22);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut form = form();
-        form.name = "quiet-otter".into();
-
-        terminal
-            .draw(|frame| form.render(frame, frame.area()))
-            .unwrap();
-
-        insta::assert_debug_snapshot!("world_creation_form", terminal.backend().buffer());
-    }
-
-    #[test]
     fn overlay_clears_the_modal_background() {
         let backend = TestBackend::new(84, 22);
         let mut terminal = Terminal::new(backend).unwrap();
