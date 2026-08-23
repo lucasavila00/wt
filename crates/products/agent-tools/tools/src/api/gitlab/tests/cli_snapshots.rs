@@ -80,6 +80,7 @@ fn cli_commands_render_provider_results_as_json() {
             WtToolsCommand::SetMr {
                 mr: "8".into(),
                 state: ChangeRequestState::Closed,
+                confirm_merged: false,
             },
         ),
         (
@@ -88,6 +89,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 title: Some("Clarify login fix".to_owned()),
                 body: None,
+                confirm_merged: false,
             },
         ),
         (
@@ -95,6 +97,7 @@ fn cli_commands_render_provider_results_as_json() {
             WtToolsCommand::CommentMr {
                 mr: "8".into(),
                 body: "Ready for another look.".to_owned(),
+                confirm_merged: false,
             },
         ),
         (
@@ -103,6 +106,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 body: "Fixed.".to_owned(),
+                confirm_merged: false,
             },
         ),
         (
@@ -111,6 +115,7 @@ fn cli_commands_render_provider_results_as_json() {
                 mr: "8".into(),
                 thread: "gid://gitlab/Discussion/thread-8".to_owned(),
                 resolved: true,
+                confirm_merged: false,
             },
         ),
     ];
@@ -125,6 +130,58 @@ fn cli_commands_render_provider_results_as_json() {
         let rendered = render_cli_command_output(output);
         let message: serde_json::Value = serde_json::from_str(&rendered).unwrap();
         insta::assert_snapshot!(name, serde_json::to_string_pretty(&message).unwrap());
+        server.join().unwrap().unwrap();
+    }
+}
+
+#[test]
+fn merged_merge_requests_require_confirmation_before_modification() {
+    let commands = [
+        WtToolsCommand::SetMr {
+            mr: "8".into(),
+            state: ChangeRequestState::Closed,
+            confirm_merged: false,
+        },
+        WtToolsCommand::EditMr {
+            mr: "8".into(),
+            title: Some("Better title".to_owned()),
+            body: None,
+            confirm_merged: false,
+        },
+        WtToolsCommand::CommentMr {
+            mr: "8".into(),
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::ReplyThread {
+            mr: "8".into(),
+            thread: "gid://gitlab/Discussion/thread-8".to_owned(),
+            body: "Done".to_owned(),
+            confirm_merged: false,
+        },
+        WtToolsCommand::SetThread {
+            mr: "8".into(),
+            thread: "gid://gitlab/Discussion/thread-8".to_owned(),
+            resolved: true,
+            confirm_merged: false,
+        },
+    ];
+
+    for command in commands {
+        let (base_url, server) = serve(vec![get(
+            "/api/v4/projects/acme%2Fwidget/merge_requests/8",
+            MR,
+        )]);
+        let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+        let error = provider
+            .execute_cli_command(&project_scope(), &command)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MR 8 is already merged; rerun with `confirm_merged`: true to modify it"
+        );
         server.join().unwrap().unwrap();
     }
 }

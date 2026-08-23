@@ -61,9 +61,9 @@ impl GitProviderApi for GithubApi {
                 )?;
                 self.read_refreshed_change_request(scope)
             }
-            ProviderCommand::MarkChangeRequestReady => {
+            ProviderCommand::MarkChangeRequestReady { confirm_merged } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubMarkPullRequestReady>(
@@ -72,9 +72,9 @@ impl GitProviderApi for GithubApi {
                 )?;
                 self.read_refreshed_change_request(scope)
             }
-            ProviderCommand::MarkChangeRequestDraft => {
+            ProviderCommand::MarkChangeRequestDraft { confirm_merged } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubMarkPullRequestDraft>(
@@ -83,9 +83,12 @@ impl GitProviderApi for GithubApi {
                 )?;
                 self.read_refreshed_change_request(scope)
             }
-            ProviderCommand::AddChangeRequestComment { body } => {
+            ProviderCommand::AddChangeRequestComment {
+                body,
+                confirm_merged,
+            } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql
@@ -100,9 +103,13 @@ impl GitProviderApi for GithubApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            ProviderCommand::EditChangeRequest { title, body } => {
+            ProviderCommand::EditChangeRequest {
+                title,
+                body,
+                confirm_merged,
+            } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .pull_request_id
                     .context("pull request has no ID")?;
                 self.graphql.execute_graphql::<GithubUpdatePullRequest>(
@@ -122,8 +129,12 @@ impl GitProviderApi for GithubApi {
                     .context("pull request disappeared")?
                     .threads,
             )),
-            ProviderCommand::ReplyToReviewThread { thread, body } => {
-                let snapshot = self.require_change_request(scope)?;
+            ProviderCommand::ReplyToReviewThread {
+                thread,
+                body,
+                confirm_merged,
+            } => {
+                let snapshot = self.require_confirmed_change_request(scope, *confirm_merged)?;
                 match Self::review_target(&snapshot, thread)? {
                     GithubReviewTarget::Thread(thread) => {
                         self.graphql.execute_graphql::<GithubReplyToReviewThread>(
@@ -149,8 +160,12 @@ impl GitProviderApi for GithubApi {
                     "Reply added.".to_owned(),
                 ))
             }
-            ProviderCommand::SetReviewThreadResolved { thread, resolved } => {
-                let snapshot = self.require_change_request(scope)?;
+            ProviderCommand::SetReviewThreadResolved {
+                thread,
+                resolved,
+                confirm_merged,
+            } => {
+                let snapshot = self.require_confirmed_change_request(scope, *confirm_merged)?;
                 let GithubReviewTarget::Thread(thread) = Self::review_target(&snapshot, thread)?
                 else {
                     bail!(
@@ -227,12 +242,13 @@ impl GitProviderApi for GithubApi {
             ProviderCommand::WaitForReviewOrCiChange => {
                 crate::api::wait_for_review_or_ci_change(self, scope)
             }
-            ProviderCommand::CloseChangeRequest | ProviderCommand::ReopenChangeRequest => {
+            ProviderCommand::CloseChangeRequest { confirm_merged }
+            | ProviderCommand::ReopenChangeRequest { confirm_merged } => {
                 let id = self
-                    .require_change_request(scope)?
+                    .require_confirmed_change_request(scope, *confirm_merged)?
                     .pull_request_id
                     .context("pull request has no ID")?;
-                let state = if matches!(command, ProviderCommand::CloseChangeRequest) {
+                let state = if matches!(command, ProviderCommand::CloseChangeRequest { .. }) {
                     github_update_pull_request::PullRequestUpdateState::CLOSED
                 } else {
                     github_update_pull_request::PullRequestUpdateState::OPEN
@@ -398,10 +414,14 @@ impl GitProviderApi for GithubApi {
                 };
                 self.execute_command(&current, &ProviderCommand::OpenChangeRequest)
             }
-            WtToolsCommand::SetMr { mr, state } => {
+            WtToolsCommand::SetMr {
+                mr,
+                state,
+                confirm_merged,
+            } => {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
-                Self::require_writable_pull_request(scope, &request)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
                 match state {
                     ChangeRequestState::Ready => {
                         self.graphql.execute_graphql::<GithubMarkPullRequestReady>(
@@ -439,10 +459,15 @@ impl GitProviderApi for GithubApi {
                     self.read_pull_request(scope.project, mr_id)?,
                 )))
             }
-            WtToolsCommand::EditMr { mr, title, body } => {
+            WtToolsCommand::EditMr {
+                mr,
+                title,
+                body,
+                confirm_merged,
+            } => {
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
-                Self::require_writable_pull_request(scope, &request)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
                 self.graphql.execute_graphql::<GithubUpdatePullRequest>(
                     self.graphql_path,
                     github_update_pull_request::Variables {
@@ -456,10 +481,14 @@ impl GitProviderApi for GithubApi {
                     self.read_pull_request(scope.project, mr_id)?,
                 )))
             }
-            WtToolsCommand::CommentMr { mr, body } => {
+            WtToolsCommand::CommentMr {
+                mr,
+                body,
+                confirm_merged,
+            } => {
                 let request =
                     self.read_pull_request(scope.project, parse_resource_id(mr, "MR")?)?;
-                Self::require_writable_pull_request(scope, &request)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
                 self.graphql
                     .execute_graphql::<GithubAddPullRequestComment>(
                         self.graphql_path,
@@ -472,11 +501,16 @@ impl GitProviderApi for GithubApi {
                     "Comment added.".to_owned(),
                 ))
             }
-            WtToolsCommand::ReplyThread { mr, thread, body } => {
+            WtToolsCommand::ReplyThread {
+                mr,
+                thread,
+                body,
+                confirm_merged,
+            } => {
                 let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
-                Self::require_writable_pull_request(scope, &request)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
                 self.require_review_thread(scope.project, mr_id, &thread)?;
                 self.graphql.execute_graphql::<GithubReplyToReviewThread>(
                     self.graphql_path,
@@ -493,11 +527,12 @@ impl GitProviderApi for GithubApi {
                 mr,
                 thread,
                 resolved,
+                confirm_merged,
             } => {
                 let thread = ReviewThreadHandle::new(thread);
                 let mr_id = parse_resource_id(mr, "MR")?;
                 let request = self.read_pull_request(scope.project, mr_id)?;
-                Self::require_writable_pull_request(scope, &request)?;
+                Self::require_writable_pull_request(scope, &request, *confirm_merged)?;
                 self.require_review_thread(scope.project, mr_id, &thread)?;
                 if *resolved {
                     self.graphql.execute_graphql::<GithubResolveReviewThread>(
