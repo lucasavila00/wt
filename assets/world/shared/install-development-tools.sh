@@ -83,9 +83,10 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
         set -eu
-        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck \
+            >/dev/null
         . "$HOME/.nvm/nvm.sh"
-        command -v nvm
+        command -v nvm >/dev/null
         {
             printf "cargo\t%s\n" "$(cargo --version)"
             printf "rustc\t%s\n" "$(rustc --version)"
