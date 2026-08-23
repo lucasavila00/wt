@@ -5,22 +5,27 @@
 
 ## Decision
 
-Track a session only while the Live view is open, the session is `working` and
-not compacting, and WT has verified that the playback stream shows that
-session's pane. Mark it `possibly stuck` after 30 seconds with no visible
-character changes and no newer Codex lifecycle observation.
+Track the Codex session displayed by each world's playback stream for as long as
+`wt shell` remains in its Control UI, regardless of which Control screen is
+selected. Track it when it is `working`, is not compacting, and is the only
+active Codex session in that world. Mark it `possibly stuck` after 30 seconds
+with no visible character changes and no newer Codex lifecycle observation.
 
-`wt shell` already receives each world's terminal output over its persistent SSH
-playback connection and applies that output to a `vt100` screen. While the Live
-view is open, its existing UI loop compares the visible character grid with the
-previous grid for the verified Codex pane and advances a local timer when they
-are equal. This uses no background thread and performs no additional remote
-polling.
+`wt shell` already opens one persistent SSH playback connection for every world
+and continuously applies every connection's output to its own `vt100` screen.
+That work does not start or stop when the user changes Control screens. The
+existing UI loop therefore compares the tracked screens on every iteration;
+it does not create another stream, background thread, or remote polling loop.
 
-Start a fresh timer after focus succeeds. Reset it when the character grid, its
+Each Codex observation already identifies its world, tmux session, and pane. WT
+uses that identity when it selects the pane on the existing world playback
+connection, so the parsed screen belongs to the selected Codex session. Start a
+fresh timer when WT selects that pane. Reset it when the character grid, its
 dimensions, or the latest Codex lifecycle observation changes. Discard it when
-the Live view closes, the connection changes, or WT can no longer verify the
-pane. After 30 seconds, render `POSSIBLY STUCK` in yellow on that live card.
+WT leaves the Control UI, temporarily stops screen observation while running a
+queued control action, replaces the playback connection, or the session stops
+being trackable. After 30 seconds, render `POSSIBLY STUCK` in yellow when that
+session is shown in the Live screen.
 
 Compare characters and screen dimensions only. Cursor movement and
 styling-only changes do not count as activity.
@@ -30,6 +35,8 @@ as client-only UI state; do not store it or return it from the server API.
 
 ## Consequences
 
-WT can implement this without changing Codex, but silent work can produce false
-positives. Leaving the eligible Live view discards elapsed quiet time. Do not
-apply the fallback when WT cannot identify the displayed pane.
+WT can implement this without changing Codex and without increasing the number
+of terminal streams. Moving between Control screens does not lose elapsed quiet
+time. Silent work can produce false positives. A world playback connection can
+show one pane at a time. When a world has multiple active Codex sessions, WT
+does not rotate the shared stream among them and does not apply this fallback.

@@ -162,10 +162,7 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        if model.mode() == Mode::Control
-            && model.control().activity() == control::Activity::Live
-            && !flows.actions.has_work()
-        {
+        if model.mode() == Mode::Control && !flows.actions.has_work() {
             redraw |= live_focus.sync(model, sessions, runtime.focus);
         } else {
             live_focus.clear();
