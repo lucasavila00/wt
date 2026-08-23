@@ -1,6 +1,6 @@
 use super::control::control_content_areas;
 use super::model::ShellModel;
-use super::render::{card_title, muted_style, selected_style};
+use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
 use ratatui::layout::{Alignment, Margin, Rect};
 use ratatui::style::{Modifier, Style};
@@ -110,7 +110,9 @@ pub(super) fn draw(
         let (title, title_color) = card_title(card);
         let block = Block::new()
             .borders(Borders::ALL)
-            .style(selected_style(state.selected() == Some(&card.identity)))
+            .border_style(selected_card_border_style(
+                state.selected() == Some(&card.identity),
+            ))
             .title(Span::styled(
                 format!(" {title} "),
                 Style::new().fg(title_color).add_modifier(Modifier::BOLD),
