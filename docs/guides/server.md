@@ -10,8 +10,15 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
-verified retained-world golden image. The final image contains Git, OpenSSH,
+verified retained-world golden image. The default image contains Git, OpenSSH,
 QEMU guest support, Byobu, tmux, Codex, Diffo, and WT's host helpers.
+
+Set `image.development_tools = true` in the install input to include the current
+Rust/Cargo, Go, Python/uv, and Node.js/nvm toolchains, plus build tools
+(`make`, CMake, GCC/Clang, and pkg-config), CLI utilities (`curl`, `wget`,
+`jq`, and `yq`), and Docker with Compose. The interactive world shell prints
+this high-level inventory when the option is enabled. It is off by default to
+keep golden-image builds, including KVM E2E, small and fast.
 
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wt-server --version`

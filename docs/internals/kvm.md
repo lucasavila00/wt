@@ -27,6 +27,12 @@ profile, and the static agent-tool and Codex-integration executables.
 Provisioning validates that foundation and applies only world-specific SSH,
 Git, gateway, and Codex state.
 
+`image.development_tools` is an optional image-build input, off by default. It
+adds current Rust/Cargo, Go, Python/uv, Node.js/nvm, build tools, common CLI
+utilities, and Docker/Compose; the finalized image records the exact resolved
+tool versions. KVM E2E leaves it disabled so its golden image stays narrow and
+does not repeat third-party language-runtime downloads.
+
 ## Readiness
 
 Libvirt waits for the QEMU guest agent and an IPv4 address. The host lifecycle

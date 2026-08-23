@@ -26,6 +26,7 @@ fn image_manifest_records_structured_package_versions() {
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         golden_sha256: "golden".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
+        development_tools: None,
     };
 
     let json = serde_json::to_value(manifest).unwrap();
@@ -56,6 +57,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
         },
         golden_sha256: "golden".to_owned(),
         packages: Default::default(),
+        development_tools: None,
     };
 
     let error = stage_publication(&UnusedRunner, &prepared, &destination, &manifest)

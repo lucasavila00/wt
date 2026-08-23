@@ -4,6 +4,31 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) type PackageVersions = BTreeMap<String, String>;
 
 const IMAGE_PACKAGES: &[&str] = &["ca-certificates", "git", "openssh-server", "byobu", "tmux"];
+const DEVELOPMENT_TOOL_PACKAGES: &[&str] = &[
+    "bison",
+    "build-essential",
+    "cmake",
+    "clang",
+    "curl",
+    "wget",
+    "jq",
+    "yq",
+    "pkg-config",
+    "docker.io",
+    "docker-compose-v2",
+];
+const DEVELOPMENT_TOOLS: &[&str] = &[
+    "cargo",
+    "rustc",
+    "go",
+    "python",
+    "nvm",
+    "node",
+    "npm",
+    "uv",
+    "docker",
+    "docker-compose",
+];
 
 struct PackageSet {
     names: Vec<&'static str>,
@@ -13,6 +38,12 @@ impl PackageSet {
     fn image() -> Self {
         Self {
             names: IMAGE_PACKAGES.to_vec(),
+        }
+    }
+
+    fn development_tools() -> Self {
+        Self {
+            names: DEVELOPMENT_TOOLS.to_vec(),
         }
     }
 
@@ -118,14 +149,23 @@ pub(super) const GHOSTTY_TERMINFO_SHA256: &str =
 
 pub(super) struct ImageRecipe {
     packages: PackageSet,
+    development_tools: Option<PackageSet>,
 }
 
 impl ImageRecipe {
-    pub(super) fn new() -> Self {
-        let packages = PackageSet::image()
+    pub(super) fn new(development_tools: bool) -> Self {
+        let mut packages = PackageSet::image()
             .with_packages(wt_libvirt_kvm::MACHINE_BOOTSTRAP_PACKAGES)
             .expect("libvirt machine package policy must be valid");
-        Self { packages }
+        if development_tools {
+            packages = packages
+                .with_packages(DEVELOPMENT_TOOL_PACKAGES)
+                .expect("development tool package policy must be valid");
+        }
+        Self {
+            packages,
+            development_tools: development_tools.then(PackageSet::development_tools),
+        }
     }
 
     pub(super) fn parse_package_versions(&self, text: &str) -> Result<PackageVersions> {
@@ -146,6 +186,32 @@ impl ImageRecipe {
         }
         Ok(())
     }
+
+    pub(super) fn parse_development_tool_versions(
+        &self,
+        text: &str,
+    ) -> Result<Option<PackageVersions>> {
+        self.development_tools
+            .as_ref()
+            .map(|tools| tools.parse_versions(text).map_err(Error::msg))
+            .transpose()
+    }
+
+    pub(super) fn validate_development_tool_versions(
+        &self,
+        tools: &Option<PackageVersions>,
+    ) -> Result<()> {
+        match (&self.development_tools, tools) {
+            (Some(expected), Some(actual)) => {
+                expected.validate_versions(actual).map_err(Error::msg)
+            }
+            (Some(_), None) => Err(Error::msg("image is missing development tool provenance")),
+            (None, Some(_)) => Err(Error::msg(
+                "image unexpectedly contains development tool provenance",
+            )),
+            (None, None) => Ok(()),
+        }
+    }
 }
 
 pub(super) struct BuildEnvironment<'a> {
@@ -156,18 +222,20 @@ pub(super) struct BuildEnvironment<'a> {
     pub(super) git_author_sha256: &'a str,
     pub(super) agent_tools_sha256: &'a str,
     pub(super) mount_codex_sha256: &'a str,
+    pub(super) development_tools: bool,
 }
 
 impl BuildEnvironment<'_> {
     pub(super) fn render(&self) -> String {
         format!(
-        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
+        "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nWT_DEVELOPMENT_TOOLS='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
         self.kind,
         wt_retained_worlds::GUEST_USER,
         wt_retained_worlds::GUEST_GROUP,
         wt_retained_worlds::GUEST_UID,
         wt_retained_worlds::GUEST_GID,
         wt_retained_worlds::GUEST_HOME,
+        self.development_tools,
         BYOBU_VERSION,
         BYOBU_SHA256,
         TMUX_VERSION,
@@ -218,6 +286,7 @@ mod tests {
                 git_author_sha256: "git-author-sha",
                 agent_tools_sha256: "agent-tools-sha",
                 mount_codex_sha256: "mount-codex-sha",
+                development_tools: false,
             }
             .render(),
             @r###"
@@ -227,6 +296,7 @@ WT_GROUP='wt'
 WT_UID='1001'
 WT_GID='1001'
 WT_HOME='/home/wt'
+WT_DEVELOPMENT_TOOLS='false'
 BYOBU_VERSION='7.15-0ubuntu1'
 BYOBU_SHA256='7ed723668e47f44cf6a066ace1ca801dd60e732404213856ac2bfa4d1eb352fc'
 TMUX_VERSION='3.6b'
@@ -246,7 +316,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
 
     #[test]
     fn parses_unordered_package_versions() {
-        let recipe = ImageRecipe::new();
+        let recipe = ImageRecipe::new(false);
         let packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -256,7 +326,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
 
     #[test]
     fn byobu_requires_its_tmux_backend() {
-        let recipe = ImageRecipe::new();
+        let recipe = ImageRecipe::new(false);
         let packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -267,7 +337,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
 
     #[test]
     fn reports_missing_and_unexpected_packages() {
-        let recipe = ImageRecipe::new();
+        let recipe = ImageRecipe::new(false);
         let mut packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -280,7 +350,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
 
     #[test]
     fn rejects_unexpected_byobu_version() {
-        let recipe = ImageRecipe::new();
+        let recipe = ImageRecipe::new(false);
         let mut packages = recipe
             .parse_package_versions(&package_output(&recipe))
             .unwrap();
@@ -297,7 +367,7 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
 
     #[test]
     fn rejects_duplicate_malformed_and_empty_versions() {
-        let recipe = ImageRecipe::new();
+        let recipe = ImageRecipe::new(false);
         assert!(recipe.parse_package_versions("tmux\t1\ntmux\t2\n").is_err());
         assert!(recipe.parse_package_versions("tmux=1\n").is_err());
         assert!(recipe.parse_package_versions("tmux\t\n").is_err());
@@ -314,5 +384,23 @@ MOUNT_CODEX_SHA256='mount-codex-sha'
                 .to_string(),
             "installed package manifest has an empty version for tmux"
         );
+    }
+
+    #[test]
+    fn development_tool_provenance_is_required_only_when_enabled() {
+        let enabled = ImageRecipe::new(true);
+        let tools = enabled
+            .parse_development_tool_versions(
+                &DEVELOPMENT_TOOLS
+                    .iter()
+                    .map(|name| format!("{name}\tversion"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+        enabled.validate_development_tool_versions(&tools).unwrap();
+        assert!(ImageRecipe::new(false)
+            .validate_development_tool_versions(&tools)
+            .is_err());
     }
 }

@@ -58,6 +58,7 @@ struct ImageManifest {
     guest_identity: wt_retained_worlds::GuestIdentity,
     golden_sha256: String,
     packages: PackageVersions,
+    development_tools: Option<PackageVersions>,
 }
 
 pub(crate) fn ensure(
@@ -77,7 +78,13 @@ pub(crate) fn ensure(
     match installed_image_state(
         installed.image.exists(),
         installed.manifest.exists(),
-        || verify_installed_image(&installed.image, &installed.manifest),
+        || {
+            verify_installed_image(
+                &installed.image,
+                &installed.manifest,
+                server.image.development_tools,
+            )
+        },
     ) {
         InstalledImageState::Reusable => {
             println!(
@@ -113,7 +120,11 @@ pub(crate) fn rebuild(
 
 pub(crate) fn verify(_input: &InstallInput, server: &ServerConfig) -> Result<()> {
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
-    verify_installed_image(&installed.image, &installed.manifest)?;
+    verify_installed_image(
+        &installed.image,
+        &installed.manifest,
+        server.image.development_tools,
+    )?;
     println!(
         "Verified retained golden image and provenance: {}",
         server.image.path.display()
@@ -226,7 +237,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let runner = context.runner;
     let input = context.input;
     let server = context.server;
-    let recipe = ImageRecipe::new();
+    let recipe = ImageRecipe::new(input.image.development_tools);
     let spec = BuildSpec {
         name: BUILD_NAME,
         recipe: RETAINED_IMAGE_BUILD,
@@ -271,6 +282,21 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .collect::<Vec<_>>()
         .join(", ");
     println!("Validated retained image packages: {package_summary}");
+    let development_tools = if input.image.development_tools {
+        let output = runner.text(
+            cmd!(
+                "sudo",
+                "virt-cat",
+                "-a",
+                &paths.disk,
+                "/var/lib/wt-image-development-tools",
+            ),
+            "read installed guest development tool versions",
+        )?;
+        recipe.parse_development_tool_versions(&output)?
+    } else {
+        None
+    };
 
     finalize_reusable_image(runner, &paths)?;
     let tmux_version = runner.text(
@@ -302,6 +328,21 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let finalized_packages = recipe.parse_package_versions(&finalized_package_output)?;
     if finalized_packages != packages {
         bail!("finalized image package versions changed during sanitization");
+    }
+    if input.image.development_tools {
+        let output = runner.text(
+            cmd!(
+                "sudo",
+                "virt-cat",
+                "-a",
+                &paths.disk,
+                "/var/lib/wt-image-development-tools",
+            ),
+            "revalidate finalized guest development tool versions",
+        )?;
+        if recipe.parse_development_tool_versions(&output)? != development_tools {
+            bail!("finalized image development tool versions changed during sanitization");
+        }
     }
     let user = User::from_uid(Uid::effective())
         .context("look up server user")?
@@ -338,6 +379,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         golden_sha256: sha_file(&paths.prepared)?,
         packages,
+        development_tools,
     };
     let publication = stage_publication(runner, &paths.prepared, &server.image.path, &manifest)?;
     if let Err(primary) = probe::verify_publication(input, server, publication.image_path()) {
@@ -357,8 +399,12 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     Ok(())
 }
 
-pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) -> Result<()> {
-    let recipe = ImageRecipe::new();
+pub(crate) fn verify_installed_image(
+    image_path: &Path,
+    manifest_path: &Path,
+    development_tools: bool,
+) -> Result<()> {
+    let recipe = ImageRecipe::new(development_tools);
     require_named_file(image_path, "libvirt-qemu", "kvm", 0o644)?;
     require_root_file(manifest_path, 0o644)?;
     let manifest: ImageManifest = serde_json::from_slice(
@@ -372,6 +418,9 @@ pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) ->
     recipe
         .validate_package_versions(&manifest.packages)
         .context("installed image package provenance differs")?;
+    recipe
+        .validate_development_tool_versions(&manifest.development_tools)
+        .context("installed image development tool provenance differs")?;
     require_sha(
         image_path,
         &manifest.golden_sha256,

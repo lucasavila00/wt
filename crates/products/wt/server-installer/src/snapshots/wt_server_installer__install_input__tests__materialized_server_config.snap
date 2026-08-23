@@ -7,6 +7,7 @@ test_server = false
 
 [image]
 path = "/var/lib/wt/images/retained.qcow2"
+development_tools = false
 
 [libvirt]
 network = "default"
