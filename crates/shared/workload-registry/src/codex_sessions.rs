@@ -8,6 +8,8 @@ use diesel::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
+const COMPACTION_LEASE_MILLIS: i64 = 2 * 60 * 1000;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CodexSessionState {
     Unknown,
@@ -388,7 +390,7 @@ impl Registry {
         owner: &str,
     ) -> Result<Vec<CodexSessionReport>, RegistryError> {
         self.read(|connection| {
-            codex_session_reports::table
+            let rows = codex_session_reports::table
                 .inner_join(worlds::table)
                 .filter(worlds::owner.eq(owner))
                 .order(codex_session_reports::received_at_unix_ms.desc())
@@ -405,8 +407,15 @@ impl Registry {
                     codex_session_reports::session_start_source,
                     codex_session_reports::received_at_unix_ms,
                 ))
-                .load::<CodexSessionReportRow>(connection)?
-                .into_iter()
+                .load::<CodexSessionReportRow>(connection)?;
+            let now_unix_ms = i64::try_from(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|error| RegistryError::InvalidData(error.to_string()))?
+                    .as_millis(),
+            )
+            .map_err(|_| RegistryError::InvalidData("system time is too large".into()))?;
+            rows.into_iter()
                 .map(|row| {
                     let checkout = load_current_checkout(connection, &row)?;
                     Ok(CodexSessionReport {
@@ -420,7 +429,11 @@ impl Registry {
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         state: CodexSessionState::parse(&row.state)?,
-                        is_compacting: row.is_compacting,
+                        is_compacting: compaction_is_current(
+                            row.is_compacting,
+                            row.received_at_unix_ms,
+                            now_unix_ms,
+                        ),
                         session_start_source: row.session_start_source,
                         received_at_unix_ms: row.received_at_unix_ms,
                     })
@@ -532,6 +545,13 @@ fn load_current_checkout(
         .transpose()
 }
 
+fn compaction_is_current(is_compacting: bool, received_at_unix_ms: i64, now_unix_ms: i64) -> bool {
+    is_compacting
+        && now_unix_ms
+            .checked_sub(received_at_unix_ms)
+            .is_some_and(|age| (0..COMPACTION_LEASE_MILLIS).contains(&age))
+}
+
 fn validate_lifecycle_report(
     cwd: &str,
     tmux_session: &str,
@@ -583,4 +603,28 @@ fn validate_checkout_context(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compaction_is_only_current_during_its_lease() {
+        let now = 1_000_000;
+
+        assert!(compaction_is_current(true, now, now));
+        assert!(compaction_is_current(
+            true,
+            now - COMPACTION_LEASE_MILLIS + 1,
+            now
+        ));
+        assert!(!compaction_is_current(
+            true,
+            now - COMPACTION_LEASE_MILLIS,
+            now
+        ));
+        assert!(!compaction_is_current(false, now, now));
+        assert!(!compaction_is_current(true, now + 1, now));
+    }
 }
