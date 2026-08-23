@@ -115,9 +115,7 @@ impl Drop for WorldRefresh {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Relaxed);
         let _ = self.stop.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
+        self.worker.take();
     }
 }
 
@@ -159,9 +157,7 @@ impl Drop for CodexRefresh {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Relaxed);
         let _ = self.commands.send(CodexRefreshCommand::Stop);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
+        self.worker.take();
     }
 }
 
@@ -173,4 +169,29 @@ pub(super) fn take_current_snapshot(
         .try_iter()
         .last()
         .filter(|snapshot| snapshot.generation == generation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn dropping_a_refresh_worker_does_not_wait_for_it() {
+        let (_updates_sender, updates) = mpsc::sync_channel(1);
+        let (stop, _stop_receiver) = mpsc::channel();
+        let worker = thread::spawn(|| thread::sleep(Duration::from_millis(250)));
+        let refresh = WorldRefresh {
+            updates,
+            generation: Arc::new(AtomicU64::new(0)),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            stop,
+            worker: Some(worker),
+        };
+
+        let started = Instant::now();
+        drop(refresh);
+
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
 }

@@ -83,6 +83,19 @@ impl ShellActionQueue {
         self.active.is_some() || !self.queued.is_empty()
     }
 
+    pub(super) fn running_work(&self) -> Vec<String> {
+        let mut work = Vec::new();
+        if let Some(active) = &self.active {
+            work.push(format!(
+                "{} ({})",
+                label(&active.entry.intent),
+                active.phase
+            ));
+        }
+        work.extend(self.queued.iter().map(|entry| label(&entry.intent)));
+        work
+    }
+
     pub(super) fn is_active(&self, id: ActionId) -> bool {
         self.active
             .as_ref()
@@ -354,5 +367,22 @@ mod tests {
             vec![remaining]
         );
         assert_ne!(remaining, removed);
+    }
+
+    #[test]
+    fn running_work_describes_active_and_queued_actions() {
+        let mut queue = ShellActionQueue::default();
+        let active = queue.enqueue(reconnect(1));
+        queue.enqueue(reconnect(2));
+        queue.activate_next("Connecting");
+
+        assert_eq!(
+            queue.running_work(),
+            [
+                format!("Reconnect local ({})", queue.active().unwrap().phase),
+                "Reconnect local".into(),
+            ]
+        );
+        assert_eq!(queue.active().unwrap().entry.id, active);
     }
 }
