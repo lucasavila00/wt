@@ -38,26 +38,47 @@ fn image_manifest_records_structured_package_versions() {
 
 #[test]
 fn development_tools_cache_identity_tracks_its_source_and_policy() {
-    let identity = development_tools_cache_identity(
+    let identity = cache::identity(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         32,
         "wt:wt:1001:1001:/home/wt",
+        "24.19.0",
     );
 
     assert_ne!(
         identity,
-        development_tools_cache_identity(
+        cache::identity(
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             32,
             "wt:wt:1001:1001:/home/wt",
+            "24.19.0",
         )
     );
     assert_ne!(
         identity,
-        development_tools_cache_identity(
+        cache::identity(
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             32,
             "wt:wt:1002:1002:/home/wt",
+            "24.19.0",
+        )
+    );
+    assert_ne!(
+        identity,
+        cache::identity(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            64,
+            "wt:wt:1001:1001:/home/wt",
+            "24.19.0",
+        )
+    );
+    assert_ne!(
+        identity,
+        cache::identity(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            32,
+            "wt:wt:1001:1001:/home/wt",
+            "24.20.0",
         )
     );
     assert_eq!(identity.len(), 64);
@@ -76,7 +97,7 @@ fn development_tools_cache_finalizer_needs_no_final_image_assets() {
 
 #[test]
 fn development_tools_cache_manifest_is_structured() {
-    let manifest = DevelopmentToolsCacheManifest {
+    let manifest = cache::DevelopmentToolsCacheManifest {
         identity: "policy".to_owned(),
         sha256: "image".to_owned(),
     };
