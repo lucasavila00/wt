@@ -22,6 +22,37 @@ npm ci
 The repository pins Node.js `24.19.0` in `.nvmrc` and npm `11.17.0` in
 `package.json`. Do not install Node.js or npm with apt.
 
+### KVM E2E host dependencies
+
+The full KVM E2E suite needs the server's runtime and image-building tools in
+addition to the development dependencies above. Install them on Ubuntu 24.04
+with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential musl-tools pkg-config git curl cpu-checker \
+    qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients \
+    virtiofsd virtinst libguestfs-tools ovmf libvirt-dev acl \
+    openssh-client openssh-server
+sudo usermod -aG libvirt,kvm "$USER"
+```
+
+`libvirt-dev` provides the native build dependency; `libvirt-clients` provides
+`virsh`. Log out and back in after the group change, then verify that nested KVM
+and the system libvirt connection are available:
+
+```bash
+test -r /dev/kvm && test -w /dev/kvm
+virsh -c qemu:///system domcapabilities --virttype kvm >/dev/null
+```
+
+The E2E image builder creates an 8-vCPU, 8192-MiB nested guest. The outer host
+must have at least 8 logical CPUs, 12 GiB RAM, and 20 GiB free on the workspace
+filesystem. A WT world with 8 vCPUs, 16 GiB RAM, and a 64 GiB disk is the
+recommended starting point. `make e2e-tests` checks these requirements before
+compiling the installer.
+
 ## Prepare a fresh server
 
 From a root shell in a WT checkout:
