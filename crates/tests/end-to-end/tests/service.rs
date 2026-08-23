@@ -124,8 +124,20 @@ fn failed_create_is_retained_until_delete() {
         InstanceStatus::Error
     );
 
+    let expected_id = Store::open(&temp.path().join("instances.db"))
+        .unwrap()
+        .get("tester", &name)
+        .unwrap()
+        .instance
+        .id;
     service
-        .execute("tester", Operation::Delete { name: name.clone() })
+        .execute(
+            "tester",
+            Operation::Delete {
+                name: name.clone(),
+                expected_id,
+            },
+        )
         .unwrap();
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
     assert!(matches!(
@@ -141,7 +153,7 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
     let temp = TempDir::new().unwrap();
     let store = Store::open(&temp.path().join("instances.db")).unwrap();
     let worker = Worker::default();
-    Service::new(
+    let Response::Instance { instance } = Service::new(
         store,
         worker.clone(),
         Gateway,
@@ -149,7 +161,9 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
         u64::MAX,
     )
     .execute("tester", Operation::Create(create("sample")))
-    .unwrap();
+    .unwrap() else {
+        panic!()
+    };
     let gateway = UnavailableGateway::default();
     let service = Service::new(
         Store::open(&temp.path().join("instances.db")).unwrap(),
@@ -164,6 +178,7 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
             "tester",
             Operation::Delete {
                 name: InstanceName::parse("sample").unwrap(),
+                expected_id: instance.id,
             },
         )
         .unwrap_err();
@@ -173,6 +188,51 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
         .unwrap()
         .get("tester", &InstanceName::parse("sample").unwrap())
         .is_ok());
+}
+
+#[test]
+fn delete_rejects_a_stale_world_id_without_side_effects() {
+    let temp = TempDir::new().unwrap();
+    let worker = Worker::default();
+    let create_service = service(&temp, worker.clone());
+    let name = InstanceName::parse("sample").unwrap();
+    let Response::Instance { instance } = create_service
+        .execute("tester", Operation::Create(create(name.as_str())))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let gateway = UnavailableGateway::default();
+    let service = Service::new(
+        Store::open(&temp.path().join("instances.db")).unwrap(),
+        worker.clone(),
+        gateway.clone(),
+        Operations::default(),
+        u64::MAX,
+    );
+
+    let error = service
+        .execute(
+            "tester",
+            Operation::Delete {
+                name: name.clone(),
+                expected_id: uuid::Uuid::new_v4(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, wt_control_protocol::ErrorCode::Conflict);
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
+    assert_eq!(gateway.revocations.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        Store::open(&temp.path().join("instances.db"))
+            .unwrap()
+            .get("tester", &name)
+            .unwrap()
+            .instance
+            .id,
+        instance.id
+    );
 }
 
 #[test]

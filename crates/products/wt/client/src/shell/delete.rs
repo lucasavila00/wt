@@ -18,13 +18,12 @@ const CONFIRMATION_MAX_HEIGHT: u16 = 11;
 pub(super) enum FlowAction {
     None,
     Changed,
+    Submit(Box<ShellWorld>),
     Cancel,
-    Deleted(WorldIdentity),
 }
 
 pub(super) struct Flow {
     phase: Phase,
-    progress: crate::progress_toast::ProgressToast,
 }
 
 enum Phase {
@@ -33,11 +32,6 @@ enum Phase {
         world: ShellWorld,
         choice: ConfirmChoice,
     },
-    Deleting {
-        world: ShellWorld,
-        result: Receiver<Result<()>>,
-    },
-    Error(String),
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -50,25 +44,6 @@ impl Flow {
     pub(super) fn new(worlds: Vec<ShellWorld>) -> Self {
         Self {
             phase: Phase::Pick(Picker::new(worlds)),
-            progress: crate::progress_toast::ProgressToast::new(),
-        }
-    }
-
-    pub(super) fn poll(&mut self) -> FlowAction {
-        let Phase::Deleting { world, result } = &self.phase else {
-            return FlowAction::None;
-        };
-        match result.try_recv() {
-            Ok(Ok(())) => FlowAction::Deleted(world.identity.clone()),
-            Ok(Err(error)) => {
-                self.phase = Phase::Error(format!("{error:#}"));
-                FlowAction::Changed
-            }
-            Err(TryRecvError::Empty) => FlowAction::None,
-            Err(TryRecvError::Disconnected) => {
-                self.phase = Phase::Error("world deletion worker stopped unexpectedly".into());
-                FlowAction::Changed
-            }
         }
     }
 
@@ -76,7 +51,7 @@ impl Flow {
         &mut self,
         event: &Event,
         area: Rect,
-        config: &ClientConfig,
+        _config: &ClientConfig,
     ) -> FlowAction {
         match &mut self.phase {
             Phase::Pick(picker) => match picker.handle_event(event, area) {
@@ -95,26 +70,9 @@ impl Flow {
                 match event {
                     ConfirmationEvent::Changed => FlowAction::Changed,
                     ConfirmationEvent::Cancel => FlowAction::Cancel,
-                    ConfirmationEvent::Delete => {
-                        let world = world.clone();
-                        match start_worker(config, &world) {
-                            Ok(result) => {
-                                self.progress.reset();
-                                self.phase = Phase::Deleting { world, result };
-                            }
-                            Err(error) => self.phase = Phase::Error(format!("{error:#}")),
-                        }
-                        FlowAction::Changed
-                    }
+                    ConfirmationEvent::Delete => FlowAction::Submit(Box::new(world.clone())),
                 }
             }
-            Phase::Deleting { .. } => FlowAction::None,
-            Phase::Error(_) => match event {
-                Event::Key(key) if matches!(key.code, KeyCode::Enter | KeyCode::Esc) => {
-                    FlowAction::Cancel
-                }
-                _ => FlowAction::None,
-            },
         }
     }
 
@@ -133,39 +91,30 @@ impl Flow {
         match &self.phase {
             Phase::Pick(picker) => picker.render(frame, area),
             Phase::Confirm { world, choice } => render_confirmation(frame, area, world, *choice),
-            Phase::Deleting { .. } => self.render_progress(frame, area),
-            Phase::Error(message) => render_message(
-                frame,
-                area,
-                "World deletion failed",
-                message,
-                "Enter/Esc close",
-            ),
         }
     }
+}
 
-    pub(super) fn blocks_input(&self) -> bool {
-        !matches!(self.phase, Phase::Deleting { .. })
+pub(super) struct Task {
+    world: ShellWorld,
+    result: Receiver<Result<()>>,
+}
+
+impl Task {
+    pub(super) fn start(config: &ClientConfig, world: ShellWorld) -> Result<Self> {
+        let result = start_worker(config, &world)?;
+        Ok(Self { world, result })
     }
 
-    pub(super) fn render_progress(&self, frame: &mut Frame<'_>, area: Rect) {
-        let Phase::Deleting { world, .. } = &self.phase else {
-            return;
-        };
-        self.progress.render(
-            frame,
-            area,
-            "World deletion",
-            &world.name,
-            "WT is deleting the world",
-        );
-    }
-
-    pub(super) fn handle_progress_mouse(&mut self, event: &Event, area: Rect) -> bool {
-        if !matches!(self.phase, Phase::Deleting { .. }) {
-            return false;
+    pub(super) fn poll(&self) -> Option<Result<WorldIdentity, String>> {
+        match self.result.try_recv() {
+            Ok(Ok(())) => Some(Ok(self.world.identity.clone())),
+            Ok(Err(error)) => Some(Err(format!("{error:#}"))),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                Some(Err("world deletion worker stopped unexpectedly".into()))
+            }
         }
-        self.progress.handle_mouse(event, area)
     }
 }
 
@@ -177,17 +126,20 @@ fn start_worker(config: &ClientConfig, world: &ShellWorld) -> Result<Receiver<Re
             anyhow::anyhow!("context {} is no longer configured", world.identity.context)
         })?;
     let name = world.instance_name.clone();
+    let expected_id = world.identity.id;
     let (sender, receiver) = mpsc::sync_channel(1);
     thread::Builder::new()
         .name(format!("wt-shell-delete-{}", world.name))
         .spawn(move || {
-            let result =
-                wt_client::transport::call(&context, &ApiRequest::new(Operation::Delete { name }))
-                    .map_err(anyhow::Error::from)
-                    .and_then(|response| match response {
-                        Response::Deleted { .. } => Ok(()),
-                        _ => bail!("helper returned the wrong response to delete"),
-                    });
+            let result = wt_client::transport::call(
+                &context,
+                &ApiRequest::new(Operation::Delete { name, expected_id }),
+            )
+            .map_err(anyhow::Error::from)
+            .and_then(|response| match response {
+                Response::Deleted { .. } => Ok(()),
+                _ => bail!("helper returned the wrong response to delete"),
+            });
             let _ = sender.send(result);
         })?;
     Ok(receiver)
@@ -426,22 +378,6 @@ fn render_confirmation(
     );
     frame.render_widget(
         Paragraph::new("Arrows: select · Enter: choose · Esc: cancel")
-            .alignment(Alignment::Center)
-            .style(muted_style()),
-        layout.footer,
-    );
-}
-
-fn render_message(frame: &mut Frame<'_>, area: Rect, title: &str, message: &str, footer: &str) {
-    let layout = confirmation_layout(area);
-    frame.render_widget(Clear, layout.modal);
-    frame.render_widget(modal_block(title), layout.modal);
-    frame.render_widget(
-        Paragraph::new(message).wrap(ratatui::widgets::Wrap { trim: false }),
-        layout.message,
-    );
-    frame.render_widget(
-        Paragraph::new(footer)
             .alignment(Alignment::Center)
             .style(muted_style()),
         layout.footer,

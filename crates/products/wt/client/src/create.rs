@@ -36,7 +36,9 @@ pub(crate) struct Created {
 pub(crate) enum FlowAction {
     None,
     Changed,
+    Submit(Input),
     Cancel,
+    Cancelling,
     Created(Box<Created>),
     Failed(String),
 }
@@ -50,11 +52,10 @@ enum Phase {
         status: String,
     },
     Capacity(String),
-    Failed(String),
 }
 
 pub(crate) struct Flow {
-    form: Form,
+    form: Option<Form>,
     phase: Phase,
     task: Option<Task>,
     world: Option<String>,
@@ -65,7 +66,7 @@ pub(crate) struct Flow {
 impl Flow {
     fn new(form: Form) -> Self {
         Self {
-            form,
+            form: Some(form),
             phase: Phase::Form,
             task: None,
             world: None,
@@ -74,39 +75,40 @@ impl Flow {
         }
     }
 
-    pub(crate) fn handle_key(&mut self, key: KeyEvent, config: &ClientConfig) -> FlowAction {
+    pub(crate) fn start(config: &ClientConfig, input: Input) -> Result<Self> {
+        let world = format!("{}.{}", input.context, input.name);
+        let memory = if input.memory_mib.is_multiple_of(1024) {
+            format!("{}G", input.memory_mib / 1024)
+        } else {
+            format!("{}MiB", input.memory_mib)
+        };
+        let resources = format!("{} CPU · {memory} · {}G disk", input.vcpus, input.disk_gib);
+        let task = Task::start(config, input)?;
+        Ok(Self {
+            form: None,
+            phase: Phase::Creating {
+                world: world.clone(),
+                resources: resources.clone(),
+                status: "WT is provisioning the guest".into(),
+            },
+            task: Some(task),
+            world: Some(world),
+            resources: Some(resources),
+            progress: crate::progress_toast::ProgressToast::new(),
+        })
+    }
+
+    pub(crate) fn handle_key(&mut self, key: KeyEvent, _config: &ClientConfig) -> FlowAction {
         match &self.phase {
-            Phase::Form => match self.form.handle_key(key) {
+            Phase::Form => match self
+                .form
+                .as_mut()
+                .expect("form phase has a form")
+                .handle_key(key)
+            {
                 FormAction::None => FlowAction::None,
                 FormAction::Cancel => FlowAction::Cancel,
-                FormAction::Submit(input) => {
-                    let world = format!("{}.{}", input.context, input.name);
-                    let memory = if input.memory_mib.is_multiple_of(1024) {
-                        format!("{}G", input.memory_mib / 1024)
-                    } else {
-                        format!("{}MiB", input.memory_mib)
-                    };
-                    let resources =
-                        format!("{} CPU · {memory} · {}G disk", input.vcpus, input.disk_gib);
-                    match Task::start(config, input) {
-                        Ok(task) => {
-                            self.task = Some(task);
-                            self.world = Some(world.clone());
-                            self.resources = Some(resources.clone());
-                            self.progress.reset();
-                            self.phase = Phase::Creating {
-                                world,
-                                resources,
-                                status: "WT is provisioning the guest".into(),
-                            };
-                            FlowAction::Changed
-                        }
-                        Err(error) => {
-                            self.phase = Phase::Failed(format!("{error:#}"));
-                            FlowAction::Changed
-                        }
-                    }
-                }
+                FormAction::Submit(input) => FlowAction::Submit(input),
             },
             Phase::Creating { .. } => FlowAction::None,
             Phase::Capacity(_) => match key.code {
@@ -126,23 +128,25 @@ impl Flow {
                     if let Some(task) = &self.task {
                         task.retry(false);
                     }
-                    FlowAction::Cancel
+                    self.phase = Phase::Creating {
+                        world: self.world.clone().unwrap_or_else(|| "world".into()),
+                        resources: self.resources.clone().unwrap_or_default(),
+                        status: "Cancelling world creation".into(),
+                    };
+                    FlowAction::Cancelling
                 }
                 _ => FlowAction::None,
             },
-            Phase::Failed(error) => {
-                if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
-                    FlowAction::Failed(error.clone())
-                } else {
-                    FlowAction::None
-                }
-            }
         }
     }
 
     pub(crate) fn handle_paste(&mut self, text: &str) -> FlowAction {
         if matches!(self.phase, Phase::Form) {
-            let _ = self.form.handle_paste(text);
+            let _ = self
+                .form
+                .as_mut()
+                .expect("form phase has a form")
+                .handle_paste(text);
         }
         FlowAction::None
     }
@@ -151,7 +155,12 @@ impl Flow {
         if !matches!(self.phase, Phase::Form) {
             return FlowAction::None;
         }
-        match self.form.handle_mouse(mouse, area) {
+        match self
+            .form
+            .as_mut()
+            .expect("form phase has a form")
+            .handle_mouse(mouse, area)
+        {
             FormAction::None => FlowAction::None,
             FormAction::Cancel => FlowAction::Cancel,
             FormAction::Submit(_) => unreachable!("the fields stage only advances to review"),
@@ -178,20 +187,23 @@ impl Flow {
             }
             TaskEvent::Finished(Ok(created)) => FlowAction::Created(created),
             TaskEvent::Finished(Err(error)) => {
-                self.phase = Phase::Failed(error);
                 self.task = None;
-                FlowAction::Changed
+                FlowAction::Failed(error)
             }
         }
     }
 
     pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
-        self.form.render(frame, area);
+        if let Some(form) = &self.form {
+            form.render(frame, area);
+        }
         self.render_status(frame, area);
     }
 
     pub(crate) fn render_overlay(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
-        self.form.render_overlay(frame, area);
+        if let Some(form) = &self.form {
+            form.render_overlay(frame, area);
+        }
         self.render_status(frame, area);
     }
 
@@ -207,11 +219,6 @@ impl Flow {
                 message.as_str(),
                 "Enter retry · Esc cancel",
             ),
-            Phase::Failed(message) => (
-                "Creation did not complete",
-                message.as_str(),
-                "Enter/Esc close",
-            ),
         };
         render_status(frame, area, title, message, help);
     }
@@ -226,6 +233,14 @@ impl Flow {
                 world, resources, ..
             } => Some((world, resources)),
             _ => None,
+        }
+    }
+
+    pub(crate) fn status(&self) -> Option<&str> {
+        match &self.phase {
+            Phase::Creating { status, .. } => Some(status),
+            Phase::Capacity(_) => Some("Waiting for capacity"),
+            Phase::Form => None,
         }
     }
 
@@ -278,6 +293,14 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
 
 pub(crate) fn prepare(config: &ClientConfig, used_names: &BTreeSet<String>) -> Result<Flow> {
     let author = read_git_author()?;
+    prepare_with_author(config, author, used_names)
+}
+
+pub(crate) fn prepare_with_author(
+    config: &ClientConfig,
+    author: crate::git_author::GitAuthor,
+    used_names: &BTreeSet<String>,
+) -> Result<Flow> {
     Form::new(config, author, used_names).map(Flow::new)
 }
 
@@ -291,9 +314,11 @@ fn run_loop(
             bail!("creation cancelled");
         }
         match flow.poll() {
+            FlowAction::Submit(_) => unreachable!("tasks do not submit forms"),
             FlowAction::Created(created) => return Ok(*created),
             FlowAction::Failed(error) => bail!(error),
             FlowAction::Cancel => bail!("creation cancelled"),
+            FlowAction::Cancelling => {}
             FlowAction::None => {}
             FlowAction::Changed => {}
         }
@@ -310,9 +335,11 @@ fn run_loop(
             _ => FlowAction::None,
         };
         match action {
+            FlowAction::Submit(input) => *flow = Flow::start(config, input)?,
             FlowAction::None => {}
             FlowAction::Changed => {}
             FlowAction::Cancel => bail!("creation cancelled"),
+            FlowAction::Cancelling => {}
             FlowAction::Created(created) => return Ok(*created),
             FlowAction::Failed(error) => bail!(error),
         }
