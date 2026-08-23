@@ -395,3 +395,66 @@ fn failed_worlds_refresh_is_shown_in_the_red_footer() {
     );
     assert!(buffer.content().iter().any(|cell| cell.fg == Color::Red));
 }
+
+#[test]
+fn live_session_repository_is_card_chrome() {
+    let backend = TestBackend::new(100, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    let session_id = Uuid::from_u128(2);
+    model.set_codex(
+        vec![CodexCard {
+            identity: CodexCardIdentity::Observation {
+                context: "ars".into(),
+                session_id,
+                world_id: Uuid::from_u128(1),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            session_id: Some(session_id),
+            timestamp: Some(now_ms()),
+            latest_user_message: None,
+            kind: CodexCardKind::Observation {
+                world_id: Uuid::from_u128(1),
+                world_name: "dev".into(),
+                cwd: "/home/wt/wt".into(),
+                repository_root: Some("/home/wt/wt".into()),
+                repository_url: Some("git@github.com:lucasavila00/wt.git".into()),
+                git_branch: Some("wt/live".into()),
+                state: CodexSessionState::Working,
+                is_compacting: false,
+                session_start_source: None,
+                target: ByobuTarget {
+                    tmux_session: "wt-host".into(),
+                    pane_id: "%1".into(),
+                },
+            },
+        }],
+        "2026-08-22T19:00:00Z".into(),
+        Rect::new(0, 0, 100, 18),
+    );
+    let mut live_parser = vt100::Parser::new(10, 91, 0);
+    live_parser.process(b"world output");
+
+    terminal
+        .draw(|frame| {
+            super::super::live::draw(
+                frame,
+                frame.area(),
+                &[live_parser.screen()],
+                &super::super::live_focus::LiveFocus::default(),
+                &model,
+            )
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let row = |y| {
+        (5..52)
+            .map(|x| buffer.cell((x, y)).unwrap().symbol())
+            .collect::<String>()
+    };
+    assert_eq!(row(1), "│world output                                 │");
+    assert_eq!(row(13), "└───────────────────── github:lucasavila00/wt ┘");
+}
