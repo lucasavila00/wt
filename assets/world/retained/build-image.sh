@@ -33,7 +33,7 @@ Group=$WT_GROUP
 Environment=HOME=$WT_HOME
 Environment=CODEX_HOME=$WT_HOME/.codex
 ExecStart=/usr/local/bin/wt-codex-integration reconcile-worker
-TimeoutStartSec=infinity
+TimeoutStartSec=5min
 Restart=on-failure
 RestartSec=30s
 UMask=0077
