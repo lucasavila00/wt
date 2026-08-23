@@ -188,14 +188,14 @@ pub(super) fn run_kvm_build<R: Runner>(
         BuildSource::ReusableImage => {
             runner.timed_run(
                 cmd!(
-                    "qemu-img",
-                    "convert",
-                    "-O",
-                    "qcow2",
+                    "cp",
+                    "--reflink=auto",
+                    "--sparse=always",
+                    "--",
                     context.source,
                     &paths.disk
                 ),
-                "copy cached image build disk",
+                "clone cached image build disk",
             )?;
         }
     }

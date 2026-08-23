@@ -48,9 +48,10 @@ discarded and rebuilt. An abandoned temporary publication is removed while the
 exclusive image-build lock is held. Failure cleanup removes only that temporary
 file and the failed build state.
 
-Do not add a qcow backing chain based on an unmeasured assumption. A clone may
-later use reflinks or another standalone-copy optimization if phase timings show
-that copying is material on supported hosts.
+Do not add a qcow backing chain. Clone the cache with a filesystem reflink when
+the host supports it and fall back to an ordinary sparse copy. Both paths create
+an independent file. The measured warm build spent 126 seconds in the previous
+eager `qemu-img convert`, so this optimization is material on the KVM test host.
 
 ## Validation
 
