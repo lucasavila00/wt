@@ -11,7 +11,7 @@ wt-client = { workspace = true }
 wt-control-protocol = { workspace = true }
 wt-git-proxy = { workspace = true }
 wt-libvirt-kvm = { workspace = true }
-wt-host-world = { workspace = true }
+wt-guest = { workspace = true }
 wt-server = { workspace = true }
 wt-workload-registry = { workspace = true }
 anyhow = { workspace = true }

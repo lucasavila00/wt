@@ -24,8 +24,7 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-sudo systemctl disable --now wt-server.service wt-agent-tool-gateway.service \
-    wt-codex-integration-auth.path 2>/dev/null || true
+sudo systemctl disable --now wts.service 2>/dev/null || true
 
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do
@@ -36,7 +35,7 @@ for domain in "${domains[@]}"; do
     virsh -c qemu:///system undefine "$domain" --nvram
 done
 
-sudo rm -f /etc/systemd/system/wt-server.service \
+sudo rm -f /etc/systemd/system/wts.service \
     /etc/systemd/system/wt-agent-tool-gateway.service \
     /etc/systemd/system/wt-codex-integration-auth.service \
     /etc/systemd/system/wt-codex-integration-auth.path \
@@ -45,6 +44,10 @@ sudo rm -f /etc/systemd/system/wt-server.service \
     /usr/local/libexec/wt-codex-integration-auth-share \
     /usr/local/libexec/wt-ssh-authorized-keys-share
 sudo rm -f \
+    /etc/credstore.encrypted/wts-github-api-token \
+    /etc/credstore.encrypted/wts-github-ssh-private-key \
+    /etc/credstore.encrypted/wts-gitlab-api-token \
+    /etc/credstore.encrypted/wts-gitlab-ssh-private-key \
     /etc/credstore.encrypted/wt-agent-tool-gateway-github-api-token \
     /etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-private-key \
     /etc/credstore.encrypted/wt-agent-tool-gateway-github-ssh-known-hosts \

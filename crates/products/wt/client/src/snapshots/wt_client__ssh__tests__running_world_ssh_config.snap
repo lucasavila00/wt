@@ -17,7 +17,7 @@ Host local.repo-feature
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature' /usr/local/bin/wt-guest-shell
 
 Host local.repo-feature-direct
   HostName 192.0.2.2
@@ -45,7 +45,7 @@ Host repo-feature
   PasswordAuthentication no
   KbdInteractiveAuthentication no
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='local.repo-feature' /usr/local/bin/wt-guest-shell
 
 Host repo-feature-direct
   HostName 192.0.2.2

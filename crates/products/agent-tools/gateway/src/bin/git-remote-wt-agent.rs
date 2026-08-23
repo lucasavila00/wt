@@ -8,15 +8,16 @@ use wt_agent_tool_gateway::{
 
 const SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
 
+#[allow(dead_code)]
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run_from(std::env::args().skip(1)) {
         eprintln!("git-remote-wt-agent: {error:#}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let mut args = std::env::args().skip(1);
+pub fn run_from(args: impl IntoIterator<Item = String>) -> Result<()> {
+    let mut args = args.into_iter();
     let _remote = args.next().context("missing remote name")?;
     let source = args.next().context("missing remote URL")?;
     if args.next().is_some() {

@@ -25,7 +25,7 @@ pub(crate) fn isolated_test_images(
         .tempdir_in("/var/tmp")
         .unwrap();
     fs::set_permissions(images.path(), fs::Permissions::from_mode(0o755)).unwrap();
-    let host_image = images.path().join("host.qcow2");
+    let guest_image = images.path().join("guest.qcow2");
     run(
         cmd!(
             "qemu-img",
@@ -37,36 +37,24 @@ pub(crate) fn isolated_test_images(
             "qcow2",
             "-b",
             installed,
-            &host_image,
+            &guest_image,
         ),
         "create isolated KVM test image",
     );
-    fs::set_permissions(&host_image, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&guest_image, fs::Permissions::from_mode(0o644)).unwrap();
     let installed_manifest = format!("{}.manifest.json", installed.display());
-    let isolated_manifest = format!("{}.manifest.json", host_image.display());
+    let isolated_manifest = format!("{}.manifest.json", guest_image.display());
     fs::copy(installed_manifest, isolated_manifest).unwrap();
     let inputs = [
         (
-            workspace.join("assets/world/host/prepare.sh"),
-            "/usr/local/libexec/wt-host-prepare",
+            workspace.join("assets/world/guest/prepare.sh"),
+            "/usr/local/libexec/wt-guest-prepare",
         ),
         (
             workspace.join("assets/world/shared/install-agent-tools.sh"),
-            "/usr/local/libexec/wt-host-agent-tools",
+            "/usr/local/libexec/wt-guest-agent-tools",
         ),
-        (
-            binary_dir.join("wt-agent-tool-gateway-relay"),
-            "/usr/local/bin/wt-agent-tool-gateway-relay",
-        ),
-        (
-            binary_dir.join("git-remote-wt-agent"),
-            "/usr/local/bin/git-remote-wt-agent",
-        ),
-        (binary_dir.join("wt-tools"), "/usr/local/bin/wt-tools"),
-        (
-            binary_dir.join("wt-codex-integration"),
-            "/usr/local/bin/wt-codex-integration",
-        ),
+        (binary_dir.join("wtg"), "/usr/local/bin/wtg"),
     ];
     let mut customize = cmd!(
         "sudo",
@@ -74,7 +62,7 @@ pub(crate) fn isolated_test_images(
         "virt-customize",
         "--no-network",
         "-a",
-        &host_image
+        &guest_image
     );
     for (source, guest_path) in &inputs {
         customize
@@ -88,6 +76,6 @@ pub(crate) fn isolated_test_images(
         customize,
         "install current guest assets in isolated test image",
     );
-    fs::set_permissions(&host_image, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&guest_image, fs::Permissions::from_mode(0o644)).unwrap();
     images
 }

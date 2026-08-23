@@ -1,10 +1,10 @@
 [package]
-name = "wt-host-world"
+name = "wt-guest"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Shared host-world guest contracts and operations for wt"
+description = "Shared guest guest contracts and operations for wt"
 
 [dependencies]
 serde = { workspace = true }

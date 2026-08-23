@@ -39,12 +39,12 @@ nuke:
 
 e2e-tests:
 	scripts/check-kvm-e2e-host
-	cargo run --quiet -p wt-server-installer -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
-	cargo run --quiet -p wt-server-installer -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --quiet -p wt-server-installer --bin wts -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --quiet -p wt-server-installer --bin wts -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
 	cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
-	cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --quiet -p wt-server-installer --bin wts -- validate --config "$(KVM_INSTALL_CONFIG)"
 	scripts/clear --codex-sessions /home/wt/.config/wt/kvm-test/codex/sessions
-	cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --release -p wt-server-installer --bin wts -- install --config "$(KVM_INSTALL_CONFIG)"
 	cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
 	@printf '\nWT E2E test server remains installed on this host.\n'
 

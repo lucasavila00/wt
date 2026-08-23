@@ -3,10 +3,10 @@ use super::*;
 impl WtToolsCommand {
     pub fn parse(args: &[String]) -> Result<Self> {
         let [json] = args else {
-            bail!("wt-tools expects exactly one JSON command object; run `wt-tools help` for the TypeScript command type");
+            bail!("wtg tools expects exactly one JSON command object; run `wtg tools help` for the TypeScript command type");
         };
         let parsed: Self = serde_json::from_str(json).context(
-            "invalid wt-tools command JSON; run `wt-tools help` for the TypeScript command type",
+            "invalid wtg tools command JSON; run `wtg tools help` for the TypeScript command type",
         )?;
         match &parsed {
             Self::GitHosting { target, command } => {

@@ -38,6 +38,7 @@ enum Command {
     },
 }
 
+#[allow(dead_code)]
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
     let silent = args.get(1).is_some_and(|value| value == "report-hook");
@@ -50,7 +51,7 @@ fn main() {
     }
 }
 
-fn run(args: Vec<OsString>) -> Result<()> {
+pub fn run(args: Vec<OsString>) -> Result<()> {
     if install::invoked_as_codex(&args)? {
         return run_trampoline(args);
     }

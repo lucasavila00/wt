@@ -182,16 +182,16 @@ impl ServerConfig {
         MachineConfig {
             image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
-            worlds_owner_uid: wt_host_world::WT_IDENTITY.uid,
+            worlds_owner_uid: wt_guest::WT_IDENTITY.uid,
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             shared_mounts: Some(self.shared_mounts()),
         }
     }
 
-    pub fn host_config(&self) -> wt_host_world::HostConfig {
-        wt_host_world::HostConfig {
-            agent_tools: wt_host_world::AgentToolsConfig {
+    pub fn host_config(&self) -> wt_guest::HostConfig {
+        wt_guest::HostConfig {
+            agent_tools: wt_guest::AgentToolsConfig {
                 provider_hosts: self.agent_tools_provider_hosts(),
                 vsock_port: self.agent_tools.vsock_port,
             },

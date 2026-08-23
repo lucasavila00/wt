@@ -11,7 +11,7 @@ use wt_libvirt_kvm::{
     RunRequest, WorkerError, WriteFileRequest,
 };
 
-const PREPARE: &str = "/usr/local/libexec/wt-host-prepare";
+const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
 const CODEX_RECONCILIATION_DESIRED: &str = "/home/wt/.local/state/wt/codex-reconciliation-desired";
 const CODEX_RECONCILIATION_STAGED: &str =
     "/home/wt/.local/state/wt/.codex-reconciliation-desired.next";
@@ -469,6 +469,6 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-        insta::assert_snapshot!(error.to_string(), @"host image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+        insta::assert_snapshot!(error.to_string(), @"guest image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
     }
 }

@@ -1,6 +1,6 @@
 # Client and SSH
 
-WT host worlds are persistent Ubuntu guests created from a server's verified golden
+WT guests are persistent Ubuntu guests created from a server's verified golden
 image. Each world has a persistent Byobu workspace and keeps its disk until it
 is removed.
 
@@ -19,7 +19,7 @@ kind = "bare_metal_ssh"
 host = "wt-server"
 ```
 
-A local context runs `wt-server api`. An SSH context runs it through the named
+A local context runs `wts api`. An SSH context runs it through the named
 OpenSSH host. Use `CONTEXT.WORLD` explicitly; a short name works only when it
 is unique across every context. World names cannot end in `-direct`, which is
 reserved for managed SSH.

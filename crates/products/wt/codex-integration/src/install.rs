@@ -90,41 +90,41 @@ sandbox_mode = "danger-full-access"
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = '''wt-tools world-prompt'''
+command = '''wtg tools world-prompt'''
 
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 
 [[hooks.PreCompact]]
 
 [[hooks.PreCompact.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 
 [[hooks.PostCompact]]
 
 [[hooks.PostCompact.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 
 [[hooks.UserPromptSubmit]]
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 
 [[hooks.Stop]]
 
 [[hooks.Stop.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 
 [[hooks.SessionEnd]]
 
 [[hooks.SessionEnd.hooks]]
 type = "command"
-command = '''wt-codex-integration report-hook'''
+command = '''wtg codex report-hook'''
 "#;
 
 pub(crate) fn invoked_as_codex(args: &[OsString]) -> Result<bool> {
@@ -232,41 +232,41 @@ mod tests {
 
         [[hooks.SessionStart.hooks]]
         type = "command"
-        command = '''wt-tools world-prompt'''
+        command = '''wtg tools world-prompt'''
 
         [[hooks.SessionStart.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
 
         [[hooks.PreCompact]]
 
         [[hooks.PreCompact.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
 
         [[hooks.PostCompact]]
 
         [[hooks.PostCompact.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
 
         [[hooks.UserPromptSubmit]]
 
         [[hooks.UserPromptSubmit.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
 
         [[hooks.Stop]]
 
         [[hooks.Stop.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
 
         [[hooks.SessionEnd]]
 
         [[hooks.SessionEnd.hooks]]
         type = "command"
-        command = '''wt-codex-integration report-hook'''
+        command = '''wtg codex report-hook'''
         "###
         );
         install_config(&codex_home).unwrap();

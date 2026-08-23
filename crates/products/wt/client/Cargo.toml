@@ -6,12 +6,23 @@ license.workspace = true
 publish.workspace = true
 description = "Local wt workstation CLI (binary name: wt)"
 
+[features]
+default = []
+guest = ["dep:wt-agent-tool-gateway", "dep:wt-codex-integration"]
+
 [[bin]]
 name = "wt"
 path = "src/main.rs"
 
+[[bin]]
+name = "wtg"
+path = "src/wtg.rs"
+required-features = ["guest"]
+
 [dependencies]
 wt-control-protocol = { workspace = true }
+wt-agent-tool-gateway = { workspace = true, optional = true }
+wt-codex-integration = { path = "../codex-integration", optional = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }

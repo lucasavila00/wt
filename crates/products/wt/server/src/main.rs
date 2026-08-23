@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, InstanceStatus};
 use wt_libvirt_kvm::LibvirtProvider;
@@ -13,7 +14,7 @@ use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
 #[derive(Debug, Parser)]
-#[command(name = "wt-server", version = wt_control_protocol::BUILD_DESCRIPTION)]
+#[command(name = "wts", version = wt_control_protocol::BUILD_DESCRIPTION)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -27,15 +28,18 @@ enum Command {
     Serve,
 }
 
+#[allow(dead_code)]
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run_from(std::env::args_os()) {
         eprintln!("wt-server: {error:#}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    match Cli::parse().command {
+pub fn run_from(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<()> {
+    match Cli::parse_from(args).command {
         Command::Api => run_api(),
         Command::Serve => run_server(),
     }
@@ -67,6 +71,7 @@ fn run_server() -> Result<()> {
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
     let codex_paths = server_config.codex_paths();
     wt_server::validate_shared_roots(codex_paths).map_err(anyhow::Error::msg)?;
+    wt_server::shared_files::publish_and_watch(codex_paths)?;
     let owner = wt_server::SERVER_USER.to_owned();
     eprintln!(
         "wt-server starting: {}",
@@ -90,7 +95,7 @@ fn run_server() -> Result<()> {
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let host_config = server_config.host_config();
-    let host_worker = wt_host_world::host::Worker::new(
+    let guest_worker = wt_guest::host::Worker::new(
         provider,
         Duration::from_secs(server_config.guest.readiness_timeout_seconds),
         host_config,
@@ -99,7 +104,7 @@ fn run_server() -> Result<()> {
     let catalog_database = state.database_path();
     let catalog_sessions = codex_paths.sessions;
     let catalog_owner = owner.clone();
-    let catalog_worker = host_worker.clone();
+    let catalog_worker = guest_worker.clone();
     std::thread::Builder::new()
         .name("wt-codex-session-catalog".to_owned())
         .spawn(move || {
@@ -119,8 +124,9 @@ fn run_server() -> Result<()> {
             }
         })
         .context("start Codex session catalog refresh")?;
-    let worker = host_worker;
-    let gateway = wt_agent_tool_gateway::ControlClient::new(wt_agent_tool_gateway::CONTROL_SOCKET);
+    let worker = guest_worker;
+    let gateway = open_gateway(&server_config, &state.database_path())?;
+    wt_agent_tool_gateway::start_vsock(gateway.clone(), server_config.agent_tools.vsock_port)?;
     let context = DaemonContext {
         state,
         operations,
@@ -137,11 +143,50 @@ fn run_server() -> Result<()> {
     })
 }
 
+fn open_gateway(
+    config: &ServerConfig,
+    database_path: &Path,
+) -> Result<wt_agent_tool_gateway::Gateway> {
+    let credentials = std::env::var_os("CREDENTIALS_DIRECTORY")
+        .map(PathBuf::from)
+        .context("CREDENTIALS_DIRECTORY is not set")?;
+    let providers = [
+        (
+            wt_tools::ProviderKind::GitHub,
+            "github",
+            config.agent_tools.github.as_ref(),
+        ),
+        (
+            wt_tools::ProviderKind::GitLab,
+            "gitlab",
+            config.agent_tools.gitlab.as_ref(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(kind, name, provider)| provider.map(|provider| (kind, name, provider)))
+    .map(
+        |(kind, name, provider)| wt_agent_tool_gateway::Provider::Ssh {
+            kind,
+            host: provider.host.clone(),
+            user: "git".to_owned(),
+            port: None,
+            api_token_file: credentials.join(format!("{name}-api-token")),
+            private_key_file: credentials.join(format!("{name}-ssh-private-key")),
+        },
+    )
+    .collect();
+    wt_agent_tool_gateway::Gateway::open(wt_agent_tool_gateway::GatewayConfig {
+        state_file: PathBuf::from("/var/lib/wt/agent-tools/state.json"),
+        database_path: database_path.to_owned(),
+        providers,
+    })
+}
+
 fn maintain_codex_history(
     database: &Path,
     sessions: &str,
     owner: &str,
-    worker: &wt_host_world::host::Worker<LibvirtProvider>,
+    worker: &wt_guest::host::Worker<LibvirtProvider>,
     requested: &mut HashMap<String, String>,
 ) -> Result<Vec<String>> {
     let store = Store::open(database).context("open instance registry")?;
@@ -182,8 +227,8 @@ fn log_codex_catalog_warnings(warnings: Vec<String>) {
 struct DaemonContext {
     state: StateConfig,
     operations: Operations,
-    worker: wt_host_world::host::Worker<LibvirtProvider>,
-    gateway: wt_agent_tool_gateway::ControlClient,
+    worker: wt_guest::host::Worker<LibvirtProvider>,
+    gateway: wt_agent_tool_gateway::Gateway,
     owner: String,
     capacity_limit: wt_workload_registry::Resources,
     test_server: bool,

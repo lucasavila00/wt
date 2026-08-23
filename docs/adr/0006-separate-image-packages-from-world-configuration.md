@@ -5,7 +5,7 @@
 
 ## Context
 
-WT creates every world from one host golden image. Some packages need a
+WT creates every world from one guest golden image. Some packages need a
 version Ubuntu 24.04 does not provide.
 
 Downloading those packages again for every world would be slow and would make

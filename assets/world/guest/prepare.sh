@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-host-contract
+. /usr/local/share/wt-guest-contract
 
 case "${1:-}" in
     wait)
@@ -24,7 +24,7 @@ case "${1:-}" in
             exit 1
         }
         usermod --append --groups sudo,kvm "$WT_USER"
-        sudoers=/run/wt-host-sudoers.wt-new
+        sudoers=/run/wt-guest-sudoers.wt-new
         rm -f "$sudoers"
         printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$WT_USER" > "$sudoers"
         chown root:root "$sudoers"
@@ -48,7 +48,7 @@ case "${1:-}" in
         sync "$file" "$(dirname "$file")"
         ;;
     *)
-        echo "usage: wt-host-prepare wait|access-policy|remove-key" >&2
+        echo "usage: wt-guest-prepare wait|access-policy|remove-key" >&2
         exit 2
         ;;
 esac

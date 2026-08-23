@@ -76,7 +76,7 @@ pub(super) fn ensure<R: Runner>(context: &BuildContext<'_, R>) -> Result<PathBuf
             &BuildSpec {
                 name: DEVELOPMENT_TOOLS_CACHE_BUILD_NAME,
                 main_recipe: DEVELOPMENT_TOOLS_CACHE_BUILD,
-                host_recipe: b"",
+                guest_recipe: b"",
             },
             &[],
             BuildSource::CloudImage,
@@ -154,11 +154,11 @@ pub(super) fn identity(
 fn guest_identity() -> String {
     format!(
         "{}:{}:{}:{}:{}",
-        wt_host_world::GUEST_USER,
-        wt_host_world::GUEST_GROUP,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
-        wt_host_world::GUEST_HOME,
+        wt_guest::GUEST_USER,
+        wt_guest::GUEST_GROUP,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
+        wt_guest::GUEST_HOME,
     )
 }
 

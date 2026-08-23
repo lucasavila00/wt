@@ -18,7 +18,7 @@ Host lab.world-one
   KbdInteractiveAuthentication no
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-one' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-one' /usr/local/bin/wt-guest-shell
 
 Host lab.world-one-direct
   HostName 192.0.2.10
@@ -48,7 +48,7 @@ Host world-one
   KbdInteractiveAuthentication no
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-one' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-one' /usr/local/bin/wt-guest-shell
 
 Host world-one-direct
   HostName 192.0.2.10
@@ -78,7 +78,7 @@ Host lab.world-two
   KbdInteractiveAuthentication no
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-two' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-two' /usr/local/bin/wt-guest-shell
 
 Host lab.world-two-direct
   HostName 192.0.2.11
@@ -108,7 +108,7 @@ Host world-two
   KbdInteractiveAuthentication no
   ProxyJump wt-server
   RequestTTY force
-  RemoteCommand BYOBU_ALT_TITLE='lab.world-two' /usr/local/bin/wt-host-shell
+  RemoteCommand BYOBU_ALT_TITLE='lab.world-two' /usr/local/bin/wt-guest-shell
 
 Host world-two-direct
   HostName 192.0.2.11

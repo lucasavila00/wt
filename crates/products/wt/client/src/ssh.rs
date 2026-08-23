@@ -64,15 +64,15 @@ fn sync_in_home(
         };
         let known_hosts_file = ssh_quote(&known_hosts_path);
         let unique_name = counts.get(instance.name.as_str()) == Some(&1);
-        let host_shell = format!("BYOBU_ALT_TITLE='{qualified}' /usr/local/bin/wt-host-shell");
+        let guest_shell = format!("BYOBU_ALT_TITLE='{qualified}' /usr/local/bin/wt-guest-shell");
         let guest_common =
             guest_options(ssh, &qualified, &known_hosts_file, compression, &proxy_jump);
         config.push_str(&format!(
-            "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {qualified}-direct\n{guest_common}"
+            "\nHost {qualified}\n{guest_common}  RequestTTY force\n  RemoteCommand {guest_shell}\n\nHost {qualified}-direct\n{guest_common}"
         ));
         if unique_name {
             config.push_str(&format!(
-                "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {host_shell}\n\nHost {}-direct\n{guest_common}",
+                "\nHost {}\n{guest_common}  RequestTTY force\n  RemoteCommand {guest_shell}\n\nHost {}-direct\n{guest_common}",
                 instance.name, instance.name
             ));
         }
@@ -392,7 +392,7 @@ mod tests {
           PasswordAuthentication no
           KbdInteractiveAuthentication no
           RequestTTY force
-          RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
+          RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-guest-shell
 
         Host local.ubuntu-direct
           HostName 192.0.2.3
@@ -420,7 +420,7 @@ mod tests {
           PasswordAuthentication no
           KbdInteractiveAuthentication no
           RequestTTY force
-          RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-host-shell
+          RemoteCommand BYOBU_ALT_TITLE='local.ubuntu' /usr/local/bin/wt-guest-shell
 
         Host ubuntu-direct
           HostName 192.0.2.3

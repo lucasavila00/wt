@@ -38,3 +38,15 @@ impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
         }
     }
 }
+
+impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
+    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String> {
+        self.reserve_grant(world_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn revoke(&self, grant_id: &str) -> Result<(), String> {
+        self.revoke_grant(grant_id)
+            .map_err(|error| error.to_string())
+    }
+}

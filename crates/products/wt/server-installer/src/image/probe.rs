@@ -43,8 +43,8 @@ pub(super) fn verify_publication(
         }
     }
     let nonce = uuid::Uuid::new_v4().to_string();
-    let guest_uid = wt_host_world::GUEST_UID.to_string();
-    let guest_gid = wt_host_world::GUEST_GID.to_string();
+    let guest_uid = wt_guest::GUEST_UID.to_string();
+    let guest_gid = wt_guest::GUEST_GID.to_string();
     let expected_contents = format!("{nonce}\n").into_bytes();
     let mut machine_config = server.machine_config();
     machine_config.image = image.to_path_buf();
@@ -68,7 +68,7 @@ pub(super) fn verify_publication(
         let deadline = Instant::now() + Duration::from_secs(server.guest.boot_timeout_seconds);
         run_guest(
             machine.transport.as_ref(),
-            wt_host_world::MOUNT_CODEX_HELPER,
+            wt_guest::MOUNT_CODEX_HELPER,
             &[],
             deadline,
             "mount Codex state for shared identity probe",
@@ -78,7 +78,7 @@ pub(super) fn verify_publication(
             "/usr/sbin/runuser",
             &[
                 "--user",
-                wt_host_world::GUEST_USER,
+                wt_guest::GUEST_USER,
                 "--",
                 "/bin/sh",
                 "-c",
@@ -210,8 +210,8 @@ fn validate_marker_details(
     expected_contents: &[u8],
 ) -> Result<()> {
     if kind == "file"
-        && uid == wt_host_world::GUEST_UID
-        && gid == wt_host_world::GUEST_GID
+        && uid == wt_guest::GUEST_UID
+        && gid == wt_guest::GUEST_GID
         && mode == 0o600
         && contents == expected_contents
     {
@@ -219,8 +219,8 @@ fn validate_marker_details(
     }
     bail!(
         "host/guest shared identity probe mismatch: expected file uid/gid={}:{} mode=0600 content={:?}; actual type={kind} uid/gid={uid}:{gid} mode={mode:04o} content={:?}",
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
         String::from_utf8_lossy(expected_contents),
         String::from_utf8_lossy(contents),
     )
@@ -234,8 +234,8 @@ mod tests {
     fn private_virtiofs_probe_requires_the_canonical_identity() {
         validate_marker_details(
             "file",
-            wt_host_world::GUEST_UID,
-            wt_host_world::GUEST_GID,
+            wt_guest::GUEST_UID,
+            wt_guest::GUEST_GID,
             0o600,
             b"wt-identity-probe\n",
             b"wt-identity-probe\n",

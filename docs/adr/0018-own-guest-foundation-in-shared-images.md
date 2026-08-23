@@ -10,7 +10,7 @@ The golden image owns the guest foundation:
 - Codex and the WT access, Git author, agent tool, and Codex mount helpers;
 - a strict image-build result marker recording the identity contract.
 
-`wt-host-world` validates this foundation and applies per-world SSH keys,
+`wt-guest` validates this foundation and applies per-world SSH keys,
 Git author state, gateway access, and Codex mounts. It does not create or repair
 a missing image contract. Provisioning has no checkpoints; remove a failed
 world and create a fresh disk.

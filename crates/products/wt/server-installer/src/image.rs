@@ -38,29 +38,21 @@ const SOURCE_IMAGE_NAME: &str = "ubuntu-24.04-server-cloudimg-amd64.img";
 const BUILD_NAME: &str = "wt-image-build";
 const DEVELOPMENT_TOOLS_CACHE_BUILD_NAME: &str = "wt-development-tools-cache-build";
 const DEVELOPMENT_TOOLS_CACHE_NAME: &str = "wt-development-tools.qcow2";
-const HOST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../../assets/world/host/build-image.sh");
+const GUEST_IMAGE_BUILD: &[u8] = include_bytes!("../../../../../assets/world/guest/build-image.sh");
 const CODEX_REQUIREMENTS: &[u8] =
-    include_bytes!("../../../../../assets/world/host/codex-requirements.toml");
-const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
-const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/prepare.sh");
-const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
-    ("host-shell", "/var/tmp/wt-host-shell", HOST_SHELL),
-    ("host-prepare", "/var/tmp/wt-host-prepare", HOST_PREPARE),
+    include_bytes!("../../../../../assets/world/guest/codex-requirements.toml");
+const GUEST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/guest/shell.sh");
+const GUEST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/guest/prepare.sh");
+const GUEST_INPUTS: &[(&str, &str, &[u8])] = &[
+    ("guest-shell", "/var/tmp/wt-guest-shell", GUEST_SHELL),
+    ("guest-prepare", "/var/tmp/wt-guest-prepare", GUEST_PREPARE),
 ];
-const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[
-    (
-        "wt-agent-tool-gateway-relay",
-        "/var/tmp/wt-agent-tool-gateway-relay",
-    ),
-    ("git-remote-wt-agent", "/var/tmp/wt-git-remote-agent"),
-    ("wt-tools", "/var/tmp/wt-tools"),
-    ("wt-codex-integration", "/var/tmp/wt-codex-integration"),
-];
+const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[("wtg", "/var/tmp/wtg")];
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
     commit: String,
-    guest_identity: wt_host_world::GuestIdentity,
+    guest_identity: wt_guest::GuestIdentity,
     golden_sha256: String,
     packages: PackageVersions,
     development_tools: PackageVersions,
@@ -87,7 +79,7 @@ pub(crate) fn ensure(
     ) {
         InstalledImageState::Reusable => {
             println!(
-                "Reusing verified host golden image: {}",
+                "Reusing verified guest golden image: {}",
                 server.image.path.display()
             );
         }
@@ -95,7 +87,7 @@ pub(crate) fn ensure(
             build_image(runner, input, server, &source, &byobu)?;
         }
         InstalledImageState::Replace(reason) => {
-            println!("Replacing the installed host golden image: {reason}");
+            println!("Replacing the installed guest golden image: {reason}");
             build_image(runner, input, server, &source, &byobu)?;
         }
     }
@@ -120,7 +112,7 @@ pub(crate) fn verify(_input: &InstallInput, server: &ServerConfig) -> Result<()>
     let installed = resolve(&server.image.path).map_err(anyhow::Error::msg)?;
     verify_installed_image(&installed.image, &installed.manifest)?;
     println!(
-        "Verified host golden image and provenance: {}",
+        "Verified guest golden image and provenance: {}",
         server.image.path.display()
     );
     Ok(())
@@ -195,7 +187,7 @@ fn build_image(
     source: &Path,
     byobu: &Path,
 ) -> Result<()> {
-    println!("Building host golden image from verified source inputs.");
+    println!("Building guest golden image from verified source inputs.");
     let build_dir = server.libvirt.worlds_dir.join(BUILD_NAME);
 
     let cache_build_dir = server
@@ -240,11 +232,11 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let input = context.input;
     let server = context.server;
     let recipe = ImageRecipe::new();
-    let staged_paths = HOST_INPUTS
+    let staged_paths = GUEST_INPUTS
         .iter()
         .map(|(name, _, bytes)| {
             let path = build_dir.join(name);
-            fs::write(&path, bytes).context("stage host image input")?;
+            fs::write(&path, bytes).context("stage guest image input")?;
             Ok(path)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -252,11 +244,11 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     fs::write(&codex_requirements, CODEX_REQUIREMENTS).context("stage Codex requirements")?;
     let guest_binary_inputs = GUEST_BINARY_INPUTS
         .iter()
-        .map(|(name, guest_path)| (binaries::release_binary(name), *guest_path))
+        .map(|(_, guest_path)| (binaries::guest_binary(), *guest_path))
         .collect::<Vec<_>>();
     let extra_inputs = staged_paths
         .iter()
-        .zip(HOST_INPUTS)
+        .zip(GUEST_INPUTS)
         .map(|(source, (_, guest_path, _))| StagedInput { source, guest_path })
         .chain(std::iter::once(StagedInput {
             source: &codex_requirements,
@@ -272,7 +264,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     let spec = BuildSpec {
         name: BUILD_NAME,
         main_recipe: CACHED_IMAGE_BUILD,
-        host_recipe: HOST_IMAGE_BUILD,
+        guest_recipe: GUEST_IMAGE_BUILD,
     };
     let cached_context = BuildContext {
         runner: context.runner,
@@ -304,7 +296,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .map(|(name, version)| format!("{name}={version}"))
         .collect::<Vec<_>>()
         .join(", ");
-    println!("Validated host image packages: {package_summary}");
+    println!("Validated guest image packages: {package_summary}");
     let development_tool_output = runner.timed_text(
         cmd!(
             "sudo",
@@ -393,15 +385,15 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     )?;
     let manifest = ImageManifest {
         commit: wt_control_protocol::GIT_COMMIT_SHA.to_owned(),
-        guest_identity: wt_host_world::GUEST_IDENTITY,
-        golden_sha256: timed("hash compacted host image", || sha_file(&paths.prepared))?,
+        guest_identity: wt_guest::GUEST_IDENTITY,
+        golden_sha256: timed("hash compacted guest image", || sha_file(&paths.prepared))?,
         packages,
         development_tools,
     };
-    let publication = timed("stage host image publication", || {
+    let publication = timed("stage guest image publication", || {
         stage_publication(runner, &paths.prepared, &server.image.path, &manifest)
     })?;
-    if let Err(primary) = timed("probe host image boot and shared identity", || {
+    if let Err(primary) = timed("probe guest image boot and shared identity", || {
         probe::verify_publication(input, server, publication.image_path())
     }) {
         return match publication.discard(runner) {
@@ -414,7 +406,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     fs::remove_dir_all(&paths.dir).context("remove image build directory")?;
     publication.publish(runner)?;
     println!(
-        "Published host golden image: {}",
+        "Published guest golden image: {}",
         server.image.path.display()
     );
     Ok(())
@@ -429,7 +421,7 @@ pub(crate) fn verify_installed_image(image_path: &Path, manifest_path: &Path) ->
             .with_context(|| format!("read image manifest {}", manifest_path.display()))?,
     )
     .with_context(|| format!("parse image manifest {}", manifest_path.display()))?;
-    wt_host_world::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
+    wt_guest::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
     require_current_commit(&manifest.commit)?;
     recipe
         .validate_package_versions(&manifest.packages)

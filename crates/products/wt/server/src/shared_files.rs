@@ -1,0 +1,274 @@
+use crate::{CodexPaths, SERVER_GID, SERVER_UID};
+use anyhow::{bail, Context, Result};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::Duration;
+
+const SSH_AUTHORIZED_KEYS: &str = "/home/wt/.ssh/authorized_keys";
+const SSH_AUTHORIZED_KEYS_SHARE: &str = "/home/wt/.ssh/.wt-authorized-keys";
+
+pub fn publish_and_watch(codex: CodexPaths) -> Result<()> {
+    let publications = [
+        Publication {
+            label: "Codex authentication",
+            source: PathBuf::from(codex.auth),
+            share: PathBuf::from(codex.auth_share),
+            destination: PathBuf::from(codex.auth_share).join("auth.json"),
+            nonempty: false,
+            validate_ssh_keys: false,
+            normalize_source_mode: true,
+            source_version: Mutex::new(None),
+        },
+        Publication {
+            label: "SSH authorized keys",
+            source: PathBuf::from(SSH_AUTHORIZED_KEYS),
+            share: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE),
+            destination: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE).join("authorized_keys"),
+            nonempty: true,
+            validate_ssh_keys: true,
+            normalize_source_mode: false,
+            source_version: Mutex::new(None),
+        },
+    ];
+    for publication in &publications {
+        publication.publish()?;
+    }
+    std::thread::Builder::new()
+        .name("wt-shared-file-publisher".to_owned())
+        .spawn(move || loop {
+            for publication in &publications {
+                if let Err(error) = publication.publish_if_changed() {
+                    eprintln!("wt-server: publish {}: {error:#}", publication.label);
+                }
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        })
+        .context("start shared file publisher")?;
+    Ok(())
+}
+
+struct Publication {
+    label: &'static str,
+    source: PathBuf,
+    share: PathBuf,
+    destination: PathBuf,
+    nonempty: bool,
+    validate_ssh_keys: bool,
+    normalize_source_mode: bool,
+    source_version: Mutex<Option<SourceVersion>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceVersion {
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+}
+
+impl Publication {
+    fn publish_if_changed(&self) -> Result<()> {
+        self.prepare()?;
+        if self.version()? == *self.source_version.lock().unwrap() && self.destination.exists() {
+            return Ok(());
+        }
+        self.publish()
+    }
+
+    fn publish(&self) -> Result<()> {
+        self.prepare()?;
+        loop {
+            let contents = fs::read(&self.source)
+                .with_context(|| format!("read {}", self.source.display()))?;
+            let temporary = self.share.join(format!(
+                ".{}.wt-new-{}",
+                self.label.replace(' ', "-"),
+                std::process::id()
+            ));
+            match fs::remove_file(&temporary) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error).context("remove stale shared-file temporary"),
+            }
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&temporary)
+                .with_context(|| format!("create {}", temporary.display()))?;
+            file.write_all(&contents)
+                .with_context(|| format!("write {}", temporary.display()))?;
+            file.sync_all()
+                .with_context(|| format!("sync {}", temporary.display()))?;
+            fs::rename(&temporary, &self.destination)
+                .with_context(|| format!("publish {}", self.destination.display()))?;
+            if fs::read(&self.source).ok().as_deref() == Some(contents.as_slice()) {
+                *self.source_version.lock().unwrap() = self.version()?;
+                return Ok(());
+            }
+        }
+    }
+
+    fn version(&self) -> Result<Option<SourceVersion>> {
+        let metadata = fs::metadata(&self.source)
+            .with_context(|| format!("inspect {}", self.source.display()))?;
+        Ok(Some(SourceVersion {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            size: metadata.len(),
+            modified_seconds: metadata.mtime(),
+            modified_nanoseconds: metadata.mtime_nsec(),
+        }))
+    }
+
+    fn prepare(&self) -> Result<()> {
+        validate_source(self)?;
+        validate_share(&self.share)?;
+        if self.normalize_source_mode {
+            fs::set_permissions(&self.source, fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("protect {}", self.source.display()))?;
+        }
+        if self.validate_ssh_keys {
+            let status = std::process::Command::new("/usr/bin/ssh-keygen")
+                .args(["-l", "-f"])
+                .arg(&self.source)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .with_context(|| format!("validate {}", self.source.display()))?;
+            if !status.success() {
+                bail!(
+                    "{} does not contain valid SSH public keys",
+                    self.source.display()
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_source(publication: &Publication) -> Result<()> {
+    let metadata = fs::symlink_metadata(&publication.source)
+        .with_context(|| format!("inspect {}", publication.source.display()))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        bail!(
+            "{} must be a regular, non-symlink file",
+            publication.source.display()
+        );
+    }
+    if metadata.uid() != SERVER_UID || metadata.gid() != SERVER_GID {
+        bail!(
+            "{} ownership mismatch: expected uid={SERVER_UID} gid={SERVER_GID}; actual uid={} gid={}",
+            publication.source.display(),
+            metadata.uid(),
+            metadata.gid()
+        );
+    }
+    if publication.nonempty && metadata.len() == 0 {
+        bail!("{} must not be empty", publication.source.display());
+    }
+    Ok(())
+}
+
+fn validate_share(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("inspect shared directory {}", path.display()))?;
+    if !metadata.file_type().is_dir()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != SERVER_UID
+        || metadata.gid() != SERVER_GID
+        || metadata.mode() & 0o7777 != 0o700
+    {
+        bail!(
+            "shared directory {} must be a non-symlink directory owned by {SERVER_UID}:{SERVER_GID} with mode 0700",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn publication(root: &Path) -> Publication {
+        let source = root.join("source");
+        let share = root.join("share");
+        fs::write(&source, "first\n").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::create_dir(&share).unwrap();
+        fs::set_permissions(&share, fs::Permissions::from_mode(0o700)).unwrap();
+        Publication {
+            label: "test",
+            source,
+            destination: share.join("published"),
+            share,
+            nonempty: false,
+            validate_ssh_keys: false,
+            normalize_source_mode: true,
+            source_version: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn publication_is_atomic_and_tracks_source_changes() {
+        if nix::unistd::Uid::effective().as_raw() != SERVER_UID
+            || nix::unistd::Gid::effective().as_raw() != SERVER_GID
+        {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let publication = publication(temp.path());
+        publication.publish().unwrap();
+        assert_eq!(
+            fs::read_to_string(&publication.destination).unwrap(),
+            "first\n"
+        );
+        assert_eq!(
+            fs::metadata(&publication.destination).unwrap().mode() & 0o7777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&publication.source).unwrap().mode() & 0o7777,
+            0o600
+        );
+
+        let published_inode = fs::metadata(&publication.destination).unwrap().ino();
+        let replacement = temp.path().join("replacement");
+        fs::write(&replacement, "first\n").unwrap();
+        fs::rename(replacement, &publication.source).unwrap();
+        publication.publish_if_changed().unwrap();
+        assert_ne!(
+            fs::metadata(&publication.destination).unwrap().ino(),
+            published_inode
+        );
+
+        fs::write(&publication.source, "second\n").unwrap();
+        publication.publish_if_changed().unwrap();
+        assert_eq!(
+            fs::read_to_string(&publication.destination).unwrap(),
+            "second\n"
+        );
+    }
+
+    #[test]
+    fn source_symlinks_are_rejected() {
+        if nix::unistd::Uid::effective().as_raw() != SERVER_UID
+            || nix::unistd::Gid::effective().as_raw() != SERVER_GID
+        {
+            return;
+        }
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let publication = publication(temp.path());
+        let target = temp.path().join("target");
+        fs::write(&target, "secret").unwrap();
+        fs::remove_file(&publication.source).unwrap();
+        symlink(target, &publication.source).unwrap();
+        assert!(publication.publish().is_err());
+    }
+}

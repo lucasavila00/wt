@@ -1,6 +1,14 @@
+extern crate self as wt_agent_tool_gateway;
+
 mod gateway;
+#[path = "bin/git-remote-wt-agent.rs"]
+pub mod git_remote_command;
 mod protocol;
+#[path = "bin/relay.rs"]
+pub mod relay_command;
 mod stream;
+#[path = "bin/wt-tools.rs"]
+pub mod tools_command;
 mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
@@ -26,6 +34,28 @@ pub fn resolve_vsock_port(explicit: Option<u32>) -> anyhow::Result<u32> {
         Some(port) => validate_vsock_port(port),
         None => Ok(vsock_port_from_env()?.unwrap_or(VSOCK_PORT)),
     }
+}
+
+pub fn start_vsock(gateway: Gateway, port: u32) -> anyhow::Result<()> {
+    let listener = VsockListener::bind(u32::MAX, validate_vsock_port(port)?)
+        .map_err(|error| anyhow::anyhow!("bind gateway vsock: {error}"))?;
+    std::thread::Builder::new()
+        .name("wt-agent-tool-gateway".to_owned())
+        .spawn(move || loop {
+            match listener.accept() {
+                Ok(stream) => {
+                    let gateway = gateway.clone();
+                    std::thread::spawn(move || {
+                        if let Err(error) = gateway.handle_transport(stream) {
+                            eprintln!("wt-server: agent tool request: {error:#}");
+                        }
+                    });
+                }
+                Err(error) => eprintln!("wt-server: accept agent tool request: {error}"),
+            }
+        })
+        .map_err(|error| anyhow::anyhow!("start agent tool gateway: {error}"))?;
+    Ok(())
 }
 
 pub fn vsock_port_from_env() -> anyhow::Result<Option<u32>> {

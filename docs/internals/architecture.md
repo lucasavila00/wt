@@ -2,19 +2,22 @@
 
 ```text
 wt client
-  └─ local process or OpenSSH ── wt-server API bridge
+  └─ local process or OpenSSH ── wts API bridge
                                   └─ Unix socket (0600)
-                                      └─ wt-server
+                                      └─ wts
                                           ├─ registry and capacity
-                                          └─ host lifecycle
+                                          ├─ guest lifecycle
+                                          ├─ Git and provider gateway
+                                          └─ shared-file publication
 
-host world ── wt-libvirt-kvm ── KVM + QEMU guest agent
+wts ── wt-libvirt-kvm ── KVM + QEMU guest agent ── guest
+                                                  └─ wtg
 
 standalone Git client
   └─ OpenSSH forced command ── wt-git-proxy ── SSH Git upstream
 ```
 
-`wt-server` owns host worlds. The control plane has no TCP listener. Local
+`wts` owns guests. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
 protected server socket. The protocol carries world resources, a Git author,
 server information, context-local Codex session observations, and streamed
@@ -24,22 +27,24 @@ creation progress events.
 
 | Scope | Crates |
 |-------|--------|
-| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-host-world`, `wt-codex-integration`, `wt-server-installer` |
-| Agent tool gateway | `wt-agent-tool-gateway`, `wt-tools` |
+| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-guest`, `wt-codex-integration`, `wt-server-installer` |
+| Agent tool gateway | `wt-agent-tool-gateway`, `wtg tools` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 | Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
 | Tests | `wt-end-to-end-tests` |
 
-Installed executable names match their owning crates.
+Installed WT executables are named by runtime: `wt` is the client, `wts` is
+the server runtime, and `wtg` is the guest runtime. Crates retain narrower
+internal ownership boundaries and do not each produce an installed program.
 
 `wt-git-smart-protocol` contains the Git protocol bridge and branch write
 policy shared by the WT gateway and standalone proxy. `wt-git-proxy` is
-released from this workspace but is not part of `wt-server` or a WT world.
+released from this workspace but is not part of `wts` or a WT guest.
 
 `wt-installer-support` contains host file, command runner, and SSH credential
 handling shared by the regular WT and standalone Git proxy installers.
 
-`wt-host-world` owns host lifecycle and the fixed guest identity. Its
+`wt-guest` owns guest lifecycle and the fixed guest identity. Its server-side
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
@@ -68,7 +73,7 @@ versions. This is not a runtime world setting.
 
 Provisioning is intentionally restart-only. WT does not resume an interrupted
 sequence or repair partial guest state. Remove a failed world and create it
-again from the host image.
+again from the guest image.
 
 ## State
 
@@ -79,5 +84,5 @@ again from the host image.
 - Registry: `~/.local/state/wt/instances.db`
 - KVM machine files: the configured libvirt worlds directories
 
-Each registry record is a host world with its resources, backend,
+Each registry record is a guest with its resources, backend,
 disk, SSH endpoint, and gateway grant.

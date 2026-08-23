@@ -1,8 +1,13 @@
 # wt
 
-WT runs Ubuntu host worlds on KVM. Each world boots from a verified golden
+WT runs Ubuntu guests on KVM. Each world boots from a verified golden
 image with persistent storage, managed SSH, Codex integration, and scoped Git
 access.
+
+WT uses three runtime-specific commands: `wt` is the user-facing client, `wts`
+is the server daemon and setup tool, and `wtg` is the guest runtime baked into
+golden images. See the [architecture](./docs/internals/architecture.md) for the
+component mapping.
 
 ## Use WT
 

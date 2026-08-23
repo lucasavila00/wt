@@ -11,9 +11,9 @@ operator recipe.
 
 ## Images
 
-`wt-server-installer` builds one host image from the pinned Ubuntu source
+`wt-server-installer` builds one guest image from the pinned Ubuntu source
 inside a temporary KVM guest. The final image contains Git, OpenSSH, QEMU guest
-support, Byobu, tmux, Codex, and WT's host and gateway helpers. Build-only
+support, Byobu, tmux, Codex, and WT's guest and gateway helpers. Build-only
 packages and bootstrap state are removed before publication.
 
 The image has a provenance manifest and checksum that cover the static WT guest
@@ -41,7 +41,7 @@ after its first build in a checkout.
 
 ## Readiness
 
-Libvirt waits for the QEMU guest agent and an IPv4 address. The host lifecycle
+Libvirt waits for the QEMU guest agent and an IPv4 address. The guest lifecycle
 then creates SSH host keys, applies access state, proves the one-use login, and
 removes the readiness key. Failed initial provisioning is not resumed; remove
 the world and recreate it from the image.

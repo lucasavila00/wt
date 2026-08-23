@@ -221,11 +221,11 @@ impl BuildEnvironment<'_> {
         format!(
         "WT_IMAGE_KIND='{}'\nWT_USER='{}'\nWT_GROUP='{}'\nWT_UID='{}'\nWT_GID='{}'\nWT_HOME='{}'\nNODE_VERSION='{}'\nBYOBU_VERSION='{}'\nBYOBU_SHA256='{}'\nTMUX_VERSION='{}'\nTMUX_SHA256='{}'\nNCURSES_TERM_DEB='{}'\nNCURSES_TERM_SHA256='{}'\nGHOSTTY_TERMINFO_SHA256='{}'\nTMUX_CONFIG_SHA256='{}'\nBYOBU_COLOR_SHA256='{}'\nACCESS_SHA256='{}'\nGIT_AUTHOR_SHA256='{}'\nAGENT_TOOLS_SHA256='{}'\nMOUNT_CODEX_SHA256='{}'\n",
         self.kind,
-        wt_host_world::GUEST_USER,
-        wt_host_world::GUEST_GROUP,
-        wt_host_world::GUEST_UID,
-        wt_host_world::GUEST_GID,
-        wt_host_world::GUEST_HOME,
+        wt_guest::GUEST_USER,
+        wt_guest::GUEST_GROUP,
+        wt_guest::GUEST_UID,
+        wt_guest::GUEST_GID,
+        wt_guest::GUEST_HOME,
         self.node_version,
         BYOBU_VERSION,
         BYOBU_SHA256,
@@ -270,7 +270,7 @@ mod tests {
     fn renders_complete_shared_image_environment() {
         insta::assert_snapshot!(
             BuildEnvironment {
-                kind: "host",
+                kind: "guest",
                 node_version: "24.19.0",
                 tmux_config_sha256: "tmux-config-sha",
                 byobu_color_sha256: "byobu-color-sha",
@@ -281,7 +281,7 @@ mod tests {
             }
             .render(),
             @r###"
-WT_IMAGE_KIND='host'
+WT_IMAGE_KIND='guest'
 WT_USER='wt'
 WT_GROUP='wt'
 WT_UID='1001'

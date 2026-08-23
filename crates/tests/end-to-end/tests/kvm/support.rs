@@ -85,7 +85,7 @@ impl KvmHarness {
         let images = timings.run("prepare isolated golden images", || {
             isolated_test_images(&workspace, &installed_image, &binary_dir)
         });
-        config.image.path = images.path().join("host.qcow2");
+        config.image.path = images.path().join("guest.qcow2");
         config.install.binary_dir = binary_dir;
         let wt_binary = config.install.binary_dir.join("wt");
         let initial_disks = count_disks(&config.libvirt.worlds_dir);
@@ -368,7 +368,7 @@ pub(crate) fn call_api_result(
     config: &Path,
     operation: Operation,
 ) -> Result<Response, String> {
-    // Match the restrictive umask of the installed wt-server.service. QEMU must
+    // Match the restrictive umask of the installed wts.service. QEMU must
     // still be able to traverse the world directory and open its disk images.
     let mut child = cmd!(
         "/bin/sh",

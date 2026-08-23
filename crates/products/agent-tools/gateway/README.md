@@ -1,10 +1,10 @@
 # wt-agent-tool-gateway
 
-Scoped Git transport for host worlds.
+Scoped Git transport for guests.
 
 The host gateway owns provider credentials and grants. The guest relay carries
-requests over vsock. `git-remote-wt-agent` and `wt-tools` expose the allowed Git
-and provider operations inside host worlds.
+requests over vsock. `git-remote-wt-agent` and `wtg tools` expose the allowed Git
+and provider operations inside guests.
 
 The same authenticated relay carries advisory Codex session observations into
 the shared registry; it validates their Byobu target inside the guest first.

@@ -1,17 +1,16 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-host-contract
+. /usr/local/share/wt-guest-contract
 
-stage=/tmp/wt-host-agent-tools
+stage=/tmp/wt-guest-agent-tools
 vsock_port=$(cat "$stage-vsock-port")
 case "$vsock_port" in
     ''|*[!0-9]*) echo "invalid agent tool vsock port" >&2; exit 1 ;;
 esac
 
-test -x /usr/local/bin/wt-agent-tool-gateway-relay
+test -x /usr/local/bin/wtg
 test -x /usr/local/bin/git-remote-wt-agent
-test -x /usr/local/bin/wt-tools
 install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" /var/lib/wt-agent-tool-gateway
 install -m 0600 -o "$WT_USER" -g "$WT_GROUP" "$stage-grant" /var/lib/wt-agent-tool-gateway/grant
 install -m 0600 -o "$WT_USER" -g "$WT_GROUP" \
@@ -32,7 +31,7 @@ Description=WT agent tool relay
 [Service]
 Type=simple
 User=$WT_USER
-ExecStart=/usr/local/bin/wt-agent-tool-gateway-relay --vsock-port $vsock_port
+ExecStart=/usr/local/bin/wtg relay --vsock-port $vsock_port
 Restart=on-failure
 RuntimeDirectory=wt-agent-tool-gateway
 RuntimeDirectoryMode=0755

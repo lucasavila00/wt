@@ -4,7 +4,7 @@
 
 ## Decision
 
-Expose general merge-request comments through two `wt-tools` operations:
+Expose general merge-request comments through two `wtg tools` operations:
 
 ```text
 { action: "list_comments"; mr: string }

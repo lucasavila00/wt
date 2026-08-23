@@ -1,4 +1,4 @@
-# ADR 0020: Make Codex a required host-world integration
+# ADR 0020: Make Codex a required guest integration
 
 - Status: Accepted
 - Date: 2026-08-21

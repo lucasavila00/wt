@@ -1,6 +1,6 @@
 use super::{map_store_error, AgentToolGateway, Service};
 use wt_control_protocol::{ApiError, ErrorCode, InstanceName, InstanceStatus, Response};
-use wt_host_world::WorldWorker;
+use wt_guest::WorldWorker;
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub(super) fn stop(&self, owner: &str, name: &InstanceName) -> Result<Response, ApiError> {

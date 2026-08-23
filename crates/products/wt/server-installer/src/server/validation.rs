@@ -102,7 +102,7 @@ fn require_test_fixture_path(path: &Path) -> Result<()> {
 }
 
 fn set_test_fixture_group(path: &Path) -> Result<()> {
-    chown(path, None, Some(Gid::from_raw(wt_host_world::GUEST_GID)))
+    chown(path, None, Some(Gid::from_raw(wt_guest::GUEST_GID)))
         .with_context(|| format!("set WT group on E2E fixture {}", path.display()))
 }
 

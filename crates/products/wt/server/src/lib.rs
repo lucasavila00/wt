@@ -1,3 +1,7 @@
+extern crate self as wt_server;
+
+#[path = "main.rs"]
+mod command;
 pub mod config;
 pub mod daemon;
 pub mod identity;
@@ -5,6 +9,9 @@ pub mod image_generation;
 pub mod operations;
 pub mod runtime_config;
 pub mod service;
+pub mod shared_files;
+
+pub use command::run_from;
 
 pub use identity::{
     validate_process_identity, validate_shared_roots, SERVER_GID, SERVER_GROUP, SERVER_HOME,
@@ -20,7 +27,7 @@ pub use runtime_config::{
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_host_world::WorldWorker, G: service::AgentToolGateway>(
+pub fn handle_request<W: wt_guest::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
@@ -28,7 +35,7 @@ pub fn handle_request<W: wt_host_world::WorldWorker, G: service::AgentToolGatewa
     handle_request_with_progress(service, owner, request, false, &mut std::io::sink())
 }
 
-pub fn handle_request_with_progress<W: wt_host_world::WorldWorker, G: service::AgentToolGateway>(
+pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

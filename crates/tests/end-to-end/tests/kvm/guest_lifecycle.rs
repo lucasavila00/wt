@@ -4,15 +4,15 @@ use std::process::Stdio;
 
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
-fn host_world_lifecycle() {
+fn guest_lifecycle() {
     let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
-    let name = unique_name("host");
+    let name = unique_name("guest");
     let mut harness = KvmHarness::new(&mut timings);
     let codex_auth_sha256 = assert_server_codex_auth_export(&harness.config);
     let codex_sessions = CodexSessionFixture::new(&name, &harness.config);
 
-    let created = timings.run("create host", || harness.create(&name));
+    let created = timings.run("create guest", || harness.create(&name));
     assert_eq!(created.status, InstanceStatus::Running);
     assert!(created.ssh.is_some());
     let grant_token = harness.grant_token_for(created.id);
@@ -38,10 +38,10 @@ fn host_world_lifecycle() {
             ". /home/wt/.nvm/nvm.sh; ",
             "command -v cargo rustc go python nvm node npm uv docker; ",
             "docker compose version >/dev/null; ",
-            "command -v git codex diffo wt-tools; ",
+            "command -v git codex diffo wtg; ",
             "codex --version >/dev/null"
         ),
-        "verify golden host image",
+        "verify golden guest image",
     );
 
     let mut byobu = cmd!(
@@ -82,15 +82,15 @@ fn host_world_lifecycle() {
         concat!(
             "set -eu; ",
             "git clone https://local.test/acme/widget.git /home/wt/project; ",
-            "cd /home/wt/project; git switch -c wt/host-gateway; ",
-            "printf 'host gateway\\n' >> README.md; git commit -am 'host gateway'; ",
-            "git push -u origin wt/host-gateway; ",
+            "cd /home/wt/project; git switch -c wt/guest-gateway; ",
+            "printf 'guest gateway\\n' >> README.md; git commit -am 'guest gateway'; ",
+            "git push -u origin wt/guest-gateway; ",
             "git switch -c outside; printf 'outside\\n' >> README.md; git commit -am outside; ",
             "! git push origin outside; git tag outside; ! git push origin refs/tags/outside"
         ),
         "use scoped Git gateway",
     );
-    assert_ref(&harness.git.repository, "refs/heads/wt/host-gateway", true);
+    assert_ref(&harness.git.repository, "refs/heads/wt/guest-gateway", true);
     assert_ref(&harness.git.repository, "refs/heads/outside", false);
     assert_ref(&harness.git.repository, "refs/tags/outside", false);
 
@@ -98,7 +98,7 @@ fn host_world_lifecycle() {
         &harness,
         &name,
         &format!(
-            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-host\\n' > /home/wt/.codex/sessions/{}",
+            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-guest\\n' > /home/wt/.codex/sessions/{}",
             codex_sessions.marker
         ),
         "verify Codex integration",
@@ -106,7 +106,7 @@ fn host_world_lifecycle() {
     run_guest(
         &harness,
         &name,
-        r#"test "$(wt-tools '{"command":{"action":"report_wt_tool_issue","description":"KVM host fixture"}}')" = '{"type":"confirmation","data":"Recorded wt-tools report for this world."}'"#,
+        r#"test "$(wtg tools '{"command":{"action":"report_wt_tool_issue","description":"KVM guest fixture"}}')" = '{"type":"confirmation","data":"Recorded wtg tools report for this world."}'"#,
         "use agent tool gateway",
     );
     assert_eq!(
@@ -115,27 +115,27 @@ fn host_world_lifecycle() {
                 .join(&codex_sessions.marker)
         )
         .unwrap(),
-        "from-host\n"
+        "from-guest\n"
     );
     let rollout_metadata = std::fs::metadata(
         std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_sessions.marker),
     )
     .unwrap();
-    assert_eq!(rollout_metadata.uid(), wt_host_world::GUEST_UID);
-    assert_eq!(rollout_metadata.gid(), wt_host_world::GUEST_GID);
+    assert_eq!(rollout_metadata.uid(), wt_guest::GUEST_UID);
+    assert_eq!(rollout_metadata.gid(), wt_guest::GUEST_GID);
     assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 
-    let stopped = timings.run("stop host", || harness.shutdown(&name));
+    let stopped = timings.run("stop guest", || harness.shutdown(&name));
     assert_eq!(stopped.status, InstanceStatus::Stopped);
-    let restarted = timings.run("restart host", || harness.start(&name));
+    let restarted = timings.run("restart guest", || harness.start(&name));
     assert_eq!(restarted.status, InstanceStatus::Running);
     harness.sync_inventory();
     run_guest(
         &harness,
         &name,
         "set -eu; git -C /home/wt/project fetch origin; test -S /run/wt-agent-tool-gateway/gateway.sock; systemctl is-active --quiet wt-agent-tool-gateway-relay.service",
-        "verify host persistence after restart",
+        "verify guest persistence after restart",
     );
 
     harness.restart_gateway();
@@ -146,7 +146,7 @@ fn host_world_lifecycle() {
         "verify gateway reconnection",
     );
 
-    timings.run("delete host", || harness.delete(&name));
+    timings.run("delete guest", || harness.delete(&name));
     harness.assert_grant_is_revoked(grant_token);
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),

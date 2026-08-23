@@ -35,7 +35,7 @@ impl Fixture {
         .unwrap();
         let bin = home.path().join("bin");
         fs::create_dir(&bin).unwrap();
-        let server = bin.join("wt-server");
+        let server = bin.join("wts");
         fs::write(&server, "#!/bin/sh\nexit 2\n").unwrap();
         fs::set_permissions(&server, fs::Permissions::from_mode(0o755)).unwrap();
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
@@ -147,7 +147,7 @@ fn escape_cancels_after_server_info_without_creating_a_world() -> Result<()> {
 }
 
 fn replace_server_with_request_log(home: &Path, requests: &Path) {
-    let server = home.join("bin/wt-server");
+    let server = home.join("bin/wts");
     fs::write(
         &server,
         format!(

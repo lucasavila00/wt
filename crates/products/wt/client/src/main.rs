@@ -39,7 +39,7 @@ enum Command {
     Rm { name: String },
     /// Start a stopped world.
     Start { name: String },
-    /// Stop a host world.
+    /// Stop a guest.
     Stop { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },
@@ -58,14 +58,14 @@ enum Command {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run_from(std::env::args_os().collect()) {
         eprintln!("wt: {error:#}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let command = Cli::parse().command;
+fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
+    let command = Cli::parse_from(args).command;
     let config = ClientConfig::load()?;
     let test_server = local_test_server(&config);
     if test_server {

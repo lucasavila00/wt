@@ -5,16 +5,16 @@
 
 ## Context
 
-`wt-tools help` needs a readable TypeScript command contract. Maintaining the
+`wtg tools help` needs a readable TypeScript command contract. Maintaining the
 same variants and fields separately in Rust lets the two definitions drift.
 
 ## Decision
 
 Keep readable, commented TypeScript declarations as the source of truth.
-Include them verbatim in `wt-tools help` and check them with pinned TypeScript
+Include them verbatim in `wtg tools help` and check them with pinned TypeScript
 and Prettier through the repository npm workspace.
 
-Use SWC in the `wt-tools` build script to parse the declarations and generate
+Use SWC in the `wtg tools` build script to parse the declarations and generate
 Rust types into `OUT_DIR`. Support only the declarations used by the contract:
 exported aliases, string-literal and object unions, primitives, references,
 arrays, and optional fields. Reject other constructs.

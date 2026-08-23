@@ -18,7 +18,7 @@ fn test_home(status: &str) -> (tempfile::TempDir, std::ffi::OsString) {
     )
     .unwrap();
     write_executable(
-        &bin.join("wt-server"),
+        &bin.join("wts"),
         &format!(
             r#"#!/bin/sh
 set -eu
