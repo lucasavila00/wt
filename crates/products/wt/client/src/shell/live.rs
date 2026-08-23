@@ -83,6 +83,13 @@ pub(super) fn draw(
     for (index, rect) in card_rects(frame.area(), state.codex_offset(), cards.len()) {
         let card = cards[index];
         let (title, title_color) = card_title(card);
+        let title = match &card.kind {
+            super::control::CodexCardKind::Observation { world_name, .. } => {
+                format!("{title} · {}.{world_name}", card.context)
+            }
+            super::control::CodexCardKind::RolloutOnly
+            | super::control::CodexCardKind::ContextError { .. } => title,
+        };
         let block = Block::new()
             .borders(Borders::ALL)
             .border_style(selected_card_border_style(
