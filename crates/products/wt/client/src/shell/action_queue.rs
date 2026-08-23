@@ -335,7 +335,7 @@ mod tests {
         let outer = Rect::new(0, 0, 100, 30);
         let mut queue = ShellActionQueue::default();
         let active = queue.enqueue(reconnect(1));
-        let retained = queue.enqueue(reconnect(2));
+        let remaining = queue.enqueue(reconnect(2));
         let removed = queue.enqueue(reconnect(3));
         queue.enqueue(reconnect(4));
         queue.activate_next("Connecting");
@@ -351,8 +351,8 @@ mod tests {
         assert_eq!(queue.active().unwrap().entry.id, active);
         assert_eq!(
             queue.queued().map(|entry| entry.id).collect::<Vec<_>>(),
-            vec![retained]
+            vec![remaining]
         );
-        assert_ne!(retained, removed);
+        assert_ne!(remaining, removed);
     }
 }

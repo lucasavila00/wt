@@ -5,7 +5,7 @@ pub(super) use contract::validate_result_metadata;
 pub(super) use provenance::{sha_bytes, stage_publication};
 
 use super::timing::TimedRunner;
-use contract::verify_retained_guest_contract;
+use contract::verify_guest_contract;
 
 use super::console::{wait_for_shutdown, ConsoleLog};
 use super::{recipe, sibling_temporary, BUILD_NAME};
@@ -51,12 +51,12 @@ const INSTALL_AGENT_TOOLS: &[u8] =
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
 const NETWORK_CONFIG: &[u8] = b"network:\n  version: 2\n  ethernets:\n    primary:\n      match:\n        name: \"en*\"\n      dhcp4: true\n      dhcp-identifier: mac\n";
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
-pub(super) const IMAGE_KIND: &str = "retained";
+pub(super) const IMAGE_KIND: &str = "host";
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
     pub(super) main_recipe: &'a [u8],
-    pub(super) retained_recipe: &'a [u8],
+    pub(super) host_recipe: &'a [u8],
 }
 
 pub(super) struct BuildPaths {
@@ -151,7 +151,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_codex = build_dir.join("install-codex.sh");
     let install_diffo = build_dir.join("install-diffo.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
-    let retained_recipe = build_dir.join("retained-build-image.sh");
+    let host_recipe = build_dir.join("host-build-image.sh");
     let tmux_config = build_dir.join("tmux.conf");
     let byobu_color = build_dir.join("byobu-color");
     let configure_access = build_dir.join("configure-access.sh");
@@ -222,7 +222,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
     fs::write(&shared_recipe, spec.main_recipe).context("write image recipe")?;
-    fs::write(&retained_recipe, spec.retained_recipe).context("write retained image recipe")?;
+    fs::write(&host_recipe, spec.host_recipe).context("write host image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
     fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
@@ -253,22 +253,19 @@ pub(super) fn run_kvm_build<R: Runner>(
         (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
         (install_diffo.as_path(), "/var/tmp/wt-install-diffo.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
-        (
-            retained_recipe.as_path(),
-            "/var/tmp/wt-retained-image-build.sh",
-        ),
+        (host_recipe.as_path(), "/var/tmp/wt-host-image-build.sh"),
         (tmux_config.as_path(), "/var/tmp/wt-tmux.conf"),
         (byobu_color.as_path(), "/var/tmp/wt-byobu-color"),
-        (configure_access.as_path(), "/var/tmp/wt-retained-access"),
+        (configure_access.as_path(), "/var/tmp/wt-host-access"),
         (
             configure_git_author.as_path(),
-            "/var/tmp/wt-retained-git-author",
+            "/var/tmp/wt-host-git-author",
         ),
         (
             install_agent_tools.as_path(),
-            "/var/tmp/wt-retained-agent-tools",
+            "/var/tmp/wt-host-agent-tools",
         ),
-        (mount_codex.as_path(), "/var/tmp/wt-retained-mount-codex"),
+        (mount_codex.as_path(), "/var/tmp/wt-host-mount-codex"),
         (network_config.as_path(), "/etc/netplan/50-wt.yaml"),
     ] {
         customize
@@ -305,7 +302,7 @@ pub(super) fn run_kvm_build<R: Runner>(
         "Building {} golden image in a temporary KVM guest (30-minute timeout)...",
         IMAGE_KIND
     );
-    wait_for_shutdown(runner, &mut console_log, spec.name, "Retained")?;
+    wait_for_shutdown(runner, &mut console_log, spec.name, "Host")?;
     undefine_build_domain(runner, spec.name)?;
 
     let marker = read_build_file(
@@ -332,8 +329,8 @@ pub(super) fn run_kvm_build<R: Runner>(
     let expected = format!(
         "kind={}\nstatus=ready\nwt_uid={}\nwt_gid={}\n",
         IMAGE_KIND,
-        wt_retained_worlds::GUEST_UID,
-        wt_retained_worlds::GUEST_GID,
+        wt_host_world::GUEST_UID,
+        wt_host_world::GUEST_GID,
     );
     if marker != expected {
         bail!(
@@ -407,7 +404,7 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         "clear reusable image SSH host keys",
     )?;
     verify_reusable_image_sanitization(runner, paths)?;
-    verify_retained_guest_contract(runner, &paths.disk)?;
+    verify_guest_contract(runner, &paths.disk)?;
     let tmux_sha256 = runner
         .text(
             cmd!(
@@ -482,7 +479,7 @@ fn verify_reusable_image_sanitization(runner: &impl Runner, paths: &BuildPaths) 
     for path in ["/usr/bin/cloud-init", "/etc/cloud", "/var/lib/cloud"] {
         let output = runner.output(cmd!("sudo", "virt-ls", "-a", &paths.disk, path))?;
         if output.status.success() {
-            bail!("reusable image retained removed bootstrap state at {path}");
+            bail!("reusable image still contains removed bootstrap state at {path}");
         }
     }
     let ssh_files = runner.text(
@@ -490,7 +487,7 @@ fn verify_reusable_image_sanitization(runner: &impl Runner, paths: &BuildPaths) 
         "inspect reusable image SSH state",
     )?;
     if ssh_files.lines().any(|name| name.starts_with("ssh_host_")) {
-        bail!("reusable image retained SSH host keys");
+        bail!("reusable image still contains SSH host keys");
     }
     Ok(())
 }

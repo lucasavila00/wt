@@ -5,8 +5,8 @@ use std::sync::{
 use tempfile::TempDir;
 use uuid::Uuid;
 use wt_control_protocol::{CreateInstance, InstanceName};
+use wt_host_world::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
-use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_server::operations::Operations;
 use wt_server::service::{AgentToolGateway, Service};
 use wt_workload_registry::Store;

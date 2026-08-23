@@ -17,7 +17,7 @@ executables change with a WT release, not with an individual world.
 
 ## Decision
 
-Build and validate the four static executables before preparing the retained
+Build and validate the four static executables before preparing the host
 image. Install them root-owned with mode 0755, and verify their metadata and
 contents before publishing the image. Install and verify the Codex integration entrypoints
 while building the image so their fixed topology is part of the same contract.

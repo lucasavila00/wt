@@ -73,8 +73,7 @@ pub(in crate::image) fn stage_publication(
     image_destination: &Path,
     manifest: &ImageManifest,
 ) -> Result<PendingPublication> {
-    wt_retained_worlds::validate_guest_identity(manifest.guest_identity)
-        .map_err(anyhow::Error::msg)?;
+    wt_host_world::validate_guest_identity(manifest.guest_identity).map_err(anyhow::Error::msg)?;
     let local_manifest = prepared.with_extension("manifest.json");
     let manifest_bytes = serde_json::to_vec_pretty(manifest)?;
     fs::write(&local_manifest, &manifest_bytes).context("write image manifest")?;
@@ -223,8 +222,8 @@ mod tests {
     fn generation(directory: &Path, name: &str, image: &[u8], manifest: &[u8]) -> PathBuf {
         let path = directory.join(name);
         fs::create_dir(&path).unwrap();
-        fs::write(path.join("retained.qcow2"), image).unwrap();
-        fs::write(path.join("retained.qcow2.manifest.json"), manifest).unwrap();
+        fs::write(path.join("host.qcow2"), image).unwrap();
+        fs::write(path.join("host.qcow2.manifest.json"), manifest).unwrap();
         path
     }
 
@@ -240,24 +239,24 @@ mod tests {
         PendingPublication {
             generation_temporary: Some(temporary.to_path_buf()),
             generation_destination: destination.to_path_buf(),
-            staged_image: temporary.join("retained.qcow2"),
+            staged_image: temporary.join("host.qcow2"),
             current_temporary: sibling_temporary(&current_path(image)).unwrap(),
             current_destination: current_path(image),
-            link_target: PathBuf::from("retained.qcow2.generations/new"),
+            link_target: PathBuf::from("host.qcow2.generations/new"),
         }
     }
 
     #[test]
     fn failed_probe_discards_only_the_temporary_generation() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         let generations = generations_path(&image);
         fs::create_dir(&generations).unwrap();
         let existing = generation(&generations, "existing", b"old image", b"old manifest");
         let temporary = generation(&generations, ".new.wt-new", b"new image", b"new manifest");
         let destination = generations.join("new");
         let publication = publication(&image, &temporary, &destination);
-        assert_eq!(publication.image_path(), temporary.join("retained.qcow2"));
+        assert_eq!(publication.image_path(), temporary.join("host.qcow2"));
 
         publication
             .discard(&FilesystemRunner {
@@ -275,13 +274,13 @@ mod tests {
     fn readers_see_complete_generation_across_publication_failures() {
         for failure in 1..=3 {
             let directory = tempfile::tempdir().unwrap();
-            let image = directory.path().join("retained.qcow2");
+            let image = directory.path().join("host.qcow2");
             let generations = generations_path(&image);
             fs::create_dir(&generations).unwrap();
             generation(&generations, "old", b"old image", b"old manifest");
             let temporary = generation(&generations, ".new.wt-new", b"new image", b"new manifest");
             let destination = generations.join("new");
-            symlink("retained.qcow2.generations/old", current_path(&image)).unwrap();
+            symlink("host.qcow2.generations/old", current_path(&image)).unwrap();
             let runner = FilesystemRunner {
                 fail_at: Some(failure),
                 calls: Cell::new(0),
@@ -297,13 +296,13 @@ mod tests {
         }
 
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         let generations = generations_path(&image);
         fs::create_dir(&generations).unwrap();
         generation(&generations, "old", b"old image", b"old manifest");
         let temporary = generation(&generations, ".new.wt-new", b"new image", b"new manifest");
         let destination = generations.join("new");
-        symlink("retained.qcow2.generations/old", current_path(&image)).unwrap();
+        symlink("host.qcow2.generations/old", current_path(&image)).unwrap();
         let runner = FilesystemRunner {
             fail_at: None,
             calls: Cell::new(0),
@@ -321,11 +320,11 @@ mod tests {
     #[test]
     fn reader_keeps_old_generation_when_manifest_staging_fails() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         let generations = generations_path(&image);
         fs::create_dir(&generations).unwrap();
         generation(&generations, "old", b"old image", b"old manifest");
-        symlink("retained.qcow2.generations/old", current_path(&image)).unwrap();
+        symlink("host.qcow2.generations/old", current_path(&image)).unwrap();
         let runner = FilesystemRunner {
             fail_at: None,
             calls: Cell::new(0),
@@ -352,7 +351,7 @@ mod tests {
                     .ends_with(".wt-new")
             })
             .unwrap();
-        assert!(temporary.join("retained.qcow2").is_file());
-        assert!(!temporary.join("retained.qcow2.manifest.json").exists());
+        assert!(temporary.join("host.qcow2").is_file());
+        assert!(!temporary.join("host.qcow2.manifest.json").exists());
     }
 }

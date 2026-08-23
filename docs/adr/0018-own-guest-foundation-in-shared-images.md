@@ -1,16 +1,16 @@
-# ADR 0018: Own the retained guest foundation in the golden image
+# ADR 0018: Own the guest foundation in the golden image
 
 - Status: Accepted
 - Date: 2026-08-20
 
-The golden image owns the retained guest foundation:
+The golden image owns the guest foundation:
 
 - `wt:wt` at UID/GID `1001:1001` with home `/home/wt`;
 - the shared Byobu/tmux profile;
 - Codex and the WT access, Git author, agent tool, and Codex mount helpers;
 - a strict image-build result marker recording the identity contract.
 
-`wt-retained-worlds` validates this foundation and applies per-world SSH keys,
+`wt-host-world` validates this foundation and applies per-world SSH keys,
 Git author state, gateway access, and Codex mounts. It does not create or repair
 a missing image contract. Provisioning has no checkpoints; remove a failed
 world and create a fresh disk.

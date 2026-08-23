@@ -182,16 +182,16 @@ impl ServerConfig {
         MachineConfig {
             image: self.image.path.clone(),
             worlds_dir: self.libvirt.worlds_dir.clone(),
-            worlds_owner_uid: wt_retained_worlds::WT_IDENTITY.uid,
+            worlds_owner_uid: wt_host_world::WT_IDENTITY.uid,
             network: self.libvirt.network.clone(),
             boot_timeout: Duration::from_secs(self.guest.boot_timeout_seconds),
             shared_mounts: Some(self.shared_mounts()),
         }
     }
 
-    pub fn retained_config(&self) -> wt_retained_worlds::RetainedConfig {
-        wt_retained_worlds::RetainedConfig {
-            agent_tools: wt_retained_worlds::AgentToolsConfig {
+    pub fn host_config(&self) -> wt_host_world::HostConfig {
+        wt_host_world::HostConfig {
+            agent_tools: wt_host_world::AgentToolsConfig {
                 provider_hosts: self.agent_tools_provider_hosts(),
                 vsock_port: self.agent_tools.vsock_port,
             },
@@ -366,7 +366,7 @@ mod tests {
 version = 1
 
 [image]
-path = "/var/lib/wt/images/retained.qcow2"
+path = "/var/lib/wt/images/host.qcow2"
 
 [libvirt]
 network = "default"
@@ -394,10 +394,7 @@ binary_dir = "/usr/local/bin"
     fn complete_config_is_valid() {
         let (config, machine) = parse(VALID).unwrap();
         assert_eq!(config.agent_tools.vsock_port, DEFAULT_AGENT_TOOL_VSOCK_PORT);
-        assert_eq!(
-            machine.image,
-            Path::new("/var/lib/wt/images/retained.qcow2")
-        );
+        assert_eq!(machine.image, Path::new("/var/lib/wt/images/host.qcow2"));
         assert_eq!(machine.network, "default");
         assert_eq!(
             machine.shared_mounts,
@@ -434,19 +431,19 @@ binary_dir = "/usr/local/bin"
     #[test]
     fn runtime_load_pins_one_image_generation() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         let generations = crate::image_generation::generations_path(&image);
         let first = generations.join("first");
         let second = generations.join("second");
         std::fs::create_dir_all(&first).unwrap();
         std::fs::create_dir(&second).unwrap();
         let current = crate::image_generation::current_path(&image);
-        symlink("retained.qcow2.generations/first", &current).unwrap();
+        symlink("host.qcow2.generations/first", &current).unwrap();
         let config_path = directory.path().join("server.toml");
         std::fs::write(
             &config_path,
             VALID.replace(
-                "/var/lib/wt/images/retained.qcow2",
+                "/var/lib/wt/images/host.qcow2",
                 &image.display().to_string(),
             ),
         )
@@ -454,11 +451,11 @@ binary_dir = "/usr/local/bin"
 
         let pinned = ServerConfig::load_runtime_from(&config_path).unwrap();
         std::fs::remove_file(&current).unwrap();
-        symlink("retained.qcow2.generations/second", &current).unwrap();
+        symlink("host.qcow2.generations/second", &current).unwrap();
         let refreshed = ServerConfig::load_runtime_from(&config_path).unwrap();
 
-        assert_eq!(pinned.image.path, first.join("retained.qcow2"));
-        assert_eq!(refreshed.image.path, second.join("retained.qcow2"));
+        assert_eq!(pinned.image.path, first.join("host.qcow2"));
+        assert_eq!(refreshed.image.path, second.join("host.qcow2"));
     }
 
     #[test]
@@ -493,8 +490,8 @@ binary_dir = "/usr/local/bin"
         ))
         .is_err());
         assert!(parse(&VALID.replace(
-            "path = \"/var/lib/wt/images/retained.qcow2\"",
-            "path = \"/var/lib/wt/images/retained.qcow2\"\nsource_url = \"https://example.com/img\""
+            "path = \"/var/lib/wt/images/host.qcow2\"",
+            "path = \"/var/lib/wt/images/host.qcow2\"\nsource_url = \"https://example.com/img\""
         ))
         .is_err());
     }

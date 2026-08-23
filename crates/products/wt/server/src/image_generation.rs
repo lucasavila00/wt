@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn uses_configured_paths_before_first_generation() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
 
         assert_eq!(
             resolve(&image).unwrap(),
@@ -94,17 +94,17 @@ mod tests {
     #[test]
     fn resolves_one_current_generation() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         let generations = generations_path(&image);
         let generation = generations.join("one");
         fs::create_dir_all(&generation).unwrap();
-        symlink("retained.qcow2.generations/one", current_path(&image)).unwrap();
+        symlink("host.qcow2.generations/one", current_path(&image)).unwrap();
 
         assert_eq!(
             resolve(&image).unwrap(),
             ImageGeneration {
-                image: generation.join("retained.qcow2"),
-                manifest: generation.join("retained.qcow2.manifest.json"),
+                image: generation.join("host.qcow2"),
+                manifest: generation.join("host.qcow2.manifest.json"),
                 current: true,
             }
         );
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn rejects_dangling_and_external_current_pointers() {
         let directory = tempfile::tempdir().unwrap();
-        let image = directory.path().join("retained.qcow2");
+        let image = directory.path().join("host.qcow2");
         symlink("missing", current_path(&image)).unwrap();
         assert!(resolve(&image).is_err());
 

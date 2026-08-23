@@ -10,7 +10,7 @@ description = "Ubuntu 24.04 server installer for wt"
 name = "wt-server-installer"
 path = "src/main.rs"
 [dependencies]
-wt-retained-worlds = { workspace = true }
+wt-host-world = { workspace = true }
 wt-libvirt-kvm = { workspace = true }
 wt-workload-registry = { workspace = true }
 wt-server = { workspace = true }

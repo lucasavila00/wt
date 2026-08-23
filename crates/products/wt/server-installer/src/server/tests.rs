@@ -184,7 +184,7 @@ limits = { vcpus = 4, memory_mib = 8192, disk_gib = 128 }
 [image]
 source_url = "https://example.test/image"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-path = "/var/lib/wt/retained.qcow2"
+path = "/var/lib/wt/host.qcow2"
 build_memory_mib = 1024
 build_vcpus = 1
 build_disk_gib = 8

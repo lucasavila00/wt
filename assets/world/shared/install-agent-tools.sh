@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-. /usr/local/share/wt-retained-contract
+. /usr/local/share/wt-host-contract
 
-stage=/tmp/wt-retained-agent-tools
+stage=/tmp/wt-host-agent-tools
 vsock_port=$(cat "$stage-vsock-port")
 case "$vsock_port" in
     ''|*[!0-9]*) echo "invalid agent tool vsock port" >&2; exit 1 ;;

@@ -7,7 +7,7 @@ use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
     Operation, ResourceCapacity, Resources as ProtocolResources, Response,
 };
-use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
+use wt_host_world::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod activity;
@@ -232,19 +232,19 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     return Err(ApiError::new(
                         ErrorCode::Backend,
                         format!(
-                            "{provisioning_error}; failed to record the retained host world: \
+                            "{provisioning_error}; failed to record the host world: \
                              {store_error}"
                         ),
                     ));
                 }
                 eprintln!(
-                    "wt-server: retained failed host world {}: {provisioning_error}",
+                    "wt-server: preserved failed host world {}: {provisioning_error}",
                     stored.instance.name
                 );
                 return Err(ApiError::new(
                     ErrorCode::Backend,
                     format!(
-                        "{provisioning_error}; host world '{}' was retained in error state; \
+                        "{provisioning_error}; host world '{}' was preserved in error state; \
                          run `wt rm {}` to delete it",
                         stored.instance.name, stored.instance.name
                     ),

@@ -11,7 +11,7 @@ numeric IDs differ. WT therefore needs one fixed identity across that boundary.
 
 ## Decision
 
-Every WT host and retained guest has user `wt`, primary group `wt`, UID/GID
+Every WT host and guest has user `wt`, primary group `wt`, UID/GID
 `1001:1001`, and home `/home/wt`. This numeric identity is part of the
 host/guest filesystem ABI.
 

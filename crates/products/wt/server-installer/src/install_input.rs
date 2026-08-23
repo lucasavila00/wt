@@ -201,7 +201,7 @@ limits = { vcpus = 32, memory_mib = 131072, disk_gib = 2048 }
 [image]
 source_url = "https://cloud-images.ubuntu.com/image.img"
 source_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-path = "/var/lib/wt/images/retained.qcow2"
+path = "/var/lib/wt/images/host.qcow2"
 build_memory_mib = 8192
 build_vcpus = 4
 build_disk_gib = 32
@@ -236,7 +236,7 @@ binary_dir = "/usr/local/bin"
         let server = input.materialize();
         assert_eq!(
             server.image.path,
-            PathBuf::from("/var/lib/wt/images/retained.qcow2")
+            PathBuf::from("/var/lib/wt/images/host.qcow2")
         );
         let bytes = serialize_server_config(&server).unwrap();
         let text = String::from_utf8(bytes).unwrap();

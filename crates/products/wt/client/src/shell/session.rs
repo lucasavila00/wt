@@ -261,13 +261,13 @@ impl SessionSet {
         columns: u16,
     ) -> Result<()> {
         self.sessions.retain_mut(|session| {
-            let retained = worlds
+            let present = worlds
                 .iter()
                 .any(|world| world.identity == session.world.identity);
-            if !retained {
+            if !present {
                 session.stop_without_joining_reader();
             }
-            retained
+            present
         });
         for world in worlds {
             if self.world_index(world).is_none() {

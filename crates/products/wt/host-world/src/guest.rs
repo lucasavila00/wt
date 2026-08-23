@@ -22,13 +22,13 @@ pub const GUEST_UID: u32 = WT_IDENTITY.uid;
 pub const GUEST_GID: u32 = WT_IDENTITY.gid;
 pub const GUEST_IDENTITY: GuestIdentity = WT_IDENTITY.numeric();
 pub const GUEST_SSH_PORT: u16 = 22;
-pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-retained-access";
-pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-retained-git-author";
-pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-retained-agent-tools";
-pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-retained-mount-codex";
+pub const ACCESS_HELPER: &str = "/usr/local/libexec/wt-host-access";
+pub const GIT_AUTHOR_HELPER: &str = "/usr/local/libexec/wt-host-git-author";
+pub const AGENT_TOOLS_HELPER: &str = "/usr/local/libexec/wt-host-agent-tools";
+pub const MOUNT_CODEX_HELPER: &str = "/usr/local/libexec/wt-host-mount-codex";
 
-const AGENT_TOOLS_STAGE: &str = "/tmp/wt-retained-agent-tools-";
-const GIT_AUTHOR_STAGE: &str = "/tmp/wt-retained-git-author-";
+const AGENT_TOOLS_STAGE: &str = "/tmp/wt-host-agent-tools-";
+const GIT_AUTHOR_STAGE: &str = "/tmp/wt-host-git-author-";
 const CAPTURE_LIMIT: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,7 +66,7 @@ pub fn validate_guest_identity(actual: GuestIdentity) -> Result<(), WorkerError>
         return Ok(());
     }
     Err(WorkerError::new(format!(
-        "retained image guest identity mismatch: expected UID/GID {}:{}, got {}:{}",
+        "host image guest identity mismatch: expected UID/GID {}:{}, got {}:{}",
         GUEST_IDENTITY.uid, GUEST_IDENTITY.gid, actual.uid, actual.gid
     )))
 }
@@ -173,7 +173,7 @@ impl AgentToolsConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RetainedConfig {
+pub struct HostConfig {
     pub agent_tools: AgentToolsConfig,
 }
 
@@ -185,7 +185,7 @@ pub struct ProvisionSpec<'a> {
     pub git_grant: &'a str,
 }
 
-impl RetainedConfig {
+impl HostConfig {
     pub fn validate(&self) -> Result<(), WorkerError> {
         self.agent_tools.validate()
     }

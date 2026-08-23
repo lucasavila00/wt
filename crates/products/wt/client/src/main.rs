@@ -39,7 +39,7 @@ enum Command {
     Rm { name: String },
     /// Start a stopped world.
     Start { name: String },
-    /// Stop a retained world.
+    /// Stop a host world.
     Stop { name: String },
     /// Open a world in VS Code Remote-SSH.
     Code { name: String },

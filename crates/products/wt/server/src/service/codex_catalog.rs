@@ -36,13 +36,13 @@ pub(super) fn refresh(store: &Store, root: &Path) -> Result<Vec<String>, String>
     let mut paths = Vec::new();
     collect_rollouts(root, &mut paths)?;
     paths.sort();
-    let mut retained = BTreeSet::new();
+    let mut active_paths = BTreeSet::new();
     let mut warnings = Vec::new();
     for path in paths {
         let path_text = path.to_string_lossy().into_owned();
         match update_rollout(&path, cached.get(&path_text)) {
             Ok(Some(update)) => {
-                retained.insert(path_text);
+                active_paths.insert(path_text);
                 for warning in update.warnings {
                     add_warning(&mut warnings, warning);
                 }
@@ -55,13 +55,13 @@ pub(super) fn refresh(store: &Store, root: &Path) -> Result<Vec<String>, String>
             Ok(None) => {}
             Err(error) if error == "subagent" => {}
             Err(error) => {
-                retained.insert(path_text);
+                active_paths.insert(path_text);
                 add_warning(&mut warnings, format!("skip {}: {error}", path.display()));
             }
         }
     }
     store
-        .retain_codex_session_catalog_paths(&retained)
+        .retain_codex_session_catalog_paths(&active_paths)
         .map_err(|error| error.to_string())?;
     Ok(warnings)
 }

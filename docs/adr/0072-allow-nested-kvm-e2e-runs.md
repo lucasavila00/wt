@@ -5,7 +5,7 @@
 
 ## Context
 
-WT development happens inside retained KVM worlds, while the full E2E suite
+WT development happens inside host KVM worlds, while the full E2E suite
 creates its own KVM guests. Running that suite in a WT world gives contributors
 a disposable and reproducible test host, but only when nested KVM is exposed
 and the outer world has enough CPU, memory, and disk.

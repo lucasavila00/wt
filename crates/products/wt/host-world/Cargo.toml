@@ -1,10 +1,10 @@
 [package]
-name = "wt-retained-worlds"
+name = "wt-host-world"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Shared retained-world guest contracts and operations for wt"
+description = "Shared host-world guest contracts and operations for wt"
 
 [dependencies]
 serde = { workspace = true }

@@ -102,12 +102,8 @@ fn require_test_fixture_path(path: &Path) -> Result<()> {
 }
 
 fn set_test_fixture_group(path: &Path) -> Result<()> {
-    chown(
-        path,
-        None,
-        Some(Gid::from_raw(wt_retained_worlds::GUEST_GID)),
-    )
-    .with_context(|| format!("set WT group on E2E fixture {}", path.display()))
+    chown(path, None, Some(Gid::from_raw(wt_host_world::GUEST_GID)))
+        .with_context(|| format!("set WT group on E2E fixture {}", path.display()))
 }
 
 fn prepare_test_codex_fixture(auth: &str, auth_share: &str, sessions: &str) -> Result<()> {

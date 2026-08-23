@@ -4,7 +4,7 @@ members = [
     "crates/products/wt/client",
     "crates/products/wt/control-protocol",
     "crates/products/wt/server",
-    "crates/products/wt/retained-worlds",
+    "crates/products/wt/host-world",
     "crates/products/wt/codex-integration",
     "crates/products/wt/server-installer",
     "crates/products/agent-tools/gateway",
@@ -37,7 +37,7 @@ wt-git-proxy = { path = "crates/products/git-proxy/service" }
 wt-git-smart-protocol = { path = "crates/shared/git-smart-protocol" }
 wt-installer-support = { path = "crates/shared/installer-support" }
 wt-libvirt-kvm = { path = "crates/shared/libvirt-kvm" }
-wt-retained-worlds = { path = "crates/products/wt/retained-worlds" }
+wt-host-world = { path = "crates/products/wt/host-world" }
 wt-server = { path = "crates/products/wt/server" }
 wt-workload-registry = { path = "crates/shared/workload-registry" }
 anyhow = "1.0.102"

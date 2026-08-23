@@ -14,7 +14,7 @@ standalone Git client
   └─ OpenSSH forced command ── wt-git-proxy ── SSH Git upstream
 ```
 
-`wt-server` owns retained worlds. The control plane has no TCP listener. Local
+`wt-server` owns host worlds. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
 protected server socket. The protocol carries world resources, a Git author,
 server information, context-local Codex session observations, and streamed
@@ -24,7 +24,7 @@ creation progress events.
 
 | Scope | Crates |
 |-------|--------|
-| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-retained-worlds`, `wt-codex-integration`, `wt-server-installer` |
+| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-host-world`, `wt-codex-integration`, `wt-server-installer` |
 | Agent tool gateway | `wt-agent-tool-gateway`, `wt-tools` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 | Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
@@ -39,7 +39,7 @@ released from this workspace but is not part of `wt-server` or a WT world.
 `wt-installer-support` contains host file, command runner, and SSH credential
 handling shared by the regular WT and standalone Git proxy installers.
 
-`wt-retained-worlds` owns host lifecycle and the fixed guest identity. Its
+`wt-host-world` owns host lifecycle and the fixed guest identity. Its
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
@@ -54,7 +54,7 @@ versions. This is not a runtime world setting.
 
 Provisioning is intentionally restart-only. WT does not resume an interrupted
 sequence or repair partial guest state. Remove a failed world and create it
-again from the retained image.
+again from the host image.
 
 ## State
 
@@ -65,5 +65,5 @@ again from the retained image.
 - Registry: `~/.local/state/wt/instances.db`
 - KVM machine files: the configured libvirt worlds directories
 
-Each registry record is a retained host world with its resources, backend,
+Each registry record is a host world with its resources, backend,
 disk, SSH endpoint, and gateway grant.

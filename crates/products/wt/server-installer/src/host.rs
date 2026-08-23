@@ -134,7 +134,7 @@ mod tests {
             version: 1,
             test_server: true,
             image: wt_server::ImageConfig {
-                path: "/var/lib/wt/images/retained.qcow2".into(),
+                path: "/var/lib/wt/images/host.qcow2".into(),
             },
             libvirt: wt_server::ServerLibvirtConfig {
                 network: "default".to_owned(),

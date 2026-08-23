@@ -3974,8 +3974,8 @@ dependencies = [
  "wt-client",
  "wt-control-protocol",
  "wt-git-proxy",
+ "wt-host-world",
  "wt-libvirt-kvm",
- "wt-retained-worlds",
  "wt-server",
  "wt-workload-registry",
 ]
@@ -4023,6 +4023,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wt-host-world"
+version = "0.0.0"
+dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tempfile",
+ "uuid",
+ "wt-control-protocol",
+ "wt-libvirt-kvm",
+]
+
+[[package]]
 name = "wt-installer-support"
 version = "0.0.0"
 dependencies = [
@@ -4058,20 +4072,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wt-retained-worlds"
-version = "0.0.0"
-dependencies = [
- "insta",
- "serde",
- "serde_json",
- "ssh-key",
- "tempfile",
- "uuid",
- "wt-control-protocol",
- "wt-libvirt-kvm",
-]
-
-[[package]]
 name = "wt-server"
 version = "0.0.0"
 dependencies = [
@@ -4091,8 +4091,8 @@ dependencies = [
  "uuid",
  "wt-agent-tool-gateway",
  "wt-control-protocol",
+ "wt-host-world",
  "wt-libvirt-kvm",
- "wt-retained-worlds",
  "wt-workload-registry",
 ]
 
@@ -4112,9 +4112,9 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "uuid",
  "wt-control-protocol",
+ "wt-host-world",
  "wt-installer-support",
  "wt-libvirt-kvm",
- "wt-retained-worlds",
  "wt-server",
  "wt-workload-registry",
  "zeroize",

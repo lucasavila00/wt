@@ -7,7 +7,7 @@
 - bounded guest command, capture, and file-write transport.
 
 It uses libvirt/KVM and the QEMU guest agent and does not know Git grants or
-world access policy. `wt-retained-worlds::host` composes a machine with the
+world access policy. `wt-host-world::host` composes a machine with the
 golden-image contract, login preparation, SSH proof, Git author, agent tooling,
 and Codex mounts.
 

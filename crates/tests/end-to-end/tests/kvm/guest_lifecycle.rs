@@ -4,7 +4,7 @@ use std::process::Stdio;
 
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
-fn retained_host_lifecycle() {
+fn host_world_lifecycle() {
     let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
     let name = unique_name("host");
@@ -121,8 +121,8 @@ fn retained_host_lifecycle() {
         std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_sessions.marker),
     )
     .unwrap();
-    assert_eq!(rollout_metadata.uid(), wt_retained_worlds::GUEST_UID);
-    assert_eq!(rollout_metadata.gid(), wt_retained_worlds::GUEST_GID);
+    assert_eq!(rollout_metadata.uid(), wt_host_world::GUEST_UID);
+    assert_eq!(rollout_metadata.gid(), wt_host_world::GUEST_GID);
     assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 

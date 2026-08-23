@@ -5,7 +5,7 @@
 
 ## Context
 
-WT creates every world from one retained golden image. Some packages need a
+WT creates every world from one host golden image. Some packages need a
 version Ubuntu 24.04 does not provide.
 
 Downloading those packages again for every world would be slow and would make
@@ -20,7 +20,7 @@ by version, URL, and SHA-256.
 Installed contract packages stay in the image manifest so world provisioning
 can require their exact versions.
 
-The image owns the retained `wt` user and terminal files. Runtime provisioning
+The image owns the image `wt` user and terminal files. Runtime provisioning
 supplies only world-specific access, Git identity, and gateway credentials. It
 does not download pinned image artifacts or install application packages.
 
