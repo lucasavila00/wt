@@ -457,6 +457,41 @@ impl GithubApi {
             .collect()
     }
 
+    fn list_general_comments(&self, project: &str, mr: u64) -> Result<Vec<GeneralComment>> {
+        self.read_pull_request(project, mr)?;
+        let mut page = 1;
+        let mut comments = Vec::new();
+        loop {
+            let current: Vec<IssueComment> = self.rest.read_json(&format!(
+                "{}repos/{project}/issues/{mr}/comments?per_page=100&page={page}",
+                self.rest_prefix
+            ))?;
+            let complete = current.len() < 100;
+            comments.extend(current.into_iter().map(general_comment));
+            if complete {
+                return Ok(comments);
+            }
+            page += 1;
+        }
+    }
+
+    fn show_general_comment(&self, project: &str, mr: u64, comment: u64) -> Result<GeneralComment> {
+        self.read_pull_request(project, mr)?;
+        let comment: IssueComment = self.rest.read_json(&format!(
+            "{}repos/{project}/issues/comments/{comment}",
+            self.rest_prefix
+        ))?;
+        let expected_suffix = format!("/repos/{project}/issues/{mr}");
+        if !comment
+            .issue_url
+            .to_ascii_lowercase()
+            .ends_with(&expected_suffix.to_ascii_lowercase())
+        {
+            bail!("comment {} does not belong to MR {mr}", comment.id);
+        }
+        Ok(general_comment(comment))
+    }
+
     fn require_review_thread(
         &self,
         project: &str,

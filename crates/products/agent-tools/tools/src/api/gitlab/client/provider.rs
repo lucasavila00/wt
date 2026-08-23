@@ -283,6 +283,16 @@ impl GitProviderApi for GitlabApi {
                 self.read_merge_request_by_iid(scope.project, parse_resource_id(mr, "MR")?)?
                     .threads,
             )),
+            WtToolsCommand::ListComments { mr } => Ok(ProviderCommandOutput::GeneralComments(
+                self.list_general_comments(scope.project, parse_resource_id(mr, "MR")?)?,
+            )),
+            WtToolsCommand::ShowComment { mr, comment } => Ok(
+                ProviderCommandOutput::GeneralComment(self.show_general_comment(
+                    scope.project,
+                    parse_resource_id(mr, "MR")?,
+                    parse_resource_id(comment, "comment")?,
+                )?),
+            ),
             WtToolsCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })

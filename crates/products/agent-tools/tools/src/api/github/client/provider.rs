@@ -282,6 +282,16 @@ impl GitProviderApi for GithubApi {
             WtToolsCommand::ListThreads { mr } => Ok(ProviderCommandOutput::ReviewThreads(
                 self.read_review_threads(scope.project, parse_resource_id(mr, "MR")?)?,
             )),
+            WtToolsCommand::ListComments { mr } => Ok(ProviderCommandOutput::GeneralComments(
+                self.list_general_comments(scope.project, parse_resource_id(mr, "MR")?)?,
+            )),
+            WtToolsCommand::ShowComment { mr, comment } => Ok(
+                ProviderCommandOutput::GeneralComment(self.show_general_comment(
+                    scope.project,
+                    parse_resource_id(mr, "MR")?,
+                    parse_resource_id(comment, "comment")?,
+                )?),
+            ),
             WtToolsCommand::ListCi { commit } => {
                 let (runs, jobs) = self.list_ci_for_commit(scope.project, commit)?;
                 Ok(ProviderCommandOutput::CiRunsAndJobs { runs, jobs })

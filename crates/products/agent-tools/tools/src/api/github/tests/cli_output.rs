@@ -5,6 +5,7 @@ const PULL_REQUEST: &str = r#"{"number":7,"node_id":"pull-request-7","html_url":
 const WORKFLOW_RUN: &str = r#"{"id":91,"name":"CI","event":"pull_request","status":"completed","conclusion":"success","html_url":"https://github.test/runs/91","head_sha":"abc123","head_branch":"wt/fix-login","head_repository":{"full_name":"acme/widget"}}"#;
 const WORKFLOW_JOB: &str = r#"{"id":44,"name":"Linux","status":"completed","conclusion":"success","html_url":"https://github.test/jobs/44","run_id":91}"#;
 const REVIEW_THREADS: &str = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"id":"thread-7","isResolved":false,"path":"src/lib.rs","line":12,"comments":{"pageInfo":{"hasNextPage":false},"totalCount":1,"nodes":[{"author":{"__typename":"User","login":"reviewer"},"body":"Please clarify this.","url":"https://github.test/thread/7"}]}}]}}}}}"#;
+const ISSUE_COMMENT: &str = r#"{"id":123,"body":"General feedback.","html_url":"https://github.test/acme/widget/pull/7#issuecomment-123","issue_url":"https://api.github.test/repos/acme/widget/issues/7","user":{"login":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z"}"#;
 
 #[test]
 fn cli_commands_render_complete_json_from_github_responses() {
@@ -57,6 +58,28 @@ fn cli_commands_render_complete_json_from_github_responses() {
             "list_threads",
             WtToolsCommand::ListThreads { mr: "7".into() },
             vec![graphql("GithubReadPullRequestByNumber", REVIEW_THREADS)],
+        ),
+        (
+            "list_comments",
+            WtToolsCommand::ListComments { mr: "7".into() },
+            vec![
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get(
+                    "/repos/acme/widget/issues/7/comments?per_page=100&page=1",
+                    leak(format!("[{ISSUE_COMMENT}]")),
+                ),
+            ],
+        ),
+        (
+            "show_comment",
+            WtToolsCommand::ShowComment {
+                mr: "7".into(),
+                comment: "123".into(),
+            },
+            vec![
+                get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+                get("/repos/acme/widget/issues/comments/123", ISSUE_COMMENT),
+            ],
         ),
         (
             "list_ci",
@@ -270,6 +293,84 @@ fn cancel_job_reports_githubs_real_command_error() {
         .unwrap_err();
 
     insta::assert_snapshot!(error);
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn show_comment_rejects_a_comment_from_another_pull_request() {
+    let wrong_mr = ISSUE_COMMENT.replace("/issues/7", "/issues/8").leak();
+    let (base_url, server) = serve(vec![
+        get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+        get("/repos/acme/widget/issues/comments/123", wrong_mr),
+    ]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let error = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ShowComment {
+                mr: "7".into(),
+                comment: "123".into(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "comment 123 does not belong to MR 7");
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn show_comment_accepts_canonical_repository_casing() {
+    let scope = ProviderProjectScope {
+        project: "Acme/Widget",
+        ..project_scope()
+    };
+    let (base_url, server) = serve(vec![
+        get("/repos/Acme/Widget/pulls/7", PULL_REQUEST),
+        get("/repos/Acme/Widget/issues/comments/123", ISSUE_COMMENT),
+    ]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    provider
+        .execute_cli_command(
+            &scope,
+            &WtToolsCommand::ShowComment {
+                mr: "7".into(),
+                comment: "123".into(),
+            },
+        )
+        .unwrap();
+
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn list_comments_reads_every_rest_page() {
+    let first_page = format!("[{}]", vec![ISSUE_COMMENT; 100].join(",")).leak();
+    let (base_url, server) = serve(vec![
+        get("/repos/acme/widget/pulls/7", PULL_REQUEST),
+        get(
+            "/repos/acme/widget/issues/7/comments?per_page=100&page=1",
+            first_page,
+        ),
+        get(
+            "/repos/acme/widget/issues/7/comments?per_page=100&page=2",
+            "[]",
+        ),
+    ]);
+    let provider = GithubApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let ProviderCommandOutput::GeneralComments(comments) = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ListComments { mr: "7".into() },
+        )
+        .unwrap()
+    else {
+        panic!("expected general comments");
+    };
+
+    assert_eq!(comments.len(), 100);
     server.join().unwrap().unwrap();
 }
 

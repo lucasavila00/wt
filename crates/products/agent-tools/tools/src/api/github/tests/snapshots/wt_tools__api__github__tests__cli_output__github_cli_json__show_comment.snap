@@ -1,0 +1,15 @@
+---
+source: crates/products/agent-tools/tools/src/api/github/tests/cli_output.rs
+expression: "serde_json::to_string_pretty(&value).unwrap()"
+---
+{
+  "data": {
+    "author": "reviewer",
+    "body": "General feedback.",
+    "created_at": "2026-08-22T10:00:00Z",
+    "handle": "123",
+    "updated_at": "2026-08-22T11:00:00Z",
+    "url": "https://github.test/acme/widget/pull/7#issuecomment-123"
+  },
+  "type": "general_comment"
+}

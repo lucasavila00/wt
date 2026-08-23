@@ -383,6 +383,41 @@ impl GitlabApi {
         })
     }
 
+    fn list_general_comments(&self, project: &str, mr: u64) -> Result<Vec<GeneralComment>> {
+        let request = self.read_merge_request(project, mr)?;
+        let mut page = 1;
+        let mut comments = Vec::new();
+        loop {
+            let current: Vec<MergeRequestNote> = self.http.read_json(&format!(
+                "api/v4/projects/{}/merge_requests/{mr}/notes?per_page=100&page={page}&sort=asc&order_by=created_at",
+                encoded_project(project)
+            ))?;
+            let complete = current.len() < 100;
+            comments.extend(
+                current
+                    .into_iter()
+                    .filter(|note| !note.system && !note.resolvable)
+                    .map(|note| general_comment(note, &request.web_url)),
+            );
+            if complete {
+                return Ok(comments);
+            }
+            page += 1;
+        }
+    }
+
+    fn show_general_comment(&self, project: &str, mr: u64, comment: u64) -> Result<GeneralComment> {
+        let request = self.read_merge_request(project, mr)?;
+        let note: MergeRequestNote = self.http.read_json(&format!(
+            "api/v4/projects/{}/merge_requests/{mr}/notes/{comment}",
+            encoded_project(project)
+        ))?;
+        if note.system || note.resolvable {
+            bail!("comment {comment} is not a general comment in MR {mr}");
+        }
+        Ok(general_comment(note, &request.web_url))
+    }
+
     fn read_pipeline(&self, project: &str, run: u64) -> Result<Pipeline> {
         self.http.read_json(&format!(
             "api/v4/projects/{}/pipelines/{run}",

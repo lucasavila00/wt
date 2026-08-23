@@ -128,6 +128,16 @@ pub struct ReviewComment {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GeneralComment {
+    pub handle: GeneralCommentHandle,
+    pub author: String,
+    pub body: String,
+    pub url: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CiJob {
     pub handle: CiJobHandle,
     pub run: Option<String>,
@@ -194,6 +204,8 @@ pub enum ProviderCommandOutput {
     CurrentStatus(Option<ChangeRequestStatus>),
     ChangeRequest(ChangeRequestStatus),
     ReviewThreads(Vec<ReviewThread>),
+    GeneralComments(Vec<GeneralComment>),
+    GeneralComment(GeneralComment),
     CiJobs(Vec<CiJob>),
     CiRun(CiRun),
     CiRunsAndJobs {
@@ -210,6 +222,16 @@ pub enum ProviderCommandOutput {
         last_state: String,
     },
     Confirmation(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct GeneralCommentHandle(String);
+
+impl GeneralCommentHandle {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
 }
 
 pub trait GitProviderApi {

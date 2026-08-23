@@ -26,6 +26,8 @@ TYPESCRIPT COMMAND TYPE:
       | { action: "show_run"; run: string }
       | { action: "show_job"; job: string }
       | { action: "list_threads"; mr: string }
+      | { action: "list_comments"; mr: string }
+      | { action: "show_comment"; mr: string; comment: string }
       | { action: "list_ci"; commit: string }
       | { action: "list_jobs"; run: string }
       | { action: "log_job"; job: string }

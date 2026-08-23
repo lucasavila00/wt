@@ -497,6 +497,8 @@ pub(super) fn wt_tools_activity_metadata(
         api::GitHostingCommand::ShowRun { .. } => ("show_run", None, None),
         api::GitHostingCommand::ShowJob { .. } => ("show_job", None, None),
         api::GitHostingCommand::ListThreads { mr } => ("list_threads", None, Some(mr.as_str())),
+        api::GitHostingCommand::ListComments { mr } => ("list_comments", None, Some(mr.as_str())),
+        api::GitHostingCommand::ShowComment { mr, .. } => ("show_comment", None, Some(mr.as_str())),
         api::GitHostingCommand::ListCi { .. } => ("list_ci", None, None),
         api::GitHostingCommand::ListJobs { .. } => ("list_jobs", None, None),
         api::GitHostingCommand::LogJob { .. } => ("log_job", None, None),
