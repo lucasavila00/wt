@@ -77,15 +77,14 @@ reported, such as `unknown(compact)`.
 
 The experimental live-session activity uses the same observed sessions but
 shows each session's state and report age around the persistent live terminal
-stream WT already maintains for its world. At 400 terminal columns and wider,
-previews use a four-column by four-row grid; narrower terminals use one card per
-row. WT temporarily resizes world playback terminals to the smaller preview
-viewport while this activity is visible and restores the full-screen size when
-it is left. Arrow keys, the mouse wheel, `Enter`, and clicking navigate or open
-the previews. When a world has one live Codex session, WT focuses that session's
-reported pane on entry. Cards for multiple live sessions in one world share its
-one stream and show a warning; open a card to choose the pane in the full world
-view.
+stream WT already maintains for its world. Previews use a two-column grid with
+as many rows as fit in the terminal. WT temporarily resizes world playback
+terminals to the smaller preview viewport while this activity is visible and
+restores the full-screen size when it is left. Arrow keys, the mouse wheel,
+`Enter`, and clicking navigate or open the previews. When a world has one live
+Codex session, WT focuses that session's reported pane on entry. Cards for
+multiple live sessions in one world share its one stream and show a warning;
+open a card to choose the pane in the full world view.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

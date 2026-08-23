@@ -150,8 +150,8 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
 }
 
 #[test]
-fn live_grid_click_and_keys_follow_four_column_geometry() {
-    let area = Rect::new(0, 0, 400, 40);
+fn live_grid_click_and_keys_follow_two_column_geometry() {
+    let area = Rect::new(0, 0, 100, 40);
     let mut state = ControlState::default();
     state.set_codex(
         (1..=17)
@@ -163,16 +163,16 @@ fn live_grid_click_and_keys_follow_four_column_geometry() {
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area);
-    assert_eq!(state.selected(), Some(&state.codex()[4].identity));
+    assert_eq!(state.selected(), Some(&state.codex()[2].identity));
     state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area);
-    assert_eq!(state.selected(), Some(&state.codex()[5].identity));
+    assert_eq!(state.selected(), Some(&state.codex()[3].identity));
 
-    let last = super::super::live::card_rects(area, 0, 17)[15].1;
+    let last = super::super::live::card_rects(area, 0, 17)[5].1;
     let (_, action) = state.handle_mouse(mouse(last.x + 1, last.y + 1), area);
     let Some(ControlAction::OpenCodex(target)) = action else {
         panic!("live tile did not open")
     };
-    assert_eq!(target.pane_id, "%16");
+    assert_eq!(target.pane_id, "%6");
 }
 
 #[test]
