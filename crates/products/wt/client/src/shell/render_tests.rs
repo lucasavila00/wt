@@ -398,7 +398,7 @@ fn failed_worlds_refresh_is_shown_in_the_red_footer() {
 }
 
 #[test]
-fn live_session_repository_is_card_chrome() {
+fn live_session_repository_and_branch_are_card_chrome() {
     let backend = TestBackend::new(100, 20);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev"]);
@@ -458,5 +458,5 @@ fn live_session_repository_is_card_chrome() {
             .collect::<String>()
     };
     assert_eq!(row(1), "│world output                                 │");
-    assert_eq!(row(17), "└───────────────────── github:lucasavila00/wt ┘");
+    assert_eq!(row(17), "└─────────── github:lucasavila00/wt · wt/live ┘");
 }
