@@ -24,4 +24,5 @@ read-only login.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` sets `test_server = true` and uses disposable
-provider paths. Never use it with real credentials or production workloads.
+provider paths and an isolated `~/.config/wt/kvm-test/codex` fixture. Never use
+it with real credentials or production workloads.

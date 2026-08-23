@@ -6,14 +6,12 @@ mod validation;
 
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
-
-pub use validation::{InstanceName, InvalidInstanceName};
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
+pub use validation::{InstanceName, InvalidInstanceName};
 
 pub const PROTOCOL_VERSION: u32 = 10;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");

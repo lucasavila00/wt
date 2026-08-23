@@ -50,6 +50,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
         .limits;
     let server = ServerConfig::load_runtime_from(config_path).map_err(anyhow::Error::msg)?;
     let test_server = server.test_server;
+    let codex_sessions = server.codex_paths().sessions;
     let provider = LibvirtProvider::new(server.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server.retained_config();
     let worker = wt_retained_worlds::host::Worker::new(
@@ -63,7 +64,8 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from(wt_agent_tool_gateway::CONTROL_SOCKET));
     let gateway = wt_agent_tool_gateway::ControlClient::new(gateway_socket);
     let service =
-        Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
+        Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity)
+            .with_codex_sessions_path(codex_sessions);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
         Ok(request) => wt_server::handle_request_with_progress(
             &service,

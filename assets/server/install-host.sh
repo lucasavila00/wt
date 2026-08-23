@@ -62,13 +62,14 @@ ensure_directory() {
 
 case ${1-} in
     check|prepare)
-        test "$#" -eq 5 || exit 2
+        test "$#" -eq 6 || exit 2
         if test "$1" = prepare; then mutate=true; else mutate=false; fi
         wt_require_effective_identity
         network=$2
         image_dir=$3
         binary_dir=$4
         worlds_dir=$5
+        codex_sessions=$6
 
         # shellcheck source=/dev/null
         . /etc/os-release
@@ -105,11 +106,9 @@ case ${1-} in
 
         ensure_directory 0 0 755 "$image_dir"
         ensure_directory 0 0 755 "$binary_dir"
-        wt_require_owned_directory "$WT_IDENTITY_HOME"
-        wt_require_owned_directory "$WT_IDENTITY_HOME/.codex"
         ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 /run/wt-image-build
         ensure_directory "$WT_IDENTITY_UID" "$kvm_gid" 2770 "$worlds_dir"
-        ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 "$WT_IDENTITY_HOME/.codex/sessions"
+        ensure_directory "$WT_IDENTITY_UID" "$WT_IDENTITY_GID" 700 "$codex_sessions"
         test ! -e "$worlds_dir" || ensure_qemu_acl "$worlds_dir"
         ;;
     acl)
@@ -119,7 +118,7 @@ case ${1-} in
         ensure_qemu_acl "$2"
         ;;
     *)
-        echo 'usage: install-host.sh {check|prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR|acl PATH}' >&2
+        echo 'usage: install-host.sh {check|prepare NETWORK IMAGE_DIR BINARY_DIR WORLDS_DIR CODEX_SESSIONS|acl PATH}' >&2
         exit 2
         ;;
 esac

@@ -1,3 +1,4 @@
+use crate::CodexPaths;
 use nix::unistd::{Gid, Group, Uid, User};
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
@@ -9,13 +10,6 @@ pub const SERVER_UID: u32 = wt_retained_worlds::WT_IDENTITY.uid;
 pub const SERVER_GID: u32 = wt_retained_worlds::WT_IDENTITY.gid;
 pub const SERVER_HOME: &str = wt_retained_worlds::WT_IDENTITY.home;
 
-const SHARED_ROOTS: [&str; 5] = [
-    SERVER_HOME,
-    "/home/wt/.codex",
-    crate::CODEX_SESSIONS_PATH,
-    crate::CODEX_AUTH_SHARE_DIR,
-    crate::SSH_AUTHORIZED_KEYS_SHARE_DIR,
-];
 const RECOVERY: &str = "rebootstrap the WT server account before installing or starting WT";
 
 pub fn validate_process_identity() -> Result<(), String> {
@@ -35,8 +29,14 @@ pub fn validate_process_identity() -> Result<(), String> {
     })
 }
 
-pub fn validate_shared_roots() -> Result<(), String> {
-    for path in SHARED_ROOTS.map(Path::new) {
+pub fn validate_shared_roots(codex: CodexPaths) -> Result<(), String> {
+    for path in [
+        Path::new(SERVER_HOME),
+        Path::new("/home/wt/.codex"),
+        Path::new(codex.sessions),
+        Path::new(codex.auth_share),
+        Path::new(crate::SSH_AUTHORIZED_KEYS_SHARE_DIR),
+    ] {
         let metadata = std::fs::symlink_metadata(path).map_err(|error| {
             format!(
                 "inspect WT shared root {}: {error}; expected a non-symlink directory owned by {SERVER_USER}:{SERVER_GROUP} (uid/gid={SERVER_UID}:{SERVER_GID}); {RECOVERY}",
@@ -129,12 +129,14 @@ fn validate_shared_root_details(
 }
 
 fn shared_root_mode(path: &Path) -> Option<u32> {
-    match path.to_str() {
-        Some(crate::CODEX_SESSIONS_PATH)
-        | Some(crate::CODEX_AUTH_SHARE_DIR)
-        | Some(crate::SSH_AUTHORIZED_KEYS_SHARE_DIR) => Some(0o700),
-        _ => None,
-    }
+    path.file_name()
+        .is_some_and(|name| name == "sessions" || name == "auth-share")
+        .then_some(0o700)
+        .or_else(|| {
+            (path == Path::new(crate::CODEX_AUTH_SHARE_DIR)
+                || path == Path::new(crate::SSH_AUTHORIZED_KEYS_SHARE_DIR))
+            .then_some(0o700)
+        })
 }
 
 #[cfg(test)]
@@ -221,7 +223,13 @@ mod tests {
     #[test]
     fn shared_roots_cover_the_host_guest_owner_boundary() {
         assert_eq!(
-            SHARED_ROOTS,
+            [
+                SERVER_HOME,
+                "/home/wt/.codex",
+                crate::CODEX_SESSIONS_PATH,
+                crate::CODEX_AUTH_SHARE_DIR,
+                crate::SSH_AUTHORIZED_KEYS_SHARE_DIR,
+            ],
             [
                 "/home/wt",
                 "/home/wt/.codex",

@@ -52,17 +52,9 @@ make e2e-tests KVM_INSTALL_CONFIG=/path/to/install-input.toml
 
 ## KVM test host
 
-The test install uses disposable provider credentials:
-
-```bash
-fixture_dir=$HOME/.config/wt/kvm-test
-install -d -m 0700 "$fixture_dir"
-if [ ! -e "$fixture_dir/id_ed25519" ]; then
-    ssh-keygen -q -t ed25519 -N '' -f "$fixture_dir/id_ed25519"
-fi
-printf 'not-a-real-token\n' > "$fixture_dir/github.token"
-chmod 0600 "$fixture_dir/github.token"
-```
+`make e2e-tests` creates disposable provider credentials and a placeholder
+Codex fixture under `~/.config/wt/kvm-test`. `test_server = true` never reads
+the active `~/.codex/auth.json` or sessions.
 
 Run the destructive installed-server flow:
 
@@ -71,7 +63,7 @@ make e2e-tests
 ```
 
 The KVM suite creates worlds through the API and through `wt shell`. It verifies
-the slim golden image, Byobu, scoped Git traffic, agent tools, Codex
+the golden image development tools, Byobu, scoped Git traffic, agent tools, Codex
 session/auth sharing, stop/start persistence, gateway restart, grant
 revocation, and cleanup.
 

@@ -63,9 +63,10 @@ fn reject_remote_test_server(test_server: bool, open_ssh: bool) -> Result<()> {
 
 fn run_server() -> Result<()> {
     wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
-    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)?;
-    let owner = wt_server::SERVER_USER.to_owned();
     let server_config = ServerConfig::load().map_err(anyhow::Error::msg)?;
+    let codex_paths = server_config.codex_paths();
+    wt_server::validate_shared_roots(codex_paths).map_err(anyhow::Error::msg)?;
+    let owner = wt_server::SERVER_USER.to_owned();
     eprintln!(
         "wt-server starting: {}",
         wt_control_protocol::BuildIdentity::current()
@@ -76,20 +77,18 @@ fn run_server() -> Result<()> {
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
     log_codex_catalog_warnings(
-        wt_server::service::refresh_codex_session_catalog(
-            &store,
-            Path::new(wt_server::CODEX_SESSIONS_PATH),
-        )
-        .map_err(anyhow::Error::msg)?,
+        wt_server::service::refresh_codex_session_catalog(&store, Path::new(codex_paths.sessions))
+            .map_err(anyhow::Error::msg)?,
     );
     let catalog_database = state.database_path();
+    let catalog_sessions = codex_paths.sessions;
     std::thread::Builder::new()
         .name("wt-codex-session-catalog".to_owned())
         .spawn(move || loop {
             match Store::open(&catalog_database).and_then(|store| {
                 wt_server::service::refresh_codex_session_catalog(
                     &store,
-                    Path::new(wt_server::CODEX_SESSIONS_PATH),
+                    Path::new(catalog_sessions),
                 )
                 .map_err(wt_workload_registry::StoreError::Registry)
             }) {
@@ -104,6 +103,7 @@ fn run_server() -> Result<()> {
         .map_err(anyhow::Error::msg)?
         .limits;
     let test_server = server_config.test_server;
+    let codex_sessions = codex_paths.sessions;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let retained = server_config.retained_config();
@@ -123,6 +123,7 @@ fn run_server() -> Result<()> {
         owner,
         capacity_limit,
         test_server,
+        codex_sessions,
     };
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
@@ -144,6 +145,7 @@ struct DaemonContext {
     owner: String,
     capacity_limit: wt_workload_registry::Resources,
     test_server: bool,
+    codex_sessions: &'static str,
 }
 
 fn handle_daemon_request(
@@ -160,7 +162,8 @@ fn handle_daemon_request(
             context.gateway.clone(),
             context.operations.clone(),
             context.capacity_limit,
-        );
+        )
+        .with_codex_sessions_path(context.codex_sessions);
         Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
             &service,
             &context.owner,

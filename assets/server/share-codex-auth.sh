@@ -13,17 +13,26 @@ if ! command -v wt_publish_shared_file >/dev/null 2>&1; then
     . "$wt_asset_dir/publish-shared-file.sh"
 fi
 
-codex_home=$WT_IDENTITY_HOME/.codex
-auth=$codex_home/auth.json
-share=$codex_home/.wt-auth
-temporary=$codex_home/.wt-auth.wt-new.$$
-shared_auth=$share/auth.json
-
-case ${1-} in
-    '') check_only=false ;;
-    --check) check_only=true ;;
-    *) echo 'usage: share-codex-auth.sh [--check]' >&2; exit 2 ;;
+case $# in
+    0) check_only=false; auth=$WT_IDENTITY_HOME/.codex/auth.json; share=$WT_IDENTITY_HOME/.codex/.wt-auth ;;
+    1)
+        test "$1" = --check || { echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2; }
+        check_only=true
+        auth=$WT_IDENTITY_HOME/.codex/auth.json
+        share=$WT_IDENTITY_HOME/.codex/.wt-auth
+        ;;
+    2) check_only=false; auth=$1; share=$2 ;;
+    3)
+        test "$1" = --check || { echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2; }
+        check_only=true
+        auth=$2
+        share=$3
+        ;;
+    *) echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2 ;;
 esac
+
+temporary=$share.wt-new.$$
+shared_auth=$share/auth.json
 
 wt_require_effective_identity
 

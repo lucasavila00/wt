@@ -15,9 +15,6 @@ path = "/var/lib/wt/images/wt-retained-ubuntu-24.04-amd64.qcow2"
 build_memory_mib = 8192
 build_vcpus = 8
 build_disk_gib = 32
-# Keep the E2E golden image narrow; development tools are tested by image builds
-# explicitly configured to install them.
-development_tools = false
 
 [libvirt]
 network = "default"

@@ -1,6 +1,6 @@
 # ADR 0048: Make developer tools an optional image profile
 
-- Status: Accepted
+- Status: Superseded by [ADR 0069](0069-use-one-development-tools-golden-image.md)
 - Date: 2026-08-23
 
 ## Context
@@ -41,8 +41,5 @@ and KVM E2E install inputs leave the option disabled.
   world provisioning or downloading tools per world.
 - Default image creation and KVM E2E remain narrow and avoid third-party
   language-runtime downloads.
-- Developer-image rebuilds depend on upstream availability and can produce
-  newer tool versions for the same WT commit; their manifest makes the exact
-  result auditable.
 - Enabling or disabling the option creates a distinct retained image
   generation; existing worlds continue to use their current generation.
