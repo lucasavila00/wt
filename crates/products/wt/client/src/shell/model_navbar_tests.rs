@@ -82,4 +82,30 @@ fn shell_starts_in_control_mode() {
     let model = ShellModel::new(vec![world("one")]);
 
     assert_eq!(model.mode(), Mode::Control);
+    assert_eq!(
+        model.control().activity(),
+        super::super::control::Activity::Live
+    );
+}
+
+#[test]
+fn control_reopens_on_the_last_activity() {
+    let mut model = model();
+    model.handle_key(key(KeyCode::F(5)), area());
+    model.handle_key(key(KeyCode::Up), area());
+    model.handle_key(key(KeyCode::Tab), area());
+    assert_eq!(
+        model.control().activity(),
+        super::super::control::Activity::Codex
+    );
+
+    model.handle_key(key(KeyCode::F(5)), area());
+    model.handle_key(key(KeyCode::F(5)), area());
+    model.handle_key(key(KeyCode::Up), area());
+
+    assert_eq!(model.mode(), Mode::Control);
+    assert_eq!(
+        model.control().activity(),
+        super::super::control::Activity::Codex
+    );
 }

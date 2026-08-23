@@ -2,8 +2,7 @@ use super::control::{CodexOpenTarget, ControlAction, ControlCommand, ControlStat
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use uuid::Uuid;
-use wt_control_protocol::InstanceName;
-use wt_control_protocol::InstanceStatus;
+use wt_control_protocol::{InstanceName, InstanceStatus};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WorldIdentity {
@@ -559,10 +558,6 @@ mod tests {
 
         assert_eq!(model.mode(), Mode::Control);
         assert_eq!(
-            model.control().activity(),
-            super::super::control::Activity::Live
-        );
-        assert_eq!(
             model.handle_key(key(KeyCode::Left), area()),
             InputRoute::Consumed
         );
@@ -575,28 +570,6 @@ mod tests {
         );
         assert_eq!(model.mode(), Mode::World);
         assert!(!model.control().palette().is_open());
-    }
-
-    #[test]
-    fn control_reopens_on_the_last_activity() {
-        let mut model = model();
-        model.handle_key(key(KeyCode::F(5)), area());
-        model.handle_key(key(KeyCode::Up), area());
-        model.handle_key(key(KeyCode::Tab), area());
-        assert_eq!(
-            model.control().activity(),
-            super::super::control::Activity::Codex
-        );
-
-        model.handle_key(key(KeyCode::F(5)), area());
-        model.handle_key(key(KeyCode::F(5)), area());
-        model.handle_key(key(KeyCode::Up), area());
-
-        assert_eq!(model.mode(), Mode::Control);
-        assert_eq!(
-            model.control().activity(),
-            super::super::control::Activity::Codex
-        );
     }
 
     #[test]
