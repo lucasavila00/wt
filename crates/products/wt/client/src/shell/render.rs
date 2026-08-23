@@ -1,20 +1,20 @@
 use super::control::{
-    codex_card_rects, command_palette_layout, control_areas, control_content_areas,
-    world_card_rects, Activity, CodexCard, CodexCardKind, CommandPalette, ControlState,
+    card_grid, codex_card_grid, command_palette_layout, control_areas, control_content_areas,
+    Activity, CodexCard, CodexCardKind, CommandPalette, ControlState, WORLD_CARD_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
 use super::terminal_view::TerminalView;
 use super::world_area;
 use crate::create::Flow;
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Widget, Wrap,
 };
 use ratatui::Frame;
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
     frame: &mut Frame<'_>,
@@ -298,6 +298,7 @@ fn draw_help(frame: &mut Frame<'_>, content: Rect, model: &ShellModel) {
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
+    let state = model.control();
     let creating = creation
         .and_then(Flow::creating_world)
         .filter(|(name, _)| model.worlds().iter().all(|world| world.name != *name));
@@ -310,69 +311,54 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         return;
     }
     let count = model.world_count() + usize::from(creating.is_some());
-    super::scrollbar::render_world_cards(frame, count, model.active(), muted_style());
-    for (index, rect) in world_card_rects(frame.area(), model.active(), count) {
+    let grid = card_grid(frame.area(), state.world_scroll(), count, WORLD_CARD_HEIGHT);
+    super::scrollbar::render(frame, grid, muted_style());
+    for card in grid.cards() {
+        let index = card.index;
         if let Some((name, resources)) = creating.filter(|_| index == model.world_count()) {
-            draw_world_card(
-                frame,
-                rect,
-                "󰔟",
-                Color::Yellow,
-                "PROVISIONING",
-                name,
-                resources,
-                None,
-                &[],
-                false,
-                "Creation in progress",
-            );
+            grid.render_card(frame, card, |rect, buffer| {
+                draw_world_card(
+                    buffer,
+                    rect,
+                    "󰔟",
+                    Color::Yellow,
+                    "PROVISIONING",
+                    name,
+                    resources,
+                    None,
+                    &[],
+                    false,
+                    "Creation in progress",
+                )
+            });
             continue;
         }
         let world = &model.worlds()[index];
         let idle = world.status == wt_control_protocol::InstanceStatus::Running
             && model.control().codex_refresh().updated_at().is_some()
             && !super::world_card::has_active_codex_session(world, model.control().codex());
-        let (icon, color, status) = match (world.status, idle) {
-            (_, true) => (
-                "󰚩",
-                Color::Yellow,
-                "IDLE · NO ACTIVE CODEX SESSION".to_owned(),
-            ),
-            (wt_control_protocol::InstanceStatus::Running, false) => {
-                ("󰐊", Color::Green, "RUNNING".to_owned())
-            }
-            (wt_control_protocol::InstanceStatus::Provisioning, false) => {
-                ("󰔟", Color::Yellow, "PROVISIONING".to_owned())
-            }
-            (wt_control_protocol::InstanceStatus::Stopped, false) => {
-                ("󰅖", Color::Reset, "STOPPED".to_owned())
-            }
-            (wt_control_protocol::InstanceStatus::Destroying, false) => {
-                ("󰩹", Color::Yellow, "DESTROYING".to_owned())
-            }
-            (wt_control_protocol::InstanceStatus::Error, false) => {
-                ("󰅚", Color::Red, "ERROR".to_owned())
-            }
-        };
-        draw_world_card(
-            frame,
-            rect,
-            icon,
-            color,
-            &status,
-            &world.name,
-            &world.resources,
-            (world.detail != "-").then_some(world.detail.as_str()),
-            &super::world_card::codex_lines(world, model.control().codex()),
-            index == model.active(),
-            "Enter or click to open",
-        );
+        let (icon, color, status) = super::world_card::status(world, idle);
+        grid.render_card(frame, card, |rect, buffer| {
+            draw_world_card(
+                buffer,
+                rect,
+                icon,
+                color,
+                &status,
+                &world.name,
+                &world.resources,
+                (world.detail != "-").then_some(world.detail.as_str()),
+                &super::world_card::codex_lines(world, model.control().codex()),
+                index == model.active(),
+                "Enter or click to open",
+            )
+        });
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw_world_card(
-    frame: &mut Frame<'_>,
+    buffer: &mut Buffer,
     area: Rect,
     icon: &str,
     color: Color,
@@ -392,7 +378,7 @@ fn draw_world_card(
             Style::new().fg(color).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
-    frame.render_widget(block, area);
+    block.render(area, buffer);
     let mut lines = vec![
         Line::from(name.to_owned()),
         Line::from(resources.to_owned()),
@@ -402,8 +388,12 @@ fn draw_world_card(
     }
     lines.extend_from_slice(codex);
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[0]);
-    frame.render_widget(Paragraph::new(footer).style(muted_style()), rows[1]);
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .render(rows[0], buffer);
+    Paragraph::new(footer)
+        .style(muted_style())
+        .render(rows[1], buffer);
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
@@ -416,26 +406,29 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), area);
         return;
     }
-    super::scrollbar::render_codex_cards(
-        frame,
+    let grid = codex_card_grid(
+        frame.area(),
+        Activity::Codex,
+        state.codex_scroll(),
         state.codex().len(),
-        state.codex_offset(),
-        muted_style(),
     );
-    for (index, rect) in codex_card_rects(frame.area(), state.codex_offset(), state.codex().len()) {
-        let card = &state.codex()[index];
-        draw_codex_card(
-            frame,
-            rect,
-            card,
-            state,
-            state.selected() == Some(&card.identity),
-        );
+    super::scrollbar::render(frame, grid, muted_style());
+    for placement in grid.cards() {
+        let card = &state.codex()[placement.index];
+        grid.render_card(frame, placement, |rect, buffer| {
+            draw_codex_card(
+                buffer,
+                rect,
+                card,
+                state,
+                state.selected() == Some(&card.identity),
+            );
+        });
     }
 }
 
 fn draw_codex_card(
-    frame: &mut Frame<'_>,
+    buffer: &mut Buffer,
     area: Rect,
     card: &CodexCard,
     state: &ControlState,
@@ -450,7 +443,7 @@ fn draw_codex_card(
             Style::new().fg(title_color).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
-    frame.render_widget(block, area);
+    block.render(area, buffer);
 
     let footer = if state.opening() == Some(&card.identity) {
         Span::styled("OPENING…", Style::new().fg(Color::Yellow))
@@ -466,7 +459,7 @@ fn draw_codex_card(
             Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(rows[0]);
         let preview_paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
         let truncated = wrapped_line_count(preview, content_rows[0].width) > 3;
-        frame.render_widget(preview_paragraph, content_rows[0]);
+        preview_paragraph.render(content_rows[0], buffer);
         if truncated && !content_rows[0].is_empty() {
             let ellipsis = Rect::new(
                 content_rows[0].right().saturating_sub(1),
@@ -474,13 +467,13 @@ fn draw_codex_card(
                 1,
                 1,
             );
-            frame.render_widget(Paragraph::new("…"), ellipsis);
+            Paragraph::new("…").render(ellipsis, buffer);
         }
-        frame.render_widget(Paragraph::new(metadata), content_rows[1]);
+        Paragraph::new(metadata).render(content_rows[1], buffer);
     } else {
-        frame.render_widget(Paragraph::new(metadata), rows[0]);
+        Paragraph::new(metadata).render(rows[0], buffer);
     }
-    frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
+    Paragraph::new(Line::from(footer)).render(rows[1], buffer);
 }
 pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
     let suffix = card

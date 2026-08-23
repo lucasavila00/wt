@@ -5,6 +5,9 @@
 
 The Codex activity renders one selectable card per observed session location in
 a two-column grid.
+The grid uses an independent terminal-row scroll offset. Wheel scrolling does
+not change selection; keyboard navigation scrolls only enough to reveal the
+selected card. Cards retain fixed grid positions and clip at viewport edges.
 Identity includes context, session, world, tmux session, and pane. Cards sort by
 state, timestamp, and complete identity. Disabled and context-error cards state
 why they cannot open.

@@ -1,6 +1,32 @@
 use super::control::{CodexCard, CodexCardKind};
 use super::model::ShellWorld;
+use ratatui::style::Color;
 use ratatui::text::{Line, Span};
+
+pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, String) {
+    match (world.status, idle) {
+        (_, true) => (
+            "󰚩",
+            Color::Yellow,
+            "IDLE · NO ACTIVE CODEX SESSION".to_owned(),
+        ),
+        (wt_control_protocol::InstanceStatus::Running, false) => {
+            ("󰐊", Color::Green, "RUNNING".to_owned())
+        }
+        (wt_control_protocol::InstanceStatus::Provisioning, false) => {
+            ("󰔟", Color::Yellow, "PROVISIONING".to_owned())
+        }
+        (wt_control_protocol::InstanceStatus::Stopped, false) => {
+            ("󰅖", Color::Reset, "STOPPED".to_owned())
+        }
+        (wt_control_protocol::InstanceStatus::Destroying, false) => {
+            ("󰩹", Color::Yellow, "DESTROYING".to_owned())
+        }
+        (wt_control_protocol::InstanceStatus::Error, false) => {
+            ("󰅚", Color::Red, "ERROR".to_owned())
+        }
+    }
+}
 
 pub(super) fn has_active_codex_session(world: &ShellWorld, cards: &[CodexCard]) -> bool {
     cards.iter().any(|card| {

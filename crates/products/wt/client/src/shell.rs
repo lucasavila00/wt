@@ -502,7 +502,18 @@ fn dispatch_event(
                 let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
                 let _ = apply_deletion_action(action, flows)?;
             } else {
-                let (changed, route) = model.handle_mouse(mouse, area);
+                let world_card_count = model.world_count()
+                    + usize::from(
+                        flows
+                            .creation
+                            .as_ref()
+                            .and_then(crate::create::Flow::creating_world)
+                            .is_some_and(|(name, _)| {
+                                model.worlds().iter().all(|world| world.name != name)
+                            }),
+                    );
+                let (changed, route) =
+                    model.handle_mouse_with_world_count(mouse, area, world_card_count);
                 match route {
                     Some(InputRoute::Command(command)) => {
                         start_control_command(command, runtime, model, flows)
