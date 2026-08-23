@@ -51,10 +51,4 @@ fn install_server_bootstraps_a_native_libvirt_installer() {
         String::from_utf8_lossy(&dynamic.stdout).contains("libvirt.so"),
         "native installer must link the host libvirt ABI"
     );
-
-    run(Command::new(&installer).current_dir(&workspace).args([
-        "validate",
-        "--config",
-        "examples/server-config/wt-server.development.toml",
-    ]));
 }

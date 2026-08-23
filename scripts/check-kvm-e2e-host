@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+minimum_vcpus=8
+minimum_memory_mib=12288
+minimum_disk_kib=$((20 * 1024 * 1024))
+
+vcpus=$(getconf _NPROCESSORS_ONLN)
+memory_mib=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)
+available_disk_kib=$(df -Pk . | awk 'NR == 2 { print $4 }')
+
+failed=false
+if [ "$vcpus" -lt "$minimum_vcpus" ]; then
+    echo "KVM E2E requires at least $minimum_vcpus host vCPUs; found $vcpus" >&2
+    failed=true
+fi
+if [ "$memory_mib" -lt "$minimum_memory_mib" ]; then
+    echo "KVM E2E requires at least $minimum_memory_mib MiB host memory; found $memory_mib MiB" >&2
+    failed=true
+fi
+if [ "$available_disk_kib" -lt "$minimum_disk_kib" ]; then
+    available_disk_gib=$((available_disk_kib / 1024 / 1024))
+    echo "KVM E2E requires at least 20 GiB free on the workspace filesystem; found $available_disk_gib GiB" >&2
+    failed=true
+fi
+if [ ! -c /dev/kvm ] || [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+    echo "KVM E2E requires readable and writable nested KVM at /dev/kvm" >&2
+    failed=true
+fi
+for command in virsh qemu-img virt-install guestfish; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "KVM E2E requires $command; install the KVM E2E host packages from DEVELOPMENT.md" >&2
+        failed=true
+    fi
+done
+if command -v virsh >/dev/null 2>&1 &&
+    ! virsh -c qemu:///system domcapabilities --virttype kvm >/dev/null 2>&1; then
+    echo "KVM E2E requires a working qemu:///system nested-KVM libvirt connection" >&2
+    failed=true
+fi
+
+if [ "$failed" = true ]; then
+    echo "KVM E2E host requirements are not satisfied; see DEVELOPMENT.md" >&2
+    exit 1
+fi

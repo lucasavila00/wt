@@ -38,6 +38,7 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
+	scripts/check-kvm-e2e-host
 	scripts/cargo run --quiet -p wt-server-installer -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
 	scripts/cargo run --quiet -p wt-server-installer -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
 	scripts/cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
