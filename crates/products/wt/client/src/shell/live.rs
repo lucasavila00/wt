@@ -11,6 +11,8 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 pub(super) const CARD_HEIGHT: u16 = 12;
+// The card viewport clips this row, leaving Byobu's status bar out of the preview.
+const BYOBU_STATUS_ROWS: u16 = 1;
 
 pub(super) fn columns(_area: Rect) -> usize {
     CARD_COLUMNS
@@ -23,7 +25,10 @@ pub(super) fn visible(area: Rect) -> usize {
 pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
     card_size(area, count).map_or((1, 1), |(height, width)| {
         (
-            height.saturating_sub(2).max(1),
+            height
+                .saturating_sub(2)
+                .saturating_add(BYOBU_STATUS_ROWS)
+                .max(1),
             width.saturating_sub(2).max(1),
         )
     })
