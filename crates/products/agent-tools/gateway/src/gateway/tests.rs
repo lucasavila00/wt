@@ -331,15 +331,16 @@ fn push_messages_cover_publish_delete_and_rejection() {
         response.extend_from_slice(b"0000");
         response
     };
-    assert_eq!(
-        successful_push_updates(
-            &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
-            &response("ok refs/heads/wt/fix-login"),
-            true,
-        )
-        .unwrap(),
-        vec![("a".repeat(40), "wt/fix-login".to_owned())]
-    );
+    let updates = successful_push_updates(
+        &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
+        &response("ok refs/heads/wt/fix-login"),
+        true,
+    )
+    .unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].previous_oid, "0".repeat(40));
+    assert_eq!(updates[0].new_oid, "a".repeat(40));
+    assert_eq!(updates[0].reference, "refs/heads/wt/fix-login");
     insta::assert_snapshot!(
         service::push_result_message(
             Some((ProviderKind::GitHub, "acme/widget")),
@@ -357,15 +358,14 @@ fn push_messages_cover_publish_delete_and_rejection() {
       wt-tools '{"command":{"action":"list_ci","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"provider":"github","repository":"acme/widget"}}'
     "###
     );
-    assert_eq!(
-        successful_push_updates(
-            &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
-            &response("ok refs/heads/wt/fix-login"),
-            true,
-        )
-        .unwrap(),
-        vec![("0".repeat(40), "wt/fix-login".to_owned())]
-    );
+    let updates = successful_push_updates(
+        &command(&"0".repeat(40), "refs/heads/wt/fix-login"),
+        &response("ok refs/heads/wt/fix-login"),
+        true,
+    )
+    .unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].new_oid, "0".repeat(40));
     assert!(successful_push_updates(
         &command(&"a".repeat(40), "refs/heads/wt/fix-login"),
         &response("ng refs/heads/wt/fix-login protected branch"),

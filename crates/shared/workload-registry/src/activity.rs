@@ -59,12 +59,15 @@ pub struct GitActivity {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum GitActivityQuery<'a> {
-    World { world_id: Uuid, before_id: Option<u64> },
+pub enum GitActivityQuery {
+    World {
+        world_id: Uuid,
+        before_id: Option<u64>,
+    },
     Branch {
-        provider_host: &'a str,
-        repository: &'a str,
-        branch: &'a str,
+        provider_host: String,
+        repository: String,
+        branch: String,
         before_id: Option<u64>,
     },
 }
@@ -97,18 +100,21 @@ pub struct WtToolsActivity {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum WtToolsActivityQuery<'a> {
-    World { world_id: Uuid, before_id: Option<u64> },
+pub enum WtToolsActivityQuery {
+    World {
+        world_id: Uuid,
+        before_id: Option<u64>,
+    },
     Branch {
-        provider_host: &'a str,
-        repository: &'a str,
-        branch: &'a str,
+        provider_host: String,
+        repository: String,
+        branch: String,
         before_id: Option<u64>,
     },
     ChangeRequest {
-        provider_host: &'a str,
-        repository: &'a str,
-        change_request: &'a str,
+        provider_host: String,
+        repository: String,
+        change_request: String,
         before_id: Option<u64>,
     },
 }
@@ -198,9 +204,14 @@ impl Registry {
     ) -> Result<(), RegistryError> {
         validate_target(input.provider_host, input.repository)?;
         if input.action.is_empty() {
-            return Err(RegistryError::InvalidData("wt-tools action is empty".into()));
+            return Err(RegistryError::InvalidData(
+                "wt-tools action is empty".into(),
+            ));
         }
-        for (name, json) in [("request", input.request_json), ("response", input.response_json)] {
+        for (name, json) in [
+            ("request", input.request_json),
+            ("response", input.response_json),
+        ] {
             serde_json::from_str::<serde_json::Value>(json).map_err(|error| {
                 RegistryError::InvalidData(format!("invalid wt-tools {name} JSON: {error}"))
             })?;
@@ -226,7 +237,7 @@ impl Registry {
     pub fn list_git_activity(
         &self,
         owner: &str,
-        query: GitActivityQuery<'_>,
+        query: GitActivityQuery,
     ) -> Result<Vec<GitActivity>, RegistryError> {
         self.read(|connection| {
             let mut query_builder = world_git_activity::table
@@ -238,9 +249,11 @@ impl Registry {
                     world_id,
                     before_id,
                 } => {
-                    query_builder = query_builder.filter(world_git_activity::world_id.eq(world_id.to_string()));
+                    query_builder =
+                        query_builder.filter(world_git_activity::world_id.eq(world_id.to_string()));
                     if let Some(before_id) = before_id {
-                        query_builder = query_builder.filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
+                        query_builder = query_builder
+                            .filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
                     }
                 }
                 GitActivityQuery::Branch {
@@ -254,7 +267,8 @@ impl Registry {
                         .filter(world_git_activity::repository.eq(repository))
                         .filter(world_git_activity::branch.eq(branch));
                     if let Some(before_id) = before_id {
-                        query_builder = query_builder.filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
+                        query_builder = query_builder
+                            .filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
                     }
                 }
             }
@@ -284,7 +298,7 @@ impl Registry {
     pub fn list_wt_tools_activity(
         &self,
         owner: &str,
-        query: WtToolsActivityQuery<'_>,
+        query: WtToolsActivityQuery,
     ) -> Result<Vec<WtToolsActivity>, RegistryError> {
         self.read(|connection| {
             let mut query_builder = world_wt_tools_activity::table
@@ -296,9 +310,12 @@ impl Registry {
                     world_id,
                     before_id,
                 } => {
-                    query_builder = query_builder.filter(world_wt_tools_activity::world_id.eq(world_id.to_string()));
+                    query_builder = query_builder
+                        .filter(world_wt_tools_activity::world_id.eq(world_id.to_string()));
                     if let Some(before_id) = before_id {
-                        query_builder = query_builder.filter(world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?));
+                        query_builder = query_builder.filter(
+                            world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?),
+                        );
                     }
                 }
                 WtToolsActivityQuery::Branch {
@@ -312,7 +329,9 @@ impl Registry {
                         .filter(world_wt_tools_activity::repository.eq(repository))
                         .filter(world_wt_tools_activity::branch.eq(branch));
                     if let Some(before_id) = before_id {
-                        query_builder = query_builder.filter(world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?));
+                        query_builder = query_builder.filter(
+                            world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?),
+                        );
                     }
                 }
                 WtToolsActivityQuery::ChangeRequest {
@@ -326,7 +345,9 @@ impl Registry {
                         .filter(world_wt_tools_activity::repository.eq(repository))
                         .filter(world_wt_tools_activity::change_request.eq(change_request));
                     if let Some(before_id) = before_id {
-                        query_builder = query_builder.filter(world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?));
+                        query_builder = query_builder.filter(
+                            world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?),
+                        );
                     }
                 }
             }
@@ -359,7 +380,8 @@ impl TryFrom<GitActivityRow> for GitActivity {
 
     fn try_from(row: GitActivityRow) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: u64::try_from(row.id).map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
+            id: u64::try_from(row.id)
+                .map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
             world_id: Uuid::parse_str(&row.world_id)
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             world_name: row.world_name,
@@ -381,7 +403,8 @@ impl TryFrom<WtToolsActivityRow> for WtToolsActivity {
 
     fn try_from(row: WtToolsActivityRow) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: u64::try_from(row.id).map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
+            id: u64::try_from(row.id)
+                .map_err(|_| RegistryError::InvalidData("invalid activity ID".into()))?,
             world_id: Uuid::parse_str(&row.world_id)
                 .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
             world_name: row.world_name,
@@ -400,7 +423,9 @@ impl TryFrom<WtToolsActivityRow> for WtToolsActivity {
 
 fn validate_target(provider_host: &str, repository: &str) -> Result<(), RegistryError> {
     if provider_host.is_empty() || repository.is_empty() {
-        return Err(RegistryError::InvalidData("activity target is empty".into()));
+        return Err(RegistryError::InvalidData(
+            "activity target is empty".into(),
+        ));
     }
     Ok(())
 }
@@ -408,7 +433,9 @@ fn validate_target(provider_host: &str, repository: &str) -> Result<(), Registry
 fn now_unix_ms() -> Result<i64, RegistryError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| RegistryError::InvalidData(format!("system clock is before Unix epoch: {error}")))?;
+        .map_err(|error| {
+            RegistryError::InvalidData(format!("system clock is before Unix epoch: {error}"))
+        })?;
     i64::try_from(elapsed.as_millis())
         .map_err(|_| RegistryError::InvalidData("activity time is too large".into()))
 }

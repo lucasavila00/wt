@@ -1,9 +1,13 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
+mod activity;
 mod codex;
 mod reports;
 mod validation;
 
+pub use activity::{
+    GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
+};
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 
@@ -96,6 +100,8 @@ pub enum Operation {
     ListAgentToolReports,
     ClearAgentToolReports,
     ListCodexSessions,
+    ListGitActivity { query: GitActivityQuery },
+    ListWtToolsActivity { query: WtToolsActivityQuery },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -187,6 +193,12 @@ pub enum Response {
     },
     CodexSessions {
         sessions: Vec<CodexSession>,
+    },
+    GitActivity {
+        activity: Vec<GitActivity>,
+    },
+    WtToolsActivity {
+        activity: Vec<WtToolsActivity>,
     },
     Deleted {
         name: InstanceName,

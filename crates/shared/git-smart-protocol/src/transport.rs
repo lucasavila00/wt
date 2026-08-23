@@ -21,6 +21,18 @@ pub trait DuplexStream: Read + Write + Send + 'static {
     fn shutdown_stream(&self, how: Shutdown) -> std::io::Result<()>;
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct GitServeResult {
+    pub receive_pack: Option<ReceivePackResult>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceivePackResult {
+    pub commands: Vec<u8>,
+    pub response: Vec<u8>,
+    pub sideband: bool,
+}
+
 impl DuplexStream for UnixStream {
     fn try_clone_stream(&self) -> std::io::Result<Self> {
         self.try_clone()
@@ -170,12 +182,13 @@ pub fn serve_git<S: DuplexStream>(
     policy: Option<&WritePolicy>,
     rejection_message: Option<&dyn Fn(&PushViolation) -> String>,
     push_message: Option<PushResultMessage<'_>>,
-) -> Result<()> {
+) -> Result<GitServeResult> {
     let mut child = spawn_git(&target, service)?;
     let provider_host = target.provider_host();
     forward_advertisement(&mut child, stream, provider_host)?;
     if service == GitService::UploadPack {
-        return bridge_child(stream, child, None, provider_host);
+        bridge_child(stream, child, None, provider_host)?;
+        return Ok(GitServeResult::default());
     }
 
     let policy = policy.context("receive-pack needs a write policy")?;
@@ -187,7 +200,7 @@ pub fn serve_git<S: DuplexStream>(
         reject_push(stream, &commands, &reason)?;
         let _ = child.kill();
         let _ = child.wait();
-        return Ok(());
+        return Ok(GitServeResult::default());
     }
     child
         .stdin
@@ -199,13 +212,21 @@ pub fn serve_git<S: DuplexStream>(
     let message = |response: &[u8]| {
         push_message.context("push message callback is unavailable")?(&commands, response, sideband)
     };
-    bridge_child(
+    let response = bridge_child(
         stream,
         child,
         (sideband && push_message.is_some())
             .then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
         provider_host,
-    )
+    )?
+    .expect("receive-pack response is captured");
+    Ok(GitServeResult {
+        receive_pack: Some(ReceivePackResult {
+            commands,
+            response,
+            sideband,
+        }),
+    })
 }
 
 fn provider_error_context(provider_host: Option<&str>, detail: &str) -> String {
@@ -262,7 +283,7 @@ fn bridge_child<S: DuplexStream>(
     mut child: Child,
     push_message: Option<ResponseMessage<'_>>,
     provider_host: Option<&str>,
-) -> Result<()> {
+) -> Result<Option<Vec<u8>>> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
     let mut request_stream = stream.try_clone_stream().context("clone gateway stream")?;
@@ -295,16 +316,22 @@ fn bridge_child<S: DuplexStream>(
                 .context("forward Git response")?;
         }
         stream.flush().context("flush Git response")?;
-        Ok(response.len() as u64)
+        Ok((response.len() as u64, Some(response)))
     } else {
-        std::io::copy(&mut child_stdout, stream)
+        std::io::copy(&mut child_stdout, stream).map(|count| (count, None))
     };
     let _ = shutdown.shutdown_stream(Shutdown::Both);
     let request = request
         .join()
         .map_err(|_| anyhow::anyhow!("Git request thread panicked"))?;
     tolerate_stream_close(request).context("forward Git request")?;
-    tolerate_stream_close(response).context("forward Git response")?;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            tolerate_stream_close(Err(error)).context("forward Git response")?;
+            unreachable!("a tolerated stream-close error cannot continue")
+        }
+    };
     let status = child.wait().context("wait for Git service")?;
     let stderr = stderr
         .join()
@@ -320,7 +347,7 @@ fn bridge_child<S: DuplexStream>(
         }
         bail!("Git provider failed with {status}");
     }
-    Ok(())
+    Ok(response.1)
 }
 
 fn forward_advertisement(

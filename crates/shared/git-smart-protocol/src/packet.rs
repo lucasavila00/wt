@@ -72,7 +72,14 @@ pub(crate) fn packet_lines(section: &[u8]) -> Result<impl Iterator<Item = &[u8]>
     Ok(lines.into_iter())
 }
 
-pub(crate) fn push_commands(section: &[u8]) -> Result<Vec<(String, String)>> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PushUpdate {
+    pub previous_oid: String,
+    pub new_oid: String,
+    pub reference: String,
+}
+
+pub(crate) fn push_commands(section: &[u8]) -> Result<Vec<PushUpdate>> {
     let mut offset = 0;
     let mut commands = Vec::new();
     while offset < section.len() {
@@ -102,7 +109,11 @@ pub(crate) fn push_commands(section: &[u8]) -> Result<Vec<(String, String)>> {
         if fields.next().is_some() || !valid_object_id(old) || !valid_object_id(new) {
             bail!("invalid Git push command");
         }
-        commands.push((new.to_owned(), reference.to_owned()));
+        commands.push(PushUpdate {
+            previous_oid: old.to_owned(),
+            new_oid: new.to_owned(),
+            reference: reference.to_owned(),
+        });
     }
     if commands.is_empty() {
         bail!("Git push did not contain a ref update");
@@ -118,7 +129,7 @@ pub fn successful_push_updates(
     commands: &[u8],
     response: &[u8],
     sideband: bool,
-) -> Result<Vec<(String, String)>> {
+) -> Result<Vec<PushUpdate>> {
     let report = if sideband {
         let mut report = Vec::new();
         for packet in packet_lines(response)? {
@@ -141,12 +152,13 @@ pub fn successful_push_updates(
         .collect();
     push_commands(commands)?
         .into_iter()
-        .filter(|(_, reference)| accepted.contains(reference))
-        .map(|(head, reference)| {
-            let branch = reference
+        .filter(|update| accepted.contains(&update.reference))
+        .map(|update| {
+            update
+                .reference
                 .strip_prefix("refs/heads/")
                 .context("validated push contains a non-branch ref")?;
-            Ok((head, branch.to_owned()))
+            Ok(update)
         })
         .collect()
 }
@@ -154,8 +166,11 @@ pub fn successful_push_updates(
 pub(crate) fn reject_push(stream: &mut impl Write, section: &[u8], reason: &str) -> Result<()> {
     let mut report = Vec::new();
     write_packet(&mut report, b"unpack ok\n")?;
-    for (_, reference) in push_commands(section)? {
-        write_packet(&mut report, format!("ng {reference} {reason}\n").as_bytes())?;
+    for update in push_commands(section)? {
+        write_packet(
+            &mut report,
+            format!("ng {} {reason}\n", update.reference).as_bytes(),
+        )?;
     }
     report.extend_from_slice(b"0000");
     if push_uses_sideband(section)? {
