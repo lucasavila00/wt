@@ -1,0 +1,2 @@
+ALTER TABLE codex_session_reports DROP COLUMN git_context_error;
+ALTER TABLE codex_session_reports DROP COLUMN git_context_checked_at_unix_ms;

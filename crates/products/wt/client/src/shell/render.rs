@@ -519,6 +519,7 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
             repository_root,
             repository_url,
             git_branch,
+            git_context_health,
             target,
             ..
         } => {
@@ -533,7 +534,7 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
                     |branch| format!("{repository} · {branch} · {cwd}"),
                 )
             });
-            vec![
+            let mut lines = vec![
                 Line::from(git.unwrap_or_else(|| cwd.clone())),
                 Line::from(format!(
                     "{}.{} · {}:{} · session {}",
@@ -543,7 +544,14 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
                     target.pane_id,
                     short_session.expect("observation card has session ID")
                 )),
-            ]
+            ];
+            if let Some(message) = git_context_health
+                .as_ref()
+                .and_then(|health| health.warning())
+            {
+                lines.push(Line::from(message));
+            }
+            lines
         }
         CodexCardKind::RolloutOnly => vec![
             Line::from(format!(

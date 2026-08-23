@@ -44,6 +44,8 @@ pub struct CodexSessionReport {
     pub repository_root: Option<String>,
     pub repository_url: Option<String>,
     pub git_branch: Option<String>,
+    pub git_context_checked_at_unix_ms: Option<i64>,
+    pub git_context_error: Option<String>,
     pub tmux_session: String,
     pub pane_id: String,
     pub state: CodexSessionState,
@@ -68,6 +70,19 @@ pub struct CodexSessionReportInput<'a> {
     pub session_start_source: Option<&'a str>,
 }
 
+pub struct CodexSessionGitContextInput<'a> {
+    pub world_id: Uuid,
+    pub session_id: Uuid,
+    pub cwd: &'a str,
+    pub tmux_session: &'a str,
+    pub pane_id: &'a str,
+    pub pane_generation: u64,
+    pub repository_root: Option<&'a str>,
+    pub repository_url: Option<&'a str>,
+    pub git_branch: Option<&'a str>,
+    pub error: Option<&'a str>,
+}
+
 #[derive(Insertable)]
 #[diesel(table_name = codex_session_reports)]
 struct NewCodexSessionReport<'a> {
@@ -77,6 +92,8 @@ struct NewCodexSessionReport<'a> {
     repository_root: Option<&'a str>,
     repository_url: Option<&'a str>,
     git_branch: Option<&'a str>,
+    git_context_checked_at_unix_ms: Option<i64>,
+    git_context_error: Option<&'a str>,
     tmux_session: &'a str,
     pane_id: &'a str,
     state: &'static str,
@@ -96,6 +113,8 @@ struct CodexSessionReportRow {
     repository_root: Option<String>,
     repository_url: Option<String>,
     git_branch: Option<String>,
+    git_context_checked_at_unix_ms: Option<i64>,
+    git_context_error: Option<String>,
     tmux_session: String,
     pane_id: String,
     state: String,
@@ -176,6 +195,8 @@ impl Registry {
                 repository_root: input.repository_root,
                 repository_url: input.repository_url,
                 git_branch: input.git_branch,
+                git_context_checked_at_unix_ms: None,
+                git_context_error: None,
                 tmux_session: input.tmux_session,
                 pane_id: input.pane_id,
                 state: state.as_str(),
@@ -206,29 +227,112 @@ impl Registry {
                 ))
                 .execute(connection)?;
             }
-            diesel::insert_into(codex_session_reports::table)
+            let target = diesel::insert_into(codex_session_reports::table)
                 .values(&report)
                 .on_conflict((
                     codex_session_reports::world_id,
                     codex_session_reports::session_id,
                 ))
-                .do_update()
-                .set((
-                    codex_session_reports::cwd.eq(report.cwd),
-                    codex_session_reports::repository_root.eq(report.repository_root),
-                    codex_session_reports::repository_url.eq(report.repository_url),
-                    codex_session_reports::git_branch.eq(report.git_branch),
-                    codex_session_reports::tmux_session.eq(report.tmux_session),
-                    codex_session_reports::pane_id.eq(report.pane_id),
-                    codex_session_reports::state.eq(report.state),
-                    codex_session_reports::is_compacting.eq(report.is_compacting),
-                    codex_session_reports::pane_generation.eq(report.pane_generation),
-                    codex_session_reports::pane_sequence.eq(report.pane_sequence),
-                    codex_session_reports::session_start_source.eq(report.session_start_source),
-                    codex_session_reports::received_at_unix_ms.eq(report.received_at_unix_ms),
-                ))
-                .execute(connection)?;
+                .do_update();
+            if report.repository_root.is_some()
+                || report.repository_url.is_some()
+                || report.git_branch.is_some()
+            {
+                target
+                    .set((
+                        codex_session_reports::cwd.eq(report.cwd),
+                        codex_session_reports::repository_root.eq(report.repository_root),
+                        codex_session_reports::repository_url.eq(report.repository_url),
+                        codex_session_reports::git_branch.eq(report.git_branch),
+                        codex_session_reports::tmux_session.eq(report.tmux_session),
+                        codex_session_reports::pane_id.eq(report.pane_id),
+                        codex_session_reports::state.eq(report.state),
+                        codex_session_reports::is_compacting.eq(report.is_compacting),
+                        codex_session_reports::pane_generation.eq(report.pane_generation),
+                        codex_session_reports::pane_sequence.eq(report.pane_sequence),
+                        codex_session_reports::session_start_source.eq(report.session_start_source),
+                        codex_session_reports::received_at_unix_ms.eq(report.received_at_unix_ms),
+                    ))
+                    .execute(connection)?;
+            } else {
+                target
+                    .set((
+                        codex_session_reports::cwd.eq(report.cwd),
+                        codex_session_reports::tmux_session.eq(report.tmux_session),
+                        codex_session_reports::pane_id.eq(report.pane_id),
+                        codex_session_reports::state.eq(report.state),
+                        codex_session_reports::is_compacting.eq(report.is_compacting),
+                        codex_session_reports::pane_generation.eq(report.pane_generation),
+                        codex_session_reports::pane_sequence.eq(report.pane_sequence),
+                        codex_session_reports::session_start_source.eq(report.session_start_source),
+                        codex_session_reports::received_at_unix_ms.eq(report.received_at_unix_ms),
+                    ))
+                    .execute(connection)?;
+            }
             Ok(true)
+        })
+    }
+
+    pub fn update_codex_session_git_context(
+        &self,
+        input: CodexSessionGitContextInput<'_>,
+    ) -> Result<bool, RegistryError> {
+        validate_report(
+            input.cwd,
+            input.repository_root,
+            input.repository_url,
+            input.git_branch,
+            input.tmux_session,
+            input.pane_id,
+            None,
+        )?;
+        if input
+            .error
+            .is_some_and(|value| value.is_empty() || value.len() > 1024)
+        {
+            return Err(RegistryError::InvalidData(
+                "invalid Codex session Git error".into(),
+            ));
+        }
+        let pane_generation = i64::try_from(input.pane_generation)
+            .map_err(|_| RegistryError::InvalidData("Codex pane generation is too large".into()))?;
+        let checked_at_unix_ms = i64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|error| RegistryError::InvalidData(error.to_string()))?
+                .as_millis(),
+        )
+        .map_err(|_| RegistryError::InvalidData("system time is too large".into()))?;
+        self.immediate_transaction(|connection| {
+            let target = codex_session_reports::table
+                .filter(codex_session_reports::world_id.eq(input.world_id.to_string()))
+                .filter(codex_session_reports::session_id.eq(input.session_id.to_string()))
+                .filter(codex_session_reports::cwd.eq(input.cwd))
+                .filter(codex_session_reports::tmux_session.eq(input.tmux_session))
+                .filter(codex_session_reports::pane_id.eq(input.pane_id))
+                .filter(codex_session_reports::pane_generation.eq(pane_generation))
+                .filter(codex_session_reports::state.ne("inactive"));
+            let changes = if let Some(error) = input.error {
+                diesel::update(target)
+                    .set((
+                        codex_session_reports::git_context_checked_at_unix_ms
+                            .eq(checked_at_unix_ms),
+                        codex_session_reports::git_context_error.eq(error),
+                    ))
+                    .execute(connection)?
+            } else {
+                diesel::update(target)
+                    .set((
+                        codex_session_reports::repository_root.eq(input.repository_root),
+                        codex_session_reports::repository_url.eq(input.repository_url),
+                        codex_session_reports::git_branch.eq(input.git_branch),
+                        codex_session_reports::git_context_checked_at_unix_ms
+                            .eq(checked_at_unix_ms),
+                        codex_session_reports::git_context_error.eq::<Option<&str>>(None),
+                    ))
+                    .execute(connection)?
+            };
+            Ok(changes == 1)
         })
     }
 
@@ -249,6 +353,8 @@ impl Registry {
                     codex_session_reports::repository_root,
                     codex_session_reports::repository_url,
                     codex_session_reports::git_branch,
+                    codex_session_reports::git_context_checked_at_unix_ms,
+                    codex_session_reports::git_context_error,
                     codex_session_reports::tmux_session,
                     codex_session_reports::pane_id,
                     codex_session_reports::state,
@@ -269,6 +375,8 @@ impl Registry {
                         repository_root: row.repository_root,
                         repository_url: row.repository_url,
                         git_branch: row.git_branch,
+                        git_context_checked_at_unix_ms: row.git_context_checked_at_unix_ms,
+                        git_context_error: row.git_context_error,
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         state: CodexSessionState::parse(&row.state)?,

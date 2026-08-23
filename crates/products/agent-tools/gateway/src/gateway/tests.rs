@@ -1,4 +1,5 @@
 use super::*;
+use crate::CodexGitContext;
 use crate::{CodexSessionStartSource, CodexSessionStartSourceKind};
 use diesel::prelude::*;
 use wt_git_smart_protocol::{validate_push, PushViolation};
@@ -325,6 +326,90 @@ fn compaction_preserves_the_primary_session_state() {
         wt_workload_registry::CodexSessionState::NeedsAttention
     );
     assert!(!reports[0].is_compacting);
+}
+
+#[test]
+fn git_context_updates_only_the_matching_active_report() {
+    let temp = tempfile::tempdir().unwrap();
+    let database_path = temp.path().join("instances.db");
+    let registry = wt_workload_registry::Registry::open(&database_path).unwrap();
+    let world_id = insert_world(&registry);
+    let gateway = Gateway::open(GatewayConfig {
+        state_file: temp.path().join("gateway.json"),
+        database_path,
+        providers: vec![Provider::Local {
+            host: "github.com".into(),
+            repositories: temp.path().to_owned(),
+            api: None,
+        }],
+    })
+    .unwrap();
+    let mut grant = test_grant();
+    grant.world_id = world_id.to_string();
+    let session_id = Uuid::new_v4();
+    let event = CodexSessionEvent {
+        session_id,
+        cwd: "/home/wt/project".into(),
+        repository_root: None,
+        repository_url: None,
+        git_branch: None,
+        tmux_session: "wt-host".into(),
+        pane_id: "%4".into(),
+        kind: CodexSessionEventKind::UserPromptSubmit,
+        pane_generation: 1,
+        pane_sequence: 1,
+        session_start_source: None,
+    };
+    assert!(gateway.store_codex_session_event(&event, &grant).unwrap());
+    let before = registry
+        .list_codex_session_reports("alice")
+        .unwrap()
+        .remove(0);
+
+    assert!(gateway
+        .store_codex_git_context(
+            &CodexGitContext {
+                session_id,
+                cwd: event.cwd.clone(),
+                tmux_session: event.tmux_session.clone(),
+                pane_id: event.pane_id.clone(),
+                pane_generation: event.pane_generation,
+                repository_root: Some(event.cwd.clone()),
+                repository_url: Some("git@github.com:acme/project.git".into()),
+                git_branch: Some("wt/after-switch".into()),
+                error: None,
+            },
+            &grant,
+        )
+        .unwrap());
+    let after = registry
+        .list_codex_session_reports("alice")
+        .unwrap()
+        .remove(0);
+    assert_eq!(after.git_branch.as_deref(), Some("wt/after-switch"));
+    assert_eq!(after.received_at_unix_ms, before.received_at_unix_ms);
+    assert_eq!(
+        after.state,
+        wt_workload_registry::CodexSessionState::Working
+    );
+    assert!(after.git_context_checked_at_unix_ms.is_some());
+
+    assert!(!gateway
+        .store_codex_git_context(
+            &CodexGitContext {
+                session_id: Uuid::new_v4(),
+                cwd: event.cwd,
+                tmux_session: event.tmux_session,
+                pane_id: event.pane_id,
+                pane_generation: event.pane_generation,
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                error: None,
+            },
+            &grant,
+        )
+        .unwrap());
 }
 
 #[test]

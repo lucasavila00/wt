@@ -37,6 +37,8 @@ diesel::table! {
         repository_root -> Nullable<Text>,
         repository_url -> Nullable<Text>,
         git_branch -> Nullable<Text>,
+        git_context_checked_at_unix_ms -> Nullable<BigInt>,
+        git_context_error -> Nullable<Text>,
         tmux_session -> Text,
         pane_id -> Text,
         state -> Text,

@@ -11,7 +11,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use wt_agent_tool_gateway::{
     read_json_line, write_json_line, ClientOperation, ClientRequest, CodexSessionEvent,
@@ -21,6 +21,7 @@ use wt_agent_tool_gateway::{
 
 const TIMEOUT: Duration = Duration::from_millis(250);
 const HOOK_STATE_DIRECTORY: &str = ".local/state/wt/codex-hook-order";
+const HOOK_ERROR_FILE: &str = ".local/state/wt/codex-session-report-error.json";
 
 #[derive(Debug, Deserialize)]
 struct HookPayload {
@@ -30,7 +31,7 @@ struct HookPayload {
     source: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 enum HookEventName {
     SessionStart,
     PreCompact,
@@ -71,6 +72,21 @@ fn event_kind(event: HookEventName) -> CodexSessionEventKind {
 
 pub(crate) fn report_hook() -> Result<()> {
     let payload: HookPayload = serde_json::from_reader(io::stdin()).context("decode Codex hook")?;
+    let event_name = format!("{:?}", payload.hook_event_name);
+    let session_id = payload.session_id;
+    match report_hook_payload(payload) {
+        Ok(()) => {
+            clear_hook_error()?;
+            Ok(())
+        }
+        Err(error) => {
+            record_hook_error(&event_name, session_id, &error)?;
+            Err(error)
+        }
+    }
+}
+
+fn report_hook_payload(payload: HookPayload) -> Result<()> {
     let session_start_source = match payload.hook_event_name {
         HookEventName::SessionStart => payload.source.map(session_start_source),
         _ => None,
@@ -84,13 +100,12 @@ pub(crate) fn report_hook() -> Result<()> {
     };
     let (pane_generation, pane_sequence) =
         pane_event_order(&pane_id, payload.session_id, payload.hook_event_name)?;
-    let (repository_root, repository_url, git_branch) = git_context(&payload.cwd);
     let event = CodexSessionEvent {
         session_id: payload.session_id,
         cwd: payload.cwd,
-        repository_root,
-        repository_url,
-        git_branch,
+        repository_root: None,
+        repository_url: None,
+        git_branch: None,
         tmux_session,
         pane_id,
         kind: event_kind(payload.hook_event_name),
@@ -116,6 +131,52 @@ pub(crate) fn report_hook() -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[derive(Serialize)]
+struct HookError<'a> {
+    timestamp_unix_ms: u128,
+    event_name: &'a str,
+    session_id: Uuid,
+    error: String,
+}
+
+fn hook_error_path() -> Result<PathBuf> {
+    Ok(PathBuf::from(env::var_os("HOME").context("HOME is not set")?).join(HOOK_ERROR_FILE))
+}
+
+fn record_hook_error(event_name: &str, session_id: Uuid, error: &anyhow::Error) -> Result<()> {
+    let path = hook_error_path()?;
+    let parent = path
+        .parent()
+        .context("Codex hook error path has no parent")?;
+    fs::create_dir_all(parent)?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+    let record = HookError {
+        timestamp_unix_ms: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
+        event_name,
+        session_id,
+        error: error
+            .to_string()
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(512)
+            .collect(),
+    };
+    let temporary = path.with_extension("json.new");
+    fs::write(&temporary, serde_json::to_vec(&record)?)?;
+    fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
+    fs::rename(temporary, path)?;
+    Ok(())
+}
+
+fn clear_hook_error() -> Result<()> {
+    let path = hook_error_path()?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("clear Codex hook error"),
+    }
 }
 
 fn pane_event_order(pane_id: &str, session_id: Uuid, event: HookEventName) -> Result<(u64, u64)> {
@@ -186,29 +247,6 @@ fn pane_event_order_at(
     serde_json::to_writer(&mut *file, &order).context("encode Codex hook order")?;
     file.sync_data().context("sync Codex hook order")?;
     Ok((generation, order.next_sequence))
-}
-
-fn git_context(cwd: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let run = |args: &[&str]| {
-        let output = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(cwd)
-            .args(args)
-            .output()
-            .ok()?;
-        output
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-            .filter(|value| !value.is_empty())
-    };
-    let root = run(&["rev-parse", "--show-toplevel"]);
-    if root.is_none() {
-        return (None, None, None);
-    }
-    let url = run(&["config", "--get", "remote.origin.url"]);
-    let branch = run(&["branch", "--show-current"]);
-    (root, url, branch)
 }
 
 fn current_tmux_session(pane_id: &str) -> Result<String> {
@@ -301,27 +339,5 @@ mod tests {
             pane_event_order_at(temp.path(), "1", first, HookEventName::Stop).unwrap(),
             (1, 4)
         );
-    }
-
-    #[test]
-    fn reports_git_context_when_the_working_directory_is_in_a_repository() {
-        let temp = tempfile::tempdir().unwrap();
-        Command::new("/usr/bin/git")
-            .args(["init", "-b", "wt/session-cards"])
-            .arg(temp.path())
-            .status()
-            .unwrap();
-        Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(temp.path())
-            .args(["remote", "add", "origin", "git@github.com:acme/widget.git"])
-            .status()
-            .unwrap();
-
-        let (root, url, branch) = git_context(temp.path().to_str().unwrap());
-
-        assert_eq!(root.as_deref(), temp.path().to_str());
-        assert_eq!(url.as_deref(), Some("git@github.com:acme/widget.git"));
-        assert_eq!(branch.as_deref(), Some("wt/session-cards"));
     }
 }

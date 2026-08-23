@@ -28,6 +28,8 @@ pub(crate) use screen::{Key, Screen};
 mod wt_shell;
 pub(crate) use wt_shell::{create_world_with_defaults, delete_world};
 
+#[path = "kvm/git_tracking.rs"]
+mod git_tracking;
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;
 #[path = "kvm/shell.rs"]
