@@ -5,19 +5,22 @@
 
 ## Decision
 
-Keep checkout state, Git gateway activity, and `wt-tools` provider activity as
-separate facts. Add a canonical repository key and a read model that can join
-those facts when a product needs one repository view.
+Keep checkout state, Git gateway activity, and `wt-tools` provider API activity
+as separate facts. Reuse the configured `(provider_host, repository)` key from
+Git activity and add a derived read model that joins facts when a product needs
+one repository view.
 
-Codex checkout observations attach their cwd, branch, and Git freshness to the
-key. Gateway and provider activity attach their operation time and provenance
-to the same key. Do not derive one source from another or let any Git update
-change Codex lifecycle state or age.
+Checkout observations remain keyed by world, session, and cwd. They associate
+with the repository key only when their selected remote resolves unambiguously
+to a configured provider and repository. Gateway and provider activity retain
+their own operation time and provenance. Do not derive one source from another
+or let any Git update change Codex lifecycle state or age.
 
 ## Consequences
 
-WT can present repository history holistically without implying that a remote
-operation or PR target is the active checkout. SSH and HTTPS remotes require a
-deliberate canonicalization policy; ambiguous or unconfigured remotes stay
-unjoined. A combined view labels lifecycle, Git-check, and operation timestamps
-separately.
+The read model is not a new authority or mutable state owner. WT can present
+repository history holistically without implying that a remote operation or PR
+target is the active checkout. Unconfigured, local-only, unsupported, and
+ambiguous remotes remain visible checkout state but unjoined. SSH and HTTPS
+aliases remain distinct until an explicit mapping policy says otherwise. A
+combined view labels lifecycle, Git-check, and operation timestamps separately.
