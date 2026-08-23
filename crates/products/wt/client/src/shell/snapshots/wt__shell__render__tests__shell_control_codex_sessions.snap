@@ -5,7 +5,7 @@ expression: terminal.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 100, height: 22 },
     content: [
-        "    │┌ 󰚩 NEEDS ATTENTION · 0s ago ─────────────────┐ ┌ 󰋗 UNKNOWN (compact) · 0s ago ───────────────┐",
+        "    │┌ 󰚩 NEEDS ATTENTION (COMPACTING) · 0s ago ────┐ ┌ 󰋗 UNKNOWN (compact) · 0s ago ───────────────┐",
         "▌ 󰚩 ││Show the latest authentication failure with  │ │Investigate why this compacted session is    │",
         "    ││enough context to act on it. Include which   │ │unknown                                      │",
         "    ││credential source was selected, which host  …│ │                                             │",
@@ -32,7 +32,7 @@ Buffer {
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 5, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: NONE,
         x: 6, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: BOLD,
-        x: 34, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: NONE,
+        x: 47, y: 0, fg: Yellow, bg: Reset, underline: Reset, modifier: NONE,
         x: 52, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 54, y: 0, fg: Gray, bg: Reset, underline: Reset, modifier: BOLD,
         x: 84, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

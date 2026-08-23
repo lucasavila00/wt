@@ -469,6 +469,7 @@ mod tests {
                 repository_url: Some("git@github.com:acme/project.git".into()),
                 git_branch: Some("wt/session-cards".into()),
                 state: CodexSessionState::Unknown,
+                is_compacting: true,
                 session_start_source: Some("compact".into()),
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
@@ -507,6 +508,7 @@ mod tests {
               "repository_url": "git@github.com:acme/project.git",
               "git_branch": "wt/session-cards",
               "state": "unknown",
+              "is_compacting": true,
               "session_start_source": "compact",
               "target": {
                 "tmux_session": "wt-host",

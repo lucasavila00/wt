@@ -220,6 +220,8 @@ mod tests {
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
             kind: CodexSessionEventKind::SessionEnd,
+            pane_generation: 1,
+            pane_sequence: 1,
             session_start_source: None,
         };
 

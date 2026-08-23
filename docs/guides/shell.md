@@ -66,7 +66,9 @@ After upgrading WT, recreate older worlds so their relay records pane markers
 and their focus helper is current.
 
 An unknown observation includes its raw Codex session-start source when one was
-reported, such as `unknown(compact)`.
+reported, such as `unknown(startup)`. During Codex compaction, the shell keeps
+the observed lifecycle state and adds a `COMPACTING` indicator until the
+compaction completes.
 
 The experimental live-session activity uses the same observed sessions but
 shows each session's state and report age around the persistent live terminal

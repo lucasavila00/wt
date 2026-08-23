@@ -1,8 +1,15 @@
 use anyhow::{bail, Context, Result};
+use nix::fcntl::{Flock, FlockArg};
 use serde::Deserialize;
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::env;
+use std::fs::{self, OpenOptions};
 use std::io;
+use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use uuid::Uuid;
@@ -13,6 +20,7 @@ use wt_agent_tool_gateway::{
 };
 
 const TIMEOUT: Duration = Duration::from_millis(250);
+const HOOK_STATE_DIRECTORY: &str = ".local/state/wt/codex-hook-order";
 
 #[derive(Debug, Deserialize)]
 struct HookPayload {
@@ -25,9 +33,18 @@ struct HookPayload {
 #[derive(Clone, Copy, Debug, Deserialize)]
 enum HookEventName {
     SessionStart,
+    PreCompact,
+    PostCompact,
     UserPromptSubmit,
     Stop,
     SessionEnd,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct PaneEventOrder {
+    current_generation: u64,
+    next_sequence: u64,
+    session_generations: BTreeMap<Uuid, u64>,
 }
 
 fn session_start_source(raw: String) -> CodexSessionStartSource {
@@ -39,6 +56,17 @@ fn session_start_source(raw: String) -> CodexSessionStartSource {
         _ => CodexSessionStartSourceKind::Other,
     };
     CodexSessionStartSource { kind, raw }
+}
+
+fn event_kind(event: HookEventName) -> CodexSessionEventKind {
+    match event {
+        HookEventName::SessionStart => CodexSessionEventKind::SessionStart,
+        HookEventName::PreCompact => CodexSessionEventKind::PreCompact,
+        HookEventName::PostCompact => CodexSessionEventKind::PostCompact,
+        HookEventName::UserPromptSubmit => CodexSessionEventKind::UserPromptSubmit,
+        HookEventName::Stop => CodexSessionEventKind::Stop,
+        HookEventName::SessionEnd => CodexSessionEventKind::SessionEnd,
+    }
 }
 
 pub(crate) fn report_hook() -> Result<()> {
@@ -54,6 +82,8 @@ pub(crate) fn report_hook() -> Result<()> {
         Ok(value) => value,
         Err(_) => current_tmux_session(&pane_id)?,
     };
+    let (pane_generation, pane_sequence) =
+        pane_event_order(&pane_id, payload.session_id, payload.hook_event_name)?;
     let (repository_root, repository_url, git_branch) = git_context(&payload.cwd);
     let event = CodexSessionEvent {
         session_id: payload.session_id,
@@ -63,12 +93,9 @@ pub(crate) fn report_hook() -> Result<()> {
         git_branch,
         tmux_session,
         pane_id,
-        kind: match payload.hook_event_name {
-            HookEventName::SessionStart => CodexSessionEventKind::SessionStart,
-            HookEventName::UserPromptSubmit => CodexSessionEventKind::UserPromptSubmit,
-            HookEventName::Stop => CodexSessionEventKind::Stop,
-            HookEventName::SessionEnd => CodexSessionEventKind::SessionEnd,
-        },
+        kind: event_kind(payload.hook_event_name),
+        pane_generation,
+        pane_sequence,
         session_start_source,
     };
     let mut stream = UnixStream::connect(RELAY_SOCKET).context("connect to WT guest relay")?;
@@ -89,6 +116,76 @@ pub(crate) fn report_hook() -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn pane_event_order(pane_id: &str, session_id: Uuid, event: HookEventName) -> Result<(u64, u64)> {
+    let pane = pane_id
+        .strip_prefix('%')
+        .filter(|pane| !pane.is_empty() && pane.bytes().all(|byte| byte.is_ascii_digit()))
+        .context("invalid Codex Byobu pane")?;
+    let home = env::var_os("HOME").context("HOME is not set")?;
+    let directory = PathBuf::from(home).join(HOOK_STATE_DIRECTORY);
+    pane_event_order_at(&directory, pane, session_id, event)
+}
+
+fn pane_event_order_at(
+    directory: &Path,
+    pane: &str,
+    session_id: Uuid,
+    event: HookEventName,
+) -> Result<(u64, u64)> {
+    fs::create_dir_all(directory)
+        .with_context(|| format!("create Codex hook state directory {}", directory.display()))?;
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("secure Codex hook state directory {}", directory.display()))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(directory.join(format!("{pane}.json")))
+        .context("open Codex hook order state")?;
+    let mut file = Flock::lock(file, FlockArg::LockExclusive)
+        .map_err(|(_, error)| error)
+        .context("lock Codex hook order")?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .context("read Codex hook order")?;
+    let mut order = if contents.is_empty() {
+        PaneEventOrder::default()
+    } else {
+        serde_json::from_str(&contents).context("decode Codex hook order")?
+    };
+    let generation = match order.session_generations.get(&session_id) {
+        Some(generation) => *generation,
+        None if order.current_generation == 0 => {
+            order.current_generation = 1;
+            order.session_generations.insert(session_id, 1);
+            1
+        }
+        None if matches!(event, HookEventName::SessionStart) => {
+            order.current_generation = order
+                .current_generation
+                .checked_add(1)
+                .context("Codex pane generation overflow")?;
+            order
+                .session_generations
+                .insert(session_id, order.current_generation);
+            order.current_generation
+        }
+        None => 0,
+    };
+    order.next_sequence = order
+        .next_sequence
+        .checked_add(1)
+        .context("Codex pane event sequence overflow")?;
+    file.seek(SeekFrom::Start(0))
+        .context("rewind Codex hook order")?;
+    file.set_len(0).context("truncate Codex hook order")?;
+    serde_json::to_writer(&mut *file, &order).context("encode Codex hook order")?;
+    file.sync_data().context("sync Codex hook order")?;
+    Ok((generation, order.next_sequence))
 }
 
 fn git_context(cwd: &str) -> (Option<String>, Option<String>, Option<String>) {
@@ -157,6 +254,52 @@ mod tests {
                 kind: CodexSessionStartSourceKind::Compact,
                 raw: "compact".into(),
             })
+        );
+    }
+
+    #[test]
+    fn recognizes_compaction_lifecycle_events() {
+        let pre_payload: HookPayload = serde_json::from_str(
+            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/home/wt/project","hook_event_name":"PreCompact"}"#,
+        )
+        .unwrap();
+        let payload: HookPayload = serde_json::from_str(
+            r#"{"session_id":"123e4567-e89b-12d3-a456-426614174000","cwd":"/home/wt/project","hook_event_name":"PostCompact"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            event_kind(pre_payload.hook_event_name),
+            CodexSessionEventKind::PreCompact
+        );
+        assert_eq!(
+            event_kind(payload.hook_event_name),
+            CodexSessionEventKind::PostCompact
+        );
+    }
+
+    #[test]
+    fn assigns_a_stable_generation_and_monotonic_sequence_per_pane() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = Uuid::new_v4();
+        let replacement = Uuid::new_v4();
+
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", first, HookEventName::SessionStart).unwrap(),
+            (1, 1)
+        );
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", first, HookEventName::Stop).unwrap(),
+            (1, 2)
+        );
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", replacement, HookEventName::SessionStart,)
+                .unwrap(),
+            (2, 3)
+        );
+        assert_eq!(
+            pane_event_order_at(temp.path(), "1", first, HookEventName::Stop).unwrap(),
+            (1, 4)
         );
     }
 

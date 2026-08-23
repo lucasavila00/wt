@@ -470,7 +470,6 @@ fn draw_codex_card(
     }
     frame.render_widget(Paragraph::new(Line::from(footer)), rows[1]);
 }
-
 pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
     let suffix = card
         .timestamp
@@ -479,6 +478,7 @@ pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
     match &card.kind {
         CodexCardKind::Observation {
             state,
+            is_compacting,
             session_start_source,
             ..
         } => {
@@ -500,13 +500,13 @@ pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
                     ("󰅖", "INACTIVE".into(), Color::Reset)
                 }
             };
-            (format!("{icon} {label}{suffix}"), color)
+            let compacting = is_compacting.then_some(" (COMPACTING)").unwrap_or_default();
+            (format!("{icon} {label}{compacting}{suffix}"), color)
         }
         CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::Reset),
         CodexCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
-
 fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
     let short_session = card
         .session_id

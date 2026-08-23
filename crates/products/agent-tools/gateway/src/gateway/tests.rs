@@ -174,7 +174,7 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
 }
 
 #[test]
-fn codex_events_upsert_latest_state_for_the_authenticated_world() {
+fn compaction_preserves_the_primary_session_state() {
     let temp = tempfile::tempdir().unwrap();
     let database_path = temp.path().join("instances.db");
     let registry = wt_workload_registry::Registry::open(&database_path).unwrap();
@@ -201,11 +201,26 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
         tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
+        pane_generation: 1,
+        pane_sequence: 1,
         session_start_source: None,
     };
 
     gateway.store_codex_session_event(&event, &grant).unwrap();
+    event.kind = CodexSessionEventKind::PreCompact;
+    event.pane_sequence += 1;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::Working
+    );
+    assert!(reports[0].is_compacting);
+
     event.kind = CodexSessionEventKind::SessionStart;
+    event.pane_sequence += 1;
     event.session_start_source = Some(CodexSessionStartSource {
         kind: CodexSessionStartSourceKind::Compact,
         raw: "compact".into(),
@@ -216,12 +231,27 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
     assert_eq!(reports.len(), 1);
     assert_eq!(
         reports[0].state,
-        wt_workload_registry::CodexSessionState::Unknown
+        wt_workload_registry::CodexSessionState::Working
     );
+    assert!(reports[0].is_compacting);
     assert_eq!(reports[0].session_start_source.as_deref(), Some("compact"));
 
-    event.kind = CodexSessionEventKind::Stop;
+    event.kind = CodexSessionEventKind::PostCompact;
+    event.pane_sequence += 1;
     event.session_start_source = None;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::Working
+    );
+    assert!(!reports[0].is_compacting);
+    assert_eq!(reports[0].session_start_source, None);
+
+    event.kind = CodexSessionEventKind::Stop;
+    event.pane_sequence += 1;
     gateway.store_codex_session_event(&event, &grant).unwrap();
 
     let reports = registry.list_codex_session_reports("alice").unwrap();
@@ -232,13 +262,36 @@ fn codex_events_upsert_latest_state_for_the_authenticated_world() {
         reports[0].state,
         wt_workload_registry::CodexSessionState::NeedsAttention
     );
+    assert!(!reports[0].is_compacting);
     assert_eq!(reports[0].tmux_session, "wt-host");
     assert_eq!(reports[0].pane_id, "%3");
     assert_eq!(reports[0].session_start_source, None);
+
+    event.kind = CodexSessionEventKind::PreCompact;
+    event.pane_sequence += 1;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::NeedsAttention
+    );
+    assert!(reports[0].is_compacting);
+
+    event.kind = CodexSessionEventKind::PostCompact;
+    event.pane_sequence += 1;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(
+        reports[0].state,
+        wt_workload_registry::CodexSessionState::NeedsAttention
+    );
+    assert!(!reports[0].is_compacting);
 }
 
 #[test]
-fn new_codex_session_in_a_pane_deactivates_the_previous_session() {
+fn new_codex_session_in_a_pane_ignores_delayed_events_from_the_previous_session() {
     let temp = tempfile::tempdir().unwrap();
     let database_path = temp.path().join("instances.db");
     let registry = wt_workload_registry::Registry::open(&database_path).unwrap();
@@ -265,6 +318,8 @@ fn new_codex_session_in_a_pane_deactivates_the_previous_session() {
         tmux_session: "wt-host".into(),
         pane_id: "%3".into(),
         kind: CodexSessionEventKind::UserPromptSubmit,
+        pane_generation: 1,
+        pane_sequence: 1,
         session_start_source: None,
     };
     gateway.store_codex_session_event(&event, &grant).unwrap();
@@ -272,6 +327,8 @@ fn new_codex_session_in_a_pane_deactivates_the_previous_session() {
     let replacement_session_id = Uuid::new_v4();
     event.session_id = replacement_session_id;
     event.kind = CodexSessionEventKind::SessionStart;
+    event.pane_generation = 2;
+    event.pane_sequence = 2;
     event.session_start_source = Some(CodexSessionStartSource {
         kind: CodexSessionStartSourceKind::Clear,
         raw: "clear".into(),
@@ -298,11 +355,29 @@ fn new_codex_session_in_a_pane_deactivates_the_previous_session() {
     );
 
     event.session_id = previous_session_id;
-    event.kind = CodexSessionEventKind::SessionEnd;
+    event.kind = CodexSessionEventKind::UserPromptSubmit;
+    event.pane_generation = 1;
+    event.pane_sequence = 3;
     event.session_start_source = None;
     gateway.store_codex_session_event(&event, &grant).unwrap();
 
+    event.kind = CodexSessionEventKind::Stop;
+    event.pane_sequence = 4;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
+    event.kind = CodexSessionEventKind::SessionEnd;
+    event.pane_sequence = 5;
+    gateway.store_codex_session_event(&event, &grant).unwrap();
+
     let reports = registry.list_codex_session_reports("alice").unwrap();
+    assert_eq!(
+        reports
+            .iter()
+            .find(|report| report.session_id == previous_session_id)
+            .unwrap()
+            .state,
+        wt_workload_registry::CodexSessionState::Inactive
+    );
     assert_eq!(
         reports
             .iter()
