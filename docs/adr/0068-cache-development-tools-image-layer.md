@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-23
-- Amends: [ADR 0067](0067-make-developer-tools-an-optional-image-profile.md)
+- Amends: [ADR 0048](0048-make-developer-tools-an-optional-image-profile.md)
 
 ## Context
 
@@ -12,24 +12,23 @@ changes.
 ## Decision
 
 - `wt-server-installer` owns one disposable host-local base image and manifest
-  in the installer checkout's `imgs/` directory.
-- Only enabled `image.development_tools` builds use it. Worlds, default images,
-  and KVM E2E do not.
+  in its working directory's `imgs/` directory.
+- Every golden-image build uses it. Worlds do not consume it directly.
 - The cache is a sanitized image base, not a runtime or distributed cache. Each
   final golden image is a separate copy with the current WT guest layer and all
   normal validation reapplied.
 - Reuse requires a complete image/manifest pair, its recorded checksum, and
-  matching source image, build disk size, terminal pins, and cached recipe.
+  matching source image, build disk size, and development-tools recipe.
   Missing, corrupt, or incompatible entries are rebuilt.
-- A cache generation fixes its selected tool versions. Normal WT-only changes
-  reuse them; changing compatibility inputs or removing the cache refreshes
-  tools from upstream. Final-image provenance records the resolved versions.
+- A cache generation fixes its selected tool versions. Normal WT changes reuse
+  it; changing cache inputs or removing it refreshes tools from upstream.
+  Final-image provenance records the resolved versions.
 
 ## Consequences
 
-- The disabled profile has no cache cost. First enabled builds pay the full
-  install cost plus one local image; warm rebuilds pay copy and validation only.
+- Cold builds install the tool layer; warm rebuilds reuse it and still rebuild
+  the terminal, Codex, and WT layers.
 - Tool upgrades are deliberate. Cached tools can lag upstream until refresh.
-- `make clear` preserves the cache; `make nuke` removes it.
+- `make clear` preserves the cache; checkout `make nuke` removes its cache.
 - The cache is integrity-checked, not a security boundary; it is trusted local
   state owned by the server user.

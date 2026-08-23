@@ -67,13 +67,13 @@ phase "configuring Docker for the retained-world user"
 usermod --append --groups docker "$WT_USER"
 cat >> "$WT_HOME/.bashrc" <<'EOF'
 
-# WT development tools
+# WT toolchain
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/go/bin:$PATH"
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-if [[ $- == *i* && -z ${WT_DEVELOPMENT_TOOLS_ANNOUNCED:-} ]]; then
-    export WT_DEVELOPMENT_TOOLS_ANNOUNCED=1
-    printf '%s\n' 'WT development tools: Rust/Cargo, Go, Python/uv, Node.js/npm (via nvm), build tools, CLI utilities, and Docker/Compose.'
+if [[ $- == *i* && -z ${WT_TOOLCHAIN_ANNOUNCED:-} ]]; then
+    export WT_TOOLCHAIN_ANNOUNCED=1
+    printf '%s\n' 'WT toolchain: Rust/Cargo, Go, Python/uv, Node.js/npm (via nvm), build tools, CLI utilities, and Docker/Compose.'
 fi
 EOF
 chown "$WT_USER:$WT_GROUP" "$WT_HOME/.bashrc"

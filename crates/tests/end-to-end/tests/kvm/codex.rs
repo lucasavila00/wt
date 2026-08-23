@@ -11,8 +11,8 @@ pub(crate) struct CodexSessionFixture {
 }
 
 impl CodexSessionFixture {
-    pub(crate) fn new(name: &InstanceName) -> Self {
-        let sessions = Path::new(wt_server::CODEX_SESSIONS_PATH);
+    pub(crate) fn new(name: &InstanceName, config: &wt_server::ServerConfig) -> Self {
+        let sessions = Path::new(config.codex_paths().sessions);
         let fixture_name = format!(".wt-kvm-e2e-{name}");
         let root = sessions.join(&fixture_name);
         let transcript_dir = root.join("2026/08/21");
@@ -28,9 +28,10 @@ impl Drop for CodexSessionFixture {
     }
 }
 
-pub(crate) fn assert_server_codex_auth_export() -> String {
-    let source = Path::new(wt_server::CODEX_AUTH_PATH);
-    let export_dir = Path::new(wt_server::CODEX_AUTH_SHARE_DIR);
+pub(crate) fn assert_server_codex_auth_export(config: &wt_server::ServerConfig) -> String {
+    let paths = config.codex_paths();
+    let source = Path::new(paths.auth);
+    let export_dir = Path::new(paths.auth_share);
     let export = export_dir.join("auth.json");
     let source_metadata = fs::symlink_metadata(source).unwrap();
     let export_metadata = fs::symlink_metadata(&export).unwrap();
@@ -58,8 +59,9 @@ pub(crate) fn verify_codex_auth_rotation(
     name: &InstanceName,
     expected_sha256: &str,
 ) {
-    let auth = Path::new(wt_server::CODEX_AUTH_PATH);
-    let export = Path::new(wt_server::CODEX_AUTH_SHARE_DIR).join("auth.json");
+    let paths = harness.config.codex_paths();
+    let auth = Path::new(paths.auth);
+    let export = Path::new(paths.auth_share).join("auth.json");
     let guest_inode = guest_output(
         harness,
         name,
@@ -89,7 +91,10 @@ pub(crate) fn verify_codex_auth_rotation(
         );
         std::thread::sleep(Duration::from_millis(100));
     }
-    assert_eq!(assert_server_codex_auth_export(), expected_sha256);
+    assert_eq!(
+        assert_server_codex_auth_export(&harness.config),
+        expected_sha256
+    );
     run_guest(
         harness,
         name,

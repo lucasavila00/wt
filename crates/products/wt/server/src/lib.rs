@@ -11,10 +11,11 @@ pub use identity::{
     SERVER_UID, SERVER_USER,
 };
 pub use runtime_config::{
-    AgentToolsConfig, AgentToolsProviderConfig, GuestConfig, ImageConfig, InstallConfig,
-    ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV, CODEX_AUTH_PATH,
+    AgentToolsConfig, AgentToolsProviderConfig, CodexPaths, GuestConfig, ImageConfig,
+    InstallConfig, ServerConfig, ServerLibvirtConfig, AGENT_TOOL_VSOCK_PORT_ENV, CODEX_AUTH_PATH,
     CODEX_AUTH_SHARE_DIR, CODEX_SESSIONS_PATH, DEFAULT_AGENT_TOOL_VSOCK_PORT, SERVER_CONFIG_PATH,
-    SSH_AUTHORIZED_KEYS_SHARE_DIR,
+    SSH_AUTHORIZED_KEYS_SHARE_DIR, TEST_CODEX_AUTH_PATH, TEST_CODEX_AUTH_SHARE_DIR,
+    TEST_CODEX_SESSIONS_PATH,
 };
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};

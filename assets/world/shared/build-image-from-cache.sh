@@ -16,7 +16,41 @@ phase() {
     echo "WT_IMAGE_PHASE=$*" > /dev/ttyS0
 }
 
-phase "refreshing retained-world tools from cached development image"
+phase "installing terminal build dependencies"
+/bin/sh /var/tmp/wt-install-packages.sh libevent-dev libncurses-dev
+
+phase "installing terminal tools"
+/bin/sh /var/tmp/wt-install-terminal.sh
+
+phase "installing Codex"
+/bin/sh /var/tmp/wt-install-codex.sh
+
+phase "installing Diffo"
+/bin/sh /var/tmp/wt-install-diffo.sh
+install -d -m 0755 /usr/local/share /usr/local/libexec
+printf "WT_USER='%s'\nWT_GROUP='%s'\nWT_UID='%s'\nWT_GID='%s'\nWT_HOME='%s'\n" \
+    "$WT_USER" "$WT_GROUP" "$WT_UID" "$WT_GID" "$WT_HOME" \
+    > /usr/local/share/wt-retained-contract
+chmod 0644 /usr/local/share/wt-retained-contract
+install -m 0644 /var/tmp/wt-tmux.conf /usr/local/share/wt-tmux.conf
+install -m 0755 /var/tmp/wt-retained-access /usr/local/libexec/wt-retained-access
+install -m 0755 /var/tmp/wt-retained-git-author \
+    /usr/local/libexec/wt-retained-git-author
+install -m 0755 /var/tmp/wt-retained-agent-tools /usr/local/libexec/wt-retained-agent-tools
+install -m 0755 /var/tmp/wt-retained-mount-codex \
+    /usr/local/libexec/wt-retained-mount-codex
+printf '%s  %s\n' "$TMUX_CONFIG_SHA256" \
+    /usr/local/share/wt-tmux.conf | sha256sum --check --strict
+printf '%s  %s\n' "$ACCESS_SHA256" \
+    /usr/local/libexec/wt-retained-access | sha256sum --check --strict
+printf '%s  %s\n' "$GIT_AUTHOR_SHA256" \
+    /usr/local/libexec/wt-retained-git-author | sha256sum --check --strict
+printf '%s  %s\n' "$AGENT_TOOLS_SHA256" \
+    /usr/local/libexec/wt-retained-agent-tools | sha256sum --check --strict
+printf '%s  %s\n' "$MOUNT_CODEX_SHA256" \
+    /usr/local/libexec/wt-retained-mount-codex | sha256sum --check --strict
+
+phase "installing retained-world tools"
 /bin/sh /var/tmp/wt-retained-image-build.sh
 
 phase "validating cached development tools"
@@ -25,9 +59,22 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
         . "$HOME/.nvm/nvm.sh"
-        command -v cargo rustc go python nvm node npm uv docker
+        command -v cargo rustc go python node npm npx corepack uv docker shellcheck
+        command -v nvm
         docker compose version >/dev/null
     '
+
+phase "validating installed terminal tools"
+test "$(/usr/bin/tmux -V)" = "tmux $TMUX_VERSION"
+test "$(dpkg-query -W -f='${Version}' byobu)" = "$BYOBU_VERSION"
+printf '%s  %s\n' "$GHOSTTY_TERMINFO_SHA256" \
+    /usr/share/terminfo/g/ghostty | sha256sum --check --strict
+cmp /usr/share/terminfo/g/ghostty /usr/share/terminfo/x/xterm-ghostty
+TERM=ghostty tput colors >/dev/null
+TERM=xterm-ghostty tput colors >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y \
+    libevent-dev libncurses-dev
+apt-get clean
 
 rm -f /var/tmp/wt-*.sh /var/tmp/wt-image-build.env \
     /var/tmp/wt-tmux.conf /var/tmp/wt-byobu-color /var/tmp/wt-host-*

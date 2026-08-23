@@ -1,7 +1,7 @@
 pub(crate) mod binaries;
 mod validation;
 
-pub(crate) use validation::{validate, validate_e2e};
+pub(crate) use validation::{prepare_e2e, validate, validate_e2e};
 
 use crate::host;
 use crate::image;
@@ -98,7 +98,7 @@ pub(crate) fn verify_images(runner: &impl Runner, input_path: &Path) -> Result<(
 
 fn prepare_host(runner: &impl Runner, config: &ServerConfig) -> Result<()> {
     host::prepare_state(runner, config)?;
-    wt_server::validate_shared_roots().map_err(anyhow::Error::msg)
+    wt_server::validate_shared_roots(config.codex_paths()).map_err(anyhow::Error::msg)
 }
 
 fn load_install_input(path: &Path) -> Result<(InstallInput, ServerConfig, Vec<u8>)> {
@@ -413,21 +413,25 @@ fn install_services(
         runner,
         "wt-codex-integration-auth",
         Path::new(CODEX_AUTH_SERVICE_PATH),
-        &codex_auth_service(),
+        &codex_auth_service(server),
         replace_runtime,
     )?;
     install_service_unit(
         runner,
         "wt-codex-integration-auth-path",
         Path::new(CODEX_AUTH_PATH_UNIT_PATH),
-        &codex_auth_path_unit(),
+        &shared_file_path_unit(
+            "Codex authentication",
+            server.codex_paths().auth,
+            "wt-codex-integration-auth.service",
+        ),
         replace_runtime,
     )?;
     install_service_unit(
         runner,
         "wt-ssh-authorized-keys",
         Path::new(SSH_KEYS_SERVICE_PATH),
-        &ssh_keys_service(),
+        &shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH, &[]),
         replace_runtime,
     )?;
     install_service_unit(
@@ -629,15 +633,24 @@ WantedBy=multi-user.target\n",
     .into_bytes()
 }
 
-fn codex_auth_service() -> Vec<u8> {
-    shared_file_service("Codex authentication", CODEX_AUTH_HELPER_PATH)
+fn codex_auth_service(server: &ServerConfig) -> Vec<u8> {
+    let paths = server.codex_paths();
+    shared_file_service(
+        "Codex authentication",
+        CODEX_AUTH_HELPER_PATH,
+        &[paths.auth, paths.auth_share],
+    )
 }
 
-fn ssh_keys_service() -> Vec<u8> {
-    shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH)
-}
-
-fn shared_file_service(description: &str, helper: &str) -> Vec<u8> {
+fn shared_file_service(description: &str, helper: &str, args: &[&str]) -> Vec<u8> {
+    let command = if args.is_empty() {
+        helper.to_owned()
+    } else {
+        std::iter::once(systemd_quote(helper))
+            .chain(args.iter().map(|arg| systemd_quote(arg)))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     format!(
         "[Unit]\n\
 Description=Refresh the WT {description} share\n\
@@ -647,22 +660,13 @@ Type=oneshot\n\
 User={}\n\
 Group={}\n\
 Environment={}\n\
-ExecStart={}\n\
+ExecStart={command}\n\
 UMask=0077\n",
         SERVER_USER,
         SERVER_GROUP,
         systemd_quote(&format!("HOME={SERVER_HOME}")),
-        helper,
     )
     .into_bytes()
-}
-
-fn codex_auth_path_unit() -> Vec<u8> {
-    shared_file_path_unit(
-        "Codex authentication",
-        wt_server::CODEX_AUTH_PATH,
-        "wt-codex-integration-auth.service",
-    )
 }
 
 fn ssh_keys_path_unit() -> Vec<u8> {

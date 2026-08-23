@@ -31,12 +31,14 @@ const INSTALL_CODEX: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-codex.sh");
 const INSTALL_DIFFO: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-diffo.sh");
-pub(super) const SHARED_IMAGE_BUILD: &[u8] =
-    include_bytes!("../../../../../../assets/world/shared/build-image.sh");
+pub(super) const DEVELOPMENT_TOOLS_CACHE_BUILD: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/build-development-tools-cache.sh");
 pub(super) const CACHED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/build-image-from-cache.sh");
 const FINALIZE_IMAGE: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/finalize-image.sh");
+pub(super) const FINALIZE_DEVELOPMENT_TOOLS_CACHE: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/finalize-development-tools-cache.sh");
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../../../assets/world/shared/tmux.conf");
 const BYOBU_COLOR: &[u8] = include_bytes!("../../../../../../assets/world/shared/byobu-color");
 const CONFIGURE_ACCESS: &[u8] =
@@ -52,7 +54,8 @@ pub(super) const IMAGE_KIND: &str = "retained";
 
 pub(super) struct BuildSpec<'a> {
     pub(super) name: &'a str,
-    pub(super) recipe: &'a [u8],
+    pub(super) main_recipe: &'a [u8],
+    pub(super) retained_recipe: &'a [u8],
 }
 
 pub(super) struct BuildPaths {
@@ -208,7 +211,6 @@ pub(super) fn run_kvm_build<R: Runner>(
             git_author_sha256: &sha_bytes(CONFIGURE_GIT_AUTHOR),
             agent_tools_sha256: &sha_bytes(INSTALL_AGENT_TOOLS),
             mount_codex_sha256: &sha_bytes(MOUNT_CODEX),
-            development_tools: input.image.development_tools,
         }
         .render(),
     )
@@ -219,8 +221,8 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
     fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
-    fs::write(&shared_recipe, SHARED_IMAGE_BUILD).context("write shared image recipe")?;
-    fs::write(&retained_recipe, spec.recipe).context("write retained image recipe")?;
+    fs::write(&shared_recipe, spec.main_recipe).context("write image recipe")?;
+    fs::write(&retained_recipe, spec.retained_recipe).context("write retained image recipe")?;
     fs::write(&tmux_config, TMUX_CONFIG).context("write shared tmux configuration")?;
     fs::write(&byobu_color, BYOBU_COLOR).context("write shared Byobu color setting")?;
     fs::write(&configure_access, CONFIGURE_ACCESS).context("write shared guest access setup")?;
@@ -402,6 +404,72 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
         ),
         "clear reusable image SSH host keys",
     )?;
+    verify_reusable_image_sanitization(runner, paths)?;
+    verify_retained_guest_contract(runner, &paths.disk)?;
+    let tmux_sha256 = runner
+        .text(
+            cmd!(
+                "sudo",
+                "virt-cat",
+                "-a",
+                &paths.disk,
+                "/var/lib/wt-tmux-sha256"
+            ),
+            "read finalized tmux checksum",
+        )?
+        .trim()
+        .to_owned();
+    if tmux_sha256.len() != 64 || !tmux_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("finalized image recorded an invalid tmux checksum");
+    }
+    Ok(())
+}
+
+pub(super) fn finalize_development_tools_cache(
+    runner: &impl Runner,
+    paths: &BuildPaths,
+) -> Result<()> {
+    println!("Finalizing cached development tools image for reuse (sysprep and sanitization)...");
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-sysprep",
+            "-a",
+            &paths.disk,
+            "--operations",
+            "defaults,-user-account"
+        ),
+        "sysprep cached development tools image",
+    )?;
+    let finalizer = paths.dir.join("finalize-development-tools-cache.sh");
+    fs::write(&finalizer, FINALIZE_DEVELOPMENT_TOOLS_CACHE)
+        .context("write development tools cache finalizer")?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-customize",
+            "-a",
+            &paths.disk,
+            "--run",
+            &finalizer
+        ),
+        "finalize cached development tools image",
+    )?;
+    runner.run(
+        cmd!(
+            "sudo",
+            "virt-sysprep",
+            "-a",
+            &paths.disk,
+            "--operations",
+            "ssh-hostkeys"
+        ),
+        "clear cached development tools image SSH host keys",
+    )?;
+    verify_reusable_image_sanitization(runner, paths)
+}
+
+fn verify_reusable_image_sanitization(runner: &impl Runner, paths: &BuildPaths) -> Result<()> {
     let machine_id = runner.text(
         cmd!("sudo", "virt-cat", "-a", &paths.disk, "/etc/machine-id"),
         "verify empty reusable image machine identity",
@@ -421,23 +489,6 @@ pub(super) fn finalize_reusable_image(runner: &impl Runner, paths: &BuildPaths) 
     )?;
     if ssh_files.lines().any(|name| name.starts_with("ssh_host_")) {
         bail!("reusable image retained SSH host keys");
-    }
-    verify_retained_guest_contract(runner, &paths.disk)?;
-    let tmux_sha256 = runner
-        .text(
-            cmd!(
-                "sudo",
-                "virt-cat",
-                "-a",
-                &paths.disk,
-                "/var/lib/wt-tmux-sha256"
-            ),
-            "read finalized tmux checksum",
-        )?
-        .trim()
-        .to_owned();
-    if tmux_sha256.len() != 64 || !tmux_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        bail!("finalized image recorded an invalid tmux checksum");
     }
     Ok(())
 }

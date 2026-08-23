@@ -10,7 +10,17 @@ pub const SERVER_CONFIG_PATH: &str = "/etc/wt/server.toml";
 pub const CODEX_AUTH_PATH: &str = "/home/wt/.codex/auth.json";
 pub const CODEX_AUTH_SHARE_DIR: &str = "/home/wt/.codex/.wt-auth";
 pub const CODEX_SESSIONS_PATH: &str = "/home/wt/.codex/sessions";
+pub const TEST_CODEX_AUTH_PATH: &str = "/home/wt/.config/wt/kvm-test/codex/auth.json";
+pub const TEST_CODEX_AUTH_SHARE_DIR: &str = "/home/wt/.config/wt/kvm-test/codex/auth-share";
+pub const TEST_CODEX_SESSIONS_PATH: &str = "/home/wt/.config/wt/kvm-test/codex/sessions";
 pub const SSH_AUTHORIZED_KEYS_SHARE_DIR: &str = "/home/wt/.ssh/.wt-authorized-keys";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CodexPaths {
+    pub auth: &'static str,
+    pub auth_share: &'static str,
+    pub sessions: &'static str,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -49,8 +59,6 @@ pub struct AgentToolsProviderConfig {
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
     pub path: PathBuf,
-    #[serde(default)]
-    pub development_tools: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -190,9 +198,26 @@ impl ServerConfig {
         }
     }
 
+    pub fn codex_paths(&self) -> CodexPaths {
+        if self.test_server {
+            CodexPaths {
+                auth: TEST_CODEX_AUTH_PATH,
+                auth_share: TEST_CODEX_AUTH_SHARE_DIR,
+                sessions: TEST_CODEX_SESSIONS_PATH,
+            }
+        } else {
+            CodexPaths {
+                auth: CODEX_AUTH_PATH,
+                auth_share: CODEX_AUTH_SHARE_DIR,
+                sessions: CODEX_SESSIONS_PATH,
+            }
+        }
+    }
+
     pub fn validate_codex_sources(&self) -> Result<(), String> {
         self.validate_codex_login()?;
-        let sessions = Path::new(CODEX_SESSIONS_PATH);
+        let paths = self.codex_paths();
+        let sessions = Path::new(paths.sessions);
         match std::fs::symlink_metadata(sessions) {
             Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
             Ok(_) => {
@@ -208,8 +233,8 @@ impl ServerConfig {
                 ))
             }
         }
-        let auth = Path::new(CODEX_AUTH_PATH);
-        let share = Path::new(CODEX_AUTH_SHARE_DIR);
+        let auth = Path::new(paths.auth);
+        let share = Path::new(paths.auth_share);
         let shared_auth = share.join("auth.json");
         let shared_metadata = std::fs::symlink_metadata(&shared_auth).map_err(|error| {
             format!(
@@ -264,7 +289,7 @@ impl ServerConfig {
     }
 
     pub fn validate_codex_login(&self) -> Result<(), String> {
-        let auth = Path::new(CODEX_AUTH_PATH);
+        let auth = Path::new(self.codex_paths().auth);
         let metadata = std::fs::symlink_metadata(auth).map_err(|error| {
             format!(
                 "inspect Codex authentication file {}: {error}",
@@ -281,9 +306,10 @@ impl ServerConfig {
     }
 
     fn shared_mounts(&self) -> SharedMounts {
+        let paths = self.codex_paths();
         SharedMounts {
-            sessions: PathBuf::from(CODEX_SESSIONS_PATH),
-            auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
+            sessions: PathBuf::from(paths.sessions),
+            auth: PathBuf::from(paths.auth_share),
             ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
         }
     }
@@ -380,6 +406,28 @@ binary_dir = "/usr/local/bin"
                 auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
                 ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
             })
+        );
+    }
+
+    #[test]
+    fn test_server_uses_isolated_codex_paths() {
+        let (config, machine) = parse(&format!("test_server = true\n{VALID}")).unwrap();
+
+        assert_eq!(
+            config.codex_paths(),
+            CodexPaths {
+                auth: TEST_CODEX_AUTH_PATH,
+                auth_share: TEST_CODEX_AUTH_SHARE_DIR,
+                sessions: TEST_CODEX_SESSIONS_PATH,
+            }
+        );
+        assert_eq!(
+            machine.shared_mounts.unwrap(),
+            SharedMounts {
+                sessions: PathBuf::from(TEST_CODEX_SESSIONS_PATH),
+                auth: PathBuf::from(TEST_CODEX_AUTH_SHARE_DIR),
+                ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
+            }
         );
     }
 

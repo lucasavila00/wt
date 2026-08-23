@@ -38,10 +38,11 @@ nuke:
 	scripts/nuke
 
 e2e-tests:
+	scripts/cargo run --quiet -p wt-server-installer -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
 	scripts/cargo run --quiet -p wt-server-installer -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
 	scripts/cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
 	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
-	$(MAKE) clear
+	scripts/clear --codex-sessions /home/wt/.config/wt/kvm-test/codex/sessions
 	scripts/cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
 	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
 	@printf '\nWT E2E test server remains installed on this host.\n'

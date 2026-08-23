@@ -29,6 +29,12 @@ enum SetupCommand {
         #[arg(long)]
         config: PathBuf,
     },
+    /// Create the isolated non-production Codex fixture for KVM E2E.
+    PrepareE2e {
+        /// Path to the E2E install input TOML.
+        #[arg(long)]
+        config: PathBuf,
+    },
     /// Install a complete local wt server from this source checkout.
     Install {
         /// Path to the install input TOML.
@@ -83,6 +89,10 @@ fn run() -> Result<()> {
         SetupCommand::ValidateE2e { config } => {
             server::validate_e2e(&config).context("E2E configuration validation stopped")?;
             println!("E2E configuration is valid: {}", config.display());
+        }
+        SetupCommand::PrepareE2e { config } => {
+            server::prepare_e2e(&config).context("E2E fixture preparation stopped")?;
+            println!("Prepared isolated E2E fixture: {}", config.display());
         }
         SetupCommand::Install { config } => {
             server::install(&runner, &config).context("server installation stopped")?

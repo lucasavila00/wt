@@ -1,6 +1,6 @@
 # ADR 0048: Make developer tools an optional image profile
 
-- Status: Accepted
+- Status: Superseded by [ADR 0069](0069-use-one-development-tools-golden-image.md)
 - Date: 2026-08-23
 
 ## Context
