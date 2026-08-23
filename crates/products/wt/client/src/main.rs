@@ -14,6 +14,7 @@ use wt_control_protocol::{ApiRequest, Operation, Response};
 mod code;
 mod create;
 mod git_author;
+mod progress_toast;
 mod reports;
 mod shell;
 

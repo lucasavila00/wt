@@ -57,8 +57,12 @@ case "$request" in
     ;;
   *'"operation":"create"'*)
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"event":"progress","message":"Waiting for the guest transport..."}'
-    sleep 2
+    sleep 5
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"error","error":{"code":"backend","message":"fixture stopped creation"}}'
+    ;;
+  *'"operation":"delete"'*)
+    sleep 5
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"deleted","name":"existing"}}'
     ;;
   *) exit 2 ;;
 esac
@@ -171,6 +175,29 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .click(2, 1)?
         .wait_for_text("No Codex sessions")?
         .wait_for_text("Creation did not complete")?;
+    Ok(())
+}
+
+#[test]
+fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("No Codex sessions")?
+        .press(Key::Function(1))?
+        .type_text("delete")?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world")?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world?")?
+        .press(Key::Right)?
+        .press(Key::Enter)?
+        .wait_for_text("WT is deleting the world")?
+        .wait_for_text("local.existing")?
+        .press(Key::Tab)?
+        .wait_for_text("Worlds")?
+        .click(97, 1)?
+        .wait_for_text_gone("WT is deleting the world")?;
     Ok(())
 }
 
