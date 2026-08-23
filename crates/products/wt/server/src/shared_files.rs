@@ -4,6 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 const SSH_AUTHORIZED_KEYS: &str = "/home/wt/.ssh/authorized_keys";
@@ -19,6 +20,7 @@ pub fn publish_and_watch(codex: CodexPaths) -> Result<()> {
             nonempty: false,
             validate_ssh_keys: false,
             normalize_source_mode: true,
+            source_version: Mutex::new(None),
         },
         Publication {
             label: "SSH authorized keys",
@@ -28,6 +30,7 @@ pub fn publish_and_watch(codex: CodexPaths) -> Result<()> {
             nonempty: true,
             validate_ssh_keys: true,
             normalize_source_mode: false,
+            source_version: Mutex::new(None),
         },
     ];
     for publication in &publications {
@@ -55,12 +58,22 @@ struct Publication {
     nonempty: bool,
     validate_ssh_keys: bool,
     normalize_source_mode: bool,
+    source_version: Mutex<Option<SourceVersion>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceVersion {
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
 }
 
 impl Publication {
     fn publish_if_changed(&self) -> Result<()> {
         self.prepare()?;
-        if fs::read(&self.source).ok() == fs::read(&self.destination).ok() {
+        if self.version()? == *self.source_version.lock().unwrap() && self.destination.exists() {
             return Ok(());
         }
         self.publish()
@@ -94,9 +107,22 @@ impl Publication {
             fs::rename(&temporary, &self.destination)
                 .with_context(|| format!("publish {}", self.destination.display()))?;
             if fs::read(&self.source).ok().as_deref() == Some(contents.as_slice()) {
+                *self.source_version.lock().unwrap() = self.version()?;
                 return Ok(());
             }
         }
+    }
+
+    fn version(&self) -> Result<Option<SourceVersion>> {
+        let metadata = fs::metadata(&self.source)
+            .with_context(|| format!("inspect {}", self.source.display()))?;
+        Ok(Some(SourceVersion {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            size: metadata.len(),
+            modified_seconds: metadata.mtime(),
+            modified_nanoseconds: metadata.mtime_nsec(),
+        }))
     }
 
     fn prepare(&self) -> Result<()> {
@@ -184,6 +210,7 @@ mod tests {
             nonempty: false,
             validate_ssh_keys: false,
             normalize_source_mode: true,
+            source_version: Mutex::new(None),
         }
     }
 
@@ -208,6 +235,16 @@ mod tests {
         assert_eq!(
             fs::metadata(&publication.source).unwrap().mode() & 0o7777,
             0o600
+        );
+
+        let published_inode = fs::metadata(&publication.destination).unwrap().ino();
+        let replacement = temp.path().join("replacement");
+        fs::write(&replacement, "first\n").unwrap();
+        fs::rename(replacement, &publication.source).unwrap();
+        publication.publish_if_changed().unwrap();
+        assert_ne!(
+            fs::metadata(&publication.destination).unwrap().ino(),
+            published_inode
         );
 
         fs::write(&publication.source, "second\n").unwrap();
