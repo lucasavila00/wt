@@ -110,6 +110,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::ListCodexSessions => self.list_codex_sessions(owner),
             Operation::ListGitActivity { query } => self.list_git_activity(owner, query),
             Operation::ListWtToolsActivity { query } => self.list_wt_tools_activity(owner, query),
+            Operation::RepositoryGitState { query } => self.repository_git_state(owner, query),
         }
     }
 

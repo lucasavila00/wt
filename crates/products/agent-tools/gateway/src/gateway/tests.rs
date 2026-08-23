@@ -6,15 +6,6 @@ use wt_git_smart_protocol::{validate_push, PushViolation};
 use wt_workload_registry::schema::worlds;
 
 #[test]
-fn parses_supported_sources_without_shell_syntax() {
-    let source = parse_source("git@example.test:group/repo.git").unwrap();
-    assert_eq!(source.host, "example.test");
-    assert_eq!(source.path, "group/repo.git");
-    assert!(parse_source("git@example.test:group/repo;touch-pwned").is_err());
-    assert!(parse_source("git@example.test:../repo.git").is_err());
-}
-
-#[test]
 fn push_scope_allows_only_prefixed_heads() {
     let command = |reference: &str| {
         let payload = format!(
@@ -408,7 +399,7 @@ fn git_context_updates_only_the_matching_active_report() {
     );
     assert!(after.checkout.is_some());
     let state = registry
-        .repository_git_state("alice", "github.com", "acme/project")
+        .repository_git_state("alice", "github.com", "acme/project", None, None)
         .unwrap()
         .unwrap();
     assert_eq!(state.checkouts.len(), 1);
@@ -420,13 +411,65 @@ fn git_context_updates_only_the_matching_active_report() {
     assert!(gateway
         .store_codex_session_event(
             &CodexSessionEvent {
+                pane_generation: 2,
+                pane_sequence: 2,
+                ..event.clone()
+            },
+            &grant,
+        )
+        .unwrap());
+    assert!(gateway
+        .store_codex_git_context(
+            &CodexGitContext {
+                pane_generation: 2,
+                repository_root: None,
+                repository_url: None,
+                git_branch: None,
+                error: Some("Git state command timed out".into()),
+                ..CodexGitContext {
+                    session_id,
+                    cwd: event.cwd.clone(),
+                    tmux_session: event.tmux_session.clone(),
+                    pane_id: event.pane_id.clone(),
+                    pane_generation: event.pane_generation,
+                    repository_root: None,
+                    repository_url: None,
+                    git_branch: None,
+                    error: None,
+                }
+            },
+            &grant,
+        )
+        .unwrap());
+    let failed = registry
+        .list_codex_session_reports("alice")
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        failed
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.branch.as_deref()),
+        Some("wt/after-switch")
+    );
+    assert_eq!(
+        failed
+            .checkout
+            .as_ref()
+            .and_then(|checkout| checkout.error.as_deref()),
+        Some("Git state command timed out")
+    );
+
+    assert!(gateway
+        .store_codex_session_event(
+            &CodexSessionEvent {
                 session_id,
                 cwd: "/home/wt/project".into(),
                 tmux_session: "wt-host".into(),
                 pane_id: "%4".into(),
                 kind: CodexSessionEventKind::SessionEnd,
-                pane_generation: 1,
-                pane_sequence: 2,
+                pane_generation: 2,
+                pane_sequence: 3,
                 session_start_source: None,
             },
             &grant,

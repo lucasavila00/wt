@@ -1,9 +1,10 @@
 use super::*;
 use crate::CodexSessionStartSourceKind;
 
-struct RepositoryTarget {
-    provider_host: String,
-    repository: String,
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct RepositoryTarget {
+    pub(super) provider_host: String,
+    pub(super) repository: String,
 }
 
 impl Gateway {
@@ -191,7 +192,10 @@ impl Gateway {
             .context("store Codex session Git context")
     }
 
-    fn resolve_checkout_repository(&self, remote: Option<&str>) -> Option<RepositoryTarget> {
+    pub(super) fn resolve_checkout_repository(
+        &self,
+        remote: Option<&str>,
+    ) -> Option<RepositoryTarget> {
         let remote = remote?;
         let source = parse_source(remote).ok();
         let (host, path) = if let Some(source) = source {
@@ -202,10 +206,11 @@ impl Gateway {
             let host = authority
                 .split_once(':')
                 .map_or(authority, |(host, _)| host);
-            if !valid_host(host) {
+            let host = host.to_ascii_lowercase();
+            if !valid_host(&host) {
                 return None;
             }
-            (host.to_owned(), path.to_owned())
+            (host, path.to_owned())
         };
         let provider = self
             .config

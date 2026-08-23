@@ -1,6 +1,6 @@
 use super::*;
 use std::time::{Duration, Instant};
-use wt_control_protocol::{Operation, Response};
+use wt_control_protocol::{Operation, RepositoryGitStateQuery, Response};
 
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
@@ -49,4 +49,23 @@ fn branch_changes_during_a_working_turn_without_another_codex_hook() {
         );
         std::thread::sleep(Duration::from_millis(100));
     }
+
+    let Response::RepositoryGitState { state } = call_api(
+        harness.temp.path(),
+        &harness.server_config_path,
+        Operation::RepositoryGitState {
+            query: RepositoryGitStateQuery {
+                provider_host: "local.test".into(),
+                repository: "acme/widget".into(),
+                git_before_id: None,
+                wt_tools_before_id: None,
+            },
+        },
+    ) else {
+        panic!("expected repository Git state response");
+    };
+    assert!(state.checkouts.iter().any(|checkout| {
+        checkout.branch.as_deref() == Some("wt/tracker-after")
+            && checkout.repository_url.as_deref() == Some("https://local.test/acme/widget.git")
+    }));
 }

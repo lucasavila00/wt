@@ -76,6 +76,7 @@ pub struct RepositoryCheckoutState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RepositoryGitState {
+    pub repository_id: u64,
     pub provider_host: String,
     pub repository: String,
     pub checkouts: Vec<RepositoryCheckoutState>,
@@ -360,6 +361,8 @@ impl Registry {
                     .set((
                         codex_checkout_state::checked_at_unix_ms.eq(checked_at_unix_ms),
                         codex_checkout_state::error.eq(error),
+                        codex_checkout_state::pane_id.eq(input.pane_id),
+                        codex_checkout_state::pane_generation.eq(pane_generation),
                     ))
                     .execute(connection)?;
             } else {
@@ -431,6 +434,8 @@ impl Registry {
         owner: &str,
         provider_host: &str,
         repository: &str,
+        git_before_id: Option<u64>,
+        wt_tools_before_id: Option<u64>,
     ) -> Result<Option<RepositoryGitState>, RegistryError> {
         validate_target(provider_host, repository)?;
         let exists = self.read(|connection| {
@@ -441,10 +446,7 @@ impl Registry {
                 .first::<i32>(connection)
                 .optional()
         })?;
-        if exists.is_none() {
-            return Ok(None);
-        }
-        let checkouts = self
+        let checkouts: Vec<_> = self
             .list_codex_session_reports(owner)?
             .into_iter()
             .filter_map(|report| {
@@ -465,7 +467,7 @@ impl Registry {
             GitActivityQuery::Repository {
                 provider_host: provider_host.to_owned(),
                 repository: repository.to_owned(),
-                before_id: None,
+                before_id: git_before_id,
             },
         )?;
         let wt_tools_activity = self.list_wt_tools_activity(
@@ -473,10 +475,15 @@ impl Registry {
             WtToolsActivityQuery::Repository {
                 provider_host: provider_host.to_owned(),
                 repository: repository.to_owned(),
-                before_id: None,
+                before_id: wt_tools_before_id,
             },
         )?;
+        if checkouts.is_empty() && git_activity.is_empty() && wt_tools_activity.is_empty() {
+            return Ok(None);
+        }
         Ok(Some(RepositoryGitState {
+            repository_id: u64::try_from(exists.expect("repository state has a catalog row"))
+                .map_err(|_| RegistryError::InvalidData("invalid repository ID".into()))?,
             provider_host: provider_host.to_owned(),
             repository: repository.to_owned(),
             checkouts,

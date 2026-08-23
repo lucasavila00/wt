@@ -1,6 +1,6 @@
 # ADR 0075: Centralize holistic Git state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-23
 
 ## Context
@@ -55,10 +55,12 @@ or ambiguous remotes; those checkout facts remain visible but unjoined. Failed c
 successful checkout facts and set `error`; a successful non-repository check clears them. Do not infer links
 from legacy raw remote URLs.
 
-Expose a typed `repository_git_state` registry query keyed by `repositories.id`. It returns active linked
-checkouts and separately paginated Git-gateway and provider API histories rather than joining three
-one-to-many tables. It is a derived read model, not a mutable table or authority, and keeps timestamps
-separate. Index checkout by `repository_id`; index activity by `repository_id`, branch/change request, and id.
+Expose `repository_git_state` through the control protocol, addressed by configured `(provider_host,
+repository)` and resolved internally to `repositories.id`. It returns only the caller's active linked
+checkouts plus independently cursor-paginated Git-gateway and provider API histories. Unknown and
+not-visible catalog rows return not found. This is a derived read model, not a mutable table or authority,
+and it keeps timestamps separate. Index checkout by `repository_id`; index activity by `repository_id`,
+branch/change request, and id.
 
 ## Deployment
 
