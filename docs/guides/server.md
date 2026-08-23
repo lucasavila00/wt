@@ -11,7 +11,7 @@ scripts/install-server --config ./server.toml
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
 verified guest golden image. Every image contains Git, OpenSSH, QEMU
-guest support, Byobu, tmux, Codex, Diffo, WT's host helpers, current Rust/Cargo,
+guest support, Byobu, tmux, Codex, Diffo, WT's guest helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
 and Docker with Compose.
 
@@ -40,7 +40,7 @@ each world.
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wts --version`
 prints the package version and full source commit SHA. The same identity is
-recorded in host-image provenance and logged when the server starts.
+recorded in guest-image provenance and logged when the server starts.
 
 Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
 limits are materialized at `/etc/wt/capacity.toml`.

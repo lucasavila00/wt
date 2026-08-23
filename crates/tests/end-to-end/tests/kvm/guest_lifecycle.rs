@@ -7,7 +7,7 @@ use std::process::Stdio;
 fn guest_lifecycle() {
     let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
-    let name = unique_name("host");
+    let name = unique_name("guest");
     let mut harness = KvmHarness::new(&mut timings);
     let codex_auth_sha256 = assert_server_codex_auth_export(&harness.config);
     let codex_sessions = CodexSessionFixture::new(&name, &harness.config);
@@ -82,15 +82,15 @@ fn guest_lifecycle() {
         concat!(
             "set -eu; ",
             "git clone https://local.test/acme/widget.git /home/wt/project; ",
-            "cd /home/wt/project; git switch -c wt/host-gateway; ",
-            "printf 'host gateway\\n' >> README.md; git commit -am 'host gateway'; ",
-            "git push -u origin wt/host-gateway; ",
+            "cd /home/wt/project; git switch -c wt/guest-gateway; ",
+            "printf 'guest gateway\\n' >> README.md; git commit -am 'guest gateway'; ",
+            "git push -u origin wt/guest-gateway; ",
             "git switch -c outside; printf 'outside\\n' >> README.md; git commit -am outside; ",
             "! git push origin outside; git tag outside; ! git push origin refs/tags/outside"
         ),
         "use scoped Git gateway",
     );
-    assert_ref(&harness.git.repository, "refs/heads/wt/host-gateway", true);
+    assert_ref(&harness.git.repository, "refs/heads/wt/guest-gateway", true);
     assert_ref(&harness.git.repository, "refs/heads/outside", false);
     assert_ref(&harness.git.repository, "refs/tags/outside", false);
 
@@ -98,7 +98,7 @@ fn guest_lifecycle() {
         &harness,
         &name,
         &format!(
-            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-host\\n' > /home/wt/.codex/sessions/{}",
+            "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-guest\\n' > /home/wt/.codex/sessions/{}",
             codex_sessions.marker
         ),
         "verify Codex integration",
@@ -115,7 +115,7 @@ fn guest_lifecycle() {
                 .join(&codex_sessions.marker)
         )
         .unwrap(),
-        "from-host\n"
+        "from-guest\n"
     );
     let rollout_metadata = std::fs::metadata(
         std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_sessions.marker),
@@ -126,9 +126,9 @@ fn guest_lifecycle() {
     assert_eq!(rollout_metadata.permissions().mode() & 0o777, 0o600);
     verify_codex_auth_rotation(&harness, &name, &codex_auth_sha256);
 
-    let stopped = timings.run("stop host", || harness.shutdown(&name));
+    let stopped = timings.run("stop guest", || harness.shutdown(&name));
     assert_eq!(stopped.status, InstanceStatus::Stopped);
-    let restarted = timings.run("restart host", || harness.start(&name));
+    let restarted = timings.run("restart guest", || harness.start(&name));
     assert_eq!(restarted.status, InstanceStatus::Running);
     harness.sync_inventory();
     run_guest(
