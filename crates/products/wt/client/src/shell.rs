@@ -134,27 +134,6 @@ struct ControlFlows {
     task: Option<action::Task>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ScreenTrackingPolicy {
-    Clear,
-    Pause,
-    Detect,
-}
-
-fn screen_tracking_policy(
-    mode: Mode,
-    activity: control::Activity,
-    action_running: bool,
-) -> ScreenTrackingPolicy {
-    if action_running {
-        ScreenTrackingPolicy::Clear
-    } else if mode == Mode::Control && activity == control::Activity::Live {
-        ScreenTrackingPolicy::Pause
-    } else {
-        ScreenTrackingPolicy::Detect
-    }
-}
-
 fn install_signal_handlers() -> Result<Arc<AtomicBool>> {
     let shutdown = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown))
@@ -183,17 +162,17 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        match screen_tracking_policy(
+        match screen_tracker::policy(
             model.mode(),
             model.control().activity(),
             flows.actions.has_work(),
         ) {
-            ScreenTrackingPolicy::Clear => screen_tracker.clear(),
-            ScreenTrackingPolicy::Pause => {
+            screen_tracker::Policy::Clear => screen_tracker.clear(),
+            screen_tracker::Policy::Pause => {
                 screen_tracker.sync_focus(model, sessions, runtime.focus);
                 redraw |= screen_tracker.pause_change_detection(model, sessions);
             }
-            ScreenTrackingPolicy::Detect => {
+            screen_tracker::Policy::Detect => {
                 redraw |= screen_tracker.detect_screen_changes(model, sessions);
             }
         }

@@ -14,21 +14,21 @@ fn world_view_reserves_the_top_row() {
 fn screen_change_detection_runs_everywhere_except_live() {
     for activity in [control::Activity::Codex, control::Activity::Worlds] {
         assert_eq!(
-            screen_tracking_policy(Mode::Control, activity, false),
-            ScreenTrackingPolicy::Detect
+            screen_tracker::policy(Mode::Control, activity, false),
+            screen_tracker::Policy::Detect
         );
     }
     assert_eq!(
-        screen_tracking_policy(Mode::World, control::Activity::Live, false),
-        ScreenTrackingPolicy::Detect
+        screen_tracker::policy(Mode::World, control::Activity::Live, false),
+        screen_tracker::Policy::Detect
     );
     assert_eq!(
-        screen_tracking_policy(Mode::Control, control::Activity::Live, false),
-        ScreenTrackingPolicy::Pause
+        screen_tracker::policy(Mode::Control, control::Activity::Live, false),
+        screen_tracker::Policy::Pause
     );
     assert_eq!(
-        screen_tracking_policy(Mode::World, control::Activity::Worlds, true),
-        ScreenTrackingPolicy::Clear
+        screen_tracker::policy(Mode::World, control::Activity::Worlds, true),
+        screen_tracker::Policy::Clear
     );
 }
 

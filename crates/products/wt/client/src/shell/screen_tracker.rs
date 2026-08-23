@@ -1,6 +1,6 @@
 use super::codex::FocusWorker;
-use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget};
-use super::model::ShellModel;
+use super::control::{Activity, CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget};
+use super::model::{Mode, ShellModel};
 use super::session::SessionSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
@@ -8,6 +8,23 @@ use uuid::Uuid;
 use wt_control_protocol::CodexSessionState;
 
 const STUCK_AFTER: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Policy {
+    Clear,
+    Pause,
+    Detect,
+}
+
+pub(super) fn policy(mode: Mode, activity: Activity, action_running: bool) -> Policy {
+    if action_running {
+        Policy::Clear
+    } else if mode == Mode::Control && activity == Activity::Live {
+        Policy::Pause
+    } else {
+        Policy::Detect
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Status {
