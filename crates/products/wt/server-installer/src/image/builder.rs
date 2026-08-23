@@ -23,7 +23,7 @@ use wt_server::ServerConfig;
 
 const INSTALL_PACKAGES: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-packages.sh");
-const INSTALL_DEVELOPMENT_TOOLS: &[u8] =
+pub(super) const INSTALL_DEVELOPMENT_TOOLS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-development-tools.sh");
 const INSTALL_TERMINAL: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-terminal.sh");
@@ -31,7 +31,7 @@ const INSTALL_CODEX: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-codex.sh");
 const INSTALL_DIFFO: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-diffo.sh");
-const SHARED_IMAGE_BUILD: &[u8] =
+pub(super) const SHARED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/build-image.sh");
 const FINALIZE_IMAGE: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/finalize-image.sh");

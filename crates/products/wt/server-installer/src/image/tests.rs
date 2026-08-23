@@ -201,3 +201,38 @@ fn progress_output_is_phase_based() {
     );
     insta::assert_snapshot!(message, @"Retained image build: installing base operating-system packages (elapsed=60s)");
 }
+
+#[test]
+fn development_tool_install_reports_individual_progress() {
+    let scripts = [
+        builder::SHARED_IMAGE_BUILD,
+        builder::INSTALL_DEVELOPMENT_TOOLS,
+    ];
+    let script_text = scripts
+        .iter()
+        .map(|script| std::str::from_utf8(script).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let phases = script_text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("phase \"")?.strip_suffix('"'))
+        .filter(|phase| {
+            phase.contains("development")
+                || phase.contains("Go")
+                || phase.contains("Rust")
+                || phase.contains("Node.js")
+                || phase.contains("Python")
+                || phase.contains("Docker")
+        })
+        .collect::<Vec<_>>();
+
+    insta::assert_snapshot!(phases.join("\n"), @r###"
+    installing development packages (build tools, CLI utilities, and Docker)
+    installing Go
+    installing Rust and Cargo
+    installing Node.js and nvm
+    installing Python and uv
+    configuring Docker for the retained-world user
+    recording installed development-tool versions
+    "###);
+}

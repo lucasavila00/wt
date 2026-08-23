@@ -3,6 +3,11 @@ set -eu
 
 . /var/tmp/wt-image-build.env
 
+phase() {
+    echo "WT_IMAGE_PHASE=$*" > /dev/ttyS0
+}
+
+phase "installing Go"
 go_release=/var/tmp/wt-go-release.json
 curl -fsSL https://go.dev/dl/?mode=json > "$go_release"
 go_archive=$(jq -er '[.[] | select(.stable) | .files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive")][0].filename' "$go_release")
@@ -12,6 +17,7 @@ printf '%s  %s\n' "$go_sha256" "/var/tmp/$go_archive" | sha256sum --check --stri
 rm -rf /usr/local/go
 tar -C /usr/local -xzf "/var/tmp/$go_archive"
 
+phase "installing Rust and Cargo"
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
@@ -19,7 +25,13 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
         curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs |
             sh -s -- -y --default-toolchain stable
         "$HOME/.cargo/bin/rustup" component add rustfmt clippy
+    '
 
+phase "installing Node.js and nvm"
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+    PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -o pipefail -c '
+        set -eu
         nvm_tag=$(git ls-remote --refs --tags https://github.com/nvm-sh/nvm.git "v[0-9]*" |
             cut -f2 | sed "s#refs/tags/##" | sort -V | tail -n1)
         test -n "$nvm_tag"
@@ -27,12 +39,19 @@ runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
         . "$HOME/.nvm/nvm.sh"
         nvm install node
         nvm alias default node
+    '
 
+phase "installing Python and uv"
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
+    PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -o pipefail -c '
+        set -eu
         curl -LsSf https://astral.sh/uv/install.sh |
             env UV_INSTALL_DIR="$HOME/.local/bin" sh
         "$HOME/.local/bin/uv" python install --default
     '
 
+phase "configuring Docker for the retained-world user"
 usermod --append --groups docker "$WT_USER"
 cat >> "$WT_HOME/.bashrc" <<'EOF'
 
@@ -47,6 +66,7 @@ fi
 EOF
 chown "$WT_USER:$WT_GROUP" "$WT_HOME/.bashrc"
 
+phase "recording installed development-tool versions"
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '

@@ -39,7 +39,7 @@ sysctl --system
 test "$(cat /proc/sys/kernel/perf_event_paranoid)" = -1
 
 if test "$WT_DEVELOPMENT_TOOLS" = true; then
-    phase "installing optional development tools"
+    phase "installing development packages (build tools, CLI utilities, and Docker)"
     /bin/sh /var/tmp/wt-install-packages.sh \
         bison build-essential cmake clang curl wget jq yq pkg-config \
         docker.io docker-compose-v2
