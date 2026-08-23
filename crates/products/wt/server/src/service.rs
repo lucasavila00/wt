@@ -12,6 +12,7 @@ use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredInstance};
 mod codex;
 mod codex_catalog;
+mod codex_catalog_generation;
 mod gateway;
 mod lifecycle;
 mod reports;
@@ -24,7 +25,7 @@ pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<S
 }
 
 pub fn codex_session_catalog_generation(store: &Store) -> Result<String, String> {
-    codex_catalog::generation(store)
+    codex_catalog_generation::generation(store)
 }
 
 const INSPECTION_RETRIES: usize = 6;
