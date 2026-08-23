@@ -8,7 +8,7 @@ Every pull-request or merge-request comment created by `wt-tools` begins with
 this exact marker, with no preceding bytes:
 
 ```text
-**WT world agent comment**
+**Comment from a WT world agent**
 
 ```
 
