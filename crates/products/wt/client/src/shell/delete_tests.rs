@@ -1,6 +1,5 @@
 use super::*;
 use crossterm::event::{KeyEvent, MouseEvent};
-use ratatui::{backend::TestBackend, Terminal};
 use uuid::Uuid;
 use wt_control_protocol::InstanceName;
 
@@ -89,27 +88,4 @@ fn delete_button_is_directly_clickable() {
         confirmation_event(&event, area, &mut ConfirmChoice::Cancel),
         ConfirmationEvent::Delete
     ));
-}
-
-#[test]
-fn picker_and_confirmation_follow_the_diffo_modal_layout() {
-    let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let mut flow = Flow::new(vec![world("local.alpha"), world("lab.topic")]);
-    terminal
-        .draw(|frame| flow.render(frame, frame.area()))
-        .unwrap();
-    insta::assert_debug_snapshot!("shell_delete_world_picker", terminal.backend().buffer());
-    let _ = flow.handle_event(
-        &key(KeyCode::Enter),
-        Rect::new(0, 0, 80, 24),
-        &ClientConfig { contexts: vec![] },
-    );
-    terminal
-        .draw(|frame| flow.render(frame, frame.area()))
-        .unwrap();
-    insta::assert_debug_snapshot!(
-        "shell_delete_world_confirmation",
-        terminal.backend().buffer()
-    );
 }

@@ -119,11 +119,6 @@ impl ShellModel {
         &self.worlds
     }
 
-    #[cfg(test)]
-    pub(super) fn worlds_mut(&mut self) -> &mut [ShellWorld] {
-        &mut self.worlds
-    }
-
     pub(super) fn world_index(&self, identity: &WorldIdentity) -> Option<usize> {
         self.worlds
             .iter()
@@ -174,11 +169,6 @@ impl ShellModel {
         area: Rect,
     ) -> bool {
         self.control.set_codex(codex, updated_at, area)
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_codex_context_failures(&mut self, contexts: Vec<String>) {
-        self.control.set_context_failures(contexts);
     }
 
     pub(super) fn resize(&mut self, area: Rect) {
