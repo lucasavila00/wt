@@ -153,7 +153,7 @@ fn image_reuse_requires_the_current_commit() {
 }
 
 #[test]
-fn host_image_owns_static_guest_binaries() {
+fn guest_image_owns_static_guest_binaries() {
     let inputs = GUEST_BINARY_INPUTS
         .iter()
         .map(|(name, path)| format!("{name}\t{path}"))
@@ -166,7 +166,7 @@ fn host_image_owns_static_guest_binaries() {
 }
 
 #[test]
-fn host_image_sets_codex_model_defaults() {
+fn guest_image_sets_codex_model_defaults() {
     insta::assert_snapshot!(
         std::str::from_utf8(CODEX_REQUIREMENTS).unwrap(),
         @r###"
@@ -178,7 +178,7 @@ fn host_image_sets_codex_model_defaults() {
 }
 
 #[test]
-fn host_image_grants_the_user_nested_kvm_access() {
+fn guest_image_grants_the_user_nested_kvm_access() {
     let prepare = std::str::from_utf8(GUEST_PREPARE).unwrap();
 
     assert!(prepare.contains("usermod --append --groups sudo,kvm \"$WT_USER\""));
@@ -286,7 +286,7 @@ fn console_reader_opens_the_replaced_log() {
 #[test]
 fn progress_output_is_phase_based() {
     let message = progress_message(
-        "Host",
+        "Guest",
         "installing base operating-system packages",
         Duration::from_secs(60),
     );

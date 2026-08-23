@@ -270,7 +270,7 @@ mod tests {
     fn renders_complete_shared_image_environment() {
         insta::assert_snapshot!(
             BuildEnvironment {
-                kind: "host",
+                kind: "guest",
                 node_version: "24.19.0",
                 tmux_config_sha256: "tmux-config-sha",
                 byobu_color_sha256: "byobu-color-sha",

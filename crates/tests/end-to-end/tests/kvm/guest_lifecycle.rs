@@ -4,7 +4,7 @@ use std::process::Stdio;
 
 #[test]
 #[ignore = "requires installed KVM image and host integration"]
-fn host_world_lifecycle() {
+fn guest_lifecycle() {
     let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
     let name = unique_name("host");
@@ -38,7 +38,7 @@ fn host_world_lifecycle() {
             ". /home/wt/.nvm/nvm.sh; ",
             "command -v cargo rustc go python nvm node npm uv docker; ",
             "docker compose version >/dev/null; ",
-            "command -v git codex diffo wt-tools; ",
+            "command -v git codex diffo wtg; ",
             "codex --version >/dev/null"
         ),
         "verify golden guest image",
@@ -106,7 +106,7 @@ fn host_world_lifecycle() {
     run_guest(
         &harness,
         &name,
-        r#"test "$(wt-tools '{"command":{"action":"report_wt_tool_issue","description":"KVM host fixture"}}')" = '{"type":"confirmation","data":"Recorded wt-tools report for this world."}'"#,
+        r#"test "$(wtg tools '{"command":{"action":"report_wt_tool_issue","description":"KVM host fixture"}}')" = '{"type":"confirmation","data":"Recorded wt-tools report for this world."}'"#,
         "use agent tool gateway",
     );
     assert_eq!(

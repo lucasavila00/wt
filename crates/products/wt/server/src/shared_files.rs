@@ -197,16 +197,25 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let publication = publication(temp.path());
         publication.publish().unwrap();
-        assert_eq!(fs::read_to_string(&publication.destination).unwrap(), "first\n");
+        assert_eq!(
+            fs::read_to_string(&publication.destination).unwrap(),
+            "first\n"
+        );
         assert_eq!(
             fs::metadata(&publication.destination).unwrap().mode() & 0o7777,
             0o600
         );
-        assert_eq!(fs::metadata(&publication.source).unwrap().mode() & 0o7777, 0o600);
+        assert_eq!(
+            fs::metadata(&publication.source).unwrap().mode() & 0o7777,
+            0o600
+        );
 
         fs::write(&publication.source, "second\n").unwrap();
         publication.publish_if_changed().unwrap();
-        assert_eq!(fs::read_to_string(&publication.destination).unwrap(), "second\n");
+        assert_eq!(
+            fs::read_to_string(&publication.destination).unwrap(),
+            "second\n"
+        );
     }
 
     #[test]

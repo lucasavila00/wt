@@ -497,7 +497,8 @@ fn focus(target: &CodexOpenTarget, alias: &str, control_path: &Path) -> anyhow::
         .args([
             "--",
             alias,
-            "/usr/local/bin/wt-codex-integration",
+            "/usr/local/bin/wtg",
+            "codex",
             "focus-pane",
             &target.session_id.to_string(),
             &target.tmux_session,

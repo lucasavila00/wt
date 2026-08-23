@@ -368,7 +368,7 @@ fn live_activity_reuses_the_open_world_stream() -> Result<()> {
     let playback = lines.next().unwrap();
     let focus = lines.find(|line| line.contains("focus-pane")).unwrap();
     assert_eq!(control_path(playback), control_path(focus));
-    assert!(calls.contains("wt-codex-integration focus-pane"));
+    assert!(calls.contains("wtg codex focus-pane"));
     assert!(calls.contains("123e4567-e89b-12d3-a456-426614174000 wt-host %1"));
     Ok(())
 }

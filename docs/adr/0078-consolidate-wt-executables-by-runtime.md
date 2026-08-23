@@ -7,7 +7,7 @@
 
 The WT installer published seven executable files:
 `wt-agent-tool-gateway`, `wt-agent-tool-gateway-relay`,
-`git-remote-wt-agent`, `wtg tools`, `wt`, `wt-codex-integration`, and
+`git-remote-wt-agent`, `wt-tools`, `wt`, `wt-codex-integration`, and
 `wt-server`. Most selected a mode of the same installed WT release. Separate
 files multiplied build, validation, image-contract, installation, and upgrade
 bookkeeping without isolating those modes at runtime.
