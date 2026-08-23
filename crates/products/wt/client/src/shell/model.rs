@@ -482,6 +482,7 @@ mod tests {
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::Tab), area());
+        model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());
         assert_eq!(model.active_world(), "two");
@@ -495,6 +496,7 @@ mod tests {
     #[test]
     fn command_palette_executes_from_the_worlds_activity() {
         let mut model = ShellModel::new(vec![world("one")]);
+        model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::F(1)), area());
         for character in "delete".chars() {
@@ -557,6 +559,10 @@ mod tests {
 
         assert_eq!(model.mode(), Mode::Control);
         assert_eq!(
+            model.control().activity(),
+            super::super::control::Activity::Live
+        );
+        assert_eq!(
             model.handle_key(key(KeyCode::Left), area()),
             InputRoute::Consumed
         );
@@ -569,6 +575,28 @@ mod tests {
         );
         assert_eq!(model.mode(), Mode::World);
         assert!(!model.control().palette().is_open());
+    }
+
+    #[test]
+    fn control_reopens_on_the_last_activity() {
+        let mut model = model();
+        model.handle_key(key(KeyCode::F(5)), area());
+        model.handle_key(key(KeyCode::Up), area());
+        model.handle_key(key(KeyCode::Tab), area());
+        assert_eq!(
+            model.control().activity(),
+            super::super::control::Activity::Codex
+        );
+
+        model.handle_key(key(KeyCode::F(5)), area());
+        model.handle_key(key(KeyCode::F(5)), area());
+        model.handle_key(key(KeyCode::Up), area());
+
+        assert_eq!(model.mode(), Mode::Control);
+        assert_eq!(
+            model.control().activity(),
+            super::super::control::Activity::Codex
+        );
     }
 
     #[test]

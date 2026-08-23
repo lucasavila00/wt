@@ -184,7 +184,7 @@ pub(super) struct ControlState {
 impl Default for ControlState {
     fn default() -> Self {
         Self {
-            activity: Activity::Codex,
+            activity: Activity::Live,
             palette: CommandPalette::default(),
             codex: Vec::new(),
             selected: None,

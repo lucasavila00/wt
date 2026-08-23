@@ -317,6 +317,7 @@ fn control_ui_shows_world_cards() {
     );
     model.finish_worlds_refresh(Ok("2026-08-21T23:26:52Z".into()));
     press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 25));
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 25));
     let parser = parser();
 
     terminal
@@ -342,6 +343,7 @@ fn control_ui_opens_the_command_palette() {
     let backend = TestBackend::new(64, 16);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one"]);
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 64, 16));
     press(&mut model, KeyCode::F(1), Rect::new(0, 0, 64, 16));
     let parser = parser();
 
@@ -482,6 +484,7 @@ fn control_ui_shows_codex_session_cards() {
         "2026-08-21T20:00:00Z".into(),
         Rect::new(0, 0, 100, 22),
     );
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 22));
     let parser = parser();
 
     terminal
@@ -539,8 +542,6 @@ fn control_ui_shows_live_session_panes() {
         "2026-08-22T19:00:00Z".into(),
         Rect::new(0, 0, 100, 18),
     );
-    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
-    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 100, 18));
     let mut live_parser = vt100::Parser::new(10, 91, 0);
     live_parser.process(b"world output\r\n\x1b[31mred\x1b[0m");
 
@@ -598,6 +599,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
         "2026-08-21T20:00:00Z".into(),
         Rect::new(0, 0, 80, 18),
     );
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 80, 18));
     let InputRoute::OpenCodex(target) = model.handle_key(
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
         Rect::new(0, 0, 80, 18),
@@ -670,6 +672,7 @@ fn failed_context_refresh_is_shown_in_the_title() {
     model.set_codex_context_failures(vec![
         "context ars could not be queried: connection timed out".into(),
     ]);
+    press(&mut model, KeyCode::Tab, Rect::new(0, 0, 80, 18));
 
     terminal
         .draw(|frame| {
