@@ -40,6 +40,8 @@ const DEVELOPMENT_TOOLS_CACHE_BUILD_NAME: &str = "wt-development-tools-cache-bui
 const DEVELOPMENT_TOOLS_CACHE_NAME: &str = "wt-development-tools.qcow2";
 const RETAINED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../assets/world/retained/build-image.sh");
+const CODEX_REQUIREMENTS: &[u8] =
+    include_bytes!("../../../../../assets/world/retained/codex-requirements.toml");
 const HOST_SHELL: &[u8] = include_bytes!("../../../../../assets/world/host/shell.sh");
 const HOST_PREPARE: &[u8] = include_bytes!("../../../../../assets/world/host/prepare.sh");
 const HOST_INPUTS: &[(&str, &str, &[u8])] = &[
@@ -247,6 +249,8 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
             Ok(path)
         })
         .collect::<Result<Vec<_>>>()?;
+    let codex_requirements = build_dir.join("codex-requirements.toml");
+    fs::write(&codex_requirements, CODEX_REQUIREMENTS).context("stage Codex requirements")?;
     let guest_binary_inputs = GUEST_BINARY_INPUTS
         .iter()
         .map(|(name, guest_path)| (binaries::release_binary(name), *guest_path))
@@ -255,6 +259,10 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
         .iter()
         .zip(HOST_INPUTS)
         .map(|(source, (_, guest_path, _))| StagedInput { source, guest_path })
+        .chain(std::iter::once(StagedInput {
+            source: &codex_requirements,
+            guest_path: "/var/tmp/wt-codex-requirements.toml",
+        }))
         .chain(
             guest_binary_inputs
                 .iter()

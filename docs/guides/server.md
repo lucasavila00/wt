@@ -19,6 +19,24 @@ Golden-image rebuilds reuse a verified local development-tools cache and refresh
 WT's guest binaries instead of reinstalling language toolchains. Changing the
 tool-layer policy invalidates the cache and fetches current upstream releases.
 
+## Codex defaults
+
+WT supplies `gpt-5.6-terra` and `high` reasoning effort as the defaults for new
+Codex threads. They are defaults, not restrictions: an explicit model or
+reasoning selection for a thread overrides them. Existing threads keep their
+current selection.
+
+WT bakes these settings into each golden image at
+`/etc/codex/requirements.toml`; their repository source is
+[assets/world/retained/codex-requirements.toml](../../assets/world/retained/codex-requirements.toml).
+Change that source and rebuild the image instead of editing a world. Existing
+world overlays retain their current backing image, so they do not receive a
+changed default.
+
+Codex authentication is shared read-only and sessions are shared read-write,
+but user configuration, databases, indexes, logs, and locks remain local to
+each world.
+
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wt-server --version`
 prints the package version and full source commit SHA. The same identity is

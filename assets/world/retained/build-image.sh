@@ -15,6 +15,9 @@ install -m 0755 /var/tmp/wt-git-remote-agent \
 install -m 0755 /var/tmp/wt-tools /usr/local/bin/wt-tools
 install -m 0755 /var/tmp/wt-codex-integration \
     /usr/local/bin/wt-codex-integration
+install -d -m 0755 /etc/codex
+install -m 0644 /var/tmp/wt-codex-requirements.toml \
+    /etc/codex/requirements.toml
 install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" \
     "$WT_HOME/.local/state/wt"
 temporary=$(mktemp)
