@@ -1,6 +1,7 @@
-use crate::schema::{world_git_activity, world_wt_tools_activity, worlds};
+use crate::schema::{repositories, world_git_activity, world_wt_tools_activity, worlds};
 use crate::{Registry, RegistryError};
 use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -43,6 +44,12 @@ pub struct GitActivityInput<'a> {
     pub new_oid: Option<&'a str>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RepositoryTargetInput<'a> {
+    pub provider_host: &'a str,
+    pub repository: &'a str,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GitActivity {
     pub id: u64,
@@ -62,6 +69,11 @@ pub struct GitActivity {
 pub enum GitActivityQuery {
     World {
         world_id: Uuid,
+        before_id: Option<u64>,
+    },
+    Repository {
+        provider_host: String,
+        repository: String,
         before_id: Option<u64>,
     },
     Branch {
@@ -105,6 +117,11 @@ pub enum WtToolsActivityQuery {
         world_id: Uuid,
         before_id: Option<u64>,
     },
+    Repository {
+        provider_host: String,
+        repository: String,
+        before_id: Option<u64>,
+    },
     Branch {
         provider_host: String,
         repository: String,
@@ -125,8 +142,7 @@ struct NewGitActivity<'a> {
     world_id: String,
     recorded_at_unix_ms: i64,
     kind: &'a str,
-    provider_host: &'a str,
-    repository: &'a str,
+    repository_id: i32,
     git_service: Option<&'a str>,
     branch: Option<&'a str>,
     previous_oid: Option<&'a str>,
@@ -138,8 +154,7 @@ struct NewGitActivity<'a> {
 struct NewWtToolsActivity<'a> {
     world_id: String,
     recorded_at_unix_ms: i64,
-    provider_host: &'a str,
-    repository: &'a str,
+    repository_id: i32,
     action: &'a str,
     branch: Option<&'a str>,
     change_request: Option<&'a str>,
@@ -180,14 +195,20 @@ struct WtToolsActivityRow {
 impl Registry {
     pub fn insert_git_activity(&self, input: GitActivityInput<'_>) -> Result<(), RegistryError> {
         validate_target(input.provider_host, input.repository)?;
-        self.read(|connection| {
+        self.immediate_transaction(|connection| {
+            let repository_id = intern_repository(
+                connection,
+                RepositoryTargetInput {
+                    provider_host: input.provider_host,
+                    repository: input.repository,
+                },
+            )?;
             diesel::insert_into(world_git_activity::table)
                 .values(NewGitActivity {
                     world_id: input.world_id.to_string(),
                     recorded_at_unix_ms: now_unix_ms()?,
                     kind: input.kind.as_str(),
-                    provider_host: input.provider_host,
-                    repository: input.repository,
+                    repository_id,
                     git_service: input.git_service,
                     branch: input.branch,
                     previous_oid: input.previous_oid,
@@ -216,13 +237,19 @@ impl Registry {
                 RegistryError::InvalidData(format!("invalid wt-tools {name} JSON: {error}"))
             })?;
         }
-        self.read(|connection| {
+        self.immediate_transaction(|connection| {
+            let repository_id = intern_repository(
+                connection,
+                RepositoryTargetInput {
+                    provider_host: input.provider_host,
+                    repository: input.repository,
+                },
+            )?;
             diesel::insert_into(world_wt_tools_activity::table)
                 .values(NewWtToolsActivity {
                     world_id: input.world_id.to_string(),
                     recorded_at_unix_ms: now_unix_ms()?,
-                    provider_host: input.provider_host,
-                    repository: input.repository,
+                    repository_id,
                     action: input.action,
                     branch: input.branch,
                     change_request: input.change_request,
@@ -241,6 +268,7 @@ impl Registry {
     ) -> Result<Vec<GitActivity>, RegistryError> {
         self.read(|connection| {
             let mut query_builder = world_git_activity::table
+                .inner_join(repositories::table)
                 .inner_join(worlds::table)
                 .filter(worlds::owner.eq(owner))
                 .into_boxed();
@@ -263,9 +291,22 @@ impl Registry {
                     before_id,
                 } => {
                     query_builder = query_builder
-                        .filter(world_git_activity::provider_host.eq(provider_host))
-                        .filter(world_git_activity::repository.eq(repository))
+                        .filter(repositories::provider_host.eq(provider_host))
+                        .filter(repositories::repository.eq(repository))
                         .filter(world_git_activity::branch.eq(branch));
+                    if let Some(before_id) = before_id {
+                        query_builder = query_builder
+                            .filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
+                    }
+                }
+                GitActivityQuery::Repository {
+                    provider_host,
+                    repository,
+                    before_id,
+                } => {
+                    query_builder = query_builder
+                        .filter(repositories::provider_host.eq(provider_host))
+                        .filter(repositories::repository.eq(repository));
                     if let Some(before_id) = before_id {
                         query_builder = query_builder
                             .filter(world_git_activity::id.lt(to_i32(before_id, "activity ID")?));
@@ -281,8 +322,8 @@ impl Registry {
                     worlds::name,
                     world_git_activity::recorded_at_unix_ms,
                     world_git_activity::kind,
-                    world_git_activity::provider_host,
-                    world_git_activity::repository,
+                    repositories::provider_host,
+                    repositories::repository,
                     world_git_activity::git_service,
                     world_git_activity::branch,
                     world_git_activity::previous_oid,
@@ -302,6 +343,7 @@ impl Registry {
     ) -> Result<Vec<WtToolsActivity>, RegistryError> {
         self.read(|connection| {
             let mut query_builder = world_wt_tools_activity::table
+                .inner_join(repositories::table)
                 .inner_join(worlds::table)
                 .filter(worlds::owner.eq(owner))
                 .into_boxed();
@@ -325,9 +367,23 @@ impl Registry {
                     before_id,
                 } => {
                     query_builder = query_builder
-                        .filter(world_wt_tools_activity::provider_host.eq(provider_host))
-                        .filter(world_wt_tools_activity::repository.eq(repository))
+                        .filter(repositories::provider_host.eq(provider_host))
+                        .filter(repositories::repository.eq(repository))
                         .filter(world_wt_tools_activity::branch.eq(branch));
+                    if let Some(before_id) = before_id {
+                        query_builder = query_builder.filter(
+                            world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?),
+                        );
+                    }
+                }
+                WtToolsActivityQuery::Repository {
+                    provider_host,
+                    repository,
+                    before_id,
+                } => {
+                    query_builder = query_builder
+                        .filter(repositories::provider_host.eq(provider_host))
+                        .filter(repositories::repository.eq(repository));
                     if let Some(before_id) = before_id {
                         query_builder = query_builder.filter(
                             world_wt_tools_activity::id.lt(to_i32(before_id, "activity ID")?),
@@ -341,8 +397,8 @@ impl Registry {
                     before_id,
                 } => {
                     query_builder = query_builder
-                        .filter(world_wt_tools_activity::provider_host.eq(provider_host))
-                        .filter(world_wt_tools_activity::repository.eq(repository))
+                        .filter(repositories::provider_host.eq(provider_host))
+                        .filter(repositories::repository.eq(repository))
                         .filter(world_wt_tools_activity::change_request.eq(change_request));
                     if let Some(before_id) = before_id {
                         query_builder = query_builder.filter(
@@ -359,8 +415,8 @@ impl Registry {
                     world_wt_tools_activity::world_id,
                     worlds::name,
                     world_wt_tools_activity::recorded_at_unix_ms,
-                    world_wt_tools_activity::provider_host,
-                    world_wt_tools_activity::repository,
+                    repositories::provider_host,
+                    repositories::repository,
                     world_wt_tools_activity::action,
                     world_wt_tools_activity::branch,
                     world_wt_tools_activity::change_request,
@@ -421,7 +477,28 @@ impl TryFrom<WtToolsActivityRow> for WtToolsActivity {
     }
 }
 
-fn validate_target(provider_host: &str, repository: &str) -> Result<(), RegistryError> {
+pub(crate) fn intern_repository(
+    connection: &mut SqliteConnection,
+    target: RepositoryTargetInput<'_>,
+) -> Result<i32, RegistryError> {
+    validate_target(target.provider_host, target.repository)?;
+    diesel::insert_into(repositories::table)
+        .values((
+            repositories::provider_host.eq(target.provider_host),
+            repositories::repository.eq(target.repository),
+        ))
+        .on_conflict((repositories::provider_host, repositories::repository))
+        .do_nothing()
+        .execute(connection)?;
+    repositories::table
+        .filter(repositories::provider_host.eq(target.provider_host))
+        .filter(repositories::repository.eq(target.repository))
+        .select(repositories::id)
+        .first(connection)
+        .map_err(Into::into)
+}
+
+pub(crate) fn validate_target(provider_host: &str, repository: &str) -> Result<(), RegistryError> {
     if provider_host.is_empty() || repository.is_empty() {
         return Err(RegistryError::InvalidData(
             "activity target is empty".into(),

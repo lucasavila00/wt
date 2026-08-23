@@ -7,15 +7,16 @@ pub mod schema;
 mod store;
 
 pub use activity::{
-    GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, WtToolsActivity,
-    WtToolsActivityInput, WtToolsActivityQuery, ACTIVITY_PAGE_SIZE,
+    GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, RepositoryTargetInput,
+    WtToolsActivity, WtToolsActivityInput, WtToolsActivityQuery, ACTIVITY_PAGE_SIZE,
 };
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
 pub use codex_catalog::{CodexSessionCatalogEntry, CodexSessionCatalogInput};
 pub use codex_sessions::{
-    CodexSessionGitContextInput, CodexSessionReport, CodexSessionReportInput, CodexSessionState,
+    CodexCheckoutState, CodexSessionGitContextInput, CodexSessionReport, CodexSessionReportInput,
+    CodexSessionState, RepositoryCheckoutState, RepositoryGitState,
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{Store, StoreError, StoredInstance};

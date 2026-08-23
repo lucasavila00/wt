@@ -57,6 +57,7 @@ fn merge_sessions(
         })
         .collect::<BTreeMap<_, _>>();
     for report in reports {
+        let checkout = report.checkout;
         let session = sessions
             .entry(report.session_id)
             .or_insert_with(|| empty_session(report.session_id));
@@ -69,11 +70,15 @@ fn merge_sessions(
                 )
             })?,
             cwd: report.cwd,
-            repository_root: report.repository_root,
-            repository_url: report.repository_url,
-            git_branch: report.git_branch,
-            git_context_checked_at_unix_ms: report.git_context_checked_at_unix_ms,
-            git_context_error: report.git_context_error,
+            repository_root: checkout
+                .as_ref()
+                .and_then(|state| state.repository_root.clone()),
+            repository_url: checkout
+                .as_ref()
+                .and_then(|state| state.repository_url.clone()),
+            git_branch: checkout.as_ref().and_then(|state| state.branch.clone()),
+            git_context_checked_at_unix_ms: checkout.as_ref().map(|state| state.checked_at_unix_ms),
+            git_context_error: checkout.and_then(|state| state.error),
             state: match report.state {
                 wt_workload_registry::CodexSessionState::Unknown => CodexSessionState::Unknown,
                 wt_workload_registry::CodexSessionState::Working => CodexSessionState::Working,
@@ -158,11 +163,15 @@ mod tests {
                 world_name: "example".into(),
                 session_id,
                 cwd: "/home/wt/project".into(),
-                repository_root: Some("/home/wt/project".into()),
-                repository_url: Some("git@github.com:acme/project.git".into()),
-                git_branch: Some("wt/cards".into()),
-                git_context_checked_at_unix_ms: None,
-                git_context_error: None,
+                checkout: Some(wt_workload_registry::CodexCheckoutState {
+                    repository_root: Some("/home/wt/project".into()),
+                    repository_url: Some("git@github.com:acme/project.git".into()),
+                    provider_host: Some("github.com".into()),
+                    repository: Some("acme/project".into()),
+                    branch: Some("wt/cards".into()),
+                    checked_at_unix_ms: 1,
+                    error: None,
+                }),
                 tmux_session: "wt-host".into(),
                 pane_id: "%1".into(),
                 state: wt_workload_registry::CodexSessionState::Working,
@@ -192,11 +201,7 @@ mod tests {
                     world_name: world_name.into(),
                     session_id,
                     cwd: "/home/wt/project".into(),
-                    repository_root: None,
-                    repository_url: None,
-                    git_branch: None,
-                    git_context_checked_at_unix_ms: None,
-                    git_context_error: None,
+                    checkout: None,
                     tmux_session: "wt-host".into(),
                     pane_id: pane_id.into(),
                     state: wt_workload_registry::CodexSessionState::Working,

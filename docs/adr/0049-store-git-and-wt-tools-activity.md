@@ -5,8 +5,9 @@
 ## Decision
 
 Store Git and `wt-tools` history in separate SQLite tables. Their data and
-query paths are different. `world_wt_tools_activity` contains only targeted
-Git-hosting commands; feedback remains `agent_tool_reports`.
+query paths are different. Both reference the central `repositories` catalog.
+`world_wt_tools_activity` contains only targeted Git-hosting commands; feedback
+remains `agent_tool_reports`.
 
 ```sql
 world_git_activity (
@@ -14,8 +15,7 @@ world_git_activity (
   world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
   recorded_at_unix_ms BIGINT NOT NULL,
   kind TEXT NOT NULL,
-  provider_host TEXT NOT NULL,
-  repository TEXT NOT NULL,
+  repository_id INTEGER NOT NULL REFERENCES repositories(id),
   git_service TEXT,
   branch TEXT,
   previous_oid TEXT,
@@ -26,8 +26,7 @@ world_wt_tools_activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
   recorded_at_unix_ms BIGINT NOT NULL,
-  provider_host TEXT NOT NULL,
-  repository TEXT NOT NULL,
+  repository_id INTEGER NOT NULL REFERENCES repositories(id),
   action TEXT NOT NULL,
   branch TEXT,
   change_request TEXT,
@@ -52,18 +51,18 @@ SQLite is appropriate because WT already owns its lifecycle, provides atomic
 writes and cascade deletion, and indexes branch and change-request lookup.
 JSONL would require a separate index for the same queries.
 
-Normalize Git and `wt-tools` targets through one function: lowercase configured
-host and repository path with one final `.git` suffix removed. Aliases,
-redirects, case variants, and renames remain distinct.
+`repositories` owns the configured provider host and repository path with one
+final `.git` suffix removed. Repository path case is preserved. Aliases,
+redirects, and renames remain distinct.
 
 Indexes:
 
 ```sql
 world_git_activity (world_id, id DESC)
-world_git_activity (provider_host, repository, branch, id DESC)
+world_git_activity (repository_id, branch, id DESC)
 world_wt_tools_activity (world_id, id DESC)
-world_wt_tools_activity (provider_host, repository, branch, id DESC)
-world_wt_tools_activity (provider_host, repository, change_request, id DESC)
+world_wt_tools_activity (repository_id, branch, id DESC)
+world_wt_tools_activity (repository_id, change_request, id DESC)
 ```
 
 The gateway takes `world_id` only from the authenticated grant.

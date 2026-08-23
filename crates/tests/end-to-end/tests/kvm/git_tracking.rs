@@ -37,6 +37,8 @@ fn branch_changes_during_a_working_turn_without_another_codex_hook() {
             .and_then(|session| session.observations.first());
         if observation.is_some_and(|observation| {
             observation.git_branch.as_deref() == Some("wt/tracker-after")
+                && observation.repository_url.as_deref()
+                    == Some("https://local.test/acme/widget.git")
                 && observation.state == wt_control_protocol::CodexSessionState::Working
         }) {
             break;

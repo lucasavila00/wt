@@ -518,9 +518,6 @@ mod tests {
         let event = wt_agent_tool_gateway::CodexSessionEvent {
             session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
             cwd: "/home/wt/project".into(),
-            repository_root: None,
-            repository_url: None,
-            git_branch: None,
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
             kind: CodexSessionEventKind::SessionEnd,

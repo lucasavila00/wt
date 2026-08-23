@@ -60,13 +60,11 @@ checkouts and separately paginated Git-gateway and provider API histories rather
 one-to-many tables. It is a derived read model, not a mutable table or authority, and keeps timestamps
 separate. Index checkout by `repository_id`; index activity by `repository_id`, branch/change request, and id.
 
-## Migration
+## Deployment
 
-1. Create `repositories` and `codex_checkout_state`.
-2. Seed the catalog from distinct activity targets; add and backfill `repository_id` transactionally, then
-   rebuild both activity tables without duplicated target columns.
-3. Copy legacy checkout fields to unjoined checkout rows, then remove the five fields from reports.
-4. New relay observations link a selected remote only when it maps unambiguously to a configured catalog entry.
+This is an incompatible registry schema replacement. Run `make clear` before deployment; do not backfill
+legacy checkout URLs or activity rows. New relay observations link a selected remote only when it maps
+unambiguously to a configured catalog entry.
 
 ## Consequences
 
