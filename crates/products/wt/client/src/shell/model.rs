@@ -378,6 +378,17 @@ mod tests {
     }
 
     #[test]
+    fn shift_f5_opens_control_instead_of_disabling_f5() {
+        let mut model = model();
+
+        assert_eq!(
+            model.handle_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::SHIFT), area()),
+            InputRoute::Consumed
+        );
+        assert_eq!(model.mode(), Mode::Control);
+    }
+
+    #[test]
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::Tab), area());

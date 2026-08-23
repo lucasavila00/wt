@@ -2,7 +2,7 @@
 
 `wt shell` opens one SSH process, local PTY, and terminal buffer for every
 accessible world. Background worlds remain connected and continue processing
-output. The top row is a WT navbar; the active world's Byobu uses the remaining
+output. The top row is a WT control bar; the active world's Byobu uses the remaining
 terminal rows.
 
 The world list and Codex sessions refresh independently in the background. Each
@@ -11,9 +11,9 @@ Worlds created elsewhere are connected automatically, and removed worlds
 disappear. A world refresh that cannot list every configured context leaves the
 last complete list in place.
 
-The dim navbar shows the active world and its position in the world list, along
+The dim control bar shows the active world and its position in the world list, along
 with command hints. `F5`, the ` WT` brand, the world label, or the `F5: ctrl`
-label opens the Control UI. Clickable navbar text is bold. `F6` closes `wt
+label opens the Control UI. Clickable control-bar text is bold. `F6` closes `wt
 shell` from every view. Other keyboard input is forwarded to the active world.
 
 If an SSH process exits, its last terminal contents remain visible and a red
@@ -23,7 +23,7 @@ world. Other terminal input is held until the connection is restored.
 Paste, terminal resize, application cursor mode, bracketed paste, mouse button
 press and release, and vertical and horizontal wheel events are supported.
 Mouse input is forwarded only when the application has enabled a terminal
-mouse protocol. The navbar row is WT-owned; mouse coordinates in the world view
+mouse protocol. The control-bar row is WT-owned; mouse coordinates in the world view
 are translated to the guest PTY.
 
 OSC 52 clipboard writes from the visible world are relayed to the workstation
