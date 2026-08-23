@@ -24,6 +24,7 @@ pub(super) enum FlowAction {
 
 pub(super) struct Flow {
     phase: Phase,
+    progress: crate::progress_toast::ProgressToast,
 }
 
 enum Phase {
@@ -49,6 +50,7 @@ impl Flow {
     pub(super) fn new(worlds: Vec<ShellWorld>) -> Self {
         Self {
             phase: Phase::Pick(Picker::new(worlds)),
+            progress: crate::progress_toast::ProgressToast::new(),
         }
     }
 
@@ -97,6 +99,7 @@ impl Flow {
                         let world = world.clone();
                         match start_worker(config, &world) {
                             Ok(result) => {
+                                self.progress.reset();
                                 self.phase = Phase::Deleting { world, result };
                             }
                             Err(error) => self.phase = Phase::Error(format!("{error:#}")),
@@ -130,13 +133,7 @@ impl Flow {
         match &self.phase {
             Phase::Pick(picker) => picker.render(frame, area),
             Phase::Confirm { world, choice } => render_confirmation(frame, area, world, *choice),
-            Phase::Deleting { world, .. } => render_message(
-                frame,
-                area,
-                "Deleting world",
-                &format!("Deleting {}…", world.name),
-                "",
-            ),
+            Phase::Deleting { .. } => self.render_progress(frame, area),
             Phase::Error(message) => render_message(
                 frame,
                 area,
@@ -145,6 +142,30 @@ impl Flow {
                 "Enter/Esc close",
             ),
         }
+    }
+
+    pub(super) fn blocks_input(&self) -> bool {
+        !matches!(self.phase, Phase::Deleting { .. })
+    }
+
+    pub(super) fn render_progress(&self, frame: &mut Frame<'_>, area: Rect) {
+        let Phase::Deleting { world, .. } = &self.phase else {
+            return;
+        };
+        self.progress.render(
+            frame,
+            area,
+            "World deletion",
+            &world.name,
+            "WT is deleting the world",
+        );
+    }
+
+    pub(super) fn handle_progress_mouse(&mut self, event: &Event, area: Rect) -> bool {
+        if !matches!(self.phase, Phase::Deleting { .. }) {
+            return false;
+        }
+        self.progress.handle_mouse(event, area)
     }
 }
 
@@ -538,144 +559,5 @@ impl FuzzyQuery {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyEvent, MouseEvent};
-    use ratatui::{backend::TestBackend, Terminal};
-    use uuid::Uuid;
-    use wt_control_protocol::InstanceName;
-
-    fn world(name: &str) -> ShellWorld {
-        let (context, instance) = name.split_once('.').unwrap();
-        ShellWorld {
-            identity: WorldIdentity {
-                context: context.into(),
-                id: Uuid::new_v4(),
-            },
-            name: name.into(),
-            instance_name: InstanceName::parse(instance).unwrap(),
-            control_alias: format!("{name}-direct"),
-            status: wt_control_protocol::InstanceStatus::Running,
-            resources: "2 CPU · 4G · 1G/32G disk".into(),
-            detail: "-".into(),
-        }
-    }
-
-    fn key(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
-    }
-
-    #[test]
-    fn fuzzy_search_suggests_the_matching_world() {
-        let mut picker = Picker::new(vec![world("local.alpha"), world("lab.topic-world")]);
-        for character in "tpw".chars() {
-            let _ = picker.handle_event(&key(KeyCode::Char(character)), Rect::new(0, 0, 80, 24));
-        }
-
-        assert_eq!(picker.matches, vec![1]);
-    }
-
-    #[test]
-    fn mouse_wheel_scrolls_results_and_click_uses_the_visible_row() {
-        let worlds = (0..20)
-            .map(|index| world(&format!("local.world-{index}")))
-            .collect::<Vec<_>>();
-        let mut picker = Picker::new(worlds);
-        let area = Rect::new(0, 0, 40, 10);
-        let (_, results) = picker_layout(area);
-        let mouse = |kind| {
-            Event::Mouse(MouseEvent {
-                kind,
-                column: results.x,
-                row: results.y,
-                modifiers: KeyModifiers::NONE,
-            })
-        };
-
-        let _ = picker.handle_event(&mouse(MouseEventKind::ScrollDown), area);
-        assert_eq!(picker.offset, 1);
-        assert!(matches!(
-            picker.handle_event(&mouse(MouseEventKind::Down(MouseButton::Left)), area),
-            PickerEvent::Select(ShellWorld { ref name, .. }) if name == "local.world-1"
-        ));
-    }
-
-    #[test]
-    fn confirmation_starts_on_cancel_and_requires_right_then_enter() {
-        let area = Rect::new(0, 0, 100, 30);
-        let mut choice = ConfirmChoice::Cancel;
-
-        assert!(matches!(
-            confirmation_event(&key(KeyCode::Enter), area, &mut choice),
-            ConfirmationEvent::Cancel
-        ));
-        assert!(matches!(
-            confirmation_event(&key(KeyCode::Right), area, &mut choice),
-            ConfirmationEvent::Changed
-        ));
-        assert!(matches!(
-            confirmation_event(&key(KeyCode::Enter), area, &mut choice),
-            ConfirmationEvent::Delete
-        ));
-    }
-
-    #[test]
-    fn delete_button_is_directly_clickable() {
-        let area = Rect::new(0, 0, 100, 30);
-        let layout = confirmation_layout(area);
-        let event = Event::Mouse(MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: layout.delete.x,
-            row: layout.delete.y,
-            modifiers: KeyModifiers::NONE,
-        });
-
-        assert!(matches!(
-            confirmation_event(&event, area, &mut ConfirmChoice::Cancel),
-            ConfirmationEvent::Delete
-        ));
-    }
-
-    #[test]
-    fn picker_and_confirmation_follow_the_diffo_modal_layout() {
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut flow = Flow::new(vec![world("local.alpha"), world("lab.topic")]);
-
-        terminal
-            .draw(|frame| flow.render(frame, frame.area()))
-            .unwrap();
-        insta::assert_debug_snapshot!("shell_delete_world_picker", terminal.backend().buffer());
-
-        let _ = flow.handle_event(
-            &key(KeyCode::Enter),
-            Rect::new(0, 0, 80, 24),
-            &ClientConfig { contexts: vec![] },
-        );
-        terminal
-            .draw(|frame| flow.render(frame, frame.area()))
-            .unwrap();
-        insta::assert_debug_snapshot!(
-            "shell_delete_world_confirmation",
-            terminal.backend().buffer()
-        );
-    }
-
-    #[test]
-    fn deletion_progress_follows_the_diffo_modal_layout() {
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let (_sender, result) = mpsc::sync_channel(1);
-        let flow = Flow {
-            phase: Phase::Deleting {
-                world: world("local.alpha"),
-                result,
-            },
-        };
-
-        terminal
-            .draw(|frame| flow.render(frame, frame.area()))
-            .unwrap();
-        insta::assert_debug_snapshot!("shell_delete_world_progress", terminal.backend().buffer());
-    }
-}
+#[path = "delete_tests.rs"]
+mod tests;

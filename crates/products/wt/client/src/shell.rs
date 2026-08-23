@@ -20,6 +20,7 @@ mod codex;
 mod control;
 mod delete;
 mod input;
+mod lifecycle;
 mod live;
 mod live_focus;
 mod model;
@@ -32,6 +33,7 @@ mod toast;
 mod world_card;
 
 use control::ControlCommand;
+use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
 use refresh::{take_current_snapshot, CodexRefresh, WorldRefresh};
 use session::SessionSet;
@@ -330,6 +332,11 @@ fn dispatch_event(
             }
         }
     }
+    if let Some(flow) = flows.deletion.as_mut() {
+        if flow.handle_progress_mouse(&event, area) {
+            return Ok(true);
+        }
+    }
     match event {
         Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
             if model.mode() != Mode::Control
@@ -373,7 +380,7 @@ fn dispatch_event(
                 flows.creation_error.take();
                 return Ok(true);
             }
-            if let Some(flow) = flows.deletion.as_mut() {
+            if let Some(flow) = flows.deletion.as_mut().filter(|flow| flow.blocks_input()) {
                 let action = flow.handle_event(&Event::Key(key), area, runtime.config);
                 let _ = apply_deletion_action(
                     action,
@@ -416,7 +423,12 @@ fn dispatch_event(
             }
             Ok(true)
         }
-        Event::Paste(text) if flows.deletion.is_some() => {
+        Event::Paste(text)
+            if flows
+                .deletion
+                .as_ref()
+                .is_some_and(|flow| flow.blocks_input()) =>
+        {
             if let Some(flow) = flows.deletion.as_mut() {
                 let _ = flow.handle_paste(&text);
             }
@@ -431,8 +443,13 @@ fn dispatch_event(
             sessions.write(model.active(), &input::encode_paste(&text, bracketed))?;
             Ok(true)
         }
-        Event::Mouse(mouse) if flows.deletion.is_some() => {
-            if let Some(flow) = flows.deletion.as_mut() {
+        Event::Mouse(mouse)
+            if flows
+                .deletion
+                .as_ref()
+                .is_some_and(|flow| flow.blocks_input()) =>
+        {
+            if let Some(flow) = flows.deletion.as_mut().filter(|flow| flow.blocks_input()) {
                 let action = flow.handle_event(&Event::Mouse(mouse), area, runtime.config);
                 let _ = apply_deletion_action(
                     action,
@@ -526,33 +543,6 @@ fn start_focus(
         return;
     }
     focus.start(target, alias.to_owned());
-}
-
-fn start_control_command(
-    command: ControlCommand,
-    config: &ClientConfig,
-    refresh: &WorldRefresh,
-    model: &ShellModel,
-    flows: &mut ControlFlows,
-) {
-    match command {
-        ControlCommand::DeleteWorld => {
-            flows.deletion = Some(delete::Flow::new(model.worlds().to_vec()));
-        }
-        ControlCommand::NewWorld => {
-            if flows.creation.is_some() {
-                return;
-            }
-            start_creation(
-                command,
-                config,
-                refresh,
-                model,
-                &mut flows.creation,
-                &mut flows.creation_error,
-            );
-        }
-    }
 }
 
 fn world_rows(terminal_rows: u16) -> u16 {

@@ -3,7 +3,8 @@ version = 1
 
 [capacity]
 version = 1
-limits = { vcpus = 12, memory_mib = 32768, disk_gib = 238 }
+# over-provision vcpu (12 actually)
+limits = { vcpus = 20, memory_mib = 32768, disk_gib = 238 }
 
 [image]
 source_url = "https://cloud-images.ubuntu.com/releases/noble/release-20260615/ubuntu-24.04-server-cloudimg-amd64.img"

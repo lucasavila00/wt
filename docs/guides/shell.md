@@ -52,6 +52,11 @@ scrolls them, and `Enter` or left click opens the selected world or live Codex
 pane. Opening a Codex pane uses a short control SSH connection; it does not
 replace any world's playback connection.
 
+World creation and deletion continue in the background after their forms are
+confirmed. Both show the same progress notification in the top-right corner;
+click `×` to hide the notification without cancelling the operation. Other
+shell navigation remains available while either operation runs.
+
 Cards show activity, title, repository, branch, working directory, context,
 world, Byobu target, session, and report age. Inactive and saved-session cards
 explain why they cannot open.
