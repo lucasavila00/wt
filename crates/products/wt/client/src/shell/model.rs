@@ -261,10 +261,18 @@ impl ShellModel {
                     {
                         match key.code {
                             KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
-                                self.active = self.active.saturating_sub(1);
+                                self.active = self.active.saturating_sub(2);
                                 return InputRoute::Consumed;
                             }
                             KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
+                                self.active = (self.active + 2).min(self.worlds.len() - 1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Left if key.modifiers == KeyModifiers::NONE => {
+                                self.active = self.active.saturating_sub(1);
+                                return InputRoute::Consumed;
+                            }
+                            KeyCode::Right if key.modifiers == KeyModifiers::NONE => {
                                 self.active = (self.active + 1).min(self.worlds.len() - 1);
                                 return InputRoute::Consumed;
                             }
@@ -335,11 +343,11 @@ impl ShellModel {
         {
             match mouse.kind {
                 crossterm::event::MouseEventKind::ScrollUp => {
-                    self.active = self.active.saturating_sub(3);
+                    self.active = self.active.saturating_sub(2);
                     return (true, Some(InputRoute::Consumed));
                 }
                 crossterm::event::MouseEventKind::ScrollDown => {
-                    self.active = (self.active + 3).min(self.worlds.len() - 1);
+                    self.active = (self.active + 2).min(self.worlds.len() - 1);
                     return (true, Some(InputRoute::Consumed));
                 }
                 _ => {}
@@ -484,6 +492,8 @@ mod tests {
         model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());
+        assert_eq!(model.active_world(), "three");
+        model.handle_key(key(KeyCode::Left), area());
         assert_eq!(model.active_world(), "two");
         assert_eq!(model.mode(), Mode::Control);
 

@@ -287,11 +287,11 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     }
     let selected = state.selected().cloned();
-    assert_eq!(state.codex_offset(), 3);
+    assert_eq!(state.codex_offset(), 2);
 
     assert!(state.set_codex(cards, "2026-08-21T20:00:05Z".into(), area()));
     assert_eq!(state.selected(), selected.as_ref());
-    assert_eq!(state.codex_offset(), 3);
+    assert_eq!(state.codex_offset(), 2);
 }
 
 #[test]
@@ -308,10 +308,10 @@ fn resize_keeps_the_selected_card_in_its_viewport() {
     for _ in 0..5 {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), tall);
     }
-    assert_eq!(state.codex_offset(), 1);
+    assert_eq!(state.codex_offset(), 0);
 
     state.resize(Rect::new(0, 0, 64, 10));
-    assert_eq!(state.codex_offset(), 5);
+    assert_eq!(state.codex_offset(), 4);
 }
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {

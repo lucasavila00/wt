@@ -4,11 +4,11 @@
 
 ## Decision
 
-The Worlds activity renders one vertically scrollable column of cards. It uses
-the same card component and interaction rules as the Codex activity: border,
-state glyph and text, information hierarchy, selected/opening/error states,
-viewport behavior, keyboard navigation, wheel scrolling, and exact click
-hit-testing.
+The Worlds activity renders a vertically scrollable two-column grid of cards.
+It uses the same card component and interaction rules as the Codex activity:
+border, state glyph and text, information hierarchy, selected/opening/error
+states, viewport behavior, keyboard navigation, wheel scrolling, and exact
+click hit-testing.
 
 Each inventory world has one card identified by `(context, world_id)`. A card
 shows every field currently emitted by `wt ls`:
@@ -22,7 +22,7 @@ guess. Context fetch failures are visible and no successfully decoded world is
 silently omitted. The panel retains the independent refresh timestamp defined
 by ADR 0055.
 
-`Up` and `Down` move selection. The mouse wheel moves selection and its
+Arrow keys move selection. The mouse wheel moves selection and its
 viewport. `Enter` or a left click opens the selected running world in its
 existing full-screen playback view. Selection alone has no side effect.
 

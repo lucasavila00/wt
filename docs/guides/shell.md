@@ -47,10 +47,10 @@ through Codex sessions, Worlds, and the experimental live-session activity.
 
 The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes session cards in the
-background. In either activity, `Up` and `Down` select cards, the mouse wheel
-scrolls them, and `Enter` or left click opens the selected world or live Codex
-pane. Opening a Codex pane uses a short control SSH connection; it does not
-replace any world's playback connection.
+background. All activities use a two-column card grid. Arrow keys select cards,
+the mouse wheel scrolls them by row, and `Enter` or left click opens the selected
+world or live Codex pane. Opening a Codex pane uses a short control SSH
+connection; it does not replace any world's playback connection.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;

@@ -1,4 +1,6 @@
-use super::control::control_content_areas;
+use super::control::{
+    card_grid_rects, card_grid_visible, control_content_areas, CARD_COLUMNS, CARD_GAP,
+};
 use super::model::ShellModel;
 use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
@@ -9,20 +11,13 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 pub(super) const CARD_HEIGHT: u16 = 12;
-const COLUMNS: usize = 2;
-const GAP: u16 = 1;
 
 pub(super) fn columns(_area: Rect) -> usize {
-    COLUMNS
+    CARD_COLUMNS
 }
 
 pub(super) fn visible(area: Rect) -> usize {
-    let (body, _) = control_content_areas(area);
-    usize::from(
-        body.inner(Margin::new(1, 1))
-            .height
-            .div_ceil(CARD_HEIGHT + GAP),
-    ) * COLUMNS
+    card_grid_visible(area, CARD_HEIGHT)
 }
 
 pub(super) fn preview_size(area: Rect) -> (u16, u16) {
@@ -42,37 +37,12 @@ fn card_size(area: Rect) -> Option<(u16, u16)> {
     }
     Some((
         CARD_HEIGHT.min(viewport.height),
-        (viewport.width.saturating_sub(GAP) / 2).max(1),
+        (viewport.width.saturating_sub(CARD_GAP) / 2).max(1),
     ))
 }
 
 pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize, Rect)> {
-    let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
-    if viewport.is_empty() {
-        return Vec::new();
-    }
-    let columns = columns(area);
-    let visible = visible(area);
-    let (height, width) = card_size(area).unwrap_or((1, 1));
-    (offset..count.min(offset.saturating_add(visible)))
-        .enumerate()
-        .map(|(row, index)| {
-            let grid_row = row / columns;
-            let grid_column = row % columns;
-            let y = viewport.y + u16::try_from(grid_row).unwrap_or(u16::MAX) * (height + GAP);
-            let x = viewport.x + u16::try_from(grid_column).unwrap_or(u16::MAX) * (width + GAP);
-            (
-                index,
-                Rect::new(
-                    x,
-                    y,
-                    width.min(viewport.right().saturating_sub(x)),
-                    height.min(viewport.bottom().saturating_sub(y)),
-                ),
-            )
-        })
-        .collect()
+    card_grid_rects(area, offset, count, CARD_HEIGHT)
 }
 
 pub(super) fn draw(
