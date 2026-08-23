@@ -151,6 +151,10 @@ pub(super) const NCURSES_TERM_SHA256: &str =
 pub(super) const GHOSTTY_TERMINFO_SHA256: &str =
     "1fbbc41e609831f9847143f368f46fb63fbeef3a1a36ac435dc2c94ec6cc70fa";
 
+pub(super) fn node_version() -> &'static str {
+    include_str!("../../../../../../.nvmrc").trim()
+}
+
 pub(super) struct ImageRecipe {
     packages: PackageSet,
     development_tools: PackageSet,
