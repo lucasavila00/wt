@@ -91,12 +91,16 @@ pub(crate) fn push_violation(
     section: &[u8],
     policy: &WritePolicy,
 ) -> Result<Option<PushViolation>> {
-    for (_, reference) in push_commands(section)? {
-        if !reference.starts_with("refs/heads/") {
-            return Ok(Some(PushViolation::NonBranch { reference }));
+    for update in push_commands(section)? {
+        if !update.reference.starts_with("refs/heads/") {
+            return Ok(Some(PushViolation::NonBranch {
+                reference: update.reference,
+            }));
         }
-        if !policy.permits(&reference) {
-            return Ok(Some(PushViolation::Unauthorized { reference }));
+        if !policy.permits(&update.reference) {
+            return Ok(Some(PushViolation::Unauthorized {
+                reference: update.reference,
+            }));
         }
     }
     Ok(None)

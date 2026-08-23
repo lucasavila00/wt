@@ -171,6 +171,26 @@ impl Store {
         })
     }
 
+    pub fn list_git_activity(
+        &self,
+        owner: &str,
+        query: crate::GitActivityQuery,
+    ) -> Result<Vec<crate::GitActivity>, StoreError> {
+        self.registry
+            .list_git_activity(owner, query)
+            .map_err(map_registry_error)
+    }
+
+    pub fn list_wt_tools_activity(
+        &self,
+        owner: &str,
+        query: crate::WtToolsActivityQuery,
+    ) -> Result<Vec<crate::WtToolsActivity>, StoreError> {
+        self.registry
+            .list_wt_tools_activity(owner, query)
+            .map_err(map_registry_error)
+    }
+
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
         self.registry.read(|connection| {
             diesel::update(

@@ -125,7 +125,6 @@ fn world_prompt() -> String {
 fn validate_repository(repository: &str) -> Result<()> {
     if repository.is_empty()
         || repository.starts_with('/')
-        || repository.ends_with(".git")
         || repository
             .split('/')
             .any(|part| part.is_empty() || part == "." || part == "..")
@@ -136,6 +135,13 @@ fn validate_repository(repository: &str) -> Result<()> {
         bail!("invalid Git repository");
     }
     Ok(())
+}
+
+fn normalize_repository(repository: &str) -> String {
+    repository
+        .strip_suffix(".git")
+        .unwrap_or(repository)
+        .to_owned()
 }
 
 struct GitSource {
