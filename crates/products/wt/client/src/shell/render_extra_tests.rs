@@ -76,7 +76,7 @@ fn running_world_without_a_codex_session_is_a_warning() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -100,7 +100,7 @@ fn running_world_without_a_codex_session_is_a_warning() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -129,7 +129,7 @@ fn world_card_has_a_top_right_menu_button() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -190,7 +190,7 @@ fn world_menu_matches_the_command_palette_style() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,

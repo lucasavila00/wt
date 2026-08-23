@@ -11,6 +11,28 @@ fn world_view_reserves_the_top_row() {
 }
 
 #[test]
+fn screen_change_detection_runs_everywhere_except_live() {
+    for activity in [control::Activity::Codex, control::Activity::Worlds] {
+        assert_eq!(
+            screen_tracking_policy(Mode::Control, activity, false),
+            ScreenTrackingPolicy::Detect
+        );
+    }
+    assert_eq!(
+        screen_tracking_policy(Mode::World, control::Activity::Live, false),
+        ScreenTrackingPolicy::Detect
+    );
+    assert_eq!(
+        screen_tracking_policy(Mode::Control, control::Activity::Live, false),
+        ScreenTrackingPolicy::Pause
+    );
+    assert_eq!(
+        screen_tracking_policy(Mode::World, control::Activity::Worlds, true),
+        ScreenTrackingPolicy::Clear
+    );
+}
+
+#[test]
 fn control_view_uses_the_compact_terminal_viewport() {
     let area = Rect::new(0, 0, 100, 30);
     let mut model = ShellModel::new(vec!["local.one".into()]);

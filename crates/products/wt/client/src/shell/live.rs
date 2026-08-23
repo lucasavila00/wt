@@ -33,7 +33,7 @@ pub(super) fn draw(
     frame: &mut Frame<'_>,
     area: Rect,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
@@ -57,7 +57,7 @@ pub(super) fn draw(
     for placement in grid.cards() {
         let card = cards[placement.index];
         grid.render_card(frame, placement, |rect, buffer| {
-            draw_card(buffer, rect, card, screens, live_focus, model)
+            draw_card(buffer, rect, card, screens, screen_tracker, model)
         });
     }
 }
@@ -67,11 +67,11 @@ fn draw_card(
     rect: Rect,
     card: &super::control::CodexCard,
     screens: &[&vt100::Screen],
-    live_focus: &super::live_focus::LiveFocus,
+    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
-    let (title, title_color) = live_card_title(card, live_focus.is_stuck(card));
+    let (title, title_color) = live_card_title(card, screen_tracker.is_stuck(card));
     let mut block = Block::new()
         .borders(Borders::ALL)
         .border_style(selected_card_border_style(
@@ -107,7 +107,7 @@ fn draw_card(
             .style(muted_style())
             .render(viewport, buffer);
     }
-    if let Some(warning) = live_focus.warning(card, state.codex()) {
+    if let Some(warning) = screen_tracker.warning(card, state.codex()) {
         let warning_area = Rect::new(
             viewport.x,
             viewport.bottom().saturating_sub(1),

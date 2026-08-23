@@ -45,7 +45,7 @@ fn world_bar_is_dimmed_and_shows_control_targets() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -86,7 +86,7 @@ fn world_bar_preserves_the_world_cursor() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -111,7 +111,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -135,7 +135,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -173,7 +173,7 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 Some("SSH session ended: Exited with code 255"),
                 &model,
                 None,
@@ -204,7 +204,7 @@ fn control_ui_has_activity_scaffolding() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -283,7 +283,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -336,7 +336,7 @@ fn failed_codex_refresh_is_shown_in_the_red_footer() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -375,7 +375,7 @@ fn failed_worlds_refresh_is_shown_in_the_red_footer() {
             draw(
                 frame,
                 &[],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 None,
                 &model,
                 None,
@@ -445,7 +445,7 @@ fn live_session_repository_is_card_chrome() {
                 frame,
                 frame.area(),
                 &[live_parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
+                &super::super::screen_tracker::CodexScreenTracker::default(),
                 &model,
             )
         })
