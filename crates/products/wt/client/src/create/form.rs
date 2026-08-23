@@ -210,6 +210,7 @@ impl Form {
         }
         let layout = form_layout(outer, self.fields().len());
         let area = layout.modal;
+        frame.render_widget(Clear, area);
         frame.render_widget(
             Block::new().borders(Borders::ALL).title("Create world"),
             area,
@@ -679,5 +680,24 @@ mod tests {
             .unwrap();
 
         insta::assert_debug_snapshot!("world_creation_form", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn overlay_clears_the_modal_background() {
+        let backend = TestBackend::new(84, 22);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let form = form();
+
+        terminal
+            .draw(|frame| {
+                frame.render_widget(Paragraph::new("x".repeat(84 * 22)), frame.area());
+                form.render_overlay(frame, frame.area());
+            })
+            .unwrap();
+
+        let modal = form_layout(Rect::new(0, 0, 84, 22), HOST_FIELDS.len()).modal;
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "x");
+        assert_eq!(buffer[(modal.x + 1, modal.y + 1)].symbol(), " ");
     }
 }
