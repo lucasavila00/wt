@@ -542,7 +542,11 @@ fn start_focus(
         model.finish_codex_open(&target, None, true);
         return;
     }
-    focus.start(target, alias.to_owned());
+    focus.start(
+        target,
+        alias.to_owned(),
+        sessions.control_path(index).to_owned(),
+    );
 }
 
 fn world_rows(terminal_rows: u16) -> u16 {

@@ -13,8 +13,9 @@ unique identities, nonnegative timestamps, absolute bounded working
 directories, exact inventory identity, an existing playback PTY, `wt-host`, and
 a numeric tmux pane ID. Reject the complete context snapshot on any violation.
 
-Opening runs the WT-owned focus helper through `CONTEXT.WORLD-direct`, verifies
-the pane-local session marker, selects the window and pane, then switches to the
-existing playback PTY. The active world changes only after success. The short
-control operation has a 15-second deadline and never replaces a playback SSH
-session.
+Each playback SSH connection owns a private OpenSSH control socket for the
+lifetime of `wt shell`. Opening runs the WT-owned focus helper through that
+connection and `CONTEXT.WORLD-direct`, verifies the pane-local session marker,
+selects the window and pane, then switches to the existing playback PTY. The
+active world changes only after success. The short control operation has a
+15-second deadline and never replaces a playback SSH session.

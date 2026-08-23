@@ -3,6 +3,7 @@ pub(super) use super::model::ShellWorld;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::os::unix::process::CommandExt as _;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -390,18 +391,24 @@ impl Default for FocusWorker {
 }
 
 impl FocusWorker {
-    pub(super) fn start(&self, target: CodexOpenTarget, alias: String) {
-        self.start_request(target, alias, true);
+    pub(super) fn start(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
+        self.start_request(target, alias, control_path, true);
     }
 
-    pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String) {
-        self.start_request(target, alias, false);
+    pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
+        self.start_request(target, alias, control_path, false);
     }
 
-    fn start_request(&self, target: CodexOpenTarget, alias: String, open_world: bool) {
+    fn start_request(
+        &self,
+        target: CodexOpenTarget,
+        alias: String,
+        control_path: PathBuf,
+        open_world: bool,
+    ) {
         let sender = self.sender.clone();
         thread::spawn(move || {
-            let result = focus(&target, &alias).map_err(|error| error.to_string());
+            let result = focus(&target, &alias, &control_path).map_err(|error| error.to_string());
             let _ = sender.send(FocusResult {
                 target,
                 result,
@@ -415,7 +422,7 @@ impl FocusWorker {
     }
 }
 
-fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
+fn focus(target: &CodexOpenTarget, alias: &str, control_path: &Path) -> anyhow::Result<()> {
     let mut command = Command::new("ssh");
     command
         .args([
@@ -425,6 +432,10 @@ fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
             "ConnectionAttempts=1",
             "-o",
             "BatchMode=yes",
+            "-S",
+        ])
+        .arg(control_path)
+        .args([
             "--",
             alias,
             "/usr/local/bin/wt-codex-integration",
