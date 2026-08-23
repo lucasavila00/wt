@@ -8,9 +8,9 @@ fn retained_host_lifecycle() {
     let _lock = acquire_kvm_test_lock();
     let mut timings = Timings::new();
     let name = unique_name("host");
-    let codex_auth_sha256 = assert_server_codex_auth_export();
-    let codex_sessions = CodexSessionFixture::new(&name);
     let mut harness = KvmHarness::new(&mut timings);
+    let codex_auth_sha256 = assert_server_codex_auth_export(&harness.config);
+    let codex_sessions = CodexSessionFixture::new(&name, &harness.config);
 
     let created = timings.run("create host", || harness.create(&name));
     assert_eq!(created.status, InstanceStatus::Running);
@@ -35,11 +35,13 @@ fn retained_host_lifecycle() {
             "test -S /run/wt-agent-tool-gateway/gateway.sock; ",
             "systemctl is-active --quiet wt-agent-tool-gateway-relay.service; ",
             "test ! -e /workspace; ",
-            "! command -v docker; ! command -v node; ! command -v npm; ",
+            ". /home/wt/.nvm/nvm.sh; ",
+            "command -v cargo rustc go python nvm node npm uv docker; ",
+            "docker compose version >/dev/null; ",
             "command -v git codex diffo wt-tools; ",
             "codex --version >/dev/null"
         ),
-        "verify slim golden host image",
+        "verify golden host image",
     );
 
     let mut byobu = cmd!(
@@ -109,13 +111,14 @@ fn retained_host_lifecycle() {
     );
     assert_eq!(
         std::fs::read_to_string(
-            std::path::Path::new(wt_server::CODEX_SESSIONS_PATH).join(&codex_sessions.marker)
+            std::path::Path::new(harness.config.codex_paths().sessions)
+                .join(&codex_sessions.marker)
         )
         .unwrap(),
         "from-host\n"
     );
     let rollout_metadata = std::fs::metadata(
-        std::path::Path::new(wt_server::CODEX_SESSIONS_PATH).join(&codex_sessions.marker),
+        std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_sessions.marker),
     )
     .unwrap();
     assert_eq!(rollout_metadata.uid(), wt_retained_worlds::GUEST_UID);

@@ -64,16 +64,18 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
         image_dir.display().to_string(),
         config.install.binary_dir.display().to_string(),
         config.libvirt.worlds_dir.display().to_string(),
+        config.codex_paths().sessions.to_owned(),
     ];
     let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let paths = config.codex_paths();
     runner.run_script(
         &shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
-        &["check", args[1], args[2], args[3], args[4]],
+        &["check", args[1], args[2], args[3], args[4], args[5]],
         "validate server host",
     )?;
     runner.run_script(
         &codex_auth_share(),
-        &["--check"],
+        &["--check", paths.auth, paths.auth_share],
         "validate Codex authentication share",
     )?;
     runner.run_script(
@@ -88,7 +90,7 @@ pub(crate) fn prepare_state(runner: &impl Runner, config: &ServerConfig) -> Resu
     )?;
     runner.run_script(
         &codex_auth_share(),
-        &[],
+        &[paths.auth, paths.auth_share],
         "prepare Codex authentication share",
     )?;
     runner.run_script(
@@ -133,7 +135,6 @@ mod tests {
             test_server: true,
             image: wt_server::ImageConfig {
                 path: "/var/lib/wt/images/retained.qcow2".into(),
-                development_tools: false,
             },
             libvirt: wt_server::ServerLibvirtConfig {
                 network: "default".to_owned(),
@@ -178,10 +179,8 @@ mod tests {
         assert!(flow
             .contains("ensure_directory \"$WT_IDENTITY_UID\" \"$kvm_gid\" 2770 \"$worlds_dir\""));
         assert!(flow.contains("ensure_qemu_acl \"$worlds_dir\""));
-        assert!(flow.contains("wt_require_owned_directory \"$WT_IDENTITY_HOME\""));
-        assert!(flow.contains("wt_require_owned_directory \"$WT_IDENTITY_HOME/.codex\""));
         assert!(flow.contains(
-            "ensure_directory \"$WT_IDENTITY_UID\" \"$WT_IDENTITY_GID\" 700 \"$WT_IDENTITY_HOME/.codex/sessions\""
+            "ensure_directory \"$WT_IDENTITY_UID\" \"$WT_IDENTITY_GID\" 700 \"$codex_sessions\""
         ));
     }
 
@@ -201,11 +200,16 @@ mod tests {
                         "/var/lib/wt/images".to_owned(),
                         "/usr/local/bin".to_owned(),
                         "/var/lib/libvirt/images/wt".to_owned(),
+                        "/home/wt/.config/wt/kvm-test/codex/sessions".to_owned(),
                     ],
                 ),
                 (
                     "validate Codex authentication share".to_owned(),
-                    vec!["--check".to_owned()],
+                    vec![
+                        "--check".to_owned(),
+                        "/home/wt/.config/wt/kvm-test/codex/auth.json".to_owned(),
+                        "/home/wt/.config/wt/kvm-test/codex/auth-share".to_owned(),
+                    ],
                 ),
                 (
                     "validate SSH authorized keys share".to_owned(),
@@ -219,9 +223,16 @@ mod tests {
                         "/var/lib/wt/images".to_owned(),
                         "/usr/local/bin".to_owned(),
                         "/var/lib/libvirt/images/wt".to_owned(),
+                        "/home/wt/.config/wt/kvm-test/codex/sessions".to_owned(),
                     ],
                 ),
-                ("prepare Codex authentication share".to_owned(), vec![]),
+                (
+                    "prepare Codex authentication share".to_owned(),
+                    vec![
+                        "/home/wt/.config/wt/kvm-test/codex/auth.json".to_owned(),
+                        "/home/wt/.config/wt/kvm-test/codex/auth-share".to_owned(),
+                    ],
+                ),
                 ("prepare SSH authorized keys share".to_owned(), vec![]),
             ]
         );

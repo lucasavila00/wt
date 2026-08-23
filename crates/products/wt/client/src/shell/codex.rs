@@ -333,6 +333,7 @@ fn validate_context(
                     repository_url: observation.repository_url,
                     git_branch: observation.git_branch,
                     state: observation.state,
+                    is_compacting: observation.is_compacting,
                     session_start_source: observation.session_start_source,
                     target: observation.target,
                 },
@@ -375,6 +376,7 @@ fn bounded_escaped(bytes: &[u8]) -> String {
 
 #[derive(Debug)]
 pub(super) struct FocusResult {
+    pub(super) action_id: Option<super::action_queue::ActionId>,
     pub(super) target: CodexOpenTarget,
     pub(super) control_path: PathBuf,
     pub(super) result: Result<(), String>,
@@ -394,37 +396,36 @@ impl Default for FocusWorker {
 }
 
 impl FocusWorker {
-    pub(super) fn start_for_session(
+    pub(super) fn start_action(
         &self,
+        action_id: super::action_queue::ActionId,
         sessions: &SessionSet,
         model: &mut ShellModel,
         target: CodexOpenTarget,
-    ) {
+    ) -> bool {
         let Some((index, alias)) = model.focus_route(&target) else {
-            model.finish_codex_open(&target, None, true);
-            return;
+            return false;
         };
         if !sessions.is_open(index) {
-            model.finish_codex_open(&target, None, true);
-            return;
+            return false;
         }
-        self.start(
+        self.start_request(
+            Some(action_id),
             target,
             alias.to_owned(),
             sessions.control_path(index).to_owned(),
+            true,
         );
-    }
-
-    pub(super) fn start(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
-        self.start_request(target, alias, control_path, true);
+        true
     }
 
     pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
-        self.start_request(target, alias, control_path, false);
+        self.start_request(None, target, alias, control_path, false);
     }
 
     fn start_request(
         &self,
+        action_id: Option<super::action_queue::ActionId>,
         target: CodexOpenTarget,
         alias: String,
         control_path: PathBuf,
@@ -434,6 +435,7 @@ impl FocusWorker {
         thread::spawn(move || {
             let result = focus(&target, &alias, &control_path).map_err(|error| error.to_string());
             let _ = sender.send(FocusResult {
+                action_id,
                 target,
                 control_path,
                 result,
@@ -499,7 +501,7 @@ fn focus(target: &CodexOpenTarget, alias: &str, control_path: &Path) -> anyhow::
     Ok(())
 }
 
-fn wait_for_control_master(
+pub(super) fn wait_for_control_master(
     alias: &str,
     control_path: &Path,
     deadline: Instant,
@@ -559,6 +561,7 @@ mod tests {
                 repository_url: Some("git@github.com:acme/project.git".into()),
                 git_branch: Some("wt/cards".into()),
                 state: CodexSessionState::NeedsAttention,
+                is_compacting: false,
                 session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),

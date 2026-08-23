@@ -9,8 +9,11 @@ report_failure() {
 }
 trap report_failure EXIT
 
-if [[ $# -ne 0 ]]; then
-    echo "usage: scripts/clear" >&2
+codex_sessions=$HOME/.codex/sessions
+if [[ $# -eq 2 && $1 == --codex-sessions ]]; then
+    codex_sessions=$2
+elif [[ $# -ne 0 ]]; then
+    echo "usage: scripts/clear [--codex-sessions PATH]" >&2
     exit 2
 fi
 if [[ $EUID -eq 0 ]]; then
@@ -33,7 +36,7 @@ for domain in "${domains[@]}"; do
     virsh -c qemu:///system undefine "$domain" --nvram
 done
 
-rm -f "$HOME/.codex/sessions/.wt-image-publication-probe"
+rm -f "$codex_sessions/.wt-image-publication-probe"
 rm -rf "$HOME/.local/state/wt" "$HOME/.ssh/wt"
 sudo rm -rf /etc/wt /var/lib/wt/agent-tools /var/lib/libvirt/images/wt
 kvm_gid=$(getent group kvm | cut -d: -f3)

@@ -175,10 +175,20 @@ impl KvmHarness {
     }
 
     pub(crate) fn delete(&self, name: &InstanceName) {
+        let Response::Instance { instance } = call_api(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::Get { name: name.clone() },
+        ) else {
+            panic!("expected instance response");
+        };
         call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Delete { name: name.clone() },
+            Operation::Delete {
+                name: name.clone(),
+                expected_id: instance.id,
+            },
         );
     }
 
@@ -263,6 +273,7 @@ impl Drop for KvmHarness {
                 &self.server_config_path,
                 Operation::Delete {
                     name: world.name.clone(),
+                    expected_id: world.id,
                 },
             ) {
                 eprintln!("KVM cleanup: delete {}: {error}", world.name);

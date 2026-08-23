@@ -10,15 +10,14 @@ scripts/install-server --config ./server.toml
 ```
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
-verified retained-world golden image. The default image contains Git, OpenSSH,
-QEMU guest support, Byobu, tmux, Codex, Diffo, and WT's host helpers.
+verified retained-world golden image. Every image contains Git, OpenSSH, QEMU
+guest support, Byobu, tmux, Codex, Diffo, WT's host helpers, current Rust/Cargo,
+Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
+and Docker with Compose.
 
-Set `image.development_tools = true` in the install input to include the current
-Rust/Cargo, Go, Python/uv, and Node.js/nvm toolchains, plus build tools
-(`make`, CMake, GCC/Clang, and pkg-config), CLI utilities (`curl`, `wget`,
-`jq`, and `yq`), and Docker with Compose. The interactive world shell prints
-this high-level inventory when the option is enabled. It is off by default to
-keep golden-image builds, including KVM E2E, small and fast.
+Golden-image rebuilds reuse a verified local development-tools cache and refresh
+WT's guest binaries instead of reinstalling language toolchains. Changing the
+tool-layer policy invalidates the cache and fetches current upstream releases.
 
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wt-server --version`
@@ -57,5 +56,6 @@ images, services, generated configuration, grants, registry, and encrypted
 credentials. Neither command removes source credentials or installed host
 packages and binaries.
 
-Golden-image rebuilds affect only new worlds. Existing overlays retain their
-current contents and continue to use their retained image generation.
+Publishing a rebuilt golden image does not rewrite existing world overlays.
+Each overlay still names its content-addressed backing-image generation, which
+must remain present and intact for that world to continue working.

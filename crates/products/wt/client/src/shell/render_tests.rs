@@ -33,11 +33,10 @@ fn press(model: &mut ShellModel, code: KeyCode, area: Rect) {
 }
 
 #[test]
-fn switcher_activates_the_world_bar() {
+fn world_bar_is_dimmed_and_shows_control_targets() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one", "local.two"]);
-    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 6));
     press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 6));
     let parser = parser();
 
@@ -56,34 +55,27 @@ fn switcher_activates_the_world_bar() {
         })
         .unwrap();
 
-    insta::assert_debug_snapshot!("shell_switcher_world_bar", terminal.backend().buffer());
+    insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
     let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
     assert_eq!(brand.fg, Some(Color::Reset));
     assert_eq!(brand.bg, Some(Color::Reset));
-    assert!(brand
-        .add_modifier
-        .contains(Modifier::BOLD | Modifier::REVERSED));
-    let hint = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert!(hint.add_modifier.contains(Modifier::REVERSED));
-    assert!(!hint.add_modifier.contains(Modifier::BOLD));
-    let [previous, world, next] = bar::world_bar_controls(&model, Rect::new(0, 0, 80, 6));
+    assert!(brand.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
+    let world = bar::world_bar_world(&model, Rect::new(0, 0, 80, 6));
     let brand = bar::world_bar_brand(Rect::new(0, 0, 80, 6));
-    let control = bar::world_bar_control(Rect::new(0, 0, 80, 6), next);
-    for clickable in [brand, previous, world, next, control] {
+    let control = bar::world_bar_control(Rect::new(0, 0, 80, 6));
+    for clickable in [brand, world, control] {
         let style = terminal
             .backend()
             .buffer()
             .cell((clickable.x, clickable.y))
             .unwrap()
             .style();
-        assert!(style
-            .add_modifier
-            .contains(Modifier::BOLD | Modifier::REVERSED));
+        assert!(style.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
     }
 }
 
 #[test]
-fn inactive_world_bar_is_dimmed() {
+fn world_bar_preserves_the_world_cursor() {
     let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one", "local.two"]);
@@ -106,48 +98,6 @@ fn inactive_world_bar_is_dimmed() {
         .unwrap();
 
     assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
-    insta::assert_debug_snapshot!("shell_inactive_world_bar", terminal.backend().buffer());
-    let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
-    assert_eq!(brand.fg, Some(Color::Reset));
-    assert_eq!(brand.bg, Some(Color::Reset));
-    assert!(brand.add_modifier.contains(Modifier::BOLD | Modifier::DIM));
-    assert!(!brand.add_modifier.contains(Modifier::REVERSED));
-    let hint = terminal.backend().buffer().cell((6, 0)).unwrap().style();
-    assert_eq!(hint.fg, Some(Color::Reset));
-    assert_eq!(hint.bg, Some(Color::Reset));
-    assert!(hint.add_modifier.contains(Modifier::DIM));
-    assert!(!hint
-        .add_modifier
-        .contains(Modifier::BOLD | Modifier::REVERSED));
-}
-
-#[test]
-fn disabled_f5_override_emphasizes_the_top_bar() {
-    let backend = TestBackend::new(80, 6);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let mut model = ShellModel::new(vec!["local.one".into()]);
-    model.handle_key(
-        crossterm::event::KeyEvent::new(KeyCode::F(5), crossterm::event::KeyModifiers::SHIFT),
-        Rect::new(0, 0, 80, 6),
-    );
-    let parser = parser();
-
-    terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[parser.screen()],
-                &super::super::live_focus::LiveFocus::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
-        .unwrap();
-
-    insta::assert_debug_snapshot!("shell_disabled_f5_override", terminal.backend().buffer());
 }
 
 #[test]
@@ -305,6 +255,7 @@ fn control_ui_shows_world_cards() {
                 repository_url: Some("git@github.com:acme/wt.git".into()),
                 git_branch: Some("wt/world-card-sessions".into()),
                 state: CodexSessionState::Working,
+                is_compacting: false,
                 session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
@@ -366,14 +317,11 @@ fn control_ui_opens_the_command_palette() {
 }
 
 #[test]
-fn active_navbar_opens_the_command_palette_over_the_world() {
-    let backend = TestBackend::new(80, 16);
+fn control_ui_opens_help() {
+    let backend = TestBackend::new(64, 16);
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["local.one"]);
-    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 16));
-    press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 16));
-    press(&mut model, KeyCode::F(1), Rect::new(0, 0, 80, 16));
-    assert!(model.control().palette().is_open());
+    press(&mut model, KeyCode::F(2), Rect::new(0, 0, 64, 16));
     let parser = parser();
 
     terminal
@@ -391,10 +339,7 @@ fn active_navbar_opens_the_command_palette_over_the_world() {
         })
         .unwrap();
 
-    insta::assert_debug_snapshot!(
-        "shell_active_navbar_command_palette",
-        terminal.backend().buffer()
-    );
+    insta::assert_debug_snapshot!("shell_control_help", terminal.backend().buffer());
 }
 
 #[test]
@@ -440,6 +385,7 @@ fn control_ui_shows_codex_session_cards() {
                     repository_url: Some("git@github.com:acme/project.git".into()),
                     git_branch: Some("wt/auth-diagnostics".into()),
                     state: CodexSessionState::NeedsAttention,
+                    is_compacting: true,
                     session_start_source: None,
                     target,
                 },
@@ -466,6 +412,7 @@ fn control_ui_shows_codex_session_cards() {
                     repository_url: None,
                     git_branch: None,
                     state: CodexSessionState::Unknown,
+                    is_compacting: false,
                     session_start_source: Some("compact".into()),
                     target: ByobuTarget {
                         tmux_session: "wt-host".into(),
@@ -501,7 +448,6 @@ fn control_ui_shows_codex_session_cards() {
             )
         })
         .unwrap();
-
     insta::assert_debug_snapshot!("shell_control_codex_sessions", terminal.backend().buffer());
 }
 
@@ -530,8 +476,9 @@ fn control_ui_shows_live_session_panes() {
                 cwd: "/home/wt/wt".into(),
                 repository_root: None,
                 repository_url: None,
-                git_branch: None,
+                git_branch: Some("wt/live".into()),
                 state: CodexSessionState::Working,
+                is_compacting: false,
                 session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
@@ -592,6 +539,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
                 repository_url: Some("https://github.com/lucasavila00/wt".into()),
                 git_branch: Some("wt/ctx-timeout-toast".into()),
                 state: CodexSessionState::Unknown,
+                is_compacting: false,
                 session_start_source: Some("compact".into()),
                 target,
             },

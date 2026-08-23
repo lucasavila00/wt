@@ -228,7 +228,7 @@ binary_dir = "/opt/wt bin"
     [Install]
     WantedBy=multi-user.target
     "###);
-    let codex_auth = String::from_utf8(codex_auth_service()).unwrap();
+    let codex_auth = String::from_utf8(codex_auth_service(&server)).unwrap();
     insta::assert_snapshot!(codex_auth, @r###"
     [Unit]
     Description=Refresh the WT Codex authentication share
@@ -238,10 +238,10 @@ binary_dir = "/opt/wt bin"
     User=wt
     Group=wt
     Environment="HOME=/home/wt"
-    ExecStart=/usr/local/libexec/wt-codex-integration-auth-share
+    ExecStart="/usr/local/libexec/wt-codex-integration-auth-share" "/home/wt/.codex/auth.json" "/home/wt/.codex/.wt-auth"
     UMask=0077
     "###);
-    insta::assert_snapshot!(String::from_utf8(codex_auth_path_unit()).unwrap(), @r###"
+    insta::assert_snapshot!(String::from_utf8(shared_file_path_unit("Codex authentication", server.codex_paths().auth, "wt-codex-integration-auth.service")).unwrap(), @r###"
     [Unit]
     Description=Watch the WT Codex authentication file
 
@@ -252,7 +252,7 @@ binary_dir = "/opt/wt bin"
     [Install]
     WantedBy=multi-user.target
     "###);
-    insta::assert_snapshot!(String::from_utf8(ssh_keys_service()).unwrap(), @r###"
+    insta::assert_snapshot!(String::from_utf8(shared_file_service("SSH authorized keys", SSH_KEYS_HELPER_PATH, &[])).unwrap(), @r###"
     [Unit]
     Description=Refresh the WT SSH authorized keys share
 

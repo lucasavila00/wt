@@ -63,9 +63,7 @@ runuser --user "$WT_USER" -- ln -sfn /usr/local/bin/wt-codex-integration \
 {
     dpkg-query -W -f='${Package}\t${Version}\n' \
         ca-certificates git openssh-server byobu tmux qemu-guest-agent
-    if test "$WT_DEVELOPMENT_TOOLS" = true; then
-        dpkg-query -W -f='${Package}\t${Version}\n' \
-            bison build-essential cmake clang curl wget jq yq pkg-config \
-            docker.io docker-compose-v2
-    fi
+    dpkg-query -W -f='${Package}\t${Version}\n' \
+        bison build-essential cmake clang curl wget jq yq pkg-config \
+        docker.io docker-compose-v2 shellcheck
 } | sort > /var/lib/wt-image-packages

@@ -1,6 +1,7 @@
 pub(super) use super::activity::Activity;
 
 mod command;
+mod help;
 mod layout;
 mod live;
 mod palette;
@@ -8,10 +9,10 @@ mod state;
 mod types;
 
 pub(super) use command::command_palette_layout;
+pub(super) use help::{help_control_area, Help, HELP_CONTROL};
 pub(super) use layout::{
-    card_grid_rects, card_grid_visible, codex_card_rects, control_areas, control_content_areas,
-    world_card_at_position, world_card_rects, ACTIVITY_BUTTON_HEIGHT, CARD_COLUMNS, CARD_GAP,
-    CODEX_CARD_HEIGHT, WORLD_CARD_HEIGHT,
+    card_grid, card_grid_with_gap, codex_card_grid, control_areas, control_content_areas,
+    world_card_at_position, CardGrid, ACTIVITY_BUTTON_HEIGHT, CARD_COLUMNS, WORLD_CARD_HEIGHT,
 };
 pub(super) use palette::CommandPalette;
 pub(super) use state::ControlState;

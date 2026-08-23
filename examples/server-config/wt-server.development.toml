@@ -13,8 +13,6 @@ path = "/var/lib/wt/images/wt-retained-ubuntu-24.04-amd64.qcow2"
 build_memory_mib = 8192
 build_vcpus = 8
 build_disk_gib = 32
-# Opt in to current language runtimes, build tools, CLI utilities, and Docker.
-development_tools = true
 
 [libvirt]
 network = "default"

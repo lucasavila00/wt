@@ -26,7 +26,7 @@ fn image_manifest_records_structured_package_versions() {
         guest_identity: wt_retained_worlds::GUEST_IDENTITY,
         golden_sha256: "golden".to_owned(),
         packages: [("tmux".to_owned(), "3.4-1".to_owned())].into(),
-        development_tools: None,
+        development_tools: Default::default(),
     };
 
     let json = serde_json::to_value(manifest).unwrap();
@@ -34,6 +34,60 @@ fn image_manifest_records_structured_package_versions() {
     assert_eq!(json["commit"], wt_control_protocol::GIT_COMMIT_SHA);
     assert_eq!(json["guest_identity"]["uid"], 1001);
     assert_eq!(json["guest_identity"]["gid"], 1001);
+}
+
+#[test]
+fn development_tools_cache_identity_tracks_its_source_and_policy() {
+    let identity = development_tools_cache_identity(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        32,
+        "wt:wt:1001:1001:/home/wt",
+    );
+
+    assert_ne!(
+        identity,
+        development_tools_cache_identity(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            32,
+            "wt:wt:1001:1001:/home/wt",
+        )
+    );
+    assert_ne!(
+        identity,
+        development_tools_cache_identity(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            32,
+            "wt:wt:1002:1002:/home/wt",
+        )
+    );
+    assert_eq!(identity.len(), 64);
+    assert!(identity.bytes().all(|byte| byte.is_ascii_hexdigit()));
+}
+
+#[test]
+fn development_tools_cache_finalizer_needs_no_final_image_assets() {
+    let finalizer = std::str::from_utf8(builder::FINALIZE_DEVELOPMENT_TOOLS_CACHE).unwrap();
+
+    assert!(finalizer.contains("/var/lib/wt-image-development-tools"));
+    for final_asset in ["wt-tmux", "codex", "wt-retained"] {
+        assert!(!finalizer.contains(final_asset));
+    }
+}
+
+#[test]
+fn development_tools_cache_manifest_is_structured() {
+    let manifest = DevelopmentToolsCacheManifest {
+        identity: "policy".to_owned(),
+        sha256: "image".to_owned(),
+    };
+
+    assert_eq!(
+        serde_json::to_value(manifest).unwrap(),
+        serde_json::json!({
+            "identity": "policy",
+            "sha256": "image",
+        })
+    );
 }
 
 #[test]
@@ -57,7 +111,7 @@ fn image_publication_rejects_a_mismatched_guest_identity() {
         },
         golden_sha256: "golden".to_owned(),
         packages: Default::default(),
-        development_tools: None,
+        development_tools: Default::default(),
     };
 
     let error = stage_publication(&UnusedRunner, &prepared, &destination, &manifest)
@@ -200,4 +254,41 @@ fn progress_output_is_phase_based() {
         Duration::from_secs(60),
     );
     insta::assert_snapshot!(message, @"Retained image build: installing base operating-system packages (elapsed=60s)");
+}
+
+#[test]
+fn development_tool_install_reports_individual_progress() {
+    let scripts = [
+        builder::DEVELOPMENT_TOOLS_CACHE_BUILD,
+        builder::INSTALL_DEVELOPMENT_TOOLS,
+    ];
+    let script_text = scripts
+        .iter()
+        .map(|script| std::str::from_utf8(script).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let phases = script_text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("phase \"")?.strip_suffix('"'))
+        .filter(|phase| {
+            phase.contains("development")
+                || phase.contains("Go")
+                || phase.contains("Rust")
+                || phase.contains("Node.js")
+                || phase.contains("Python")
+                || phase.contains("Docker")
+        })
+        .collect::<Vec<_>>();
+
+    insta::assert_snapshot!(phases.join("\n"), @r###"
+    installing cached operating-system and development packages
+    installing cached development tools
+    installing Go
+    installing Rust and Cargo
+    installing Node.js and nvm
+    installing Python and uv
+    configuring Node.js command path
+    configuring Docker for the retained-world user
+    recording installed development-tool versions
+    "###);
 }
