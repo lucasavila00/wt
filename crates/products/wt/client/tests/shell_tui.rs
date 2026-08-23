@@ -183,7 +183,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No Codex sessions")?
+        .wait_for_text("No live Codex sessions")?
         .press(Key::Function(1))?
         .type_text("delete")?
         .press(Key::Enter)?
@@ -194,6 +194,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
         .press(Key::Enter)?
         .wait_for_text("WT is deleting the world")?
         .wait_for_text("local.existing")?
+        .press(Key::Tab)?
         .press(Key::Tab)?
         .wait_for_text("Worlds")?
         .click(97, 1)?
