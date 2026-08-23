@@ -221,6 +221,18 @@ fn control_ui_has_activity_scaffolding() {
         .unwrap();
 
     insta::assert_debug_snapshot!("shell_control_activities", terminal.backend().buffer());
+    assert_eq!(
+        terminal.backend().buffer().cell((0, 7)).unwrap().fg,
+        Color::Blue
+    );
+    assert_eq!(
+        terminal.backend().buffer().cell((2, 7)).unwrap().fg,
+        Color::Blue
+    );
+    assert_eq!(
+        terminal.backend().buffer().cell((2, 1)).unwrap().fg,
+        Color::Reset
+    );
 }
 
 #[test]
