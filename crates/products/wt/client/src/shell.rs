@@ -212,13 +212,19 @@ fn run_loop(
         }
         while let Some(result) = runtime.focus.try_recv() {
             redraw = true;
+            let focused_world = model
+                .focus_route(&result.target)
+                .map(|(index, _)| index)
+                .filter(|index| sessions.control_path(*index) == result.control_path);
             if !result.open_world {
-                live_focus.complete(&result.target, result.result.is_ok());
+                if focused_world.is_some() {
+                    live_focus.complete(&result.target, result.result.is_ok());
+                }
                 continue;
             }
             match result.result {
-                Ok(()) => match model.focus_route(&result.target) {
-                    Some((index, _)) if sessions.is_open(index) => {
+                Ok(()) => match focused_world {
+                    Some(index) if sessions.is_open(index) => {
                         model.finish_codex_open(&result.target, Some(index), false)
                     }
                     Some(_) | None => model.finish_codex_open(&result.target, None, true),
@@ -406,7 +412,7 @@ fn dispatch_event(
                     start_control_command(command, runtime.config, runtime.refresh, model, flows);
                 }
                 InputRoute::OpenCodex(target) => {
-                    start_focus(sessions, model, runtime.focus, *target)
+                    runtime.focus.start_for_session(sessions, model, *target)
                 }
                 InputRoute::Consumed => {}
             }
@@ -512,7 +518,7 @@ fn dispatch_event(
                         flows,
                     ),
                     Some(InputRoute::OpenCodex(target)) => {
-                        start_focus(sessions, model, runtime.focus, *target)
+                        runtime.focus.start_for_session(sessions, model, *target)
                     }
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
@@ -528,30 +534,13 @@ fn dispatch_event(
         _ => Ok(false),
     }
 }
-fn start_focus(
-    sessions: &SessionSet,
-    model: &mut ShellModel,
-    focus: &codex::FocusWorker,
-    target: control::CodexOpenTarget,
-) {
-    let Some((index, alias)) = model.focus_route(&target) else {
-        model.finish_codex_open(&target, None, true);
-        return;
-    };
-    if !sessions.is_open(index) {
-        model.finish_codex_open(&target, None, true);
-        return;
-    }
-    focus.start(target, alias.to_owned());
-}
-
 fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
     if model.mode() == Mode::Control && model.control().activity() == control::Activity::Live {
-        live::preview_size(area)
+        live::preview_size(area, model.control().live_codex().len())
     } else {
         (world_rows(area.height), area.width)
     }

@@ -14,6 +14,8 @@ pub(super) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(super) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
 pub(super) const CODEX_CARD_HEIGHT: u16 = 8;
 pub(super) const WORLD_CARD_HEIGHT: u16 = 10;
+pub(super) const CARD_COLUMNS: usize = 2;
+pub(super) const CARD_GAP: u16 = 1;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum CodexCardIdentity {
@@ -315,8 +317,8 @@ impl ControlState {
             KeyCode::Down if self.activity != Activity::Worlds => {
                 self.move_codex(super::live::columns(area) as isize, area)
             }
-            KeyCode::Left if self.activity == Activity::Live => self.move_codex(-1, area),
-            KeyCode::Right if self.activity == Activity::Live => self.move_codex(1, area),
+            KeyCode::Left if self.activity != Activity::Worlds => self.move_codex(-1, area),
+            KeyCode::Right if self.activity != Activity::Worlds => self.move_codex(1, area),
             KeyCode::Enter if self.activity != Activity::Worlds => {
                 return self
                     .activate_selected()
@@ -439,8 +441,8 @@ impl ControlState {
             .min(identities.len().saturating_sub(1));
         self.selected = Some(identities[selected].clone());
         let visible = codex_visible_cards(area, self.activity).max(1);
-        if self.activity == Activity::Live {
-            let columns = super::live::columns(area);
+        if self.activity != Activity::Worlds {
+            let columns = CARD_COLUMNS;
             if selected < self.codex_offset {
                 self.codex_offset = selected / columns * columns;
             } else if selected >= self.codex_offset.saturating_add(visible) {
@@ -469,8 +471,8 @@ impl ControlState {
             self.codex_offset = 0;
             return;
         };
-        if self.activity == Activity::Live {
-            let columns = super::live::columns(area);
+        if self.activity != Activity::Worlds {
+            let columns = CARD_COLUMNS;
             self.codex_offset -= self.codex_offset % columns;
             if selected < self.codex_offset {
                 self.codex_offset = selected / columns * columns;
@@ -578,10 +580,10 @@ pub(super) fn control_content_areas(area: Rect) -> (Rect, Rect) {
 }
 
 pub(super) fn codex_card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize, Rect)> {
-    session_card_rects(area, offset, count, CODEX_CARD_HEIGHT)
+    card_grid_rects(area, offset, count, CODEX_CARD_HEIGHT)
 }
 
-fn session_card_rects(
+pub(super) fn card_grid_rects(
     area: Rect,
     offset: usize,
     count: usize,
@@ -592,22 +594,24 @@ fn session_card_rects(
     if viewport.is_empty() {
         return Vec::new();
     }
-    let visible = usize::from(viewport.height.div_ceil(card_height));
-    let width = viewport.width.saturating_sub(u16::from(count > visible));
+    let visible = card_grid_visible(area, card_height);
+    let viewport_width = viewport.width.saturating_sub(u16::from(count > visible));
+    let viewport_right = viewport.x.saturating_add(viewport_width);
+    let width = (viewport_width.saturating_sub(CARD_GAP) / 2).max(1);
     (offset..count.min(offset.saturating_add(visible)))
         .enumerate()
-        .map(|(row, index)| {
+        .map(|(position, index)| {
+            let row = position / CARD_COLUMNS;
+            let column = position % CARD_COLUMNS;
+            let x = viewport.x + u16::try_from(column).unwrap_or(u16::MAX) * (width + CARD_GAP);
+            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * (card_height + CARD_GAP);
             (
                 index,
                 Rect::new(
-                    viewport.x,
-                    viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * card_height,
-                    width,
-                    card_height.min(
-                        viewport
-                            .bottom()
-                            .saturating_sub(viewport.y + row as u16 * card_height),
-                    ),
+                    x,
+                    y,
+                    width.min(viewport_right.saturating_sub(x)),
+                    card_height.min(viewport.bottom().saturating_sub(y)),
                 ),
             )
         })
@@ -615,29 +619,18 @@ fn session_card_rects(
 }
 
 pub(super) fn world_card_rects(area: Rect, selected: usize, count: usize) -> Vec<(usize, Rect)> {
-    let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
-    if viewport.is_empty() {
-        return Vec::new();
-    }
-    let visible = usize::from(viewport.height.div_ceil(WORLD_CARD_HEIGHT)).max(1);
+    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT).max(1);
     let offset = selected / visible * visible;
-    let width = viewport.width.saturating_sub(u16::from(count > visible));
-    (offset..count.min(offset.saturating_add(visible)))
-        .enumerate()
-        .map(|(row, index)| {
-            let y = viewport.y + u16::try_from(row).unwrap_or(u16::MAX) * WORLD_CARD_HEIGHT;
-            (
-                index,
-                Rect::new(
-                    viewport.x,
-                    y,
-                    width,
-                    WORLD_CARD_HEIGHT.min(viewport.bottom().saturating_sub(y)),
-                ),
-            )
-        })
-        .collect()
+    card_grid_rects(area, offset, count, WORLD_CARD_HEIGHT)
+}
+
+pub(super) fn card_grid_visible(area: Rect, card_height: u16) -> usize {
+    let (body, _) = control_content_areas(area);
+    usize::from(
+        body.inner(Margin::new(1, 1))
+            .height
+            .div_ceil(card_height + CARD_GAP),
+    ) * CARD_COLUMNS
 }
 
 pub(super) fn world_card_at_position(
@@ -657,7 +650,7 @@ fn codex_visible_cards(area: Rect, activity: Activity) -> usize {
     if activity == Activity::Live {
         return super::live::visible(area);
     }
-    super::scrollbar::viewport_rows(area, CODEX_CARD_HEIGHT)
+    card_grid_visible(area, CODEX_CARD_HEIGHT)
 }
 
 fn session_card_at_position(

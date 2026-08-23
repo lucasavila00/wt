@@ -220,20 +220,20 @@ fn draw_control(
     }
     let hint = match (model.control().activity(), model.has_worlds()) {
         (Activity::Worlds, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Worlds, false) => "[ Commands (1 / F1) ] [ Activities (Tab) ] [ Close (F6) ]",
         (Activity::Codex, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Codex, false) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
         (Activity::Live, true) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]"
         }
         (Activity::Live, false) => {
-            "[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
+            "[ arrows or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ Close (F6) ]"
         }
     };
     frame.render_widget(Paragraph::new(hint).style(muted_style()), footer);
@@ -313,7 +313,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
     }
     let count = model.world_count() + usize::from(creating.is_some());
     let viewport =
-        super::scrollbar::viewport_rows(frame.area(), super::control::WORLD_CARD_HEIGHT).max(1);
+        super::control::card_grid_visible(frame.area(), super::control::WORLD_CARD_HEIGHT).max(1);
     super::scrollbar::render(
         frame,
         super::scrollbar::area(frame.area()),
@@ -415,7 +415,7 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
         return;
     }
     let viewport =
-        super::scrollbar::viewport_rows(frame.area(), super::control::CODEX_CARD_HEIGHT).max(1);
+        super::control::card_grid_visible(frame.area(), super::control::CODEX_CARD_HEIGHT).max(1);
     super::scrollbar::render(
         frame,
         super::scrollbar::area(frame.area()),

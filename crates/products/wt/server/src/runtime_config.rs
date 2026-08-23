@@ -49,6 +49,8 @@ pub struct AgentToolsProviderConfig {
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
     pub path: PathBuf,
+    #[serde(default)]
+    pub development_tools: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

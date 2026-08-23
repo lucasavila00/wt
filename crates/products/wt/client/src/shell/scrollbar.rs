@@ -24,11 +24,6 @@ pub(super) fn area(area: Rect) -> Rect {
     )
 }
 
-pub(super) fn viewport_rows(area: Rect, card_height: u16) -> usize {
-    let (body, _) = control_content_areas(area);
-    usize::from(body.inner(Margin::new(1, 1)).height.div_ceil(card_height))
-}
-
 pub(super) fn render(
     frame: &mut Frame<'_>,
     area: Rect,

@@ -105,7 +105,7 @@ fn live_activity_excludes_sessions_that_are_not_open() {
         area(),
     );
 
-    state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area());
     assert_eq!(state.selected(), Some(&state.codex()[1].identity));
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
@@ -150,8 +150,8 @@ fn card_clicks_use_rendered_rectangles_and_wheel_moves_selection() {
 }
 
 #[test]
-fn live_grid_click_and_keys_follow_four_column_geometry() {
-    let area = Rect::new(0, 0, 400, 40);
+fn live_grid_click_and_keys_follow_two_column_geometry() {
+    let area = Rect::new(0, 0, 100, 40);
     let mut state = ControlState::default();
     state.set_codex(
         (1..=17)
@@ -163,16 +163,16 @@ fn live_grid_click_and_keys_follow_four_column_geometry() {
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area);
     state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area);
-    assert_eq!(state.selected(), Some(&state.codex()[4].identity));
+    assert_eq!(state.selected(), Some(&state.codex()[2].identity));
     state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area);
-    assert_eq!(state.selected(), Some(&state.codex()[5].identity));
+    assert_eq!(state.selected(), Some(&state.codex()[3].identity));
 
-    let last = super::super::live::card_rects(area, 0, 17)[15].1;
+    let last = super::super::live::card_rects(area, 0, 17)[5].1;
     let (_, action) = state.handle_mouse(mouse(last.x + 1, last.y + 1), area);
     let Some(ControlAction::OpenCodex(target)) = action else {
         panic!("live tile did not open")
     };
-    assert_eq!(target.pane_id, "%16");
+    assert_eq!(target.pane_id, "%6");
 }
 
 #[test]
@@ -287,11 +287,11 @@ fn refresh_keeps_the_selected_card_in_its_viewport() {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
     }
     let selected = state.selected().cloned();
-    assert_eq!(state.codex_offset(), 3);
+    assert_eq!(state.codex_offset(), 2);
 
     assert!(state.set_codex(cards, "2026-08-21T20:00:05Z".into(), area()));
     assert_eq!(state.selected(), selected.as_ref());
-    assert_eq!(state.codex_offset(), 3);
+    assert_eq!(state.codex_offset(), 2);
 }
 
 #[test]
@@ -308,18 +308,21 @@ fn resize_keeps_the_selected_card_in_its_viewport() {
     for _ in 0..5 {
         state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), tall);
     }
-    assert_eq!(state.codex_offset(), 1);
+    assert_eq!(state.codex_offset(), 0);
 
     state.resize(Rect::new(0, 0, 64, 10));
-    assert_eq!(state.codex_offset(), 5);
+    assert_eq!(state.codex_offset(), 4);
 }
 
 #[test]
 fn world_cards_reserve_a_scrollbar_column_only_when_overflowing() {
-    let fitting = world_card_rects(area(), 0, 1);
-    let overflowing = world_card_rects(area(), 0, 3);
+    let area = Rect::new(0, 0, 100, 30);
+    let visible = card_grid_visible(area, WORLD_CARD_HEIGHT);
+    let fitting = world_card_rects(area, 0, visible);
+    let overflowing = world_card_rects(area, 0, visible + 1);
 
-    assert_eq!(overflowing[0].1.width + 1, fitting[0].1.width);
+    assert!(overflowing[1].1.right() <= super::super::scrollbar::area(area).x);
+    assert!(overflowing[1].1.right() < fitting[1].1.right());
 }
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {

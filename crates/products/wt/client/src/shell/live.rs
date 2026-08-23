@@ -1,4 +1,6 @@
-use super::control::control_content_areas;
+use super::control::{
+    card_grid_rects, card_grid_visible, control_content_areas, CARD_COLUMNS, CARD_GAP,
+};
 use super::model::ShellModel;
 use super::render::{card_title, muted_style, selected_card_border_style};
 use super::terminal_view::TerminalView;
@@ -9,30 +11,17 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 pub(super) const CARD_HEIGHT: u16 = 12;
-const WIDE_BREAKPOINT: u16 = 400;
-const WIDE_COLUMNS: usize = 4;
-const WIDE_ROWS: usize = 4;
-const GAP: u16 = 1;
 
-pub(super) fn columns(area: Rect) -> usize {
-    if area.width >= WIDE_BREAKPOINT {
-        WIDE_COLUMNS
-    } else {
-        1
-    }
+pub(super) fn columns(_area: Rect) -> usize {
+    CARD_COLUMNS
 }
 
 pub(super) fn visible(area: Rect) -> usize {
-    if columns(area) == WIDE_COLUMNS {
-        WIDE_COLUMNS * WIDE_ROWS
-    } else {
-        let (body, _) = control_content_areas(area);
-        usize::from(body.inner(Margin::new(1, 1)).height.div_ceil(CARD_HEIGHT))
-    }
+    card_grid_visible(area, CARD_HEIGHT)
 }
 
-pub(super) fn preview_size(area: Rect) -> (u16, u16) {
-    card_size(area).map_or((1, 1), |(height, width)| {
+pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
+    card_size(area, count).map_or((1, 1), |(height, width)| {
         (
             height.saturating_sub(2).max(1),
             width.saturating_sub(2).max(1),
@@ -40,53 +29,25 @@ pub(super) fn preview_size(area: Rect) -> (u16, u16) {
     })
 }
 
-fn card_size(area: Rect) -> Option<(u16, u16)> {
+fn card_size(area: Rect, count: usize) -> Option<(u16, u16)> {
     let (body, _) = control_content_areas(area);
     let viewport = body.inner(Margin::new(1, 1));
     if viewport.is_empty() {
         return None;
     }
-    if columns(area) == 1 {
-        return Some((CARD_HEIGHT.min(viewport.height), viewport.width));
-    }
     Some((
-        (viewport.height.saturating_sub(GAP * 3) / 4).max(3),
-        (viewport.width.saturating_sub(GAP * 3) / 4).max(3),
+        CARD_HEIGHT.min(viewport.height),
+        (viewport
+            .width
+            .saturating_sub(u16::from(count > visible(area)))
+            .saturating_sub(CARD_GAP)
+            / 2)
+        .max(1),
     ))
 }
 
 pub(super) fn card_rects(area: Rect, offset: usize, count: usize) -> Vec<(usize, Rect)> {
-    let (body, _) = control_content_areas(area);
-    let viewport = body.inner(Margin::new(1, 1));
-    if viewport.is_empty() {
-        return Vec::new();
-    }
-    let columns = columns(area);
-    let visible = visible(area);
-    let (height, width) = card_size(area).unwrap_or((1, 1));
-    let content_rows = count.div_ceil(columns);
-    let viewport_rows = visible.div_ceil(columns).max(1);
-    let viewport_right = viewport
-        .right()
-        .saturating_sub(u16::from(content_rows > viewport_rows));
-    (offset..count.min(offset.saturating_add(visible)))
-        .enumerate()
-        .map(|(row, index)| {
-            let grid_row = row / columns;
-            let grid_column = row % columns;
-            let y = viewport.y + u16::try_from(grid_row).unwrap_or(u16::MAX) * (height + GAP);
-            let x = viewport.x + u16::try_from(grid_column).unwrap_or(u16::MAX) * (width + GAP);
-            (
-                index,
-                Rect::new(
-                    x,
-                    y,
-                    width.min(viewport_right.saturating_sub(x)),
-                    height.min(viewport.bottom().saturating_sub(y)),
-                ),
-            )
-        })
-        .collect()
+    card_grid_rects(area, offset, count, CARD_HEIGHT)
 }
 
 pub(super) fn draw(
@@ -111,15 +72,12 @@ pub(super) fn draw(
         );
         return;
     }
-    let columns = columns(frame.area());
-    let content_rows = cards.len().div_ceil(columns);
-    let viewport_rows = visible(frame.area()).div_ceil(columns).max(1);
     super::scrollbar::render(
         frame,
         super::scrollbar::area(frame.area()),
-        content_rows,
-        viewport_rows,
-        state.codex_offset() / columns,
+        cards.len(),
+        visible(frame.area()).max(1),
+        state.codex_offset(),
         muted_style(),
     );
     for (index, rect) in card_rects(frame.area(), state.codex_offset(), cards.len()) {
@@ -179,16 +137,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wide_layout_is_four_by_four_at_the_breakpoint() {
-        let area = Rect::new(0, 0, 400, 40);
-        let rects = card_rects(area, 0, 16);
-        assert_eq!(columns(area), 4);
-        assert_eq!(visible(area), 16);
-        assert_eq!(rects.len(), 16);
-        assert_eq!(rects[0].1.y, rects[3].1.y);
-        assert!(rects[4].1.y > rects[0].1.y);
+    fn layout_uses_two_equal_columns() {
+        let area = Rect::new(0, 0, 100, 30);
+        let rects = card_rects(area, 0, 6);
+        assert_eq!(columns(area), 2);
+        assert_eq!(visible(area), 6);
+        assert_eq!(rects.len(), 6);
+        assert_eq!(rects[0].1.y, rects[1].1.y);
+        assert!(rects[2].1.y > rects[0].1.y);
+        assert_eq!(rects[0].1.width, rects[1].1.width);
         for (index, (_, rect)) in rects.iter().enumerate() {
-            assert!(rect.width >= 3 && rect.height >= 3);
+            assert!(rect.width >= 1 && rect.height >= 1);
             assert!(rect.right() <= area.right() && rect.bottom() <= area.bottom());
             assert!(rects[..index]
                 .iter()
@@ -197,20 +156,20 @@ mod tests {
     }
 
     #[test]
-    fn narrow_layout_uses_one_card_per_row() {
-        let area = Rect::new(0, 0, 399, 40);
-        let rects = card_rects(area, 0, 3);
-        assert_eq!(columns(area), 1);
-        assert_eq!(rects.len(), 3);
-        assert!(rects.windows(2).all(|pair| pair[1].1.y > pair[0].1.y));
+    fn offset_preserves_two_column_rows() {
+        let area = Rect::new(0, 0, 100, 30);
+        let rects = card_rects(area, 2, 6);
+        assert_eq!(rects[0].0, 2);
+        assert_eq!(rects[0].1.y, rects[1].1.y);
     }
 
     #[test]
     fn live_cards_reserve_a_scrollbar_column_only_when_overflowing() {
-        let area = Rect::new(0, 0, 399, 40);
-        let fitting = card_rects(area, 0, 4);
-        let overflowing = card_rects(area, 0, 5);
+        let area = Rect::new(0, 0, 100, 30);
+        let fitting = card_rects(area, 0, visible(area));
+        let overflowing = card_rects(area, 0, visible(area) + 1);
 
-        assert_eq!(overflowing[0].1.width + 1, fitting[0].1.width);
+        assert!(overflowing[1].1.right() <= super::super::scrollbar::area(area).x);
+        assert!(overflowing[1].1.right() < fitting[1].1.right());
     }
 }

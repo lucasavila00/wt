@@ -1,13 +1,16 @@
 use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarget};
+use super::model::ShellModel;
 pub(super) use super::model::ShellWorld;
+use super::session::SessionSet;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::os::unix::process::CommandExt as _;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 #[cfg(test)]
 use uuid::Uuid;
 use wt_client::config::ClientConfig;
@@ -373,6 +376,7 @@ fn bounded_escaped(bytes: &[u8]) -> String {
 #[derive(Debug)]
 pub(super) struct FocusResult {
     pub(super) target: CodexOpenTarget,
+    pub(super) control_path: PathBuf,
     pub(super) result: Result<(), String>,
     pub(super) open_world: bool,
 }
@@ -390,20 +394,48 @@ impl Default for FocusWorker {
 }
 
 impl FocusWorker {
-    pub(super) fn start(&self, target: CodexOpenTarget, alias: String) {
-        self.start_request(target, alias, true);
+    pub(super) fn start_for_session(
+        &self,
+        sessions: &SessionSet,
+        model: &mut ShellModel,
+        target: CodexOpenTarget,
+    ) {
+        let Some((index, alias)) = model.focus_route(&target) else {
+            model.finish_codex_open(&target, None, true);
+            return;
+        };
+        if !sessions.is_open(index) {
+            model.finish_codex_open(&target, None, true);
+            return;
+        }
+        self.start(
+            target,
+            alias.to_owned(),
+            sessions.control_path(index).to_owned(),
+        );
     }
 
-    pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String) {
-        self.start_request(target, alias, false);
+    pub(super) fn start(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
+        self.start_request(target, alias, control_path, true);
     }
 
-    fn start_request(&self, target: CodexOpenTarget, alias: String, open_world: bool) {
+    pub(super) fn start_live(&self, target: CodexOpenTarget, alias: String, control_path: PathBuf) {
+        self.start_request(target, alias, control_path, false);
+    }
+
+    fn start_request(
+        &self,
+        target: CodexOpenTarget,
+        alias: String,
+        control_path: PathBuf,
+        open_world: bool,
+    ) {
         let sender = self.sender.clone();
         thread::spawn(move || {
-            let result = focus(&target, &alias).map_err(|error| error.to_string());
+            let result = focus(&target, &alias, &control_path).map_err(|error| error.to_string());
             let _ = sender.send(FocusResult {
                 target,
+                control_path,
                 result,
                 open_world,
             });
@@ -415,7 +447,9 @@ impl FocusWorker {
     }
 }
 
-fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
+fn focus(target: &CodexOpenTarget, alias: &str, control_path: &Path) -> anyhow::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    wait_for_control_master(alias, control_path, deadline)?;
     let mut command = Command::new("ssh");
     command
         .args([
@@ -425,6 +459,12 @@ fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
             "ConnectionAttempts=1",
             "-o",
             "BatchMode=yes",
+            "-o",
+            "ProxyCommand=/bin/false",
+            "-S",
+        ])
+        .arg(control_path)
+        .args([
             "--",
             alias,
             "/usr/local/bin/wt-codex-integration",
@@ -440,7 +480,8 @@ fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
     let child = command
         .spawn()
         .map_err(|error| anyhow::anyhow!("start Codex focus helper: {error}"))?;
-    let output = wt_client::transport::wait_with_output_timeout(child, Duration::from_secs(15))
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let output = wt_client::transport::wait_with_output_timeout(child, remaining)
         .map_err(|error| anyhow::anyhow!("wait for Codex focus helper: {error}"))?;
     let expected = format!(
         "{}:{}:{}:0\n",
@@ -456,6 +497,31 @@ fn focus(target: &CodexOpenTarget, alias: &str) -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+fn wait_for_control_master(
+    alias: &str,
+    control_path: &Path,
+    deadline: Instant,
+) -> anyhow::Result<()> {
+    while Instant::now() < deadline {
+        if control_path.exists() {
+            let status = Command::new("ssh")
+                .args(["-S"])
+                .arg(control_path)
+                .args(["-o", "ProxyCommand=/bin/false", "-O", "check", "--", alias])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|error| anyhow::anyhow!("check shell SSH connection: {error}"))?;
+            if status.success() {
+                return Ok(());
+            }
+        }
+        thread::sleep(Duration::from_millis(16));
+    }
+    anyhow::bail!("shell SSH connection was not ready before the focus deadline")
 }
 
 #[cfg(test)]
