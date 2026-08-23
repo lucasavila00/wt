@@ -48,6 +48,7 @@ const CONFIGURE_GIT_AUTHOR: &[u8] =
 const INSTALL_AGENT_TOOLS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-agent-tools.sh");
 const MOUNT_CODEX: &[u8] = include_bytes!("../../../../../../assets/world/shared/mount-codex.sh");
+const NVMRC: &[u8] = include_bytes!("../../../../../../.nvmrc");
 const NETWORK_CONFIG: &[u8] = b"network:\n  version: 2\n  ethernets:\n    primary:\n      match:\n        name: \"en*\"\n      dhcp4: true\n      dhcp-identifier: mac\n";
 const BUILD_LOCK_PATH: &str = "/run/wt-image-build/lock";
 pub(super) const IMAGE_KIND: &str = "retained";
@@ -201,10 +202,14 @@ pub(super) fn run_kvm_build<R: Runner>(
         }
     }
 
+    let node_version = std::str::from_utf8(NVMRC)
+        .context("parse repository .nvmrc")?
+        .trim();
     fs::write(
         &environment,
         recipe::BuildEnvironment {
             kind: IMAGE_KIND,
+            node_version,
             tmux_config_sha256: &sha_bytes(TMUX_CONFIG),
             byobu_color_sha256: &sha_bytes(BYOBU_COLOR),
             access_sha256: &sha_bytes(CONFIGURE_ACCESS),
