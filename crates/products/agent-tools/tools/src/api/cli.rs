@@ -24,6 +24,8 @@ impl GitHostingCommand {
         match self {
             Self::ShowMr { mr, .. }
             | Self::ListThreads { mr, .. }
+            | Self::ListComments { mr, .. }
+            | Self::ShowComment { mr, .. }
             | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
@@ -51,6 +53,9 @@ impl GitHostingCommand {
                 bail!("edit_mr requires `title` or `body`");
             }
         }
+        if let Self::ShowComment { comment, .. } = self {
+            nonempty(comment, "comment ID")?;
+        }
         match self {
             Self::WaitMr {
                 timeout_seconds, ..
@@ -74,6 +79,8 @@ impl GitHostingCommand {
             Self::ShowRun { .. } => "show the CI run",
             Self::ShowJob { .. } => "show the CI job",
             Self::ListThreads { .. } => "list merge request threads",
+            Self::ListComments { .. } => "list merge request comments",
+            Self::ShowComment { .. } => "show the merge request comment",
             Self::ListCi { .. } => "list CI for the commit",
             Self::ListJobs { .. } => "list jobs for the CI run",
             Self::LogJob { .. } => "read the CI job log",
@@ -97,10 +104,12 @@ impl GitHostingCommand {
             Self::ShowMrForBranch { branch, .. } => format!("mr for branch {branch}"),
             Self::ShowMr { mr, .. }
             | Self::ListThreads { mr, .. }
+            | Self::ListComments { mr, .. }
             | Self::WaitMr { mr, .. }
             | Self::SetMr { mr, .. }
             | Self::EditMr { mr, .. }
             | Self::CommentMr { mr, .. } => format!("mr {mr}"),
+            Self::ShowComment { mr, comment } => format!("comment {comment} in mr {mr}"),
             Self::ReplyThread { mr, thread, .. } | Self::SetThread { mr, thread, .. } => {
                 format!("thread {thread} in mr {mr}")
             }

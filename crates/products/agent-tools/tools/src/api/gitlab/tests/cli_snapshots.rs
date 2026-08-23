@@ -7,6 +7,7 @@ const OPEN_MR: &str = r#"{"iid":8,"title":"Fix login","description":"Fixes the l
 const PIPELINE: &str = r#"{"id":92,"status":"success","web_url":"https://gitlab.test/pipelines/92","sha":"abc123","ref":"wt/fix-login","source":"merge_request_event"}"#;
 const JOB: &str = r#"{"id":45,"name":"test","status":"success","web_url":"https://gitlab.test/jobs/45","ref":"wt/fix-login","pipeline":{"id":92}}"#;
 const THREADS: &str = r#"{"data":{"project":{"mergeRequest":{"id":"gid://gitlab/MergeRequest/8","diffHeadSha":"abc123","discussions":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"gid://gitlab/Discussion/thread-8","resolved":false,"resolvable":true,"notes":{"pageInfo":{"hasNextPage":false},"nodes":[{"author":{"username":"reviewer"},"body":"Please clarify this.","url":"https://gitlab.test/thread/8","position":{"filePath":"src/lib.rs","newLine":12,"oldLine":null}}]}}]}}}}}"#;
+const NOTE: &str = r#"{"id":124,"body":"General feedback.","author":{"username":"reviewer"},"created_at":"2026-08-22T10:00:00Z","updated_at":"2026-08-22T11:00:00Z","system":false,"resolvable":false}"#;
 
 #[test]
 fn cli_commands_render_provider_results_as_json() {
@@ -23,6 +24,17 @@ fn cli_commands_render_provider_results_as_json() {
         (
             "list_threads",
             WtToolsCommand::ListThreads { mr: "8".into() },
+        ),
+        (
+            "list_comments",
+            WtToolsCommand::ListComments { mr: "8".into() },
+        ),
+        (
+            "show_comment",
+            WtToolsCommand::ShowComment {
+                mr: "8".into(),
+                comment: "124".into(),
+            },
         ),
         (
             "list_ci",
@@ -188,6 +200,67 @@ fn wait_run_timeout_returns_the_unfinished_run() {
     server.join().unwrap().unwrap();
 }
 
+#[test]
+fn list_comments_reads_every_rest_page() {
+    let first_page = format!("[{}]", vec![NOTE; 100].join(",")).leak();
+    let (base_url, server) = serve(vec![
+        get("/api/v4/projects/acme%2Fwidget/merge_requests/8", MR),
+        get(
+            "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes?per_page=100&page=1&sort=asc&order_by=created_at",
+            first_page,
+        ),
+        get(
+            "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes?per_page=100&page=2&sort=asc&order_by=created_at",
+            "[]",
+        ),
+    ]);
+    let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let ProviderCommandOutput::GeneralComments(comments) = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ListComments { mr: "8".into() },
+        )
+        .unwrap()
+    else {
+        panic!("expected general comments");
+    };
+
+    assert_eq!(comments.len(), 100);
+    server.join().unwrap().unwrap();
+}
+
+#[test]
+fn show_comment_rejects_a_resolvable_review_note() {
+    let review_note = NOTE
+        .replace("\"resolvable\":false", "\"resolvable\":true")
+        .leak();
+    let (base_url, server) = serve(vec![
+        get("/api/v4/projects/acme%2Fwidget/merge_requests/8", MR),
+        get(
+            "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+            review_note,
+        ),
+    ]);
+    let provider = GitlabApi::with_base_url(base_url, "fixture-token").unwrap();
+
+    let error = provider
+        .execute_cli_command(
+            &project_scope(),
+            &WtToolsCommand::ShowComment {
+                mr: "8".into(),
+                comment: "124".into(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "comment 124 is not a general comment in MR 8"
+    );
+    server.join().unwrap().unwrap();
+}
+
 fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
     match command {
         WtToolsCommand::ShowMr { .. } => vec![
@@ -220,6 +293,27 @@ fn fixtures(command: &WtToolsCommand) -> Vec<ExpectedRequest> {
             JOB,
         )],
         WtToolsCommand::ListThreads { .. } => vec![graphql("GitlabReadMergeRequestByIid", THREADS)],
+        WtToolsCommand::ListComments { .. } => vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes?per_page=100&page=1&sort=asc&order_by=created_at",
+                format!(
+                    "[{NOTE},{},{}]",
+                    NOTE.replace("\"id\":124", "\"id\":125")
+                        .replace("\"system\":false", "\"system\":true"),
+                    NOTE.replace("\"id\":124", "\"id\":126")
+                        .replace("\"resolvable\":false", "\"resolvable\":true")
+                )
+                .leak(),
+            ),
+        ],
+        WtToolsCommand::ShowComment { .. } => vec![
+            get("/api/v4/projects/acme%2Fwidget/merge_requests/8", MR),
+            get(
+                "/api/v4/projects/acme%2Fwidget/merge_requests/8/notes/124",
+                NOTE,
+            ),
+        ],
         WtToolsCommand::ListCi { .. } => vec![
             get(
                 "/api/v4/projects/acme%2Fwidget/pipelines?sha=abc123&per_page=100",

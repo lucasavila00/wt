@@ -44,6 +44,15 @@ pub enum GitHostingCommand {
     ListThreads {
         mr: String,
     },
+    #[serde(rename = "list_comments")]
+    ListComments {
+        mr: String,
+    },
+    #[serde(rename = "show_comment")]
+    ShowComment {
+        mr: String,
+        comment: String,
+    },
     #[serde(rename = "list_ci")]
     ListCi {
         commit: String,

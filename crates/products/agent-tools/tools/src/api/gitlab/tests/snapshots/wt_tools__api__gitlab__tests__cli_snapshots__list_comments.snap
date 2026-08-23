@@ -1,0 +1,17 @@
+---
+source: crates/products/agent-tools/tools/src/api/gitlab/tests/cli_snapshots.rs
+expression: "serde_json::to_string_pretty(&message).unwrap()"
+---
+{
+  "data": [
+    {
+      "author": "reviewer",
+      "body": "General feedback.",
+      "created_at": "2026-08-22T10:00:00Z",
+      "handle": "124",
+      "updated_at": "2026-08-22T11:00:00Z",
+      "url": "https://gitlab.test/acme/widget/-/merge_requests/8#note_124"
+    }
+  ],
+  "type": "general_comments"
+}

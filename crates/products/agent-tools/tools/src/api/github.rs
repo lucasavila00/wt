@@ -2,8 +2,9 @@ mod client;
 
 use super::{
     ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, ConflictState,
-    GitHostingCommand as WtToolsCommand, GitProviderApi, ProviderCommand, ProviderCommandOutput,
-    ProviderCommandScope, ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle,
+    GeneralComment, GeneralCommentHandle, GitHostingCommand as WtToolsCommand, GitProviderApi,
+    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
+    ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -229,6 +230,36 @@ struct PullRequestRepository {
 #[derive(Deserialize)]
 struct Commit {
     sha: String,
+}
+
+#[derive(Deserialize)]
+struct IssueComment {
+    id: u64,
+    body: String,
+    html_url: String,
+    issue_url: String,
+    user: Option<IssueCommentAuthor>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+struct IssueCommentAuthor {
+    login: String,
+}
+
+fn general_comment(comment: IssueComment) -> GeneralComment {
+    GeneralComment {
+        handle: GeneralCommentHandle::new(comment.id.to_string()),
+        author: comment
+            .user
+            .map(|author| author.login)
+            .unwrap_or_else(|| "unknown".to_owned()),
+        body: comment.body,
+        url: comment.html_url,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+    }
 }
 
 fn pull_request_status(request: PullRequest) -> ChangeRequestStatus {

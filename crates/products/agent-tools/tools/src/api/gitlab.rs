@@ -2,8 +2,9 @@ mod client;
 
 use super::{
     ChangeRequestState, ChangeRequestStatus, CiJob, CiJobHandle, CiRun, ConflictState,
-    GitHostingCommand as WtToolsCommand, GitProviderApi, ProviderCommand, ProviderCommandOutput,
-    ProviderCommandScope, ProviderProjectScope, ReviewComment, ReviewThread, ReviewThreadHandle,
+    GeneralComment, GeneralCommentHandle, GitHostingCommand as WtToolsCommand, GitProviderApi,
+    ProviderCommand, ProviderCommandOutput, ProviderCommandScope, ProviderProjectScope,
+    ReviewComment, ReviewThread, ReviewThreadHandle,
 };
 use crate::api::http::{ProviderAuthentication, ProviderHttpClient};
 use anyhow::{bail, Context, Result};
@@ -185,6 +186,36 @@ struct MergeRequest {
     has_conflicts: bool,
     #[serde(default)]
     detailed_merge_status: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MergeRequestNote {
+    id: u64,
+    body: String,
+    author: Option<MergeRequestNoteAuthor>,
+    created_at: String,
+    updated_at: String,
+    system: bool,
+    resolvable: bool,
+}
+
+#[derive(Deserialize)]
+struct MergeRequestNoteAuthor {
+    username: String,
+}
+
+fn general_comment(note: MergeRequestNote, mr_url: &str) -> GeneralComment {
+    GeneralComment {
+        handle: GeneralCommentHandle::new(note.id.to_string()),
+        author: note
+            .author
+            .map(|author| author.username)
+            .unwrap_or_else(|| "unknown".to_owned()),
+        body: note.body,
+        url: format!("{mr_url}#note_{}", note.id),
+        created_at: note.created_at,
+        updated_at: note.updated_at,
+    }
 }
 
 #[derive(Deserialize)]

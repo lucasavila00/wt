@@ -102,6 +102,26 @@ fn wt_tools_activity_metadata_uses_the_head_and_response_handle() {
     insta::assert_snapshot!(format!("{} {:?} {:?}", metadata.0, metadata.1, metadata.2), @r###"
     open_mr Some("wt/activity") Some("42")
     "###);
+
+    for (command, expected_action) in [
+        (
+            api::GitHostingCommand::ListComments { mr: "7".into() },
+            "list_comments",
+        ),
+        (
+            api::GitHostingCommand::ShowComment {
+                mr: "7".into(),
+                comment: "123".into(),
+            },
+            "show_comment",
+        ),
+    ] {
+        assert_eq!(
+            service::wt_tools_activity_metadata(&command, r#"{"type":"confirmation","data":"ok"}"#)
+                .unwrap(),
+            (expected_action.to_owned(), None, Some("7".to_owned()))
+        );
+    }
 }
 
 #[test]
