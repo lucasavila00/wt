@@ -1,1 +1,0 @@
-copy from diffo too https://github.com/lucasavila00/diffo the scrollbarview thing. the current sessions view scrolls without any indication. lets fix it.
