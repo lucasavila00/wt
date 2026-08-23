@@ -214,12 +214,15 @@ fn handle_daemon_request(
             progress,
         ))
     })();
-    result.unwrap_or_else(|error| {
-        ApiResponse::error(ApiError::new(
-            ErrorCode::Internal,
-            format!("initialize request: {error:#}"),
-        ))
-    })
+    result.unwrap_or_else(request_initialization_error)
+}
+
+fn request_initialization_error(error: anyhow::Error) -> ApiResponse {
+    eprintln!("wt-server: initialize request: {error:#}");
+    ApiResponse::error(ApiError::new(
+        ErrorCode::Internal,
+        format!("initialize request: {error:#}"),
+    ))
 }
 
 #[cfg(test)]
@@ -235,5 +238,16 @@ mod tests {
             reject_remote_test_server(true, true).unwrap_err().to_string(),
             @"WT test server refuses remote OpenSSH clients"
         );
+    }
+
+    #[test]
+    fn request_initialization_errors_remain_internal_responses() {
+        let response = request_initialization_error(anyhow::anyhow!("database is locked"));
+        let wt_control_protocol::Outcome::Error { error } = response.outcome else {
+            panic!("initialization failure must return an error response");
+        };
+
+        assert_eq!(error.code, ErrorCode::Internal);
+        insta::assert_snapshot!(error.message, @"initialize request: database is locked");
     }
 }

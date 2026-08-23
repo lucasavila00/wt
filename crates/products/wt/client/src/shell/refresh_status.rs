@@ -28,14 +28,14 @@ impl RefreshStatus {
     }
 
     pub(super) fn title(&self, label: &str) -> String {
-        let mut title = self.updated_at().map_or_else(
+        self.updated_at().map_or_else(
             || format!("{label} · Updating…"),
             |updated_at| format!("{label} · Last updated {updated_at}"),
-        );
-        if let Some(failures) = self.failures() {
-            title.push_str(" · Sync failed: ");
-            title.push_str(&failures.join("; "));
-        }
-        title
+        )
+    }
+
+    pub(super) fn failure(&self) -> Option<String> {
+        self.failures()
+            .map(|failures| format!(" · Sync failed: {}", failures.join("; ")))
     }
 }

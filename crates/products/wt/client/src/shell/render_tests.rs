@@ -318,3 +318,80 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
         .add_modifier
         .contains(Modifier::BOLD));
 }
+#[test]
+fn failed_codex_refresh_is_shown_in_the_red_footer() {
+    let area = Rect::new(0, 0, 160, 18);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    model.set_codex(Vec::new(), "2026-08-22T19:25:06Z".into(), area);
+    model.control_mut().set_context_failures(vec![
+        "context ars could not be queried: connection timed out".into(),
+    ]);
+    press(&mut model, KeyCode::Tab, area);
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let rendered = buffer
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(
+        rendered.contains("Sync failed: context ars could not be queried: connection timed out")
+    );
+    assert!(buffer.content().iter().any(|cell| cell.fg == Color::Red));
+}
+
+#[test]
+fn failed_worlds_refresh_is_shown_in_the_red_footer() {
+    let area = Rect::new(0, 0, 160, 18);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut model = model(&["ars.dev"]);
+    model.show_worlds();
+    model.finish_worlds_refresh(Ok("2026-08-22T19:25:06Z".into()));
+    model.finish_worlds_refresh(Err(vec![
+        "context ars could not be queried: connection timed out".into(),
+    ]));
+
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &[],
+                &super::super::live_focus::LiveFocus::default(),
+                None,
+                &model,
+                None,
+                None,
+                None,
+            )
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let rendered = buffer
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(
+        rendered.contains("Sync failed: context ars could not be queried: connection timed out")
+    );
+    assert!(buffer.content().iter().any(|cell| cell.fg == Color::Red));
+}

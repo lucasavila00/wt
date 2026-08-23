@@ -20,14 +20,19 @@ manual lifecycle operation. These recovery probes are not given the full retry
 delay, so one previously failed world cannot repeatedly stall every inventory
 request.
 
-If a Worlds refresh fails, the UI retains the last complete snapshot and does
-not advance its freshness time. Worlds and Codex use the same title component
-and failure shape: `<panel> · Last updated <timestamp> · Sync failed: <reason>`.
-Before any snapshot has succeeded, the title uses `Updating…` in place of the
-timestamp. Reasons identify the affected contexts and use concise, sanitized
-transport summaries joined with `; ` rather than multiline diagnostic details.
-The warning is confined to that title line; cards and the rest of the layout
-retain their existing content and interaction.
+If a Worlds or Codex refresh fails, the UI retains the last complete snapshot
+and does not advance its freshness time. Both panels use the same footer: the
+panel name and last successful timestamp are muted, while the adjacent `Sync
+failed: <reason>` span is red. Before any snapshot has succeeded, the footer
+uses `Updating…` in place of the timestamp. Reasons identify the affected
+contexts and use concise, sanitized transport summaries joined with `; ` rather
+than multiline diagnostic details. The warning is confined to that footer line;
+cards and the rest of the layout retain their existing content and interaction.
+
+The server writes the full cause of a request-initialization failure to the
+`wt-server.service` journal before returning its API error. Operators inspect
+it with `journalctl -u wt-server.service`; the interactive UI keeps only the
+concise refresh summary.
 
 The UI does not show an intermediate `Retrying…` state because the list protocol
 does not expose inspection-attempt events. A later complete refresh clears the

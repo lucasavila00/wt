@@ -175,10 +175,16 @@ fn draw_control(
         Activity::Codex => draw_codex(frame, body, model.control()),
         Activity::Live => super::live::draw(frame, body, screens, live_focus, model),
     }
-    let title = match model.control().activity() {
-        Activity::Worlds => model.control().worlds_refresh().title("Worlds"),
-        Activity::Codex => model.control().codex_refresh().title("Codex sessions"),
-        Activity::Live => "Live sessions · Experimental".to_owned(),
+    let (title, failure) = match model.control().activity() {
+        Activity::Worlds => {
+            let status = model.control().worlds_refresh();
+            (status.title("Worlds"), status.failure())
+        }
+        Activity::Codex => {
+            let status = model.control().codex_refresh();
+            (status.title("Codex sessions"), status.failure())
+        }
+        Activity::Live => ("Live sessions · Experimental".to_owned(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
@@ -191,7 +197,14 @@ fn draw_control(
         Constraint::Length(help.width),
     ])
     .areas(footer);
-    frame.render_widget(Paragraph::new(title).style(muted_style()), title_area);
+    let mut title = vec![Span::styled(title, muted_style())];
+    if let Some(failure) = failure {
+        title.push(Span::styled(failure, Style::new().fg(Color::Red)));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(title)).style(muted_style()),
+        title_area,
+    );
     if let Some(capacity) = capacity {
         frame.render_widget(
             Paragraph::new(capacity)
@@ -209,31 +222,14 @@ fn draw_control(
     draw_command_palette(frame, content, model.control().palette());
     draw_help(frame, content, model);
     if model.control().open_failed() {
-        draw_codex_toast(frame, area, model.control());
+        draw_codex_toast(frame, area);
     }
 }
-fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
+fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect) {
     let toast = super::toast::area(area);
     let (retry, _) = super::toast::actions(area);
-    let (title, message) = if state.open_failed() {
-        (
-            " Could not open Codex session ".to_owned(),
-            "The session could not be focused. Try again.".to_owned(),
-        )
-    } else {
-        let contexts = state
-            .context_failure()
-            .expect("Codex toast has an open or context failure");
-        let target = if contexts.len() == 1 {
-            format!("context {}", contexts[0])
-        } else {
-            format!("{} contexts", contexts.len())
-        };
-        (
-            format!(" Could not refresh Codex sessions for {target} "),
-            "The context could not be queried. Try again.".to_owned(),
-        )
-    };
+    let title = " Could not open Codex session ";
+    let message = "The session could not be focused. Try again.";
     frame.render_widget(Clear, toast);
     frame.render_widget(
         Block::new()
