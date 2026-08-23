@@ -1,0 +1,5 @@
+- latest cargo/rust
+- latest go
+- latest python
+- latest nvm
+- latest node
