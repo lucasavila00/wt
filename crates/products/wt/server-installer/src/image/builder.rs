@@ -33,6 +33,8 @@ const INSTALL_DIFFO: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-diffo.sh");
 pub(super) const SHARED_IMAGE_BUILD: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/build-image.sh");
+pub(super) const CACHED_IMAGE_BUILD: &[u8] =
+    include_bytes!("../../../../../../assets/world/shared/build-image-from-cache.sh");
 const FINALIZE_IMAGE: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/finalize-image.sh");
 const TMUX_CONFIG: &[u8] = include_bytes!("../../../../../../assets/world/shared/tmux.conf");
@@ -58,6 +60,12 @@ pub(super) struct BuildPaths {
     pub(super) disk: PathBuf,
     pub(super) console: PathBuf,
     pub(super) prepared: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum BuildSource {
+    CloudImage,
+    ReusableImage,
 }
 
 pub(super) struct StagedInput<'a> {
@@ -120,6 +128,7 @@ pub(super) fn run_kvm_build<R: Runner>(
     build_dir: &Path,
     spec: &BuildSpec<'_>,
     extra_inputs: &[StagedInput<'_>],
+    source: BuildSource,
 ) -> Result<BuildPaths> {
     let runner = context.runner;
     let input = context.input;
@@ -146,30 +155,48 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_agent_tools = build_dir.join("install-agent-tools.sh");
     let mount_codex = build_dir.join("mount-codex.sh");
 
-    println!("Creating expanded {IMAGE_KIND} image-build disk...");
-    runner.run(
-        cmd!(
-            "qemu-img",
-            "create",
-            "-q",
-            "-f",
-            "qcow2",
-            &paths.disk,
-            format!("{}G", input.image.build_disk_gib),
-        ),
-        "create image build disk",
-    )?;
-    runner.run(
-        cmd!(
-            "sudo",
-            "virt-resize",
-            "--expand",
-            "/dev/sda1",
-            context.source,
-            &paths.disk,
-        ),
-        "copy and expand source image",
-    )?;
+    match source {
+        BuildSource::CloudImage => {
+            println!("Creating expanded {IMAGE_KIND} image-build disk...");
+            runner.run(
+                cmd!(
+                    "qemu-img",
+                    "create",
+                    "-q",
+                    "-f",
+                    "qcow2",
+                    &paths.disk,
+                    format!("{}G", input.image.build_disk_gib),
+                ),
+                "create image build disk",
+            )?;
+            runner.run(
+                cmd!(
+                    "sudo",
+                    "virt-resize",
+                    "--expand",
+                    "/dev/sda1",
+                    context.source,
+                    &paths.disk,
+                ),
+                "copy and expand source image",
+            )?;
+        }
+        BuildSource::ReusableImage => {
+            println!("Copying cached {IMAGE_KIND} image-build disk...");
+            runner.run(
+                cmd!(
+                    "qemu-img",
+                    "convert",
+                    "-O",
+                    "qcow2",
+                    context.source,
+                    &paths.disk
+                ),
+                "copy cached image build disk",
+            )?;
+        }
+    }
 
     fs::write(
         &environment,

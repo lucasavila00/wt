@@ -19,6 +19,7 @@ wt-server-installer image rebuild --config PATH
 - Strict `/etc/wt/server.toml` and `/etc/wt/capacity.toml` materialization and
   drift checks.
 - Retained-world image build, provenance, and verification.
+- A verified development-tools image cache used only by opted-in golden-image builds.
 - `wt` and `wt-server` binary installation.
 - `wt-server.service` installation and startup under the installing user.
 

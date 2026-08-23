@@ -35,6 +35,12 @@ silently reusing a different profile.
 The enabled world shell announces the high-level tool inventory. The default
 and KVM E2E install inputs leave the option disabled.
 
+The enabled profile retains a local cache image after installing the complete
+tool layer. Its identity covers the pinned Ubuntu source, build disk size,
+terminal pins, and the recipe assets that produced it. A new WT commit copies
+that verified cache and refreshes only the WT-specific guest layer. Operators
+receive newer upstream releases when the tool-layer policy changes.
+
 ## Consequences
 
 - Operators can choose a ready-to-use developer environment without changing
@@ -42,7 +48,7 @@ and KVM E2E install inputs leave the option disabled.
 - Default image creation and KVM E2E remain narrow and avoid third-party
   language-runtime downloads.
 - Developer-image rebuilds depend on upstream availability and can produce
-  newer tool versions for the same WT commit; their manifest makes the exact
-  result auditable.
+  newer tool versions when the cache is invalidated or explicitly refreshed;
+  their manifest makes the exact result auditable.
 - Enabling or disabling the option creates a distinct retained image
   generation; existing worlds continue to use their current generation.

@@ -37,6 +37,40 @@ fn image_manifest_records_structured_package_versions() {
 }
 
 #[test]
+fn development_tools_cache_identity_tracks_its_source_and_policy() {
+    let identity = development_tools_cache_identity(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        32,
+    );
+
+    assert_ne!(
+        identity,
+        development_tools_cache_identity(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            32,
+        )
+    );
+    assert_eq!(identity.len(), 64);
+    assert!(identity.bytes().all(|byte| byte.is_ascii_hexdigit()));
+}
+
+#[test]
+fn development_tools_cache_manifest_is_structured() {
+    let manifest = DevelopmentToolsCacheManifest {
+        identity: "policy".to_owned(),
+        sha256: "image".to_owned(),
+    };
+
+    assert_eq!(
+        serde_json::to_value(manifest).unwrap(),
+        serde_json::json!({
+            "identity": "policy",
+            "sha256": "image",
+        })
+    );
+}
+
+#[test]
 fn image_publication_rejects_a_mismatched_guest_identity() {
     struct UnusedRunner;
 

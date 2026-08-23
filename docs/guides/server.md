@@ -22,6 +22,11 @@ Node.js installation. The interactive world shell prints this high-level
 inventory when the option is enabled. It is off by default to keep golden-image
 builds, including KVM E2E, small and fast.
 
+Enabled images retain a verified local development-tools cache. Later golden-image
+rebuilds derive from it and refresh WT's guest binaries instead of reinstalling
+language toolchains. Changing the tool-layer policy invalidates the cache and
+fetches the current upstream tool releases again.
+
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wt-server --version`
 prints the package version and full source commit SHA. The same identity is

@@ -34,6 +34,13 @@ utilities including ShellCheck, and Docker/Compose; the finalized image records
 the exact resolved tool versions. KVM E2E leaves it disabled so its golden image
 stays narrow and does not repeat third-party language-runtime downloads.
 
+When enabled, the installer first builds a verified, fully sanitized cache image
+from the pinned Ubuntu source and the development-tools policy. Golden-image
+rebuilds copy that cache, refresh the WT-specific guest binaries, and publish a
+standalone image. The cache identity covers the source image, image size, pinned
+terminal inputs, and every cached recipe asset; a change to any of those inputs
+rebuilds it and picks up newer upstream tool releases.
+
 ## Readiness
 
 Libvirt waits for the QEMU guest agent and an IPv4 address. The host lifecycle
