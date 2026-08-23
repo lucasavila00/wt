@@ -530,7 +530,7 @@ fn control_ui_shows_live_session_panes() {
                 cwd: "/home/wt/wt".into(),
                 repository_root: None,
                 repository_url: None,
-                git_branch: None,
+                git_branch: Some("wt/live".into()),
                 state: CodexSessionState::Working,
                 session_start_source: None,
                 target: ByobuTarget {

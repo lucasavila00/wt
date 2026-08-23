@@ -89,9 +89,14 @@ pub(super) fn draw(
         let card = cards[index];
         let (title, title_color) = card_title(card);
         let title = match &card.kind {
-            super::control::CodexCardKind::Observation { world_name, .. } => {
-                format!("{title} · {}.{world_name}", card.context)
-            }
+            super::control::CodexCardKind::Observation {
+                world_name,
+                git_branch,
+                ..
+            } => git_branch.as_ref().map_or_else(
+                || format!("{title} · {}.{world_name}", card.context),
+                |branch| format!("{title} · {}.{world_name} · {branch}", card.context),
+            ),
             super::control::CodexCardKind::RolloutOnly
             | super::control::CodexCardKind::ContextError { .. } => title,
         };
