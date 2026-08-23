@@ -105,7 +105,7 @@ fn live_activity_excludes_sessions_that_are_not_open() {
         area(),
     );
 
-    state.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), area());
+    state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), area());
     assert_eq!(state.selected(), Some(&state.codex()[1].identity));
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
     state.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), area());
