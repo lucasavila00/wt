@@ -3,7 +3,9 @@ use super::control::{CodexCard, CodexCardIdentity, CodexCardKind, CodexOpenTarge
 use super::model::ShellModel;
 use super::session::SessionSet;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
+use wt_control_protocol::CodexSessionState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Status {
@@ -12,13 +14,46 @@ enum Status {
     Failed,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FocusState {
+    status: Status,
+    stream_token: Option<u64>,
+}
+
+impl FocusState {
+    fn matches_stream(self, stream_token: u64) -> bool {
+        self.stream_token == Some(stream_token)
+    }
+}
+
 pub(super) struct LiveFocus {
-    states: BTreeMap<CodexCardIdentity, Status>,
+    states: BTreeMap<CodexCardIdentity, FocusState>,
+    quiet: BTreeMap<CodexCardIdentity, QuietSession>,
+    stuck_after: Duration,
+}
+
+struct QuietSession {
+    screen: ((u16, u16), String),
+    lifecycle: (Option<i64>, CodexSessionState),
+    quiet_since: Instant,
+    stuck: bool,
 }
 
 impl LiveFocus {
-    pub(super) fn sync(&mut self, model: &ShellModel, sessions: &SessionSet, worker: &FocusWorker) {
+    pub(super) fn new(stuck_after: Duration) -> Self {
+        Self {
+            states: BTreeMap::new(),
+            quiet: BTreeMap::new(),
+            stuck_after,
+        }
+    }
+
+    pub(super) fn sync(
+        &mut self,
+        model: &ShellModel,
+        sessions: &SessionSet,
+        worker: &FocusWorker,
+    ) -> bool {
         let targets = model
             .control()
             .codex()
@@ -34,43 +69,72 @@ impl LiveFocus {
         self.states.retain(|identity, _| unique.contains(identity));
 
         for target in targets {
-            if counts.get(&world_key(&target)).copied() != Some(1)
-                || self.states.contains_key(&target.identity)
-            {
+            if counts.get(&world_key(&target)).copied() != Some(1) {
                 continue;
             }
             let Some((index, alias)) = model.focus_route(&target) else {
-                self.states.insert(target.identity, Status::Failed);
+                self.states.insert(
+                    target.identity,
+                    FocusState {
+                        status: Status::Failed,
+                        stream_token: None,
+                    },
+                );
                 continue;
             };
             if !sessions.is_open(index) {
-                self.states.insert(target.identity, Status::Failed);
+                self.states.insert(
+                    target.identity,
+                    FocusState {
+                        status: Status::Failed,
+                        stream_token: None,
+                    },
+                );
                 continue;
             }
-            self.states.insert(target.identity.clone(), Status::Pending);
+            let stream_token = sessions.token(index);
+            if self
+                .states
+                .get(&target.identity)
+                .is_some_and(|state| state.matches_stream(stream_token))
+            {
+                continue;
+            }
+            self.states.insert(
+                target.identity.clone(),
+                FocusState {
+                    status: Status::Pending,
+                    stream_token: Some(stream_token),
+                },
+            );
             worker.start_live(
                 target,
                 alias.to_owned(),
                 sessions.control_path(index).to_owned(),
             );
         }
+        self.sync_quiet(model, sessions, Instant::now())
     }
 
     pub(super) fn complete(&mut self, target: &CodexOpenTarget, focused: bool) {
-        if self.states.contains_key(&target.identity) {
-            self.states.insert(
-                target.identity.clone(),
-                if focused {
-                    Status::Focused
-                } else {
-                    Status::Failed
-                },
-            );
+        if let Some(state) = self.states.get_mut(&target.identity) {
+            state.status = if focused {
+                Status::Focused
+            } else {
+                Status::Failed
+            };
         }
     }
 
     pub(super) fn clear(&mut self) {
         self.states.clear();
+        self.quiet.clear();
+    }
+
+    pub(super) fn is_stuck(&self, card: &CodexCard) -> bool {
+        self.quiet
+            .get(&card.identity)
+            .is_some_and(|session| session.stuck)
     }
 
     pub(super) fn warning(&self, card: &CodexCard, cards: &[CodexCard]) -> Option<&'static str> {
@@ -95,11 +159,103 @@ impl LiveFocus {
         if count > 1 {
             return Some("Multiple Codex sessions in this world; open one to choose its pane");
         }
-        match self.states.get(&card.identity) {
+        match self.states.get(&card.identity).map(|state| state.status) {
             Some(Status::Pending) => Some("Focusing world on this Codex session…"),
             Some(Status::Failed) => Some("World not focused on this Codex session"),
             Some(Status::Focused) | None => None,
         }
+    }
+
+    fn sync_quiet(&mut self, model: &ShellModel, sessions: &SessionSet, now: Instant) -> bool {
+        let mut eligible = BTreeSet::new();
+        let mut changed = false;
+        for card in model.control().codex() {
+            let CodexCardKind::Observation {
+                world_id,
+                state,
+                is_compacting,
+                ..
+            } = &card.kind
+            else {
+                continue;
+            };
+            if *state != CodexSessionState::Working
+                || *is_compacting
+                || self.states.get(&card.identity).map(|state| state.status)
+                    != Some(Status::Focused)
+            {
+                continue;
+            }
+            let Some(index) = model.worlds().iter().position(|world| {
+                world.identity.context == card.context && world.identity.id == *world_id
+            }) else {
+                continue;
+            };
+            if !sessions.is_open(index) {
+                continue;
+            }
+            eligible.insert(card.identity.clone());
+            let screen = sessions.screen(index);
+            let screen = (screen.size(), screen.contents());
+            let lifecycle = (card.timestamp, *state);
+            match self.quiet.get_mut(&card.identity) {
+                Some(session) => {
+                    changed |= session.update(screen, lifecycle, now, self.stuck_after);
+                }
+                None => {
+                    self.quiet.insert(
+                        card.identity.clone(),
+                        QuietSession::new(screen, lifecycle, now),
+                    );
+                }
+            }
+        }
+        self.quiet.retain(|identity, session| {
+            let retained = eligible.contains(identity);
+            changed |= !retained && session.stuck;
+            retained
+        });
+        changed
+    }
+}
+
+impl QuietSession {
+    fn new(
+        screen: ((u16, u16), String),
+        lifecycle: (Option<i64>, CodexSessionState),
+        now: Instant,
+    ) -> Self {
+        Self {
+            screen,
+            lifecycle,
+            quiet_since: now,
+            stuck: false,
+        }
+    }
+
+    fn update(
+        &mut self,
+        screen: ((u16, u16), String),
+        lifecycle: (Option<i64>, CodexSessionState),
+        now: Instant,
+        threshold: Duration,
+    ) -> bool {
+        let was_stuck = self.stuck;
+        if self.screen != screen || self.lifecycle != lifecycle {
+            self.screen = screen;
+            self.lifecycle = lifecycle;
+            self.quiet_since = now;
+            self.stuck = false;
+        } else if now.saturating_duration_since(self.quiet_since) >= threshold {
+            self.stuck = true;
+        }
+        self.stuck != was_stuck
+    }
+}
+
+impl Default for LiveFocus {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(30))
     }
 }
 
@@ -166,12 +322,77 @@ mod tests {
     fn failed_unique_focus_has_an_explicit_warning() {
         let cards = vec![card(1)];
         let mut focus = LiveFocus::default();
-        focus
-            .states
-            .insert(cards[0].identity.clone(), Status::Failed);
+        focus.states.insert(
+            cards[0].identity.clone(),
+            FocusState {
+                status: Status::Failed,
+                stream_token: Some(1),
+            },
+        );
         assert_eq!(
             focus.warning(&cards[0], &cards),
             Some("World not focused on this Codex session")
         );
+    }
+
+    #[test]
+    fn quiet_session_becomes_stuck_at_the_threshold_and_resets_on_change() {
+        let started = Instant::now();
+        let lifecycle = (Some(1), CodexSessionState::Working);
+        let screen = ((16, 80), "screen".into());
+        let mut quiet = QuietSession::new(screen.clone(), lifecycle, started);
+
+        assert!(!quiet.update(
+            screen.clone(),
+            lifecycle,
+            started + Duration::from_secs(29),
+            Duration::from_secs(30)
+        ));
+        assert!(quiet.update(
+            screen,
+            lifecycle,
+            started + Duration::from_secs(30),
+            Duration::from_secs(30)
+        ));
+        assert!(quiet.stuck);
+        assert!(quiet.update(
+            ((16, 80), "changed".into()),
+            lifecycle,
+            started + Duration::from_secs(31),
+            Duration::from_secs(30)
+        ));
+        assert!(!quiet.stuck);
+    }
+
+    #[test]
+    fn resizing_resets_a_quiet_session_even_when_its_text_is_unchanged() {
+        let started = Instant::now();
+        let lifecycle = (Some(1), CodexSessionState::Working);
+        let mut quiet = QuietSession::new(((16, 80), "screen".into()), lifecycle, started);
+        assert!(quiet.update(
+            ((16, 80), "screen".into()),
+            lifecycle,
+            started + Duration::from_secs(30),
+            Duration::from_secs(30)
+        ));
+
+        assert!(quiet.update(
+            ((20, 100), "screen".into()),
+            lifecycle,
+            started + Duration::from_secs(31),
+            Duration::from_secs(30)
+        ));
+        assert!(!quiet.stuck);
+    }
+
+    #[test]
+    fn focus_is_valid_only_for_the_stream_that_was_checked() {
+        let focus = FocusState {
+            status: Status::Focused,
+            stream_token: Some(7),
+        };
+
+        assert!(focus.matches_stream(7));
+        assert!(!focus.matches_stream(8));
     }
 }

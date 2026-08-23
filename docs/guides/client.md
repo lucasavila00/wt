@@ -9,6 +9,9 @@ The client reads `~/.wt/config.toml`:
 ```toml
 version = 1
 
+[shell]
+codex_stuck_after_seconds = 30
+
 [[contexts]]
 name = "local"
 kind = "bare_metal_local"
@@ -18,6 +21,8 @@ name = "lab"
 kind = "bare_metal_ssh"
 host = "wt-server"
 ```
+
+`shell.codex_stuck_after_seconds` defaults to 30 when omitted.
 
 A local context runs `wt-server api`. An SSH context runs it through the named
 OpenSSH host. Use `CONTEXT.WORLD` explicitly; a short name works only when it

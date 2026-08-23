@@ -542,6 +542,7 @@ mod tests {
     fn form() -> Form {
         Form::new(
             &ClientConfig {
+                shell: Default::default(),
                 contexts: vec![
                     Context {
                         name: "local".into(),

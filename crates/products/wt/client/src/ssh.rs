@@ -155,6 +155,7 @@ mod tests {
 
     fn local_config() -> ClientConfig {
         ClientConfig {
+            shell: Default::default(),
             contexts: vec![ClientContext {
                 name: "local".into(),
                 kind: ContextKind::BareMetalLocal,
@@ -508,6 +509,7 @@ mod tests {
             },
         };
         let client_config = ClientConfig {
+            shell: Default::default(),
             contexts: vec![
                 ClientContext {
                     name: "local".into(),
@@ -568,6 +570,7 @@ mod tests {
             },
         };
         let client_config = ClientConfig {
+            shell: Default::default(),
             contexts: vec![ClientContext {
                 name: "lab".into(),
                 kind: ContextKind::BareMetalSsh {
