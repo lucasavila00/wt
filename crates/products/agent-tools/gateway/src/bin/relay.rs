@@ -17,6 +17,11 @@ use wt_agent_tool_gateway::{
     CODEX_SESSION_PANE_OPTION, RELAY_SOCKET,
 };
 
+#[path = "relay/liveness.rs"]
+mod liveness;
+
+use liveness::{codex_pane_liveness, infer_session_end, PaneLiveness};
+
 const TRACKER_STATE_FILE: &str = ".local/state/wt/codex-git-tracker.json";
 const GIT_TIMEOUT: Duration = Duration::from_millis(500);
 const TRACKER_INTERVAL: Duration = Duration::from_secs(2);
@@ -43,6 +48,8 @@ struct Registration {
     tmux_session: String,
     pane_id: String,
     pane_generation: u64,
+    #[serde(default)]
+    pane_sequence: u64,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -275,9 +282,22 @@ fn update_registration(
                 tmux_session: event.tmux_session.clone(),
                 pane_id: event.pane_id.clone(),
                 pane_generation: event.pane_generation,
+                pane_sequence: event.pane_sequence,
             },
         );
     }
+    save_tracker(state_file, &tracker)
+}
+
+fn remove_registration(
+    session_id: uuid::Uuid,
+    tracker: &Arc<Mutex<TrackerState>>,
+    state_file: &PathBuf,
+) -> Result<()> {
+    let mut tracker = tracker
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Codex Git tracker lock poisoned"))?;
+    tracker.sessions.remove(&session_id);
     save_tracker(state_file, &tracker)
 }
 
@@ -319,14 +339,55 @@ fn track_git_context(
             }
         };
         for (session_id, registration) in registrations {
-            if !marker_matches(session_id, &registration) {
-                if let Ok(mut state) = tracker.lock() {
-                    state.sessions.remove(&session_id);
-                    if let Err(error) = save_tracker(&state_file, &state) {
-                        eprintln!("wt-agent-tool-gateway-relay: remove stale Git tracker registration: {error:#}");
+            match codex_pane_liveness(session_id, &registration) {
+                PaneLiveness::Running => {}
+                PaneLiveness::Closed => {
+                    if registration.pane_sequence == 0 {
+                        if let Err(error) = remove_registration(session_id, &tracker, &state_file) {
+                            eprintln!(
+                                "wt-agent-tool-gateway-relay: remove legacy Git tracker registration: {error:#}"
+                            );
+                        }
+                        sent.remove(&session_id);
+                        continue;
                     }
+                    match infer_session_end(session_id, &registration).and_then(|event| {
+                        let response = send_transport(
+                            &token,
+                            gateway_unix.as_ref(),
+                            vsock_port,
+                            ClientOperation::CodexSession {
+                                event: event.clone(),
+                            },
+                        )?;
+                        if !response.ok {
+                            bail!(
+                                "Codex session completion transport failed: {}",
+                                response.error.unwrap_or_else(|| "unknown error".into())
+                            );
+                        }
+                        update_codex_marker(&event)?;
+                        update_registration(&event, &tracker, &state_file)
+                    }) {
+                        Ok(()) => {
+                            sent.remove(&session_id);
+                        }
+                        Err(error) => eprintln!(
+                            "wt-agent-tool-gateway-relay: reconcile closed Codex session {session_id} {}: {error:#}",
+                            registration.pane_id,
+                        ),
+                    }
+                    continue;
                 }
-                continue;
+                PaneLiveness::Missing => {
+                    if let Err(error) = remove_registration(session_id, &tracker, &state_file) {
+                        eprintln!(
+                            "wt-agent-tool-gateway-relay: remove stale Git tracker registration: {error:#}"
+                        );
+                    }
+                    sent.remove(&session_id);
+                    continue;
+                }
             }
             let context = git_context(&registration.cwd);
             let unchanged = sent.get(&session_id).is_some_and(|(previous, at)| {
@@ -484,27 +545,6 @@ fn run_git(cwd: &str, arguments: &[&str], allowed_failure: GitFailure) -> Result
     }
     let value = String::from_utf8(output).context("Git state output was not UTF-8")?;
     Ok(Some(value.trim().to_owned()).filter(|value| !value.is_empty()))
-}
-
-fn marker_matches(session_id: uuid::Uuid, registration: &Registration) -> bool {
-    let output = Command::new("/usr/bin/tmux")
-        .args([
-            "display-message",
-            "-p",
-            "-t",
-            &registration.pane_id,
-            "#{session_name}:#{pane_id}:#{@wt_codex_session_id}",
-        ])
-        .output();
-    output.is_ok_and(|output| {
-        output.status.success()
-            && output.stdout
-                == format!(
-                    "{}:{}:{}\n",
-                    registration.tmux_session, registration.pane_id, session_id
-                )
-                .as_bytes()
-    })
 }
 
 fn send_transport(
