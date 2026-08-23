@@ -181,6 +181,7 @@ pub(super) struct ControlState {
     pub(super) open_failure: Option<CodexOpenTarget>,
     worlds_refresh: RefreshStatus,
     codex_refresh: RefreshStatus,
+    capacity: wt_control_protocol::ResourceCapacity,
 }
 
 impl Default for ControlState {
@@ -195,11 +196,20 @@ impl Default for ControlState {
             open_failure: None,
             worlds_refresh: RefreshStatus::default(),
             codex_refresh: RefreshStatus::default(),
+            capacity: Default::default(),
         }
     }
 }
 
 impl ControlState {
+    pub(super) fn capacity(&self) -> wt_control_protocol::ResourceCapacity {
+        self.capacity
+    }
+
+    pub(super) fn set_capacity(&mut self, capacity: wt_control_protocol::ResourceCapacity) {
+        self.capacity = capacity;
+    }
+
     pub(super) fn show_worlds(&mut self) {
         self.activity = Activity::Worlds;
         self.palette.close();

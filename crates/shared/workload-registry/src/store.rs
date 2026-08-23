@@ -139,6 +139,12 @@ impl Store {
         })
     }
 
+    pub fn reserved_resources(&self) -> Result<Resources, StoreError> {
+        self.registry
+            .read(crate::reserved_resources)
+            .map_err(map_registry_error)
+    }
+
     pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
         self.registry.read(|connection| {
             worlds::table
@@ -485,5 +491,34 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(names, ["w6", "w10"]);
+    }
+
+    #[test]
+    fn reports_authoritative_resource_reservations() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("instances.db")).unwrap();
+        let world = stored("world");
+        store.insert(&world).unwrap();
+
+        assert_eq!(
+            store.reserved_resources().unwrap(),
+            Resources {
+                vcpus: 2,
+                memory_mib: 4096,
+                disk_gib: 32,
+            }
+        );
+
+        store
+            .mark_stopped(world.instance.id, "stopped", 3 * 1024 * 1024 * 1024)
+            .unwrap();
+        assert_eq!(
+            store.reserved_resources().unwrap(),
+            Resources {
+                vcpus: 0,
+                memory_mib: 0,
+                disk_gib: 3,
+            }
+        );
     }
 }

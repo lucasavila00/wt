@@ -1,0 +1,25 @@
+---
+source: crates/products/wt/client/src/shell/render_extra_tests.rs
+expression: terminal.backend().buffer()
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 160, height: 12 },
+    content: [
+        "    │┌Codex sessions · Updating…───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐",
+        "▌ 󰚩 ││                                                                 Loading Codex sessions…                                                                 │",
+        "    ││                                                                                                                                                         │",
+        "    ││                                                                                                                                                         │",
+        "   ││                                                                                                                                                         │",
+        "    ││                                                                                                                                                         │",
+        "    ││                                                                                                                                                         │",
+        "  󰆍 ││                                                                                                                                                         │",
+        "    ││                                                                                                                                                         │",
+        "    ││                                                                                                                                                         │",
+        "    │└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        "    │[ ↑/↓ or wheel: select ] [ Enter/click: open ] [ Tab: activity ] [ F5: world ]                                       CPU 6/16 · RAM 10G/32G · Disk 68G/256G",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 5, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+    ]
+}

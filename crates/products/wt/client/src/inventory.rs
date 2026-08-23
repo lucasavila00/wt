@@ -4,7 +4,9 @@ use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wt_control_protocol::{ApiRequest, Instance, InstanceName, Operation, Response};
+use wt_control_protocol::{
+    ApiRequest, Instance, InstanceName, Operation, ResourceCapacity, Response,
+};
 
 #[derive(Clone, Debug)]
 pub struct ContextInstance {
@@ -17,6 +19,7 @@ pub struct ContextInstance {
 #[derive(Debug)]
 pub struct InventoryReport {
     pub instances: Vec<ContextInstance>,
+    pub capacity: ResourceCapacity,
     pub failures: Vec<ContextError>,
 }
 
@@ -44,6 +47,29 @@ pub fn format_resources(instance: &Instance, disk_usage_bytes: Option<u64>) -> S
         },
     );
     format!("{} CPU · {memory} · {disk}", instance.vcpus)
+}
+
+pub fn format_capacity(capacity: ResourceCapacity) -> Option<String> {
+    if capacity.total == Default::default() {
+        return None;
+    }
+    Some(format!(
+        "CPU {}/{} · RAM {}/{} · Disk {}G/{}G",
+        capacity.reserved.vcpus,
+        capacity.total.vcpus,
+        format_memory(capacity.reserved.memory_mib),
+        format_memory(capacity.total.memory_mib),
+        capacity.reserved.disk_gib,
+        capacity.total.disk_gib,
+    ))
+}
+
+fn format_memory(memory_mib: u64) -> String {
+    if memory_mib.is_multiple_of(1024) {
+        format!("{}G", memory_mib / 1024)
+    } else {
+        format!("{memory_mib}MiB")
+    }
 }
 
 pub fn format_detail(item: &ContextInstance) -> String {
@@ -117,6 +143,7 @@ fn list_all_inner(
     timeout: Option<(Duration, &AtomicBool)>,
 ) -> InventoryReport {
     let mut all = Vec::new();
+    let mut capacity = ResourceCapacity::default();
     let mut failures = Vec::new();
     for context in &config.contexts {
         if timeout.is_some_and(|(_, cancelled)| cancelled.load(Ordering::Relaxed)) {
@@ -137,6 +164,7 @@ fn list_all_inner(
         };
         let Response::Instances {
             instances,
+            capacity: context_capacity,
             disk_usage_bytes,
             agent_tool_report_counts,
         } = response
@@ -144,6 +172,7 @@ fn list_all_inner(
             failures.push(transport::wrong_response(context, "list"));
             continue;
         };
+        capacity = capacity.saturating_add(context_capacity);
         all.extend(instances.into_iter().map(|instance| {
             let agent_tool_report_count = agent_tool_report_counts
                 .get(&instance.id)
@@ -161,6 +190,7 @@ fn list_all_inner(
     group_by_context(&mut all);
     InventoryReport {
         instances: all,
+        capacity,
         failures,
     }
 }
@@ -274,5 +304,23 @@ mod tests {
             .map(ContextInstance::qualified_name)
             .collect::<Vec<_>>();
         assert_eq!(names, ["lab.other", "local.w6", "local.w10"]);
+    }
+
+    #[test]
+    fn formats_reserved_and_total_capacity() {
+        let capacity = ResourceCapacity {
+            reserved: wt_control_protocol::Resources {
+                vcpus: 6,
+                memory_mib: 10_240,
+                disk_gib: 68,
+            },
+            total: wt_control_protocol::Resources {
+                vcpus: 16,
+                memory_mib: 32_768,
+                disk_gib: 256,
+            },
+        };
+
+        insta::assert_snapshot!(format_capacity(capacity).unwrap(), @"CPU 6/16 · RAM 10G/32G · Disk 68G/256G");
     }
 }
