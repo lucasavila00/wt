@@ -28,6 +28,7 @@ pub fn serve(config_path: &Path) -> Result<()> {
         None,
         None,
     )
+    .map(|_| ())
 }
 
 struct StdioStream {
