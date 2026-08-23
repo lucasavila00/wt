@@ -74,9 +74,13 @@ pub(crate) fn report_hook() -> Result<()> {
     let payload: HookPayload = serde_json::from_reader(io::stdin()).context("decode Codex hook")?;
     let event_name = format!("{:?}", payload.hook_event_name);
     let session_id = payload.session_id;
+    let successful_output = successful_hook_output(payload.hook_event_name);
     match report_hook_payload(payload) {
         Ok(()) => {
             clear_hook_error()?;
+            if let Some(output) = successful_output {
+                println!("{output}");
+            }
             Ok(())
         }
         Err(error) => {
@@ -177,6 +181,10 @@ fn clear_hook_error() -> Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error).context("clear Codex hook error"),
     }
+}
+
+fn successful_hook_output(event: HookEventName) -> Option<&'static str> {
+    matches!(event, HookEventName::Stop).then_some(r#"{"continue":true}"#)
 }
 
 fn pane_event_order(pane_id: &str, session_id: Uuid, event: HookEventName) -> Result<(u64, u64)> {
@@ -314,6 +322,15 @@ mod tests {
             event_kind(payload.hook_event_name),
             CodexSessionEventKind::PostCompact
         );
+    }
+
+    #[test]
+    fn stop_hook_returns_a_continue_response() {
+        assert_eq!(
+            successful_hook_output(HookEventName::Stop),
+            Some(r#"{"continue":true}"#)
+        );
+        assert_eq!(successful_hook_output(HookEventName::SessionEnd), None);
     }
 
     #[test]
