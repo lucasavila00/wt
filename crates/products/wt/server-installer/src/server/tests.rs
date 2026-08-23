@@ -10,6 +10,16 @@ impl Runner for CapturedRunner {
 
 struct FixedPassphrase(&'static str);
 
+struct FailedRunner;
+
+impl Runner for FailedRunner {
+    fn output(&self, _command: std::process::Command) -> Result<std::process::Output> {
+        Ok(std::process::Command::new("/bin/sh")
+            .args(["-c", "printf 'unit does not exist' >&2; exit 1"])
+            .output()?)
+    }
+}
+
 impl PassphrasePrompt for FixedPassphrase {
     fn read(
         &self,
@@ -93,6 +103,21 @@ fn encrypted_provider_key_is_unlocked_without_modifying_the_source() {
     assert_eq!(
         prepared.public_key().key_data(),
         encrypted.public_key().key_data()
+    );
+}
+
+#[test]
+fn absent_obsolete_units_are_already_disabled() {
+    let temp = tempfile::tempdir().unwrap();
+    let absent = temp.path().join("obsolete.service");
+    disable_obsolete_unit(&FailedRunner, "obsolete.service", &absent).unwrap();
+
+    fs::write(&absent, "obsolete").unwrap();
+    insta::assert_snapshot!(
+        disable_obsolete_unit(&FailedRunner, "obsolete.service", &absent)
+            .unwrap_err()
+            .to_string(),
+        @"disable superseded WT service obsolete.service: unit does not exist"
     );
 }
 
