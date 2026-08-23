@@ -31,7 +31,11 @@ fn refresh_titles_distinguish_waiting_from_applied_snapshots() {
     ]);
     assert_eq!(
         status.title("Codex sessions"),
-        "Codex sessions · Last updated 2026-08-21T20:00:00Z · Sync failed: context ars could not be queried: connection timed out"
+        "Codex sessions · Last updated 2026-08-21T20:00:00Z"
+    );
+    assert_eq!(
+        status.failure().as_deref(),
+        Some(" · Sync failed: context ars could not be queried: connection timed out")
     );
 }
 
@@ -45,7 +49,11 @@ fn worlds_refresh_title_surfaces_failure_and_preserves_last_success() {
     ]));
     assert_eq!(
         state.worlds_refresh().title("Worlds"),
-        "Worlds · Last updated 2026-08-22T19:29:38Z · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused"
+        "Worlds · Last updated 2026-08-22T19:29:38Z"
+    );
+    assert_eq!(
+        state.worlds_refresh().failure().as_deref(),
+        Some(" · Sync failed: context ars could not be queried: request timed out after 60s; context lab could not be queried: connection refused")
     );
 
     state.finish_worlds_refresh(Ok("2026-08-22T19:30:00Z".into()));

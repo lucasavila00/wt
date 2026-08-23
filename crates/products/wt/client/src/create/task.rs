@@ -1,10 +1,14 @@
 use anyhow::{Context as _, Result};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
+use std::time::Duration;
 use wt_client::config::ClientConfig;
 use wt_control_protocol::{ApiRequest, CreateInstance, Operation, Outcome, Response};
 
 use super::{capacity_message, Created, Input};
+
+const SSH_SYNC_ATTEMPTS: usize = 5;
+const SSH_SYNC_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub(super) enum TaskEvent {
     Progress(String),
@@ -106,7 +110,7 @@ fn run(
                 let _ = events.send(TaskEvent::Progress(
                     "World created; opening SSH access".into(),
                 ));
-                if let Err(error) = crate::sync_complete_inventory(&config).with_context(|| {
+                if let Err(error) = sync_inventory_after_create(&config, events).with_context(|| {
                     format!(
                         "world {}.{} was created, but SSH was not opened\nresolve the synchronization error, run `wt sync`, and reconnect with `ssh {}.{}`",
                         context_name, instance.name, context_name, instance.name
@@ -161,6 +165,101 @@ fn run(
     }
 }
 
+fn sync_inventory_after_create(config: &ClientConfig, events: &Sender<TaskEvent>) -> Result<()> {
+    retry_database_lock(
+        || crate::sync_complete_inventory(config).map(|_| ()),
+        |attempt| {
+            let _ = events.send(TaskEvent::Progress(format!(
+                "SSH inventory is busy; retrying ({attempt}/{SSH_SYNC_ATTEMPTS})"
+            )));
+            thread::sleep(SSH_SYNC_RETRY_DELAY);
+        },
+    )
+}
+
+fn retry_database_lock<T>(
+    mut operation: impl FnMut() -> Result<T>,
+    mut retrying: impl FnMut(usize),
+) -> Result<T> {
+    for attempt in 1..=SSH_SYNC_ATTEMPTS {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error)
+                if attempt < SSH_SYNC_ATTEMPTS
+                    && error.to_string().contains("database is locked") =>
+            {
+                retrying(attempt + 1);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("the final retry either succeeds or returns its error")
+}
+
 fn finish(events: &Sender<TaskEvent>, result: Result<Created, String>) {
     let _ = events.send(TaskEvent::Finished(result.map(Box::new)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retries_a_database_lock_until_the_inventory_syncs() {
+        let mut calls = 0;
+        let mut retries = Vec::new();
+
+        let result = retry_database_lock(
+            || -> Result<()> {
+                calls += 1;
+                if calls < 3 {
+                    anyhow::bail!("database is locked");
+                }
+                Ok(())
+            },
+            |attempt| retries.push(attempt),
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(calls, 3);
+        assert_eq!(retries, [2, 3]);
+    }
+
+    #[test]
+    fn does_not_retry_a_non_retryable_inventory_error() {
+        let mut calls = 0;
+        let mut retries = Vec::new();
+
+        let error = retry_database_lock(
+            || -> Result<()> {
+                calls += 1;
+                anyhow::bail!("context helper is unavailable")
+            },
+            |attempt| retries.push(attempt),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "context helper is unavailable");
+        assert_eq!(calls, 1);
+        assert!(retries.is_empty());
+    }
+
+    #[test]
+    fn limits_database_lock_retries() {
+        let mut calls = 0;
+        let mut retries = Vec::new();
+
+        let error = retry_database_lock(
+            || -> Result<()> {
+                calls += 1;
+                anyhow::bail!("database is locked")
+            },
+            |attempt| retries.push(attempt),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "database is locked");
+        assert_eq!(calls, SSH_SYNC_ATTEMPTS);
+        assert_eq!(retries, [2, 3, 4, 5]);
+    }
 }

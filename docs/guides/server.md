@@ -27,6 +27,10 @@ recorded in retained-image provenance and logged when the server starts.
 Runtime configuration is written to `/etc/wt/server.toml`. CPU, RAM, and disk
 limits are materialized at `/etc/wt/capacity.toml`.
 
+Request-initialization failures are recorded in the server journal. Inspect
+them with `journalctl -u wt-server.service` when a client reports a context
+refresh failure.
+
 The installer creates the server-backed Codex sessions directory and a
 read-only authentication export. Running worlds receive both through virtiofs.
 Shared sessions are outside world disk quotas and need a separate backup. Do
