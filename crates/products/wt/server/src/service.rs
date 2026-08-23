@@ -5,7 +5,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
-    Operation, Response,
+    Operation, ResourceCapacity, Resources as ProtocolResources, Response,
 };
 use wt_retained_worlds::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
 use wt_workload_registry::Resources;
@@ -268,8 +268,13 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .agent_tool_report_counts(owner)
             .map_err(map_store_error)?;
+        let reserved = self.store.reserved_resources().map_err(map_store_error)?;
         Ok(Response::Instances {
             instances,
+            capacity: ResourceCapacity {
+                reserved: protocol_resources(reserved),
+                total: protocol_resources(self.capacity_limit),
+            },
             disk_usage_bytes,
             agent_tool_report_counts,
         })
@@ -454,6 +459,14 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .delete(stored.instance.id, stored.disk_id)
             .map_err(map_store_error)?;
         Ok(Response::Deleted { name: name.clone() })
+    }
+}
+
+fn protocol_resources(resources: Resources) -> ProtocolResources {
+    ProtocolResources {
+        vcpus: resources.vcpus,
+        memory_mib: resources.memory_mib,
+        disk_gib: resources.disk_gib,
     }
 }
 
