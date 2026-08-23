@@ -1,6 +1,6 @@
 use super::control::{
-    card_grid, codex_card_grid, command_palette_layout, control_areas, control_content_areas,
-    Activity, CodexCard, CodexCardKind, CommandPalette, ControlState, WORLD_CARD_HEIGHT,
+    card_grid, codex_card_grid, control_areas, control_content_areas, Activity, CodexCard,
+    CodexCardKind, ControlState, WORLD_CARD_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
@@ -8,12 +8,10 @@ use super::terminal_view::TerminalView;
 use super::world_area;
 use crate::create::Flow;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Widget, Wrap,
-};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
@@ -61,7 +59,7 @@ pub(super) fn draw(
             creation.render_progress(frame, frame.area());
         }
     }
-    draw_command_palette(frame, world, model.control().palette());
+    super::control_overlay::draw_palette(frame, world, model.control().palette());
     if let Some(error) = action_error {
         draw_action_error(frame, error);
     }
@@ -219,78 +217,12 @@ fn draw_control(
             .style(Style::new().add_modifier(Modifier::BOLD)),
         help_area,
     );
-    draw_command_palette(frame, content, model.control().palette());
-    draw_help(frame, content, model);
+    super::control_overlay::draw_palette(frame, content, model.control().palette());
+    super::control_overlay::draw_world_menu(frame, model);
+    super::control_overlay::draw_help(frame, content, model);
     if model.control().open_failed() {
-        draw_codex_toast(frame, area);
+        super::control_overlay::draw_codex_toast(frame, area);
     }
-}
-fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect) {
-    let toast = super::toast::area(area);
-    let (retry, _) = super::toast::actions(area);
-    let title = " Could not open Codex session ";
-    let message = "The session could not be focused. Try again.";
-    frame.render_widget(Clear, toast);
-    frame.render_widget(
-        Block::new()
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(Color::Red))
-            .title(title)
-            .title(
-                Line::styled("×", Style::new().add_modifier(Modifier::BOLD))
-                    .alignment(Alignment::Right),
-            ),
-        toast,
-    );
-    frame.render_widget(
-        Paragraph::new(message),
-        Rect::new(
-            toast.x.saturating_add(1),
-            toast.y.saturating_add(1),
-            toast.width.saturating_sub(2),
-            1,
-        ),
-    );
-    frame.render_widget(
-        Paragraph::new("Retry")
-            .alignment(Alignment::Right)
-            .style(Style::new().add_modifier(Modifier::BOLD)),
-        retry,
-    );
-}
-
-fn draw_help(frame: &mut Frame<'_>, content: Rect, model: &ShellModel) {
-    let help = model.control().help();
-    if !help.is_open() {
-        return;
-    }
-    let width = 64.min(content.width);
-    let height = 14.min(content.height);
-    let area = Rect::new(
-        content.x + content.width.saturating_sub(width) / 2,
-        content.y + content.height.saturating_sub(height) / 2,
-        width,
-        height,
-    );
-    frame.render_widget(Clear, area);
-    let block = Block::new().borders(Borders::ALL).title(" Help ");
-    let inner = block.inner(area).inner(Margin::new(2, 1));
-    frame.render_widget(block, area);
-    let sections = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    let rows = help
-        .rows(model.control().activity(), model.has_worlds())
-        .into_iter()
-        .map(|(shortcut, action)| Row::new([Cell::from(shortcut), Cell::from(action)]));
-    frame.render_widget(
-        Table::new(rows, [Constraint::Length(20), Constraint::Min(0)])
-            .header(Row::new(["Shortcut", "Action"]))
-            .column_spacing(2),
-        sections[0],
-    );
-    frame.render_widget(
-        Paragraph::new("Esc: close").style(muted_style()),
-        sections[1],
-    );
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
@@ -313,7 +245,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         let index = card.index;
         if let Some((name, resources)) = creating.filter(|_| index == model.world_count()) {
             grid.render_card(frame, card, |rect, buffer| {
-                draw_world_card(
+                super::world_card::draw(
                     buffer,
                     rect,
                     "󰔟",
@@ -325,6 +257,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                     &[],
                     false,
                     "Creation in progress",
+                    false,
                 )
             });
             continue;
@@ -335,7 +268,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             && !super::world_card::has_active_codex_session(world, model.control().codex());
         let (icon, color, status) = super::world_card::status(world, idle);
         grid.render_card(frame, card, |rect, buffer| {
-            draw_world_card(
+            super::world_card::draw(
                 buffer,
                 rect,
                 icon,
@@ -347,49 +280,10 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 &super::world_card::codex_lines(world, model.control().codex()),
                 index == model.active(),
                 "Enter or click to open",
+                true,
             )
         });
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_world_card(
-    buffer: &mut Buffer,
-    area: Rect,
-    icon: &str,
-    color: Color,
-    status: &str,
-    name: &str,
-    resources: &str,
-    detail: Option<&str>,
-    codex: &[Line<'static>],
-    selected: bool,
-    footer: &str,
-) {
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .border_style(selected_card_border_style(selected))
-        .title(Span::styled(
-            format!(" {icon} {status} "),
-            Style::new().fg(color).add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(area);
-    block.render(area, buffer);
-    let mut lines = vec![
-        Line::from(name.to_owned()),
-        Line::from(resources.to_owned()),
-    ];
-    if let Some(detail) = detail {
-        lines.push(Line::from(detail.to_owned()));
-    }
-    lines.extend_from_slice(codex);
-    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .render(rows[0], buffer);
-    Paragraph::new(footer)
-        .style(muted_style())
-        .render(rows[1], buffer);
 }
 
 fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
@@ -625,51 +519,6 @@ pub(super) fn relative_age(timestamp: i64) -> String {
     } else {
         format!("{value} ago")
     }
-}
-
-fn draw_command_palette(frame: &mut Frame<'_>, content: Rect, palette: &CommandPalette) {
-    if !palette.is_open() {
-        return;
-    }
-    let (area, _) = command_palette_layout(content);
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Block::new().borders(Borders::ALL).title("Command Palette"),
-        area,
-    );
-    let inner = area.inner(Margin::new(1, 1));
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(1),
-    ])
-    .split(inner);
-    frame.render_widget(Paragraph::new(format!("> {}█", palette.query())), rows[0]);
-    frame.render_widget(
-        Paragraph::new("─".repeat(usize::from(rows[1].width))).style(muted_style()),
-        rows[1],
-    );
-    let commands = palette.matches();
-    let items = if commands.is_empty() {
-        vec![ListItem::new("No matching commands").style(muted_style())]
-    } else {
-        commands
-            .iter()
-            .map(|command| ListItem::new(command.label()))
-            .collect()
-    };
-    let list = List::new(items)
-        .highlight_symbol(" ")
-        .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
-    let mut state = ListState::default().with_selected(
-        (!commands.is_empty()).then_some(palette.selected().min(commands.len().saturating_sub(1))),
-    );
-    frame.render_stateful_widget(list, rows[2], &mut state);
-    frame.render_widget(
-        Paragraph::new("↑/↓ select · Enter run · Esc close").style(muted_style()),
-        rows[3],
-    );
 }
 
 pub(super) fn muted_style() -> Style {

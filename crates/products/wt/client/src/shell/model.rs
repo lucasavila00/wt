@@ -1,5 +1,8 @@
-use super::control::{CodexOpenTarget, ControlAction, ControlCommand, ControlState};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use super::control::{CodexOpenTarget, ControlCommand, ControlState};
+use super::world_menu::WorldMenu;
+use crossterm::event::KeyCode;
+#[cfg(test)]
+use crossterm::event::{KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use uuid::Uuid;
 use wt_control_protocol::{InstanceName, InstanceStatus};
@@ -63,6 +66,7 @@ pub(super) enum InputRoute {
     World,
     OpenCodex(Box<CodexOpenTarget>),
     Command(ControlCommand),
+    DeleteWorld(Box<ShellWorld>),
 }
 
 #[derive(Debug)]
@@ -73,6 +77,7 @@ pub(super) struct ShellModel {
     test_server: bool,
     control: ControlState,
     should_quit: bool,
+    world_menu: Option<WorldMenu>,
 }
 
 impl ShellModel {
@@ -84,6 +89,7 @@ impl ShellModel {
             test_server: false,
             control: ControlState::default(),
             should_quit: false,
+            world_menu: None,
         }
     }
 
@@ -125,6 +131,10 @@ impl ShellModel {
             .position(|world| &world.identity == identity)
     }
 
+    pub(super) fn world_menu(&self) -> Option<&WorldMenu> {
+        self.world_menu.as_ref()
+    }
+
     pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
         let active_identity = self
             .worlds
@@ -139,6 +149,13 @@ impl ShellModel {
         if self.worlds.is_empty() {
             self.control.close();
             self.mode = Mode::Control;
+        }
+        if self
+            .world_menu
+            .as_ref()
+            .is_some_and(|menu| self.world_index(menu.identity()).is_none())
+        {
+            self.world_menu = None;
         }
     }
 
@@ -177,140 +194,6 @@ impl ShellModel {
             .keep_world_selection_visible(area, self.active, self.worlds.len());
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
-        if key.code == KeyCode::F(6) {
-            self.should_quit = true;
-            return InputRoute::Consumed;
-        }
-        match self.mode {
-            Mode::World if key.code == KeyCode::F(5) => {
-                self.mode = Mode::Control;
-                InputRoute::Consumed
-            }
-            Mode::World => InputRoute::World,
-            Mode::Control => {
-                if key.code == KeyCode::F(5) && self.has_worlds() {
-                    self.control.close();
-                    self.mode = Mode::World;
-                } else {
-                    if self.control.palette().is_open() {
-                        return self
-                            .control
-                            .handle_key(key, area)
-                            .map_or(InputRoute::Consumed, route);
-                    }
-                    if self.has_worlds()
-                        && self.control.activity() == super::control::Activity::Worlds
-                    {
-                        if key.modifiers == KeyModifiers::NONE
-                            && self.move_world_grid_selection(key.code)
-                        {
-                            self.control.keep_world_selection_visible(
-                                area,
-                                self.active,
-                                self.worlds.len(),
-                            );
-                            return InputRoute::Consumed;
-                        }
-                        if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
-                            self.control.close();
-                            self.mode = Mode::World;
-                            return InputRoute::Consumed;
-                        }
-                    }
-                    if let Some(action) = self.control.handle_key(key, area) {
-                        return route(action);
-                    }
-                }
-                InputRoute::Consumed
-            }
-        }
-    }
-
-    pub(super) fn handle_mouse(
-        &mut self,
-        mouse: MouseEvent,
-        area: Rect,
-    ) -> (bool, Option<InputRoute>) {
-        self.handle_mouse_with_world_count(mouse, area, self.worlds.len())
-    }
-
-    pub(super) fn handle_mouse_with_world_count(
-        &mut self,
-        mouse: MouseEvent,
-        area: Rect,
-        world_card_count: usize,
-    ) -> (bool, Option<InputRoute>) {
-        if self.control.palette().is_open() {
-            let (changed, action) = self.control.handle_mouse(mouse, area);
-            return (changed, action.map(route));
-        }
-        if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-            && mouse.row == area.y
-            && mouse.column >= area.x
-            && mouse.column < area.right()
-            && self.has_worlds()
-            && self.mode == Mode::World
-        {
-            let brand = super::bar::world_bar_brand(area);
-            let world = super::bar::world_bar_world(self, area);
-            let control = super::bar::world_bar_control(area);
-            if brand.contains((mouse.column, mouse.row).into())
-                || world.contains((mouse.column, mouse.row).into())
-                || control.contains((mouse.column, mouse.row).into())
-            {
-                self.mode = Mode::Control;
-            }
-            return (true, Some(InputRoute::Consumed));
-        }
-        if self.mode != Mode::Control {
-            return (false, None);
-        }
-        if self.control.activity() == super::control::Activity::Worlds
-            && self
-                .control
-                .handle_world_scrollbar(mouse, area, world_card_count)
-        {
-            return (true, Some(InputRoute::Consumed));
-        }
-        let (changed, action) = self.control.handle_mouse(mouse, area);
-        if !changed
-            && self.has_worlds()
-            && self.control.activity() == super::control::Activity::Worlds
-        {
-            match mouse.kind {
-                crossterm::event::MouseEventKind::ScrollUp => {
-                    self.control.scroll_worlds(-1, area, world_card_count);
-                    return (true, Some(InputRoute::Consumed));
-                }
-                crossterm::event::MouseEventKind::ScrollDown => {
-                    self.control.scroll_worlds(1, area, world_card_count);
-                    return (true, Some(InputRoute::Consumed));
-                }
-                _ => {}
-            }
-        }
-        if !changed && self.control.activity() == super::control::Activity::Worlds {
-            let Some(index) = super::control::world_card_at_position(
-                area,
-                self.control.world_scroll(),
-                self.worlds.len(),
-                mouse.column,
-                mouse.row,
-            ) else {
-                return (changed, action.map(route));
-            };
-            self.active = index;
-            if mouse.kind
-                == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
-            {
-                self.mode = Mode::World;
-            }
-            return (true, Some(InputRoute::Consumed));
-        }
-        (changed, action.map(route))
-    }
-
     pub(super) fn focus_route(&self, target: &CodexOpenTarget) -> Option<(usize, &str)> {
         self.worlds
             .iter()
@@ -342,17 +225,15 @@ impl ShellModel {
     }
 }
 
-fn route(action: ControlAction) -> InputRoute {
-    match action {
-        ControlAction::Command(command) => InputRoute::Command(command),
-        ControlAction::OpenCodex(target) => InputRoute::OpenCodex(target),
-    }
-}
-
 #[cfg(test)]
 #[path = "model_focus_tests.rs"]
 mod focus_tests;
 
+#[cfg(test)]
+#[path = "model_world_menu_tests.rs"]
+mod world_menu_tests;
+
+mod input;
 mod world_grid;
 
 #[cfg(test)]

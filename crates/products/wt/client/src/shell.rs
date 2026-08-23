@@ -19,6 +19,7 @@ mod bar;
 mod clipboard;
 mod codex;
 mod control;
+mod control_overlay;
 mod delete;
 mod input;
 mod lifecycle;
@@ -33,6 +34,7 @@ mod session;
 mod terminal_view;
 mod toast;
 mod world_card;
+mod world_menu;
 use control::ControlCommand;
 use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
@@ -440,6 +442,9 @@ fn dispatch_event(
                         .actions
                         .enqueue(action_queue::Intent::OpenCodex(*target));
                 }
+                InputRoute::DeleteWorld(world) => {
+                    flows.deletion = Some(delete::Flow::confirm(*world));
+                }
                 InputRoute::Consumed => {}
             }
             Ok(true)
@@ -525,6 +530,9 @@ fn dispatch_event(
                         flows
                             .actions
                             .enqueue(action_queue::Intent::OpenCodex(*target));
+                    }
+                    Some(InputRoute::DeleteWorld(world)) => {
+                        flows.deletion = Some(delete::Flow::confirm(*world));
                     }
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }

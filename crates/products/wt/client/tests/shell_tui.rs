@@ -299,6 +299,25 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
 }
 
 #[test]
+fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("No live Codex sessions")?
+        .press(Key::Tab)?
+        .press(Key::Tab)?
+        .wait_for_text("… Menu")?
+        .click(49, 0)?
+        .wait_for_text("World Menu")?
+        .wait_for_text("local.existing")?
+        .press(Key::Enter)?
+        .wait_for_text("Delete world?")?
+        .press(Key::Escape)?
+        .wait_for_text_gone("Delete world?")?;
+    Ok(())
+}
+
+#[test]
 fn codex_sessions_refresh_after_startup() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
