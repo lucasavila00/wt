@@ -184,7 +184,7 @@ fn draw_control(
             let status = model.control().codex_refresh();
             (status.title("Codex sessions"), status.failure())
         }
-        Activity::Live => ("Live sessions · Experimental".to_owned(), None),
+        Activity::Live => ("Live sessions".to_owned(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
