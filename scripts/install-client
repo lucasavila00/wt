@@ -10,4 +10,4 @@ if ! command -v cargo >/dev/null; then
 fi
 
 cd "$root"
-scripts/cargo install --locked --force --path crates/products/wt/client
+cargo install --locked --force --path crates/products/wt/client

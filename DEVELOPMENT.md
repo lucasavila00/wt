@@ -119,11 +119,10 @@ client does not need a direct route to guest addresses.
 ## Checks
 
 ```bash
-scripts/cargo test --workspace
+cargo test --workspace
 make static
 ```
 
-The repository-wide Cargo settings cap build jobs and test threads at four.
 The workspace test command skips the ignored real-system KVM test. Run it only
 on a configured Ubuntu/KVM host:
 

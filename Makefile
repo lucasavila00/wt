@@ -29,7 +29,7 @@ check-install-checkout:
 	scripts/test-require-clean-checkout
 
 check-snapshot-lines:
-	scripts/cargo run --quiet -p wt-repository-checks -- snapshot-lines
+	cargo run --quiet -p wt-repository-checks -- snapshot-lines
 
 clear:
 	scripts/clear
@@ -39,13 +39,13 @@ nuke:
 
 e2e-tests:
 	scripts/check-kvm-e2e-host
-	scripts/cargo run --quiet -p wt-server-installer -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
-	scripts/cargo run --quiet -p wt-server-installer -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
-	scripts/cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
-	scripts/cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --quiet -p wt-server-installer -- prepare-e2e --config "$(KVM_INSTALL_CONFIG)"
+	cargo run --quiet -p wt-server-installer -- validate-e2e --config "$(KVM_INSTALL_CONFIG)"
+	cargo test -p wt-end-to-end-tests --test install_server_bootstrap -- --ignored --nocapture
+	cargo run --quiet -p wt-server-installer -- validate --config "$(KVM_INSTALL_CONFIG)"
 	scripts/clear --codex-sessions /home/wt/.config/wt/kvm-test/codex/sessions
-	scripts/cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
-	scripts/cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
+	cargo run --release -p wt-server-installer -- install --config "$(KVM_INSTALL_CONFIG)"
+	cargo test -p wt-end-to-end-tests --test kvm_e2e -- --ignored --nocapture
 	@printf '\nWT E2E test server remains installed on this host.\n'
 
 install-client:
@@ -64,19 +64,19 @@ prepare-image:
 	scripts/prepare-image --config "$(CONFIG)"
 
 shell:
-	scripts/cargo run -p wt-client -- shell
+	cargo run -p wt-client -- shell
 
 check-typescript:
 	npm run check:typescript
 
 ci: static
-	scripts/cargo test --workspace --locked
+	cargo test --workspace --locked
 
 static: check-crate-readmes check-file-lines check-install-checkout check-snapshot-lines check-typescript
 	@set -e; rg --files assets/world -g '*.sh' | sort | while IFS= read -r file; do \
 		bash -n "$$file"; \
 		shellcheck --shell=sh --severity=warning "$$file"; \
 	done
-	scripts/cargo fmt --all --check
-	scripts/cargo check --workspace --all-targets --locked
-	scripts/cargo clippy --workspace --all-targets --locked -- -D warnings
+	cargo fmt --all --check
+	cargo check --workspace --all-targets --locked
+	cargo clippy --workspace --all-targets --locked -- -D warnings

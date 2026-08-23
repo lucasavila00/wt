@@ -16,14 +16,7 @@ const STATIC_BINARIES: [&str; 6] = [
 
 pub(super) fn build(runner: &impl Runner) -> Result<()> {
     runner.run(
-        cmd!(
-            "scripts/cargo",
-            "build",
-            "--quiet",
-            "--release",
-            "-p",
-            "wt-server",
-        ),
+        cmd!("cargo", "build", "--quiet", "--release", "-p", "wt-server",),
         "build native wt-server",
     )?;
     build_static(runner)
@@ -32,7 +25,7 @@ pub(super) fn build(runner: &impl Runner) -> Result<()> {
 pub(super) fn build_static(runner: &impl Runner) -> Result<()> {
     runner.run(
         cmd!(
-            "scripts/cargo",
+            "cargo",
             "build",
             "--quiet",
             "--release",
