@@ -456,6 +456,27 @@ done
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    fn start_initialized_server(codex: &Path, home: &Path) -> AppServer {
+        let mut server = AppServer::start(
+            codex,
+            home,
+            Duration::from_secs(1),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+        let _: InitializeResult = server
+            .call(
+                "initialize",
+                json!({
+                    "clientInfo": {"name": "wt-codex-integration", "version": env!("CARGO_PKG_VERSION")},
+                    "capabilities": {"experimentalApi": true}
+                }),
+            )
+            .unwrap();
+        server.notify("initialized").unwrap();
+        server
+    }
+
     #[test]
     fn asks_codex_to_scan_and_verify_active_and_archived_threads() {
         let temp = tempdir().unwrap();
@@ -519,16 +540,11 @@ done
         fs::create_dir(&home).unwrap();
         let codex = temp.path().join("codex");
         fake_unresponsive_codex(&codex, &home);
+        let mut server = start_initialized_server(&codex, &home);
+        server.response_timeout = Duration::from_millis(10);
 
         insta::assert_snapshot!(
-            reconcile_home_with_timeouts(
-                &codex,
-                &home,
-                Duration::from_millis(10),
-                Duration::from_secs(1),
-            )
-                .unwrap_err()
-                .to_string(),
+            server.list_ids(false, false).unwrap_err().to_string(),
             @"Codex app-server did not reply to thread/list within 10ms"
         );
     }
@@ -540,16 +556,11 @@ done
         fs::create_dir(&home).unwrap();
         let codex = temp.path().join("codex");
         fake_chatty_unresponsive_codex(&codex, &home);
+        let mut server = start_initialized_server(&codex, &home);
+        server.response_timeout = Duration::from_millis(10);
 
         insta::assert_snapshot!(
-            reconcile_home_with_timeouts(
-                &codex,
-                &home,
-                Duration::from_millis(10),
-                Duration::from_secs(1),
-            )
-            .unwrap_err()
-            .to_string(),
+            server.list_ids(false, false).unwrap_err().to_string(),
             @"Codex app-server did not reply to thread/list within 10ms"
         );
     }
@@ -561,16 +572,11 @@ done
         fs::create_dir(&home).unwrap();
         let codex = temp.path().join("codex");
         fake_unresponsive_codex(&codex, &home);
+        let mut server = start_initialized_server(&codex, &home);
+        server.deadline = Instant::now();
 
         insta::assert_snapshot!(
-            reconcile_home_with_timeouts(
-                &codex,
-                &home,
-                Duration::from_secs(1),
-                Duration::from_secs(1),
-            )
-            .unwrap_err()
-            .to_string(),
+            server.list_ids(false, false).unwrap_err().to_string(),
             @"Codex session reconciliation exceeded its deadline during thread/list"
         );
     }
