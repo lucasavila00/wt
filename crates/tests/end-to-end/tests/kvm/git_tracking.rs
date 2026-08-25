@@ -18,7 +18,7 @@ fn branch_changes_during_a_working_turn_without_another_codex_hook() {
         &harness,
         &name,
         &format!(
-            "set -eu; git clone https://local.test/acme/widget.git /home/wt/project; cd /home/wt/project; git switch -c wt/tracker-before; tmux new-session -d -s wt-host -n git-tracker 'cd /home/wt/project; exec bash'; pane=$(tmux list-panes -t wt-host:git-tracker -F '#{{pane_id}}'); printf '%s\\n' '{{\"session_id\":\"{session_id}\",\"cwd\":\"/home/wt/project\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}}' | WT_BYOBU_SESSION=wt-host WT_BYOBU_PANE=$pane wtg codex report-hook; printf '%s\\n' '{{\"session_id\":\"{session_id}\",\"cwd\":\"/home/wt/project\",\"hook_event_name\":\"UserPromptSubmit\"}}' | WT_BYOBU_SESSION=wt-host WT_BYOBU_PANE=$pane wtg codex report-hook; for attempt in $(seq 1 50); do test -f /home/wt/.local/state/wt/codex-git-tracker.json && break; sleep 0.1; done; if ! test -f /home/wt/.local/state/wt/codex-git-tracker.json; then cat /home/wt/.local/state/wt/codex-session-report-error.json >&2; exit 1; fi; git switch -c wt/tracker-after",
+            "set -eu; git clone https://local.test/acme/widget.git /home/wt/project; cd /home/wt/project; git switch -c wt/tracker-before; cp /usr/bin/sleep /tmp/codex; tmux new-session -d -s wt-host -n git-tracker 'cd /home/wt/project; exec /tmp/codex 300'; pane=$(tmux list-panes -t wt-host:git-tracker -F '#{{pane_id}}'); printf '%s\\n' '{{\"session_id\":\"{session_id}\",\"cwd\":\"/home/wt/project\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}}' | WT_BYOBU_SESSION=wt-host WT_BYOBU_PANE=$pane wtg codex report-hook; printf '%s\\n' '{{\"session_id\":\"{session_id}\",\"cwd\":\"/home/wt/project\",\"hook_event_name\":\"UserPromptSubmit\"}}' | WT_BYOBU_SESSION=wt-host WT_BYOBU_PANE=$pane wtg codex report-hook; for attempt in $(seq 1 50); do test -f /home/wt/.local/state/wt/codex-git-tracker.json && break; sleep 0.1; done; if ! test -f /home/wt/.local/state/wt/codex-git-tracker.json; then cat /home/wt/.local/state/wt/codex-session-report-error.json >&2; exit 1; fi; git switch -c wt/tracker-after",
         ),
         "start a working Codex session and switch its branch",
     );
@@ -46,7 +46,7 @@ fn branch_changes_during_a_working_turn_without_another_codex_hook() {
         }
         assert!(
             Instant::now() < deadline,
-            "Git tracker did not report branch change"
+            "Git tracker did not report branch change; latest observation: {observation:#?}"
         );
         std::thread::sleep(Duration::from_millis(100));
     }
