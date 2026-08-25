@@ -1,19 +1,19 @@
 use super::*;
 use crossterm::event::{KeyEvent, MouseEvent};
 use uuid::Uuid;
-use wt_control_protocol::InstanceName;
+use wt_control_protocol::WorldName;
 
 fn world(name: &str) -> ShellWorld {
-    let (context, instance) = name.split_once('.').unwrap();
+    let (context, world) = name.split_once('.').unwrap();
     ShellWorld {
         identity: WorldIdentity {
             context: context.into(),
-            id: Uuid::new_v4(),
+            world_id: Uuid::new_v4().into(),
         },
         name: name.into(),
-        instance_name: InstanceName::parse(instance).unwrap(),
+        world_name: WorldName::parse(world).unwrap(),
         control_alias: format!("{name}-direct"),
-        status: wt_control_protocol::InstanceStatus::Running,
+        status: wt_control_protocol::WorldStatus::Running,
         resources: "2 CPU · 4G · 1G/32G disk".into(),
         detail: "-".into(),
     }

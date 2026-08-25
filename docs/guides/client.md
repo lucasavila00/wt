@@ -36,6 +36,7 @@ reserved for managed SSH.
 | `wt code NAME` | Sync managed aliases and open the direct guest in VS Code |
 | `wt shell` | Open all accessible worlds in one terminal workspace |
 | `wt rm NAME` | Destroy the world |
+| `wt rename NAME NEW_NAME` | Change a world's name without replacing its disk |
 | `wt sync` | Rewrite managed SSH inventory |
 | `wt diagnostics` | Compare the client build identity with every configured server |
 
@@ -46,7 +47,9 @@ Use the compatible client binary reported by `wt diagnostics` when investigating
 missing shell refreshes; a PATH-selected older client can mask otherwise healthy
 server state.
 
-Each world has a writable qcow2 overlay on the server. A running disk display
+Each world has an immutable UUID and a separately mutable, server-unique name.
+The UUID names its writable qcow2 overlay on the server, so stopping, starting,
+or renaming a world preserves its disk. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports
 allocated size only. `wt stop` keeps the overlay. `wt rm` deletes it and
 revokes the world's scoped Git grant.

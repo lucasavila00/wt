@@ -1,10 +1,10 @@
 use super::*;
-use wt_control_protocol::InstanceName;
+use wt_control_protocol::WorldName;
 
 #[test]
 fn setup_fingerprint_is_stable() {
-    let request = CreateInstance {
-        name: InstanceName::parse("host").unwrap(),
+    let request = CreateWorld {
+        name: WorldName::parse("host").unwrap(),
         vcpus: 1,
         memory_mib: 1024,
         disk_gib: 8,

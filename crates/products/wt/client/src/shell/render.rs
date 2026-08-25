@@ -263,7 +263,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             continue;
         }
         let world = &model.worlds()[index];
-        let idle = world.status == wt_control_protocol::InstanceStatus::Running
+        let idle = world.status == wt_control_protocol::WorldStatus::Running
             && model.control().codex_refresh().updated_at().is_some()
             && !super::world_card::has_active_codex_session(world, model.control().codex());
         let (icon, color, status) = super::world_card::status(world, idle);

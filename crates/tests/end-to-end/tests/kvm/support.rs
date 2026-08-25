@@ -14,8 +14,8 @@ use wt_agent_tool_gateway::{
     PROTOCOL_VERSION, VSOCK_PORT_ENV,
 };
 use wt_control_protocol::{
-    ApiProgress, ApiRequest, ApiResponse, CreateInstance, InstanceName, Operation, Outcome,
-    Response,
+    ApiProgress, ApiRequest, ApiResponse, CreateWorld, Operation, Outcome, Response, World,
+    WorldId, WorldName,
 };
 use wt_end_to_end_tests::cmd;
 use wt_server::ServerConfig;
@@ -146,11 +146,11 @@ impl KvmHarness {
         }
     }
 
-    pub(crate) fn create(&self, name: &InstanceName) -> wt_control_protocol::Instance {
-        let Response::Instance { instance } = call_api(
+    pub(crate) fn create(&self, name: &WorldName) -> World {
+        let Response::World { world } = call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Create(CreateInstance {
+            Operation::CreateWorld(CreateWorld {
                 name: name.clone(),
                 vcpus: 2,
                 memory_mib: 4096,
@@ -159,59 +159,60 @@ impl KvmHarness {
                 git_user_email: "wt@example.invalid".to_owned(),
             }),
         ) else {
-            panic!("expected instance response");
+            panic!("expected world response");
         };
-        *instance
+        *world
     }
 
-    pub(crate) fn sync_inventory(&self) -> Vec<wt_control_protocol::Instance> {
-        let Response::Instances { instances, .. } =
-            call_api(self.temp.path(), &self.server_config_path, Operation::List)
-        else {
-            panic!("expected list response");
-        };
-        sync_inventory(&instances).unwrap();
-        instances
-    }
-
-    pub(crate) fn delete(&self, name: &InstanceName) {
-        let Response::Instance { instance } = call_api(
+    pub(crate) fn sync_inventory(&self) -> Vec<World> {
+        let Response::Worlds { worlds, .. } = call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Get { name: name.clone() },
+            Operation::ListWorlds,
         ) else {
-            panic!("expected instance response");
+            panic!("expected list response");
+        };
+        sync_inventory(&worlds).unwrap();
+        worlds
+    }
+
+    pub(crate) fn delete(&self, name: &WorldName) {
+        let Response::World { world } = call_api(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::GetWorld { name: name.clone() },
+        ) else {
+            panic!("expected world response");
         };
         call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Delete {
-                name: name.clone(),
-                expected_id: instance.id,
+            Operation::DeleteWorld {
+                world_id: world.world_id,
             },
         );
     }
 
-    pub(crate) fn shutdown(&self, name: &InstanceName) -> wt_control_protocol::Instance {
-        let Response::Instance { instance } = call_api(
+    pub(crate) fn shutdown(&self, world_id: WorldId) -> World {
+        let Response::World { world } = call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Stop { name: name.clone() },
+            Operation::StopWorld { world_id },
         ) else {
-            panic!("expected instance response");
+            panic!("expected world response");
         };
-        *instance
+        *world
     }
 
-    pub(crate) fn start(&self, name: &InstanceName) -> wt_control_protocol::Instance {
-        let Response::Instance { instance } = call_api(
+    pub(crate) fn start(&self, world_id: WorldId) -> World {
+        let Response::World { world } = call_api(
             self.temp.path(),
             &self.server_config_path,
-            Operation::Start { name: name.clone() },
+            Operation::StartWorld { world_id },
         ) else {
-            panic!("expected instance response");
+            panic!("expected world response");
         };
-        *instance
+        *world
     }
 
     pub(crate) fn restart_gateway(&mut self) {
@@ -220,7 +221,7 @@ impl KvmHarness {
         self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir);
     }
 
-    pub(crate) fn grant_token_for(&self, world_id: uuid::Uuid) -> String {
+    pub(crate) fn grant_token_for(&self, world_id: WorldId) -> String {
         let state: serde_json::Value =
             serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
                 .unwrap();
@@ -255,25 +256,27 @@ impl KvmHarness {
 
 impl Drop for KvmHarness {
     fn drop(&mut self) {
-        let worlds =
-            match call_api_result(self.temp.path(), &self.server_config_path, Operation::List) {
-                Ok(Response::Instances { instances, .. }) => instances,
-                Ok(response) => {
-                    eprintln!("KVM cleanup: unexpected list response: {response:?}");
-                    return;
-                }
-                Err(error) => {
-                    eprintln!("KVM cleanup: list worlds: {error}");
-                    return;
-                }
-            };
+        let worlds = match call_api_result(
+            self.temp.path(),
+            &self.server_config_path,
+            Operation::ListWorlds,
+        ) {
+            Ok(Response::Worlds { worlds, .. }) => worlds,
+            Ok(response) => {
+                eprintln!("KVM cleanup: unexpected list response: {response:?}");
+                return;
+            }
+            Err(error) => {
+                eprintln!("KVM cleanup: list worlds: {error}");
+                return;
+            }
+        };
         for world in worlds.into_iter().rev() {
             if let Err(error) = call_api_result(
                 self.temp.path(),
                 &self.server_config_path,
-                Operation::Delete {
-                    name: world.name.clone(),
-                    expected_id: world.id,
+                Operation::DeleteWorld {
+                    world_id: world.world_id,
                 },
             ) {
                 eprintln!("KVM cleanup: delete {}: {error}", world.name);
@@ -291,8 +294,8 @@ impl Drop for KvmHarness {
     }
 }
 
-pub(crate) fn unique_name(label: &str) -> InstanceName {
-    InstanceName::parse(format!(
+pub(crate) fn unique_name(label: &str) -> WorldName {
+    WorldName::parse(format!(
         "e15-{label}-{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -302,14 +305,14 @@ pub(crate) fn unique_name(label: &str) -> InstanceName {
     .unwrap()
 }
 
-pub(crate) fn run_guest(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) {
+pub(crate) fn run_guest(harness: &KvmHarness, name: &WorldName, command: &str, action: &str) {
     let output = guest_command(harness, name, command).output().unwrap();
     ensure_success(action, &output).unwrap();
 }
 
 pub(crate) fn guest_command(
     harness: &KvmHarness,
-    name: &InstanceName,
+    name: &WorldName,
     command: &str,
 ) -> std::process::Command {
     cmd!(
@@ -335,7 +338,7 @@ pub(crate) fn count_disks(worlds_dir: &Path) -> usize {
         .count()
 }
 
-pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Result<(), String> {
+pub(crate) fn sync_inventory(worlds: &[World]) -> Result<(), String> {
     let client_config = wt_client::config::ClientConfig {
         contexts: vec![wt_client::config::Context {
             name: "local".into(),
@@ -344,14 +347,14 @@ pub(crate) fn sync_inventory(instances: &[wt_control_protocol::Instance]) -> Res
     };
     wt_client::ssh::sync(
         &client_config,
-        &instances
+        &worlds
             .iter()
             .cloned()
-            .map(|instance| wt_client::inventory::ContextInstance {
+            .map(|world| wt_client::inventory::ContextWorld {
                 context: "local".into(),
                 agent_tool_report_count: 0,
                 disk_usage_bytes: None,
-                instance,
+                world,
             })
             .collect::<Vec<_>>(),
     )

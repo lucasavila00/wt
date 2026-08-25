@@ -6,7 +6,7 @@ CREATE TABLE repositories (
 );
 
 CREATE TABLE codex_checkout_state (
-    world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     session_id TEXT NOT NULL,
     cwd TEXT NOT NULL,
     repository_root TEXT,
@@ -27,7 +27,7 @@ CREATE INDEX codex_checkout_state_repository_id
 
 CREATE TABLE world_git_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     recorded_at_unix_ms BIGINT NOT NULL,
     kind TEXT NOT NULL,
     repository_id INTEGER NOT NULL REFERENCES repositories(id),
@@ -44,7 +44,7 @@ CREATE INDEX world_git_activity_target_branch_id
 
 CREATE TABLE world_wt_tools_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     recorded_at_unix_ms BIGINT NOT NULL,
     repository_id INTEGER NOT NULL REFERENCES repositories(id),
     action TEXT NOT NULL,

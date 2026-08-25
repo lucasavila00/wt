@@ -1,12 +1,12 @@
-use uuid::Uuid;
+use wt_control_protocol::WorldId;
 
 pub trait AgentToolGateway {
-    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String>;
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
-    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String> {
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         let response = self
             .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
                 world_id: world_id.to_string(),
@@ -40,8 +40,8 @@ impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
-    fn reserve(&self, world_id: Uuid) -> Result<wt_agent_tool_gateway::Grant, String> {
-        self.reserve_grant(world_id)
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
+        self.reserve_grant(world_id.into())
             .map_err(|error| error.to_string())
     }
 

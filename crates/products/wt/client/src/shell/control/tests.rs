@@ -407,7 +407,7 @@ fn world_cards_reserve_a_scrollbar_column_only_when_overflowing() {
 
 fn live_card(index: u128, pane_id: &str) -> CodexCard {
     let session_id = Uuid::from_u128(index);
-    let world_id = Uuid::from_u128(100 + index);
+    let world_id = wt_control_protocol::WorldId::from(Uuid::from_u128(100 + index));
     let identity = CodexCardIdentity::Observation {
         context: "ars".into(),
         session_id,

@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Duration;
-use uuid::Uuid;
 use wt_libvirt_kvm::WorkerError;
+use wt_world::WorldId;
 
 #[macro_export]
 macro_rules! cmd {
@@ -16,7 +16,7 @@ mod guest;
 pub mod host;
 
 pub use guest::*;
-pub use host::{ProvisionSpec, WorldInspection};
+pub use host::{WorldInspection, WorldProvisionSpec};
 
 fn write_creation_timing(
     log: &mut dyn Write,
@@ -34,14 +34,14 @@ fn write_creation_timing(
 pub trait WorldWorker: Clone + Send + Sync + 'static {
     fn provision(
         &self,
-        spec: ProvisionSpec<'_>,
+        spec: WorldProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<GuestAccess, WorkerError>;
-    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError>;
-    fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError>;
-    fn start(&self, backend_id: &str) -> Result<GuestAccess, WorkerError>;
-    fn stop(&self, backend_id: &str) -> Result<(), WorkerError>;
-    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError>;
+    fn destroy(&self, world_id: WorldId) -> Result<(), WorkerError>;
+    fn inspect(&self, world_id: WorldId) -> Result<WorldInspection, WorkerError>;
+    fn start(&self, world_id: WorldId) -> Result<GuestAccess, WorkerError>;
+    fn stop(&self, world_id: WorldId) -> Result<(), WorkerError>;
+    fn disk_usage(&self, world_id: WorldId) -> Result<u64, WorkerError>;
 }
 
 #[cfg(test)]

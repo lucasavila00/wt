@@ -1,6 +1,6 @@
 use super::{map_store_error, Service, WorldWorker};
 use crate::service::AgentToolGateway;
-use wt_control_protocol::{AgentToolReport, AgentToolReportKind, ApiError, InstanceName, Response};
+use wt_control_protocol::{AgentToolReport, AgentToolReportKind, ApiError, Response, WorldName};
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub(super) fn list_agent_tool_reports(&self, owner: &str) -> Result<Response, ApiError> {
@@ -12,7 +12,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .map(|report| {
                 Ok(AgentToolReport {
                     world_id: report.world_id,
-                    world_name: InstanceName::parse(report.world_name).map_err(|error| {
+                    world_name: WorldName::parse(report.world_name).map_err(|error| {
                         ApiError::new(wt_control_protocol::ErrorCode::Internal, error.to_string())
                     })?,
                     kind: match report.kind {

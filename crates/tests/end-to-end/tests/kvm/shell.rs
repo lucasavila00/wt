@@ -43,24 +43,24 @@ fn shell_creates_and_deletes_a_real_world() {
     screen.wait_for_text("WT E2E TEST SERVER").unwrap();
     create_world_with_defaults(&mut screen, name.as_str()).unwrap();
 
-    let Response::Instances { instances, .. } = call_api(
+    let Response::Worlds { worlds, .. } = call_api(
         harness.temp.path(),
         &harness.server_config_path,
-        Operation::List,
+        Operation::ListWorlds,
     ) else {
         panic!("expected list response");
     };
-    assert!(instances.iter().any(|instance| instance.name == name));
+    assert!(worlds.iter().any(|world| world.name == name));
 
     delete_world(&mut screen, name.as_str()).unwrap();
-    let Response::Instances { instances, .. } = call_api(
+    let Response::Worlds { worlds, .. } = call_api(
         harness.temp.path(),
         &harness.server_config_path,
-        Operation::List,
+        Operation::ListWorlds,
     ) else {
         panic!("expected list response");
     };
-    assert!(instances.iter().all(|instance| instance.name != name));
+    assert!(worlds.iter().all(|world| world.name != name));
 
     screen
         .press(Key::Function(6))

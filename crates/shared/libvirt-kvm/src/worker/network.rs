@@ -1,11 +1,11 @@
-use crate::{ProviderId, WorkerError};
+use crate::{DomainName, WorkerError};
 use virt::connect::Connect;
 use virt::network::Network;
 
 use super::{context, lookup_domain};
 
-pub(super) fn domain_ip(provider_id: &ProviderId) -> Result<Option<String>, WorkerError> {
-    let domain = lookup_domain(provider_id)?;
+pub(super) fn domain_ip(domain_name: &DomainName) -> Result<Option<String>, WorkerError> {
+    let domain = lookup_domain(domain_name)?;
     let interfaces = domain
         .interface_addresses(virt::sys::VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE, 0)
         .map_err(|error| context("get domain interface addresses", error))?;

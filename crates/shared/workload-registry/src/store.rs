@@ -8,27 +8,24 @@ use diesel::sqlite::SqliteConnection;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use uuid::Uuid;
-use wt_control_protocol::{Instance, InstanceName, InstanceStatus, SshAccess};
+use wt_control_protocol::{SshAccess, World, WorldId, WorldName, WorldStatus};
 
 pub struct Store {
     registry: Registry,
 }
 
 #[derive(Clone, Debug)]
-pub struct StoredInstance {
-    pub instance: Instance,
-    pub backend_id: String,
-    pub disk_id: Uuid,
+pub struct StoredWorld {
+    pub world: World,
     pub setup_fingerprint: String,
     pub gateway_grant_id: Option<String>,
 }
 
 #[derive(Debug, Error)]
 pub enum StoreError {
-    #[error("instance already exists")]
+    #[error("world name already exists")]
     Conflict,
-    #[error("instance not found")]
+    #[error("world not found")]
     NotFound,
     #[error("world {resource:?} capacity is full: {reserved} of {total} reserved; requested {requested}")]
     Capacity {
@@ -48,9 +45,7 @@ pub enum StoreError {
 #[derive(Insertable)]
 #[diesel(table_name = worlds)]
 struct NewWorld<'a> {
-    id: String,
-    backend_id: &'a str,
-    disk_id: String,
+    world_id: String,
     vcpus: i64,
     memory_mib: i64,
     disk_gib: i64,
@@ -69,9 +64,7 @@ struct NewWorld<'a> {
 #[diesel(table_name = worlds)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct WorldRow {
-    id: String,
-    backend_id: String,
-    disk_id: String,
+    world_id: String,
     vcpus: i64,
     memory_mib: i64,
     disk_gib: i64,
@@ -96,14 +89,14 @@ impl Store {
         })
     }
 
-    pub fn insert(&self, stored: &StoredInstance) -> Result<(), StoreError> {
+    pub fn insert(&self, stored: &StoredWorld) -> Result<(), StoreError> {
         self.registry
             .transaction(|connection| insert_world(connection, stored, Resources::UNLIMITED))
     }
 
     pub fn insert_with_memory_limit(
         &self,
-        stored: &StoredInstance,
+        stored: &StoredWorld,
         total_mib: u64,
     ) -> Result<(), StoreError> {
         self.registry.immediate_transaction(|connection| {
@@ -120,22 +113,22 @@ impl Store {
 
     pub fn insert_with_capacity_limit(
         &self,
-        stored: &StoredInstance,
+        stored: &StoredWorld,
         limit: Resources,
     ) -> Result<(), StoreError> {
         self.registry
             .immediate_transaction(|connection| insert_world(connection, stored, limit))
     }
 
-    pub fn reserve_resources(&self, id: Uuid, limit: Resources) -> Result<(), StoreError> {
+    pub fn reserve_resources(&self, world_id: WorldId, limit: Resources) -> Result<(), StoreError> {
         self.registry.immediate_transaction(|connection| {
-            crate::reserve_resources(connection, id, limit).map_err(map_registry_error)
+            crate::reserve_resources(connection, world_id, limit).map_err(map_registry_error)
         })
     }
 
-    pub fn ensure_resources_reserved(&self, id: Uuid) -> Result<(), StoreError> {
+    pub fn ensure_resources_reserved(&self, world_id: WorldId) -> Result<(), StoreError> {
         self.registry.transaction(|connection| {
-            crate::ensure_resources_reserved(connection, id).map_err(map_registry_error)
+            crate::ensure_resources_reserved(connection, world_id).map_err(map_registry_error)
         })
     }
 
@@ -145,7 +138,11 @@ impl Store {
             .map_err(map_registry_error)
     }
 
-    pub fn get(&self, owner: &str, name: &InstanceName) -> Result<StoredInstance, StoreError> {
+    pub fn get_owned_by_name(
+        &self,
+        owner: &str,
+        name: &WorldName,
+    ) -> Result<StoredWorld, StoreError> {
         self.registry.read(|connection| {
             worlds::table
                 .filter(worlds::owner.eq(owner))
@@ -158,11 +155,28 @@ impl Store {
         })
     }
 
-    pub fn list(&self, owner: &str) -> Result<Vec<StoredInstance>, StoreError> {
+    pub fn get_owned_by_id(
+        &self,
+        owner: &str,
+        world_id: WorldId,
+    ) -> Result<StoredWorld, StoreError> {
+        self.registry.read(|connection| {
+            worlds::table
+                .find(world_id.to_string())
+                .filter(worlds::owner.eq(owner))
+                .select(WorldRow::as_select())
+                .first::<WorldRow>(connection)
+                .optional()?
+                .ok_or(StoreError::NotFound)?
+                .try_into()
+        })
+    }
+
+    pub fn list_owned(&self, owner: &str) -> Result<Vec<StoredWorld>, StoreError> {
         self.registry.read(|connection| {
             worlds::table
                 .filter(worlds::owner.eq(owner))
-                .order((worlds::created_at_unix_ms, worlds::id))
+                .order((worlds::created_at_unix_ms, worlds::world_id))
                 .select(WorldRow::as_select())
                 .load::<WorldRow>(connection)?
                 .into_iter()
@@ -230,16 +244,16 @@ impl Store {
 
     pub fn mark_host_running(
         &self,
-        id: Uuid,
+        world_id: WorldId,
         guest_ip: &str,
         ssh: &SshAccess,
     ) -> Result<(), StoreError> {
         let host_keys = serde_json::to_string(&ssh.host_keys)
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         self.registry.read(|connection| {
-            let changed = diesel::update(worlds::table.find(id.to_string()))
+            let changed = diesel::update(worlds::table.find(world_id.to_string()))
                 .set((
-                    worlds::status.eq(InstanceStatus::Running.to_string()),
+                    worlds::status.eq(WorldStatus::Running.to_string()),
                     worlds::guest_ip.eq(guest_ip),
                     worlds::last_error.eq(None::<String>),
                     worlds::ssh_user.eq(&ssh.user),
@@ -252,41 +266,51 @@ impl Store {
         })
     }
 
-    pub fn mark_destroying(&self, id: Uuid) -> Result<(), StoreError> {
-        self.update_state(id, InstanceStatus::Destroying, None, None)
+    pub fn mark_destroying(&self, world_id: WorldId) -> Result<(), StoreError> {
+        self.update_state(world_id, WorldStatus::Destroying, None, None)
     }
 
-    pub fn mark_error(&self, id: Uuid, message: &str) -> Result<(), StoreError> {
-        self.update_state(id, InstanceStatus::Error, None, Some(message))
+    pub fn rename(&self, world_id: WorldId, name: &WorldName) -> Result<(), StoreError> {
+        self.registry.transaction(|connection| {
+            let changed = diesel::update(worlds::table.find(world_id.to_string()))
+                .set(worlds::name.eq(name.as_str()))
+                .execute(connection)?;
+            changed_one(changed)
+        })
+    }
+
+    pub fn mark_error(&self, world_id: WorldId, message: &str) -> Result<(), StoreError> {
+        self.update_state(world_id, WorldStatus::Error, None, Some(message))
     }
 
     pub fn mark_stopped(
         &self,
-        id: Uuid,
+        world_id: WorldId,
         message: &str,
         disk_usage_bytes: u64,
     ) -> Result<(), StoreError> {
         self.registry.transaction(|connection| {
-            let changed = diesel::update(worlds::table.find(id.to_string()))
+            let changed = diesel::update(worlds::table.find(world_id.to_string()))
                 .set((
-                    worlds::status.eq(InstanceStatus::Stopped.to_string()),
+                    worlds::status.eq(WorldStatus::Stopped.to_string()),
                     worlds::last_error.eq(message),
                 ))
                 .execute(connection)?;
             changed_one(changed)?;
-            crate::release_resources(connection, id, disk_usage_bytes).map_err(map_registry_error)
+            crate::release_resources(connection, world_id, disk_usage_bytes)
+                .map_err(map_registry_error)
         })
     }
 
     fn update_state(
         &self,
-        id: Uuid,
-        status: InstanceStatus,
+        world_id: WorldId,
+        status: WorldStatus,
         guest_ip: Option<&str>,
         last_error: Option<&str>,
     ) -> Result<(), StoreError> {
         self.registry.read(|connection| {
-            let target = worlds::table.find(id.to_string());
+            let target = worlds::table.find(world_id.to_string());
             let changed = if let Some(guest_ip) = guest_ip {
                 diesel::update(target)
                     .set((
@@ -307,27 +331,23 @@ impl Store {
         })
     }
 
-    pub fn delete(&self, id: Uuid, disk_id: Uuid) -> Result<(), StoreError> {
+    pub fn delete(&self, world_id: WorldId) -> Result<(), StoreError> {
         self.registry.transaction(|connection| {
-            let changed = diesel::delete(
-                worlds::table
-                    .find(id.to_string())
-                    .filter(worlds::disk_id.eq(disk_id.to_string())),
-            )
-            .execute(connection)?;
+            let changed =
+                diesel::delete(worlds::table.find(world_id.to_string())).execute(connection)?;
             changed_one(changed)?;
             Ok(())
         })
     }
 }
 
-impl TryFrom<WorldRow> for StoredInstance {
+impl TryFrom<WorldRow> for StoredWorld {
     type Error = StoreError;
 
     fn try_from(row: WorldRow) -> Result<Self, Self::Error> {
-        let id =
-            Uuid::parse_str(&row.id).map_err(|error| StoreError::InvalidData(error.to_string()))?;
-        let disk_id = Uuid::parse_str(&row.disk_id)
+        let world_id = row
+            .world_id
+            .parse::<WorldId>()
             .map_err(|error| StoreError::InvalidData(error.to_string()))?;
         let _created_at_unix_ms = crate::to_u64(row.created_at_unix_ms, "created_at_unix_ms")
             .map_err(map_registry_error)?;
@@ -341,13 +361,13 @@ impl TryFrom<WorldRow> for StoredInstance {
             None => None,
         };
         Ok(Self {
-            instance: Instance {
-                id,
+            world: World {
+                world_id,
                 owner: row.owner,
-                name: InstanceName::parse(row.name)
+                name: WorldName::parse(row.name)
                     .map_err(|error| StoreError::InvalidData(error.to_string()))?,
                 status: row.status.parse().map_err(
-                    |error: wt_control_protocol::ParseStatusError| {
+                    |error: wt_control_protocol::ParseWorldStatusError| {
                         StoreError::InvalidData(error.to_string())
                     },
                 )?,
@@ -362,8 +382,6 @@ impl TryFrom<WorldRow> for StoredInstance {
                 disk_gib: crate::to_u64(row.disk_gib, "disk_gib").map_err(map_registry_error)?,
                 ssh,
             },
-            backend_id: row.backend_id,
-            disk_id,
             setup_fingerprint: row.setup_fingerprint,
             gateway_grant_id: row.gateway_grant_id,
         })
@@ -372,10 +390,10 @@ impl TryFrom<WorldRow> for StoredInstance {
 
 fn insert_world(
     connection: &mut SqliteConnection,
-    stored: &StoredInstance,
+    stored: &StoredWorld,
     limit: Resources,
 ) -> Result<(), StoreError> {
-    let instance = &stored.instance;
+    let world = &stored.world;
     let created_at_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| StoreError::InvalidData(error.to_string()))?
@@ -383,15 +401,13 @@ fn insert_world(
         .try_into()
         .map_err(|_| StoreError::InvalidData("creation time is too large".into()))?;
     let resources = Resources {
-        vcpus: instance.vcpus.into(),
-        memory_mib: instance.memory_mib,
-        disk_gib: instance.disk_gib,
+        vcpus: world.vcpus.into(),
+        memory_mib: world.memory_mib,
+        disk_gib: world.disk_gib,
     };
     crate::capacity::ensure_capacity(connection, resources, limit).map_err(map_registry_error)?;
     let row = NewWorld {
-        id: instance.id.to_string(),
-        backend_id: &stored.backend_id,
-        disk_id: stored.disk_id.to_string(),
+        world_id: world.world_id.to_string(),
         vcpus: crate::to_i64(resources.vcpus, "vcpus").map_err(map_registry_error)?,
         memory_mib: crate::to_i64(resources.memory_mib, "memory_mib")
             .map_err(map_registry_error)?,
@@ -399,9 +415,9 @@ fn insert_world(
         compute_reserved: true,
         disk_reserved_gib: crate::to_i64(resources.disk_gib, "disk_reserved_gib")
             .map_err(map_registry_error)?,
-        owner: &instance.owner,
-        name: instance.name.as_str(),
-        status: instance.status.to_string(),
+        owner: &world.owner,
+        name: world.name.as_str(),
+        status: world.status.to_string(),
         setup_fingerprint: &stored.setup_fingerprint,
         ssh_host_keys: "[]",
         gateway_grant_id: stored.gateway_grant_id.as_deref(),
@@ -474,13 +490,13 @@ fn invalid_number(field: &str, value: impl std::fmt::Display) -> StoreError {
 mod tests {
     use super::*;
 
-    fn stored(name: &str) -> StoredInstance {
-        StoredInstance {
-            instance: Instance {
-                id: Uuid::new_v4(),
-                name: InstanceName::parse(name).unwrap(),
+    fn stored(name: &str) -> StoredWorld {
+        StoredWorld {
+            world: World {
+                world_id: WorldId::new(),
+                name: WorldName::parse(name).unwrap(),
                 owner: "owner".into(),
-                status: InstanceStatus::Running,
+                status: WorldStatus::Running,
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
@@ -488,8 +504,6 @@ mod tests {
                 last_error: None,
                 ssh: None,
             },
-            backend_id: format!("backend-{name}"),
-            disk_id: Uuid::new_v4(),
             setup_fingerprint: "fingerprint".into(),
             gateway_grant_id: None,
         }
@@ -500,7 +514,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open(&temp.path().join("instances.db")).unwrap();
 
-        assert!(store.list("owner").unwrap().is_empty());
+        assert!(store.list_owned("owner").unwrap().is_empty());
     }
 
     #[test]
@@ -512,24 +526,48 @@ mod tests {
         store.insert(&first).unwrap();
         store.insert(&second).unwrap();
         store.registry.read(|connection| {
-            diesel::update(worlds::table.find(first.instance.id.to_string()))
+            diesel::update(worlds::table.find(first.world.world_id.to_string()))
                 .set(worlds::created_at_unix_ms.eq(1))
                 .execute(connection)
                 .unwrap();
-            diesel::update(worlds::table.find(second.instance.id.to_string()))
+            diesel::update(worlds::table.find(second.world.world_id.to_string()))
                 .set(worlds::created_at_unix_ms.eq(2))
                 .execute(connection)
                 .unwrap();
         });
 
         let names = store
-            .list("owner")
+            .list_owned("owner")
             .unwrap()
             .into_iter()
-            .map(|stored| stored.instance.name.to_string())
+            .map(|stored| stored.world.name.to_string())
             .collect::<Vec<_>>();
 
         assert_eq!(names, ["w6", "w10"]);
+    }
+
+    #[test]
+    fn world_names_are_unique_across_owners() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("registry.db")).unwrap();
+        let first = stored("shared");
+        let mut second = stored("shared");
+        second.world.owner = "other-owner".into();
+
+        store.insert(&first).unwrap();
+        assert!(matches!(store.insert(&second), Err(StoreError::Conflict)));
+        assert!(matches!(
+            store.get_owned_by_name("other-owner", &second.world.name),
+            Err(StoreError::NotFound)
+        ));
+        assert_eq!(
+            store
+                .get_owned_by_id("owner", first.world.world_id)
+                .unwrap()
+                .world
+                .name,
+            first.world.name
+        );
     }
 
     #[test]
@@ -549,7 +587,7 @@ mod tests {
         );
 
         store
-            .mark_stopped(world.instance.id, "stopped", 3 * 1024 * 1024 * 1024)
+            .mark_stopped(world.world.world_id, "stopped", 3 * 1024 * 1024 * 1024)
             .unwrap();
         assert_eq!(
             store.reserved_resources().unwrap(),

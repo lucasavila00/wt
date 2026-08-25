@@ -8,6 +8,7 @@ description = "Shared guest registry and host capacity admission for WT"
 
 [dependencies]
 wt-control-protocol = { workspace = true }
+wt-world = { workspace = true }
 serde_json = { workspace = true }
 diesel = { workspace = true }
 diesel_migrations = { workspace = true }

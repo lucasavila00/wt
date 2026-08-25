@@ -17,6 +17,7 @@ wt-workload-registry = { workspace = true }
 wt-server = { workspace = true }
 wt-installer-support = { workspace = true }
 wt-control-protocol = { workspace = true }
+wt-world = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 nix = { workspace = true }

@@ -67,7 +67,7 @@ fn repository_state_is_owner_scoped_and_honors_git_cursors() {
     let session_id = Uuid::new_v4();
     registry
         .upsert_codex_session_report(wt_workload_registry::CodexSessionReportInput {
-            world_id: bob,
+            world_id: bob.into(),
             session_id,
             cwd: "/home/wt/private",
             tmux_session: "wt-host",
@@ -81,7 +81,7 @@ fn repository_state_is_owner_scoped_and_honors_git_cursors() {
         .unwrap();
     registry
         .update_codex_session_git_context(wt_workload_registry::CodexSessionGitContextInput {
-            world_id: bob,
+            world_id: bob.into(),
             session_id,
             cwd: "/home/wt/private",
             tmux_session: "wt-host",
@@ -105,7 +105,7 @@ fn repository_state_is_owner_scoped_and_honors_git_cursors() {
     for branch in ["wt/first", "wt/second"] {
         registry
             .insert_git_activity(wt_workload_registry::GitActivityInput {
-                world_id: alice,
+                world_id: alice.into(),
                 kind: wt_workload_registry::GitActivityKind::BranchUpdate,
                 provider_host: "github.com",
                 repository: "acme/project",
@@ -144,9 +144,7 @@ fn insert_world(registry: &wt_workload_registry::Registry, owner: &str, name: &s
         .transaction::<_, wt_workload_registry::RegistryError>(|connection| {
             diesel::insert_into(worlds::table)
                 .values((
-                    worlds::id.eq(id.to_string()),
-                    worlds::backend_id.eq(format!("wt-{}", id.simple())),
-                    worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                    worlds::world_id.eq(id.to_string()),
                     worlds::vcpus.eq(1_i64),
                     worlds::memory_mib.eq(1024_i64),
                     worlds::disk_gib.eq(10_i64),

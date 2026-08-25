@@ -3,6 +3,8 @@
 mod activity;
 mod codex;
 mod create;
+#[cfg(test)]
+mod rename_tests;
 mod reports;
 mod validation;
 
@@ -11,16 +13,18 @@ pub use activity::{
     RepositoryGitStateQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use codex::{ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState};
-pub use create::{validate_create_resources, CreateInstance};
+pub use create::{validate_create_world_resources, CreateWorld};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
+#[cfg(test)]
 use uuid::Uuid;
-pub use validation::{InstanceName, InvalidInstanceName};
+pub use validation::{InvalidWorldName, WorldName};
+pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 13;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -93,12 +97,13 @@ impl ApiRequest {
 #[rustfmt::skip]
 pub enum Operation {
     ServerInfo,
-    Create(CreateInstance),
-    List,
-    Get { name: InstanceName },
-    Start { name: InstanceName },
-    Stop { name: InstanceName },
-    Delete { name: InstanceName, expected_id: Uuid },
+    CreateWorld(CreateWorld),
+    ListWorlds,
+    GetWorld { name: WorldName },
+    RenameWorld { world_id: WorldId, new_name: WorldName },
+    StartWorld { world_id: WorldId },
+    StopWorld { world_id: WorldId },
+    DeleteWorld { world_id: WorldId },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListCodexSessions,
@@ -146,17 +151,17 @@ pub enum Response {
         test_server: bool,
         build: BuildIdentity,
     },
-    Instance {
-        instance: Box<Instance>,
+    World {
+        world: Box<World>,
     },
-    Instances {
-        instances: Vec<Instance>,
+    Worlds {
+        worlds: Vec<World>,
         #[serde(default, skip_serializing_if = "ResourceCapacity::is_empty")]
         capacity: ResourceCapacity,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        disk_usage_bytes: std::collections::BTreeMap<Uuid, u64>,
+        disk_usage_bytes: std::collections::BTreeMap<WorldId, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        agent_tool_report_counts: std::collections::BTreeMap<Uuid, u64>,
+        agent_tool_report_counts: std::collections::BTreeMap<WorldId, u64>,
     },
     AgentToolReports {
         reports: Vec<AgentToolReport>,
@@ -176,8 +181,8 @@ pub enum Response {
     RepositoryGitState {
         state: Box<RepositoryGitState>,
     },
-    Deleted {
-        name: InstanceName,
+    WorldDeleted {
+        world_id: WorldId,
     },
 }
 
@@ -220,11 +225,12 @@ impl Resources {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Instance {
-    pub id: Uuid,
-    pub name: InstanceName,
+pub struct World {
+    /// Immutable world identity. The same UUID identifies its persistent disk.
+    pub world_id: WorldId,
+    pub name: WorldName,
     pub owner: String,
-    pub status: InstanceStatus,
+    pub status: WorldStatus,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
@@ -246,7 +252,7 @@ pub struct SshAccess {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum InstanceStatus {
+pub enum WorldStatus {
     Provisioning,
     Running,
     Stopped,
@@ -254,7 +260,7 @@ pub enum InstanceStatus {
     Error,
 }
 
-impl fmt::Display for InstanceStatus {
+impl fmt::Display for WorldStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Provisioning => "provisioning",
@@ -267,8 +273,8 @@ impl fmt::Display for InstanceStatus {
     }
 }
 
-impl FromStr for InstanceStatus {
-    type Err = ParseStatusError;
+impl FromStr for WorldStatus {
+    type Err = ParseWorldStatusError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
@@ -277,14 +283,14 @@ impl FromStr for InstanceStatus {
             "stopped" => Ok(Self::Stopped),
             "destroying" => Ok(Self::Destroying),
             "error" => Ok(Self::Error),
-            _ => Err(ParseStatusError(value.to_owned())),
+            _ => Err(ParseWorldStatusError(value.to_owned())),
         }
     }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("unknown instance status: {0}")]
-pub struct ParseStatusError(String);
+#[error("unknown world status: {0}")]
+pub struct ParseWorldStatusError(String);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -357,9 +363,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validates_instance_names() {
+    fn validates_world_names() {
         for valid in ["repo-feature", "a", "app-123"] {
-            assert!(InstanceName::parse(valid).is_ok(), "{valid}");
+            assert!(WorldName::parse(valid).is_ok(), "{valid}");
         }
         for invalid in [
             "",
@@ -370,29 +376,29 @@ mod tests {
             "has_space",
             "repo-direct",
         ] {
-            assert!(InstanceName::parse(invalid).is_err(), "{invalid}");
+            assert!(WorldName::parse(invalid).is_err(), "{invalid}");
         }
     }
 
     #[test]
     fn explains_reserved_ssh_alias_suffixes() {
         insta::assert_snapshot!(
-            InstanceName::parse("repo-direct").unwrap_err().to_string(),
-            @"invalid instance name: must not end with the reserved SSH alias suffix -direct"
+            WorldName::parse("repo-direct").unwrap_err().to_string(),
+            @"invalid world name: must not end with the reserved SSH alias suffix -direct"
         );
     }
 
     #[test]
     fn request_has_stable_tagged_shape() {
-        let request = ApiRequest::new(Operation::Get {
-            name: InstanceName::parse("repo-feature").unwrap(),
+        let request = ApiRequest::new(Operation::GetWorld {
+            name: WorldName::parse("repo-feature").unwrap(),
         });
         let value = serde_json::to_value(request).unwrap();
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 11,
-                "operation": "get",
+                "protocol_version": 13,
+                "operation": "get_world",
                 "name": "repo-feature"
             })
         );
@@ -400,54 +406,56 @@ mod tests {
 
     #[test]
     fn start_request_has_stable_shape() {
-        let request = ApiRequest::new(Operation::Start {
-            name: InstanceName::parse("repo-feature").unwrap(),
+        let request = ApiRequest::new(Operation::StartWorld {
+            world_id: WorldId::from(
+                Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            ),
         });
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 11,
-                "operation": "start",
-                "name": "repo-feature"
+                "protocol_version": 13,
+                "operation": "start_world",
+                "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
     }
 
     #[test]
     fn stop_request_has_stable_shape() {
-        let request = ApiRequest::new(Operation::Stop {
-            name: InstanceName::parse("repo-feature").unwrap(),
+        let request = ApiRequest::new(Operation::StopWorld {
+            world_id: WorldId::from(
+                Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            ),
         });
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 11,
-                "operation": "stop",
-                "name": "repo-feature"
+                "protocol_version": 13,
+                "operation": "stop_world",
+                "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
     }
 
     #[test]
-    fn delete_request_carries_the_expected_world_id() {
-        let expected_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
-        let request = ApiRequest::new(Operation::Delete {
-            name: InstanceName::parse("repo-feature").unwrap(),
-            expected_id,
+    fn delete_request_targets_the_world_id() {
+        let request = ApiRequest::new(Operation::DeleteWorld {
+            world_id: WorldId::from(
+                Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
+            ),
         });
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 11,
-                "operation": "delete",
-                "name": "repo-feature",
-                "expected_id": "123e4567-e89b-12d3-a456-426614174000"
+                "protocol_version": 13,
+                "operation": "delete_world",
+                "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
         assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 11,
-            "operation": "delete",
-            "name": "repo-feature"
+            "protocol_version": 13,
+            "operation": "delete_world"
         }))
         .is_err());
     }
@@ -474,8 +482,10 @@ mod tests {
             output_tokens: 200,
             reasoning_output_tokens: 50,
             observations: vec![CodexSessionObservation {
-                world_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
-                world_name: InstanceName::parse("checkout").unwrap(),
+                world_id: WorldId::from(
+                    Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
+                ),
+                world_name: WorldName::parse("checkout").unwrap(),
                 cwd: "/home/wt/project".into(),
                 repository_root: Some("/home/wt/project".into()),
                 repository_url: Some("git@github.com:acme/project.git".into()),
@@ -541,7 +551,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ApiRequest::new(Operation::ListCodexSessions)).unwrap(),
             serde_json::json!({
-                "protocol_version": 11,
+                "protocol_version": 13,
                 "operation": "list_codex_sessions"
             })
         );
@@ -557,7 +567,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 11,
+          "protocol_version": 13,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -575,8 +585,8 @@ mod tests {
 
     #[test]
     fn host_create_request_has_tagged_shape() {
-        let request = ApiRequest::new(Operation::Create(CreateInstance {
-            name: InstanceName::parse("build-world").unwrap(),
+        let request = ApiRequest::new(Operation::CreateWorld(CreateWorld {
+            name: WorldName::parse("build-world").unwrap(),
             vcpus: 2,
             memory_mib: 4096,
             disk_gib: 32,
@@ -591,8 +601,8 @@ mod tests {
           "git_user_name": "Lucas Ávila",
           "memory_mib": 4096,
           "name": "build-world",
-          "operation": "create",
-          "protocol_version": 11,
+          "operation": "create_world",
+          "protocol_version": 13,
           "vcpus": 2
         }
         "###);
@@ -601,15 +611,15 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 11,
-            "operation": "create",
+            "protocol_version": 13,
+            "operation": "create_world",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 11,
-            "operation": "create",
+            "protocol_version": 13,
+            "operation": "create_world",
             "name": "repo-feature",
             "git_user_name": "",
             "git_user_email": "lucaxx@gmail.com"
@@ -619,36 +629,36 @@ mod tests {
 
     #[test]
     fn create_resources_are_strict() {
-        let mut request = CreateInstance {
-            name: InstanceName::parse("sample").unwrap(),
+        let mut request = CreateWorld {
+            name: WorldName::parse("sample").unwrap(),
             vcpus: 1,
             memory_mib: 1024,
             disk_gib: 8,
             git_user_name: "Test User".to_owned(),
             git_user_email: "test@example.invalid".to_owned(),
         };
-        assert_eq!(validate_create_resources(&request), Ok(()));
+        assert_eq!(validate_create_world_resources(&request), Ok(()));
         request.vcpus = 0;
-        assert!(validate_create_resources(&request).is_err());
+        assert!(validate_create_world_resources(&request).is_err());
         request.vcpus = 1;
     }
 
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 11,
-            "operation": "get",
+            "protocol_version": 13,
+            "operation": "get_world",
             "name": "Not-Valid"
         }))
         .unwrap_err();
-        insta::assert_snapshot!(error.to_string(), @"invalid instance name: must start with a lowercase letter or digit");
+        insta::assert_snapshot!(error.to_string(), @"invalid world name: must start with a lowercase letter or digit");
     }
 
     #[test]
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 11,
+          "protocol_version": 13,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -668,11 +678,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 11,
+            "protocol_version": 13,
             "operation": "server_info"
           },
           {
-            "protocol_version": 11,
+            "protocol_version": 13,
             "outcome": "ok",
             "response": {
               "response": "server_info",

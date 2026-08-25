@@ -71,10 +71,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    worlds (id) {
-        id -> Text,
-        backend_id -> Text,
-        disk_id -> Text,
+    worlds (world_id) {
+        world_id -> Text,
         vcpus -> BigInt,
         memory_mib -> BigInt,
         disk_gib -> BigInt,

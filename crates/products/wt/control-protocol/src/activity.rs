@@ -1,12 +1,13 @@
-use crate::InstanceName;
+use crate::WorldName;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use wt_world::WorldId;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "query", rename_all = "snake_case")]
 pub enum GitActivityQuery {
     World {
-        world_id: Uuid,
+        world_id: WorldId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         before_id: Option<u64>,
     },
@@ -23,7 +24,7 @@ pub enum GitActivityQuery {
 #[serde(tag = "query", rename_all = "snake_case")]
 pub enum WtToolsActivityQuery {
     World {
-        world_id: Uuid,
+        world_id: WorldId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         before_id: Option<u64>,
     },
@@ -56,8 +57,8 @@ pub struct RepositoryGitStateQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepositoryCheckoutState {
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+    pub world_id: WorldId,
+    pub world_name: WorldName,
     pub session_id: Uuid,
     pub cwd: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -122,8 +123,8 @@ pub enum GitActivityKind {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GitActivity {
     pub id: u64,
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+    pub world_id: WorldId,
+    pub world_name: WorldName,
     pub recorded_at_unix_ms: u64,
     pub kind: GitActivityKind,
     pub provider_host: String,
@@ -141,8 +142,8 @@ pub struct GitActivity {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WtToolsActivity {
     pub id: u64,
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+    pub world_id: WorldId,
+    pub world_name: WorldName,
     pub recorded_at_unix_ms: u64,
     pub provider_host: String,
     pub repository: String,

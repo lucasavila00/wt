@@ -60,8 +60,8 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
             None,
         ));
     }
-    ssh::sync(config, &report.instances)?;
-    let worlds = shell_worlds(&report.instances);
+    ssh::sync(config, &report.worlds)?;
+    let worlds = shell_worlds(&report.worlds);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut model = ShellModel::new(worlds);
     let area = Rect::new(0, 0, columns, rows);
@@ -114,8 +114,8 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     result.and(input_result).map(|_| ())
 }
 
-fn shell_worlds(instances: &[inventory::ContextInstance]) -> Vec<ShellWorld> {
-    instances
+fn shell_worlds(worlds: &[inventory::ContextWorld]) -> Vec<ShellWorld> {
+    worlds
         .iter()
         .filter(|world| ssh::has_alias(world))
         .map(codex::ShellWorld::from_inventory)
@@ -199,7 +199,7 @@ fn run_loop(
                     model.finish_worlds_refresh(Err(vec![error]));
                     redraw = true;
                 } else {
-                    let worlds = shell_worlds(&snapshot.instances);
+                    let worlds = shell_worlds(&snapshot.worlds);
                     let area: Rect = terminal
                         .size()
                         .context("read wt shell terminal area")?
@@ -617,7 +617,7 @@ fn start_creation(
     let mut used_names = model
         .worlds()
         .iter()
-        .map(|world| world.instance_name.to_string())
+        .map(|world| world.world_name.to_string())
         .collect::<std::collections::BTreeSet<_>>();
     used_names.extend(flows.actions.create_names().map(str::to_owned));
     let author = match git_author {

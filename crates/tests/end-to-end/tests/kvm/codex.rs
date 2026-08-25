@@ -11,7 +11,7 @@ pub(crate) struct CodexSessionFixture {
 }
 
 impl CodexSessionFixture {
-    pub(crate) fn new(name: &InstanceName, config: &wt_server::ServerConfig) -> Self {
+    pub(crate) fn new(name: &WorldName, config: &wt_server::ServerConfig) -> Self {
         let sessions = Path::new(config.codex_paths().sessions);
         let fixture_name = format!(".wt-kvm-e2e-{name}");
         let root = sessions.join(&fixture_name);
@@ -56,7 +56,7 @@ pub(crate) fn assert_server_codex_auth_export(config: &wt_server::ServerConfig) 
 
 pub(crate) fn verify_codex_auth_rotation(
     harness: &KvmHarness,
-    name: &InstanceName,
+    name: &WorldName,
     expected_sha256: &str,
 ) {
     let paths = harness.config.codex_paths();
@@ -117,7 +117,7 @@ fn sha256_file(path: &Path) -> String {
         .to_owned()
 }
 
-fn guest_output(harness: &KvmHarness, name: &InstanceName, command: &str, action: &str) -> String {
+fn guest_output(harness: &KvmHarness, name: &WorldName, command: &str, action: &str) -> String {
     let output = guest_command(harness, name, command).output().unwrap();
     ensure_success(action, &output).unwrap();
     String::from_utf8(output.stdout).unwrap()

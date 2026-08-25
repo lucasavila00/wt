@@ -189,7 +189,9 @@ fn agent_tool_reports_are_stored_for_the_authenticated_world_without_a_provider_
     }
     let reports = registry.list_agent_tool_reports("alice").unwrap();
     assert_eq!(reports.len(), 4);
-    assert!(reports.iter().all(|report| report.world_id == world_id));
+    assert!(reports
+        .iter()
+        .all(|report| report.world_id == world_id.into()));
     assert_eq!(
         reports.iter().map(|report| report.kind).collect::<Vec<_>>(),
         vec![
@@ -282,7 +284,7 @@ fn compaction_preserves_the_primary_session_state() {
 
     let reports = registry.list_codex_session_reports("alice").unwrap();
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].world_id, world_id);
+    assert_eq!(reports[0].world_id, world_id.into());
     assert_eq!(reports[0].session_id, session_id);
     assert_eq!(
         reports[0].state,
@@ -678,9 +680,7 @@ fn insert_world(registry: &wt_workload_registry::Registry) -> Uuid {
         .transaction::<_, wt_workload_registry::RegistryError>(|connection| {
             diesel::insert_into(worlds::table)
                 .values((
-                    worlds::id.eq(id.to_string()),
-                    worlds::backend_id.eq(format!("wt-{}", id.simple())),
-                    worlds::disk_id.eq(Uuid::new_v4().to_string()),
+                    worlds::world_id.eq(id.to_string()),
                     worlds::vcpus.eq(1_i64),
                     worlds::memory_mib.eq(1024_i64),
                     worlds::disk_gib.eq(10_i64),

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use wt_client::config::ContextKind;
 use wt_client::config::{ClientConfig, Context};
-use wt_client::inventory::{self, ContextInstance};
+use wt_client::inventory::{self, ContextWorld};
 use wt_client::transport::ContextError;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
@@ -37,6 +37,8 @@ enum Command {
     Ls,
     /// Remove a world.
     Rm { name: String },
+    /// Change a world's name without changing its identity or disk.
+    Rename { name: String, new_name: String },
     /// Start a stopped world.
     Start { name: String },
     /// Stop a guest.
@@ -75,23 +77,23 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
         Command::New => {
             let created = create::run(&config)?;
             let context = created.context;
-            let instance = created.instance;
+            let world = created.world;
             println!(
                 "{}.{}\t{}\t{}",
                 context,
-                instance.name,
-                instance.status,
-                instance.guest_ip.as_deref().unwrap_or("-")
+                world.name,
+                world.status,
+                world.guest_ip.as_deref().unwrap_or("-")
             );
-            let ssh = instance
+            let ssh = world
                 .ssh
                 .as_ref()
                 .context("created world has no SSH endpoint")?;
-            println!("\nOpening: ssh {}.{}", context, instance.name);
-            println!("Direct: ssh {}.{}-direct", context, instance.name);
+            println!("\nOpening: ssh {}.{}", context, world.name);
+            println!("Direct: ssh {}.{}-direct", context, world.name);
             println!("Endpoint: {}@{}:{}", ssh.user, ssh.host, ssh.port);
             std::io::stdout().flush()?;
-            let target = format!("{}.{}", context, instance.name);
+            let target = format!("{}.{}", context, world.name);
             return Err(ProcessCommand::new("ssh").arg(&target).exec())
                 .with_context(|| format!("exec ssh {target}"));
         }
@@ -104,10 +106,10 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
                     None,
                 ));
             }
-            print!("{}", format_instances(&report.instances));
+            print!("{}", format_worlds(&report.worlds));
             std::io::stdout().flush()?;
             if report.failures.is_empty() {
-                wt_client::ssh::sync(&config, &report.instances)?;
+                wt_client::ssh::sync(&config, &report.worlds)?;
             } else {
                 print_context_warnings(&report.failures);
                 eprintln!(
@@ -119,59 +121,96 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
             let response = wt_client::transport::call(
                 context,
-                &ApiRequest::new(Operation::Get {
+                &ApiRequest::new(Operation::GetWorld {
                     name: world_name.clone(),
                 }),
             )?;
-            let Response::Instance { instance } = response else {
+            let Response::World { world } = response else {
                 bail!("helper returned the wrong response while resolving delete");
             };
             let response = wt_client::transport::call(
                 context,
-                &ApiRequest::new(Operation::Delete {
-                    name: world_name.clone(),
-                    expected_id: instance.id,
+                &ApiRequest::new(Operation::DeleteWorld {
+                    world_id: world.world_id,
                 }),
             )?;
-            let Response::Deleted { .. } = response else {
+            let Response::WorldDeleted { .. } = response else {
                 bail!("helper returned the wrong response to delete");
             };
             warn_if_sync_skipped(&config)?;
             println!("removed {}.{}", context.name, world_name);
         }
-        Command::Start { name } => {
+        Command::Rename { name, new_name } => {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
+            let old_name = world_name.clone();
+            let new_name = wt_control_protocol::WorldName::parse(new_name)?;
             let response = wt_client::transport::call(
                 context,
-                &ApiRequest::new(Operation::Start {
+                &ApiRequest::new(Operation::GetWorld {
                     name: world_name.clone(),
                 }),
             )?;
-            let Response::Instance { instance } = response else {
+            let Response::World { world } = response else {
+                bail!("helper returned the wrong response while resolving rename");
+            };
+            let response = wt_client::transport::call(
+                context,
+                &ApiRequest::new(Operation::RenameWorld {
+                    world_id: world.world_id,
+                    new_name: new_name.clone(),
+                }),
+            )?;
+            let Response::World { world } = response else {
+                bail!("helper returned the wrong response to rename");
+            };
+            warn_if_sync_skipped(&config)?;
+            println!("renamed {}.{} to {}", context.name, old_name, world.name);
+        }
+        Command::Start { name } => {
+            let (context, world_name) = resolve_operation_target(&config, &name)?;
+            let world = wt_client::transport::call(
+                context,
+                &ApiRequest::new(Operation::GetWorld {
+                    name: world_name.clone(),
+                }),
+            )?;
+            let Response::World { world } = world else {
+                bail!("helper returned the wrong response while resolving start");
+            };
+            let response = wt_client::transport::call(
+                context,
+                &ApiRequest::new(Operation::StartWorld {
+                    world_id: world.world_id,
+                }),
+            )?;
+            let Response::World { world } = response else {
                 bail!("helper returned the wrong response to start");
             };
             warn_if_sync_skipped(&config)?;
-            println!(
-                "started {}.{} ({})",
-                context.name, world_name, instance.status
-            );
+            println!("started {}.{} ({})", context.name, world_name, world.status);
         }
         Command::Stop { name } => {
             let (context, world_name) = resolve_operation_target(&config, &name)?;
-            let response = wt_client::transport::call(
+            let world = wt_client::transport::call(
                 context,
-                &ApiRequest::new(Operation::Stop {
+                &ApiRequest::new(Operation::GetWorld {
                     name: world_name.clone(),
                 }),
             )?;
-            let Response::Instance { instance } = response else {
+            let Response::World { world } = world else {
+                bail!("helper returned the wrong response while resolving stop");
+            };
+            let response = wt_client::transport::call(
+                context,
+                &ApiRequest::new(Operation::StopWorld {
+                    world_id: world.world_id,
+                }),
+            )?;
+            let Response::World { world } = response else {
                 bail!("helper returned the wrong response to stop");
             };
             warn_if_sync_skipped(&config)?;
-            println!(
-                "stopped {}.{} ({})",
-                context.name, world_name, instance.status
-            );
+            println!("stopped {}.{} ({})", context.name, world_name, world.status);
         }
         Command::Code { name } => code::open(&config, &name)?,
         Command::Ssh { name } => wt_client::connection::ssh(&config, &name)?,
@@ -224,8 +263,8 @@ fn build_status(
     }
 }
 
-fn format_instances(instances: &[ContextInstance]) -> String {
-    let mut rows = Vec::with_capacity(instances.len() + 1);
+fn format_worlds(worlds: &[ContextWorld]) -> String {
+    let mut rows = Vec::with_capacity(worlds.len() + 1);
     rows.push([
         "CONTEXT".to_owned(),
         "NAME".to_owned(),
@@ -233,13 +272,13 @@ fn format_instances(instances: &[ContextInstance]) -> String {
         "RESOURCES".to_owned(),
         "DETAIL".to_owned(),
     ]);
-    rows.extend(instances.iter().map(|item| {
-        let instance = &item.instance;
+    rows.extend(worlds.iter().map(|item| {
+        let world = &item.world;
         [
             item.context.clone(),
-            instance.name.to_string(),
-            instance.status.to_string(),
-            inventory::format_resources(instance, item.disk_usage_bytes),
+            world.name.to_string(),
+            world.status.to_string(),
+            inventory::format_resources(world, item.disk_usage_bytes),
             inventory::format_detail(item),
         ]
     }));
@@ -280,7 +319,7 @@ fn required_context<'a>(config: &'a ClientConfig, name: &str) -> Result<&'a Cont
 fn resolve_operation_target<'a>(
     config: &'a ClientConfig,
     target: &str,
-) -> Result<(&'a Context, wt_control_protocol::InstanceName)> {
+) -> Result<(&'a Context, wt_control_protocol::WorldName)> {
     let (qualified_context, world_name) = inventory::parse_target(config, target)?;
     if let Some(context) = qualified_context {
         return Ok((context, world_name));
@@ -297,15 +336,15 @@ fn resolve_operation_target<'a>(
             Some("use a qualified name such as `context.world` to contact one context directly"),
         ));
     }
-    let selected = inventory::resolve(&report.instances, target)?;
+    let selected = inventory::resolve(&report.worlds, target)?;
     let context = required_context(config, &selected.context)?;
-    Ok((context, selected.instance.name.clone()))
+    Ok((context, selected.world.name.clone()))
 }
 
 fn warn_if_sync_skipped(config: &ClientConfig) -> Result<()> {
     let report = inventory::list_all(config);
     if report.failures.is_empty() {
-        wt_client::ssh::sync(config, &report.instances)?;
+        wt_client::ssh::sync(config, &report.worlds)?;
     } else {
         print_context_warnings(&report.failures);
         eprintln!(
@@ -324,7 +363,7 @@ fn sync_complete_inventory(config: &ClientConfig) -> Result<PathBuf> {
             None,
         ));
     }
-    wt_client::ssh::sync(config, &report.instances)
+    wt_client::ssh::sync(config, &report.worlds)
 }
 
 fn print_context_warnings(failures: &[ContextError]) {

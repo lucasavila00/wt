@@ -155,8 +155,7 @@ pub(super) fn poll(
                     true
                 }
                 crate::create::FlowAction::Created(created) => {
-                    let world =
-                        codex::ShellWorld::from_instance(&created.context, &created.instance);
+                    let world = codex::ShellWorld::from_world(&created.context, &created.world);
                     refresh.invalidate();
                     let (rows, columns) = session_viewport(model, area);
                     match sessions.start_world(&world, rows, columns) {

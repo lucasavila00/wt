@@ -4,21 +4,21 @@ use super::*;
 fn stopped_world_can_be_started() {
     let temp = TempDir::new().unwrap();
     service(&temp, Worker::default())
-        .execute("tester", Operation::Create(create("sample")))
+        .execute("tester", Operation::CreateWorld(create("sample")))
         .unwrap();
     let stopped_worker = Worker {
         stopped: true,
         ..Worker::default()
     };
-    let Response::Instances { instances, .. } = service(&temp, stopped_worker)
-        .execute("tester", Operation::List)
+    let Response::Worlds { worlds, .. } = service(&temp, stopped_worker)
+        .execute("tester", Operation::ListWorlds)
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(instances[0].status, InstanceStatus::Stopped);
+    assert_eq!(worlds[0].status, WorldStatus::Stopped);
     assert_eq!(
-        instances[0].last_error.as_deref(),
+        worlds[0].last_error.as_deref(),
         Some("guest stopped (crashed)")
     );
 
@@ -27,18 +27,18 @@ fn stopped_world_can_be_started() {
         ..Worker::default()
     };
     let starts = worker.starts.clone();
-    let Response::Instance { instance } = service(&temp, worker)
+    let Response::World { world } = service(&temp, worker)
         .execute(
             "tester",
-            Operation::Start {
-                name: InstanceName::parse("sample").unwrap(),
+            Operation::StartWorld {
+                world_id: worlds[0].world_id,
             },
         )
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Running);
+    assert_eq!(world.status, WorldStatus::Running);
     assert_eq!(starts.load(Ordering::SeqCst), 1);
 }
 
@@ -50,7 +50,7 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
         ..Worker::default()
     };
     let service = Service::with_capacity_limit(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker.clone(),
         Gateway,
         Operations::default(),
@@ -60,55 +60,58 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
             disk_gib: 10,
         },
     );
-    service
-        .execute("tester", Operation::Create(create("first")))
-        .unwrap();
+    let Response::World { world: first } = service
+        .execute("tester", Operation::CreateWorld(create("first")))
+        .unwrap()
+    else {
+        panic!()
+    };
 
-    let Response::Instance { instance } = service
+    let Response::World { world } = service
         .execute(
             "tester",
-            Operation::Stop {
-                name: InstanceName::parse("first").unwrap(),
+            Operation::StopWorld {
+                world_id: first.world_id,
             },
         )
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(instance.status, InstanceStatus::Stopped);
+    assert_eq!(world.status, WorldStatus::Stopped);
     assert_eq!(
-        instance.last_error.as_deref(),
+        world.last_error.as_deref(),
         Some("guest stopped (requested)")
     );
     assert_eq!(worker.stops.load(Ordering::SeqCst), 1);
 
     service
-        .execute("tester", Operation::Create(create("second")))
+        .execute("tester", Operation::CreateWorld(create("second")))
         .unwrap();
     let error = service
         .execute(
             "tester",
-            Operation::Start {
-                name: InstanceName::parse("first").unwrap(),
+            Operation::StartWorld {
+                world_id: world.world_id,
             },
         )
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Capacity);
     assert_eq!(error.capacity.unwrap().resource, CapacityResource::Disk);
 
-    let Response::Instances {
-        instances,
+    let Response::Worlds {
+        worlds,
         disk_usage_bytes,
         ..
-    } = service.execute("tester", Operation::List).unwrap()
+    } = service.execute("tester", Operation::ListWorlds).unwrap()
     else {
         panic!()
     };
-    let first = instances
+    let first = worlds
         .iter()
         .find(|world| world.name.as_str() == "first")
         .unwrap();
-    assert_eq!(disk_usage_bytes[&first.id], 1536 * 1024 * 1024);
+    assert_eq!(disk_usage_bytes[&first.world_id], 1536 * 1024 * 1024);
 }
 
 #[test]
@@ -119,27 +122,30 @@ fn failed_stop_keeps_the_world_running_and_resources_reserved() {
         ..Worker::default()
     };
     let service = Service::new(
-        Store::open(&temp.path().join("instances.db")).unwrap(),
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker,
         Gateway,
         Operations::default(),
         1024,
     );
-    service
-        .execute("tester", Operation::Create(create("first")))
-        .unwrap();
+    let Response::World { world: first } = service
+        .execute("tester", Operation::CreateWorld(create("first")))
+        .unwrap()
+    else {
+        panic!()
+    };
     let error = service
         .execute(
             "tester",
-            Operation::Stop {
-                name: InstanceName::parse("first").unwrap(),
+            Operation::StopWorld {
+                world_id: first.world_id,
             },
         )
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
 
     let error = service
-        .execute("tester", Operation::Create(create("second")))
+        .execute("tester", Operation::CreateWorld(create("second")))
         .unwrap_err();
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Capacity);
 }

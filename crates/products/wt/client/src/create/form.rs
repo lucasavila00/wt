@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use wt_client::config::ClientConfig;
-use wt_control_protocol::InstanceName;
+use wt_control_protocol::WorldName;
 
 use crate::git_author::GitAuthor;
 
@@ -33,7 +33,7 @@ const OK_FOCUS: usize = HOST_FIELDS.len();
 #[derive(Clone, Debug)]
 pub(crate) struct Input {
     pub(crate) context: String,
-    pub(crate) name: InstanceName,
+    pub(crate) name: WorldName,
     pub(crate) vcpus: u32,
     pub(crate) memory_mib: u64,
     pub(crate) disk_gib: u64,
@@ -344,7 +344,7 @@ impl Form {
         }
         Ok(Input {
             context: self.contexts[self.context].clone(),
-            name: InstanceName::parse(self.name.clone()).map_err(|error| error.to_string())?,
+            name: WorldName::parse(self.name.clone()).map_err(|error| error.to_string())?,
             vcpus: parse_number(&self.vcpus, DEFAULT_VCPUS)?,
             memory_mib: parse_number(&self.memory, DEFAULT_MEMORY_MIB)?,
             disk_gib: parse_number(&self.disk, DEFAULT_DISK_GIB)?,
@@ -356,7 +356,7 @@ impl Form {
     fn validate(&self, field: Field) -> Result<(), String> {
         match field {
             Field::Context => Ok(()),
-            Field::Name => InstanceName::parse(self.name.clone())
+            Field::Name => WorldName::parse(self.name.clone())
                 .map(|_| ())
                 .map_err(|error| error.to_string()),
             Field::Vcpus => parse_number::<u32>(&self.vcpus, DEFAULT_VCPUS).map(|_| ()),
@@ -596,7 +596,7 @@ mod tests {
             form.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             Action::None
         ));
-        assert!(form.error.as_deref().unwrap().contains("instance name"));
+        assert!(form.error.as_deref().unwrap().contains("world name"));
         assert_eq!(form.focus, 1);
     }
 

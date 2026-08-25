@@ -13,7 +13,7 @@ use std::io::IsTerminal as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use wt_client::config::ClientConfig;
-use wt_control_protocol::{Capacity, CapacityResource, Instance, InstanceName};
+use wt_control_protocol::{Capacity, CapacityResource, World, WorldName};
 
 use crate::git_author::read_git_author;
 
@@ -29,7 +29,7 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 #[derive(Clone, Debug)]
 pub(crate) struct Created {
     pub(crate) context: String,
-    pub(crate) instance: Instance,
+    pub(crate) world: World,
 }
 
 #[derive(Clone, Debug)]
@@ -265,9 +265,9 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
         bail!("`wt new` requires an interactive terminal");
     }
     let used_names = crate::inventory::list_all(config)
-        .instances
+        .worlds
         .into_iter()
-        .map(|item| item.instance.name.to_string())
+        .map(|item| item.world.name.to_string())
         .collect();
     let mut flow = prepare(config, &used_names)?;
     let _signals = install_cancel_handlers()?;
@@ -374,7 +374,7 @@ fn render_status(
     );
 }
 
-pub(crate) fn capacity_message(context: &str, name: &InstanceName, capacity: &Capacity) -> String {
+pub(crate) fn capacity_message(context: &str, name: &WorldName, capacity: &Capacity) -> String {
     let (resource, unit) = match capacity.resource {
         CapacityResource::Cpu => ("CPU", "CPU"),
         CapacityResource::Memory => ("memory", "MiB"),

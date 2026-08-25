@@ -7,6 +7,7 @@ use crate::{Registry, RegistryError};
 use diesel::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+use wt_world::WorldId;
 
 const COMPACTION_LEASE_MILLIS: i64 = 2 * 60 * 1000;
 
@@ -43,7 +44,7 @@ impl CodexSessionState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CodexSessionReport {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub world_name: String,
     pub session_id: Uuid,
     pub cwd: String,
@@ -69,7 +70,7 @@ pub struct CodexCheckoutState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RepositoryCheckoutState {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub world_name: String,
     pub session_id: Uuid,
     pub cwd: String,
@@ -87,7 +88,7 @@ pub struct RepositoryGitState {
 }
 
 pub struct CodexSessionReportInput<'a> {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub session_id: Uuid,
     pub cwd: &'a str,
     pub tmux_session: &'a str,
@@ -100,7 +101,7 @@ pub struct CodexSessionReportInput<'a> {
 }
 
 pub struct CodexSessionGitContextInput<'a> {
-    pub world_id: Uuid,
+    pub world_id: WorldId,
     pub session_id: Uuid,
     pub cwd: &'a str,
     pub tmux_session: &'a str,
@@ -419,7 +420,9 @@ impl Registry {
                 .map(|row| {
                     let checkout = load_current_checkout(connection, &row)?;
                     Ok(CodexSessionReport {
-                        world_id: Uuid::parse_str(&row.world_id)
+                        world_id: row
+                            .world_id
+                            .parse::<WorldId>()
                             .map_err(|error| RegistryError::InvalidData(error.to_string()))?,
                         world_name: row.world_name,
                         session_id: Uuid::parse_str(&row.session_id)

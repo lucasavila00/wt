@@ -2,14 +2,13 @@ use crate::operations::Operations;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use uuid::Uuid;
 use wt_control_protocol::{
-    ApiError, Capacity, CapacityResource, CreateInstance, ErrorCode, Instance, InstanceStatus,
-    Operation, ResourceCapacity, Resources as ProtocolResources, Response,
+    ApiError, Capacity, CapacityResource, CreateWorld, ErrorCode, Operation, ResourceCapacity,
+    Resources as ProtocolResources, Response, World, WorldId, WorldName, WorldStatus,
 };
-use wt_guest::{GuestAccess, ProvisionSpec, WorldInspection, WorldWorker};
+use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_workload_registry::Resources;
-use wt_workload_registry::{Store, StoreError, StoredInstance};
+use wt_workload_registry::{Store, StoreError, StoredWorld};
 mod activity;
 mod codex;
 mod codex_catalog;
@@ -94,12 +93,15 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         match operation {
             Operation::ServerInfo => unreachable!("server info is handled before service dispatch"),
-            Operation::Create(request) => self.create(owner, request, progress),
-            Operation::List => self.list(owner),
-            Operation::Get { name } => self.get(owner, &name),
-            Operation::Start { name } => self.start(owner, &name),
-            Operation::Stop { name } => self.stop(owner, &name),
-            Operation::Delete { name, expected_id } => self.delete(owner, &name, expected_id),
+            Operation::CreateWorld(request) => self.create(owner, request, progress),
+            Operation::ListWorlds => self.list(owner),
+            Operation::GetWorld { name } => self.get(owner, &name),
+            Operation::RenameWorld { world_id, new_name } => {
+                self.rename(owner, world_id, &new_name)
+            }
+            Operation::StartWorld { world_id } => self.start(owner, world_id),
+            Operation::StopWorld { world_id } => self.stop(owner, world_id),
+            Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             Operation::ListCodexSessions => self.list_codex_sessions(owner),
@@ -112,20 +114,20 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn create(
         &self,
         owner: &str,
-        request: CreateInstance,
+        request: CreateWorld,
         progress: &mut dyn std::io::Write,
     ) -> Result<Response, ApiError> {
-        wt_control_protocol::validate_create_resources(&request)
+        wt_control_protocol::validate_create_world_resources(&request)
             .map_err(|error| ApiError::new(ErrorCode::InvalidRequest, error))?;
-        let _operation = self.operations.lock(owner, &request.name);
+        let _operation = self.operations.lock_create(&request.name);
         let setup_fingerprint = setup_fingerprint(&request)?;
-        match self.store.get(owner, &request.name) {
+        match self.store.get_owned_by_name(owner, &request.name) {
             Ok(stored)
-                if retryable_create(&stored.instance)
+                if retryable_create(&stored.world)
                     && stored.setup_fingerprint == setup_fingerprint =>
             {
-                return Ok(Response::Instance {
-                    instance: Box::new(stored.instance),
+                return Ok(Response::World {
+                    world: Box::new(stored.world),
                 });
             }
             Ok(_) => {
@@ -166,17 +168,15 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 ));
             }
         }
-        let id = Uuid::new_v4();
-        let grant = self.gateway.reserve(id);
+        let world_id = WorldId::new();
+        let grant = self.gateway.reserve(world_id);
         let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
-        let disk_id = Uuid::new_v4();
-        let backend_id = format!("wt-{}", id.simple());
-        let stored = StoredInstance {
-            instance: Instance {
-                id,
+        let stored = StoredWorld {
+            world: World {
+                world_id,
                 name: request.name.clone(),
                 owner: owner.to_owned(),
-                status: InstanceStatus::Provisioning,
+                status: WorldStatus::Provisioning,
                 vcpus: request.vcpus,
                 memory_mib: request.memory_mib,
                 disk_gib: request.disk_gib,
@@ -184,8 +184,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 last_error: None,
                 ssh: None,
             },
-            backend_id,
-            disk_id,
             setup_fingerprint,
             gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
@@ -201,9 +199,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(map_store_error(error));
         }
 
-        let spec = ProvisionSpec {
-            backend_id: &stored.backend_id,
-            disk_id,
+        let spec = WorldProvisionSpec {
+            world_id,
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
@@ -215,14 +212,14 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         match result {
             Ok(access) => self
                 .store
-                .mark_host_running(id, access.guest_ip(), access.ssh())
+                .mark_host_running(world_id, access.guest_ip(), access.ssh())
                 .map_err(map_store_error)?,
             Err(error) => {
                 let provisioning_error = error.to_string();
-                if let Err(store_error) = self.store.mark_error(id, &provisioning_error) {
+                if let Err(store_error) = self.store.mark_error(world_id, &provisioning_error) {
                     eprintln!(
                         "wt-server: record failed host create {}: {store_error}",
-                        stored.instance.name
+                        stored.world.name
                     );
                     return Err(ApiError::new(
                         ErrorCode::Backend,
@@ -234,47 +231,47 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 }
                 eprintln!(
                     "wt-server: preserved failed guest {}: {provisioning_error}",
-                    stored.instance.name
+                    stored.world.name
                 );
                 return Err(ApiError::new(
                     ErrorCode::Backend,
                     format!(
                         "{provisioning_error}; guest '{}' was preserved in error state; \
                          run `wt rm {}` to delete it",
-                        stored.instance.name, stored.instance.name
+                        stored.world.name, stored.world.name
                     ),
                 ));
             }
         }
-        let instance = self
+        let world = self
             .store
-            .get(owner, &stored.instance.name)
+            .get_owned_by_id(owner, stored.world.world_id)
             .map_err(map_store_error)?
-            .instance;
-        Ok(Response::Instance {
-            instance: Box::new(instance),
+            .world;
+        Ok(Response::World {
+            world: Box::new(world),
         })
     }
 
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
-        let stored = self.store.list(owner).map_err(map_store_error)?;
-        for instance in &stored {
-            self.reconcile(instance)?;
+        let stored = self.store.list_owned(owner).map_err(map_store_error)?;
+        for world in &stored {
+            self.reconcile(world)?;
         }
-        let stored = self.store.list(owner).map_err(map_store_error)?;
+        let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         let mut disk_usage_bytes = std::collections::BTreeMap::new();
         for world in &stored {
             let usage = self.disk_usage(world)?;
-            disk_usage_bytes.insert(world.instance.id, usage);
+            disk_usage_bytes.insert(world.world.world_id, usage);
         }
-        let instances = stored.into_iter().map(|stored| stored.instance).collect();
+        let worlds = stored.into_iter().map(|stored| stored.world).collect();
         let agent_tool_report_counts = self
             .store
             .agent_tool_report_counts(owner)
             .map_err(map_store_error)?;
         let reserved = self.store.reserved_resources().map_err(map_store_error)?;
-        Ok(Response::Instances {
-            instances,
+        Ok(Response::Worlds {
+            worlds,
             capacity: ResourceCapacity {
                 reserved: protocol_resources(reserved),
                 total: protocol_resources(self.capacity_limit),
@@ -284,26 +281,26 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 
-    fn reconcile(&self, stored: &StoredInstance) -> Result<(), ApiError> {
+    fn reconcile(&self, stored: &StoredWorld) -> Result<(), ApiError> {
         if !matches!(
-            stored.instance.status,
-            InstanceStatus::Running | InstanceStatus::Stopped | InstanceStatus::Error
+            stored.world.status,
+            WorldStatus::Running | WorldStatus::Stopped | WorldStatus::Error
         ) {
             return Ok(());
         }
-        let retries = if stored.instance.status == InstanceStatus::Error {
+        let retries = if stored.world.status == WorldStatus::Error {
             0
         } else {
             INSPECTION_RETRIES
         };
         match retry(
-            || self.worker.inspect(&stored.backend_id),
+            || self.worker.inspect(stored.world.world_id),
             retries,
             || std::thread::sleep(INSPECTION_RETRY_DELAY),
         ) {
             Ok(WorldInspection::Running(world)) => {
                 self.store
-                    .ensure_resources_reserved(stored.instance.id)
+                    .ensure_resources_reserved(stored.world.world_id)
                     .map_err(map_store_error)?;
                 self.apply_world(stored, &world)?
             }
@@ -311,7 +308,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 let disk_usage_bytes = self.disk_usage(stored)?;
                 self.store
                     .mark_stopped(
-                        stored.instance.id,
+                        stored.world.world_id,
                         &stopped_message(reason.as_deref()),
                         disk_usage_bytes,
                     )
@@ -319,12 +316,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             }
             Ok(WorldInspection::Missing) => self
                 .store
-                .mark_error(stored.instance.id, "guest domain is missing")
+                .mark_error(stored.world.world_id, "guest domain is missing")
                 .map_err(map_store_error)?,
             Err(error) => self
                 .store
                 .mark_error(
-                    stored.instance.id,
+                    stored.world.world_id,
                     &format!("guest reconciliation: {error}"),
                 )
                 .map_err(map_store_error)?,
@@ -332,85 +329,86 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         Ok(())
     }
 
-    fn disk_usage(&self, stored: &StoredInstance) -> Result<u64, ApiError> {
-        self.worker.disk_usage(stored.disk_id).map_err(|error| {
-            ApiError::new(
-                ErrorCode::Backend,
-                format!("read world disk usage: {error}"),
-            )
-        })
+    fn disk_usage(&self, stored: &StoredWorld) -> Result<u64, ApiError> {
+        self.worker
+            .disk_usage(stored.world.world_id)
+            .map_err(|error| {
+                ApiError::new(
+                    ErrorCode::Backend,
+                    format!("read world disk usage: {error}"),
+                )
+            })
     }
 
-    fn apply_world(&self, stored: &StoredInstance, access: &GuestAccess) -> Result<(), ApiError> {
+    fn apply_world(&self, stored: &StoredWorld, access: &GuestAccess) -> Result<(), ApiError> {
         let same_guest_identity = stored
-            .instance
+            .world
             .ssh
             .as_ref()
             .is_some_and(|ssh| ssh.host_keys == access.ssh().host_keys);
         if !same_guest_identity {
             return self
                 .store
-                .mark_error(stored.instance.id, "SSH host identity changed")
+                .mark_error(stored.world.world_id, "SSH host identity changed")
                 .map_err(map_store_error);
         }
         self.store
-            .mark_host_running(stored.instance.id, access.guest_ip(), access.ssh())
+            .mark_host_running(stored.world.world_id, access.guest_ip(), access.ssh())
             .map_err(map_store_error)
     }
 
-    fn get(
-        &self,
-        owner: &str,
-        name: &wt_control_protocol::InstanceName,
-    ) -> Result<Response, ApiError> {
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        self.reconcile(&stored)?;
-        let instance = self
+    fn get(&self, owner: &str, name: &WorldName) -> Result<Response, ApiError> {
+        let stored = self
             .store
-            .get(owner, name)
+            .get_owned_by_name(owner, name)
+            .map_err(map_store_error)?;
+        self.reconcile(&stored)?;
+        let world = self
+            .store
+            .get_owned_by_id(owner, stored.world.world_id)
             .map_err(map_store_error)?
-            .instance;
-        Ok(Response::Instance {
-            instance: Box::new(instance),
+            .world;
+        Ok(Response::World {
+            world: Box::new(world),
         })
     }
 
-    fn start(
-        &self,
-        owner: &str,
-        name: &wt_control_protocol::InstanceName,
-    ) -> Result<Response, ApiError> {
+    fn start(&self, owner: &str, world_id: WorldId) -> Result<Response, ApiError> {
+        let stored = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?;
         let _operation = self
             .operations
-            .try_lock(owner, name)
-            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
+            .try_lock_world(world_id)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
         self.reconcile(&stored)?;
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        if matches!(stored.instance.status, InstanceStatus::Running) {
-            return Ok(Response::Instance {
-                instance: Box::new(stored.instance),
+        let stored = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?;
+        if matches!(stored.world.status, WorldStatus::Running) {
+            return Ok(Response::World {
+                world: Box::new(stored.world),
             });
         }
-        if stored.instance.status != InstanceStatus::Stopped {
+        if stored.world.status != WorldStatus::Stopped {
             return Err(ApiError::new(
                 ErrorCode::Conflict,
-                format!("world is {}; expected stopped", stored.instance.status),
+                format!("world is {}; expected stopped", stored.world.status),
             ));
         }
         self.store
-            .reserve_resources(stored.instance.id, self.capacity_limit)
+            .reserve_resources(world_id, self.capacity_limit)
             .map_err(map_store_error)?;
-        let world = match self.worker.start(&stored.backend_id) {
+        let access = match self.worker.start(world_id) {
             Ok(world) => world,
             Err(error) => {
-                if let Ok(WorldInspection::Stopped { reason }) =
-                    self.worker.inspect(&stored.backend_id)
-                {
+                if let Ok(WorldInspection::Stopped { reason }) = self.worker.inspect(world_id) {
                     let disk_usage_bytes = self.disk_usage(&stored)?;
                     self.store
                         .mark_stopped(
-                            stored.instance.id,
+                            world_id,
                             &stopped_message(reason.as_deref()),
                             disk_usage_bytes,
                         )
@@ -422,34 +420,26 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 ));
             }
         };
-        self.apply_world(&stored, &world)?;
-        let instance = self
+        self.apply_world(&stored, &access)?;
+        let world = self
             .store
-            .get(owner, name)
+            .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?
-            .instance;
-        Ok(Response::Instance {
-            instance: Box::new(instance),
+            .world;
+        Ok(Response::World {
+            world: Box::new(world),
         })
     }
 
-    fn delete(
-        &self,
-        owner: &str,
-        name: &wt_control_protocol::InstanceName,
-        expected_id: Uuid,
-    ) -> Result<Response, ApiError> {
+    fn delete(&self, owner: &str, world_id: WorldId) -> Result<Response, ApiError> {
         let _operation = self
             .operations
-            .try_lock(owner, name)
-            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "instance operation is active"))?;
-        let stored = self.store.get(owner, name).map_err(map_store_error)?;
-        if expected_id != stored.instance.id {
-            return Err(ApiError::new(
-                ErrorCode::Conflict,
-                "instance identity no longer matches the requested delete",
-            ));
-        }
+            .try_lock_world(world_id)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
+        let stored = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?;
         let gateway_grant_id = stored.gateway_grant_id.as_ref();
         if let Some(gateway_grant_id) = gateway_grant_id {
             self.gateway
@@ -457,19 +447,43 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
         }
         self.store
-            .mark_destroying(stored.instance.id)
+            .mark_destroying(world_id)
             .map_err(map_store_error)?;
-        if let Err(error) = self.worker.destroy(&stored.backend_id, stored.disk_id) {
+        if let Err(error) = self.worker.destroy(world_id) {
             let message = error.to_string();
             self.store
-                .mark_error(stored.instance.id, &message)
+                .mark_error(world_id, &message)
                 .map_err(map_store_error)?;
             return Err(ApiError::new(ErrorCode::Backend, message));
         }
+        self.store.delete(world_id).map_err(map_store_error)?;
+        Ok(Response::WorldDeleted { world_id })
+    }
+
+    fn rename(
+        &self,
+        owner: &str,
+        world_id: WorldId,
+        new_name: &WorldName,
+    ) -> Result<Response, ApiError> {
         self.store
-            .delete(stored.instance.id, stored.disk_id)
+            .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        Ok(Response::Deleted { name: name.clone() })
+        let _operation = self
+            .operations
+            .try_lock_world(world_id)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
+        self.store
+            .rename(world_id, new_name)
+            .map_err(map_store_error)?;
+        let world = self
+            .store
+            .get_owned_by_id(owner, world_id)
+            .map_err(map_store_error)?
+            .world;
+        Ok(Response::World {
+            world: Box::new(world),
+        })
     }
 }
 
@@ -499,14 +513,14 @@ fn retry<T, E>(
     }
 }
 
-fn retryable_create(instance: &Instance) -> bool {
+fn retryable_create(world: &World) -> bool {
     matches!(
-        instance.status,
-        InstanceStatus::Provisioning | InstanceStatus::Running
+        world.status,
+        WorldStatus::Provisioning | WorldStatus::Running
     )
 }
 
-fn setup_fingerprint(request: &CreateInstance) -> Result<String, ApiError> {
+fn setup_fingerprint(request: &CreateWorld) -> Result<String, ApiError> {
     let bytes = serde_json::to_vec(request)
         .map_err(|error| ApiError::new(ErrorCode::Internal, error.to_string()))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
@@ -514,8 +528,8 @@ fn setup_fingerprint(request: &CreateInstance) -> Result<String, ApiError> {
 
 fn map_store_error(error: StoreError) -> ApiError {
     match error {
-        StoreError::Conflict => ApiError::new(ErrorCode::Conflict, "instance already exists"),
-        StoreError::NotFound => ApiError::new(ErrorCode::NotFound, "instance not found"),
+        StoreError::Conflict => ApiError::new(ErrorCode::Conflict, "world name already exists"),
+        StoreError::NotFound => ApiError::new(ErrorCode::NotFound, "world not found"),
         StoreError::Capacity {
             resource,
             total,

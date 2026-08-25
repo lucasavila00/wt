@@ -10,7 +10,7 @@ fn branch_changes_during_a_working_turn_without_another_codex_hook() {
     let name = unique_name("git-tracker");
     let harness = KvmHarness::new(&mut timings);
     let created = timings.run("create Git tracking world", || harness.create(&name));
-    assert_eq!(created.status, InstanceStatus::Running);
+    assert_eq!(created.status, WorldStatus::Running);
     harness.sync_inventory();
 
     let session_id = "123e4567-e89b-12d3-a456-426614174000";

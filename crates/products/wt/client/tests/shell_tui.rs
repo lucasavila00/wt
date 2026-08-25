@@ -52,17 +52,17 @@ case "$request" in
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]}}'
     fi
     ;;
-  *'"operation":"list"'*)
-    instances='{"id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
+  *'"operation":"list_worlds"'*)
+    worlds='{"world_id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
     if test -f "$HOME/created-first"; then
-      instances="$instances,"' {"id":"00000000-0000-0000-0000-000000000002","name":"first","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
+      worlds="$worlds,"' {"world_id":"00000000-0000-0000-0000-000000000002","name":"first","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
     fi
     if test -f "$HOME/created-second"; then
-      instances="$instances,"' {"id":"00000000-0000-0000-0000-000000000003","name":"second","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.4","ssh":{"user":"wt","host":"192.0.2.4","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
+      worlds="$worlds,"' {"world_id":"00000000-0000-0000-0000-000000000003","name":"second","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.4","ssh":{"user":"wt","host":"192.0.2.4","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
     fi
-    printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instances","instances":[%s]}}\n' "$instances"
+    printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"worlds","worlds":[%s]}}\n' "$worlds"
     ;;
-  *'"operation":"create"'*)
+  *'"operation":"create_world"'*)
     name=
     id=
     case "$request" in
@@ -83,7 +83,7 @@ case "$request" in
       fi
       touch "$HOME/created-$name"
       printf 'end %s\n' "$name" >> "$HOME/create-log"
-      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"instance","instance":{"id":"%s","name":"%s","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}\n' "$id" "$name"
+      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"world","world":{"world_id":"%s","name":"%s","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.3","ssh":{"user":"wt","host":"192.0.2.3","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}\n' "$id" "$name"
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"event":"progress","message":"Waiting for the guest transport..."}'
       sleep 5
@@ -92,7 +92,7 @@ case "$request" in
     ;;
   *'"operation":"delete"'*)
     sleep 5
-    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"deleted","name":"existing"}}'
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
     ;;
   *) exit 2 ;;
 esac

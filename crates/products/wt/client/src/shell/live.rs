@@ -93,7 +93,7 @@ fn draw_card(
             .worlds()
             .iter()
             .position(|world| {
-                world.identity.context == card.context && world.identity.id == *world_id
+                world.identity.context == card.context && world.identity.world_id == *world_id
             })
             .and_then(|index| screens.get(index).copied()),
         super::control::CodexCardKind::RolloutOnly
@@ -198,7 +198,7 @@ mod tests {
             identity: super::super::control::CodexCardIdentity::Observation {
                 context: "local".into(),
                 session_id,
-                world_id: Uuid::from_u128(2),
+                world_id: Uuid::from_u128(2).into(),
                 tmux_session: "wt-host".into(),
                 pane_id: "%1".into(),
             },
@@ -207,7 +207,7 @@ mod tests {
             timestamp: Some(1),
             latest_user_message: None,
             kind: super::super::control::CodexCardKind::Observation {
-                world_id: Uuid::from_u128(2),
+                world_id: Uuid::from_u128(2).into(),
                 world_name: "world".into(),
                 cwd: "/home/wt".into(),
                 repository_root: None,

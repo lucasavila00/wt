@@ -4,49 +4,47 @@ use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use wt_control_protocol::{
-    ApiRequest, Instance, InstanceName, Operation, ResourceCapacity, Response,
-};
+use wt_control_protocol::{ApiRequest, Operation, ResourceCapacity, Response, World, WorldName};
 
 #[derive(Clone, Debug)]
-pub struct ContextInstance {
+pub struct ContextWorld {
     pub context: String,
-    pub instance: Instance,
+    pub world: World,
     pub agent_tool_report_count: u64,
     pub disk_usage_bytes: Option<u64>,
 }
 
 #[derive(Debug)]
-pub struct InventoryReport {
-    pub instances: Vec<ContextInstance>,
+pub struct WorldInventory {
+    pub worlds: Vec<ContextWorld>,
     pub capacity: ResourceCapacity,
     pub failures: Vec<ContextError>,
 }
 
-impl ContextInstance {
+impl ContextWorld {
     pub fn qualified_name(&self) -> String {
-        format!("{}.{}", self.context, self.instance.name)
+        format!("{}.{}", self.context, self.world.name)
     }
 }
 
-pub fn format_resources(instance: &Instance, disk_usage_bytes: Option<u64>) -> String {
-    let memory = if instance.memory_mib.is_multiple_of(1024) {
-        format!("{}G", instance.memory_mib / 1024)
+pub fn format_resources(world: &World, disk_usage_bytes: Option<u64>) -> String {
+    let memory = if world.memory_mib.is_multiple_of(1024) {
+        format!("{}G", world.memory_mib / 1024)
     } else {
-        format!("{}MiB", instance.memory_mib)
+        format!("{}MiB", world.memory_mib)
     };
     let disk = disk_usage_bytes.map_or_else(
-        || format!("{}G", instance.disk_gib),
+        || format!("{}G", world.disk_gib),
         |bytes| {
             let usage = format_disk_usage(bytes);
-            if instance.status == wt_control_protocol::InstanceStatus::Stopped {
+            if world.status == wt_control_protocol::WorldStatus::Stopped {
                 format!("{usage} disk")
             } else {
-                format!("{usage}/{}G disk", instance.disk_gib)
+                format!("{usage}/{}G disk", world.disk_gib)
             }
         },
     );
-    format!("{} CPU · {memory} · {disk}", instance.vcpus)
+    format!("{} CPU · {memory} · {disk}", world.vcpus)
 }
 
 pub fn format_capacity(capacity: ResourceCapacity) -> Option<String> {
@@ -72,19 +70,19 @@ fn format_memory(memory_mib: u64) -> String {
     }
 }
 
-pub fn format_detail(item: &ContextInstance) -> String {
-    let instance = &item.instance;
-    let target = format!("{}.{}", item.context, instance.name);
-    let detail = match instance.status {
-        wt_control_protocol::InstanceStatus::Stopped => format!(
+pub fn format_detail(item: &ContextWorld) -> String {
+    let world = &item.world;
+    let target = format!("{}.{}", item.context, world.name);
+    let detail = match world.status {
+        wt_control_protocol::WorldStatus::Stopped => format!(
             "{}; run `wt start {target}` or `wt rm {target}`",
-            instance.last_error.as_deref().unwrap_or("guest stopped")
+            world.last_error.as_deref().unwrap_or("guest stopped")
         ),
-        wt_control_protocol::InstanceStatus::Error => format!(
+        wt_control_protocol::WorldStatus::Error => format!(
             "{}; run `wt rm {target}`",
-            instance.last_error.as_deref().unwrap_or("world failed")
+            world.last_error.as_deref().unwrap_or("world failed")
         ),
-        _ => instance.last_error.as_deref().unwrap_or("-").to_owned(),
+        _ => world.last_error.as_deref().unwrap_or("-").to_owned(),
     };
     if item.agent_tool_report_count == 0 {
         return detail;
@@ -126,7 +124,7 @@ fn format_disk_usage(bytes: u64) -> String {
     }
 }
 
-pub fn list_all(config: &ClientConfig) -> InventoryReport {
+pub fn list_all(config: &ClientConfig) -> WorldInventory {
     list_all_inner(config, None)
 }
 
@@ -134,14 +132,14 @@ pub fn list_all_with_timeout(
     config: &ClientConfig,
     timeout: Duration,
     cancelled: &AtomicBool,
-) -> InventoryReport {
+) -> WorldInventory {
     list_all_inner(config, Some((timeout, cancelled)))
 }
 
 fn list_all_inner(
     config: &ClientConfig,
     timeout: Option<(Duration, &AtomicBool)>,
-) -> InventoryReport {
+) -> WorldInventory {
     let mut all = Vec::new();
     let mut capacity = ResourceCapacity::default();
     let mut failures = Vec::new();
@@ -149,7 +147,7 @@ fn list_all_inner(
         if timeout.is_some_and(|(_, cancelled)| cancelled.load(Ordering::Relaxed)) {
             break;
         }
-        let request = ApiRequest::new(Operation::List);
+        let request = ApiRequest::new(Operation::ListWorlds);
         let response = match timeout.map_or_else(
             || transport::call(context, &request),
             |(timeout, cancelled)| {
@@ -162,8 +160,8 @@ fn list_all_inner(
                 continue;
             }
         };
-        let Response::Instances {
-            instances,
+        let Response::Worlds {
+            worlds,
             capacity: context_capacity,
             disk_usage_bytes,
             agent_tool_report_counts,
@@ -173,37 +171,37 @@ fn list_all_inner(
             continue;
         };
         capacity = capacity.saturating_add(context_capacity);
-        all.extend(instances.into_iter().map(|instance| {
+        all.extend(worlds.into_iter().map(|world| {
             let agent_tool_report_count = agent_tool_report_counts
-                .get(&instance.id)
+                .get(&world.world_id)
                 .copied()
                 .unwrap_or_default();
-            let disk_usage_bytes = disk_usage_bytes.get(&instance.id).copied();
-            ContextInstance {
+            let disk_usage_bytes = disk_usage_bytes.get(&world.world_id).copied();
+            ContextWorld {
                 context: context.name.clone(),
-                instance,
+                world,
                 agent_tool_report_count,
                 disk_usage_bytes,
             }
         }));
     }
     group_by_context(&mut all);
-    InventoryReport {
-        instances: all,
+    WorldInventory {
+        worlds: all,
         capacity,
         failures,
     }
 }
 
-fn group_by_context(instances: &mut [ContextInstance]) {
+fn group_by_context(worlds: &mut [ContextWorld]) {
     // Stable sorting groups contexts without changing the server's creation order.
-    instances.sort_by(|left, right| left.context.cmp(&right.context));
+    worlds.sort_by(|left, right| left.context.cmp(&right.context));
 }
 
 pub fn parse_target<'a>(
     config: &'a ClientConfig,
     target: &str,
-) -> Result<(Option<&'a Context>, InstanceName)> {
+) -> Result<(Option<&'a Context>, WorldName)> {
     if let Some((context_name, world_name)) = target.split_once('.') {
         if world_name.contains('.') {
             bail!("invalid qualified world name: {target}");
@@ -211,21 +209,21 @@ pub fn parse_target<'a>(
         let context = config
             .context(context_name)
             .ok_or_else(|| anyhow::anyhow!("unknown context: {context_name}"))?;
-        return Ok((Some(context), InstanceName::parse(world_name)?));
+        return Ok((Some(context), WorldName::parse(world_name)?));
     }
-    Ok((None, InstanceName::parse(target)?))
+    Ok((None, WorldName::parse(target)?))
 }
 
-pub fn resolve<'a>(inventory: &'a [ContextInstance], target: &str) -> Result<&'a ContextInstance> {
+pub fn resolve<'a>(inventory: &'a [ContextWorld], target: &str) -> Result<&'a ContextWorld> {
     if let Some((context, name)) = target.split_once('.') {
         return inventory
             .iter()
-            .find(|item| item.context == context && item.instance.name.as_str() == name)
+            .find(|item| item.context == context && item.world.name.as_str() == name)
             .ok_or_else(|| anyhow::anyhow!("world not found: {target}"));
     }
     let matches = inventory
         .iter()
-        .filter(|item| item.instance.name.as_str() == target)
+        .filter(|item| item.world.name.as_str() == target)
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => bail!("world not found: {target}"),
@@ -241,10 +239,10 @@ pub fn resolve<'a>(inventory: &'a [ContextInstance], target: &str) -> Result<&'a
     }
 }
 
-pub fn name_counts(inventory: &[ContextInstance]) -> HashMap<&str, usize> {
+pub fn name_counts(inventory: &[ContextWorld]) -> HashMap<&str, usize> {
     let mut counts = HashMap::new();
     for item in inventory {
-        *counts.entry(item.instance.name.as_str()).or_insert(0) += 1;
+        *counts.entry(item.world.name.as_str()).or_insert(0) += 1;
     }
     counts
 }
@@ -253,18 +251,18 @@ pub fn name_counts(inventory: &[ContextInstance]) -> HashMap<&str, usize> {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use wt_control_protocol::InstanceStatus;
+    use wt_control_protocol::WorldStatus;
 
-    fn item(context: &str, name: &str) -> ContextInstance {
-        ContextInstance {
+    fn item(context: &str, name: &str) -> ContextWorld {
+        ContextWorld {
             context: context.into(),
             agent_tool_report_count: 0,
             disk_usage_bytes: None,
-            instance: Instance {
-                id: Uuid::new_v4(),
-                name: InstanceName::parse(name).unwrap(),
+            world: World {
+                world_id: Uuid::new_v4().into(),
+                name: WorldName::parse(name).unwrap(),
                 owner: "tester".into(),
-                status: InstanceStatus::Running,
+                status: WorldStatus::Running,
                 vcpus: 2,
                 memory_mib: 4096,
                 disk_gib: 32,
@@ -301,7 +299,7 @@ mod tests {
 
         let names = inventory
             .iter()
-            .map(ContextInstance::qualified_name)
+            .map(ContextWorld::qualified_name)
             .collect::<Vec<_>>();
         assert_eq!(names, ["lab.other", "local.w6", "local.w10"]);
     }

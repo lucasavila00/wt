@@ -145,7 +145,7 @@ pub fn format(reports: &[ContextAgentToolReport]) -> String {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use wt_control_protocol::{AgentToolReport, AgentToolReportKind, InstanceName};
+    use wt_control_protocol::{AgentToolReport, AgentToolReportKind, WorldName};
 
     #[test]
     fn formats_reports_as_bounded_rows() {
@@ -153,8 +153,8 @@ mod tests {
             ContextAgentToolReport {
                 context: "local".into(),
                 report: AgentToolReport {
-                    world_id: Uuid::nil(),
-                    world_name: InstanceName::parse("checkout").unwrap(),
+                    world_id: Uuid::nil().into(),
+                    world_name: WorldName::parse("checkout").unwrap(),
                     kind: AgentToolReportKind::Bug,
                     description: "log output is missing\nfor failed jobs".into(),
                 },
@@ -162,8 +162,8 @@ mod tests {
             ContextAgentToolReport {
                 context: "lab".into(),
                 report: AgentToolReport {
-                    world_id: Uuid::nil(),
-                    world_name: InstanceName::parse("review").unwrap(),
+                    world_id: Uuid::nil().into(),
+                    world_name: WorldName::parse("review").unwrap(),
                     kind: AgentToolReportKind::FeatureRequest,
                     description: "support commit search".into(),
                 },

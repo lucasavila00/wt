@@ -1,6 +1,7 @@
-use crate::InstanceName;
+use crate::WorldName;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use wt_world::WorldId;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,8 +22,8 @@ pub struct ByobuTarget {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodexSessionObservation {
-    pub world_id: Uuid,
-    pub world_name: InstanceName,
+    pub world_id: WorldId,
+    pub world_name: WorldName,
     pub cwd: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository_root: Option<String>,

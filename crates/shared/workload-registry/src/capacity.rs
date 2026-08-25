@@ -2,7 +2,7 @@ use crate::schema::worlds;
 use crate::{to_i64, to_u64, RegistryError, Resource, Resources};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use uuid::Uuid;
+use wt_world::WorldId;
 
 #[derive(QueryableByName)]
 struct ResourceSum {
@@ -78,11 +78,11 @@ pub(crate) fn ensure_capacity(
 
 pub fn reserve_resources(
     connection: &mut SqliteConnection,
-    id: Uuid,
+    world_id: WorldId,
     limit: Resources,
 ) -> Result<(), RegistryError> {
     let row = worlds::table
-        .find(id.to_string())
+        .find(world_id.to_string())
         .select(ReservationRow::as_select())
         .first::<ReservationRow>(connection)?;
     let disk_gib = to_u64(row.disk_gib, "disk_gib")?;
@@ -127,7 +127,7 @@ pub fn reserve_resources(
             });
         }
     }
-    diesel::update(worlds::table.find(id.to_string()))
+    diesel::update(worlds::table.find(world_id.to_string()))
         .set((
             worlds::compute_reserved.eq(true),
             worlds::disk_reserved_gib.eq(to_i64(disk_target_gib, "disk_reserved_gib")?),
@@ -138,11 +138,11 @@ pub fn reserve_resources(
 
 pub fn release_resources(
     connection: &mut SqliteConnection,
-    id: Uuid,
+    world_id: WorldId,
     disk_usage_bytes: u64,
 ) -> Result<(), RegistryError> {
     let disk_reserved_gib = disk_usage_bytes.div_ceil(1024 * 1024 * 1024);
-    let changed = diesel::update(worlds::table.find(id.to_string()))
+    let changed = diesel::update(worlds::table.find(world_id.to_string()))
         .set((
             worlds::compute_reserved.eq(false),
             worlds::disk_reserved_gib.eq(to_i64(disk_reserved_gib, "disk_reserved_gib")?),
@@ -157,15 +157,15 @@ pub fn release_resources(
 
 pub fn ensure_resources_reserved(
     connection: &mut SqliteConnection,
-    id: Uuid,
+    world_id: WorldId,
 ) -> Result<(), RegistryError> {
     let row = worlds::table
-        .find(id.to_string())
+        .find(world_id.to_string())
         .select(ReservationRow::as_select())
         .first::<ReservationRow>(connection)?;
     let disk_gib = to_u64(row.disk_gib, "disk_gib")?;
     let disk_reserved_gib = to_u64(row.disk_reserved_gib, "disk_reserved_gib")?;
-    let changed = diesel::update(worlds::table.find(id.to_string()))
+    let changed = diesel::update(worlds::table.find(world_id.to_string()))
         .set((
             worlds::compute_reserved.eq(true),
             worlds::disk_reserved_gib.eq(to_i64(

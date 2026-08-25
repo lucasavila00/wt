@@ -1,9 +1,9 @@
-use crate::InstanceName;
+use crate::WorldName;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CreateInstance {
-    pub name: InstanceName,
+pub struct CreateWorld {
+    pub name: WorldName,
     pub vcpus: u32,
     pub memory_mib: u64,
     pub disk_gib: u64,
@@ -13,7 +13,7 @@ pub struct CreateInstance {
     pub git_user_email: String,
 }
 
-pub fn validate_create_resources(request: &CreateInstance) -> Result<(), &'static str> {
+pub fn validate_create_world_resources(request: &CreateWorld) -> Result<(), &'static str> {
     if request.vcpus == 0 || request.memory_mib == 0 || request.disk_gib == 0 {
         return Err("CPU, memory, and disk values must be greater than zero");
     }

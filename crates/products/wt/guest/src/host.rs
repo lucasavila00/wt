@@ -1,21 +1,24 @@
-use crate::{GuestAccess, HostConfig};
+use crate::{GuestAccess, HostConfig, GUEST_GROUP, GUEST_USER};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, ProviderId,
-    RunRequest, WorkerError,
+    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, RunRequest,
+    WorkerError, WriteFileRequest,
 };
+use wt_world::WorldId;
 
 const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
+const CODEX_RECONCILIATION_DESIRED: &str = "/home/wt/.local/state/wt/codex-reconciliation-desired";
+const CODEX_RECONCILIATION_STAGED: &str =
+    "/home/wt/.local/state/wt/.codex-reconciliation-desired.next";
+const CODEX_RECONCILIATION_SERVICE: &str = "wt-codex-reconciliation.service";
 
-pub struct ProvisionSpec<'a> {
-    pub backend_id: &'a str,
-    pub disk_id: Uuid,
+pub struct WorldProvisionSpec<'a> {
+    pub world_id: WorldId,
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
@@ -53,10 +56,80 @@ impl<P> Worker<P> {
     }
 }
 
+impl<P: MachineProvider> Worker<P> {
+    pub fn request_codex_reconciliation(
+        &self,
+        world_id: WorldId,
+        generation: &str,
+    ) -> Result<bool, WorkerError> {
+        if generation.len() != 64
+            || !generation
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return Err(WorkerError::new(
+                "Codex catalog generation must be 64 lowercase hexadecimal characters",
+            ));
+        }
+        let machine = match self.provider.inspect(world_id)? {
+            MachineInspection::Running(machine) => machine,
+            MachineInspection::Missing | MachineInspection::Stopped { .. } => return Ok(false),
+        };
+        let deadline = Instant::now() + self.readiness_timeout;
+        let desired = format!("{generation}\n");
+        machine.transport.write_file(&WriteFileRequest {
+            path: CODEX_RECONCILIATION_STAGED,
+            contents: desired.as_bytes(),
+            owner: GUEST_USER,
+            group: GUEST_GROUP,
+            mode: 0o600,
+            deadline,
+        })?;
+        let output = machine.transport.run(
+            &RunRequest {
+                executable: "/bin/mv",
+                args: &[
+                    "--force",
+                    "--",
+                    CODEX_RECONCILIATION_STAGED,
+                    CODEX_RECONCILIATION_DESIRED,
+                ],
+                stdin: None,
+                deadline,
+            },
+            &mut std::io::sink(),
+        )?;
+        if output.exit_code != 0 {
+            return Err(WorkerError::new(format!(
+                "publish Codex reconciliation request: exit code {}: {}",
+                output.exit_code,
+                String::from_utf8_lossy(&output.diagnostic_tail).trim()
+            )));
+        }
+        let output = machine.transport.run(
+            &RunRequest {
+                executable: "/usr/bin/systemctl",
+                args: &["start", "--no-block", CODEX_RECONCILIATION_SERVICE],
+                stdin: None,
+                deadline,
+            },
+            &mut std::io::sink(),
+        )?;
+        if output.exit_code != 0 {
+            return Err(WorkerError::new(format!(
+                "start Codex reconciliation: exit code {}: {}",
+                output.exit_code,
+                String::from_utf8_lossy(&output.diagnostic_tail).trim()
+            )));
+        }
+        Ok(true)
+    }
+}
+
 impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
     fn provision(
         &self,
-        spec: ProvisionSpec<'_>,
+        spec: WorldProvisionSpec<'_>,
         log: &mut dyn Write,
     ) -> Result<GuestAccess, WorkerError> {
         crate::verify_pinned_image_identity(self.provider.image_path())?;
@@ -68,8 +141,7 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         let phase_started = Instant::now();
         let machine = self.provider.create(
             &MachineSpec {
-                provider_id: ProviderId::parse(spec.backend_id)?,
-                disk_id: spec.disk_id,
+                world_id: spec.world_id,
                 memory_mib: spec.memory_mib,
                 vcpus: spec.vcpus,
                 disk_gib: spec.disk_gib,
@@ -126,13 +198,12 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         Ok(access)
     }
 
-    fn destroy(&self, backend_id: &str, disk_id: Uuid) -> Result<(), WorkerError> {
-        self.provider
-            .delete(&ProviderId::parse(backend_id)?, disk_id)
+    fn destroy(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        self.provider.delete(world_id)
     }
 
-    fn inspect(&self, backend_id: &str) -> Result<WorldInspection, WorkerError> {
-        match self.provider.inspect(&ProviderId::parse(backend_id)?)? {
+    fn inspect(&self, world_id: WorldId) -> Result<WorldInspection, WorkerError> {
+        match self.provider.inspect(world_id)? {
             MachineInspection::Missing => Ok(WorldInspection::Missing),
             MachineInspection::Stopped { reason } => Ok(WorldInspection::Stopped { reason }),
             MachineInspection::Running(machine) => {
@@ -142,8 +213,8 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         }
     }
 
-    fn start(&self, backend_id: &str) -> Result<GuestAccess, WorkerError> {
-        let machine = self.provider.start(&ProviderId::parse(backend_id)?)?;
+    fn start(&self, world_id: WorldId) -> Result<GuestAccess, WorkerError> {
+        let machine = self.provider.start(world_id)?;
         run_prepare(
             machine.transport.as_ref(),
             "wait",
@@ -159,12 +230,12 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         inspect_machine(&machine, self.readiness_timeout, &mut std::io::sink())
     }
 
-    fn stop(&self, backend_id: &str) -> Result<(), WorkerError> {
-        self.provider.stop(&ProviderId::parse(backend_id)?)
+    fn stop(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        self.provider.stop(world_id)
     }
 
-    fn disk_usage(&self, disk_id: Uuid) -> Result<u64, WorkerError> {
-        self.provider.disk_usage(disk_id)
+    fn disk_usage(&self, world_id: WorldId) -> Result<u64, WorkerError> {
+        self.provider.disk_usage(world_id)
     }
 }
 
@@ -333,23 +404,23 @@ mod tests {
             Err(WorkerError::new("unexpected machine creation"))
         }
 
-        fn inspect(&self, _provider_id: &ProviderId) -> Result<MachineInspection, WorkerError> {
+        fn inspect(&self, _world_id: WorldId) -> Result<MachineInspection, WorkerError> {
             unreachable!()
         }
 
-        fn start(&self, _provider_id: &ProviderId) -> Result<Machine, WorkerError> {
+        fn start(&self, _world_id: WorldId) -> Result<Machine, WorkerError> {
             unreachable!()
         }
 
-        fn stop(&self, _provider_id: &ProviderId) -> Result<(), WorkerError> {
+        fn stop(&self, _world_id: WorldId) -> Result<(), WorkerError> {
             unreachable!()
         }
 
-        fn disk_usage(&self, _disk_id: Uuid) -> Result<u64, WorkerError> {
+        fn disk_usage(&self, _world_id: WorldId) -> Result<u64, WorkerError> {
             unreachable!()
         }
 
-        fn delete(&self, _provider_id: &ProviderId, _disk_id: Uuid) -> Result<(), WorkerError> {
+        fn delete(&self, _world_id: WorldId) -> Result<(), WorkerError> {
             unreachable!()
         }
     }
@@ -380,9 +451,8 @@ mod tests {
         .unwrap();
         let error = worker
             .provision(
-                ProvisionSpec {
-                    backend_id: "wt-0123456789abcdef0123456789abcdef",
-                    disk_id: Uuid::nil(),
+                WorldProvisionSpec {
+                    world_id: WorldId::from(uuid::Uuid::nil()),
                     memory_mib: 1024,
                     vcpus: 1,
                     disk_gib: 16,

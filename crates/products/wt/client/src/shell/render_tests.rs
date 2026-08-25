@@ -234,7 +234,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
     let mut terminal = Terminal::new(backend).unwrap();
     let mut model = model(&["ars.dev"]);
     let session_id = Uuid::from_u128(10);
-    let world_id = Uuid::from_u128(20);
+    let world_id = wt_control_protocol::WorldId::from(Uuid::from_u128(20));
     let target = ByobuTarget {
         tmux_session: "wt-host".into(),
         pane_id: "%1".into(),
@@ -408,7 +408,7 @@ fn live_session_repository_is_card_chrome() {
             identity: CodexCardIdentity::Observation {
                 context: "ars".into(),
                 session_id,
-                world_id: Uuid::from_u128(1),
+                world_id: Uuid::from_u128(1).into(),
                 tmux_session: "wt-host".into(),
                 pane_id: "%1".into(),
             },
@@ -417,7 +417,7 @@ fn live_session_repository_is_card_chrome() {
             timestamp: Some(now_ms()),
             latest_user_message: None,
             kind: CodexCardKind::Observation {
-                world_id: Uuid::from_u128(1),
+                world_id: Uuid::from_u128(1).into(),
                 world_name: "dev".into(),
                 cwd: "/home/wt/wt".into(),
                 repository_root: Some("/home/wt/wt".into()),
