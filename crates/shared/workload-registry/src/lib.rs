@@ -1,7 +1,7 @@
 mod activity;
 mod capacity;
 mod codex_catalog;
-mod codex_sessions;
+mod pane_observations;
 mod reports;
 pub mod schema;
 mod store;
@@ -14,10 +14,7 @@ pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
 pub use codex_catalog::{CodexSessionCatalogEntry, CodexSessionCatalogInput};
-pub use codex_sessions::{
-    CodexCheckoutState, CodexSessionGitContextInput, CodexSessionReport, CodexSessionReportInput,
-    CodexSessionState, RepositoryCheckoutState, RepositoryGitState,
-};
+pub use pane_observations::{PaneObservation, PaneObservationInput};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{Store, StoreError, StoredWorld};
 
@@ -265,6 +262,50 @@ mod tests {
             })
             .unwrap();
         assert_eq!(registry.read(reserved_resources).unwrap(), resources);
+    }
+
+    #[test]
+    fn pane_observations_replace_closed_panes_and_preserve_unchanged_age() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
+        let resources = Resources {
+            vcpus: 1,
+            memory_mib: 512,
+            disk_gib: 1,
+        };
+        let world_id = insert_world(&registry, resources, resources);
+        let fingerprint = "a".repeat(64);
+        registry
+            .replace_pane_observations(
+                world_id,
+                &[PaneObservationInput {
+                    tmux_session: "wt-host",
+                    pane_id: "%1",
+                    screen_fingerprint: &fingerprint,
+                    changed: true,
+                }],
+            )
+            .unwrap();
+        let first = registry.list_pane_observations("owner").unwrap();
+        assert_eq!(first.len(), 1);
+
+        registry
+            .replace_pane_observations(
+                world_id,
+                &[PaneObservationInput {
+                    tmux_session: "wt-host",
+                    pane_id: "%1",
+                    screen_fingerprint: &fingerprint,
+                    changed: false,
+                }],
+            )
+            .unwrap();
+        let unchanged = registry.list_pane_observations("owner").unwrap();
+        assert_eq!(unchanged[0].changed_at_unix_ms, first[0].changed_at_unix_ms);
+        assert!(unchanged[0].observed_at_unix_ms >= first[0].observed_at_unix_ms);
+
+        registry.replace_pane_observations(world_id, &[]).unwrap();
+        assert!(registry.list_pane_observations("owner").unwrap().is_empty());
     }
 
     #[test]

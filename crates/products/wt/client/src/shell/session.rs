@@ -95,10 +95,6 @@ impl SessionSet {
         self.sessions[index].parser.screen()
     }
 
-    pub(super) fn token(&self, index: usize) -> u64 {
-        self.sessions[index].token
-    }
-
     pub(super) fn screens(&self) -> Vec<&vt100::Screen> {
         self.sessions
             .iter()

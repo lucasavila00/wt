@@ -20,7 +20,7 @@ shows every field currently emitted by `wt ls`:
 Cards may wrap values but never replace missing, invalid, or failed data with a
 guess. Context fetch failures are visible and no successfully decoded world is
 silently omitted. The panel retains the independent refresh timestamp defined
-by ADR 0032.
+by the server-owned pane-observation refresh in ADR 0081.
 
 Arrow keys move selection and scroll only as needed to keep it visible. The
 mouse wheel moves the viewport by one terminal row without changing selection.

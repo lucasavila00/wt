@@ -5,7 +5,7 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT control bar; the active world's Byobu uses the remaining
 terminal rows.
 
-The world list and Codex sessions refresh independently in the background. Each
+The world list and observed Byobu panes refresh independently in the background. Each
 worker starts its next refresh five seconds after the previous one finishes.
 Worlds created elsewhere are connected automatically, and removed worlds
 disappear. A world refresh that cannot list every configured context leaves the
@@ -31,62 +31,38 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
-`wt shell` opens in the Control UI with Codex sessions selected. `Tab` cycles
-through Codex sessions, Worlds, and the experimental live-session activity.
+`wt shell` opens in the Control UI with terminal activity selected. `Tab` cycles
+through terminal activity, Worlds, and the live-pane activity.
 `F5` opens the active world when one is available. The active activity and its
 refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
 help menu; `Esc` closes it.
 
 The Worlds activity shows cards with each world's status, resources, and
-actionable details. The Codex activity refreshes session cards in the
-background. All activities use a two-column card grid. Arrow keys select cards,
-the mouse wheel scrolls the grid by one terminal row without changing selection,
-and `Enter` or left click opens the selected world or live Codex pane. Opening a
-Codex pane uses a short control SSH
-connection; it does not replace any world's playback connection.
+actionable details. Terminal activity refreshes pane cards in the background.
+All activities use a two-column card grid. Arrow keys select cards, the mouse
+wheel scrolls the grid by one terminal row without changing selection, and
+`Enter` or left click opens the selected world. It does not replace any world's
+playback connection.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;
 click `×` to hide the notification without cancelling the operation. Other
 shell navigation remains available while either operation runs.
 
-Cards show activity, title, repository, branch, working directory, context,
-world, Byobu target, session, and report age. Inactive and saved-session cards
-explain why they cannot open.
-Git context is refreshed independently by the guest relay. `Git state
-unavailable: …` retains the last successful checkout details but marks them as
-stale; `Git state stale` means the relay has not refreshed its heartbeat for
-30 seconds. The card title age always remains lifecycle activity age.
-Malformed context data remains visible as an exact error. Failed world or Codex
-context queries leave existing cards intact and show the query error in red in
-the matching footer beside the last successful update time. Failed pane-open
-checks leave existing cards intact and show a persistent, sanitized notification
-with a bold,
-clickable `Retry` action; `Enter` retries and `Esc` dismisses it. WT does not
-guess another world or pane. The Worlds and Codex footer labels show when their
-latest snapshot was applied in UTC, or `Updating…` before the first snapshot
-arrives.
+Cards show the observed pane, world, context, change age, and freshness. A
+recent screen change is `CHANGING`; an unchanged pane is `STATIC`. These are
+generic terminal facts, not claims about a Codex conversation, a working
+directory, or application liveness. Failed pane-context queries leave existing
+cards intact and show the query error in red beside the last successful update
+time. The Worlds and terminal-activity footer labels show when their latest
+snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
 
-Opening requires worlds provisioned by a WT version containing this feature.
-After upgrading WT, recreate older worlds so their relay records pane markers
-and their focus helper is current.
-
-An unknown observation includes its raw Codex session-start source when one was
-reported, such as `unknown(startup)`. During Codex compaction, the shell keeps
-the observed lifecycle state and adds a `COMPACTING` indicator until the
-compaction completes. The indicator expires after two minutes if WT does not
-receive the completion hook.
-
-The experimental live-session activity uses the same observed sessions but
-shows each session's state and report age around the persistent live terminal
-stream WT already maintains for its world. Previews use a two-column grid with
-as many rows as fit in the terminal. WT temporarily resizes world playback
-terminals to the smaller preview viewport while this activity is visible and
-restores the full-screen size when it is left. Arrow keys, the mouse wheel,
-`Enter`, and clicking navigate or open the previews. When a world has one live
-Codex session, WT focuses that session's reported pane on entry. Cards for
-multiple live sessions in one world share its one stream and show a warning;
-open a card to choose the pane in the full world view.
+The live-pane activity uses the same server observations around the persistent
+terminal stream WT already maintains for each world. Previews use a two-column
+grid with as many rows as fit in the terminal. WT temporarily resizes world
+playback terminals to the smaller preview viewport while this activity is
+visible and restores the full-screen size when it is left. Opening a preview
+opens its world normally; WT does not select or validate a pane to infer state.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

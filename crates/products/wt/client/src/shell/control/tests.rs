@@ -431,7 +431,6 @@ fn live_card(index: u128, pane_id: &str) -> CodexCard {
             git_context_health: None,
             state: CodexSessionState::Working,
             is_compacting: false,
-            session_start_source: None,
             target: ByobuTarget {
                 tmux_session: "wt-host".into(),
                 pane_id: pane_id.into(),

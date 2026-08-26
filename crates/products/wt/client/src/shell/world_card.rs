@@ -12,7 +12,7 @@ pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, St
         (_, true) => (
             "󰚩",
             Color::Yellow,
-            "IDLE · NO ACTIVE CODEX SESSION".to_owned(),
+            "STATIC · NO RECENT PANE CHANGE".to_owned(),
         ),
         (wt_control_protocol::WorldStatus::Running, false) => {
             ("󰐊", Color::Green, "RUNNING".to_owned())
@@ -104,9 +104,9 @@ pub(super) fn codex_lines(world: &ShellWorld, cards: &[CodexCard]) -> Vec<Line<'
             .map(|id| id.to_string()[..8].to_owned())
             .unwrap_or_else(|| "unknown".into());
         lines.push(Line::from(vec![
-            Span::styled("  Codex ", super::render::muted_style()),
+            Span::styled("  Pane ", super::render::muted_style()),
             Span::raw(format!(
-                "session {session} · {} · {}",
+                "{session} · {} · {}",
                 state_label(*state),
                 card.timestamp
                     .map(super::render::relative_age)
@@ -120,8 +120,8 @@ pub(super) fn codex_lines(world: &ShellWorld, cards: &[CodexCard]) -> Vec<Line<'
 fn state_label(state: wt_control_protocol::CodexSessionState) -> &'static str {
     match state {
         wt_control_protocol::CodexSessionState::Unknown => "UNKNOWN",
-        wt_control_protocol::CodexSessionState::Working => "WORKING",
-        wt_control_protocol::CodexSessionState::NeedsAttention => "NEEDS ATTENTION",
+        wt_control_protocol::CodexSessionState::Working => "CHANGING",
+        wt_control_protocol::CodexSessionState::NeedsAttention => "STATIC",
         wt_control_protocol::CodexSessionState::Inactive => "INACTIVE",
     }
 }

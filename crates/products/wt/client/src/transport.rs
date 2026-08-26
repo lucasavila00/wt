@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_control_protocol::{
-    ApiError, ApiRequest, ApiResponse, CodexSession, Outcome, Response, PROTOCOL_VERSION,
+    ApiError, ApiRequest, ApiResponse, Outcome, PaneObservation, Response, PROTOCOL_VERSION,
 };
 
 mod progress;
@@ -144,27 +144,27 @@ fn call_outcome_inner(
     Ok(response.outcome)
 }
 
-pub fn call_codex_sessions_with_timeout_until(
+pub fn call_pane_observations_with_timeout_until(
     context: &Context,
     timeout: Duration,
     cancelled: &AtomicBool,
-) -> std::result::Result<Vec<CodexSession>, ContextError> {
-    let request = ApiRequest::new(wt_control_protocol::Operation::ListCodexSessions);
+) -> std::result::Result<Vec<PaneObservation>, ContextError> {
+    let request = ApiRequest::new(wt_control_protocol::Operation::ListPaneObservations);
     let output = call_bytes_inner(context, &request, Some((timeout, cancelled)))?;
-    decode_codex_sessions(context, &output)
+    decode_pane_observations(context, &output)
 }
 
-fn decode_codex_sessions(
+fn decode_pane_observations(
     context: &Context,
     output: &[u8],
-) -> std::result::Result<Vec<CodexSession>, ContextError> {
-    let response: StrictCodexResponse =
+) -> std::result::Result<Vec<PaneObservation>, ContextError> {
+    let response: StrictPaneResponse =
         serde_json::from_slice(output).map_err(|error| invalid_response(context, error, output))?;
     let protocol_version = match &response {
-        StrictCodexResponse::Ok {
+        StrictPaneResponse::Ok {
             protocol_version, ..
         }
-        | StrictCodexResponse::Error {
+        | StrictPaneResponse::Error {
             protocol_version, ..
         } => *protocol_version,
     };
@@ -172,25 +172,25 @@ fn decode_codex_sessions(
         return Err(protocol_version_error(context, protocol_version));
     }
     match response {
-        StrictCodexResponse::Ok { response, .. } if response.response == "codex_sessions" => {
-            Ok(response.sessions)
+        StrictPaneResponse::Ok { response, .. } if response.response == "pane_observations" => {
+            Ok(response.panes)
         }
-        StrictCodexResponse::Ok { response, .. } => Err(context_error(
+        StrictPaneResponse::Ok { response, .. } => Err(context_error(
             context,
             "context helper returned an invalid response",
             Some(format!("unexpected response tag: {}", response.response)),
             retry_hint(context),
         )),
-        StrictCodexResponse::Error { error, .. } => Err(rejection(context, &error)),
+        StrictPaneResponse::Error { error, .. } => Err(rejection(context, &error)),
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
-enum StrictCodexResponse {
+enum StrictPaneResponse {
     Ok {
         protocol_version: u32,
-        response: StrictCodexSessionsResponse,
+        response: StrictPaneObservationsResponse,
     },
     Error {
         protocol_version: u32,
@@ -200,9 +200,9 @@ enum StrictCodexResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StrictCodexSessionsResponse {
+struct StrictPaneObservationsResponse {
     response: String,
-    sessions: Vec<CodexSession>,
+    panes: Vec<PaneObservation>,
 }
 
 fn call_bytes_inner(
@@ -569,24 +569,22 @@ mod tests {
     }
 
     #[test]
-    fn codex_response_rejects_unknown_fields_at_every_level() {
+    fn pane_observation_response_rejects_unknown_fields_at_every_level() {
         let context = Context {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[]}]}}"#;
-        assert_eq!(decode_codex_sessions(&context, valid).unwrap().len(), 1);
+        let valid = br#"{"protocol_version":14,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":1,"observed_at_unix_ms":2}]}}"#;
+        assert_eq!(decode_pane_observations(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[]},"extra":true}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[],"extra":true}}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[],"extra":true}]}}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1"},"extra":true}]}]}}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"ok","response":{"response":"codex_sessions","sessions":[{"session_id":"123e4567-e89b-12d3-a456-426614174000","observations":[{"world_id":"223e4567-e89b-12d3-a456-426614174000","world_name":"host","cwd":"/home/wt","state":"working","received_at_unix_ms":1,"target":{"tmux_session":"wt-host","pane_id":"%1","extra":true}}]}]}}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
-            br#"{"protocol_version":13,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+            br#"{"protocol_version":14,"outcome":"ok","response":{"response":"pane_observations","panes":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":14,"outcome":"ok","response":{"response":"pane_observations","panes":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":14,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":1,"observed_at_unix_ms":2,"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":14,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":14,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
-            let error = decode_codex_sessions(&context, invalid).unwrap_err();
+            let error = decode_pane_observations(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));
             assert!(error.to_string().contains("unknown field `extra`"));
         }

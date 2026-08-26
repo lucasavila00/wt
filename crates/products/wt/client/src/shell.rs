@@ -28,7 +28,6 @@ mod model;
 mod refresh;
 mod refresh_status;
 mod render;
-mod screen_tracker;
 mod scrollbar;
 mod session;
 mod shutdown;
@@ -71,7 +70,6 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let focus = codex::FocusWorker::default();
-    let mut screen_tracker = screen_tracker::CodexScreenTracker::default();
     let refresh = WorldRefresh::start(config.clone());
     let codex_refresh = CodexRefresh::start(config.clone());
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
@@ -97,7 +95,6 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        &mut screen_tracker,
         &runtime,
         &shutdown,
     );
@@ -152,7 +149,6 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    screen_tracker: &mut screen_tracker::CodexScreenTracker,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<Vec<String>> {
@@ -167,20 +163,6 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        match screen_tracker::policy(
-            model.mode(),
-            model.control().activity(),
-            flows.actions.has_work(),
-        ) {
-            screen_tracker::Policy::Clear => screen_tracker.clear(),
-            screen_tracker::Policy::Pause => {
-                screen_tracker.sync_focus(model, sessions, runtime.focus);
-                redraw |= screen_tracker.pause_change_detection(model, sessions);
-            }
-            screen_tracker::Policy::Detect => {
-                redraw |= screen_tracker.detect_screen_changes(model, sessions);
-            }
-        }
         for sequence in clipboard_writes {
             terminal
                 .backend_mut()
@@ -249,9 +231,6 @@ fn run_loop(
                 if flows.actions.has_work() {
                     continue;
                 }
-                if focused_world.is_some() {
-                    screen_tracker.complete(&result.target, result.result.is_ok());
-                }
                 continue;
             }
             if let Some(action_id) = result.action_id {
@@ -306,7 +285,6 @@ fn run_loop(
                 render::draw(
                     frame,
                     &screens,
-                    screen_tracker,
                     closed_message,
                     model,
                     flows.creation.as_ref(),

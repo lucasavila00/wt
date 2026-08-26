@@ -1,6 +1,6 @@
 # ADR 0081: Observe terminal state from Byobu panes
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-26
 
 ## Context
@@ -80,7 +80,6 @@ of the same change.
 - The observer introduces guest polling and server-side pane state, while the
   cutover removes Codex-specific state machines, sequencing, reconciliation,
   and checkout tracking.
-- The implementation supersedes the live-state portions of ADRs 0029, 0032,
-  0033, 0040, 0045, 0074, 0075, both ADR 0076 decisions, and ADR 0080. The
-  implementation must fold any still-applicable behavior into this decision
-  and remove records that no longer describe WT.
+- This decision replaces the removed live-state ADRs 0029, 0032, 0033, 0040,
+  0045, 0074, 0075, both ADR 0076 decisions, and ADR 0080. Their remaining
+  durable-history behavior is covered separately by ADR 0079.

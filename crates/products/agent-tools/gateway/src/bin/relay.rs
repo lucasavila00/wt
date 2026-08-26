@@ -1,31 +1,21 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
+use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_agent_tool_gateway::{
-    copy_bidirectional, read_json_line, resolve_vsock_port, valid_codex_pane_id,
-    valid_codex_tmux_session, write_json_line, ClientOperation, ClientRequest,
-    CodexSessionEventKind, TransportRequest, TransportResponse, VsockStream,
-    CODEX_SESSION_PANE_OPTION, RELAY_SOCKET,
+    copy_bidirectional, read_json_line, resolve_vsock_port, valid_byobu_pane_id,
+    valid_byobu_tmux_session, write_json_line, ClientOperation, ClientRequest, PaneObservation,
+    TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
 };
 
-#[path = "relay/liveness.rs"]
-mod liveness;
-
-use liveness::{codex_pane_liveness, infer_session_end, PaneLiveness};
-
-const TRACKER_STATE_FILE: &str = ".local/state/wt/codex-git-tracker.json";
-const GIT_TIMEOUT: Duration = Duration::from_millis(500);
-const TRACKER_INTERVAL: Duration = Duration::from_secs(2);
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+const OBSERVER_INTERVAL: Duration = Duration::from_secs(2);
+const FRESHNESS_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway-relay")]
@@ -38,23 +28,6 @@ struct Cli {
     gateway_unix: Option<PathBuf>,
     #[arg(long)]
     vsock_port: Option<u32>,
-    #[arg(long)]
-    tracker_state_file: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct Registration {
-    cwd: String,
-    tmux_session: String,
-    pane_id: String,
-    pane_generation: u64,
-    #[serde(default)]
-    pane_sequence: u64,
-}
-
-#[derive(Default, Deserialize, Serialize)]
-struct TrackerState {
-    sessions: BTreeMap<uuid::Uuid, Registration>,
 }
 
 #[allow(dead_code)]
@@ -76,29 +49,10 @@ pub fn run_from(
     if token.is_empty() {
         bail!("gateway grant is empty");
     }
-    let tracker_state_file = cli.tracker_state_file.unwrap_or_else(|| {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(TRACKER_STATE_FILE)
-    });
-    let tracker = Arc::new(Mutex::new(load_tracker(&tracker_state_file)?));
-    let (tracker_wake, tracker_events) = mpsc::channel();
     std::thread::spawn({
         let token = token.to_owned();
         let gateway_unix = cli.gateway_unix.clone();
-        let tracker = Arc::clone(&tracker);
-        let tracker_state_file = tracker_state_file.clone();
-        move || {
-            track_git_context(
-                tracker,
-                tracker_events,
-                token,
-                gateway_unix,
-                vsock_port,
-                tracker_state_file,
-            )
-        }
+        move || observe_panes(token, gateway_unix, vsock_port)
     });
     if let Some(parent) = cli.socket.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
@@ -119,19 +73,8 @@ pub fn run_from(
             Ok(stream) => {
                 let token = token.to_owned();
                 let gateway_unix = cli.gateway_unix.clone();
-                let tracker = Arc::clone(&tracker);
-                let tracker_state_file = tracker_state_file.clone();
-                let tracker_wake = tracker_wake.clone();
                 std::thread::spawn(move || {
-                    if let Err(error) = handle(
-                        stream,
-                        &token,
-                        gateway_unix,
-                        vsock_port,
-                        &tracker,
-                        &tracker_state_file,
-                        &tracker_wake,
-                    ) {
+                    if let Err(error) = handle(stream, &token, gateway_unix, vsock_port) {
                         eprintln!("wt-agent-tool-gateway-relay: request: {error:#}");
                     }
                 });
@@ -147,20 +90,12 @@ fn handle(
     token: &str,
     gateway_unix: Option<PathBuf>,
     vsock_port: u32,
-    tracker: &Arc<Mutex<TrackerState>>,
-    tracker_state_file: &PathBuf,
-    tracker_wake: &mpsc::Sender<()>,
 ) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
-    validate_codex_target(&request.operation)?;
-    let codex_event = match &request.operation {
-        ClientOperation::CodexSession { event } => Some(event.clone()),
-        _ => None,
-    };
-    let streams_git = matches!(
-        &request.operation,
-        wt_agent_tool_gateway::ClientOperation::Git { .. }
-    );
+    if matches!(request.operation, ClientOperation::PaneObservations { .. }) {
+        bail!("pane observations are relay-internal");
+    }
+    let streams_git = matches!(&request.operation, ClientOperation::Git { .. });
     let request = TransportRequest {
         protocol_version: request.protocol_version,
         token: token.to_owned(),
@@ -171,13 +106,6 @@ fn handle(
             .with_context(|| format!("connect to gateway {}", path.display()))?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
-        if response.ok && response.message.as_deref() == Some("accepted") {
-            if let Some(event) = &codex_event {
-                update_codex_marker(event)?;
-                update_registration(event, tracker, tracker_state_file)?;
-                let _ = tracker_wake.send(());
-            }
-        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -186,13 +114,6 @@ fn handle(
         let mut gateway = VsockStream::connect(2, vsock_port).context("connect to host gateway")?;
         write_json_line(&mut gateway, &request)?;
         let response: TransportResponse = read_json_line(&mut gateway)?;
-        if response.ok && response.message.as_deref() == Some("accepted") {
-            if let Some(event) = &codex_event {
-                update_codex_marker(event)?;
-                update_registration(event, tracker, tracker_state_file)?;
-                let _ = tracker_wake.send(());
-            }
-        }
         write_json_line(&mut client, &response)?;
         if response.ok && streams_git {
             copy_bidirectional(client, gateway)?;
@@ -201,357 +122,101 @@ fn handle(
     Ok(())
 }
 
-fn validate_codex_target(operation: &ClientOperation) -> Result<()> {
-    if matches!(operation, ClientOperation::CodexGitContext { .. }) {
-        bail!("Codex Git context is relay-internal");
+fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) {
+    let mut previous = BTreeMap::new();
+    let mut last_sent = Instant::now() - FRESHNESS_INTERVAL;
+    loop {
+        match read_panes() {
+            Ok(mut panes) => {
+                let fingerprints = panes
+                    .iter()
+                    .map(|pane| {
+                        (
+                            (pane.tmux_session.clone(), pane.pane_id.clone()),
+                            pane.screen_fingerprint.clone(),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                let changed = fingerprints != previous;
+                for pane in &mut panes {
+                    pane.changed = previous
+                        .get(&(pane.tmux_session.clone(), pane.pane_id.clone()))
+                        .is_none_or(|previous| previous != &pane.screen_fingerprint);
+                }
+                if changed || last_sent.elapsed() >= FRESHNESS_INTERVAL {
+                    match send_transport(
+                        &token,
+                        gateway_unix.as_ref(),
+                        vsock_port,
+                        ClientOperation::PaneObservations { panes },
+                    ) {
+                        Ok(response) if response.ok => {
+                            previous = fingerprints;
+                            last_sent = Instant::now();
+                        }
+                        Ok(response) => eprintln!(
+                            "wt-agent-tool-gateway-relay: pane observation transport failed: {}",
+                            response.error.unwrap_or_else(|| "unknown error".into())
+                        ),
+                        Err(error) => eprintln!(
+                            "wt-agent-tool-gateway-relay: pane observation transport failed: {error:#}"
+                        ),
+                    }
+                }
+            }
+            Err(error) => eprintln!("wt-agent-tool-gateway-relay: read panes: {error:#}"),
+        }
+        std::thread::sleep(OBSERVER_INTERVAL);
     }
-    let ClientOperation::CodexSession { event } = operation else {
-        return Ok(());
-    };
-    if !valid_codex_tmux_session(&event.tmux_session) || !valid_codex_pane_id(&event.pane_id) {
-        bail!("invalid Codex Byobu target");
-    }
+}
+
+fn read_panes() -> Result<Vec<PaneObservation>> {
     let output = Command::new("/usr/bin/tmux")
-        .args([
-            "display-message",
-            "-p",
-            "-t",
-            &event.pane_id,
-            "#{session_name}:#{pane_id}",
-        ])
+        .args(["list-panes", "-a", "-F", "#{session_name}\t#{pane_id}"])
         .output()
-        .context("validate Codex Byobu target")?;
-    let expected = format!("{}:{}\n", event.tmux_session, event.pane_id);
-    if !output.status.success() || output.stdout != expected.as_bytes() {
+        .context("list Byobu panes")?;
+    if !output.status.success() {
+        bail!("list Byobu panes failed: {}", escaped(&output.stderr));
+    }
+    output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .filter_map(parse_target)
+        .map(|(tmux_session, pane_id)| capture_pane(&tmux_session, &pane_id))
+        .collect()
+}
+
+fn parse_target(line: &[u8]) -> Option<(String, String)> {
+    let (tmux_session, pane_id) = std::str::from_utf8(line).ok()?.split_once('\t')?;
+    (valid_byobu_tmux_session(tmux_session) && valid_byobu_pane_id(pane_id))
+        .then(|| (tmux_session.to_owned(), pane_id.to_owned()))
+}
+
+fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
+    let output = Command::new("/usr/bin/tmux")
+        .args(["capture-pane", "-p", "-e", "-t", pane_id])
+        .output()
+        .with_context(|| format!("capture Byobu pane {pane_id}"))?;
+    if !output.status.success() {
         bail!(
-            "Codex Byobu target validation failed: status {}; expected stdout {}; actual stdout {}; stderr {}",
-            output.status,
-            escaped(expected.as_bytes()),
-            escaped(&output.stdout),
+            "capture Byobu pane {pane_id} failed: {}",
             escaped(&output.stderr)
         );
     }
-    Ok(())
-}
-
-fn update_codex_marker(event: &wt_agent_tool_gateway::CodexSessionEvent) -> Result<()> {
-    if event.kind == CodexSessionEventKind::SessionEnd {
-        let (condition, clear) = clear_marker_command(event);
-        let status = Command::new("/usr/bin/tmux")
-            .args(["if-shell", "-F", "-t", &event.pane_id, &condition, &clear])
-            .status()
-            .context("clear matching Codex session pane marker")?;
-        if !status.success() {
-            bail!("could not clear matching Codex session pane marker");
-        }
-        return Ok(());
-    }
-
-    let status = Command::new("/usr/bin/tmux")
-        .args([
-            "set-option",
-            "-p",
-            "-t",
-            &event.pane_id,
-            CODEX_SESSION_PANE_OPTION,
-            &event.session_id.to_string(),
-        ])
-        .status()
-        .context("write Codex session pane marker")?;
-    if !status.success() {
-        bail!("could not write Codex session pane marker");
-    }
-    Ok(())
-}
-
-fn update_registration(
-    event: &wt_agent_tool_gateway::CodexSessionEvent,
-    tracker: &Arc<Mutex<TrackerState>>,
-    state_file: &PathBuf,
-) -> Result<()> {
-    let mut tracker = tracker
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Codex Git tracker lock poisoned"))?;
-    if event.kind == CodexSessionEventKind::SessionEnd {
-        tracker.sessions.remove(&event.session_id);
-    } else {
-        tracker.sessions.insert(
-            event.session_id,
-            Registration {
-                cwd: event.cwd.clone(),
-                tmux_session: event.tmux_session.clone(),
-                pane_id: event.pane_id.clone(),
-                pane_generation: event.pane_generation,
-                pane_sequence: event.pane_sequence,
-            },
-        );
-    }
-    save_tracker(state_file, &tracker)
-}
-
-fn remove_registration(
-    session_id: uuid::Uuid,
-    tracker: &Arc<Mutex<TrackerState>>,
-    state_file: &PathBuf,
-) -> Result<()> {
-    let mut tracker = tracker
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Codex Git tracker lock poisoned"))?;
-    tracker.sessions.remove(&session_id);
-    save_tracker(state_file, &tracker)
-}
-
-fn load_tracker(path: &PathBuf) -> Result<TrackerState> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).context("decode Codex Git tracker state"),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(TrackerState::default()),
-        Err(error) => Err(error).context("read Codex Git tracker state"),
-    }
-}
-
-fn save_tracker(path: &PathBuf, tracker: &TrackerState) -> Result<()> {
-    let parent = path
-        .parent()
-        .context("Codex Git tracker state has no parent directory")?;
-    fs::create_dir_all(parent).context("create Codex Git tracker state directory")?;
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
-    let temporary = path.with_extension("json.new");
-    fs::write(&temporary, serde_json::to_vec(tracker)?)?;
-    fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
-    fs::rename(temporary, path).context("replace Codex Git tracker state")
-}
-
-fn track_git_context(
-    tracker: Arc<Mutex<TrackerState>>,
-    wake: mpsc::Receiver<()>,
-    token: String,
-    gateway_unix: Option<PathBuf>,
-    vsock_port: u32,
-    state_file: PathBuf,
-) {
-    let mut sent = BTreeMap::<uuid::Uuid, (GitContext, Instant)>::new();
-    loop {
-        let registrations = match tracker.lock() {
-            Ok(tracker) => tracker.sessions.clone(),
-            Err(_) => {
-                eprintln!("wt-agent-tool-gateway-relay: Codex Git tracker lock poisoned");
-                return;
-            }
-        };
-        for (session_id, registration) in registrations {
-            match codex_pane_liveness(session_id, &registration) {
-                PaneLiveness::Running => {}
-                PaneLiveness::Closed => {
-                    if registration.pane_sequence == 0 {
-                        if let Err(error) = remove_registration(session_id, &tracker, &state_file) {
-                            eprintln!(
-                                "wt-agent-tool-gateway-relay: remove legacy Git tracker registration: {error:#}"
-                            );
-                        }
-                        sent.remove(&session_id);
-                        continue;
-                    }
-                    match infer_session_end(session_id, &registration).and_then(|event| {
-                        let response = send_transport(
-                            &token,
-                            gateway_unix.as_ref(),
-                            vsock_port,
-                            ClientOperation::CodexSession {
-                                event: event.clone(),
-                            },
-                        )?;
-                        if !response.ok {
-                            bail!(
-                                "Codex session completion transport failed: {}",
-                                response.error.unwrap_or_else(|| "unknown error".into())
-                            );
-                        }
-                        update_codex_marker(&event)?;
-                        update_registration(&event, &tracker, &state_file)
-                    }) {
-                        Ok(()) => {
-                            sent.remove(&session_id);
-                        }
-                        Err(error) => eprintln!(
-                            "wt-agent-tool-gateway-relay: reconcile closed Codex session {session_id} {}: {error:#}",
-                            registration.pane_id,
-                        ),
-                    }
-                    continue;
-                }
-                PaneLiveness::Missing => {
-                    if let Err(error) = remove_registration(session_id, &tracker, &state_file) {
-                        eprintln!(
-                            "wt-agent-tool-gateway-relay: remove stale Git tracker registration: {error:#}"
-                        );
-                    }
-                    sent.remove(&session_id);
-                    continue;
-                }
-            }
-            let context = git_context(&registration.cwd);
-            let unchanged = sent.get(&session_id).is_some_and(|(previous, at)| {
-                previous == &context && at.elapsed() < HEARTBEAT_INTERVAL
-            });
-            if unchanged {
-                continue;
-            }
-            let request = wt_agent_tool_gateway::ClientOperation::CodexGitContext {
-                context: wt_agent_tool_gateway::CodexGitContext {
-                    session_id,
-                    cwd: registration.cwd.clone(),
-                    tmux_session: registration.tmux_session.clone(),
-                    pane_id: registration.pane_id.clone(),
-                    pane_generation: registration.pane_generation,
-                    repository_root: context.repository_root.clone(),
-                    repository_url: context.repository_url.clone(),
-                    git_branch: context.git_branch.clone(),
-                    error: context.error.clone(),
-                },
-            };
-            match send_transport(&token, gateway_unix.as_ref(), vsock_port, request) {
-                Ok(response) if response.ok => {
-                    sent.insert(session_id, (context, Instant::now()));
-                }
-                Ok(response) => eprintln!(
-                    "wt-agent-tool-gateway-relay: Git context transport failed for {session_id} {}: {}",
-                    registration.pane_id,
-                    response.error.unwrap_or_else(|| "unknown error".into())
-                ),
-                Err(error) => eprintln!(
-                    "wt-agent-tool-gateway-relay: Git context transport failed for {session_id} {}: {error:#}",
-                    registration.pane_id,
-                ),
-            }
-        }
-        let _ = wake.recv_timeout(TRACKER_INTERVAL);
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct GitContext {
-    repository_root: Option<String>,
-    repository_url: Option<String>,
-    git_branch: Option<String>,
-    error: Option<String>,
-}
-
-fn git_context(cwd: &str) -> GitContext {
-    let root = match run_git(
-        cwd,
-        &["rev-parse", "--show-toplevel"],
-        GitFailure::NotRepository,
-    ) {
-        Ok(Some(root)) => root,
-        Ok(None) => {
-            return GitContext {
-                repository_root: None,
-                repository_url: None,
-                git_branch: None,
-                error: None,
-            }
-        }
-        Err(error) => return failed_git_context(error),
-    };
-    let repository_url = match run_git(
-        cwd,
-        &["config", "--get", "remote.origin.url"],
-        GitFailure::MissingValue,
-    ) {
-        Ok(value) => value,
-        Err(error) => return failed_git_context(error),
-    };
-    let git_branch = match run_git(cwd, &["branch", "--show-current"], GitFailure::Never) {
-        Ok(value) => value,
-        Err(error) => return failed_git_context(error),
-    };
-    GitContext {
-        repository_root: Some(root),
-        repository_url,
-        git_branch,
-        error: None,
-    }
-}
-
-fn failed_git_context(error: anyhow::Error) -> GitContext {
-    GitContext {
-        repository_root: None,
-        repository_url: None,
-        git_branch: None,
-        error: Some(
-            error
-                .to_string()
-                .chars()
-                .filter(|character| !character.is_control())
-                .take(512)
-                .collect(),
-        ),
-    }
-}
-
-#[derive(Clone, Copy)]
-enum GitFailure {
-    NotRepository,
-    MissingValue,
-    Never,
-}
-
-fn run_git(cwd: &str, arguments: &[&str], allowed_failure: GitFailure) -> Result<Option<String>> {
-    let mut child = Command::new("/usr/bin/git")
-        .args(["-C", cwd])
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("start Git state command")?;
-    let deadline = Instant::now() + GIT_TIMEOUT;
-    while child.try_wait()?.is_none() {
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!("Git state command timed out");
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let mut output = Vec::new();
-    child
-        .stdout
-        .take()
-        .context("Git state stdout unavailable")?
-        .take(16 * 1024)
-        .read_to_end(&mut output)?;
-    let mut error = Vec::new();
-    child
-        .stderr
-        .take()
-        .context("Git state stderr unavailable")?
-        .take(16 * 1024)
-        .read_to_end(&mut error)?;
-    let status = child.wait()?;
-    if !status.success() {
-        let error = String::from_utf8_lossy(&error);
-        let expected = match allowed_failure {
-            GitFailure::NotRepository => error.contains("not a git repository"),
-            GitFailure::MissingValue => status.code() == Some(1) && error.is_empty(),
-            GitFailure::Never => false,
-        };
-        if expected {
-            return Ok(None);
-        }
-        bail!(
-            "Git state command failed: status {status}; stderr {}",
-            escaped(error.as_bytes())
-        );
-    }
-    let value = String::from_utf8(output).context("Git state output was not UTF-8")?;
-    Ok(Some(value.trim().to_owned()).filter(|value| !value.is_empty()))
+    Ok(PaneObservation {
+        tmux_session: tmux_session.to_owned(),
+        pane_id: pane_id.to_owned(),
+        screen_fingerprint: format!("{:x}", Sha256::digest(&output.stdout)),
+        changed: false,
+    })
 }
 
 fn send_transport(
     token: &str,
     gateway_unix: Option<&PathBuf>,
     vsock_port: u32,
-    operation: wt_agent_tool_gateway::ClientOperation,
+    operation: ClientOperation,
 ) -> Result<TransportResponse> {
     let request = TransportRequest {
         protocol_version: wt_agent_tool_gateway::PROTOCOL_VERSION,
@@ -561,24 +226,11 @@ fn send_transport(
     if let Some(path) = gateway_unix {
         let mut stream = UnixStream::connect(path)?;
         write_json_line(&mut stream, &request)?;
-        return read_json_line(&mut stream).context("read Git context response");
+        return read_json_line(&mut stream).context("read pane observation response");
     }
     let mut stream = VsockStream::connect(2, vsock_port)?;
     write_json_line(&mut stream, &request)?;
-    read_json_line(&mut stream).context("read Git context response")
-}
-
-fn clear_marker_command(event: &wt_agent_tool_gateway::CodexSessionEvent) -> (String, String) {
-    (
-        format!(
-            "#{{==:#{{{CODEX_SESSION_PANE_OPTION}}},{}}}",
-            event.session_id
-        ),
-        format!(
-            "set-option -p -u -t {} {CODEX_SESSION_PANE_OPTION}",
-            event.pane_id
-        ),
-    )
+    read_json_line(&mut stream).context("read pane observation response")
 }
 
 fn escaped(bytes: &[u8]) -> String {
@@ -594,105 +246,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clears_the_marker_with_one_conditional_tmux_command() {
-        let event = wt_agent_tool_gateway::CodexSessionEvent {
-            session_id: uuid::Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
-            cwd: "/home/wt/project".into(),
-            tmux_session: "wt-host".into(),
-            pane_id: "%1".into(),
-            kind: CodexSessionEventKind::SessionEnd,
-            pane_generation: 1,
-            pane_sequence: 1,
-            session_start_source: None,
-        };
-
+    fn accepts_only_wt_byobu_targets() {
         assert_eq!(
-            clear_marker_command(&event),
-            (
-                "#{==:#{@wt_codex_session_id},123e4567-e89b-12d3-a456-426614174000}".into(),
-                "set-option -p -u -t %1 @wt_codex_session_id".into(),
-            )
+            parse_target(b"wt-host\t%1"),
+            Some(("wt-host".into(), "%1".into()))
         );
-    }
-
-    #[test]
-    fn rejects_git_context_from_the_public_relay() {
-        let error = validate_codex_target(&ClientOperation::CodexGitContext {
-            context: wt_agent_tool_gateway::CodexGitContext {
-                session_id: uuid::Uuid::new_v4(),
-                cwd: "/home/wt/project".into(),
-                tmux_session: "wt-host".into(),
-                pane_id: "%1".into(),
-                pane_generation: 1,
-                repository_root: None,
-                repository_url: None,
-                git_branch: None,
-                error: None,
-            },
-        })
-        .unwrap_err();
-        assert_eq!(error.to_string(), "Codex Git context is relay-internal");
-    }
-
-    #[test]
-    fn discovers_normal_detached_and_non_repository_contexts() {
-        let temp = tempfile::tempdir().unwrap();
-        let status = Command::new("/usr/bin/git")
-            .args(["init", "-b", "wt/tracker"])
-            .arg(temp.path())
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let status = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(temp.path())
-            .args(["remote", "add", "origin", "git@github.com:acme/project.git"])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let status = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(temp.path())
-            .args([
-                "-c",
-                "user.name=WT",
-                "-c",
-                "user.email=wt@example.invalid",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "initial",
-            ])
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let context = git_context(temp.path().to_str().unwrap());
-        assert_eq!(context.repository_root.as_deref(), temp.path().to_str());
-        assert_eq!(
-            context.repository_url.as_deref(),
-            Some("git@github.com:acme/project.git")
-        );
-        assert_eq!(context.git_branch.as_deref(), Some("wt/tracker"));
-
-        let status = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(temp.path())
-            .args(["checkout", "--detach"])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        assert_eq!(git_context(temp.path().to_str().unwrap()).git_branch, None);
-
-        let non_repository = tempfile::tempdir().unwrap();
-        assert_eq!(
-            git_context(non_repository.path().to_str().unwrap()),
-            GitContext {
-                repository_root: None,
-                repository_url: None,
-                git_branch: None,
-                error: None,
-            }
-        );
+        assert_eq!(parse_target(b"other\t%1"), None);
+        assert_eq!(parse_target(b"wt-host\t%bad"), None);
     }
 }

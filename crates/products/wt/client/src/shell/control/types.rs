@@ -62,7 +62,6 @@ pub(in crate::shell) enum CodexCardKind {
         git_context_health: Option<Box<GitContextHealth>>,
         state: CodexSessionState,
         is_compacting: bool,
-        session_start_source: Option<String>,
         target: ByobuTarget,
     },
     RolloutOnly,

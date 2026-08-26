@@ -1,9 +1,8 @@
 mod service;
 
 use crate::{
-    ClientOperation, CodexSessionEvent, CodexSessionEventKind, ControlRequest, ControlResponse,
-    DuplexStream, GitService, Grant, TransportRequest, TransportResponse, BRANCH_PREFIX,
-    PROTOCOL_VERSION,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
+    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -267,8 +266,3 @@ pub fn wt_tools_help() -> String {
         .join("\n");
     format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
 }
-
-#[cfg(test)]
-mod repository_state_tests;
-#[cfg(test)]
-mod tests;

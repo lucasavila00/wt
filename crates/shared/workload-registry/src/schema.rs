@@ -1,22 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    codex_checkout_state (world_id, session_id, cwd) {
-        world_id -> Text,
-        session_id -> Text,
-        cwd -> Text,
-        repository_root -> Nullable<Text>,
-        repository_url -> Nullable<Text>,
-        repository_id -> Nullable<Integer>,
-        branch -> Nullable<Text>,
-        checked_at_unix_ms -> BigInt,
-        error -> Nullable<Text>,
-        pane_id -> Text,
-        pane_generation -> BigInt,
-    }
-}
-
-diesel::table! {
     codex_session_catalog (session_id) {
         session_id -> Text,
         rollout_path -> Text,
@@ -46,18 +30,13 @@ diesel::table! {
 }
 
 diesel::table! {
-    codex_session_reports (world_id, session_id) {
+    pane_observations (world_id, tmux_session, pane_id) {
         world_id -> Text,
-        session_id -> Text,
-        cwd -> Text,
         tmux_session -> Text,
         pane_id -> Text,
-        state -> Text,
-        is_compacting -> Bool,
-        pane_generation -> BigInt,
-        pane_sequence -> BigInt,
-        session_start_source -> Nullable<Text>,
-        received_at_unix_ms -> BigInt,
+        screen_fingerprint -> Text,
+        changed_at_unix_ms -> BigInt,
+        observed_at_unix_ms -> BigInt,
     }
 }
 
@@ -130,9 +109,7 @@ diesel::table! {
 }
 
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
-diesel::joinable!(codex_checkout_state -> repositories (repository_id));
-diesel::joinable!(codex_checkout_state -> worlds (world_id));
-diesel::joinable!(codex_session_reports -> worlds (world_id));
+diesel::joinable!(pane_observations -> worlds (world_id));
 diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
@@ -140,9 +117,8 @@ diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     agent_tool_reports,
-    codex_checkout_state,
     codex_session_catalog,
-    codex_session_reports,
+    pane_observations,
     repositories,
     world_git_activity,
     world_wt_tools_activity,

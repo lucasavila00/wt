@@ -61,7 +61,6 @@ fn model_with_open_card() -> ShellModel {
                 git_context_health: None,
                 state: CodexSessionState::Working,
                 is_compacting: false,
-                session_start_source: None,
                 target,
             },
         }],

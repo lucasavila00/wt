@@ -7,16 +7,10 @@ creation time, status, request fingerprint, resources, reservation state, SSH
 endpoint, and gateway grant. World listings use creation order. The UUID also
 names the world's disk; neither a disk identifier nor a libvirt domain name is
 stored in the registry.
-`agent_tool_reports` stores `wtg tools` feedback and
-`codex_session_reports` stores the latest per-world Codex observations. Both
-are deleted with their world.
-
-`codex_checkout_state` independently stores the latest Git context for an
-active Codex session, working directory, pane, and generation. It links to the
-central `repositories` catalog only when the selected remote resolves to a
-configured target. The guest relay updates checkout state without changing
-lifecycle ordering or activity age; unavailable or unconfigured remotes remain
-stored as unjoined checkout state.
+`agent_tool_reports` stores `wtg tools` feedback. `pane_observations` stores
+the latest fingerprint and change/freshness timestamps for each observed Byobu
+pane. Both are deleted with their world. It never stores rendered terminal
+contents, Codex lifecycle events, or checkout state.
 
 `codex_session_catalog` is a rebuildable index of the shared Codex rollout
 tree. It stores bounded session summaries, aggregate activity and token counts,

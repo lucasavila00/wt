@@ -5,26 +5,6 @@ CREATE TABLE repositories (
     UNIQUE (provider_host, repository)
 );
 
-CREATE TABLE codex_checkout_state (
-    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
-    session_id TEXT NOT NULL,
-    cwd TEXT NOT NULL,
-    repository_root TEXT,
-    repository_url TEXT,
-    repository_id INTEGER REFERENCES repositories(id),
-    branch TEXT,
-    checked_at_unix_ms BIGINT NOT NULL,
-    error TEXT,
-    pane_id TEXT NOT NULL,
-    pane_generation BIGINT NOT NULL,
-    PRIMARY KEY (world_id, session_id, cwd),
-    FOREIGN KEY (world_id, session_id)
-        REFERENCES codex_session_reports(world_id, session_id) ON DELETE CASCADE
-);
-
-CREATE INDEX codex_checkout_state_repository_id
-    ON codex_checkout_state (repository_id);
-
 CREATE TABLE world_git_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,

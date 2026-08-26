@@ -1,7 +1,5 @@
 use super::{map_registry_error, Store, StoreError};
-use crate::{
-    AgentToolReport, CodexSessionCatalogEntry, CodexSessionCatalogInput, CodexSessionReport,
-};
+use crate::{AgentToolReport, CodexSessionCatalogEntry, CodexSessionCatalogInput, PaneObservation};
 use std::collections::{BTreeMap, BTreeSet};
 use wt_world::WorldId;
 
@@ -30,12 +28,9 @@ impl Store {
             .map_err(map_registry_error)
     }
 
-    pub fn list_codex_session_reports(
-        &self,
-        owner: &str,
-    ) -> Result<Vec<CodexSessionReport>, StoreError> {
+    pub fn list_pane_observations(&self, owner: &str) -> Result<Vec<PaneObservation>, StoreError> {
         self.registry
-            .list_codex_session_reports(owner)
+            .list_pane_observations(owner)
             .map_err(map_registry_error)
     }
 

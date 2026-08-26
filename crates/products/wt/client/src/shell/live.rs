@@ -33,15 +33,16 @@ pub(super) fn draw(
     frame: &mut Frame<'_>,
     area: Rect,
     screens: &[&vt100::Screen],
-    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
     let cards = state.live_codex();
     if cards.is_empty() {
         frame.render_widget(
-            Paragraph::new("No live Codex sessions\nStart Codex in a world to see its pane here")
-                .alignment(Alignment::Center),
+            Paragraph::new(
+                "No observed Byobu panes\nStart a terminal in a world to see its pane here",
+            )
+            .alignment(Alignment::Center),
             area,
         );
         return;
@@ -57,7 +58,7 @@ pub(super) fn draw(
     for placement in grid.cards() {
         let card = cards[placement.index];
         grid.render_card(frame, placement, |rect, buffer| {
-            draw_card(buffer, rect, card, screens, screen_tracker, model)
+            draw_card(buffer, rect, card, screens, model)
         });
     }
 }
@@ -67,11 +68,10 @@ fn draw_card(
     rect: Rect,
     card: &super::control::CodexCard,
     screens: &[&vt100::Screen],
-    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
 ) {
     let state = model.control();
-    let (title, title_color) = live_card_title(card, screen_tracker.is_stuck(card));
+    let (title, title_color) = live_card_title(card);
     let mut block = Block::new()
         .borders(Borders::ALL)
         .border_style(selected_card_border_style(
@@ -107,26 +107,10 @@ fn draw_card(
             .style(muted_style())
             .render(viewport, buffer);
     }
-    if let Some(warning) = screen_tracker.warning(card, state.codex()) {
-        let warning_area = Rect::new(
-            viewport.x,
-            viewport.bottom().saturating_sub(1),
-            viewport.width,
-            1.min(viewport.height),
-        );
-        Paragraph::new(warning)
-            .alignment(Alignment::Center)
-            .style(Style::new().add_modifier(Modifier::REVERSED))
-            .render(warning_area, buffer);
-    }
 }
 
-fn live_card_title(card: &super::control::CodexCard, stuck: bool) -> (String, Color) {
-    let (title, title_color) = if stuck {
-        ("󰚩 POSSIBLY STUCK".into(), Color::Yellow)
-    } else {
-        card_title(card)
-    };
+fn live_card_title(card: &super::control::CodexCard) -> (String, Color) {
+    let (title, title_color) = card_title(card);
     let title = match &card.kind {
         super::control::CodexCardKind::Observation { world_name, .. } => {
             format!("{title} · {}.{world_name}", card.context)
@@ -204,7 +188,7 @@ mod tests {
             },
             context: "local".into(),
             session_id: Some(session_id),
-            timestamp: Some(1),
+            timestamp: None,
             latest_user_message: None,
             kind: super::super::control::CodexCardKind::Observation {
                 world_id: Uuid::from_u128(2).into(),
@@ -216,7 +200,6 @@ mod tests {
                 git_context_health: None,
                 state: CodexSessionState::Working,
                 is_compacting: false,
-                session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
                     pane_id: "%1".into(),
@@ -226,11 +209,11 @@ mod tests {
     }
 
     #[test]
-    fn stuck_title_uses_attention_color_and_keeps_location() {
-        let (title, color) = live_card_title(&working_card(), true);
+    fn pane_title_keeps_its_location() {
+        let (title, color) = live_card_title(&working_card());
 
-        assert_eq!(title, "󰚩 POSSIBLY STUCK · local.world");
-        assert_eq!(color, Color::Yellow);
+        assert_eq!(title, "󰔟 CHANGING · local.world");
+        assert_eq!(color, Color::Green);
     }
 
     #[test]

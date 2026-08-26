@@ -17,7 +17,6 @@ use ratatui::Frame;
 pub(super) fn draw(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
-    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     closed_message: Option<&str>,
     model: &ShellModel,
     creation: Option<&Flow>,
@@ -32,7 +31,7 @@ pub(super) fn draw(
         }
     }
     if model.mode() == Mode::Control {
-        draw_control(frame, screens, screen_tracker, model, creation);
+        draw_control(frame, screens, model, creation);
         if let Some(error) = action_error {
             draw_action_error(frame, error);
         }
@@ -159,7 +158,6 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 fn draw_control(
     frame: &mut Frame<'_>,
     screens: &[&vt100::Screen],
-    screen_tracker: &super::screen_tracker::CodexScreenTracker,
     model: &ShellModel,
     creation: Option<&Flow>,
 ) {
@@ -171,7 +169,7 @@ fn draw_control(
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
         Activity::Codex => draw_codex(frame, body, model.control()),
-        Activity::Live => super::live::draw(frame, body, screens, screen_tracker, model),
+        Activity::Live => super::live::draw(frame, body, screens, model),
     }
     let (title, failure) = match model.control().activity() {
         Activity::Worlds => {
@@ -182,7 +180,7 @@ fn draw_control(
             let status = model.control().codex_refresh();
             (status.title("Codex sessions"), status.failure())
         }
-        Activity::Live => ("Live sessions".to_owned(), None),
+        Activity::Live => ("Live panes".to_owned(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
@@ -374,28 +372,23 @@ pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
         CodexCardKind::Observation {
             state,
             is_compacting,
-            session_start_source,
             ..
         } => {
-            let (icon, label, color) = match state {
+            let (icon, label, color): (&str, String, Color) = match state {
                 wt_control_protocol::CodexSessionState::NeedsAttention => {
-                    ("󰚩", "NEEDS ATTENTION".into(), Color::Yellow)
+                    ("󰚩", "STATIC".into(), Color::Yellow)
                 }
                 wt_control_protocol::CodexSessionState::Working => {
-                    ("󰔟", "WORKING".into(), Color::Green)
+                    ("󰔟", "CHANGING".into(), Color::Green)
                 }
-                wt_control_protocol::CodexSessionState::Unknown => (
-                    "󰋗",
-                    session_start_source
-                        .as_ref()
-                        .map_or_else(|| "UNKNOWN".into(), |source| format!("UNKNOWN ({source})")),
-                    Color::Gray,
-                ),
+                wt_control_protocol::CodexSessionState::Unknown => {
+                    ("󰋗", "UNAVAILABLE".into(), Color::Gray)
+                }
                 wt_control_protocol::CodexSessionState::Inactive => {
                     ("󰅖", "INACTIVE".into(), Color::Reset)
                 }
             };
-            let compacting = is_compacting.then_some(" (COMPACTING)").unwrap_or_default();
+            let compacting = is_compacting.then_some(" (UPDATING)").unwrap_or_default();
             (format!("{icon} {label}{compacting}{suffix}"), color)
         }
         CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::Reset),
@@ -431,12 +424,8 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
             let mut lines = vec![
                 Line::from(git.unwrap_or_else(|| cwd.clone())),
                 Line::from(format!(
-                    "{}.{} · {}:{} · session {}",
-                    card.context,
-                    world_name,
-                    target.tmux_session,
-                    target.pane_id,
-                    short_session.expect("observation card has session ID")
+                    "{}.{} · {}:{}",
+                    card.context, world_name, target.tmux_session, target.pane_id,
                 )),
             ];
             if let Some(message) = git_context_health
@@ -453,7 +442,7 @@ fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
                 card.context,
                 short_session.expect("rollout card has session ID")
             )),
-            Line::from("Saved in Codex history, but not open in a WT pane"),
+            Line::from("Saved history is not a live pane observation"),
         ],
         CodexCardKind::ContextError { message } => vec![
             Line::from(format!("Context {}", card.context)),

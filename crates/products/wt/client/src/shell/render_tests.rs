@@ -41,18 +41,7 @@ fn world_bar_is_dimmed_and_shows_control_targets() {
     let parser = parser();
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[parser.screen()], None, &model, None, None, None))
         .unwrap();
 
     let brand = terminal.backend().buffer().cell((0, 0)).unwrap().style();
@@ -82,18 +71,7 @@ fn world_bar_preserves_the_world_cursor() {
     let parser = parser();
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[parser.screen()], None, &model, None, None, None))
         .unwrap();
 
     assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(3, 2));
@@ -107,18 +85,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     model.set_test_server(true);
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let style = terminal.backend().buffer().cell((79, 0)).unwrap().style();
@@ -131,18 +98,7 @@ fn test_server_warning_owns_the_topbar_in_control_and_world_views() {
     press(&mut model, KeyCode::F(5), Rect::new(0, 0, 80, 12));
     let parser = parser();
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[parser.screen()], None, &model, None, None, None))
         .unwrap();
     let top = (0..80)
         .map(|column| {
@@ -173,7 +129,6 @@ fn closed_session_uses_a_reverse_video_reconnect_bar() {
             draw(
                 frame,
                 &[parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
                 Some("SSH session ended: Exited with code 255"),
                 &model,
                 None,
@@ -200,18 +155,7 @@ fn control_ui_has_activity_scaffolding() {
     let parser = parser();
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[parser.screen()], None, &model, None, None, None))
         .unwrap();
 
     assert_eq!(
@@ -262,7 +206,6 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
                 git_context_health: None,
                 state: CodexSessionState::Unknown,
                 is_compacting: false,
-                session_start_source: Some("compact".into()),
                 target,
             },
         }],
@@ -279,18 +222,7 @@ fn failed_codex_open_is_a_retryable_toast_without_internal_details() {
     model.finish_codex_open(&target, None, true);
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let rendered = terminal
@@ -332,18 +264,7 @@ fn failed_codex_refresh_is_shown_in_the_red_footer() {
     press(&mut model, KeyCode::Tab, area);
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let buffer = terminal.backend().buffer();
@@ -371,18 +292,7 @@ fn failed_worlds_refresh_is_shown_in_the_red_footer() {
     ]));
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let buffer = terminal.backend().buffer();
@@ -426,7 +336,6 @@ fn live_session_repository_and_branch_are_card_chrome() {
                 git_context_health: None,
                 state: CodexSessionState::Working,
                 is_compacting: false,
-                session_start_source: None,
                 target: ByobuTarget {
                     tmux_session: "wt-host".into(),
                     pane_id: "%1".into(),
@@ -441,13 +350,7 @@ fn live_session_repository_and_branch_are_card_chrome() {
 
     terminal
         .draw(|frame| {
-            super::super::live::draw(
-                frame,
-                frame.area(),
-                &[live_parser.screen()],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                &model,
-            )
+            super::super::live::draw(frame, frame.area(), &[live_parser.screen()], &model)
         })
         .unwrap();
 

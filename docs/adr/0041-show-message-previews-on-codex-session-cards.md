@@ -29,5 +29,5 @@
 
 - More sessions fit below the fold only through scrolling.
 - Message previews may expose prompt text to anyone who can view `wt shell`.
-- ADR 0029's rollout catalog reads the latest user-message event in addition to
+- The durable rollout catalog reads the latest user-message event in addition to
   `session_meta`.

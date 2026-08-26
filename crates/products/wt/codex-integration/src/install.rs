@@ -6,83 +6,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const REAL_CODEX_SUFFIX: &str = ".codex/packages/standalone/current/bin/codex";
-const LEGACY_CONFIG: &str = r#"approval_policy = "never"
-sandbox_mode = "danger-full-access"
-
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-tools world-prompt'''
-"#;
-const PREVIOUS_CONFIG: &str = r#"approval_policy = "never"
-sandbox_mode = "danger-full-access"
-
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-tools world-prompt'''
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.UserPromptSubmit]]
-
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.SessionEnd]]
-
-[[hooks.SessionEnd.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-"#;
-const POST_COMPACT_CONFIG: &str = r#"approval_policy = "never"
-sandbox_mode = "danger-full-access"
-
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-tools world-prompt'''
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.PostCompact]]
-
-[[hooks.PostCompact.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.UserPromptSubmit]]
-
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-
-[[hooks.SessionEnd]]
-
-[[hooks.SessionEnd.hooks]]
-type = "command"
-command = '''wt-codex-integration report-hook'''
-"#;
 const CONFIG: &str = r#"approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
@@ -91,40 +14,6 @@ sandbox_mode = "danger-full-access"
 [[hooks.SessionStart.hooks]]
 type = "command"
 command = '''wtg tools world-prompt'''
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
-
-[[hooks.PreCompact]]
-
-[[hooks.PreCompact.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
-
-[[hooks.PostCompact]]
-
-[[hooks.PostCompact.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
-
-[[hooks.UserPromptSubmit]]
-
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
-
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
-
-[[hooks.SessionEnd]]
-
-[[hooks.SessionEnd.hooks]]
-type = "command"
-command = '''wtg codex report-hook'''
 "#;
 
 pub(crate) fn invoked_as_codex(args: &[OsString]) -> Result<bool> {
@@ -169,10 +58,6 @@ fn install_config(codex_home: &Path) -> Result<()> {
     let path = codex_home.join("config.toml");
     match fs::read(&path) {
         Ok(contents) if contents == CONFIG.as_bytes() => return Ok(()),
-        Ok(contents)
-            if contents == LEGACY_CONFIG.as_bytes()
-                || contents == PREVIOUS_CONFIG.as_bytes()
-                || contents == POST_COMPACT_CONFIG.as_bytes() => {}
         Ok(_) => bail!(
             "Codex configuration differs from WT's configuration: {}",
             path.display()
@@ -222,9 +107,7 @@ mod tests {
         let codex_home = temp.path().join(".codex");
 
         install_config(&codex_home).unwrap();
-        insta::assert_snapshot!(
-            fs::read_to_string(codex_home.join("config.toml")).unwrap(),
-            @r###"
+        insta::assert_snapshot!(fs::read_to_string(codex_home.join("config.toml")).unwrap(), @r###"
         approval_policy = "never"
         sandbox_mode = "danger-full-access"
 
@@ -233,42 +116,7 @@ mod tests {
         [[hooks.SessionStart.hooks]]
         type = "command"
         command = '''wtg tools world-prompt'''
-
-        [[hooks.SessionStart.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-
-        [[hooks.PreCompact]]
-
-        [[hooks.PreCompact.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-
-        [[hooks.PostCompact]]
-
-        [[hooks.PostCompact.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-
-        [[hooks.UserPromptSubmit]]
-
-        [[hooks.UserPromptSubmit.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-
-        [[hooks.Stop]]
-
-        [[hooks.Stop.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-
-        [[hooks.SessionEnd]]
-
-        [[hooks.SessionEnd.hooks]]
-        type = "command"
-        command = '''wtg codex report-hook'''
-        "###
-        );
+        "###);
         install_config(&codex_home).unwrap();
 
         fs::write(codex_home.join("config.toml"), "model = \"other\"\n").unwrap();
@@ -277,22 +125,5 @@ mod tests {
             .to_string()
             .replace(&codex_home.display().to_string(), "<CODEX_HOME>");
         insta::assert_snapshot!(error, @"Codex configuration differs from WT's configuration: <CODEX_HOME>/config.toml");
-    }
-
-    #[test]
-    fn config_install_upgrades_previous_wt_configs() {
-        for previous in [LEGACY_CONFIG, PREVIOUS_CONFIG, POST_COMPACT_CONFIG] {
-            let temp = tempdir().unwrap();
-            let codex_home = temp.path().join(".codex");
-            fs::create_dir_all(&codex_home).unwrap();
-            fs::write(codex_home.join("config.toml"), previous).unwrap();
-
-            install_config(&codex_home).unwrap();
-
-            assert_eq!(
-                fs::read_to_string(codex_home.join("config.toml")).unwrap(),
-                CONFIG
-            );
-        }
     }
 }

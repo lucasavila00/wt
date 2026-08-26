@@ -1,9 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::process::Command;
 use uuid::Uuid;
-use wt_agent_tool_gateway::{
-    valid_codex_pane_id, valid_codex_tmux_session, CODEX_SESSION_PANE_OPTION,
-};
+use wt_agent_tool_gateway::{valid_byobu_pane_id, valid_byobu_tmux_session};
 
 pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
     let expected = inspect(session_id, tmux_session, pane_id)?;
@@ -31,31 +29,29 @@ pub(crate) fn focus(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Resu
     Ok(expected)
 }
 
-fn inspect(session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
-    if !valid_codex_tmux_session(tmux_session) {
-        bail!("invalid Codex tmux session: {tmux_session}");
+fn inspect(_session_id: Uuid, tmux_session: &str, pane_id: &str) -> Result<String> {
+    if !valid_byobu_tmux_session(tmux_session) {
+        bail!("invalid Byobu tmux session: {tmux_session}");
     }
-    if !valid_codex_pane_id(pane_id) {
-        bail!("invalid Codex pane ID: {pane_id}");
+    if !valid_byobu_pane_id(pane_id) {
+        bail!("invalid Byobu pane ID: {pane_id}");
     }
 
-    let expected = format!("{tmux_session}:{pane_id}:{session_id}:0");
+    let expected = format!("{tmux_session}:{pane_id}:0");
     let output = Command::new("/usr/bin/tmux")
         .args([
             "display-message",
             "-p",
             "-t",
             pane_id,
-            &format!(
-                "#{{session_name}}:#{{pane_id}}:#{{{CODEX_SESSION_PANE_OPTION}}}:#{{pane_dead}}"
-            ),
+            "#{session_name}:#{pane_id}:#{pane_dead}",
         ])
         .output()
         .context("inspect Codex Byobu target")?;
     let actual = format!("{expected}\n");
     if !output.status.success() || output.stdout != actual.as_bytes() {
         bail!(
-            "Codex Byobu target mismatch: status {}; expected stdout {}; actual stdout {}; stderr {}",
+            "Byobu target mismatch: status {}; expected stdout {}; actual stdout {}; stderr {}",
             output.status,
             escaped(actual.as_bytes()),
             escaped(&output.stdout),
@@ -79,11 +75,11 @@ mod tests {
         let session_id = Uuid::nil();
         insta::assert_snapshot!(
             focus(session_id, "other", "%1").unwrap_err(),
-            @"invalid Codex tmux session: other"
+            @"invalid Byobu tmux session: other"
         );
         insta::assert_snapshot!(
             focus(session_id, "wt-host", "%bad").unwrap_err(),
-            @"invalid Codex pane ID: %bad"
+            @"invalid Byobu pane ID: %bad"
         );
     }
 }

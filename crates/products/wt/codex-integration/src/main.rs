@@ -1,7 +1,6 @@
 mod focus;
 mod install;
 mod reconcile;
-mod report;
 mod startup;
 
 use anyhow::{Context, Result};
@@ -23,9 +22,6 @@ enum Command {
     Reconcile,
     /// Install WT's exact Codex user configuration.
     InstallConfig,
-    /// Report a WT-managed Codex lifecycle hook.
-    #[command(hide = true)]
-    ReportHook,
     /// Focus a strictly identified WT Byobu pane.
     #[command(hide = true)]
     FocusPane {
@@ -38,11 +34,7 @@ enum Command {
 #[allow(dead_code)]
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
-    let silent = args.get(1).is_some_and(|value| value == "report-hook");
     if let Err(error) = run(args) {
-        if silent {
-            return;
-        }
         eprintln!("wt-codex-integration: {error:#}");
         std::process::exit(1);
     }
@@ -59,7 +51,6 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             println!("Codex session index refreshed.");
         }
         Command::InstallConfig => install::install_user_config()?,
-        Command::ReportHook => report::report_hook()?,
         Command::FocusPane {
             session_id,
             tmux_session,

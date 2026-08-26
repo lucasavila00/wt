@@ -20,7 +20,7 @@ standalone Git client
 `wts` owns guests. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
 protected server socket. The protocol carries world resources, a Git author,
-server information, context-local Codex session observations, and streamed
+server information, server-owned terminal-pane observations, and streamed
 creation progress events.
 
 ## Crates
@@ -48,10 +48,10 @@ handling shared by the regular WT and standalone Git proxy installers.
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
-Codex lifecycle hooks report session identity, pane order, and activity only.
-The guest relay independently polls registered working directories for Git
-context and sends authenticated metadata updates to the host. Those updates
-cannot create, reorder, reactivate, or refresh a lifecycle observation.
+The guest relay polls each eligible Byobu pane's rendered terminal screen and
+sends a fingerprint and freshness timestamp through its authenticated server
+connection. `wts` owns those observations. No client playback stream, Codex
+hook, working-directory probe, or checkout poll participates in live state.
 
 ## Shell playback
 
@@ -61,11 +61,10 @@ event queue; the UI loop drains that queue and advances every parser whether a
 world is visible or active. Inventory reconciliation can add or remove a world,
 and reconnecting replaces its connection, parser, and stream identity.
 
-Codex observations identify the world, tmux session, and pane. The client uses
-that identity when selecting a Codex pane. Selection is shared with other tmux
-clients and can be changed by them. A world playback connection renders the
-pane currently active in the shared tmux window, regardless of which client
-selected it; it does not expose every pane in the world.
+Pane observations identify the world, tmux session, and pane. A world playback
+connection renders the pane currently active in the shared tmux window; it
+does not expose every pane in the world. The observation is server-owned and
+does not change that shared selection.
 
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved

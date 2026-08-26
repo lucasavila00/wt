@@ -1,11 +1,4 @@
 use super::*;
-use crate::CodexSessionStartSourceKind;
-
-#[derive(Debug, Eq, PartialEq)]
-pub(super) struct RepositoryTarget {
-    pub(super) provider_host: String,
-    pub(super) repository: String,
-}
 
 impl Gateway {
     pub fn open(config: GatewayConfig) -> Result<Self> {
@@ -93,20 +86,9 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
-            ClientOperation::CodexSession { event } => {
-                let response = match self.store_codex_session_event(&event, &grant) {
-                    Ok(true) => TransportResponse::with_message("accepted"),
-                    Ok(false) => TransportResponse::with_message("ignored"),
-                    Err(error) => TransportResponse::error(format!("{error:#}")),
-                };
-                crate::write_json_line(&mut stream, &response)
-            }
-            ClientOperation::CodexGitContext { context } => {
-                let response = match self.store_codex_git_context(&context, &grant) {
-                    Ok(true) => TransportResponse::ok(),
-                    Ok(false) => {
-                        TransportResponse::error("Codex session Git context no longer matches")
-                    }
+            ClientOperation::PaneObservations { panes } => {
+                let response = match self.store_pane_observations(&panes, &grant) {
+                    Ok(()) => TransportResponse::ok(),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
                 crate::write_json_line(&mut stream, &response)
@@ -114,120 +96,25 @@ impl Gateway {
         }
     }
 
-    pub(super) fn store_codex_session_event(
+    pub(super) fn store_pane_observations(
         &self,
-        event: &CodexSessionEvent,
+        panes: &[crate::PaneObservation],
         grant: &GrantRecord,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        let (state, is_compacting) = match event.kind {
-            CodexSessionEventKind::SessionStart
-                if event
-                    .session_start_source
-                    .as_ref()
-                    .is_some_and(|source| source.kind == CodexSessionStartSourceKind::Compact) =>
-            {
-                (None, Some(true))
-            }
-            CodexSessionEventKind::SessionStart => (
-                Some(wt_workload_registry::CodexSessionState::Unknown),
-                Some(false),
-            ),
-            CodexSessionEventKind::PreCompact => (None, Some(true)),
-            CodexSessionEventKind::PostCompact => (None, Some(false)),
-            CodexSessionEventKind::UserPromptSubmit => (
-                Some(wt_workload_registry::CodexSessionState::Working),
-                Some(false),
-            ),
-            CodexSessionEventKind::Stop => (
-                Some(wt_workload_registry::CodexSessionState::NeedsAttention),
-                Some(false),
-            ),
-            CodexSessionEventKind::SessionEnd => (
-                Some(wt_workload_registry::CodexSessionState::Inactive),
-                Some(false),
-            ),
-        };
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .upsert_codex_session_report(wt_workload_registry::CodexSessionReportInput {
-                world_id: world_id.into(),
-                session_id: event.session_id,
-                cwd: &event.cwd,
-                tmux_session: &event.tmux_session,
-                pane_id: &event.pane_id,
-                state,
-                is_compacting,
-                pane_generation: event.pane_generation,
-                pane_sequence: event.pane_sequence,
-                session_start_source: event
-                    .session_start_source
-                    .as_ref()
-                    .map(|source| source.raw.as_str()),
-            })
-            .context("store Codex session report")
-    }
-
-    pub(super) fn store_codex_git_context(
-        &self,
-        context: &crate::CodexGitContext,
-        grant: &GrantRecord,
-    ) -> Result<bool> {
-        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        let repository_target = self.resolve_checkout_repository(context.repository_url.as_deref());
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .update_codex_session_git_context(wt_workload_registry::CodexSessionGitContextInput {
-                world_id: world_id.into(),
-                session_id: context.session_id,
-                cwd: &context.cwd,
-                tmux_session: &context.tmux_session,
-                pane_id: &context.pane_id,
-                pane_generation: context.pane_generation,
-                repository_root: context.repository_root.as_deref(),
-                repository_url: context.repository_url.as_deref(),
-                git_branch: context.git_branch.as_deref(),
-                repository_target: repository_target.as_ref().map(|target| {
-                    wt_workload_registry::RepositoryTargetInput {
-                        provider_host: &target.provider_host,
-                        repository: &target.repository,
-                    }
-                }),
-                error: context.error.as_deref(),
-            })
-            .context("store Codex session Git context")
-    }
-
-    pub(super) fn resolve_checkout_repository(
-        &self,
-        remote: Option<&str>,
-    ) -> Option<RepositoryTarget> {
-        let remote = remote?;
-        let source = parse_source(remote).ok();
-        let (host, path) = if let Some(source) = source {
-            (source.host, source.path)
-        } else {
-            let rest = remote.strip_prefix("https://")?;
-            let (authority, path) = rest.split_once('/')?;
-            let host = authority
-                .split_once(':')
-                .map_or(authority, |(host, _)| host);
-            let host = host.to_ascii_lowercase();
-            if !valid_host(&host) {
-                return None;
-            }
-            (host, path.to_owned())
-        };
-        let provider = self
-            .config
-            .providers
+        let inputs = panes
             .iter()
-            .find(|provider| provider.host().eq_ignore_ascii_case(&host))?;
-        validate_repository(&path).ok()?;
-        Some(RepositoryTarget {
-            provider_host: provider.host().to_owned(),
-            repository: normalize_repository(&path),
-        })
+            .map(|pane| wt_workload_registry::PaneObservationInput {
+                tmux_session: &pane.tmux_session,
+                pane_id: &pane.pane_id,
+                screen_fingerprint: &pane.screen_fingerprint,
+                changed: pane.changed,
+            })
+            .collect::<Vec<_>>();
+        wt_workload_registry::Registry::open(&self.config.database_path)
+            .context("open WT registry")?
+            .replace_pane_observations(world_id.into(), &inputs)
+            .context("store pane observations")
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {

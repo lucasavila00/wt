@@ -72,18 +72,7 @@ fn running_world_without_a_codex_session_is_a_warning() {
     model.show_worlds();
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
     let rendered = terminal
         .backend()
@@ -96,18 +85,7 @@ fn running_world_without_a_codex_session_is_a_warning() {
 
     model.set_codex(Vec::new(), "2026-08-23T12:00:00Z".into(), area);
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let title = terminal.backend().buffer().cell((6, 0)).unwrap().style();
@@ -125,18 +103,7 @@ fn world_card_has_a_top_right_menu_button() {
     model.set_codex(Vec::new(), "2026-08-23T12:00:00Z".into(), area);
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let card = card_grid(area, 0, 1, WORLD_CARD_HEIGHT)
@@ -152,7 +119,7 @@ fn world_card_has_a_top_right_menu_button() {
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(rendered, @"
-    ┌ 󰚩 IDLE · NO ACTIVE CODEX SESSION ───────────── … Menu ┐
+    ┌ 󰚩 STATIC · NO RECENT PANE CHANGE ───────────── … Menu ┐
     │ars.calm-wombat                                        │
     │2 CPU · 4G · 1G/32G disk                               │
     │                                                       │
@@ -186,18 +153,7 @@ fn world_menu_matches_the_command_palette_style() {
     );
 
     terminal
-        .draw(|frame| {
-            draw(
-                frame,
-                &[],
-                &super::super::screen_tracker::CodexScreenTracker::default(),
-                None,
-                &model,
-                None,
-                None,
-                None,
-            )
-        })
+        .draw(|frame| draw(frame, &[], None, &model, None, None, None))
         .unwrap();
 
     let (menu, _, _, results, _) = super::super::world_menu::menu_layout(area);
