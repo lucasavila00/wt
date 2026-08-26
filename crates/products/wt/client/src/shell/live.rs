@@ -128,14 +128,9 @@ fn live_card_title(card: &super::control::CodexCard, stuck: bool) -> (String, Co
         card_title(card)
     };
     let title = match &card.kind {
-        super::control::CodexCardKind::Observation {
-            world_name,
-            git_branch,
-            ..
-        } => git_branch.as_ref().map_or_else(
-            || format!("{title} · {}.{world_name}", card.context),
-            |branch| format!("{title} · {}.{world_name} · {branch}", card.context),
-        ),
+        super::control::CodexCardKind::Observation { world_name, .. } => {
+            format!("{title} · {}.{world_name}", card.context)
+        }
         super::control::CodexCardKind::RolloutOnly
         | super::control::CodexCardKind::ContextError { .. } => title,
     };
@@ -146,12 +141,13 @@ fn card_repository(card: &super::control::CodexCard) -> Option<String> {
     let super::control::CodexCardKind::Observation {
         repository_root,
         repository_url,
+        git_branch,
         ..
     } = &card.kind
     else {
         return None;
     };
-    repository_url
+    let repository = repository_url
         .as_deref()
         .and_then(repository_identifier)
         .or_else(|| {
@@ -159,7 +155,11 @@ fn card_repository(card: &super::control::CodexCard) -> Option<String> {
                 .as_deref()
                 .and_then(|root| std::path::Path::new(root).file_name()?.to_str())
                 .map(str::to_owned)
-        })
+        })?;
+    Some(match git_branch {
+        Some(branch) => format!("{repository} · {branch}"),
+        None => repository,
+    })
 }
 
 fn repository_identifier(url: &str) -> Option<String> {
@@ -229,7 +229,7 @@ mod tests {
     fn stuck_title_uses_attention_color_and_keeps_location() {
         let (title, color) = live_card_title(&working_card(), true);
 
-        assert_eq!(title, "󰚩 POSSIBLY STUCK · local.world · wt/change");
+        assert_eq!(title, "󰚩 POSSIBLY STUCK · local.world");
         assert_eq!(color, Color::Yellow);
     }
 
