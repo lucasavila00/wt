@@ -25,7 +25,45 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-sudo systemctl stop wts.service 2>/dev/null || true
+sudo systemctl stop \
+    wts.service \
+    wt-server.service \
+    wt-agent-tool-gateway.service \
+    2>/dev/null || true
+
+# A development server may have been started directly rather than by systemd.
+# Stop every current or superseded WT daemon before removing its database so it
+# cannot recreate state during cleanup. Read executable names from procfs
+# because Linux truncates process names longer than 15 bytes.
+daemon_pids=()
+for process in /proc/[0-9]*/exe; do
+    executable=$(readlink "$process" 2>/dev/null) || continue
+    case ${executable##*/} in
+        wts | wt-server | wt-agent-tool-gateway)
+            pid=${process#/proc/}
+            pid=${pid%/exe}
+            if [[ $(stat -c %u "/proc/$pid" 2>/dev/null) == "$EUID" ]]; then
+                daemon_pids+=("$pid")
+                kill "$pid" 2>/dev/null || true
+            fi
+            ;;
+    esac
+done
+for _ in {1..50}; do
+    running=()
+    for pid in "${daemon_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            running+=("$pid")
+        fi
+    done
+    if (( ${#running[@]} == 0 )); then
+        break
+    fi
+    sleep 0.1
+done
+for pid in "${running[@]}"; do
+    kill -KILL "$pid" 2>/dev/null || true
+done
 
 mapfile -t domains < <(virsh -c qemu:///system list --all --name | awk '/^wt-/{print}')
 for domain in "${domains[@]}"; do
@@ -46,3 +84,31 @@ if [[ -z $kvm_gid ]]; then
 fi
 sudo install -d -o "$EUID" -g "$kvm_gid" -m 2770 /var/lib/libvirt/images/wt
 sudo setfacl -m u:libvirt-qemu:--x -- /var/lib/libvirt/images/wt
+
+failed=0
+if virsh -c qemu:///system list --all --name | awk '/^wt-/{found=1} END {exit !found}'; then
+    echo "WT domains remain after cleanup" >&2
+    failed=1
+fi
+for path in "$HOME/.local/state/wt" "$HOME/.ssh/wt" /etc/wt /var/lib/wt/agent-tools; do
+    if [[ -e $path ]]; then
+        echo "WT state remains after cleanup: $path" >&2
+        failed=1
+    fi
+done
+for process in /proc/[0-9]*/exe; do
+    executable=$(readlink "$process" 2>/dev/null) || continue
+    case ${executable##*/} in
+        wts | wt-server | wt-agent-tool-gateway)
+            pid=${process#/proc/}
+            pid=${pid%/exe}
+            if [[ $(stat -c %u "/proc/$pid" 2>/dev/null) == "$EUID" ]]; then
+                echo "WT daemon remains after cleanup: ${executable##*/} (PID $pid)" >&2
+                failed=1
+            fi
+            ;;
+    esac
+done
+if (( failed != 0 )); then
+    exit 1
+fi
