@@ -20,7 +20,7 @@ pub(crate) fn create_world_with_defaults(screen: &mut Screen, name: &str) -> Res
         .wait_for_text("Review")?
         .press(Key::Enter)?
         .wait_for_text(name)?;
-    wait_for_slow_text(screen, "Enter or click to open", Duration::from_secs(90))?;
+    wait_for_slow_text(screen, "RUNNING", Duration::from_secs(90))?;
     eprintln!("WT shell E2E: open world {name}");
     screen.press(Key::Enter)?;
     wait_for_slow_text(screen, "wt@ubuntu:", Duration::from_secs(30))?;

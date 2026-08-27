@@ -5,7 +5,7 @@ use super::terminal_view::TerminalView;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use ratatui::Frame;
 
@@ -109,16 +109,6 @@ fn draw_card(
             .style(muted_style())
             .render(viewport, buffer);
     }
-    let footer = Rect::new(
-        viewport.x,
-        viewport.bottom().saturating_sub(1),
-        viewport.width,
-        viewport.height.min(1),
-    );
-    Paragraph::new(Line::from("Click or Enter to open in Byobu"))
-        .alignment(Alignment::Center)
-        .style(muted_style())
-        .render(footer, buffer);
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ Add an actions button to the top-right edge of each world card's frame:
 │ars.calm-wombat                                                     │
 │2 CPU · 4G · 7.5G/32G disk                                         │
 │                                                                   │
-│Enter or click to open                                              │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
