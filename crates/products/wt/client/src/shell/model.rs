@@ -21,6 +21,7 @@ pub(super) struct ShellWorld {
     pub(super) status: WorldStatus,
     pub(super) resources: String,
     pub(super) detail: String,
+    pub(super) git_repositories: Vec<super::git_activity::RepositoryInteraction>,
 }
 
 #[cfg(test)]
@@ -41,6 +42,7 @@ impl From<&str> for ShellWorld {
             status: WorldStatus::Running,
             resources: "2 CPU · 4G · 1G/32G disk".into(),
             detail: "-".into(),
+            git_repositories: Vec::new(),
         }
     }
 }

@@ -21,6 +21,7 @@ mod control;
 mod control_overlay;
 mod delete;
 mod focus;
+mod git_activity;
 mod input;
 mod lifecycle;
 mod live;
@@ -60,7 +61,8 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         ));
     }
     ssh::sync(config, &report.worlds)?;
-    let worlds = shell_worlds(&report.worlds);
+    let activity = git_activity::load(config, &report.worlds, &cancelled);
+    let worlds = shell_worlds(&report.worlds, &activity);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut model = ShellModel::new(worlds);
     let area = Rect::new(0, 0, columns, rows);
@@ -111,10 +113,23 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     result.and(input_result).map(|_| ())
 }
 
-fn shell_worlds(worlds: &[inventory::ContextWorld]) -> Vec<ShellWorld> {
+fn shell_worlds(
+    worlds: &[inventory::ContextWorld],
+    activity: &[git_activity::WorldGitActivity],
+) -> Vec<ShellWorld> {
     worlds
         .iter()
-        .map(pane::ShellWorld::from_inventory)
+        .map(|world| {
+            let mut shell_world = pane::ShellWorld::from_inventory(world);
+            shell_world.git_repositories = activity
+                .iter()
+                .find(|entry| {
+                    entry.context == world.context && entry.world_id == world.world.world_id
+                })
+                .map(|entry| entry.repositories.clone())
+                .unwrap_or_default();
+            shell_world
+        })
         .collect()
 }
 
@@ -180,7 +195,7 @@ fn run_loop(
                     model.finish_worlds_refresh(Err(vec![error]));
                     redraw = true;
                 } else {
-                    let worlds = shell_worlds(&snapshot.worlds);
+                    let worlds = shell_worlds(&snapshot.worlds, &snapshot.git_activity);
                     let area: Rect = terminal
                         .size()
                         .context("read wt shell terminal area")?

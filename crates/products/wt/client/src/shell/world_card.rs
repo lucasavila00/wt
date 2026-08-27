@@ -1,3 +1,4 @@
+use super::control::{PaneCard, PaneCardIdentity, PaneCardKind};
 use super::model::ShellWorld;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -11,7 +12,7 @@ pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, St
         (_, true) => (
             "󰚩",
             Color::Yellow,
-            "STATIC · NO RECENT PANE CHANGE".to_owned(),
+            "IDLE · NO RECENT PANE CHANGE".to_owned(),
         ),
         (wt_control_protocol::WorldStatus::Running, false) => {
             ("󰐊", Color::Green, "RUNNING".to_owned())
@@ -26,6 +27,86 @@ pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, St
             ("󰩹", Color::Yellow, "DESTROYING".to_owned())
         }
         (wt_control_protocol::WorldStatus::Error, false) => ("󰅚", Color::Red, "ERROR".to_owned()),
+    }
+}
+
+pub(super) fn is_idle(world: &ShellWorld, cards: &[PaneCard]) -> bool {
+    !cards.iter().any(|card| {
+        matches!(
+            &card.kind,
+            PaneCardKind::ContextError if card.context == world.identity.context
+        )
+    }) && !cards
+        .iter()
+        .any(|card| belongs_to_world(card, world) && card.changed_recently())
+}
+
+pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'static>> {
+    let lines = cards
+        .iter()
+        .filter_map(|card| {
+            let PaneCardIdentity::Observation {
+                tmux_session,
+                pane_id,
+                ..
+            } = &card.identity
+            else {
+                return None;
+            };
+            belongs_to_world(card, world).then(|| {
+                Line::from(vec![
+                    Span::styled("Codex ", super::render::muted_style()),
+                    Span::raw(format!("{tmux_session}:{pane_id} · {}", pane_status(card))),
+                ])
+            })
+        })
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        vec![Line::styled(
+            "Codex no observed Byobu panes",
+            super::render::muted_style(),
+        )]
+    } else {
+        lines
+    }
+}
+
+pub(super) fn git_lines(world: &ShellWorld) -> Vec<Line<'static>> {
+    if world.git_repositories.is_empty() {
+        return vec![Line::styled(
+            "Git no recorded interactions",
+            super::render::muted_style(),
+        )];
+    }
+    world
+        .git_repositories
+        .iter()
+        .map(|repository| {
+            let interaction = if repository.wrote { "write" } else { "read" };
+            Line::from(vec![
+                Span::styled(format!("Git {interaction} "), super::render::muted_style()),
+                Span::raw(repository.target.clone()),
+            ])
+        })
+        .collect()
+}
+
+fn belongs_to_world(card: &PaneCard, world: &ShellWorld) -> bool {
+    matches!(
+        &card.identity,
+        PaneCardIdentity::Observation {
+            context, world_id, ..
+        } if context == &world.identity.context && world_id == &world.identity.world_id
+    )
+}
+
+fn pane_status(card: &PaneCard) -> &'static str {
+    if card.is_stale() {
+        "STALE"
+    } else if card.changed_recently() {
+        "CHANGING"
+    } else {
+        "STATIC"
     }
 }
 
@@ -77,4 +158,104 @@ pub(super) fn draw(
     Paragraph::new(footer)
         .style(super::render::muted_style())
         .render(rows[1], buffer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn now_unix_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .try_into()
+            .unwrap()
+    }
+
+    fn observation(world: &ShellWorld, pane_id: &str, changed_at_unix_ms: i64) -> PaneCard {
+        let now = now_unix_ms();
+        PaneCard {
+            identity: PaneCardIdentity::Observation {
+                context: world.identity.context.clone(),
+                world_id: world.identity.world_id,
+                tmux_session: "wt-host".into(),
+                pane_id: pane_id.into(),
+            },
+            context: world.identity.context.clone(),
+            created_at_unix_ms: Some(now),
+            observed_at_unix_ms: Some(now),
+            kind: PaneCardKind::Observation {
+                world_name: world.world_name.to_string(),
+                changed_at_unix_ms,
+            },
+        }
+    }
+
+    #[test]
+    fn lists_the_observed_panes_for_its_world() {
+        let world = ShellWorld::test("ars.dev", 1);
+        let now = now_unix_ms();
+        let lines = pane_lines(
+            &world,
+            &[
+                observation(&world, "%1", now),
+                observation(&world, "%2", now - 16_000),
+            ],
+        );
+
+        insta::assert_snapshot!(
+            lines
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+            @r###"
+        Codex wt-host:%1 · CHANGING
+        Codex wt-host:%2 · STATIC
+        "###
+        );
+    }
+
+    #[test]
+    fn lists_git_interactions_before_empty_pane_state() {
+        let mut world = ShellWorld::test("ars.dev", 1);
+        world.git_repositories = vec![
+            super::super::git_activity::RepositoryInteraction {
+                target: "github.com/owner/write".into(),
+                wrote: true,
+            },
+            super::super::git_activity::RepositoryInteraction {
+                target: "github.com/owner/read".into(),
+                wrote: false,
+            },
+        ];
+
+        insta::assert_snapshot!(
+            git_lines(&world)
+                .into_iter()
+                .chain(pane_lines(&world, &[]))
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            @r###"
+        Git write github.com/owner/write
+        Git read github.com/owner/read
+        Codex no observed Byobu panes
+        "###
+        );
+    }
+
+    #[test]
+    fn marks_worlds_idle_without_a_recent_pane_change() {
+        let world = ShellWorld::test("ars.dev", 1);
+        let now = now_unix_ms();
+        let static_pane = observation(&world, "%1", now - 16_000);
+        let changing_pane = observation(&world, "%2", now);
+
+        assert!(is_idle(&world, &[]));
+        assert!(is_idle(&world, &[static_pane]));
+        assert!(!is_idle(&world, &[changing_pane]));
+        assert!(!is_idle(&world, &[PaneCard::context_error("ars")]));
+    }
 }
