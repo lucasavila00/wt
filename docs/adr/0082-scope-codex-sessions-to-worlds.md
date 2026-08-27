@@ -29,8 +29,8 @@ Each leaves work or coordination proportional to global history.
 
 ## Migration
 
-Make `make clear` delete the legacy global sessions tree and every per-world sessions directory.
-Deploy the cutover with:
+Change `scripts/clear` so `make clear` deletes the legacy global sessions tree and every per-world
+sessions directory. This cleanup change is required before deploying the cutover with:
 
 ```sh
 make clear
