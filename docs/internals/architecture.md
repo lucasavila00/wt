@@ -49,8 +49,9 @@ runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
 The guest relay polls each Byobu pane whose foreground process is `codex`, then
-sends a screen fingerprint and freshness timestamp through its authenticated
-server connection. `wts` owns those observations. No Codex hook,
+sends its bounded rendered terminal frame, screen fingerprint, and freshness
+through its authenticated server connection. `wts` owns those observations and
+keeps only their latest frames in memory. No Codex hook,
 working-directory probe, or checkout poll participates in live state.
 
 ## Shell playback
@@ -66,12 +67,13 @@ connection renders the pane currently active in the shared tmux window; it
 does not expose every pane in the world. The observation is server-owned and
 does not change that shared selection.
 
-The Live control activity renders previews from those existing playback
-parsers. While the Control UI is open, playback PTYs stay at the Live preview
-dimensions. A World view resizes only its opened world's PTY. It creates no
-additional playback sessions. Opening a preview verifies and selects the
-observed Codex pane through the existing SSH control master, then shows that
-world's shared Byobu session.
+The Live control activity renders each preview from the exact observed Codex
+pane frame. It does not use a world playback parser, so a non-Codex tab or a
+second Codex pane cannot appear in the wrong card. Playback PTYs retain their
+world-view dimensions while the Control UI is open. A World view uses the same
+existing connection. Opening a preview verifies and selects the observed Codex
+pane through the existing SSH control master, then shows that world's shared
+Byobu session.
 
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved

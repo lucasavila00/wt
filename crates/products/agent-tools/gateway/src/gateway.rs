@@ -16,6 +16,7 @@ use wt_git_smart_protocol::{
     serve_git, successful_push_updates, GitTarget, HostKeyPolicy, PushViolation, WritePolicy,
 };
 use wt_tools::{self as api, ProviderKind};
+use wt_world::WorldId;
 
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
@@ -67,6 +68,15 @@ impl Provider {
 pub struct Gateway {
     config: GatewayConfig,
     state: Arc<Mutex<State>>,
+    pane_frames: Arc<Mutex<std::collections::BTreeMap<WorldId, Vec<PaneFrameSnapshot>>>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaneFrameSnapshot {
+    pub tmux_session: String,
+    pub pane_id: String,
+    pub observed_at_unix_ms: i64,
+    pub frame: wt_control_protocol::PaneFrame,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

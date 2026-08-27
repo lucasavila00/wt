@@ -10,15 +10,25 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_agent_tool_gateway::{
     copy_bidirectional, read_json_line, resolve_vsock_port, valid_byobu_pane_id,
-    valid_byobu_tmux_session, write_json_line, ClientOperation, ClientRequest, PaneObservation,
-    TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
+    valid_byobu_tmux_session, validate_pane_observations, write_json_line, ClientOperation,
+    ClientRequest, PaneObservation, TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
+};
+use wt_control_protocol::{
+    PaneCell, PaneColor, PaneFrame, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
 };
 
 const OBSERVER_INTERVAL: Duration = Duration::from_secs(2);
 const OBSERVER_INTERVAL_MIN: Duration = Duration::from_millis(1500);
 const OBSERVER_INTERVAL_MAX: Duration = Duration::from_millis(2500);
 const FRESHNESS_INTERVAL: Duration = Duration::from_secs(15);
-const CAPTURE_PANE_OPTIONS: &[&str] = &["capture-pane", "-p", "-e", "-J", "-S", "-"];
+const CAPTURE_PANE_OPTIONS: &[&str] = &["capture-pane", "-p", "-e"];
+
+struct PaneTarget {
+    tmux_session: String,
+    pane_id: String,
+    rows: u16,
+    columns: u16,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway-relay")]
@@ -188,7 +198,7 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\t#{pane_id}\t#{pane_current_command}",
+            "#{session_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_height}\t#{pane_width}",
         ])
         .output()
         .context("list Byobu panes")?;
@@ -200,34 +210,92 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .filter_map(parse_codex_target)
-        .map(|(tmux_session, pane_id)| capture_pane(&tmux_session, &pane_id))
-        .collect()
+        .map(|target| capture_pane(&target))
+        .collect::<Result<Vec<_>>>()
+        .and_then(|panes| {
+            validate_pane_observations(&panes).map_err(anyhow::Error::msg)?;
+            Ok(panes)
+        })
 }
 
-fn parse_codex_target(line: &[u8]) -> Option<(String, String)> {
+fn parse_codex_target(line: &[u8]) -> Option<PaneTarget> {
     let (tmux_session, rest) = std::str::from_utf8(line).ok()?.split_once('\t')?;
     let (pane_id, command) = rest.split_once('\t')?;
-    (valid_byobu_tmux_session(tmux_session) && valid_byobu_pane_id(pane_id) && command == "codex")
-        .then(|| (tmux_session.to_owned(), pane_id.to_owned()))
+    let (command, rows) = command.split_once('\t')?;
+    let (rows, columns) = rows.split_once('\t')?;
+    let rows = rows.parse().ok()?;
+    let columns = columns.parse().ok()?;
+    (valid_byobu_tmux_session(tmux_session)
+        && valid_byobu_pane_id(pane_id)
+        && command == "codex"
+        && (1..=MAX_PANE_FRAME_ROWS).contains(&rows)
+        && (1..=MAX_PANE_FRAME_COLUMNS).contains(&columns))
+    .then(|| PaneTarget {
+        tmux_session: tmux_session.to_owned(),
+        pane_id: pane_id.to_owned(),
+        rows,
+        columns,
+    })
 }
 
-fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
+fn capture_pane(target: &PaneTarget) -> Result<PaneObservation> {
     let output = Command::new("/usr/bin/tmux")
         .args(CAPTURE_PANE_OPTIONS)
-        .args(["-t", pane_id])
+        .args(["-t", &target.pane_id])
         .output()
-        .with_context(|| format!("capture Byobu pane {pane_id}"))?;
+        .with_context(|| format!("capture Byobu pane {}", target.pane_id))?;
     if !output.status.success() {
         bail!(
-            "capture Byobu pane {pane_id} failed: {}",
+            "capture Byobu pane {} failed: {}",
+            target.pane_id,
             escaped(&output.stderr)
         );
     }
     Ok(PaneObservation {
-        tmux_session: tmux_session.to_owned(),
-        pane_id: pane_id.to_owned(),
+        tmux_session: target.tmux_session.clone(),
+        pane_id: target.pane_id.clone(),
         screen_fingerprint: screen_fingerprint(&output.stdout),
+        frame: pane_frame(&output.stdout, target.rows, target.columns),
     })
+}
+
+fn pane_frame(captured: &[u8], rows: u16, columns: u16) -> PaneFrame {
+    let mut parser = vt100::Parser::new(rows, columns, 0);
+    parser.process(captured);
+    let screen = parser.screen();
+    let cells = (0..rows)
+        .flat_map(|row| {
+            (0..columns).map(move |column| {
+                let source = screen.cell(row, column).expect("screen cell in bounds");
+                PaneCell {
+                    text: if source.is_wide_continuation() || !source.has_contents() {
+                        " ".into()
+                    } else {
+                        source.contents()
+                    },
+                    foreground: pane_color(source.fgcolor()),
+                    background: pane_color(source.bgcolor()),
+                    bold: source.bold(),
+                    italic: source.italic(),
+                    underlined: source.underline(),
+                    inverse: source.inverse(),
+                }
+            })
+        })
+        .collect();
+    PaneFrame {
+        rows,
+        columns,
+        cells,
+    }
+}
+
+fn pane_color(color: vt100::Color) -> PaneColor {
+    match color {
+        vt100::Color::Default => PaneColor::Default,
+        vt100::Color::Idx(index) => PaneColor::Indexed { index },
+        vt100::Color::Rgb(red, green, blue) => PaneColor::Rgb { red, green, blue },
+    }
 }
 
 fn screen_fingerprint(captured: &[u8]) -> String {
@@ -273,12 +341,18 @@ mod tests {
     #[test]
     fn accepts_only_codex_panes_in_wt_byobu() {
         assert_eq!(
-            parse_codex_target(b"wt-host\t%1\tcodex"),
-            Some(("wt-host".into(), "%1".into()))
+            parse_codex_target(b"wt-host\t%1\tcodex\t24\t80").map(|target| (
+                target.tmux_session,
+                target.pane_id,
+                target.rows,
+                target.columns
+            )),
+            Some(("wt-host".into(), "%1".into(), 24, 80))
         );
-        assert_eq!(parse_codex_target(b"wt-host\t%1\tbash"), None);
-        assert_eq!(parse_codex_target(b"other\t%1\tcodex"), None);
-        assert_eq!(parse_codex_target(b"wt-host\t%bad\tcodex"), None);
+        assert!(parse_codex_target(b"wt-host\t%1\tbash\t24\t80").is_none());
+        assert!(parse_codex_target(b"other\t%1\tcodex\t24\t80").is_none());
+        assert!(parse_codex_target(b"wt-host\t%bad\tcodex\t24\t80").is_none());
+        assert!(parse_codex_target(b"wt-host\t%1\tcodex\t101\t80").is_none());
     }
 
     #[test]
@@ -300,10 +374,17 @@ mod tests {
     }
 
     #[test]
-    fn pane_capture_joins_wrapped_history() {
-        assert_eq!(
-            CAPTURE_PANE_OPTIONS,
-            ["capture-pane", "-p", "-e", "-J", "-S", "-"]
-        );
+    fn pane_frame_keeps_terminal_styles_as_inert_cells() {
+        let frame = pane_frame(b"\x1b[31mR\x1b[0m", 1, 2);
+
+        assert_eq!(frame.cells[0].text, "R");
+        assert_eq!(frame.cells[0].foreground, PaneColor::Indexed { index: 1 });
+        assert_eq!(frame.cells[1].text, " ");
+        assert_eq!(frame.validate(), Ok(()));
+    }
+
+    #[test]
+    fn pane_capture_contains_only_the_viewport() {
+        assert_eq!(CAPTURE_PANE_OPTIONS, ["capture-pane", "-p", "-e"]);
     }
 }

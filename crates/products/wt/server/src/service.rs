@@ -442,6 +442,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(ApiError::new(ErrorCode::Backend, message));
         }
         self.store.delete(world_id).map_err(map_store_error)?;
+        if let Err(error) = self.gateway.clear_pane_frames(world_id) {
+            eprintln!("wt-server: clear deleted world pane frames: {error}");
+        }
         Ok(Response::WorldDeleted { world_id })
     }
 

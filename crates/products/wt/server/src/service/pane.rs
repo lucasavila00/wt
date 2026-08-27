@@ -10,6 +10,22 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .map_err(map_store_error)?
             .into_iter()
             .map(|pane| {
+                let frame = self
+                    .gateway
+                    .pane_frames(pane.world_id)
+                    .map_err(|error| {
+                        ApiError::new(
+                            wt_control_protocol::ErrorCode::Internal,
+                            format!("read pane frame: {error}"),
+                        )
+                    })?
+                    .into_iter()
+                    .find(|frame| {
+                        frame.tmux_session == pane.tmux_session
+                            && frame.pane_id == pane.pane_id
+                            && frame.observed_at_unix_ms == pane.observed_at_unix_ms
+                    })
+                    .map(|frame| frame.frame);
                 Ok(PaneObservation {
                     world_id: pane.world_id,
                     world_name: WorldName::parse(pane.world_name).map_err(|error| {
@@ -23,6 +39,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     pane_id: pane.pane_id,
                     changed_at_unix_ms: pane.changed_at_unix_ms,
                     observed_at_unix_ms: pane.observed_at_unix_ms,
+                    frame,
                 })
             })
             .collect::<Result<Vec<_>, ApiError>>()?;

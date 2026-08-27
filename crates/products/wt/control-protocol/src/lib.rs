@@ -12,7 +12,10 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use create::{validate_create_world_resources, CreateWorld};
-pub use pane::PaneObservation;
+pub use pane::{
+    PaneCell, PaneColor, PaneFrame, PaneObservation, MAX_PANE_CELL_TEXT_BYTES,
+    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
+};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -23,7 +26,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(

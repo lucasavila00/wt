@@ -1,4 +1,4 @@
-use wt_control_protocol::WorldId;
+use wt_control_protocol::{PaneFrame, WorldId};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(in crate::shell) enum PaneCardIdentity {
@@ -18,6 +18,7 @@ pub(in crate::shell) enum PaneCardKind {
     Observation {
         world_name: String,
         changed_at_unix_ms: i64,
+        frame: Option<PaneFrame>,
     },
     ContextError,
 }
@@ -32,6 +33,7 @@ pub(in crate::shell) struct PaneCard {
 }
 
 impl PaneCard {
+    #[cfg(test)]
     pub(in crate::shell) fn world_id(&self) -> Option<WorldId> {
         match self.identity {
             PaneCardIdentity::Observation { world_id, .. } => Some(world_id),
@@ -87,6 +89,13 @@ impl PaneCard {
         match self.kind {
             PaneCardKind::Observation { .. } => None,
             PaneCardKind::ContextError => Some("context data rejected"),
+        }
+    }
+
+    pub(in crate::shell) fn frame(&self) -> Option<&PaneFrame> {
+        match &self.kind {
+            PaneCardKind::Observation { frame, .. } => frame.as_ref(),
+            PaneCardKind::ContextError => None,
         }
     }
 
