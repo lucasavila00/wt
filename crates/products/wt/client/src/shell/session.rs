@@ -243,7 +243,6 @@ impl SessionSet {
             .get(index)
             .is_some_and(|session| session.closed_message.is_none())
     }
-
     pub(super) fn control_path(&self, index: usize) -> &Path {
         &self.sessions[index].control_path
     }
