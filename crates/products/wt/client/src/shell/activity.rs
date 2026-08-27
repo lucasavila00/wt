@@ -1,14 +1,16 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Activity {
     Worlds,
-    Panes,
+    Codex,
+    Live,
 }
 
 impl Activity {
     pub(super) fn next(self) -> Self {
         match self {
-            Self::Panes => Self::Worlds,
-            Self::Worlds => Self::Panes,
+            Self::Codex => Self::Worlds,
+            Self::Worlds => Self::Live,
+            Self::Live => Self::Codex,
         }
     }
 }
@@ -23,8 +25,9 @@ pub(super) fn at_position(area: ratatui::layout::Rect, column: u16, row: u16) ->
         return None;
     }
     match row.saturating_sub(bar.y) / super::control::ACTIVITY_BUTTON_HEIGHT {
-        0 => Some(Activity::Panes),
+        0 => Some(Activity::Codex),
         1 => Some(Activity::Worlds),
+        2 => Some(Activity::Live),
         _ => None,
     }
 }
@@ -40,9 +43,13 @@ pub(super) fn draw(frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect, 
             .border_style(Style::new()),
         area,
     );
-    for (index, (activity, icon)) in [(Activity::Panes, "󰆍"), (Activity::Worlds, "")]
-        .into_iter()
-        .enumerate()
+    for (index, (activity, icon)) in [
+        (Activity::Codex, "󰚩"),
+        (Activity::Worlds, ""),
+        (Activity::Live, "󰆍"),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let button = Rect::new(
             area.x,

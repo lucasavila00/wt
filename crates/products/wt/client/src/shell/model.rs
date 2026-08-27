@@ -1,4 +1,4 @@
-use super::control::{ControlCommand, ControlState};
+use super::control::{ControlCommand, ControlState, PaneCardIdentity};
 use super::world_menu::WorldMenu;
 use crossterm::event::KeyCode;
 #[cfg(test)]
@@ -62,6 +62,7 @@ pub(super) enum InputRoute {
     Consumed,
     World,
     Command(ControlCommand),
+    ShowCodex(Box<PaneCardIdentity>),
     DeleteWorld(Box<ShellWorld>),
 }
 
@@ -170,6 +171,10 @@ impl ShellModel {
         self.control.show_worlds();
     }
 
+    pub(super) fn show_codex(&mut self, identity: PaneCardIdentity, area: Rect) {
+        self.control.show_codex(identity, area);
+    }
+
     pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
         self.control.finish_worlds_refresh(result);
     }
@@ -237,6 +242,7 @@ mod tests {
     #[test]
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
+        model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());

@@ -6,14 +6,18 @@
 ## Decision
 
 Rendered Byobu panes are the sole source of live terminal state. The guest
-observer sends bounded normalized observations through the authenticated path;
-`wts` persists and serves them. Observations identify world, tmux session, and
-pane and contain only screen-derived fingerprint and timestamps. They contain
-no Codex IDs, hook events, lifecycle, checkout, or raw screen content.
+observer identifies each pane's foreground process through tmux and sends
+bounded normalized observations for `codex` panes through the authenticated
+path; `wts` persists and serves them. Observations identify world, tmux
+session, and pane and contain only screen-derived fingerprint and timestamps.
+They contain no Codex IDs, hook events, lifecycle, checkout, or raw screen
+content.
 
-The shell renders these server observations. Stale or missing data stays stale
-or unavailable; it never implies an application exit. The shell does not switch
-panes to create state.
+The shell renders these server observations as Codex panes. Stale or missing
+data stays stale or unavailable; it never implies an application exit. Live
+previews use the shell's existing per-world SSH/PTY parsers and link to their
+matching Codex pane. The shell does not switch panes to create state or create
+another SSH connection for previews.
 
 This is one incompatible cutover: delete every Codex lifecycle hook, report,
 protocol, persistence record, local liveness/checkout tracker, and related UI.
@@ -27,6 +31,8 @@ There is no migration, backfill, or compatibility path.
 
 ## Consequences
 
-- Live state is shared for every observed pane, independent of client playback.
+- Live state is shared for every observed Codex pane, independent of client
+  playback.
 - WT depends on terminal semantics and represents uncertainty explicitly.
 - Codex upgrades cannot strand WT lifecycle state.
+- Codex behind a foreground wrapper is not observed.

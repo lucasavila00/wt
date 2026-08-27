@@ -193,5 +193,6 @@ impl ShellModel {
 fn route(action: ControlAction) -> InputRoute {
     match action {
         ControlAction::Command(command) => InputRoute::Command(command),
+        ControlAction::ShowCodex(identity) => InputRoute::ShowCodex(Box::new(identity)),
     }
 }

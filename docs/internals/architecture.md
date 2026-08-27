@@ -48,10 +48,10 @@ handling shared by the regular WT and standalone Git proxy installers.
 runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
-The guest relay polls each eligible Byobu pane's rendered terminal screen and
-sends a fingerprint and freshness timestamp through its authenticated server
-connection. `wts` owns those observations. No client playback stream, Codex
-hook, working-directory probe, or checkout poll participates in live state.
+The guest relay polls each Byobu pane whose foreground process is `codex`, then
+sends a screen fingerprint and freshness timestamp through its authenticated
+server connection. `wts` owns those observations. No Codex hook,
+working-directory probe, or checkout poll participates in live state.
 
 ## Shell playback
 
@@ -65,6 +65,10 @@ Pane observations identify the world, tmux session, and pane. A world playback
 connection renders the pane currently active in the shared tmux window; it
 does not expose every pane in the world. The observation is server-owned and
 does not change that shared selection.
+
+The Live control activity renders previews from those existing playback
+parsers. It changes the shared PTY dimensions while visible, but creates no
+additional SSH sessions and does not select a Byobu pane.
 
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved

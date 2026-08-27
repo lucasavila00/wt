@@ -35,6 +35,13 @@ pub(in crate::shell) struct PaneCard {
 }
 
 impl PaneCard {
+    pub(in crate::shell) fn world_id(&self) -> Option<WorldId> {
+        match self.identity {
+            PaneCardIdentity::Observation { world_id, .. } => Some(world_id),
+            PaneCardIdentity::ContextError { .. } => None,
+        }
+    }
+
     pub(in crate::shell) fn context_error(context: &str, message: String) -> Self {
         Self {
             identity: PaneCardIdentity::ContextError {
@@ -98,4 +105,5 @@ pub(in crate::shell) enum ControlCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::shell) enum ControlAction {
     Command(ControlCommand),
+    ShowCodex(PaneCardIdentity),
 }

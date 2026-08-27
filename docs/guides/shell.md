@@ -5,7 +5,7 @@ accessible world. Background worlds remain connected and continue processing
 output. The top row is a WT control bar; the active world's Byobu uses the remaining
 terminal rows.
 
-The world list and observed Byobu panes refresh independently in the background. Each
+The world list and Codex Byobu panes refresh independently in the background. Each
 worker starts its next refresh five seconds after the previous one finishes.
 Worlds created elsewhere are connected automatically, and removed worlds
 disappear. A world refresh that cannot list every configured context leaves the
@@ -31,18 +31,19 @@ terminal. Writes from background worlds are ignored. Clipboard-read queries
 are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
-`wt shell` opens in the Control UI with terminal activity selected. `Tab` cycles
-through terminal activity and Worlds.
+`wt shell` opens in the Control UI with live Codex screens selected. `Tab` cycles
+through Live, Codex, and Worlds.
 `F5` opens the active world when one is available. The active activity and its
 refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
 help menu; `Esc` closes it.
 
 The Worlds activity shows cards with each world's status, resources, and
-actionable details. Terminal activity refreshes pane cards in the background.
-All activities use a two-column card grid. Arrow keys select cards, the mouse
-wheel scrolls the grid by one terminal row without changing selection, and
-`Enter` or left click opens the selected world. It does not replace any world's
-playback connection.
+actionable details. The Codex activity refreshes tracker-derived cards only for
+Byobu panes whose foreground process is `codex`. Live shows those same cards
+with a preview rendered from the persistent SSH/PTY playback connection already
+owned by each world. It does not create another connection or change the shared
+tmux pane selection. `Enter` or left click on a Live preview selects its
+matching Codex card.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;
@@ -50,12 +51,13 @@ click `×` to hide the notification without cancelling the operation. Other
 shell navigation remains available while either operation runs.
 
 Cards show the observed pane, world, context, change age, and freshness. A
-recent screen change is `CHANGING`; an unchanged pane is `STATIC`. These are
-generic terminal facts, not claims about a Codex conversation, a working
-directory, or application liveness. Failed pane-context queries leave existing
-cards intact and show the query error in red beside the last successful update
-time. The Worlds and terminal-activity footer labels show when their latest
-snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
+recent screen change is `CHANGING`; an unchanged pane is `STATIC`. The Codex
+panel identifies the foreground process only; it does not infer a Codex session
+lifecycle, working directory, or application liveness. Failed pane-context
+queries leave existing cards intact and show the query error in red beside the
+last successful update time. The Worlds and Codex footer labels show when their
+latest snapshot was applied in UTC, or `Updating…` before the first snapshot
+arrives.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

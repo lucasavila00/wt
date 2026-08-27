@@ -233,11 +233,18 @@ pub(in crate::shell) fn world_card_action_at_position(
 
 pub(in crate::shell) fn pane_card_grid(
     area: Rect,
-    _activity: Activity,
+    activity: Activity,
     scroll: usize,
     count: usize,
 ) -> CardGrid {
-    let (height, gap) = (PANE_CARD_HEIGHT, CARD_GAP);
+    let (height, gap) = if activity == Activity::Live {
+        (
+            super::super::live::CARD_HEIGHT,
+            super::super::live::CARD_GAP,
+        )
+    } else {
+        (PANE_CARD_HEIGHT, CARD_GAP)
+    };
     card_grid_with_gap(area, scroll, count, height, gap)
 }
 
