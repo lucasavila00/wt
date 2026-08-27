@@ -230,6 +230,7 @@ rejects unknown fields.\n\
 \n\
 USAGE:\n\
     wtg tools '<JSON>'\n\
+    wtg tools --file PATH\n\
 \n\
 TYPESCRIPT COMMAND TYPE:\n";
 
@@ -237,6 +238,7 @@ const HELP_SUFFIX: &str = "\
 \n\
 EXAMPLE:\n\
     wtg tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
+    wtg tools --file command.json\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch in the target\n\
 repository. It fails when there is no match or multiple matches.\n\

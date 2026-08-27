@@ -29,6 +29,7 @@ pub fn render_error(message: &str) -> serde_json::Value {
 }
 
 pub fn run(args: Vec<String>) -> Result<()> {
+    let args = input_args(args)?;
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(
@@ -62,6 +63,18 @@ pub fn run(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn input_args(args: Vec<String>) -> Result<Vec<String>> {
+    match args.as_slice() {
+        [flag, path] if flag == "--file" => {
+            let command = std::fs::read_to_string(path)
+                .with_context(|| format!("read JSON command file {path}"))?;
+            Ok(vec![command])
+        }
+        [flag, ..] if flag == "--file" => bail!("usage: wtg tools --file PATH"),
+        _ => Ok(args),
+    }
+}
+
 fn test_socket() -> String {
     if cfg!(debug_assertions) {
         std::env::var("WT_AGENT_TOOL_TEST_SOCKET")
@@ -81,5 +94,35 @@ mod tests {
         insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
         {"error":{"message":"gateway rejected command"}}
         "###);
+    }
+
+    #[test]
+    fn reads_a_json_command_from_a_file() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            temp.path(),
+            "{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            input_args(vec![
+                "--file".to_owned(),
+                temp.path().to_str().unwrap().to_owned(),
+            ])
+            .unwrap(),
+            vec!["{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n"]
+        );
+    }
+
+    #[test]
+    fn file_input_requires_exactly_one_path() {
+        assert!(input_args(vec!["--file".to_owned()]).is_err());
+        assert!(input_args(vec![
+            "--file".to_owned(),
+            "command.json".to_owned(),
+            "extra".to_owned()
+        ])
+        .is_err());
     }
 }
