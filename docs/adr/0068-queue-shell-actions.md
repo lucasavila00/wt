@@ -24,8 +24,8 @@ build intents; confirmation enqueues them. The queue resolves an intent only
 when it reaches the head. Delete carries the world UUID, which the server checks
 before deleting a name.
 
-Create/delete world, open/focus a Codex session, and reconnect world playback
-are the initial actions. Future lifecycle, synchronization, update, helper-backed,
+Create/delete world and reconnect world playback are the initial actions. Future
+life-cycle, synchronization, update, helper-backed,
 or asynchronously completed commands use the same queue.
 
 ### Execution

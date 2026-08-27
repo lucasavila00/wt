@@ -30,5 +30,5 @@ buffer and input target; it never reconnects or detaches.
 owns its sessions and terminal behavior.
 
 The full-screen control UI has a left activity rail. `Tab` switches between
-Codex sessions, Worlds, and live session previews. `1` or `F1` opens its
-command palette. `F5` opens the active world.
+server-observed Byobu panes and Worlds. `1` or `F1` opens its command palette.
+`F5` opens the active world.

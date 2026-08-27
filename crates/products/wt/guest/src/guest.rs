@@ -214,7 +214,7 @@ impl HostConfig {
         crate::write_creation_timing(log, "configure agent tools", phase_started.elapsed())?;
         let phase_started = Instant::now();
         self.mount_codex(transport, deadline, log)?;
-        crate::write_creation_timing(log, "mount Codex state", phase_started.elapsed())
+        crate::write_creation_timing(log, "mount Codex shared files", phase_started.elapsed())
     }
 
     fn install_access(

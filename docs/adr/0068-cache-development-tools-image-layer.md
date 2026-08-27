@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-23
-- Amends: [ADR 0048](0048-make-developer-tools-an-optional-image-profile.md)
 
 ## Context
 

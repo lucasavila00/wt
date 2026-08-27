@@ -2,14 +2,13 @@ use super::action_queue::{ActionId, Intent, ShellActionQueue};
 use super::model::{ShellModel, ShellWorld};
 use super::refresh::WorldRefresh;
 use super::session::{SessionSet, StartTask};
-use super::{codex, delete, session_viewport, ControlFlows, ShellRuntime};
+use super::{delete, pane, session_viewport, ControlFlows, ShellRuntime};
 use anyhow::Result;
 use ratatui::layout::Rect;
 
 pub(super) enum Task {
     Create { id: ActionId, phase: CreatePhase },
     Delete { id: ActionId, task: delete::Task },
-    Focus { id: ActionId },
     Reconnect { id: ActionId, task: StartTask },
 }
 
@@ -22,10 +21,6 @@ pub(super) enum CreatePhase {
 }
 
 impl Task {
-    pub(super) fn is_focus(&self, id: ActionId) -> bool {
-        matches!(self, Self::Focus { id: active } if *active == id)
-    }
-
     pub(super) fn blocks_input(&self) -> bool {
         matches!(
             self,
@@ -60,10 +55,7 @@ impl Task {
 
     fn id(&self) -> ActionId {
         match self {
-            Self::Create { id, .. }
-            | Self::Delete { id, .. }
-            | Self::Focus { id }
-            | Self::Reconnect { id, .. } => *id,
+            Self::Create { id, .. } | Self::Delete { id, .. } | Self::Reconnect { id, .. } => *id,
         }
     }
 }
@@ -95,18 +87,6 @@ pub(super) fn start_next(
             flows.actions.update_phase(id, "Deleting world");
             Task::Delete { id, task }
         }),
-        Intent::OpenCodex(target) => {
-            if runtime
-                .focus
-                .start_action(id, sessions, model, target.clone())
-            {
-                flows.actions.update_phase(id, "Focusing session");
-                Ok(Task::Focus { id })
-            } else {
-                model.finish_codex_open(&target, None, true);
-                Err(anyhow::anyhow!("Codex session is no longer openable"))
-            }
-        }
         Intent::Reconnect(identity) => {
             let Some(index) = model.world_index(&identity) else {
                 flows.actions.acknowledge(id, false);
@@ -155,7 +135,7 @@ pub(super) fn poll(
                     true
                 }
                 crate::create::FlowAction::Created(created) => {
-                    let world = codex::ShellWorld::from_world(&created.context, &created.world);
+                    let world = pane::ShellWorld::from_world(&created.context, &created.world);
                     refresh.invalidate();
                     let (rows, columns) = session_viewport(model, area);
                     match sessions.start_world(&world, rows, columns) {
@@ -225,7 +205,6 @@ pub(super) fn poll(
             }
             Some(Err(error)) => fail(flows, *id, error, &mut keep),
         },
-        Task::Focus { .. } => false,
         Task::Reconnect { id, task } => match task.poll() {
             None => false,
             Some(Ok(started)) => {
@@ -250,13 +229,7 @@ fn fail(flows: &mut ControlFlows, id: ActionId, error: String, keep: &mut bool) 
     true
 }
 
-pub(super) fn apply_removed(actions: &mut ShellActionQueue, model: &mut ShellModel) -> bool {
+pub(super) fn apply_removed(actions: &mut ShellActionQueue, _model: &mut ShellModel) -> bool {
     let removed = actions.take_removed();
-    let changed = !removed.is_empty();
-    for entry in removed {
-        if let Intent::OpenCodex(target) = entry.intent {
-            model.finish_codex_open(&target, None, true);
-        }
-    }
-    changed
+    !removed.is_empty()
 }

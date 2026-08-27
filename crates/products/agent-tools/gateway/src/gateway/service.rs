@@ -108,7 +108,6 @@ impl Gateway {
                 tmux_session: &pane.tmux_session,
                 pane_id: &pane.pane_id,
                 screen_fingerprint: &pane.screen_fingerprint,
-                changed: pane.changed,
             })
             .collect::<Vec<_>>();
         wt_workload_registry::Registry::open(&self.config.database_path)
@@ -319,11 +318,6 @@ impl Gateway {
     pub(super) fn serve_cli(&self, args: &[String], grant: &GrantRecord) -> Result<String> {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(wt_tools_help());
-        }
-        // Setup hook outside the agent-facing JSON API. World builders use this
-        // to inject gateway-owned instructions into coding-agent sessions.
-        if args == ["world-prompt"] {
-            return Ok(world_prompt());
         }
         let parsed = api::WtToolsCommand::parse(args)?;
         let (target, command) = match &parsed {

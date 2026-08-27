@@ -74,7 +74,6 @@ pub struct PaneObservation {
     pub tmux_session: String,
     pub pane_id: String,
     pub screen_fingerprint: String,
-    pub changed: bool,
 }
 
 #[cfg(test)]

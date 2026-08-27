@@ -5,12 +5,12 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub(crate) struct CodexSessionFixture {
+pub(crate) struct CodexHistoryFixture {
     pub(crate) marker: String,
     root: PathBuf,
 }
 
-impl CodexSessionFixture {
+impl CodexHistoryFixture {
     pub(crate) fn new(name: &WorldName, config: &wt_server::ServerConfig) -> Self {
         let sessions = Path::new(config.codex_paths().sessions);
         let fixture_name = format!(".wt-kvm-e2e-{name}");
@@ -22,7 +22,7 @@ impl CodexSessionFixture {
     }
 }
 
-impl Drop for CodexSessionFixture {
+impl Drop for CodexHistoryFixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }

@@ -12,9 +12,7 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use create::{validate_create_world_resources, CreateWorld};
-pub use pane::{
-    ByobuTarget, CodexSession, CodexSessionObservation, CodexSessionState, PaneObservation,
-};
+pub use pane::PaneObservation;
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -455,93 +453,6 @@ mod tests {
             "operation": "delete_world"
         }))
         .is_err());
-    }
-
-    #[test]
-    fn live_codex_session_has_a_complete_pane_target() {
-        let session = CodexSession {
-            session_id: Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap(),
-            title: Some("Improve session cards".into()),
-            latest_user_message: Some("Show the latest user request on the card".into()),
-            latest_user_message_at_unix_ms: Some(39),
-            latest_agent_message: Some("The session card is ready".into()),
-            latest_agent_message_at_unix_ms: Some(40),
-            created_at_unix_ms: Some(10),
-            rollout_updated_at_unix_ms: Some(40),
-            cwd: Some("/home/wt/project".into()),
-            model: Some("gpt-5.6-sol".into()),
-            cli_version: Some("0.149.0".into()),
-            turn_count: 3,
-            command_count: 4,
-            file_change_count: 2,
-            input_tokens: 1_000,
-            cached_input_tokens: 800,
-            output_tokens: 200,
-            reasoning_output_tokens: 50,
-            observations: vec![CodexSessionObservation {
-                world_id: WorldId::from(
-                    Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap(),
-                ),
-                world_name: WorldName::parse("checkout").unwrap(),
-                cwd: "/home/wt/project".into(),
-                repository_root: Some("/home/wt/project".into()),
-                repository_url: Some("git@github.com:acme/project.git".into()),
-                git_branch: Some("wt/session-cards".into()),
-                git_context_checked_at_unix_ms: Some(1_700_000_000_000),
-                git_context_error: None,
-                state: CodexSessionState::Unknown,
-                is_compacting: true,
-                session_start_source: Some("compact".into()),
-                target: ByobuTarget {
-                    tmux_session: "wt-host".into(),
-                    pane_id: "%3".into(),
-                },
-                received_at_unix_ms: 42,
-            }],
-        };
-
-        insta::assert_snapshot!(serde_json::to_string_pretty(&session).unwrap(), @r###"
-        {
-          "session_id": "123e4567-e89b-12d3-a456-426614174000",
-          "title": "Improve session cards",
-          "latest_user_message": "Show the latest user request on the card",
-          "latest_user_message_at_unix_ms": 39,
-          "latest_agent_message": "The session card is ready",
-          "latest_agent_message_at_unix_ms": 40,
-          "created_at_unix_ms": 10,
-          "rollout_updated_at_unix_ms": 40,
-          "cwd": "/home/wt/project",
-          "model": "gpt-5.6-sol",
-          "cli_version": "0.149.0",
-          "turn_count": 3,
-          "command_count": 4,
-          "file_change_count": 2,
-          "input_tokens": 1000,
-          "cached_input_tokens": 800,
-          "output_tokens": 200,
-          "reasoning_output_tokens": 50,
-          "observations": [
-            {
-              "world_id": "123e4567-e89b-12d3-a456-426614174001",
-              "world_name": "checkout",
-              "cwd": "/home/wt/project",
-              "repository_root": "/home/wt/project",
-              "repository_url": "git@github.com:acme/project.git",
-              "git_branch": "wt/session-cards",
-              "git_context_checked_at_unix_ms": 1700000000000,
-              "git_context_error": null,
-              "state": "unknown",
-              "is_compacting": true,
-              "session_start_source": "compact",
-              "target": {
-                "tmux_session": "wt-host",
-                "pane_id": "%3"
-              },
-              "received_at_unix_ms": 42
-            }
-          ]
-        }
-        "###);
     }
 
     #[test]

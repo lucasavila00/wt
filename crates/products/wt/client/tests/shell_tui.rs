@@ -46,7 +46,7 @@ case "$request" in
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"server_info","test_server":false,"build":{"version":"test","commit":"0000000000000000000000000000000000000000"}}}'
     ;;
   *'"operation":"list_pane_observations"'*)
-    if test -f "$HOME/codex-active"; then
+    if test -f "$HOME/pane-observed"; then
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":20,"observed_at_unix_ms":20}]}}'
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
@@ -104,7 +104,7 @@ esac
         write_executable(&bin.join("wts"), &server);
         write_executable(
             &bin.join("ssh"),
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'focus-pane'*'%1') printf 'wt-host:%%1:0\\n' ;;\n  *'-M -S'*)\n    if test \"$target\" = local.first && test -f \"$HOME/success-creates\"; then\n      while ! test -f \"$HOME/release-first-ssh\"; do sleep 0.05; done\n    fi\n    touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat\n    ;;\n  *) exit 2 ;;\nesac\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'-M -S'*)\n    if test \"$target\" = local.first && test -f \"$HOME/success-creates\"; then\n      while ! test -f \"$HOME/release-first-ssh\"; do sleep 0.05; done\n    fi\n    touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat\n    ;;\n  *) exit 2 ;;\nesac\n",
         );
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -270,7 +270,7 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .click(97, 1)?
         .wait_for_text_gone("Waiting for the guest transport...")?
         .click(2, 1)?
-        .wait_for_text("No Codex sessions")?;
+        .wait_for_text("No observed Byobu panes")?;
     Ok(())
 }
 
@@ -291,7 +291,6 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
         .wait_for_text("Deleting world")?
         .wait_for_text("local.existing")?
         .press(Key::Tab)?
-        .press(Key::Tab)?
         .wait_for_text("Worlds")?
         .click(97, 1)?
         .wait_for_text_gone("Deleting world")?;
@@ -305,7 +304,6 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
     screen
         .wait_for_text("No observed Byobu panes")?
         .press(Key::Tab)?
-        .press(Key::Tab)?
         .wait_for_text("… Menu")?
         .click(49, 0)?
         .wait_for_text("World Menu")?
@@ -318,33 +316,29 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
 }
 
 #[test]
-fn codex_sessions_refresh_after_startup() -> Result<()> {
+fn pane_observations_refresh_after_startup() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
+    screen.wait_for_text("No observed Byobu panes")?;
+    fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
     screen
-        .wait_for_text("No observed Byobu panes")?
-        .press(Key::Tab)?
-        .wait_for_text("No Codex sessions")?;
-    fs::write(fixture.home.path().join("codex-active"), "").unwrap();
-    screen
-        .wait_for_text("/")?
+        .wait_for_text("local.existing")?
         .wait_for_text("wt-host:%1")?
         .wait_for_quiet(Duration::from_millis(50))?;
     Ok(())
 }
 
 #[test]
-fn live_activity_does_not_focus_a_pane_to_track_state() -> Result<()> {
+fn pane_activity_is_server_observation_only() -> Result<()> {
     let fixture = Fixture::new();
-    fs::write(fixture.home.path().join("codex-active"), "").unwrap();
+    fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("Live panes")?
-        .wait_for_text("session: local.existing")?
+        .wait_for_text("Pane observations")?
+        .wait_for_text("local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;
     let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
     assert!(calls.lines().next().unwrap().starts_with("-M -S "));
-    assert!(!calls.contains("focus-pane"));
     Ok(())
 }
 

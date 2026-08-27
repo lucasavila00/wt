@@ -58,7 +58,7 @@ pub(super) fn verify_publication(
             wt_guest::MOUNT_CODEX_HELPER,
             &[],
             deadline,
-            "mount Codex state for shared identity probe",
+            "mount Codex shared files for shared identity probe",
         )?;
         run_guest(
             machine.transport.as_ref(),

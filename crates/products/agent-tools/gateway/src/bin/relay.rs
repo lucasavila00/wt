@@ -127,7 +127,7 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
     let mut last_sent = Instant::now() - FRESHNESS_INTERVAL;
     loop {
         match read_panes() {
-            Ok(mut panes) => {
+            Ok(panes) => {
                 let fingerprints = panes
                     .iter()
                     .map(|pane| {
@@ -138,11 +138,6 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
                     })
                     .collect::<BTreeMap<_, _>>();
                 let changed = fingerprints != previous;
-                for pane in &mut panes {
-                    pane.changed = previous
-                        .get(&(pane.tmux_session.clone(), pane.pane_id.clone()))
-                        .is_none_or(|previous| previous != &pane.screen_fingerprint);
-                }
                 if changed || last_sent.elapsed() >= FRESHNESS_INTERVAL {
                     match send_transport(
                         &token,
@@ -208,7 +203,6 @@ fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
         tmux_session: tmux_session.to_owned(),
         pane_id: pane_id.to_owned(),
         screen_fingerprint: format!("{:x}", Sha256::digest(&output.stdout)),
-        changed: false,
     })
 }
 

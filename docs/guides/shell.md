@@ -32,7 +32,7 @@ are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
 `wt shell` opens in the Control UI with terminal activity selected. `Tab` cycles
-through terminal activity, Worlds, and the live-pane activity.
+through terminal activity and Worlds.
 `F5` opens the active world when one is available. The active activity and its
 refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
 help menu; `Esc` closes it.
@@ -56,13 +56,6 @@ directory, or application liveness. Failed pane-context queries leave existing
 cards intact and show the query error in red beside the last successful update
 time. The Worlds and terminal-activity footer labels show when their latest
 snapshot was applied in UTC, or `Updating…` before the first snapshot arrives.
-
-The live-pane activity uses the same server observations around the persistent
-terminal stream WT already maintains for each world. Previews use a two-column
-grid with as many rows as fit in the terminal. WT temporarily resizes world
-playback terminals to the smaller preview viewport while this activity is
-visible and restores the full-screen size when it is left. Opening a preview
-opens its world normally; WT does not select or validate a pane to infer state.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

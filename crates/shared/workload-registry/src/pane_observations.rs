@@ -20,7 +20,6 @@ pub struct PaneObservationInput<'a> {
     pub tmux_session: &'a str,
     pub pane_id: &'a str,
     pub screen_fingerprint: &'a str,
-    pub changed: bool,
 }
 
 #[derive(Insertable)]
@@ -78,10 +77,7 @@ impl Registry {
                     .first::<StoredPaneObservation>(connection)
                     .optional()?;
                 let changed_at_unix_ms = match existing {
-                    Some(existing)
-                        if !input.changed
-                            && existing.screen_fingerprint == input.screen_fingerprint =>
-                    {
+                    Some(existing) if existing.screen_fingerprint == input.screen_fingerprint => {
                         existing.changed_at_unix_ms
                     }
                     _ => observed_at_unix_ms,

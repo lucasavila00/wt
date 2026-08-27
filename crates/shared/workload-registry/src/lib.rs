@@ -1,6 +1,5 @@
 mod activity;
 mod capacity;
-mod codex_catalog;
 mod pane_observations;
 mod reports;
 pub mod schema;
@@ -13,7 +12,6 @@ pub use activity::{
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
-pub use codex_catalog::{CodexSessionCatalogEntry, CodexSessionCatalogInput};
 pub use pane_observations::{PaneObservation, PaneObservationInput};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{Store, StoreError, StoredWorld};
@@ -282,7 +280,6 @@ mod tests {
                     tmux_session: "wt-host",
                     pane_id: "%1",
                     screen_fingerprint: &fingerprint,
-                    changed: true,
                 }],
             )
             .unwrap();
@@ -296,7 +293,6 @@ mod tests {
                     tmux_session: "wt-host",
                     pane_id: "%1",
                     screen_fingerprint: &fingerprint,
-                    changed: false,
                 }],
             )
             .unwrap();

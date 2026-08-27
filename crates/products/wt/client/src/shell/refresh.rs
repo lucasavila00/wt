@@ -1,4 +1,4 @@
-use super::{codex, CONTEXT_REQUEST_TIMEOUT, REFRESH_INTERVAL};
+use super::{pane, CONTEXT_REQUEST_TIMEOUT, REFRESH_INTERVAL};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
@@ -24,14 +24,14 @@ pub(super) struct WorldSnapshot {
     pub(super) ssh_sync_error: Option<String>,
 }
 
-pub(super) struct CodexRefresh {
-    pub(super) updates: Receiver<Vec<codex::CodexContextSnapshot>>,
+pub(super) struct PaneRefresh {
+    pub(super) updates: Receiver<Vec<pane::PaneContextSnapshot>>,
     cancelled: Arc<AtomicBool>,
-    commands: Sender<CodexRefreshCommand>,
+    commands: Sender<PaneRefreshCommand>,
     worker: Option<JoinHandle<()>>,
 }
 
-enum CodexRefreshCommand {
+enum PaneRefreshCommand {
     Stop,
 }
 
@@ -119,16 +119,16 @@ impl Drop for WorldRefresh {
     }
 }
 
-impl CodexRefresh {
+impl PaneRefresh {
     pub(super) fn start(config: ClientConfig) -> Self {
         let (updates_tx, updates) = mpsc::sync_channel(1);
         let (commands, command_rx) = mpsc::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = Arc::clone(&cancelled);
         let worker = thread::Builder::new()
-            .name("wt-shell-codex-refresh".into())
+            .name("wt-shell-pane-refresh".into())
             .spawn(move || loop {
-                let snapshot = codex::load_snapshots(&config, &worker_cancelled);
+                let snapshot = pane::load_snapshots(&config, &worker_cancelled);
                 if worker_cancelled.load(Ordering::Relaxed) {
                     break;
                 }
@@ -138,12 +138,12 @@ impl CodexRefresh {
                 }
                 match command_rx.recv_timeout(REFRESH_INTERVAL) {
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Ok(CodexRefreshCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Ok(PaneRefreshCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                         break
                     }
                 }
             })
-            .expect("start wt shell Codex refresh worker");
+            .expect("start wt shell pane refresh worker");
         Self {
             updates,
             cancelled,
@@ -153,10 +153,10 @@ impl CodexRefresh {
     }
 }
 
-impl Drop for CodexRefresh {
+impl Drop for PaneRefresh {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Relaxed);
-        let _ = self.commands.send(CodexRefreshCommand::Stop);
+        let _ = self.commands.send(PaneRefreshCommand::Stop);
         self.worker.take();
     }
 }

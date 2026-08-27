@@ -4,8 +4,10 @@ use anyhow::{Context as _, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 const OUTPUT_QUEUE: usize = 256;
 const SCROLLBACK_ROWS: usize = 10_000;
@@ -145,11 +147,7 @@ impl SessionSet {
                 )
                 .and_then(|mut session| {
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-                    match super::codex::wait_for_control_master(
-                        &world.name,
-                        &control_path,
-                        deadline,
-                    ) {
+                    match wait_for_control_master(&world.name, &control_path, deadline) {
                         Ok(()) => Ok(session),
                         Err(error) => {
                             session.stop_without_joining_reader();
@@ -240,16 +238,6 @@ impl SessionSet {
         Ok(())
     }
 
-    pub(super) fn is_open(&self, index: usize) -> bool {
-        self.sessions
-            .get(index)
-            .is_some_and(|session| session.closed_message.is_none())
-    }
-
-    pub(super) fn control_path(&self, index: usize) -> &Path {
-        &self.sessions[index].control_path
-    }
-
     fn control_path_for(&self, token: u64) -> PathBuf {
         self.control_dir.path().join(token.to_string())
     }
@@ -295,6 +283,27 @@ impl SessionSet {
     }
 }
 
+fn wait_for_control_master(alias: &str, control_path: &Path, deadline: Instant) -> Result<()> {
+    while Instant::now() < deadline {
+        if control_path.exists() {
+            let status = Command::new("ssh")
+                .args(["-S"])
+                .arg(control_path)
+                .args(["-o", "ProxyCommand=/bin/false", "-O", "check", "--", alias])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .context("check shell SSH connection")?;
+            if status.success() {
+                return Ok(());
+            }
+        }
+        thread::sleep(Duration::from_millis(16));
+    }
+    anyhow::bail!("shell SSH connection was not ready before the connection deadline")
+}
+
 impl Drop for SessionSet {
     fn drop(&mut self) {
         self.events.take();
@@ -305,7 +314,6 @@ impl Drop for SessionSet {
 struct WorldSession {
     token: u64,
     world: ShellWorld,
-    control_path: PathBuf,
     name: String,
     parser: vt100::Parser,
     writer: Option<Box<dyn std::io::Write + Send>>,
@@ -335,7 +343,7 @@ impl WorldSession {
     fn start(
         token: u64,
         world: &ShellWorld,
-        control_path: PathBuf,
+        _control_path: PathBuf,
         command: CommandBuilder,
         rows: u16,
         columns: u16,
@@ -366,7 +374,6 @@ impl WorldSession {
         Ok(Self {
             token,
             world: world.clone(),
-            control_path,
             name: world.name.clone(),
             parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
             writer: Some(writer),

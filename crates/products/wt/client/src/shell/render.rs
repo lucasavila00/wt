@@ -1,6 +1,6 @@
 use super::control::{
-    card_grid, codex_card_grid, control_areas, control_content_areas, Activity, CodexCard,
-    CodexCardKind, ControlState, WORLD_CARD_HEIGHT,
+    card_grid, control_areas, control_content_areas, pane_card_grid, Activity, ControlState,
+    PaneCard, PaneCardKind, WORLD_CARD_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
@@ -11,7 +11,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui::Frame;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
@@ -157,7 +157,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 }
 fn draw_control(
     frame: &mut Frame<'_>,
-    screens: &[&vt100::Screen],
+    _screens: &[&vt100::Screen],
     model: &ShellModel,
     creation: Option<&Flow>,
 ) {
@@ -168,19 +168,17 @@ fn draw_control(
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
-        Activity::Codex => draw_codex(frame, body, model.control()),
-        Activity::Live => super::live::draw(frame, body, screens, model),
+        Activity::Panes => draw_panes(frame, body, model.control()),
     }
     let (title, failure) = match model.control().activity() {
         Activity::Worlds => {
             let status = model.control().worlds_refresh();
             (status.title("Worlds"), status.failure())
         }
-        Activity::Codex => {
-            let status = model.control().codex_refresh();
-            (status.title("Codex sessions"), status.failure())
+        Activity::Panes => {
+            let status = model.control().pane_refresh();
+            (status.title("Pane observations"), status.failure())
         }
-        Activity::Live => ("Live panes".to_owned(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
@@ -218,9 +216,6 @@ fn draw_control(
     super::control_overlay::draw_palette(frame, content, model.control().palette());
     super::control_overlay::draw_world_menu(frame, model);
     super::control_overlay::draw_help(frame, content, model);
-    if model.control().open_failed() {
-        super::control_overlay::draw_codex_toast(frame, area);
-    }
 }
 
 fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: Option<&Flow>) {
@@ -261,10 +256,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             continue;
         }
         let world = &model.worlds()[index];
-        let idle = world.status == wt_control_protocol::WorldStatus::Running
-            && model.control().codex_refresh().updated_at().is_some()
-            && !super::world_card::has_active_codex_session(world, model.control().codex());
-        let (icon, color, status) = super::world_card::status(world, idle);
+        let (icon, color, status) = super::world_card::status(world, false);
         grid.render_card(frame, card, |rect, buffer| {
             super::world_card::draw(
                 buffer,
@@ -275,7 +267,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 &world.name,
                 &world.resources,
                 (world.detail != "-").then_some(world.detail.as_str()),
-                &super::world_card::codex_lines(world, model.control().codex()),
+                &[],
                 index == model.active(),
                 "Enter or click to open",
                 true,
@@ -284,27 +276,27 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
     }
 }
 
-fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    if state.codex().is_empty() {
-        let message = if state.codex_refresh().updated_at().is_some() {
-            "No Codex sessions\nStart Codex in a world to see its session here"
+fn draw_panes(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
+    if state.panes().is_empty() {
+        let message = if state.pane_refresh().updated_at().is_some() {
+            "No observed Byobu panes"
         } else {
-            "Loading Codex sessions…"
+            "Loading pane observations…"
         };
         frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), area);
         return;
     }
-    let grid = codex_card_grid(
+    let grid = pane_card_grid(
         frame.area(),
-        Activity::Codex,
-        state.codex_scroll(),
-        state.codex().len(),
+        Activity::Panes,
+        state.pane_scroll(),
+        state.panes().len(),
     );
     super::scrollbar::render(frame, grid, muted_style());
     for placement in grid.cards() {
-        let card = &state.codex()[placement.index];
+        let card = &state.panes()[placement.index];
         grid.render_card(frame, placement, |rect, buffer| {
-            draw_codex_card(
+            draw_pane_card(
                 buffer,
                 rect,
                 card,
@@ -315,11 +307,11 @@ fn draw_codex(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     }
 }
 
-fn draw_codex_card(
+fn draw_pane_card(
     buffer: &mut Buffer,
     area: Rect,
-    card: &CodexCard,
-    state: &ControlState,
+    card: &PaneCard,
+    _state: &ControlState,
     selected: bool,
 ) {
     let (title, title_color) = card_title(card);
@@ -333,153 +325,49 @@ fn draw_codex_card(
     let inner = block.inner(area);
     block.render(area, buffer);
 
-    let footer = if state.opening() == Some(&card.identity) {
-        Span::styled("OPENING…", Style::new().fg(Color::Yellow))
-    } else if let Some(reason) = card.disabled_reason() {
+    let footer = if let Some(reason) = card.disabled_reason() {
         Span::styled(format!("Unavailable: {reason}"), muted_style())
     } else {
-        Span::styled("Enter or click to open", muted_style())
+        Span::styled("Screen-derived observation", muted_style())
     };
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     let metadata = card_metadata_lines(card);
-    if let Some(preview) = card.latest_user_message.as_deref() {
-        let content_rows =
-            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(rows[0]);
-        let preview_paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
-        let truncated = wrapped_line_count(preview, content_rows[0].width) > 3;
-        preview_paragraph.render(content_rows[0], buffer);
-        if truncated && !content_rows[0].is_empty() {
-            let ellipsis = Rect::new(
-                content_rows[0].right().saturating_sub(1),
-                content_rows[0].bottom().saturating_sub(1),
-                1,
-                1,
-            );
-            Paragraph::new("…").render(ellipsis, buffer);
-        }
-        Paragraph::new(metadata).render(content_rows[1], buffer);
-    } else {
-        Paragraph::new(metadata).render(rows[0], buffer);
-    }
+    Paragraph::new(metadata).render(rows[0], buffer);
     Paragraph::new(Line::from(footer)).render(rows[1], buffer);
 }
-pub(super) fn card_title(card: &CodexCard) -> (String, Color) {
-    let suffix = card
-        .timestamp
-        .map(relative_age)
-        .map_or_else(String::new, |age| format!(" · {age}"));
+pub(super) fn card_title(card: &PaneCard) -> (String, Color) {
+    let suffix = format!(" · {}", relative_age(card.timestamp()));
     match &card.kind {
-        CodexCardKind::Observation {
-            state,
-            is_compacting,
-            ..
-        } => {
-            let (icon, label, color): (&str, String, Color) = match state {
-                wt_control_protocol::CodexSessionState::NeedsAttention => {
-                    ("󰚩", "STATIC".into(), Color::Yellow)
-                }
-                wt_control_protocol::CodexSessionState::Working => {
-                    ("󰔟", "CHANGING".into(), Color::Green)
-                }
-                wt_control_protocol::CodexSessionState::Unknown => {
-                    ("󰋗", "UNAVAILABLE".into(), Color::Gray)
-                }
-                wt_control_protocol::CodexSessionState::Inactive => {
-                    ("󰅖", "INACTIVE".into(), Color::Reset)
-                }
-            };
-            let compacting = is_compacting.then_some(" (UPDATING)").unwrap_or_default();
-            (format!("{icon} {label}{compacting}{suffix}"), color)
+        PaneCardKind::Observation { .. } => {
+            if card.is_stale() {
+                (format!("󰅚 STALE{suffix}"), Color::Yellow)
+            } else if card.changed_recently() {
+                (format!("󰔟 CHANGING{suffix}"), Color::Green)
+            } else {
+                (format!("󰚩 STATIC{suffix}"), Color::Yellow)
+            }
         }
-        CodexCardKind::RolloutOnly => (format!("󰈙 SAVED SESSION{suffix}"), Color::Reset),
-        CodexCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
+        PaneCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
-fn card_metadata_lines(card: &CodexCard) -> Vec<Line<'static>> {
-    let short_session = card
-        .session_id
-        .map(|session| session.to_string()[..8].to_owned());
+fn card_metadata_lines(card: &PaneCard) -> Vec<Line<'static>> {
     match &card.kind {
-        CodexCardKind::Observation {
+        PaneCardKind::Observation {
             world_name,
-            cwd,
-            repository_root,
-            repository_url,
-            git_branch,
-            git_context_health,
-            target,
+            tmux_session,
+            pane_id,
             ..
         } => {
-            let git = repository_root.as_ref().map(|root| {
-                let repository = repository_url
-                    .as_deref()
-                    .and_then(repository_name)
-                    .or_else(|| std::path::Path::new(root).file_name()?.to_str())
-                    .unwrap_or(root);
-                git_branch.as_ref().map_or_else(
-                    || format!("{repository} · {cwd}"),
-                    |branch| format!("{repository} · {branch} · {cwd}"),
-                )
-            });
-            let mut lines = vec![
-                Line::from(git.unwrap_or_else(|| cwd.clone())),
-                Line::from(format!(
-                    "{}.{} · {}:{}",
-                    card.context, world_name, target.tmux_session, target.pane_id,
-                )),
-            ];
-            if let Some(message) = git_context_health
-                .as_ref()
-                .and_then(|health| health.warning())
-            {
-                lines.push(Line::from(message));
-            }
-            lines
+            vec![
+                Line::from(format!("{}.{}", card.context, world_name)),
+                Line::from(format!("{tmux_session}:{pane_id}")),
+            ]
         }
-        CodexCardKind::RolloutOnly => vec![
-            Line::from(format!(
-                "{} · session {}",
-                card.context,
-                short_session.expect("rollout card has session ID")
-            )),
-            Line::from("Saved history is not a live pane observation"),
-        ],
-        CodexCardKind::ContextError { message } => vec![
+        PaneCardKind::ContextError { message } => vec![
             Line::from(format!("Context {}", card.context)),
             Line::styled(message.clone(), Style::new().fg(Color::Red)),
         ],
     }
-}
-
-pub(super) fn repository_name(url: &str) -> Option<&str> {
-    url.trim_end_matches(".git")
-        .rsplit(['/', ':'])
-        .find(|part| !part.is_empty())
-}
-
-fn wrapped_line_count(value: &str, width: u16) -> usize {
-    let width = usize::from(width);
-    if width == 0 {
-        return 0;
-    }
-    let mut lines = 1;
-    let mut used = 0;
-    for word in value.split_whitespace() {
-        let word_width = Line::from(word).width();
-        if used > 0 && used + 1 + word_width <= width {
-            used += 1 + word_width;
-            continue;
-        }
-        if used > 0 {
-            lines += 1;
-        }
-        lines += word_width.saturating_sub(1) / width;
-        used = word_width % width;
-        if used == 0 && word_width > 0 {
-            used = width;
-        }
-    }
-    lines
 }
 
 pub(super) fn relative_age(timestamp: i64) -> String {
@@ -521,13 +409,3 @@ pub(super) fn selected_card_border_style(selected: bool) -> Style {
         Style::new()
     }
 }
-
-#[cfg(test)]
-#[path = "render_tests.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "render_extra_tests.rs"]
-mod extra_tests;
-#[cfg(test)]
-use extra_tests::now_ms;

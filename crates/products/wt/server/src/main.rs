@@ -81,16 +81,11 @@ fn run_server() -> Result<()> {
     store
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
-    log_codex_catalog_warnings(
-        wt_server::service::refresh_codex_session_catalog(&store, Path::new(codex_paths.sessions))
-            .map_err(anyhow::Error::msg)?,
-    );
     let operations = Operations::default();
     let capacity_limit = wt_workload_registry::CapacityConfig::load()
         .map_err(anyhow::Error::msg)?
         .limits;
     let test_server = server_config.test_server;
-    let codex_sessions = codex_paths.sessions;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
     let host_config = server_config.host_config();
@@ -100,18 +95,6 @@ fn run_server() -> Result<()> {
         host_config,
     )
     .map_err(anyhow::Error::msg)?;
-    let catalog_database = state.database_path();
-    let catalog_sessions = codex_paths.sessions;
-    std::thread::Builder::new()
-        .name("wt-codex-session-catalog".to_owned())
-        .spawn(move || loop {
-            match maintain_codex_session_catalog(&catalog_database, catalog_sessions) {
-                Ok(warnings) => log_codex_catalog_warnings(warnings),
-                Err(error) => eprintln!("wt-server: refresh Codex session catalog: {error}"),
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        })
-        .context("start Codex session catalog refresh")?;
     let worker = guest_worker;
     let gateway = open_gateway(&server_config, &state.database_path())?;
     wt_agent_tool_gateway::start_vsock(gateway.clone(), server_config.agent_tools.vsock_port)?;
@@ -123,7 +106,6 @@ fn run_server() -> Result<()> {
         owner,
         capacity_limit,
         test_server,
-        codex_sessions,
     };
 
     daemon::serve(Path::new(CONTROL_SOCKET_PATH), move |request, progress| {
@@ -170,18 +152,6 @@ fn open_gateway(
     })
 }
 
-fn maintain_codex_session_catalog(database: &Path, sessions: &str) -> Result<Vec<String>> {
-    let store = Store::open(database).context("open instance registry")?;
-    wt_server::service::refresh_codex_session_catalog(&store, Path::new(sessions))
-        .map_err(anyhow::Error::msg)
-}
-
-fn log_codex_catalog_warnings(warnings: Vec<String>) {
-    for warning in warnings {
-        eprintln!("wt-server: Codex session discovery: {warning}");
-    }
-}
-
 struct DaemonContext {
     state: StateConfig,
     operations: Operations,
@@ -190,7 +160,6 @@ struct DaemonContext {
     owner: String,
     capacity_limit: wt_workload_registry::Resources,
     test_server: bool,
-    codex_sessions: &'static str,
 }
 
 fn handle_daemon_request(
@@ -207,8 +176,7 @@ fn handle_daemon_request(
             context.gateway.clone(),
             context.operations.clone(),
             context.capacity_limit,
-        )
-        .with_codex_sessions_path(context.codex_sessions);
+        );
         Ok::<_, anyhow::Error>(wt_server::handle_request_with_progress(
             &service,
             &context.owner,

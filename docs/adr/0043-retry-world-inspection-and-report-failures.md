@@ -1,6 +1,6 @@
 # ADR 0043: Retry world inspection and report failures
 
-- Status: Accepted; Date: 2026-08-22
+- Status: Superseded in part by ADR 0081; Date: 2026-08-22
 
 ## Decision
 
@@ -20,7 +20,7 @@ manual lifecycle operation. These recovery probes are not given the full retry
 delay, so one previously failed world cannot repeatedly stall every inventory
 request.
 
-If a Worlds or Codex refresh fails, the UI retains the last complete snapshot
+If a Worlds refresh fails, the UI retains the last complete snapshot
 and does not advance its freshness time. Both panels use the same footer: the
 panel name and last successful timestamp are muted, while the adjacent `Sync
 failed: <reason>` span is red. Before any snapshot has succeeded, the footer

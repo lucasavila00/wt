@@ -1,8 +1,7 @@
 use super::control::{command_palette_layout, CommandPalette};
 use super::model::ShellModel;
-use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
@@ -94,37 +93,5 @@ pub(super) fn draw_help(frame: &mut Frame<'_>, content: Rect, model: &ShellModel
     frame.render_widget(
         Paragraph::new("Esc: close").style(super::render::muted_style()),
         sections[1],
-    );
-}
-
-pub(super) fn draw_codex_toast(frame: &mut Frame<'_>, area: Rect) {
-    let toast = super::toast::area(area);
-    let (retry, _) = super::toast::actions(area);
-    frame.render_widget(Clear, toast);
-    frame.render_widget(
-        Block::new()
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(Color::Red))
-            .title(" Could not open Codex session ")
-            .title(
-                Line::styled("×", Style::new().add_modifier(Modifier::BOLD))
-                    .alignment(Alignment::Right),
-            ),
-        toast,
-    );
-    frame.render_widget(
-        Paragraph::new("The session could not be focused. Try again."),
-        Rect::new(
-            toast.x.saturating_add(1),
-            toast.y.saturating_add(1),
-            toast.width.saturating_sub(2),
-            1,
-        ),
-    );
-    frame.render_widget(
-        Paragraph::new("Retry")
-            .alignment(Alignment::Right)
-            .style(Style::new().add_modifier(Modifier::BOLD)),
-        retry,
     );
 }
