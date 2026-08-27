@@ -157,7 +157,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
 }
 fn draw_control(
     frame: &mut Frame<'_>,
-    _screens: &[&vt100::Screen],
+    screens: &[&vt100::Screen],
     model: &ShellModel,
     creation: Option<&Flow>,
 ) {
@@ -168,17 +168,19 @@ fn draw_control(
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
-        Activity::Panes => draw_panes(frame, body, model.control()),
+        Activity::Codex => draw_panes(frame, body, model.control()),
+        Activity::Live => super::live::draw(frame, body, screens, model),
     }
     let (title, failure) = match model.control().activity() {
         Activity::Worlds => {
             let status = model.control().worlds_refresh();
             (status.title("Worlds"), status.failure())
         }
-        Activity::Panes => {
+        Activity::Codex => {
             let status = model.control().pane_refresh();
-            (status.title("Pane observations"), status.failure())
+            (status.title("Codex panes"), status.failure())
         }
+        Activity::Live => ("Live Codex screens".into(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
@@ -279,16 +281,16 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
 fn draw_panes(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
     if state.panes().is_empty() {
         let message = if state.pane_refresh().updated_at().is_some() {
-            "No observed Byobu panes"
+            "No Codex panes\nStart Codex in a world to see its pane here"
         } else {
-            "Loading pane observations…"
+            "Loading Codex panes…"
         };
         frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), area);
         return;
     }
     let grid = pane_card_grid(
         frame.area(),
-        Activity::Panes,
+        Activity::Codex,
         state.pane_scroll(),
         state.panes().len(),
     );
@@ -328,7 +330,7 @@ fn draw_pane_card(
     let footer = if let Some(reason) = card.disabled_reason() {
         Span::styled(format!("Unavailable: {reason}"), muted_style())
     } else {
-        Span::styled("Screen-derived observation", muted_style())
+        Span::styled("Tracker-derived Codex pane", muted_style())
     };
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     let metadata = card_metadata_lines(card);

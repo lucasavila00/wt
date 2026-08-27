@@ -136,7 +136,7 @@ fn command_palette_opens_the_world_form_and_ok_is_clickable() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
         .press(Key::Function(1))?
         .wait_for_text("Command Palette")?
         .type_text("new")?
@@ -145,7 +145,7 @@ fn command_palette_opens_the_world_form_and_ok_is_clickable() -> Result<()> {
         .click(13, 11)?
         .wait_for_text("Review")?
         .press(Key::Escape)?
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
         .wait_for_text_gone("Create world")?;
     Ok(())
 }
@@ -155,7 +155,7 @@ fn two_world_creations_run_one_after_the_other() -> Result<()> {
     let fixture = Fixture::new();
     fs::write(fixture.home.path().join("success-creates"), "").unwrap();
     let mut screen = fixture.screen()?;
-    screen.wait_for_text("No observed Byobu panes")?;
+    screen.wait_for_text("No live Codex panes")?;
 
     submit_world(&mut screen, "first")?;
     screen.wait_for_text("Create local.first")?;
@@ -198,7 +198,7 @@ fn two_world_creations_run_one_after_the_other() -> Result<()> {
 fn capacity_cancellation_acknowledges_and_clears_the_old_tail() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
-    screen.wait_for_text("No observed Byobu panes")?;
+    screen.wait_for_text("No live Codex panes")?;
 
     submit_world(&mut screen, "capacity")?;
     screen.wait_for_text("Create local.capacity")?;
@@ -222,7 +222,7 @@ fn world_creation_runs_behind_a_live_progress_notification() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
         .press(Key::Function(1))?
         .type_text("new")?
         .press(Key::Enter)?
@@ -250,7 +250,7 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
         .press(Key::Function(1))?
         .type_text("new")?
         .press(Key::Enter)?
@@ -269,8 +269,8 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .wait_for_text("Waiting for the guest transport...")?
         .click(97, 1)?
         .wait_for_text_gone("Waiting for the guest transport...")?
-        .click(2, 1)?
-        .wait_for_text("No observed Byobu panes")?;
+        .click(2, 7)?
+        .wait_for_text("No live Codex panes")?;
     Ok(())
 }
 
@@ -279,7 +279,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
         .press(Key::Function(1))?
         .type_text("delete")?
         .press(Key::Enter)?
@@ -290,6 +290,7 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
         .press(Key::Enter)?
         .wait_for_text("Deleting world")?
         .wait_for_text("local.existing")?
+        .press(Key::Tab)?
         .press(Key::Tab)?
         .wait_for_text("Worlds")?
         .click(97, 1)?
@@ -302,7 +303,8 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("No observed Byobu panes")?
+        .wait_for_text("No live Codex panes")?
+        .press(Key::Tab)?
         .press(Key::Tab)?
         .wait_for_text("… Menu")?
         .click(49, 0)?
@@ -319,26 +321,29 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
 fn pane_observations_refresh_after_startup() -> Result<()> {
     let fixture = Fixture::new();
     let mut screen = fixture.screen()?;
-    screen.wait_for_text("No observed Byobu panes")?;
+    screen.wait_for_text("No live Codex panes")?;
     fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
     screen
-        .wait_for_text("local.existing")?
-        .wait_for_text("wt-host:%1")?
+        .wait_for_text("session: local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;
     Ok(())
 }
 
 #[test]
-fn pane_activity_is_server_observation_only() -> Result<()> {
+fn live_preview_opens_the_matching_codex_panel_without_another_ssh_connection() -> Result<()> {
     let fixture = Fixture::new();
     fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
-        .wait_for_text("Pane observations")?
+        .wait_for_text("session: local.existing")?
+        .click(20, 8)?
+        .wait_for_text("Codex panes")?
         .wait_for_text("local.existing")?
+        .wait_for_text("wt-host:%1")?
         .wait_for_quiet(Duration::from_millis(50))?;
     let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
-    assert!(calls.lines().next().unwrap().starts_with("-M -S "));
+    assert_eq!(calls.lines().count(), 1);
+    assert!(calls.starts_with("-M -S "));
     Ok(())
 }
 

@@ -28,7 +28,7 @@ pub(in crate::shell) struct ControlState {
 impl Default for ControlState {
     fn default() -> Self {
         Self {
-            activity: Activity::Panes,
+            activity: Activity::Live,
             palette: CommandPalette::default(),
             help: Help::default(),
             panes: Vec::new(),
@@ -56,6 +56,12 @@ impl ControlState {
         self.activity = Activity::Worlds;
         self.palette.close();
         self.help.close();
+    }
+
+    pub(in crate::shell) fn show_codex(&mut self, identity: PaneCardIdentity, area: Rect) {
+        self.activity = Activity::Codex;
+        self.selected = Some(identity);
+        self.keep_pane_selection_visible(area);
     }
 
     pub(in crate::shell) fn activity(&self) -> Activity {
@@ -201,13 +207,16 @@ impl ControlState {
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Char('2') | KeyCode::F(2) => self.help.toggle(),
             KeyCode::Up if self.activity != Activity::Worlds => {
-                self.move_pane(-(CARD_COLUMNS as isize), area)
+                self.move_pane(-(super::super::live::columns(area) as isize), area)
             }
             KeyCode::Down if self.activity != Activity::Worlds => {
-                self.move_pane(CARD_COLUMNS as isize, area)
+                self.move_pane(super::super::live::columns(area) as isize, area)
             }
             KeyCode::Left if self.activity != Activity::Worlds => self.move_pane(-1, area),
             KeyCode::Right if self.activity != Activity::Worlds => self.move_pane(1, area),
+            KeyCode::Enter if self.activity == Activity::Live => {
+                return self.selected.clone().map(ControlAction::ShowCodex);
+            }
             _ => {}
         }
         None
@@ -283,8 +292,12 @@ impl ControlState {
                 mouse.column,
                 mouse.row,
             ) {
-                self.selected = Some(self.visible_pane_identities()[index].clone());
-                return (true, None);
+                let identity = self.visible_pane_identities()[index].clone();
+                self.selected = Some(identity.clone());
+                return (
+                    true,
+                    (self.activity == Activity::Live).then_some(ControlAction::ShowCodex(identity)),
+                );
             }
         }
         (false, None)
@@ -324,7 +337,14 @@ impl ControlState {
             self.pane_scroll = 0;
             return;
         };
-        let (height, gap) = (super::layout::PANE_CARD_HEIGHT, super::layout::CARD_GAP);
+        let (height, gap) = if self.activity == Activity::Live {
+            (
+                super::super::live::CARD_HEIGHT,
+                super::super::live::CARD_GAP,
+            )
+        } else {
+            (super::layout::PANE_CARD_HEIGHT, super::layout::CARD_GAP)
+        };
         self.pane_scroll = reveal_card(self.pane_scroll, selected, grid, height, gap);
     }
 

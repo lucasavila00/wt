@@ -167,7 +167,12 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
 
 fn read_panes() -> Result<Vec<PaneObservation>> {
     let output = Command::new("/usr/bin/tmux")
-        .args(["list-panes", "-a", "-F", "#{session_name}\t#{pane_id}"])
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}\t#{pane_id}\t#{pane_current_command}",
+        ])
         .output()
         .context("list Byobu panes")?;
     if !output.status.success() {
@@ -177,14 +182,15 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
         .stdout
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
-        .filter_map(parse_target)
+        .filter_map(parse_codex_target)
         .map(|(tmux_session, pane_id)| capture_pane(&tmux_session, &pane_id))
         .collect()
 }
 
-fn parse_target(line: &[u8]) -> Option<(String, String)> {
-    let (tmux_session, pane_id) = std::str::from_utf8(line).ok()?.split_once('\t')?;
-    (valid_byobu_tmux_session(tmux_session) && valid_byobu_pane_id(pane_id))
+fn parse_codex_target(line: &[u8]) -> Option<(String, String)> {
+    let (tmux_session, rest) = std::str::from_utf8(line).ok()?.split_once('\t')?;
+    let (pane_id, command) = rest.split_once('\t')?;
+    (valid_byobu_tmux_session(tmux_session) && valid_byobu_pane_id(pane_id) && command == "codex")
         .then(|| (tmux_session.to_owned(), pane_id.to_owned()))
 }
 
@@ -240,12 +246,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_only_wt_byobu_targets() {
+    fn accepts_only_codex_panes_in_wt_byobu() {
         assert_eq!(
-            parse_target(b"wt-host\t%1"),
+            parse_codex_target(b"wt-host\t%1\tcodex"),
             Some(("wt-host".into(), "%1".into()))
         );
-        assert_eq!(parse_target(b"other\t%1"), None);
-        assert_eq!(parse_target(b"wt-host\t%bad"), None);
+        assert_eq!(parse_codex_target(b"wt-host\t%1\tbash"), None);
+        assert_eq!(parse_codex_target(b"other\t%1\tcodex"), None);
+        assert_eq!(parse_codex_target(b"wt-host\t%bad\tcodex"), None);
     }
 }

@@ -22,6 +22,7 @@ mod control_overlay;
 mod delete;
 mod input;
 mod lifecycle;
+mod live;
 mod model;
 mod pane;
 mod refresh;
@@ -374,6 +375,7 @@ fn dispatch_event(
                 InputRoute::Command(command) => {
                     start_control_command(command, runtime, model, flows);
                 }
+                InputRoute::ShowCodex(identity) => model.show_codex(*identity, area),
                 InputRoute::DeleteWorld(world) => {
                     flows.deletion = Some(delete::Flow::confirm(*world));
                 }
@@ -458,6 +460,7 @@ fn dispatch_event(
                     Some(InputRoute::Command(command)) => {
                         start_control_command(command, runtime, model, flows)
                     }
+                    Some(InputRoute::ShowCodex(identity)) => model.show_codex(*identity, area),
                     Some(InputRoute::DeleteWorld(world)) => {
                         flows.deletion = Some(delete::Flow::confirm(*world));
                     }
@@ -483,12 +486,8 @@ fn world_rows(terminal_rows: u16) -> u16 {
 }
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
-    if model.mode() == Mode::Control {
-        let (height, width) = control::card_grid_with_gap(area, 0, 0, 18, 0).card_size();
-        (
-            height.saturating_sub(1).max(1),
-            width.saturating_sub(2).max(1),
-        )
+    if model.mode() == Mode::Control && model.control().activity() == activity::Activity::Live {
+        live::preview_size(area, model.control().panes().len())
     } else {
         (world_rows(area.height), area.width)
     }
