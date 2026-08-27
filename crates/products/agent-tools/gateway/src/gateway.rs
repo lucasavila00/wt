@@ -114,6 +114,12 @@ remote:\n"
     )
 }
 
+fn world_prompt() -> String {
+    format!(
+        "This process runs as the non-root `wt` user inside a disposable Ubuntu 24.04 WT KVM guest. The guest is the security boundary, so installing system packages, compilers, package managers, language runtimes, and test dependencies is allowed. Use `sudo apt-get update` and `sudo apt-get install -y PACKAGE` to install missing system prerequisites. If Rust tooling is missing, install stable Rust as the normal user with rustup, not apt, then source `$HOME/.cargo/env` and add the rustfmt and clippy components. If other required tooling is missing, install it instead of skipping validation. System-level changes inside the guest are acceptable. Run the repository's normal build, lint, typecheck, and test workflow whenever practical.\n\nThis environment has wtg tools installed for pull or merge request, review, and CI operations; run wtg tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
+    )
+}
+
 fn validate_repository(repository: &str) -> Result<()> {
     if repository.is_empty()
         || repository.starts_with('/')
@@ -259,4 +265,18 @@ pub fn wt_tools_help() -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn world_prompt_explains_the_disposable_world_and_wtg_tools() {
+        insta::assert_snapshot!(world_prompt(), @r###"
+        This process runs as the non-root `wt` user inside a disposable Ubuntu 24.04 WT KVM guest. The guest is the security boundary, so installing system packages, compilers, package managers, language runtimes, and test dependencies is allowed. Use `sudo apt-get update` and `sudo apt-get install -y PACKAGE` to install missing system prerequisites. If Rust tooling is missing, install stable Rust as the normal user with rustup, not apt, then source `$HOME/.cargo/env` and add the rustfmt and clippy components. If other required tooling is missing, install it instead of skipping validation. System-level changes inside the guest are acceptable. Run the repository's normal build, lint, typecheck, and test workflow whenever practical.
+
+        This environment has wtg tools installed for pull or merge request, review, and CI operations; run wtg tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `wt/` prefix (for example, `wt/fix-login`). Every WT world may update, force-push, or delete any branch under `wt/`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m wt/NAME.
+        "###);
+    }
 }

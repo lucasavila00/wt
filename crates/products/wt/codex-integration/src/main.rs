@@ -1,4 +1,5 @@
 mod focus;
+mod install;
 mod reconcile;
 mod startup;
 
@@ -23,6 +24,8 @@ struct Cli {
 enum Command {
     /// Synchronize shared Codex history.
     Reconcile,
+    /// Install WT's Codex configuration.
+    InstallConfig,
     /// Focus an observed Codex Byobu pane.
     #[command(hide = true)]
     FocusPane {
@@ -50,6 +53,7 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             startup::reconcile_manual()?;
             println!("Codex history synchronized.");
         }
+        Command::InstallConfig => install::install_user_config()?,
         Command::FocusPane {
             tmux_session,
             pane_id,
@@ -119,8 +123,9 @@ mod tests {
 Usage: wt-codex-integration <COMMAND>
 
 Commands:
-  reconcile  Synchronize shared Codex history
-  help       Print this message or the help of the given subcommand(s)
+  reconcile       Synchronize shared Codex history
+  install-config  Install WT's Codex configuration
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
