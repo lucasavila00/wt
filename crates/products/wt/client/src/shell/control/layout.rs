@@ -1,4 +1,3 @@
-use super::Activity;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
@@ -7,7 +6,6 @@ use ratatui::{
 
 pub(in crate::shell) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(in crate::shell) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
-pub(in crate::shell) const PANE_CARD_HEIGHT: u16 = 8;
 pub(in crate::shell) const WORLD_CARD_HEIGHT: u16 = 10;
 pub(in crate::shell) const CARD_COLUMNS: usize = 2;
 pub(in crate::shell) const CARD_GAP: u16 = 1;
@@ -231,30 +229,22 @@ pub(in crate::shell) fn world_card_action_at_position(
     })
 }
 
-pub(in crate::shell) fn pane_card_grid(
-    area: Rect,
-    activity: Activity,
-    scroll: usize,
-    count: usize,
-) -> CardGrid {
-    let (height, gap) = if activity == Activity::Live {
-        (
-            super::super::live::CARD_HEIGHT,
-            super::super::live::CARD_GAP,
-        )
-    } else {
-        (PANE_CARD_HEIGHT, CARD_GAP)
-    };
-    card_grid_with_gap(area, scroll, count, height, gap)
+pub(in crate::shell) fn pane_card_grid(area: Rect, scroll: usize, count: usize) -> CardGrid {
+    card_grid_with_gap(
+        area,
+        scroll,
+        count,
+        super::super::live::CARD_HEIGHT,
+        super::super::live::CARD_GAP,
+    )
 }
 
 pub(in crate::shell) fn session_card_at_position(
     area: Rect,
-    activity: Activity,
     scroll: usize,
     count: usize,
     column: u16,
     row: u16,
 ) -> Option<usize> {
-    pane_card_grid(area, activity, scroll, count).card_at(column, row)
+    pane_card_grid(area, scroll, count).card_at(column, row)
 }

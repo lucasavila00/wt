@@ -32,18 +32,18 @@ are deliberately not relayed; visible world code can set, but cannot retrieve,
 the workstation clipboard through `wt shell`.
 
 `wt shell` opens in the Control UI with live Codex screens selected. `Tab` cycles
-through Live, Codex, and Worlds.
+through Live and Worlds.
 `F5` opens the active world when one is available. The active activity and its
 refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
 help menu; `Esc` closes it.
 
 The Worlds activity shows cards with each world's status, resources, and
-actionable details. The Codex activity refreshes tracker-derived cards only for
-Byobu panes whose foreground process is `codex`. Live shows those same cards
-with a preview rendered from the persistent SSH/PTY playback connection already
-owned by each world. `Enter` or left click on a Live preview verifies and
-selects its matching Codex pane in Byobu, then opens that world. The focus
-request reuses the playback connection's SSH control master.
+actionable details. Live refreshes cards only for Byobu panes whose foreground
+process is `codex`, with a preview rendered from the persistent SSH/PTY playback
+connection already owned by each world. `Enter` or left click on a Live preview
+verifies and selects its matching Codex pane in Byobu, then opens that world's
+full Byobu view. The focus request reuses the playback connection's SSH control
+master.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;

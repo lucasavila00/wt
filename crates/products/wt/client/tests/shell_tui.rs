@@ -269,7 +269,7 @@ fn world_creation_progress_can_be_hidden_without_blocking_navigation() -> Result
         .wait_for_text("Waiting for the guest transport...")?
         .click(97, 1)?
         .wait_for_text_gone("Waiting for the guest transport...")?
-        .click(2, 7)?
+        .click(2, 1)?
         .wait_for_text("No live Codex panes")?;
     Ok(())
 }
@@ -291,7 +291,6 @@ fn world_deletion_progress_can_be_hidden_without_blocking_navigation() -> Result
         .wait_for_text("Deleting world")?
         .wait_for_text("local.existing")?
         .press(Key::Tab)?
-        .press(Key::Tab)?
         .wait_for_text("Worlds")?
         .click(97, 1)?
         .wait_for_text_gone("Deleting world")?;
@@ -304,7 +303,6 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
     let mut screen = fixture.screen()?;
     screen
         .wait_for_text("No live Codex panes")?
-        .press(Key::Tab)?
         .press(Key::Tab)?
         .wait_for_text("… Menu")?
         .click(49, 0)?

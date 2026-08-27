@@ -107,7 +107,7 @@ pub(super) fn cards(snapshots: Vec<PaneContextSnapshot>, worlds: &[ShellWorld]) 
             PaneContextSnapshot::Panes { context, panes } => {
                 match validate_context(&context, panes, worlds) {
                     Ok(mut context_cards) => cards.append(&mut context_cards),
-                    Err(message) => cards.push(PaneCard::context_error(&context, message)),
+                    Err(_) => cards.push(PaneCard::context_error(&context)),
                 }
             }
             PaneContextSnapshot::Failure { message } => failures.push(message),
@@ -186,8 +186,6 @@ fn validate_context(
             observed_at_unix_ms: Some(pane.observed_at_unix_ms),
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
-                tmux_session: pane.tmux_session,
-                pane_id: pane.pane_id,
                 changed_at_unix_ms: pane.changed_at_unix_ms,
             },
         });

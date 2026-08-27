@@ -269,7 +269,6 @@ mod tests {
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
         model.handle_key(key(KeyCode::Tab), area());
-        model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());
         assert_eq!(model.active_world(), "three");
@@ -305,7 +304,6 @@ mod tests {
     #[test]
     fn command_palette_executes_from_the_worlds_activity() {
         let mut model = ShellModel::new(vec![world("one")]);
-        model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::F(1)), area());
         for character in "delete".chars() {

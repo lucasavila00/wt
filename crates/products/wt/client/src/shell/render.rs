@@ -1,17 +1,16 @@
 use super::control::{
-    card_grid, control_areas, control_content_areas, pane_card_grid, Activity, ControlState,
-    PaneCard, PaneCardKind, WORLD_CARD_HEIGHT,
+    card_grid, control_areas, control_content_areas, Activity, PaneCard, PaneCardKind,
+    WORLD_CARD_HEIGHT,
 };
 use super::delete;
 use super::model::{Mode, ShellModel};
 use super::terminal_view::TerminalView;
 use super::world_area;
 use crate::create::Flow;
-use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
@@ -168,7 +167,6 @@ fn draw_control(
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
-        Activity::Codex => draw_panes(frame, body, model.control()),
         Activity::Live => super::live::draw(frame, body, screens, model),
     }
     let (title, failure) = match model.control().activity() {
@@ -176,11 +174,10 @@ fn draw_control(
             let status = model.control().worlds_refresh();
             (status.title("Worlds"), status.failure())
         }
-        Activity::Codex => {
+        Activity::Live => {
             let status = model.control().pane_refresh();
-            (status.title("Codex panes"), status.failure())
+            (status.title("Live Codex screens"), status.failure())
         }
-        Activity::Live => ("Live Codex screens".into(), None),
     };
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
@@ -278,65 +275,6 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
     }
 }
 
-fn draw_panes(frame: &mut Frame<'_>, area: Rect, state: &ControlState) {
-    if state.panes().is_empty() {
-        let message = if state.pane_refresh().updated_at().is_some() {
-            "No Codex panes\nStart Codex in a world to see its pane here"
-        } else {
-            "Loading Codex panes…"
-        };
-        frame.render_widget(Paragraph::new(message).alignment(Alignment::Center), area);
-        return;
-    }
-    let grid = pane_card_grid(
-        frame.area(),
-        Activity::Codex,
-        state.pane_scroll(),
-        state.panes().len(),
-    );
-    super::scrollbar::render(frame, grid, muted_style());
-    for placement in grid.cards() {
-        let card = &state.panes()[placement.index];
-        grid.render_card(frame, placement, |rect, buffer| {
-            draw_pane_card(
-                buffer,
-                rect,
-                card,
-                state,
-                state.selected() == Some(&card.identity),
-            );
-        });
-    }
-}
-
-fn draw_pane_card(
-    buffer: &mut Buffer,
-    area: Rect,
-    card: &PaneCard,
-    _state: &ControlState,
-    selected: bool,
-) {
-    let (title, title_color) = card_title(card);
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .border_style(selected_card_border_style(selected))
-        .title(Span::styled(
-            format!(" {title} "),
-            Style::new().fg(title_color).add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(area);
-    block.render(area, buffer);
-
-    let footer = if let Some(reason) = card.disabled_reason() {
-        Span::styled(format!("Unavailable: {reason}"), muted_style())
-    } else {
-        Span::styled("Tracker-derived Codex pane", muted_style())
-    };
-    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    let metadata = card_metadata_lines(card);
-    Paragraph::new(metadata).render(rows[0], buffer);
-    Paragraph::new(Line::from(footer)).render(rows[1], buffer);
-}
 pub(super) fn card_title(card: &PaneCard) -> (String, Color) {
     let suffix = format!(" · {}", relative_age(card.timestamp()));
     match &card.kind {
@@ -349,29 +287,9 @@ pub(super) fn card_title(card: &PaneCard) -> (String, Color) {
                 (format!("󰚩 STATIC{suffix}"), Color::Yellow)
             }
         }
-        PaneCardKind::ContextError { .. } => ("󰅚 CONTEXT ERROR".into(), Color::Red),
+        PaneCardKind::ContextError => ("󰅚 CONTEXT ERROR".into(), Color::Red),
     }
 }
-fn card_metadata_lines(card: &PaneCard) -> Vec<Line<'static>> {
-    match &card.kind {
-        PaneCardKind::Observation {
-            world_name,
-            tmux_session,
-            pane_id,
-            ..
-        } => {
-            vec![
-                Line::from(format!("{}.{}", card.context, world_name)),
-                Line::from(format!("{tmux_session}:{pane_id}")),
-            ]
-        }
-        PaneCardKind::ContextError { message } => vec![
-            Line::from(format!("Context {}", card.context)),
-            Line::styled(message.clone(), Style::new().fg(Color::Red)),
-        ],
-    }
-}
-
 pub(super) fn relative_age(timestamp: i64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

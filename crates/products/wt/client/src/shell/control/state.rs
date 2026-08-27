@@ -200,14 +200,14 @@ impl ControlState {
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Char('2') | KeyCode::F(2) => self.help.toggle(),
-            KeyCode::Up if self.activity != Activity::Worlds => {
+            KeyCode::Up if self.activity == Activity::Live => {
                 self.move_pane(-(super::super::live::columns(area) as isize), area)
             }
-            KeyCode::Down if self.activity != Activity::Worlds => {
+            KeyCode::Down if self.activity == Activity::Live => {
                 self.move_pane(super::super::live::columns(area) as isize, area)
             }
-            KeyCode::Left if self.activity != Activity::Worlds => self.move_pane(-1, area),
-            KeyCode::Right if self.activity != Activity::Worlds => self.move_pane(1, area),
+            KeyCode::Left if self.activity == Activity::Live => self.move_pane(-1, area),
+            KeyCode::Right if self.activity == Activity::Live => self.move_pane(1, area),
             KeyCode::Enter if self.activity == Activity::Live => {
                 return self.selected.clone().map(ControlAction::OpenPane);
             }
@@ -234,24 +234,19 @@ impl ControlState {
                 return (true, None);
             }
         }
-        if self.activity != Activity::Worlds && !self.palette.is_open() {
-            let maximum = pane_card_grid(
-                area,
-                self.activity,
-                self.pane_scroll,
-                self.visible_pane_len(),
-            )
-            .maximum_scroll();
+        if self.activity == Activity::Live && !self.palette.is_open() {
+            let maximum =
+                pane_card_grid(area, self.pane_scroll, self.visible_pane_len()).maximum_scroll();
             if self.handle_scrollbar(mouse, area, self.activity, maximum) {
                 return (true, None);
             }
         }
         match mouse.kind {
-            MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
+            MouseEventKind::ScrollUp if self.activity == Activity::Live => {
                 self.scroll_pane(-1, area);
                 return (true, None);
             }
-            MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
+            MouseEventKind::ScrollDown if self.activity == Activity::Live => {
                 self.scroll_pane(1, area);
                 return (true, None);
             }
@@ -277,10 +272,9 @@ impl ControlState {
             self.keep_pane_selection_visible(area);
             return (true, None);
         }
-        if self.activity != Activity::Worlds {
+        if self.activity == Activity::Live {
             if let Some(index) = session_card_at_position(
                 area,
-                self.activity,
                 self.pane_scroll,
                 self.visible_pane_len(),
                 mouse.column,
@@ -288,10 +282,7 @@ impl ControlState {
             ) {
                 let identity = self.visible_pane_identities()[index].clone();
                 self.selected = Some(identity.clone());
-                return (
-                    true,
-                    (self.activity == Activity::Live).then_some(ControlAction::OpenPane(identity)),
-                );
+                return (true, Some(ControlAction::OpenPane(identity)));
             }
         }
         (false, None)
@@ -321,7 +312,7 @@ impl ControlState {
 
     fn keep_pane_selection_visible(&mut self, area: Rect) {
         let identities = self.visible_pane_identities();
-        let grid = pane_card_grid(area, self.activity, self.pane_scroll, identities.len());
+        let grid = pane_card_grid(area, self.pane_scroll, identities.len());
         self.pane_scroll = self.pane_scroll.min(grid.maximum_scroll());
         let Some(selected) = self
             .selected
@@ -331,20 +322,18 @@ impl ControlState {
             self.pane_scroll = 0;
             return;
         };
-        let (height, gap) = if self.activity == Activity::Live {
-            (
-                super::super::live::CARD_HEIGHT,
-                super::super::live::CARD_GAP,
-            )
-        } else {
-            (super::layout::PANE_CARD_HEIGHT, super::layout::CARD_GAP)
-        };
-        self.pane_scroll = reveal_card(self.pane_scroll, selected, grid, height, gap);
+        self.pane_scroll = reveal_card(
+            self.pane_scroll,
+            selected,
+            grid,
+            super::super::live::CARD_HEIGHT,
+            super::super::live::CARD_GAP,
+        );
     }
 
     fn scroll_pane(&mut self, delta: isize, area: Rect) {
         let count = self.visible_pane_len();
-        let maximum = pane_card_grid(area, self.activity, self.pane_scroll, count).maximum_scroll();
+        let maximum = pane_card_grid(area, self.pane_scroll, count).maximum_scroll();
         self.pane_scroll = self.pane_scroll.saturating_add_signed(delta).min(maximum);
     }
 
