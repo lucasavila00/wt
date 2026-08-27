@@ -9,9 +9,10 @@ Rendered Byobu panes are the sole source of live terminal state. The guest
 observer identifies each pane's foreground process through tmux and sends
 bounded normalized observations for `codex` panes through the authenticated
 path; `wts` persists and serves them. Observations identify world, tmux
-session, and pane and contain only screen-derived fingerprint and timestamps.
-They contain no Codex IDs, hook events, lifecycle, checkout, or raw screen
-content.
+session, pane, screen-derived fingerprint, timestamps, and current working
+directory. When that directory has a `.git` folder, they also contain its
+checked-out branch. They contain no Codex IDs, hook events, lifecycle, or raw
+screen content.
 
 The shell renders these server observations as Codex panes. Stale or missing
 data stays stale or unavailable; it never implies an application exit. Live

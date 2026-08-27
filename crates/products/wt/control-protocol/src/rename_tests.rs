@@ -9,7 +9,7 @@ fn rename_request_carries_the_stable_world_id() {
     assert_eq!(
         serde_json::to_value(request).unwrap(),
         serde_json::json!({
-            "protocol_version": 14,
+            "protocol_version": 15,
             "operation": "rename_world",
             "world_id": "123e4567-e89b-12d3-a456-426614174000",
             "new_name": "new-name"

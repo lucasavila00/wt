@@ -138,6 +138,18 @@ fn validate_context(
                 &pane.pane_id,
             ));
         }
+        if !valid_display_text(&pane.cwd, 4096)
+            || pane
+                .git_branch
+                .as_deref()
+                .is_some_and(|branch| !valid_display_text(branch, 255))
+        {
+            return Err(invalid(
+                context,
+                "safe current working directory and Git branch",
+                &pane.cwd,
+            ));
+        }
         if !valid_pane_id(&pane.pane_id) {
             return Err(invalid(
                 context,
@@ -189,6 +201,8 @@ fn validate_context(
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms: pane.changed_at_unix_ms,
+                cwd: pane.cwd,
+                git_branch: pane.git_branch,
             },
         });
     }
@@ -199,6 +213,10 @@ fn valid_pane_id(value: &str) -> bool {
     value.strip_prefix('%').is_some_and(|number| {
         !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
     })
+}
+
+fn valid_display_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 fn invalid(context: &str, invariant: &str, value: &str) -> String {

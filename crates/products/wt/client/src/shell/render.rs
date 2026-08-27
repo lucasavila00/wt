@@ -284,14 +284,15 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
 }
 
 pub(super) fn card_title(card: &PaneCard) -> (String, Color) {
-    let suffix = format!(" · {}", relative_age(card.timestamp()));
     match &card.kind {
         PaneCardKind::Observation { .. } => {
             if card.is_stale() {
+                let suffix = format!(" · {}", relative_age(card.timestamp()));
                 (format!("󰅚 STALE{suffix}"), Color::Yellow)
             } else if card.changed_recently() {
-                (format!("󰔟 CHANGING{suffix}"), Color::Green)
+                ("󰔟 CHANGING".into(), Color::Green)
             } else {
+                let suffix = format!(" · {}", relative_age(card.timestamp()));
                 (format!("󰚩 STATIC{suffix}"), Color::Yellow)
             }
         }
@@ -335,5 +336,40 @@ pub(super) fn selected_card_border_style(selected: bool) -> Style {
         Style::new().fg(Color::Blue)
     } else {
         Style::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::control::{PaneCardIdentity, PaneCardKind};
+
+    #[test]
+    fn changing_pane_titles_omit_the_relative_age() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .try_into()
+            .unwrap();
+        let card = PaneCard {
+            identity: PaneCardIdentity::Observation {
+                context: "ars".into(),
+                world_id: uuid::Uuid::nil().into(),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            created_at_unix_ms: Some(now),
+            observed_at_unix_ms: Some(now),
+            kind: PaneCardKind::Observation {
+                world_name: "dev".into(),
+                changed_at_unix_ms: now,
+                cwd: "/home/wt/wt".into(),
+                git_branch: Some("wt/live-pane-cwd".into()),
+            },
+        };
+
+        insta::assert_snapshot!(card_title(&card).0, @"󰔟 CHANGING");
     }
 }

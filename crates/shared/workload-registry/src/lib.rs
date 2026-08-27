@@ -273,6 +273,8 @@ mod tests {
         };
         let world_id = insert_world(&registry, resources, resources);
         let fingerprint = "a".repeat(64);
+        let cwd = "/home/wt/wt";
+        let git_branch = Some("wt/live-pane-cwd");
         registry
             .replace_pane_observations(
                 world_id,
@@ -280,11 +282,15 @@ mod tests {
                     tmux_session: "wt-host",
                     pane_id: "%1",
                     screen_fingerprint: &fingerprint,
+                    cwd,
+                    git_branch,
                 }],
             )
             .unwrap();
         let first = registry.list_pane_observations("owner").unwrap();
         assert_eq!(first.len(), 1);
+        assert_eq!(first[0].cwd, cwd);
+        assert_eq!(first[0].git_branch.as_deref(), git_branch);
 
         registry
             .replace_pane_observations(
@@ -293,12 +299,16 @@ mod tests {
                     tmux_session: "wt-host",
                     pane_id: "%1",
                     screen_fingerprint: &fingerprint,
+                    cwd: "/home/wt/wt/crates",
+                    git_branch: None,
                 }],
             )
             .unwrap();
         let unchanged = registry.list_pane_observations("owner").unwrap();
         assert_eq!(unchanged[0].changed_at_unix_ms, first[0].changed_at_unix_ms);
         assert!(unchanged[0].observed_at_unix_ms >= first[0].observed_at_unix_ms);
+        assert_eq!(unchanged[0].cwd, "/home/wt/wt/crates");
+        assert_eq!(unchanged[0].git_branch, None);
 
         registry.replace_pane_observations(world_id, &[]).unwrap();
         assert!(registry.list_pane_observations("owner").unwrap().is_empty());

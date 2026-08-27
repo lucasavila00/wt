@@ -49,7 +49,7 @@ case "$request" in
     if test -f "$HOME/pane-observed"; then
       observed_at=$(date +%s%3N)
       changed_at=$((observed_at - 16000))
-      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","changed_at_unix_ms":%s,"observed_at_unix_ms":%s}]}}\n' "$changed_at" "$observed_at"
+      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","cwd":"/home/wt","changed_at_unix_ms":%s,"observed_at_unix_ms":%s}]}}\n' "$changed_at" "$observed_at"
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
     fi

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 pub fn valid_byobu_tmux_session(value: &str) -> bool {
     value == "wt-host"
@@ -74,6 +74,9 @@ pub struct PaneObservation {
     pub tmux_session: String,
     pub pane_id: String,
     pub screen_fingerprint: String,
+    pub cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
 }
 
 #[cfg(test)]

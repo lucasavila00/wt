@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_agent_tool_gateway::{
@@ -19,6 +19,8 @@ const OBSERVER_INTERVAL_MIN: Duration = Duration::from_millis(1500);
 const OBSERVER_INTERVAL_MAX: Duration = Duration::from_millis(2500);
 const FRESHNESS_INTERVAL: Duration = Duration::from_secs(15);
 const CAPTURE_PANE_OPTIONS: &[&str] = &["capture-pane", "-p", "-e", "-J", "-S", "-"];
+const LIST_PANES_FORMAT: &str =
+    "#{session_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_current_path}";
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway-relay")]
@@ -136,7 +138,11 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
                     .map(|pane| {
                         (
                             (pane.tmux_session.clone(), pane.pane_id.clone()),
-                            pane.screen_fingerprint.clone(),
+                            (
+                                pane.screen_fingerprint.clone(),
+                                pane.cwd.clone(),
+                                pane.git_branch.clone(),
+                            ),
                         )
                     })
                     .collect::<BTreeMap<_, _>>();
@@ -184,12 +190,7 @@ fn observer_interval(random: u16) -> Duration {
 
 fn read_panes() -> Result<Vec<PaneObservation>> {
     let output = Command::new("/usr/bin/tmux")
-        .args([
-            "list-panes",
-            "-a",
-            "-F",
-            "#{session_name}\t#{pane_id}\t#{pane_current_command}",
-        ])
+        .args(["list-panes", "-a", "-F", LIST_PANES_FORMAT])
         .output()
         .context("list Byobu panes")?;
     if !output.status.success() {
@@ -200,34 +201,67 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .filter_map(parse_codex_target)
-        .map(|(tmux_session, pane_id)| capture_pane(&tmux_session, &pane_id))
+        .map(|target| capture_pane(&target))
         .collect()
 }
 
-fn parse_codex_target(line: &[u8]) -> Option<(String, String)> {
-    let (tmux_session, rest) = std::str::from_utf8(line).ok()?.split_once('\t')?;
-    let (pane_id, command) = rest.split_once('\t')?;
-    (valid_byobu_tmux_session(tmux_session) && valid_byobu_pane_id(pane_id) && command == "codex")
-        .then(|| (tmux_session.to_owned(), pane_id.to_owned()))
+struct PaneTarget {
+    tmux_session: String,
+    pane_id: String,
+    cwd: String,
 }
 
-fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
+fn parse_codex_target(line: &[u8]) -> Option<PaneTarget> {
+    let mut fields = std::str::from_utf8(line).ok()?.splitn(4, '\t');
+    let tmux_session = fields.next()?;
+    let pane_id = fields.next()?;
+    let command = fields.next()?;
+    let cwd = fields.next()?;
+    (valid_byobu_tmux_session(tmux_session)
+        && valid_byobu_pane_id(pane_id)
+        && command == "codex"
+        && valid_display_text(cwd, 4096))
+    .then(|| PaneTarget {
+        tmux_session: tmux_session.to_owned(),
+        pane_id: pane_id.to_owned(),
+        cwd: cwd.to_owned(),
+    })
+}
+
+fn capture_pane(target: &PaneTarget) -> Result<PaneObservation> {
     let output = Command::new("/usr/bin/tmux")
         .args(CAPTURE_PANE_OPTIONS)
-        .args(["-t", pane_id])
+        .args(["-t", &target.pane_id])
         .output()
-        .with_context(|| format!("capture Byobu pane {pane_id}"))?;
+        .with_context(|| format!("capture Byobu pane {}", target.pane_id))?;
     if !output.status.success() {
         bail!(
-            "capture Byobu pane {pane_id} failed: {}",
+            "capture Byobu pane {} failed: {}",
+            target.pane_id,
             escaped(&output.stderr)
         );
     }
     Ok(PaneObservation {
-        tmux_session: tmux_session.to_owned(),
-        pane_id: pane_id.to_owned(),
+        tmux_session: target.tmux_session.clone(),
+        pane_id: target.pane_id.clone(),
         screen_fingerprint: screen_fingerprint(&output.stdout),
+        cwd: target.cwd.clone(),
+        git_branch: git_branch(&target.cwd),
     })
+}
+
+fn git_branch(cwd: &str) -> Option<String> {
+    Path::new(cwd).join(".git").is_dir().then_some(())?;
+    let output = Command::new("/usr/bin/git")
+        .args(["-C", cwd, "branch", "--show-current"])
+        .output()
+        .ok()?;
+    let branch = std::str::from_utf8(&output.stdout).ok()?.trim();
+    (output.status.success() && valid_display_text(branch, 255)).then(|| branch.to_owned())
+}
+
+fn valid_display_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 fn screen_fingerprint(captured: &[u8]) -> String {
@@ -272,13 +306,31 @@ mod tests {
 
     #[test]
     fn accepts_only_codex_panes_in_wt_byobu() {
+        let target = parse_codex_target(b"wt-host\t%1\tcodex\t/home/wt/wt").unwrap();
+        assert_eq!(target.tmux_session, "wt-host");
+        assert_eq!(target.pane_id, "%1");
+        assert_eq!(target.cwd, "/home/wt/wt");
+        assert!(parse_codex_target(b"wt-host\t%1\tbash\t/home/wt/wt").is_none());
+        assert!(parse_codex_target(b"other\t%1\tcodex\t/home/wt/wt").is_none());
+        assert!(parse_codex_target(b"wt-host\t%bad\tcodex\t/home/wt/wt").is_none());
+    }
+
+    #[test]
+    fn reports_a_branch_only_for_a_directory_with_dot_git() {
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(git_branch(temp.path().to_str().unwrap()), None);
+
+        let status = Command::new("/usr/bin/git")
+            .args(["init", "--quiet", "--initial-branch=wt/live-cwd"])
+            .arg(temp.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
         assert_eq!(
-            parse_codex_target(b"wt-host\t%1\tcodex"),
-            Some(("wt-host".into(), "%1".into()))
+            git_branch(temp.path().to_str().unwrap()),
+            Some("wt/live-cwd".into())
         );
-        assert_eq!(parse_codex_target(b"wt-host\t%1\tbash"), None);
-        assert_eq!(parse_codex_target(b"other\t%1\tcodex"), None);
-        assert_eq!(parse_codex_target(b"wt-host\t%bad\tcodex"), None);
     }
 
     #[test]

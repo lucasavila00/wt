@@ -108,6 +108,8 @@ impl Gateway {
                 tmux_session: &pane.tmux_session,
                 pane_id: &pane.pane_id,
                 screen_fingerprint: &pane.screen_fingerprint,
+                cwd: &pane.cwd,
+                git_branch: pane.git_branch.as_deref(),
             })
             .collect::<Vec<_>>();
         wt_workload_registry::Registry::open(&self.config.database_path)
