@@ -47,7 +47,7 @@ case "$request" in
     ;;
   *'"operation":"list_pane_observations"'*)
     if test -f "$HOME/pane-observed"; then
-      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":20,"observed_at_unix_ms":20}]}}'
+      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":20,"observed_at_unix_ms":20}]}}'
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
     fi
