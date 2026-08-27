@@ -231,6 +231,11 @@ rejects unknown fields.\n\
 USAGE:\n\
     wtg tools '<JSON>'\n\
     wtg tools --file PATH\n\
+    wtg tools --stdin\n\
+    wtg tools -\n\
+\n\
+`--file PATH` reads one UTF-8 JSON command from a file. `--file -`, `--stdin`, and\n\
+`-` read one UTF-8 JSON command from standard input until end-of-file.\n\
 \n\
 TYPESCRIPT COMMAND TYPE:\n";
 
@@ -239,6 +244,7 @@ const HELP_SUFFIX: &str = "\
 EXAMPLE:\n\
     wtg tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
     wtg tools --file command.json\n\
+    printf '%s\\n' '{\"command\":{\"action\":\"report_wt_tool_issue\",\"description\":\"example\"}}' | wtg tools -\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch in the target\n\
 repository. It fails when there is no match or multiple matches.\n\
@@ -280,5 +286,12 @@ mod tests {
 
         This environment has wtg tools installed for pull or merge request, review, and CI operations; run wtg tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `wt/` prefix (for example, `wt/fix-login`). Every WT world may update, force-push, or delete any branch under `wt/`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m wt/NAME.
         "###);
+    }
+
+    #[test]
+    fn help_is_the_complete_command_contract() {
+        insta::with_settings!({snapshot_path => "gateway/snapshots"}, {
+            insta::assert_snapshot!(wt_tools_help());
+        });
     }
 }
