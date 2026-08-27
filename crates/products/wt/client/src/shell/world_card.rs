@@ -5,7 +5,9 @@ use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Color;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
+
+const MAX_PANE_ROWS: usize = 6;
 
 pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, String) {
     match (world.status, idle) {
@@ -31,14 +33,19 @@ pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, St
 }
 
 pub(super) fn is_idle(world: &ShellWorld, cards: &[PaneCard]) -> bool {
-    !cards.iter().any(|card| {
+    if cards.iter().any(|card| {
         matches!(
             &card.kind,
             PaneCardKind::ContextError if card.context == world.identity.context
         )
-    }) && !cards
+    }) {
+        return false;
+    }
+    let panes = cards
         .iter()
-        .any(|card| belongs_to_world(card, world) && card.changed_recently())
+        .filter(|card| belongs_to_world(card, world))
+        .collect::<Vec<_>>();
+    !panes.iter().any(|card| card.is_stale()) && !panes.iter().any(|card| card.changed_recently())
 }
 
 pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'static>> {
@@ -67,19 +74,44 @@ pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'st
             super::render::muted_style(),
         )]
     } else {
-        lines
+        let mut visible = lines;
+        if visible.len() > MAX_PANE_ROWS {
+            let hidden = visible.len() - (MAX_PANE_ROWS - 1);
+            visible.truncate(MAX_PANE_ROWS - 1);
+            visible.push(Line::styled(
+                format!("Codex +{hidden} more panes"),
+                super::render::muted_style(),
+            ));
+        }
+        visible
     }
 }
 
 pub(super) fn git_lines(world: &ShellWorld) -> Vec<Line<'static>> {
-    if world.git_repositories.is_empty() {
-        return vec![Line::styled(
-            "Git no recorded interactions",
-            super::render::muted_style(),
-        )];
-    }
-    world
-        .git_repositories
+    let repositories = match &world.git_activity {
+        super::git_activity::RepositoryActivity::Loading => {
+            return vec![Line::styled(
+                "Git activity loading…",
+                super::render::muted_style(),
+            )]
+        }
+        super::git_activity::RepositoryActivity::Unavailable => {
+            return vec![Line::styled(
+                "Git activity unavailable",
+                super::render::muted_style(),
+            )]
+        }
+        super::git_activity::RepositoryActivity::Loaded(repositories)
+            if repositories.is_empty() =>
+        {
+            return vec![Line::styled(
+                "Git no recorded interactions",
+                super::render::muted_style(),
+            )]
+        }
+        super::git_activity::RepositoryActivity::Loaded(repositories) => repositories,
+    };
+    repositories
         .iter()
         .map(|repository| {
             let interaction = if repository.wrote { "write" } else { "read" };
@@ -152,9 +184,7 @@ pub(super) fn draw(
     }
     lines.extend_from_slice(details);
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .render(rows[0], buffer);
+    Paragraph::new(lines).render(rows[0], buffer);
     Paragraph::new(footer)
         .style(super::render::muted_style())
         .render(rows[1], buffer);
@@ -220,7 +250,7 @@ mod tests {
     #[test]
     fn lists_git_interactions_before_empty_pane_state() {
         let mut world = ShellWorld::test("ars.dev", 1);
-        world.git_repositories = vec![
+        world.git_activity = super::super::git_activity::RepositoryActivity::Loaded(vec![
             super::super::git_activity::RepositoryInteraction {
                 target: "github.com/owner/write".into(),
                 wrote: true,
@@ -229,7 +259,7 @@ mod tests {
                 target: "github.com/owner/read".into(),
                 wrote: false,
             },
-        ];
+        ]);
 
         insta::assert_snapshot!(
             git_lines(&world)
@@ -256,6 +286,34 @@ mod tests {
         assert!(is_idle(&world, &[]));
         assert!(is_idle(&world, &[static_pane]));
         assert!(!is_idle(&world, &[changing_pane]));
+        let mut stale_pane = observation(&world, "%3", 0);
+        stale_pane.observed_at_unix_ms = Some(0);
+        assert!(!is_idle(&world, &[stale_pane]));
         assert!(!is_idle(&world, &[PaneCard::context_error("ars")]));
+    }
+
+    #[test]
+    fn bounds_long_pane_lists_with_an_overflow_row() {
+        let world = ShellWorld::test("ars.dev", 1);
+        let now = now_unix_ms();
+        let panes = (1..=8)
+            .map(|index| observation(&world, &format!("%{index}"), now))
+            .collect::<Vec<_>>();
+
+        insta::assert_snapshot!(
+            pane_lines(&world, &panes)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+            @r###"
+        Codex wt-host:%1 · CHANGING
+        Codex wt-host:%2 · CHANGING
+        Codex wt-host:%3 · CHANGING
+        Codex wt-host:%4 · CHANGING
+        Codex wt-host:%5 · CHANGING
+        Codex +3 more panes
+        "###
+        );
     }
 }

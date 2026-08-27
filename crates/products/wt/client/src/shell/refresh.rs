@@ -1,4 +1,4 @@
-use super::{git_activity, pane, CONTEXT_REQUEST_TIMEOUT, REFRESH_INTERVAL};
+use super::{pane, CONTEXT_REQUEST_TIMEOUT, REFRESH_INTERVAL};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TrySendError};
 use std::sync::Arc;
@@ -19,7 +19,6 @@ pub(super) struct WorldRefresh {
 pub(super) struct WorldSnapshot {
     pub(super) generation: u64,
     pub(super) worlds: Vec<inventory::ContextWorld>,
-    pub(super) git_activity: Vec<git_activity::WorldGitActivity>,
     pub(super) capacity: wt_control_protocol::ResourceCapacity,
     pub(super) failures: Vec<String>,
     pub(super) ssh_sync_error: Option<String>,
@@ -67,7 +66,6 @@ impl WorldRefresh {
                 if worker_cancelled.load(Ordering::Relaxed) {
                     break;
                 }
-                let git_activity = git_activity::load(&config, &report.worlds, &worker_cancelled);
                 let failures: Vec<String> = report
                     .failures
                     .into_iter()
@@ -90,7 +88,6 @@ impl WorldRefresh {
                 match updates_tx.try_send(WorldSnapshot {
                     generation,
                     worlds: report.worlds,
-                    git_activity,
                     capacity: report.capacity,
                     failures,
                     ssh_sync_error,

@@ -47,7 +47,9 @@ case "$request" in
     ;;
   *'"operation":"list_pane_observations"'*)
     if test -f "$HOME/pane-observed"; then
-      printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%1","changed_at_unix_ms":20,"observed_at_unix_ms":20}]}}'
+      observed_at=$(date +%s%3N)
+      changed_at=$((observed_at - 16000))
+      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","changed_at_unix_ms":%s,"observed_at_unix_ms":%s}]}}\n' "$changed_at" "$observed_at"
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
     fi
@@ -339,7 +341,7 @@ fn world_cards_correlate_observed_byobu_panes_and_show_idle_worlds() -> Result<(
         .wait_for_text("session: local.existing")?
         .press(Key::Tab)?
         .wait_for_text("IDLE · NO RECENT PANE CHANGE")?
-        .wait_for_text("Codex wt-host:%1 · STALE")?
+        .wait_for_text("Codex wt-host:%1 · STATIC")?
         .wait_for_text("Git write github.com/owner/write")?
         .wait_for_text("Git read github.com/owner/read")?;
     Ok(())

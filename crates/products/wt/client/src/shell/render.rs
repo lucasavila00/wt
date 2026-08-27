@@ -257,6 +257,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         let world = &model.worlds()[index];
         let idle = world.status == wt_control_protocol::WorldStatus::Running
             && model.control().pane_refresh().updated_at().is_some()
+            && model.control().pane_refresh().failures().is_none()
             && super::world_card::is_idle(world, model.control().panes());
         let (icon, color, status) = super::world_card::status(world, idle);
         grid.render_card(frame, card, |rect, buffer| {

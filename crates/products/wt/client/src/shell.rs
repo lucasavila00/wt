@@ -61,8 +61,7 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         ));
     }
     ssh::sync(config, &report.worlds)?;
-    let activity = git_activity::load(config, &report.worlds, &cancelled);
-    let worlds = shell_worlds(&report.worlds, &activity);
+    let worlds = shell_worlds(&report.worlds);
     let (columns, rows) = crossterm::terminal::size().context("read terminal size")?;
     let mut model = ShellModel::new(worlds);
     let area = Rect::new(0, 0, columns, rows);
@@ -73,12 +72,14 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let refresh = WorldRefresh::start(config.clone());
     let pane_refresh = PaneRefresh::start(config.clone());
+    let git_activity = git_activity::Refresh::start(config.clone(), report.worlds);
     let focus = focus::FocusWorker::default();
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
         refresh: &refresh,
         pane_refresh: &pane_refresh,
+        git_activity: &git_activity,
         focus: &focus,
         git_author: &git_author,
     };
@@ -113,23 +114,10 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     result.and(input_result).map(|_| ())
 }
 
-fn shell_worlds(
-    worlds: &[inventory::ContextWorld],
-    activity: &[git_activity::WorldGitActivity],
-) -> Vec<ShellWorld> {
+fn shell_worlds(worlds: &[inventory::ContextWorld]) -> Vec<ShellWorld> {
     worlds
         .iter()
-        .map(|world| {
-            let mut shell_world = pane::ShellWorld::from_inventory(world);
-            shell_world.git_repositories = activity
-                .iter()
-                .find(|entry| {
-                    entry.context == world.context && entry.world_id == world.world.world_id
-                })
-                .map(|entry| entry.repositories.clone())
-                .unwrap_or_default();
-            shell_world
-        })
+        .map(pane::ShellWorld::from_inventory)
         .collect()
 }
 
@@ -137,6 +125,7 @@ struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
     pane_refresh: &'a PaneRefresh,
+    git_activity: &'a git_activity::Refresh,
     focus: &'a focus::FocusWorker,
     git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
@@ -195,7 +184,8 @@ fn run_loop(
                     model.finish_worlds_refresh(Err(vec![error]));
                     redraw = true;
                 } else {
-                    let worlds = shell_worlds(&snapshot.worlds, &snapshot.git_activity);
+                    runtime.git_activity.reconcile(snapshot.worlds.clone());
+                    let worlds = shell_worlds(&snapshot.worlds);
                     let area: Rect = terminal
                         .size()
                         .context("read wt shell terminal area")?
@@ -227,6 +217,9 @@ fn run_loop(
             }
         } else {
             let _ = runtime.pane_refresh.updates.try_iter().last();
+        }
+        for update in runtime.git_activity.updates.try_iter() {
+            redraw |= model.apply_git_activity(update);
         }
         while let Some(result) = runtime.focus.try_recv() {
             if !flows.actions.is_active(result.action_id)
