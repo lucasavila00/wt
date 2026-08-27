@@ -15,6 +15,8 @@ use wt_agent_tool_gateway::{
 };
 
 const OBSERVER_INTERVAL: Duration = Duration::from_secs(2);
+const OBSERVER_INTERVAL_MIN: Duration = Duration::from_millis(1500);
+const OBSERVER_INTERVAL_MAX: Duration = Duration::from_millis(2500);
 const FRESHNESS_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Parser)]
@@ -161,8 +163,22 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
             }
             Err(error) => eprintln!("wt-agent-tool-gateway-relay: read panes: {error:#}"),
         }
-        std::thread::sleep(OBSERVER_INTERVAL);
+        std::thread::sleep(jittered_observer_interval());
     }
+}
+
+fn jittered_observer_interval() -> Duration {
+    let mut bytes = [0; 2];
+    if getrandom::fill(&mut bytes).is_err() {
+        return OBSERVER_INTERVAL;
+    }
+    observer_interval(u16::from_le_bytes(bytes))
+}
+
+fn observer_interval(random: u16) -> Duration {
+    let range_millis = (OBSERVER_INTERVAL_MAX - OBSERVER_INTERVAL_MIN).as_millis();
+    let jitter_millis = range_millis * u128::from(random) / u128::from(u16::MAX);
+    OBSERVER_INTERVAL_MIN + Duration::from_millis(jitter_millis as u64)
 }
 
 fn read_panes() -> Result<Vec<PaneObservation>> {
@@ -254,5 +270,11 @@ mod tests {
         assert_eq!(parse_codex_target(b"wt-host\t%1\tbash"), None);
         assert_eq!(parse_codex_target(b"other\t%1\tcodex"), None);
         assert_eq!(parse_codex_target(b"wt-host\t%bad\tcodex"), None);
+    }
+
+    #[test]
+    fn observer_interval_has_twenty_five_percent_jitter() {
+        assert_eq!(observer_interval(0), Duration::from_millis(1500));
+        assert_eq!(observer_interval(u16::MAX), Duration::from_millis(2500));
     }
 }
