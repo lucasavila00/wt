@@ -12,30 +12,53 @@ therefore can render a non-Codex tab, or one Codex pane's screen in every
 Codex card for that world. A paused card is especially misleading because its
 state is derived from one pane while its pixels can come from another.
 
-An observer fingerprint is not itself a preview: it only detects whether a
-captured pane changed. The observer already captures each eligible pane to
-produce that fingerprint, so it can provide a bounded rendered pane frame
-alongside it.
+An observer fingerprint is not itself a preview: it is an irreversible digest
+used only to detect whether a captured pane changed. The observer already
+targets and captures each eligible pane to produce that fingerprint, so that
+same pane-local observation path can also provide the visual data.
 
 ## Decision
+
+This replaces the Live preview-source decision in ADR 0081 and is folded into
+that record when implemented.
 
 The Live activity renders each card from the latest rendered frame captured
 for that card's observed Codex pane. It does not use any SSH playback parser
 as a Live preview source.
 
 The guest observer captures every Byobu pane whose foreground process is
-`codex`. For every capture it reports the observation identity, a normalized
-and bounded terminal frame, and its fingerprint. The fingerprint remains the
-change-detection and freshness key; the frame is the visual data. “Screenshot”
-here means that normalized terminal frame, not a raster image and not terminal
-bytes from a client SSH session.
+`codex`. For each pane-local observation it reports the observation identity,
+the existing normalized fingerprint, and a viewport-only terminal frame. The
+fingerprint determines `changed_at`; successful receipt of the report
+determines `observed_at`; the frame is only the visual data. Every transmitted
+observation includes its frame, and an accepted report replaces that frame
+even when the fingerprint did not change.
 
-`wts` owns the latest frame for each `(world, tmux session, pane)` observation
-and serves it only to the world's authorized clients. It keeps no history of
-frames and discards a frame with its observation. A server restart may leave a
-preview unavailable until the next guest observation; it must never substitute
-another pane's frame. Frames remain bounded and are normalized before they
-cross the authenticated guest-to-server boundary.
+“Screenshot” here means an inert rectangular grid of displayed cells, including
+its dimensions and presentation attributes. It is not a raster image, tmux
+scrollback, or an ANSI/control byte stream that a client replays. The observer
+consumes any tmux capture escapes before transport. The client preserves the
+captured row and column coordinates, clipping or padding the grid to fit a
+card rather than reflowing it. This makes the preview a faithful view of the
+observed pane while preventing pane content from becoming local terminal
+control input.
+
+`wts` holds the latest frame in memory for each `(world, tmux session, pane)`
+observation and serves it only to the world's authorized clients. Frames are
+not persisted or logged. It replaces the world's frame set as one observation
+snapshot, so removal of a pane also removes its frame. A frame is published
+only with the exact observation identity and `observed_at` value produced by
+the same accepted report; this prevents a delayed frame or a reused tmux pane
+ID from being paired with newer metadata. A server restart leaves previews
+unavailable until the next guest report; it must never substitute another
+pane's frame.
+
+Both sides apply explicit bounds, and `wts` independently validates the pane
+count, frame dimensions, per-frame encoded size, total report size, cell text,
+and style values. A malformed or oversized report is rejected as a whole
+without refreshing its observations. The protocol admits only inert cell data,
+not terminal control sequences. These checks apply before a frame is retained
+or returned by the owner-scoped control API.
 
 Each observed Codex pane has one independent Live card. Multiple Codex panes
 in one world therefore show their own captured frames, even when another
@@ -54,5 +77,6 @@ window is intentional.
 - Multiple Codex panes in a world are correctly represented at the same time.
 - Live previews remain shared server observations rather than client-local SSH
   playback state.
-- The observation path carries the latest visible terminal content, so its
-  bounded payload and owner-scoped access are security-relevant.
+- The observation path carries the latest visible terminal content, which may
+  contain secrets. It is therefore ephemeral, bounded, validated on receipt,
+  excluded from logs, and exposed only through owner-scoped access.
