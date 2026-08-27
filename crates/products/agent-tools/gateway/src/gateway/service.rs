@@ -319,6 +319,9 @@ impl Gateway {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(wt_tools_help());
         }
+        if args == ["world-prompt"] {
+            return Ok(world_prompt());
+        }
         let parsed = api::WtToolsCommand::parse(args)?;
         let (target, command) = match &parsed {
             api::WtToolsCommand::Feedback { command } => {
@@ -503,4 +506,35 @@ pub(super) fn wt_tools_activity_metadata(
             .map(str::to_owned)
     });
     Ok((action.to_owned(), branch, change_request))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn world_prompt_does_not_require_a_provider_api() {
+        let temp = tempfile::tempdir().unwrap();
+        let gateway = Gateway::open(GatewayConfig {
+            state_file: temp.path().join("gateway.json"),
+            database_path: temp.path().join("instances.db"),
+            providers: vec![Provider::Local {
+                host: "github.com".into(),
+                repositories: temp.path().to_owned(),
+                api: None,
+            }],
+        })
+        .unwrap();
+        let grant = GrantRecord {
+            id: "id".into(),
+            token: "token".into(),
+            world_id: "world".into(),
+            revoked: false,
+        };
+
+        assert_eq!(
+            gateway.serve_cli(&["world-prompt".into()], &grant).unwrap(),
+            world_prompt()
+        );
+    }
 }

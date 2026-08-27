@@ -14,6 +14,8 @@ install -d -m 0755 /etc/codex
 install -m 0644 /var/tmp/wt-codex-requirements.toml \
     /etc/codex/requirements.toml
 install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" "$WT_HOME/.local/state/wt"
+runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
+    /usr/local/bin/wtg codex install-config
 test -x "$WT_HOME/.codex/packages/standalone/current/bin/codex"
 ln -sfn /usr/local/bin/wtg /usr/local/bin/codex
 runuser --user "$WT_USER" -- ln -sfn /usr/local/bin/wtg \

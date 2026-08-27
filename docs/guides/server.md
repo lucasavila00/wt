@@ -33,6 +33,11 @@ Change that source and rebuild the image instead of editing a world. Existing
 world overlays retain their current backing image, so they do not receive a
 changed default.
 
+Each golden image also owns `/home/wt/.codex/config.toml`. Its `SessionStart`
+hook injects the WT world prompt, which explains the disposable guest, normal
+Git workflow, the shared `wt/` branch namespace, and `wtg tools` provider
+operations. Change the image recipe and rebuild rather than editing a world.
+
 Codex authentication is shared read-only and sessions are shared read-write,
 but user configuration, databases, indexes, logs, and locks remain local to
 each world.
