@@ -20,15 +20,15 @@ but not Codex's own backfill of every visible rollout.
 3. Keep the read-only Codex authentication share unchanged.
 4. Give each world a server-backed sessions directory keyed by its immutable world ID. Mount only
    that directory at `/home/wt/.codex/sessions` so sessions remain durable and isolated.
-5. Preserve the existing global sessions tree as an unmounted legacy archive.
-6. Later add explicit bounded import: copy or project one selected archived rollout into the target
-   world, then run `codex resume <id>`.
+5. Delete the global sessions tree during the clean cutover. Do not migrate legacy sessions.
+6. Later add explicit bounded import: copy or project one selected rollout from a source world's
+   sessions directory into the target world, then run `codex resume <id>`.
 
 Do not increase timeouts, share Codex's SQLite database, or run global background scans per world.
 Each leaves work or coordination proportional to global history.
 
 ## Migration
 
-Rebuild the image and recreate worlds with the new mount. After switching an affected world, stop
-Codex and move `state_5.sqlite`, `state_5.sqlite-wal`, and `state_5.sqlite-shm` aside together.
-Retain the legacy archive and update the existing Codex ADRs when this proposal is implemented.
+Deploy after `make clear` or `make nuke`. Delete the global sessions tree and old local databases;
+do not migrate or repair them. Rebuild the image, create new worlds with per-world mounts, and
+update the existing Codex ADRs when this proposal is implemented.
