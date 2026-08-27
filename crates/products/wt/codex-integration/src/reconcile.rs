@@ -146,14 +146,28 @@ impl AppServer {
         response_timeout: Duration,
         deadline: Instant,
     ) -> Result<Self> {
-        let mut child = Command::new(codex)
-            .args(["app-server", "--stdio"])
-            .env("CODEX_HOME", home)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("start {} app-server", codex.display()))?;
+        let mut child = loop {
+            match Command::new(codex)
+                .args(["app-server", "--stdio"])
+                .env("CODEX_HOME", home)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => break child,
+                Err(error)
+                    if error.raw_os_error() == Some(nix::errno::Errno::ETXTBSY as i32)
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(16));
+                }
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("start {} app-server", codex.display()));
+                }
+            }
+        };
         let stdin = child.stdin.take().context("open Codex app-server stdin")?;
         let stdout = child
             .stdout

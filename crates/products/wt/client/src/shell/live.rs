@@ -79,7 +79,7 @@ fn draw_card(
         PaneCardKind::Observation { world_name, .. } => {
             format!("{status} · {}.{world_name}", card.context)
         }
-        PaneCardKind::ContextError { .. } => status,
+        PaneCardKind::ContextError => status,
     };
     let block = Block::new()
         .borders(Borders::ALL)
@@ -99,7 +99,7 @@ fn draw_card(
                 })
             })
             .and_then(|index| screens.get(index).copied()),
-        PaneCardKind::ContextError { .. } => None,
+        PaneCardKind::ContextError => None,
     };
     if let Some(screen) = screen {
         TerminalView(screen).render(viewport, buffer);

@@ -17,13 +17,9 @@ pub(in crate::shell) enum PaneCardIdentity {
 pub(in crate::shell) enum PaneCardKind {
     Observation {
         world_name: String,
-        tmux_session: String,
-        pane_id: String,
         changed_at_unix_ms: i64,
     },
-    ContextError {
-        message: String,
-    },
+    ContextError,
 }
 
 #[derive(Clone, Debug)]
@@ -43,7 +39,7 @@ impl PaneCard {
         }
     }
 
-    pub(in crate::shell) fn context_error(context: &str, message: String) -> Self {
+    pub(in crate::shell) fn context_error(context: &str) -> Self {
         Self {
             identity: PaneCardIdentity::ContextError {
                 context: context.into(),
@@ -51,7 +47,7 @@ impl PaneCard {
             context: context.into(),
             created_at_unix_ms: None,
             observed_at_unix_ms: None,
-            kind: PaneCardKind::ContextError { message },
+            kind: PaneCardKind::ContextError,
         }
     }
 
@@ -59,7 +55,7 @@ impl PaneCard {
         match self.kind {
             PaneCardKind::Observation { .. } if self.changed_recently() => 1,
             PaneCardKind::Observation { .. } => 0,
-            PaneCardKind::ContextError { .. } => 2,
+            PaneCardKind::ContextError => 2,
         }
     }
 
@@ -90,7 +86,7 @@ impl PaneCard {
     pub(in crate::shell) fn disabled_reason(&self) -> Option<&'static str> {
         match self.kind {
             PaneCardKind::Observation { .. } => None,
-            PaneCardKind::ContextError { .. } => Some("context data rejected"),
+            PaneCardKind::ContextError => Some("context data rejected"),
         }
     }
 
