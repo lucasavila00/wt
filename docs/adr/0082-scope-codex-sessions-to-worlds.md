@@ -29,6 +29,13 @@ Each leaves work or coordination proportional to global history.
 
 ## Migration
 
-Deploy after `make clear` or `make nuke`. Delete the global sessions tree and old local databases;
-do not migrate or repair them. Rebuild the image, create new worlds with per-world mounts, and
-update the existing Codex ADRs when this proposal is implemented.
+Make `make clear` delete the legacy global sessions tree and every per-world sessions directory.
+Deploy the cutover with:
+
+```sh
+make clear
+make install-server CONFIG=./server.toml
+```
+
+Do not migrate or repair old sessions or databases. Create new worlds after installation and update
+the existing Codex ADRs when this proposal is implemented.
