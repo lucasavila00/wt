@@ -30,6 +30,7 @@ pub(in crate::shell) enum PaneCardKind {
 pub(in crate::shell) struct PaneCard {
     pub(in crate::shell) identity: PaneCardIdentity,
     pub(in crate::shell) context: String,
+    pub(in crate::shell) created_at_unix_ms: Option<i64>,
     pub(in crate::shell) observed_at_unix_ms: Option<i64>,
     pub(in crate::shell) kind: PaneCardKind,
 }
@@ -48,6 +49,7 @@ impl PaneCard {
                 context: context.into(),
             },
             context: context.into(),
+            created_at_unix_ms: None,
             observed_at_unix_ms: None,
             kind: PaneCardKind::ContextError { message },
         }
@@ -55,9 +57,14 @@ impl PaneCard {
 
     pub(in crate::shell) fn sort_rank(&self) -> u8 {
         match self.kind {
+            PaneCardKind::Observation { .. } if self.changed_recently() => 1,
             PaneCardKind::Observation { .. } => 0,
-            PaneCardKind::ContextError { .. } => 1,
+            PaneCardKind::ContextError { .. } => 2,
         }
+    }
+
+    pub(in crate::shell) fn created_at_unix_ms(&self) -> i64 {
+        self.created_at_unix_ms.unwrap_or_default()
     }
 
     pub(in crate::shell) fn timestamp(&self) -> i64 {

@@ -7,6 +7,8 @@ use wt_world::WorldId;
 pub struct PaneObservation {
     pub world_id: WorldId,
     pub world_name: WorldName,
+    #[serde(default)]
+    pub created_at_unix_ms: i64,
     pub tmux_session: String,
     pub pane_id: String,
     pub changed_at_unix_ms: i64,

@@ -1,6 +1,5 @@
 use super::control::{PaneCard, PaneCardIdentity, PaneCardKind};
 pub(super) use super::model::ShellWorld;
-use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(test)]
@@ -114,12 +113,7 @@ pub(super) fn cards(snapshots: Vec<PaneContextSnapshot>, worlds: &[ShellWorld]) 
             PaneContextSnapshot::Failure { message } => failures.push(message),
         }
     }
-    cards.sort_by(|left, right| {
-        left.sort_rank()
-            .cmp(&right.sort_rank())
-            .then_with(|| Reverse(left.timestamp()).cmp(&Reverse(right.timestamp())))
-            .then_with(|| left.identity.cmp(&right.identity))
-    });
+    cards.sort_by_key(|card| (card.sort_rank(), card.created_at_unix_ms()));
     PaneCards { cards, failures }
 }
 
@@ -131,13 +125,14 @@ fn validate_context(
     let mut cards = Vec::new();
     let mut identities = BTreeSet::new();
     for pane in panes {
-        if pane.changed_at_unix_ms < 0
+        if pane.created_at_unix_ms < 0
+            || pane.changed_at_unix_ms < 0
             || pane.observed_at_unix_ms < 0
             || pane.changed_at_unix_ms > pane.observed_at_unix_ms
         {
             return Err(invalid(
                 context,
-                "ordered nonnegative observation timestamps",
+                "nonnegative creation and observation timestamps",
                 &pane.pane_id,
             ));
         }
@@ -187,6 +182,7 @@ fn validate_context(
         cards.push(PaneCard {
             identity,
             context: context.into(),
+            created_at_unix_ms: Some(pane.created_at_unix_ms),
             observed_at_unix_ms: Some(pane.observed_at_unix_ms),
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),

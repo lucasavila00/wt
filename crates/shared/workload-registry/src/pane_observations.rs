@@ -9,6 +9,7 @@ use wt_world::WorldId;
 pub struct PaneObservation {
     pub world_id: WorldId,
     pub world_name: String,
+    pub created_at_unix_ms: i64,
     pub tmux_session: String,
     pub pane_id: String,
     pub changed_at_unix_ms: i64,
@@ -43,6 +44,7 @@ struct StoredPaneObservation {
 struct PaneObservationRow {
     world_id: String,
     world_name: String,
+    created_at_unix_ms: i64,
     tmux_session: String,
     pane_id: String,
     changed_at_unix_ms: i64,
@@ -135,6 +137,7 @@ impl Registry {
                 .select((
                     pane_observations::world_id,
                     worlds::name,
+                    worlds::created_at_unix_ms,
                     pane_observations::tmux_session,
                     pane_observations::pane_id,
                     pane_observations::changed_at_unix_ms,
@@ -148,6 +151,7 @@ impl Registry {
                             RegistryError::InvalidData(format!("invalid pane world ID: {error}"))
                         })?,
                         world_name: row.world_name,
+                        created_at_unix_ms: row.created_at_unix_ms,
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
                         changed_at_unix_ms: row.changed_at_unix_ms,
