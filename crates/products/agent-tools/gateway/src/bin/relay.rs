@@ -18,6 +18,7 @@ const OBSERVER_INTERVAL: Duration = Duration::from_secs(2);
 const OBSERVER_INTERVAL_MIN: Duration = Duration::from_millis(1500);
 const OBSERVER_INTERVAL_MAX: Duration = Duration::from_millis(2500);
 const FRESHNESS_INTERVAL: Duration = Duration::from_secs(15);
+const CAPTURE_PANE_OPTIONS: &[&str] = &["capture-pane", "-p", "-e", "-J", "-S", "-"];
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway-relay")]
@@ -212,7 +213,8 @@ fn parse_codex_target(line: &[u8]) -> Option<(String, String)> {
 
 fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
     let output = Command::new("/usr/bin/tmux")
-        .args(["capture-pane", "-p", "-e", "-t", pane_id])
+        .args(CAPTURE_PANE_OPTIONS)
+        .args(["-t", pane_id])
         .output()
         .with_context(|| format!("capture Byobu pane {pane_id}"))?;
     if !output.status.success() {
@@ -224,8 +226,15 @@ fn capture_pane(tmux_session: &str, pane_id: &str) -> Result<PaneObservation> {
     Ok(PaneObservation {
         tmux_session: tmux_session.to_owned(),
         pane_id: pane_id.to_owned(),
-        screen_fingerprint: format!("{:x}", Sha256::digest(&output.stdout)),
+        screen_fingerprint: screen_fingerprint(&output.stdout),
     })
+}
+
+fn screen_fingerprint(captured: &[u8]) -> String {
+    // `-J` turns terminal-width wrapping back into logical lines. The remaining
+    // trailing blank rows are viewport padding, so they must not mark a paused
+    // Codex pane as active when its playback PTY changes size.
+    format!("{:x}", Sha256::digest(captured.trim_ascii_end()))
 }
 
 fn send_transport(
@@ -276,5 +285,25 @@ mod tests {
     fn observer_interval_has_twenty_five_percent_jitter() {
         assert_eq!(observer_interval(0), Duration::from_millis(1500));
         assert_eq!(observer_interval(u16::MAX), Duration::from_millis(2500));
+    }
+
+    #[test]
+    fn pane_fingerprint_ignores_viewport_padding() {
+        let compact = b"Codex is waiting for input\n\n";
+        let expanded = b"Codex is waiting for input\n\n\n\n\n";
+
+        assert_eq!(screen_fingerprint(compact), screen_fingerprint(expanded));
+        assert_ne!(
+            screen_fingerprint(compact),
+            screen_fingerprint(b"Codex is working\n")
+        );
+    }
+
+    #[test]
+    fn pane_capture_joins_wrapped_history() {
+        assert_eq!(
+            CAPTURE_PANE_OPTIONS,
+            ["capture-pane", "-p", "-e", "-J", "-S", "-"]
+        );
     }
 }
