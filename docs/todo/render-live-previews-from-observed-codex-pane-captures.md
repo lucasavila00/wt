@@ -48,19 +48,6 @@ control path, then transitions to the full world Byobu view. SSH playback is
 used only for that full world view, where showing the selected shared Byobu
 window is intentional.
 
-## Migration
-
-1. Extend the pane-observation protocol and server-owned observation state to
-   carry a bounded normalized frame with its existing fingerprint.
-2. Render Live cards from the frame associated with their exact observation
-   identity, including explicit stale and unavailable states.
-3. Remove the Live preview dependency on world SSH playback parsers and its
-   preview-specific sizing behavior. Retain those parsers for the full world
-   view and for opening a selected pane.
-4. Fold this decision into ADR 0081 when the implementation ships, replacing
-   the existing SSH-parser preview decision. Do not retain this proposal in
-   `docs/adr/` before then.
-
 ## Consequences
 
 - A Live preview cannot display a non-Codex tab or a different Codex pane.
