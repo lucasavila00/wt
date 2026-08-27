@@ -268,7 +268,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 (world.detail != "-").then_some(world.detail.as_str()),
                 &[],
                 index == model.active(),
-                "Enter or click to open",
+                "",
                 true,
             )
         });
