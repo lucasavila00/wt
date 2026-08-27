@@ -255,7 +255,11 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             continue;
         }
         let world = &model.worlds()[index];
-        let (icon, color, status) = super::world_card::status(world, false);
+        let idle = world.status == wt_control_protocol::WorldStatus::Running
+            && model.control().pane_refresh().updated_at().is_some()
+            && model.control().pane_refresh().failures().is_none()
+            && super::world_card::is_idle(world, model.control().panes());
+        let (icon, color, status) = super::world_card::status(world, idle);
         grid.render_card(frame, card, |rect, buffer| {
             super::world_card::draw(
                 buffer,
@@ -266,7 +270,11 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 &world.name,
                 &world.resources,
                 (world.detail != "-").then_some(world.detail.as_str()),
-                &[],
+                &[
+                    super::world_card::git_lines(world),
+                    super::world_card::pane_lines(world, model.control().panes()),
+                ]
+                .concat(),
                 index == model.active(),
                 "",
                 true,
