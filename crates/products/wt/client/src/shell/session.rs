@@ -1,12 +1,13 @@
 use super::clipboard::ClipboardRelay;
-use super::model::ShellWorld;
+use super::model::{Mode, ShellWorld};
 use anyhow::{Context as _, Result};
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use std::io::{Read as _, Write as _};
+#[cfg(test)]
+use portable_pty::CommandBuilder;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const OUTPUT_QUEUE: usize = 256;
@@ -16,6 +17,10 @@ enum SessionEvent {
     Output { token: u64, bytes: Vec<u8> },
     Closed { token: u64, error: Option<String> },
 }
+
+mod world_session;
+
+use world_session::{pty_size, WorldSession};
 
 pub(super) struct SessionSet {
     sessions: Vec<WorldSession>,
@@ -200,16 +205,25 @@ impl SessionSet {
             .with_context(|| format!("flush input to {}", self.sessions[index].name))
     }
 
-    pub(super) fn resize(&mut self, rows: u16, columns: u16) -> Result<()> {
-        if self
-            .sessions
+    pub(super) fn resize(
+        &mut self,
+        mode: Mode,
+        active: usize,
+        rows: u16,
+        columns: u16,
+    ) -> Result<()> {
+        let sessions: &mut [WorldSession] = match mode {
+            Mode::Control => &mut self.sessions[..],
+            Mode::World => &mut self.sessions[active..=active],
+        };
+        if sessions
             .iter()
             .all(|session| session.parser.screen().size() == (rows, columns))
         {
             return Ok(());
         }
         let size = pty_size(rows, columns);
-        for session in &mut self.sessions {
+        for session in sessions {
             if let Some(master) = session.master.as_ref() {
                 master
                     .resize(size)
@@ -218,6 +232,16 @@ impl SessionSet {
             session.parser.set_size(rows, columns);
         }
         Ok(())
+    }
+
+    pub(super) fn is_open(&self, index: usize) -> bool {
+        self.sessions
+            .get(index)
+            .is_some_and(|session| session.closed_message.is_none())
+    }
+
+    pub(super) fn control_path(&self, index: usize) -> &Path {
+        &self.sessions[index].control_path
     }
 
     pub(super) fn add_world(&mut self, world: &ShellWorld, rows: u16, columns: u16) -> Result<()> {
@@ -236,15 +260,6 @@ impl SessionSet {
             &self.sender,
         )?);
         Ok(())
-    }
-
-    pub(super) fn is_open(&self, index: usize) -> bool {
-        self.sessions
-            .get(index)
-            .is_some_and(|session| session.closed_message.is_none())
-    }
-    pub(super) fn control_path(&self, index: usize) -> &Path {
-        &self.sessions[index].control_path
     }
 
     fn control_path_for(&self, token: u64) -> PathBuf {
@@ -320,177 +335,6 @@ impl Drop for SessionSet {
     }
 }
 
-struct WorldSession {
-    token: u64,
-    world: ShellWorld,
-    control_path: PathBuf,
-    name: String,
-    parser: vt100::Parser,
-    writer: Option<Box<dyn std::io::Write + Send>>,
-    master: Option<Box<dyn MasterPty + Send>>,
-    child: Option<Box<dyn Child + Send + Sync>>,
-    reader: Option<JoinHandle<()>>,
-    clipboard: ClipboardRelay,
-    closed_message: Option<String>,
-}
-
-impl WorldSession {
-    fn start_ssh(
-        token: u64,
-        world: &ShellWorld,
-        control_path: PathBuf,
-        rows: u16,
-        columns: u16,
-        sender: &SyncSender<SessionEvent>,
-    ) -> Result<Self> {
-        let mut command = CommandBuilder::new("ssh");
-        command.args(["-M", "-S"]);
-        command.arg(&control_path);
-        command.args(["--", &world.name]);
-        Self::start(token, world, control_path, command, rows, columns, sender)
-    }
-
-    fn start(
-        token: u64,
-        world: &ShellWorld,
-        control_path: PathBuf,
-        command: CommandBuilder,
-        rows: u16,
-        columns: u16,
-        sender: &SyncSender<SessionEvent>,
-    ) -> Result<Self> {
-        let pair = native_pty_system()
-            .openpty(pty_size(rows, columns))
-            .with_context(|| format!("open {} terminal", world.name))?;
-        let reader = pair
-            .master
-            .try_clone_reader()
-            .with_context(|| format!("open {} terminal output", world.name))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .with_context(|| format!("open {} terminal input", world.name))?;
-        let child = pair
-            .slave
-            .spawn_command(command)
-            .with_context(|| format!("start SSH for {}", world.name))?;
-        drop(pair.slave);
-        let output_sender = sender.clone();
-        let event_token = token;
-        let reader = thread::Builder::new()
-            .name(format!("wt-shell-{}", world.name))
-            .spawn(move || read_output(event_token, reader, &output_sender))
-            .with_context(|| format!("start {} terminal reader", world.name))?;
-        Ok(Self {
-            token,
-            world: world.clone(),
-            control_path,
-            name: world.name.clone(),
-            parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
-            writer: Some(writer),
-            master: Some(pair.master),
-            child: Some(child),
-            reader: Some(reader),
-            clipboard: ClipboardRelay::default(),
-            closed_message: None,
-        })
-    }
-
-    fn mark_closed(&mut self, reader_error: Option<String>) {
-        let status = self
-            .child
-            .as_mut()
-            .and_then(|child| child.try_wait().ok())
-            .flatten();
-        self.closed_message = Some(match (reader_error, status) {
-            (Some(error), _) => format!("SSH session reader failed: {error}"),
-            (None, Some(status)) if status.success() => "SSH session ended".into(),
-            (None, Some(status)) => format!("SSH session ended: {status}"),
-            (None, None) => "SSH connection closed".into(),
-        });
-        self.writer.take();
-        self.master.take();
-        self.reader.take();
-    }
-
-    fn stop_without_joining_reader(&mut self) {
-        self.writer.take();
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        self.master.take();
-        self.reader.take();
-    }
-}
-
-impl Drop for WorldSession {
-    fn drop(&mut self) {
-        self.writer.take();
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        self.master.take();
-        if let Some(reader) = self.reader.take() {
-            let _ = reader.join();
-        }
-    }
-}
-
-fn read_output(
-    token: u64,
-    mut reader: Box<dyn std::io::Read + Send>,
-    sender: &SyncSender<SessionEvent>,
-) {
-    let mut buffer = vec![0; 8192];
-    loop {
-        match reader.read(&mut buffer) {
-            Ok(0) => {
-                let _ = sender.send(SessionEvent::Closed { token, error: None });
-                return;
-            }
-            Ok(length) => {
-                if sender
-                    .send(SessionEvent::Output {
-                        token,
-                        bytes: buffer[..length].to_vec(),
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            Err(error) if is_pty_eof(&error) => {
-                let _ = sender.send(SessionEvent::Closed { token, error: None });
-                return;
-            }
-            Err(error) => {
-                let _ = sender.send(SessionEvent::Closed {
-                    token,
-                    error: Some(error.to_string()),
-                });
-                return;
-            }
-        }
-    }
-}
-
-fn is_pty_eof(error: &std::io::Error) -> bool {
-    error.kind() == std::io::ErrorKind::UnexpectedEof
-        || error.kind() == std::io::ErrorKind::BrokenPipe
-        || error.raw_os_error() == Some(nix::errno::Errno::EIO as i32)
-}
-
-fn pty_size(rows: u16, columns: u16) -> PtySize {
-    PtySize {
-        rows,
-        cols: columns,
-        pixel_width: 0,
-        pixel_height: 0,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +369,9 @@ mod tests {
         };
         wait_for(&mut sessions, 0, "ready");
         wait_for(&mut sessions, 1, "ready");
-
+        sessions.resize(Mode::World, 1, 10, 40).unwrap();
+        assert_eq!(sessions.screen(0).size(), (4, 20));
+        assert_eq!(sessions.screen(1).size(), (10, 40));
         sessions.write(1, b"hidden\r").unwrap();
         wait_for(&mut sessions, 1, "readyhidden");
 

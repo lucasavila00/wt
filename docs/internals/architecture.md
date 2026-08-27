@@ -67,7 +67,8 @@ does not expose every pane in the world. The observation is server-owned and
 does not change that shared selection.
 
 The Live control activity renders previews from those existing playback
-parsers. It changes the shared PTY dimensions while visible and creates no
+parsers. While the Control UI is open, playback PTYs stay at the Live preview
+dimensions. A World view resizes only its opened world's PTY. It creates no
 additional playback sessions. Opening a preview verifies and selects the
 observed Codex pane through the existing SSH control master, then shows that
 world's shared Byobu session.
