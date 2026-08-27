@@ -11,7 +11,7 @@ fn world_view_reserves_the_top_row() {
 }
 
 #[test]
-fn live_view_uses_the_compact_terminal_viewport() {
+fn control_views_use_the_live_preview_viewport() {
     let area = Rect::new(0, 0, 100, 30);
     let mut model = ShellModel::new(vec!["local.one".into()]);
 
@@ -21,7 +21,7 @@ fn live_view_uses_the_compact_terminal_viewport() {
         (17, 195)
     );
     model.show_worlds();
-    assert_eq!(session_viewport(&model, area), (29, 100));
+    assert_eq!(session_viewport(&model, area), (17, 45));
 }
 
 #[test]

@@ -159,7 +159,7 @@ fn run_loop(
             .context("read wt shell terminal area")?
             .into();
         let (rows, columns) = session_viewport(model, area);
-        sessions.resize(rows, columns)?;
+        sessions.resize(model.mode(), model.active(), rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
         for sequence in clipboard_writes {
@@ -514,7 +514,7 @@ fn dispatch_event(
             let area = Rect::new(0, 0, columns, rows);
             model.resize(area);
             let (rows, columns) = session_viewport(model, area);
-            sessions.resize(rows, columns)?;
+            sessions.resize(model.mode(), model.active(), rows, columns)?;
             Ok(true)
         }
         _ => Ok(false),
@@ -526,7 +526,7 @@ fn world_rows(terminal_rows: u16) -> u16 {
 }
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
-    if model.mode() == Mode::Control && model.control().activity() == activity::Activity::Live {
+    if model.mode() == Mode::Control {
         live::preview_size(area, model.control().panes().len())
     } else {
         (world_rows(area.height), area.width)
