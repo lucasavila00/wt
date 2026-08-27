@@ -1,5 +1,5 @@
 ---
-source: crates/products/agent-tools/gateway/src/gateway/tests.rs
+source: crates/products/agent-tools/gateway/src/gateway.rs
 expression: wt_tools_help()
 ---
 wtg tools reads and changes explicitly identified Git provider resources and records
@@ -8,6 +8,12 @@ rejects unknown fields.
 
 USAGE:
 wtg tools '<JSON>'
+wtg tools --file PATH
+wtg tools --stdin
+wtg tools -
+
+`--file PATH` reads one UTF-8 JSON command from a file. `--file -`, `--stdin`, and
+`-` read one UTF-8 JSON command from standard input until end-of-file.
 
 TYPESCRIPT COMMAND TYPE:
     /** State transition accepted by the set_mr command. */
@@ -77,6 +83,8 @@ TYPESCRIPT COMMAND TYPE:
 
 EXAMPLE:
 wtg tools '{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"show_mr_for_branch","branch":"wt/fix-login"}}'
+wtg tools --file command.json
+printf '%s\n' '{"command":{"action":"report_wt_tool_issue","description":"example"}}' | wtg tools -
 
 `show_mr_for_branch` returns the single open MR from the named branch in the target
 repository. It fails when there is no match or multiple matches.

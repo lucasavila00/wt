@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use wt_agent_tool_gateway::{
     read_json_line, write_json_line, ClientOperation, ClientRequest, TransportResponse,
@@ -29,6 +29,7 @@ pub fn render_error(message: &str) -> serde_json::Value {
 }
 
 pub fn run(args: Vec<String>) -> Result<()> {
+    let args = input_args(args, &mut std::io::stdin().lock())?;
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(
@@ -62,6 +63,31 @@ pub fn run(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn input_args(args: Vec<String>, stdin: &mut impl Read) -> Result<Vec<String>> {
+    match args.as_slice() {
+        [input] if matches!(input.as_str(), "-" | "--stdin") => read_stdin(stdin),
+        [flag, path] if flag == "--file" => {
+            if path == "-" {
+                return read_stdin(stdin);
+            }
+            let command = std::fs::read_to_string(path)
+                .with_context(|| format!("read JSON command file {path}"))?;
+            Ok(vec![command])
+        }
+        [flag, ..] if flag == "--file" => bail!("usage: wtg tools --file PATH"),
+        [flag, ..] if flag == "--stdin" => bail!("usage: wtg tools --stdin"),
+        _ => Ok(args),
+    }
+}
+
+fn read_stdin(stdin: &mut impl Read) -> Result<Vec<String>> {
+    let mut command = String::new();
+    stdin
+        .read_to_string(&mut command)
+        .context("read JSON command from standard input")?;
+    Ok(vec![command])
+}
+
 fn test_socket() -> String {
     if cfg!(debug_assertions) {
         std::env::var("WT_AGENT_TOOL_TEST_SOCKET")
@@ -81,5 +107,70 @@ mod tests {
         insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
         {"error":{"message":"gateway rejected command"}}
         "###);
+    }
+
+    #[test]
+    fn reads_a_json_command_from_a_file() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            temp.path(),
+            "{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            input_args(
+                vec![
+                    "--file".to_owned(),
+                    temp.path().to_str().unwrap().to_owned(),
+                ],
+                &mut std::io::empty(),
+            )
+            .unwrap(),
+            vec!["{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n"]
+        );
+    }
+
+    #[test]
+    fn file_input_requires_exactly_one_path() {
+        assert!(input_args(vec!["--file".to_owned()], &mut std::io::empty()).is_err());
+        assert!(input_args(
+            vec![
+                "--file".to_owned(),
+                "command.json".to_owned(),
+                "extra".to_owned()
+            ],
+            &mut std::io::empty(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn reads_a_json_command_from_standard_input() {
+        for args in [
+            vec!["-".to_owned()],
+            vec!["--stdin".to_owned()],
+            vec!["--file".to_owned(), "-".to_owned()],
+        ] {
+            let mut stdin =
+                r#"{"command":{"action":"report_wt_tool_issue","description":"piped input"}}"#
+                    .as_bytes();
+
+            assert_eq!(
+                input_args(args, &mut stdin).unwrap(),
+                vec![
+                    r#"{"command":{"action":"report_wt_tool_issue","description":"piped input"}}"#
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn stdin_flag_rejects_other_arguments() {
+        assert!(input_args(
+            vec!["--stdin".to_owned(), "extra".to_owned()],
+            &mut std::io::empty(),
+        )
+        .is_err());
     }
 }
