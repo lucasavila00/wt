@@ -104,7 +104,7 @@ esac
         write_executable(&bin.join("wts"), &server);
         write_executable(
             &bin.join("ssh"),
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'-M -S'*)\n    if test \"$target\" = local.first && test -f \"$HOME/success-creates\"; then\n      while ! test -f \"$HOME/release-first-ssh\"; do sleep 0.05; done\n    fi\n    touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat\n    ;;\n  *) exit 2 ;;\nesac\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/ssh-args\"\ncontrol=\nprevious=\nfor argument do\n  if test \"$previous\" = -S; then control=$argument; fi\n  previous=$argument\n  target=$argument\ndone\ncase \"$*\" in\n  *'-O check'*) test -e \"$control\" ;;\n  *'/usr/local/bin/wtg codex focus-pane wt-host %1'*) printf 'wt-host:%%1\\n' ;;\n  *'-M -S'*)\n    if test \"$target\" = local.first && test -f \"$HOME/success-creates\"; then\n      while ! test -f \"$HOME/release-first-ssh\"; do sleep 0.05; done\n    fi\n    touch \"$control\"; stty -echo; printf 'session: %s\\n' \"$target\"; exec cat\n    ;;\n  *) exit 2 ;;\nesac\n",
         );
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -330,20 +330,22 @@ fn pane_observations_refresh_after_startup() -> Result<()> {
 }
 
 #[test]
-fn live_preview_opens_the_matching_codex_panel_without_another_ssh_connection() -> Result<()> {
+fn live_preview_focuses_the_matching_byobu_pane_and_opens_its_world() -> Result<()> {
     let fixture = Fixture::new();
     fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
     let mut screen = fixture.screen()?;
     screen
         .wait_for_text("session: local.existing")?
         .click(20, 8)?
-        .wait_for_text("Codex panes")?
-        .wait_for_text("local.existing")?
-        .wait_for_text("wt-host:%1")?
+        .wait_for_text("F5: dashboard")?
         .wait_for_quiet(Duration::from_millis(50))?;
     let calls = fs::read_to_string(fixture.home.path().join("ssh-args"))?;
-    assert_eq!(calls.lines().count(), 1);
+    assert_eq!(calls.lines().count(), 3);
     assert!(calls.starts_with("-M -S "));
+    assert!(calls.contains("-O check -- local.existing-direct"));
+    assert!(
+        calls.contains("-- local.existing-direct /usr/local/bin/wtg codex focus-pane wt-host %1")
+    );
     Ok(())
 }
 

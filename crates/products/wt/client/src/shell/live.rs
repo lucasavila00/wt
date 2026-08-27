@@ -115,7 +115,7 @@ fn draw_card(
         viewport.width,
         viewport.height.min(1),
     );
-    Paragraph::new(Line::from("Click or Enter for Codex details"))
+    Paragraph::new(Line::from("Click or Enter to open in Byobu"))
         .alignment(Alignment::Center)
         .style(muted_style())
         .render(footer, buffer);

@@ -41,9 +41,9 @@ The Worlds activity shows cards with each world's status, resources, and
 actionable details. The Codex activity refreshes tracker-derived cards only for
 Byobu panes whose foreground process is `codex`. Live shows those same cards
 with a preview rendered from the persistent SSH/PTY playback connection already
-owned by each world. It does not create another connection or change the shared
-tmux pane selection. `Enter` or left click on a Live preview selects its
-matching Codex card.
+owned by each world. `Enter` or left click on a Live preview verifies and
+selects its matching Codex pane in Byobu, then opens that world. The focus
+request reuses the playback connection's SSH control master.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;

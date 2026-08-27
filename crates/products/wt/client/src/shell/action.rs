@@ -9,6 +9,7 @@ use ratatui::layout::Rect;
 pub(super) enum Task {
     Create { id: ActionId, phase: CreatePhase },
     Delete { id: ActionId, task: delete::Task },
+    Focus { id: ActionId },
     Reconnect { id: ActionId, task: StartTask },
 }
 
@@ -55,7 +56,10 @@ impl Task {
 
     fn id(&self) -> ActionId {
         match self {
-            Self::Create { id, .. } | Self::Delete { id, .. } | Self::Reconnect { id, .. } => *id,
+            Self::Create { id, .. }
+            | Self::Delete { id, .. }
+            | Self::Focus { id }
+            | Self::Reconnect { id, .. } => *id,
         }
     }
 }
@@ -87,6 +91,14 @@ pub(super) fn start_next(
             flows.actions.update_phase(id, "Deleting world");
             Task::Delete { id, task }
         }),
+        Intent::OpenPane(target) => {
+            if runtime.focus.start(id, sessions, model, target) {
+                flows.actions.update_phase(id, "Focusing Codex pane");
+                Ok(Task::Focus { id })
+            } else {
+                Err(anyhow::anyhow!("Codex pane is no longer openable"))
+            }
+        }
         Intent::Reconnect(identity) => {
             let Some(index) = model.world_index(&identity) else {
                 flows.actions.acknowledge(id, false);
@@ -205,6 +217,7 @@ pub(super) fn poll(
             }
             Some(Err(error)) => fail(flows, *id, error, &mut keep),
         },
+        Task::Focus { .. } => false,
         Task::Reconnect { id, task } => match task.poll() {
             None => false,
             Some(Ok(started)) => {

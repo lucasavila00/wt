@@ -11,7 +11,8 @@ Before changing `wt shell` terminal behavior, trace `SessionSet` in
 - UI modes change terminal dimensions and presentation; they do not create the
   underlying playback streams.
 - Server pane observations carry the world, tmux session, and pane identity.
-  The shell renders those observations without selecting a pane locally.
+  Live opens a card by validating and selecting that pane through the existing
+  SSH control master before showing the world playback session.
 
 Do not claim that a shell UI change requires additional polling, threads,
 connections, or parsing without first identifying the existing owner and

@@ -1,3 +1,4 @@
+mod focus;
 mod reconcile;
 mod startup;
 
@@ -22,6 +23,12 @@ struct Cli {
 enum Command {
     /// Synchronize shared Codex history.
     Reconcile,
+    /// Focus an observed Codex Byobu pane.
+    #[command(hide = true)]
+    FocusPane {
+        tmux_session: String,
+        pane_id: String,
+    },
 }
 
 #[allow(dead_code)]
@@ -43,6 +50,10 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             startup::reconcile_manual()?;
             println!("Codex history synchronized.");
         }
+        Command::FocusPane {
+            tmux_session,
+            pane_id,
+        } => println!("{}", focus::focus(&tmux_session, &pane_id)?),
     }
     Ok(())
 }

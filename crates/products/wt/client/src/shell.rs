@@ -20,6 +20,7 @@ mod clipboard;
 mod control;
 mod control_overlay;
 mod delete;
+mod focus;
 mod input;
 mod lifecycle;
 mod live;
@@ -70,11 +71,13 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let refresh = WorldRefresh::start(config.clone());
     let pane_refresh = PaneRefresh::start(config.clone());
+    let focus = focus::FocusWorker::default();
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
         refresh: &refresh,
         pane_refresh: &pane_refresh,
+        focus: &focus,
         git_author: &git_author,
     };
     let shutdown = install_signal_handlers()?;
@@ -119,6 +122,7 @@ struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
     pane_refresh: &'a PaneRefresh,
+    focus: &'a focus::FocusWorker,
     git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
 
@@ -208,6 +212,34 @@ fn run_loop(
             }
         } else {
             let _ = runtime.pane_refresh.updates.try_iter().last();
+        }
+        while let Some(result) = runtime.focus.try_recv() {
+            if !flows.actions.is_active(result.action_id)
+                || !flows.task.as_ref().is_some_and(
+                    |task| matches!(task, action::Task::Focus { id } if *id == result.action_id),
+                )
+            {
+                continue;
+            }
+            let focused_world = model
+                .pane_route(&result.target)
+                .map(|(index, _)| index)
+                .filter(|index| sessions.control_path(*index) == result.control_path);
+            let succeeded =
+                result.result.is_ok() && focused_world.is_some_and(|index| sessions.is_open(index));
+            if succeeded {
+                model.open_world(focused_world.expect("successful focus has a world"));
+            } else {
+                flows.action_error = Some(
+                    result
+                        .result
+                        .err()
+                        .unwrap_or_else(|| "Codex pane is no longer openable".into()),
+                );
+            }
+            flows.actions.acknowledge(result.action_id, succeeded);
+            flows.task = None;
+            redraw = true;
         }
         redraw |= action::poll(
             &mut flows,
@@ -375,7 +407,11 @@ fn dispatch_event(
                 InputRoute::Command(command) => {
                     start_control_command(command, runtime, model, flows);
                 }
-                InputRoute::ShowCodex(identity) => model.show_codex(*identity, area),
+                InputRoute::OpenPane(identity) => {
+                    flows
+                        .actions
+                        .enqueue(action_queue::Intent::OpenPane(*identity));
+                }
                 InputRoute::DeleteWorld(world) => {
                     flows.deletion = Some(delete::Flow::confirm(*world));
                 }
@@ -460,7 +496,11 @@ fn dispatch_event(
                     Some(InputRoute::Command(command)) => {
                         start_control_command(command, runtime, model, flows)
                     }
-                    Some(InputRoute::ShowCodex(identity)) => model.show_codex(*identity, area),
+                    Some(InputRoute::OpenPane(identity)) => {
+                        flows
+                            .actions
+                            .enqueue(action_queue::Intent::OpenPane(*identity));
+                    }
                     Some(InputRoute::DeleteWorld(world)) => {
                         flows.deletion = Some(delete::Flow::confirm(*world));
                     }
