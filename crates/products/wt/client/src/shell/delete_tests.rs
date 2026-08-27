@@ -16,6 +16,7 @@ fn world(name: &str) -> ShellWorld {
         status: wt_control_protocol::WorldStatus::Running,
         resources: "2 CPU · 4G · 1G/32G disk".into(),
         detail: "-".into(),
+        git_activity: crate::shell::git_activity::RepositoryActivity::Loading,
     }
 }
 

@@ -21,6 +21,7 @@ pub(super) struct ShellWorld {
     pub(super) status: WorldStatus,
     pub(super) resources: String,
     pub(super) detail: String,
+    pub(super) git_activity: super::git_activity::RepositoryActivity,
 }
 
 #[cfg(test)]
@@ -41,6 +42,7 @@ impl From<&str> for ShellWorld {
             status: WorldStatus::Running,
             resources: "2 CPU · 4G · 1G/32G disk".into(),
             detail: "-".into(),
+            git_activity: super::git_activity::RepositoryActivity::Loading,
         }
     }
 }
@@ -132,11 +134,20 @@ impl ShellModel {
         self.world_menu.as_ref()
     }
 
-    pub(super) fn reconcile_worlds(&mut self, worlds: Vec<ShellWorld>) {
+    pub(super) fn reconcile_worlds(&mut self, mut worlds: Vec<ShellWorld>) {
         let active_identity = self
             .worlds
             .get(self.active)
             .map(|world| world.identity.clone());
+        for world in &mut worlds {
+            if let Some(existing) = self
+                .worlds
+                .iter()
+                .find(|existing| existing.identity == world.identity)
+            {
+                world.git_activity = existing.git_activity.clone();
+            }
+        }
         self.worlds = worlds;
         self.active = self
             .worlds
@@ -154,6 +165,33 @@ impl ShellModel {
         {
             self.world_menu = None;
         }
+    }
+
+    pub(super) fn apply_git_activity(
+        &mut self,
+        update: super::git_activity::WorldGitActivity,
+    ) -> bool {
+        let Some(world) = self.worlds.iter_mut().find(|world| {
+            world.identity.context == update.context && world.identity.world_id == update.world_id
+        }) else {
+            return false;
+        };
+        let activity = match update.repositories {
+            Some(repositories) => super::git_activity::RepositoryActivity::Loaded(repositories),
+            None if matches!(
+                world.git_activity,
+                super::git_activity::RepositoryActivity::Loading
+            ) =>
+            {
+                super::git_activity::RepositoryActivity::Unavailable
+            }
+            None => return false,
+        };
+        if world.git_activity == activity {
+            return false;
+        }
+        world.git_activity = activity;
+        true
     }
 
     pub(super) fn should_quit(&self) -> bool {
@@ -415,6 +453,57 @@ mod tests {
 
         model.reconcile_worlds(vec![world("four"), world("zero")]);
         assert_eq!(model.active_world(), "four");
+    }
+
+    #[test]
+    fn git_refresh_preserves_loaded_activity_across_failures_and_inventory_refreshes() {
+        let mut model = ShellModel::new(vec![world("one")]);
+        let identity = model.worlds()[0].identity.clone();
+        let repositories = vec![super::super::git_activity::RepositoryInteraction {
+            target: "github.com/owner/repository".into(),
+            wrote: true,
+        }];
+        assert!(
+            model.apply_git_activity(super::super::git_activity::WorldGitActivity {
+                context: identity.context.clone(),
+                world_id: identity.world_id,
+                repositories: Some(repositories.clone()),
+            })
+        );
+        assert!(
+            !model.apply_git_activity(super::super::git_activity::WorldGitActivity {
+                context: identity.context.clone(),
+                world_id: identity.world_id,
+                repositories: None,
+            })
+        );
+
+        let mut refreshed = model.worlds()[0].clone();
+        refreshed.git_activity = super::super::git_activity::RepositoryActivity::Loading;
+        model.reconcile_worlds(vec![refreshed]);
+
+        assert_eq!(
+            model.worlds()[0].git_activity,
+            super::super::git_activity::RepositoryActivity::Loaded(repositories)
+        );
+    }
+
+    #[test]
+    fn initial_git_refresh_failure_is_not_reported_as_empty_activity() {
+        let mut model = ShellModel::new(vec![world("one")]);
+        let identity = model.worlds()[0].identity.clone();
+
+        assert!(
+            model.apply_git_activity(super::super::git_activity::WorldGitActivity {
+                context: identity.context,
+                world_id: identity.world_id,
+                repositories: None,
+            })
+        );
+        assert_eq!(
+            model.worlds()[0].git_activity,
+            super::super::git_activity::RepositoryActivity::Unavailable
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use ratatui::{
 
 pub(in crate::shell) const ACTIVITY_BAR_WIDTH: u16 = 5;
 pub(in crate::shell) const ACTIVITY_BUTTON_HEIGHT: u16 = 3;
-pub(in crate::shell) const WORLD_CARD_HEIGHT: u16 = 10;
+pub(in crate::shell) const WORLD_CARD_HEIGHT: u16 = 16;
 pub(in crate::shell) const CARD_COLUMNS: usize = 2;
 pub(in crate::shell) const CARD_GAP: u16 = 1;
 

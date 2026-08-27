@@ -48,10 +48,16 @@ case "$request" in
   *'"operation":"list_pane_observations"'*)
     if test -f "$HOME/pane-observed"; then
       frame='{"rows":1,"columns":23,"cells":[{"text":"s"},{"text":"e"},{"text":"s"},{"text":"s"},{"text":"i"},{"text":"o"},{"text":"n"},{"text":":"},{"text":" "},{"text":"l"},{"text":"o"},{"text":"c"},{"text":"a"},{"text":"l"},{"text":"."},{"text":"e"},{"text":"x"},{"text":"i"},{"text":"s"},{"text":"t"},{"text":"i"},{"text":"n"},{"text":"g"}]}'
-      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","changed_at_unix_ms":20,"observed_at_unix_ms":20,"frame":%s}]}}\n' "$frame"
+      observed_at=$(date +%s%3N)
+      changed_at=$((observed_at - 16000))
+      frame='{"rows":1,"columns":23,"cells":[{"text":"s"},{"text":"e"},{"text":"s"},{"text":"s"},{"text":"i"},{"text":"o"},{"text":"n"},{"text":":"},{"text":" "},{"text":"l"},{"text":"o"},{"text":"c"},{"text":"a"},{"text":"l"},{"text":"."},{"text":"e"},{"text":"x"},{"text":"i"},{"text":"s"},{"text":"t"},{"text":"i"},{"text":"n"},{"text":"g"}]}'
+      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","changed_at_unix_ms":%s,"observed_at_unix_ms":%s,"frame":%s}]}}\n' "$changed_at" "$observed_at" "$frame"
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
     fi
+    ;;
+  *'"operation":"list_git_activity"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"git_activity","activity":[{"id":2,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":20,"kind":"service","provider_host":"github.com","repository":"owner/write","git_service":"git-receive-pack"},{"id":1,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":10,"kind":"service","provider_host":"github.com","repository":"owner/read","git_service":"git-upload-pack"}]}}'
     ;;
   *'"operation":"list_worlds"'*)
     worlds='{"world_id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
@@ -325,6 +331,21 @@ fn pane_observations_refresh_after_startup() -> Result<()> {
     screen
         .wait_for_text("session: local.existing")?
         .wait_for_quiet(Duration::from_millis(50))?;
+    Ok(())
+}
+
+#[test]
+fn world_cards_correlate_observed_byobu_panes_and_show_idle_worlds() -> Result<()> {
+    let fixture = Fixture::new();
+    fs::write(fixture.home.path().join("pane-observed"), "").unwrap();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("session: local.existing")?
+        .press(Key::Tab)?
+        .wait_for_text("IDLE · NO RECENT PANE CHANGE")?
+        .wait_for_text("Codex wt-host:%1 · STATIC")?
+        .wait_for_text("Git write github.com/owner/write")?
+        .wait_for_text("Git read github.com/owner/read")?;
     Ok(())
 }
 

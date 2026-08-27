@@ -38,12 +38,15 @@ refresh status are shown in the footer. Press `2` or `F2` to toggle the shortcut
 help menu; `Esc` closes it.
 
 The Worlds activity shows cards with each world's status, resources, and
-actionable details. Live refreshes cards only for Byobu panes whose foreground
-process is `codex`. Each preview is the latest captured frame for its exact
-observed pane, independent of the currently selected Byobu tab or world SSH
-playback screen. `Enter` or left click on a Live preview verifies and selects
-its matching Codex pane in Byobu, then opens that world's full Byobu view. The
-focus request reuses the playback connection's SSH control master.
+actionable details. Each card lists its observed Codex Byobu panes and shows a
+running world as idle when none has changed recently. It also shows up to three
+recent Git repositories recorded for the world, with writes before reads. Live
+refreshes cards only for Byobu panes whose foreground process is `codex`. Each
+preview is the latest captured frame for its exact observed pane, independent of
+the currently selected Byobu tab or world SSH playback screen. `Enter` or left
+click on a Live preview verifies and selects its matching Codex pane in Byobu,
+then opens that world's full Byobu view. The focus request reuses the playback
+connection's SSH control master.
 
 World creation and deletion continue in the background after their forms are
 confirmed. Both show the same progress notification in the top-right corner;
