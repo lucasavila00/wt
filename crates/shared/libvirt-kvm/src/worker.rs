@@ -157,6 +157,7 @@ impl LibvirtProvider {
         network_enabled: bool,
     ) -> Result<(), WorkerError> {
         let domain_name = DomainName::for_world(spec.world_id);
+        self.create_sessions_directory(spec.world_id)?;
         let directory = self.config.worlds_dir.join(domain_name.as_str());
         fs::create_dir(&directory).map_err(|error| context("create machine directory", error))?;
         prepare_qemu_file_access(&directory, disk)?;
@@ -168,6 +169,30 @@ impl LibvirtProvider {
             .create()
             .map_err(|error| context("start KVM domain", error))?;
         Ok(())
+    }
+
+    fn create_sessions_directory(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        let Some(mounts) = &self.config.shared_mounts else {
+            return Ok(());
+        };
+        let path = mounts.sessions_root.join(world_id.to_string());
+        match fs::create_dir(&path) {
+            Ok(()) => fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .map_err(|error| context("secure Codex sessions directory", error)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&path)
+                    .map_err(|error| context("inspect Codex sessions directory", error))?;
+                if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                    Ok(())
+                } else {
+                    Err(WorkerError::new(format!(
+                        "Codex sessions path is not a directory: {}",
+                        path.display()
+                    )))
+                }
+            }
+            Err(error) => Err(context("create Codex sessions directory", error)),
+        }
     }
 
     fn remove_domain(&self, domain_name: &DomainName) -> Result<(), WorkerError> {

@@ -17,7 +17,9 @@ pub(super) fn verify_publication(
     wt_server::validate_process_identity().map_err(anyhow::Error::msg)?;
     wt_server::validate_shared_roots(server.codex_paths()).map_err(anyhow::Error::msg)?;
     let world_id = WorldId::from(uuid::Uuid::nil());
-    let marker = Path::new(server.codex_paths().sessions).join(MARKER_NAME);
+    let marker = Path::new(server.codex_paths().sessions)
+        .join(world_id.to_string())
+        .join(MARKER_NAME);
     for (label, path) in [("marker", marker.as_path())] {
         match fs::symlink_metadata(path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

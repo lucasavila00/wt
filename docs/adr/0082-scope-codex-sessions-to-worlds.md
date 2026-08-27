@@ -1,6 +1,6 @@
 # ADR 0082: Scope Codex sessions to worlds
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-27
 
 ## Context

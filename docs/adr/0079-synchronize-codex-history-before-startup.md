@@ -1,6 +1,6 @@
 # ADR 0079: Synchronize Codex history before startup
 
-- Status: Accepted
+- Status: Superseded by [ADR 0082](0082-scope-codex-sessions-to-worlds.md)
 - Date: 2026-08-23
 
 ## Context

@@ -21,8 +21,9 @@ services run as that account, and host installation must reject a different
 effective UID/GID before installing or starting services.
 
 The golden image keeps its existing validated `wt:wt` identity. `/home/wt`,
-`/home/wt/.codex`, and the Codex sessions tree are owned by `1001:1001`; the
-sessions root is mode `0700`, and Codex rollout files remain mode `0600`.
+`/home/wt/.codex`, and the Codex sessions root are owned by `1001:1001`; the
+root and each per-world session directory are mode `0700`, and Codex rollout
+files remain mode `0600`.
 Virtiofs remains an unmapped passthrough mount. ACL repair,
 supplementary-group access, and recursive ownership repair are not part of the
 contract.
@@ -33,10 +34,9 @@ with mode `2770` and search access for `libvirt-qemu`. Server startup and every
 domain creation validate that boundary. Tests must reject replacing its host
 group and QEMU ACL with ordinary `wt:wt` ownership.
 
-All worlds sharing the sessions tree are therefore the same filesystem
-principal and may read or modify it. The tree must contain no host secrets or
-control state, and the server must treat its contents as guest-controlled
-input.
+The server mounts only the directory keyed by each world's immutable ID. The
+sessions root contains no host secrets or control state, and the server treats
+its contents as guest-controlled input.
 
 Enforce the contract at every boundary:
 

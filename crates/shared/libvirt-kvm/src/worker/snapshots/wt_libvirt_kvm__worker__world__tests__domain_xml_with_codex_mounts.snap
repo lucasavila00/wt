@@ -33,7 +33,7 @@ expression: xml
     </interface>
     <filesystem type='mount' accessmode='passthrough'>
       <driver type='virtiofs'/>
-      <source dir='/home/wt/.codex/sessions &amp; rollouts'/>
+      <source dir='/home/wt/.codex/sessions &amp; rollouts/01234567-89ab-cdef-0123-456789abcdef'/>
       <target dir='wt-codex-integration-sessions'/>
     </filesystem>
     <filesystem type='mount' accessmode='passthrough'>

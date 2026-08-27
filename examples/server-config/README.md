@@ -19,8 +19,8 @@ processes may override it with `WT_AGENT_TOOL_VSOCK_PORT`.
 The `image` section names the guest golden image.
 Before installation, the server's `wt` user must log in to Codex and own a
 regular, non-symlink `/home/wt/.codex/auth.json`. Codex integration has no
-configuration: every guest receives the server-backed sessions and
-read-only login.
+configuration: every guest receives its own server-backed sessions directory
+and the read-only login.
 Changing strict server settings requires `make nuke` followed by reinstalling.
 
 `wt-server.kvm-e2e-install.toml` sets `test_server = true` and uses disposable

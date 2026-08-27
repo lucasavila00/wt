@@ -38,9 +38,9 @@ hook injects the WT world prompt, which explains the disposable guest, normal
 Git workflow, the shared `wt/` branch namespace, and `wtg tools` provider
 operations. Change the image recipe and rebuild rather than editing a world.
 
-Codex authentication is shared read-only and sessions are shared read-write,
-but user configuration, databases, indexes, logs, and locks remain local to
-each world.
+Codex authentication is shared read-only. Each world receives a read-write
+mount of only its own server-backed sessions directory; user configuration,
+databases, indexes, logs, and locks remain local to that world.
 
 Installation requires a clean checkout: staged, unstaged, and untracked files
 are all rejected before a production build starts. `wts --version`
@@ -54,10 +54,10 @@ Request-initialization failures are recorded in the server journal. Inspect
 them with `journalctl -u wts.service` when a client reports a context
 refresh failure.
 
-The installer creates a server-backed historical Codex sessions directory and
-a read-only authentication export. Running worlds receive both through
-virtiofs. The history is outside world disk quotas and needs a separate backup;
-it is not live pane state.
+The installer creates a server-backed Codex sessions root and a read-only
+authentication export. Each world receives its own sessions directory through
+virtiofs. History is outside world disk quotas and needs a separate backup; it
+is not live pane state.
 
 Refresh expired Codex authentication as the server `wt` user. A systemd path
 unit atomically republishes `auth.json`; running worlds receive the replacement

@@ -10,7 +10,7 @@ fn guest_lifecycle() {
     let name = unique_name("guest");
     let mut harness = KvmHarness::new(&mut timings);
     let codex_auth_sha256 = assert_server_codex_auth_export(&harness.config);
-    let codex_history = CodexHistoryFixture::new(&name, &harness.config);
+    let codex_marker = format!(".wt-kvm-e2e-{name}");
 
     let created = timings.run("create guest", || harness.create(&name));
     assert_eq!(created.status, WorldStatus::Running);
@@ -99,7 +99,7 @@ fn guest_lifecycle() {
         &name,
         &format!(
             "set -eu; test \"$(readlink /home/wt/.codex/auth.json)\" = /run/wt-codex-integration-auth/auth.json; test ! -w /home/wt/.codex/auth.json; umask 077; printf 'from-guest\\n' > /home/wt/.codex/sessions/{}",
-            codex_history.marker
+            codex_marker
         ),
         "verify Codex integration",
     );
@@ -111,13 +111,17 @@ fn guest_lifecycle() {
     );
     assert_eq!(
         std::fs::read_to_string(
-            std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_history.marker)
+            std::path::Path::new(harness.config.codex_paths().sessions)
+                .join(created.world_id.to_string())
+                .join(&codex_marker)
         )
         .unwrap(),
         "from-guest\n"
     );
     let rollout_metadata = std::fs::metadata(
-        std::path::Path::new(harness.config.codex_paths().sessions).join(&codex_history.marker),
+        std::path::Path::new(harness.config.codex_paths().sessions)
+            .join(created.world_id.to_string())
+            .join(&codex_marker),
     )
     .unwrap();
     assert_eq!(rollout_metadata.uid(), wt_guest::GUEST_UID);
