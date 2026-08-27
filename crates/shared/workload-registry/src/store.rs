@@ -205,25 +205,6 @@ impl Store {
             .map_err(map_registry_error)
     }
 
-    pub fn repository_git_state(
-        &self,
-        owner: &str,
-        provider_host: &str,
-        repository: &str,
-        git_before_id: Option<u64>,
-        wt_tools_before_id: Option<u64>,
-    ) -> Result<Option<crate::RepositoryGitState>, StoreError> {
-        self.registry
-            .repository_git_state(
-                owner,
-                provider_host,
-                repository,
-                git_before_id,
-                wt_tools_before_id,
-            )
-            .map_err(map_registry_error)
-    }
-
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
         self.registry.read(|connection| {
             diesel::update(

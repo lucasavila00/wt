@@ -1,7 +1,8 @@
 # wt
 
 WT runs Ubuntu guests on KVM. Each world boots from a verified golden
-image with persistent storage, managed SSH, Codex integration, and scoped Git
+image with persistent storage, managed SSH, shared terminal-pane observation,
+and scoped Git
 access.
 
 WT uses three runtime-specific commands: `wt` is the user-facing client, `wts`
@@ -14,7 +15,7 @@ component mapping.
 - [Development and setup](./DEVELOPMENT.md)
 - [Client, world lifecycle, and SSH](./docs/guides/client.md)
 - [Terminal workspace](./docs/guides/shell.md)
-- [Codex integration and defaults](./docs/guides/server.md#codex-defaults)
+- [Codex history integration and defaults](./docs/guides/server.md#codex-defaults)
 - [Server operations](./docs/guides/server.md)
 - [Known limitations](./docs/known-limitations.md)
 

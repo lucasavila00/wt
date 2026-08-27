@@ -1,4 +1,4 @@
-use crate::{install, reconcile};
+use crate::reconcile;
 use anyhow::{Context, Result};
 use nix::fcntl::{Flock, FlockArg};
 use std::fs::{self, File, OpenOptions};
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 const LOCK_FILE: &str = "codex-reconciliation.lock";
 
 pub(crate) fn reconcile_manual() -> Result<()> {
-    reconcile_before_start(&install::real_codex()?)
+    reconcile_before_start(&crate::real_codex()?)
 }
 
 pub(crate) fn reconcile_before_start(codex: &Path) -> Result<()> {

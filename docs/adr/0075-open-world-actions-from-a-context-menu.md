@@ -1,6 +1,6 @@
 # ADR 0075: Open world actions from a context menu
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0081
 - Date: 2026-08-23
 
 ## Decision
@@ -8,10 +8,9 @@
 Add an actions button to the top-right edge of each world card's frame:
 
 ```text
-┌ 󰚩 IDLE · NO ACTIVE CODEX SESSION ─────────────────────────── … Menu ┐
+┌ 󰚩 STATIC · NO RECENT PANE CHANGE ─────────────────────────── … Menu ┐
 │ars.calm-wombat                                                     │
 │2 CPU · 4G · 7.5G/32G disk                                         │
-│Checkout wt · wt/read-general-pr-comments                          │
 │                                                                   │
 │Enter or click to open                                              │
 └───────────────────────────────────────────────────────────────────┘

@@ -1,9 +1,8 @@
 mod service;
 
 use crate::{
-    ClientOperation, CodexSessionEvent, CodexSessionEventKind, ControlRequest, ControlResponse,
-    DuplexStream, GitService, Grant, TransportRequest, TransportResponse, BRANCH_PREFIX,
-    PROTOCOL_VERSION,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
+    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -112,12 +111,6 @@ remote: wtg tools uses explicit provider resource types and IDs; it does not inf
 remote: resources from the current checkout.\n\
 remote: Run wtg tools --help to discover every available command.\n\
 remote:\n"
-    )
-}
-
-fn world_prompt() -> String {
-    format!(
-        "This process runs as the non-root `wt` user inside a disposable Ubuntu 24.04 WT KVM guest. The guest is the security boundary, so installing system packages, compilers, package managers, language runtimes, and test dependencies is allowed. Use `sudo apt-get update` and `sudo apt-get install -y PACKAGE` to install missing system prerequisites. If Rust tooling is missing, install stable Rust as the normal user with rustup, not apt, then source `$HOME/.cargo/env` and add the rustfmt and clippy components. If other required tooling is missing, install it instead of skipping validation. System-level changes inside the guest are acceptable. Run the repository's normal build, lint, typecheck, and test workflow whenever practical.\n\nThis environment has wtg tools installed for pull or merge request, review, and CI operations; run wtg tools help to see its supported commands. Use normal Git for commits, fetches, pulls, and pushes. The Git gateway can read every available repository and requires branch names to use the shared `{BRANCH_PREFIX}` prefix (for example, `{BRANCH_PREFIX}fix-login`). Every WT world may update, force-push, or delete any branch under `{BRANCH_PREFIX}`, so an agent can continue or take over work from another agent. If the gateway rejects a branch, rename it with git branch -m {BRANCH_PREFIX}NAME.\n"
     )
 }
 
@@ -267,8 +260,3 @@ pub fn wt_tools_help() -> String {
         .join("\n");
     format!("{HELP_PREFIX}{command_type}\n{HELP_SUFFIX}")
 }
-
-#[cfg(test)]
-mod repository_state_tests;
-#[cfg(test)]
-mod tests;

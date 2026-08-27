@@ -1,10 +1,8 @@
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::fs::{symlink, PermissionsExt};
-use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::thread;
 
 fn run_codex(codex: &Path, home: &Path, ignore_checks: bool) {
     let sync_marker = home.join("sync-called");
@@ -147,38 +145,4 @@ esac
         .unwrap();
     assert!(output.status.success());
     assert_eq!(output.stdout, b"codex-cli 0.149.0\n");
-}
-
-#[test]
-fn stop_hook_continues_when_the_relay_rejects_the_report() {
-    let temp = tempfile::tempdir().unwrap();
-    let socket = temp.path().join("gateway.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
-    let relay = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 4096];
-        assert!(stream.read(&mut request).unwrap() > 0);
-        stream
-            .write_all(b"{\"ok\":false,\"error\":\"forced relay failure\"}\n")
-            .unwrap();
-    });
-    let payload = b"{\"session_id\":\"123e4567-e89b-12d3-a456-426614174000\",\"cwd\":\"/home/wt/project\",\"hook_event_name\":\"Stop\"}\n";
-    let mut child = Command::new(env!("CARGO_BIN_EXE_wt-codex-integration"))
-        .arg("report-hook")
-        .env("HOME", temp.path())
-        .env("WT_BYOBU_PANE", "%1")
-        .env("WT_BYOBU_SESSION", "wt-test")
-        .env("WT_AGENT_TOOL_TEST_SOCKET", socket)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.as_mut().unwrap().write_all(payload).unwrap();
-    let output = child.wait_with_output().unwrap();
-    relay.join().unwrap();
-
-    assert!(output.status.success());
-    assert_eq!(output.stdout, b"{\"continue\":true}\n");
-    assert!(output.stderr.is_empty());
 }

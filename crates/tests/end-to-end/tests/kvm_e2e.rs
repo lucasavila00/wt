@@ -6,13 +6,13 @@ mod fixture;
 pub(crate) use fixture::*;
 #[path = "kvm/binaries.rs"]
 mod binaries;
-#[path = "kvm/codex.rs"]
-mod codex;
+#[path = "kvm/codex_history.rs"]
+mod codex_history;
 #[path = "kvm/gateway.rs"]
 mod gateway;
 #[path = "kvm/images.rs"]
 mod images;
-pub(crate) use codex::*;
+pub(crate) use codex_history::*;
 #[path = "kvm/ssh.rs"]
 mod ssh;
 #[path = "kvm/support.rs"]
@@ -28,8 +28,6 @@ pub(crate) use screen::{Key, Screen};
 mod wt_shell;
 pub(crate) use wt_shell::{create_world_with_defaults, delete_world};
 
-#[path = "kvm/git_tracking.rs"]
-mod git_tracking;
 #[path = "kvm/guest_lifecycle.rs"]
 mod guest_lifecycle;
 #[path = "kvm/shell.rs"]

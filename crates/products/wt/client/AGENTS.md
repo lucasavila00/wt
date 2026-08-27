@@ -10,9 +10,8 @@ Before changing `wt shell` terminal behavior, trace `SessionSet` in
   replaces one session's connection, parser, and stream identity.
 - UI modes change terminal dimensions and presentation; they do not create the
   underlying playback streams.
-- Codex observations already carry the world, tmux session, and pane identity
-  used when selecting a pane. tmux selection is shared with other clients and
-  is not durable ownership of that pane.
+- Server pane observations carry the world, tmux session, and pane identity.
+  The shell renders those observations without selecting a pane locally.
 
 Do not claim that a shell UI change requires additional polling, threads,
 connections, or parsing without first identifying the existing owner and

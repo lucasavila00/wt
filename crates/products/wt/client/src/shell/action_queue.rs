@@ -1,4 +1,3 @@
-use super::control::CodexOpenTarget;
 use super::model::{ShellWorld, WorldIdentity};
 use crate::create::Input;
 use crossterm::event::{Event, MouseButton, MouseEventKind};
@@ -14,7 +13,6 @@ pub(super) type ActionId = u64;
 pub(super) enum Intent {
     Create(Input),
     Delete(ShellWorld),
-    OpenCodex(CodexOpenTarget),
     Reconnect(WorldIdentity),
 }
 
@@ -271,7 +269,6 @@ pub(super) fn label(intent: &Intent) -> String {
     match intent {
         Intent::Create(input) => format!("Create {}.{}", input.context, input.name),
         Intent::Delete(world) => format!("Delete {}", world.name),
-        Intent::OpenCodex(target) => format!("Open Codex in {}", target.context),
         Intent::Reconnect(identity) => format!("Reconnect {}", identity.context),
     }
 }

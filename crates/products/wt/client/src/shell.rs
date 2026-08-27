@@ -17,29 +17,26 @@ mod action_queue;
 mod activity;
 mod bar;
 mod clipboard;
-mod codex;
 mod control;
 mod control_overlay;
 mod delete;
 mod input;
 mod lifecycle;
-mod live;
 mod model;
+mod pane;
 mod refresh;
 mod refresh_status;
 mod render;
-mod screen_tracker;
 mod scrollbar;
 mod session;
 mod shutdown;
 mod terminal_view;
-mod toast;
 mod world_card;
 mod world_menu;
 use control::ControlCommand;
 use lifecycle::start_control_command;
 use model::{InputRoute, Mode, ShellModel, ShellWorld};
-use refresh::{take_current_snapshot, CodexRefresh, WorldRefresh};
+use refresh::{take_current_snapshot, PaneRefresh, WorldRefresh};
 use session::SessionSet;
 use shutdown::{log_running_work, request_close};
 
@@ -70,16 +67,13 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.control_mut().set_capacity(report.capacity);
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
-    let focus = codex::FocusWorker::default();
-    let mut screen_tracker = screen_tracker::CodexScreenTracker::default();
     let refresh = WorldRefresh::start(config.clone());
-    let codex_refresh = CodexRefresh::start(config.clone());
+    let pane_refresh = PaneRefresh::start(config.clone());
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
         refresh: &refresh,
-        codex_refresh: &codex_refresh,
-        focus: &focus,
+        pane_refresh: &pane_refresh,
         git_author: &git_author,
     };
     let shutdown = install_signal_handlers()?;
@@ -97,7 +91,6 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         &mut terminal,
         &mut sessions,
         &mut model,
-        &mut screen_tracker,
         &runtime,
         &shutdown,
     );
@@ -117,16 +110,14 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
 fn shell_worlds(worlds: &[inventory::ContextWorld]) -> Vec<ShellWorld> {
     worlds
         .iter()
-        .filter(|world| ssh::has_alias(world))
-        .map(codex::ShellWorld::from_inventory)
+        .map(pane::ShellWorld::from_inventory)
         .collect()
 }
 
 struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
-    codex_refresh: &'a CodexRefresh,
-    focus: &'a codex::FocusWorker,
+    pane_refresh: &'a PaneRefresh,
     git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
 
@@ -152,7 +143,6 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     sessions: &mut SessionSet,
     model: &mut ShellModel,
-    screen_tracker: &mut screen_tracker::CodexScreenTracker,
     runtime: &ShellRuntime<'_>,
     shutdown: &AtomicBool,
 ) -> Result<Vec<String>> {
@@ -167,20 +157,6 @@ fn run_loop(
         sessions.resize(rows, columns)?;
         let (output_changed, clipboard_writes) = sessions.drain_output(model.active());
         redraw |= output_changed;
-        match screen_tracker::policy(
-            model.mode(),
-            model.control().activity(),
-            flows.actions.has_work(),
-        ) {
-            screen_tracker::Policy::Clear => screen_tracker.clear(),
-            screen_tracker::Policy::Pause => {
-                screen_tracker.sync_focus(model, sessions, runtime.focus);
-                redraw |= screen_tracker.pause_change_detection(model, sessions);
-            }
-            screen_tracker::Policy::Detect => {
-                redraw |= screen_tracker.detect_screen_changes(model, sessions);
-            }
-        }
         for sequence in clipboard_writes {
             terminal
                 .backend_mut()
@@ -216,20 +192,13 @@ fn run_loop(
             let _ = runtime.refresh.updates.try_iter().last();
         }
         if !flows.actions.has_work() {
-            if let Some(snapshot) = runtime.codex_refresh.updates.try_iter().last() {
-                let live_worlds = model
-                    .worlds()
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| sessions.is_open(*index))
-                    .map(|(_, world)| world.clone())
-                    .collect::<Vec<_>>();
+            if let Some(snapshot) = runtime.pane_refresh.updates.try_iter().last() {
                 let area = terminal
                     .size()
                     .context("read wt shell terminal area")?
                     .into();
-                let snapshot = codex::cards(snapshot, &live_worlds);
-                redraw |= model.control_mut().apply_codex_refresh(
+                let snapshot = pane::cards(snapshot, model.worlds());
+                redraw |= model.control_mut().apply_pane_refresh(
                     snapshot.cards,
                     snapshot.failures,
                     refresh::updated_at(),
@@ -237,52 +206,7 @@ fn run_loop(
                 );
             }
         } else {
-            let _ = runtime.codex_refresh.updates.try_iter().last();
-        }
-        while let Some(result) = runtime.focus.try_recv() {
-            redraw = true;
-            let focused_world = model
-                .focus_route(&result.target)
-                .map(|(index, _)| index)
-                .filter(|index| sessions.control_path(*index) == result.control_path);
-            if !result.open_world {
-                if flows.actions.has_work() {
-                    continue;
-                }
-                if focused_world.is_some() {
-                    screen_tracker.complete(&result.target, result.result.is_ok());
-                }
-                continue;
-            }
-            if let Some(action_id) = result.action_id {
-                if !flows.actions.is_active(action_id)
-                    || !flows
-                        .task
-                        .as_ref()
-                        .is_some_and(|task| task.is_focus(action_id))
-                {
-                    continue;
-                }
-                let succeeded = result.result.is_ok()
-                    && focused_world.is_some_and(|index| sessions.is_open(index));
-                match result.result {
-                    Ok(()) => model.finish_codex_open(&result.target, focused_world, !succeeded),
-                    Err(_) => model.finish_codex_open(&result.target, None, true),
-                }
-                flows.actions.acknowledge(action_id, succeeded);
-                flows.task = None;
-                redraw = true;
-                continue;
-            }
-            match result.result {
-                Ok(()) => match focused_world {
-                    Some(index) if sessions.is_open(index) => {
-                        model.finish_codex_open(&result.target, Some(index), false)
-                    }
-                    Some(_) | None => model.finish_codex_open(&result.target, None, true),
-                },
-                Err(_) => model.finish_codex_open(&result.target, None, true),
-            }
+            let _ = runtime.pane_refresh.updates.try_iter().last();
         }
         redraw |= action::poll(
             &mut flows,
@@ -306,7 +230,6 @@ fn run_loop(
                 render::draw(
                     frame,
                     &screens,
-                    screen_tracker,
                     closed_message,
                     model,
                     flows.creation.as_ref(),
@@ -451,11 +374,6 @@ fn dispatch_event(
                 InputRoute::Command(command) => {
                     start_control_command(command, runtime, model, flows);
                 }
-                InputRoute::OpenCodex(target) => {
-                    flows
-                        .actions
-                        .enqueue(action_queue::Intent::OpenCodex(*target));
-                }
                 InputRoute::DeleteWorld(world) => {
                     flows.deletion = Some(delete::Flow::confirm(*world));
                 }
@@ -540,11 +458,6 @@ fn dispatch_event(
                     Some(InputRoute::Command(command)) => {
                         start_control_command(command, runtime, model, flows)
                     }
-                    Some(InputRoute::OpenCodex(target)) => {
-                        flows
-                            .actions
-                            .enqueue(action_queue::Intent::OpenCodex(*target));
-                    }
                     Some(InputRoute::DeleteWorld(world)) => {
                         flows.deletion = Some(delete::Flow::confirm(*world));
                     }
@@ -571,7 +484,11 @@ fn world_rows(terminal_rows: u16) -> u16 {
 
 fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
     if model.mode() == Mode::Control {
-        live::preview_size(area, model.control().live_codex().len())
+        let (height, width) = control::card_grid_with_gap(area, 0, 0, 18, 0).card_size();
+        (
+            height.saturating_sub(1).max(1),
+            width.saturating_sub(2).max(1),
+        )
     } else {
         (world_rows(area.height), area.width)
     }

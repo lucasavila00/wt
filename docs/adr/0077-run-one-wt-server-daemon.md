@@ -22,7 +22,6 @@ Run one persistent server service, `wts.service`. `wts` owns:
 
 - the client control socket and guest lifecycle;
 - the agent-tool vsock gateway for Git and provider operations;
-- Codex session cataloging; and
 - watching and atomically publishing shared Codex authentication and SSH
   authorized keys.
 

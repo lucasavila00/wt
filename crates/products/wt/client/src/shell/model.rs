@@ -1,4 +1,4 @@
-use super::control::{CodexOpenTarget, ControlCommand, ControlState};
+use super::control::{ControlCommand, ControlState};
 use super::world_menu::WorldMenu;
 use crossterm::event::KeyCode;
 #[cfg(test)]
@@ -61,7 +61,6 @@ impl Mode {
 pub(super) enum InputRoute {
     Consumed,
     World,
-    OpenCodex(Box<CodexOpenTarget>),
     Command(ControlCommand),
     DeleteWorld(Box<ShellWorld>),
 }
@@ -175,57 +174,12 @@ impl ShellModel {
         self.control.finish_worlds_refresh(result);
     }
 
-    #[cfg(test)]
-    pub(super) fn set_codex(
-        &mut self,
-        codex: Vec<super::control::CodexCard>,
-        updated_at: String,
-        area: Rect,
-    ) -> bool {
-        self.control.set_codex(codex, updated_at, area)
-    }
-
     pub(super) fn resize(&mut self, area: Rect) {
         self.control.resize(area);
         self.control
             .keep_world_selection_visible(area, self.active, self.worlds.len());
     }
-
-    pub(super) fn focus_route(&self, target: &CodexOpenTarget) -> Option<(usize, &str)> {
-        self.worlds
-            .iter()
-            .enumerate()
-            .find(|(_, world)| {
-                world.identity.context == target.context
-                    && world.identity.world_id == target.world_id
-            })
-            .map(|(index, world)| (index, world.control_alias.as_str()))
-    }
-
-    pub(super) fn finish_codex_open(
-        &mut self,
-        target: &CodexOpenTarget,
-        world: Option<usize>,
-        failed: bool,
-    ) {
-        let accepted = self.control.finish_open(target, failed);
-        if accepted
-            && self.mode == Mode::Control
-            && self.control.activity() != super::control::Activity::Worlds
-            && !failed
-        {
-            let Some(world) = world else {
-                return;
-            };
-            self.active = world;
-            self.mode = Mode::World;
-        }
-    }
 }
-
-#[cfg(test)]
-#[path = "model_focus_tests.rs"]
-mod focus_tests;
 
 #[cfg(test)]
 #[path = "model_world_menu_tests.rs"]
@@ -283,7 +237,6 @@ mod tests {
     #[test]
     fn world_cards_select_and_open_worlds() {
         let mut model = ShellModel::new(vec![world("one"), world("two"), world("three")]);
-        model.handle_key(key(KeyCode::Tab), area());
         model.handle_key(key(KeyCode::Tab), area());
 
         model.handle_key(key(KeyCode::Down), area());

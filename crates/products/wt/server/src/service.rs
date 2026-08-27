@@ -1,6 +1,5 @@
 use crate::operations::Operations;
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 use wt_control_protocol::{
     ApiError, Capacity, CapacityResource, CreateWorld, ErrorCode, Operation, ResourceCapacity,
@@ -10,18 +9,13 @@ use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{Store, StoreError, StoredWorld};
 mod activity;
-mod codex;
-mod codex_catalog;
 mod gateway;
 mod lifecycle;
+mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
 pub use gateway::AgentToolGateway;
-
-pub fn refresh_codex_session_catalog(store: &Store, root: &Path) -> Result<Vec<String>, String> {
-    codex_catalog::refresh(store, root)
-}
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -32,7 +26,6 @@ pub struct Service<W, G> {
     gateway: G,
     operations: Operations,
     capacity_limit: Resources,
-    codex_sessions_path: PathBuf,
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
@@ -52,7 +45,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 memory_mib: memory_limit_mib,
                 ..Resources::UNLIMITED
             },
-            codex_sessions_path: PathBuf::from(crate::CODEX_SESSIONS_PATH),
         }
     }
 
@@ -69,13 +61,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             gateway,
             operations,
             capacity_limit,
-            codex_sessions_path: PathBuf::from(crate::CODEX_SESSIONS_PATH),
         }
-    }
-
-    pub fn with_codex_sessions_path(mut self, path: impl AsRef<Path>) -> Self {
-        self.codex_sessions_path = path.as_ref().to_owned();
-        self
     }
 
     pub fn execute(&self, owner: &str, operation: Operation) -> Result<Response, ApiError> {
@@ -104,10 +90,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
-            Operation::ListCodexSessions => self.list_codex_sessions(owner),
+            Operation::ListPaneObservations => self.list_pane_observations(owner),
             Operation::ListGitActivity { query } => self.list_git_activity(owner, query),
             Operation::ListWtToolsActivity { query } => self.list_wt_tools_activity(owner, query),
-            Operation::RepositoryGitState { query } => self.repository_git_state(owner, query),
         }
     }
 

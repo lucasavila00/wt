@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-08-23
-- Supersedes: [ADR 0070](0070-move-codex-reconciliation-out-of-interactive-startup.md)
 
 ## Context
 
@@ -17,7 +16,8 @@ The `codex` wrapper synchronizes the local session database immediately before s
 Codex CLI. It writes a progress message to standard output and names
 `IGNORE_CODEX_WT_CHECKS=true` as the explicit bypass.
 
-WT keeps the server-side rollout catalog refreshed for its session UI, but it does not request
+WT does not index or expose rollout metadata through the server. It only
+coordinates shared filesystem history before local Codex startup and does not request
 database reconciliation from running worlds. A process lock serializes concurrent startup
 refreshes in one world.
 

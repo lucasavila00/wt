@@ -13,10 +13,8 @@ mod vsock;
 
 pub use gateway::{wt_tools_help, FixtureApi, Gateway, GatewayConfig, Provider};
 pub use protocol::{
-    valid_codex_pane_id, valid_codex_tmux_session, ClientOperation, ClientRequest, CodexGitContext,
-    CodexSessionEvent, CodexSessionEventKind, CodexSessionStartSource, CodexSessionStartSourceKind,
-    ControlRequest, ControlResponse, Grant, TransportRequest, TransportResponse,
-    CODEX_SESSION_PANE_OPTION, PROTOCOL_VERSION,
+    valid_byobu_pane_id, valid_byobu_tmux_session, ClientOperation, ClientRequest, ControlRequest,
+    ControlResponse, Grant, PaneObservation, TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line};
 pub use vsock::{VsockListener, VsockStream};

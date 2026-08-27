@@ -11,7 +11,8 @@ const SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
 #[allow(dead_code)]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let plain_text = matches!(args.as_slice(), [arg] if matches!(arg.as_str(), "help" | "--help" | "-h" | "world-prompt"));
+    let plain_text =
+        matches!(args.as_slice(), [arg] if matches!(arg.as_str(), "help" | "--help" | "-h"));
     if let Err(error) = run(args) {
         if plain_text {
             eprintln!("wt-tools: {error:#}");

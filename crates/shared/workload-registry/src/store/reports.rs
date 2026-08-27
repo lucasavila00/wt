@@ -1,41 +1,12 @@
 use super::{map_registry_error, Store, StoreError};
-use crate::{
-    AgentToolReport, CodexSessionCatalogEntry, CodexSessionCatalogInput, CodexSessionReport,
-};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::{AgentToolReport, PaneObservation};
+use std::collections::BTreeMap;
 use wt_world::WorldId;
 
 impl Store {
-    pub fn upsert_codex_session_catalog(
-        &self,
-        entry: &CodexSessionCatalogInput,
-    ) -> Result<(), StoreError> {
+    pub fn list_pane_observations(&self, owner: &str) -> Result<Vec<PaneObservation>, StoreError> {
         self.registry
-            .upsert_codex_session_catalog(entry)
-            .map_err(map_registry_error)
-    }
-
-    pub fn list_codex_session_catalog(&self) -> Result<Vec<CodexSessionCatalogEntry>, StoreError> {
-        self.registry
-            .list_codex_session_catalog()
-            .map_err(map_registry_error)
-    }
-
-    pub fn retain_codex_session_catalog_paths(
-        &self,
-        paths: &BTreeSet<String>,
-    ) -> Result<(), StoreError> {
-        self.registry
-            .retain_codex_session_catalog_paths(paths)
-            .map_err(map_registry_error)
-    }
-
-    pub fn list_codex_session_reports(
-        &self,
-        owner: &str,
-    ) -> Result<Vec<CodexSessionReport>, StoreError> {
-        self.registry
-            .list_codex_session_reports(owner)
+            .list_pane_observations(owner)
             .map_err(map_registry_error)
     }
 

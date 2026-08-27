@@ -1,11 +1,11 @@
 # ADR 0034: Show worlds as cards in `wt shell`
 
-- Status: Accepted; Date: 2026-08-21
+- Status: Superseded in part by ADR 0081; Date: 2026-08-21
 
 ## Decision
 
 The Worlds activity renders a vertically scrollable two-column grid of cards.
-It uses the same card component and interaction rules as the Codex activity:
+It uses the same card component and interaction rules as the observed-panes activity:
 border, state glyph and text, information hierarchy, selected/opening/error
 states, viewport behavior, keyboard navigation, wheel scrolling, and exact
 click hit-testing.
@@ -20,7 +20,7 @@ shows every field currently emitted by `wt ls`:
 Cards may wrap values but never replace missing, invalid, or failed data with a
 guess. Context fetch failures are visible and no successfully decoded world is
 silently omitted. The panel retains the independent refresh timestamp defined
-by ADR 0032.
+by the server-owned pane-observation refresh in ADR 0081.
 
 Arrow keys move selection and scroll only as needed to keep it visible. The
 mouse wheel moves the viewport by one terminal row without changing selection.
@@ -34,7 +34,7 @@ playback PTY. Provisioning, stopped, failed, or otherwise unavailable cards are
 disabled and show the exact reason. Opening never creates or reconnects an SSH
 session. Failure leaves the Worlds activity, selection, and error visible.
 
-World and Codex cards share rendering and interaction primitives, not copied
+World and observed-pane cards share rendering and interaction primitives, not copied
 implementations. Activity-specific code supplies identity, state, fields,
 disabled reason, and open action. `Tab`, `F1`, `F5`, and `F6` keep their current
 meanings.

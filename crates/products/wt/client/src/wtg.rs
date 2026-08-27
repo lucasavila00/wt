@@ -4,20 +4,12 @@ use std::path::Path;
 
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
-    let silent_hook = args.get(1).is_some_and(|arg| arg == "codex")
-        && args.get(2).is_some_and(|arg| arg == "report-hook");
     let tools = args.get(1).is_some_and(|arg| arg == "tools");
     let plain_tools = tools
-        && args.get(2).is_some_and(|arg| {
-            matches!(
-                arg.to_str(),
-                Some("help" | "--help" | "-h" | "world-prompt")
-            )
-        });
+        && args
+            .get(2)
+            .is_some_and(|arg| matches!(arg.to_str(), Some("help" | "--help" | "-h")));
     if let Err(error) = run(args) {
-        if silent_hook {
-            return;
-        }
         if tools && !plain_tools {
             eprintln!(
                 "{}",

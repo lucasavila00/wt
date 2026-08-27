@@ -49,10 +49,10 @@ Request-initialization failures are recorded in the server journal. Inspect
 them with `journalctl -u wts.service` when a client reports a context
 refresh failure.
 
-The installer creates the server-backed Codex sessions directory and a
-read-only authentication export. Running worlds receive both through virtiofs.
-Shared sessions are outside world disk quotas and need a separate backup. Do
-not open one conversation in two worlds simultaneously.
+The installer creates a server-backed historical Codex sessions directory and
+a read-only authentication export. Running worlds receive both through
+virtiofs. The history is outside world disk quotas and needs a separate backup;
+it is not live pane state.
 
 Refresh expired Codex authentication as the server `wt` user. A systemd path
 unit atomically republishes `auth.json`; running worlds receive the replacement

@@ -1,10 +1,10 @@
 use super::super::refresh_status::RefreshStatus;
 use super::layout::{
-    card_grid, codex_card_grid, session_card_at_position, CARD_COLUMNS, WORLD_CARD_HEIGHT,
+    card_grid, pane_card_grid, session_card_at_position, CARD_COLUMNS, WORLD_CARD_HEIGHT,
 };
 use super::{
-    command_palette_layout, control_areas, Activity, CodexCard, CodexCardIdentity, CodexOpenTarget,
-    CommandPalette, ControlAction, Help,
+    command_palette_layout, control_areas, Activity, CommandPalette, ControlAction, Help, PaneCard,
+    PaneCardIdentity,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -15,33 +15,29 @@ pub(in crate::shell) struct ControlState {
     pub(super) activity: Activity,
     palette: CommandPalette,
     help: Help,
-    pub(super) codex: Vec<CodexCard>,
-    pub(super) selected: Option<CodexCardIdentity>,
-    codex_scroll: usize,
+    pub(super) panes: Vec<PaneCard>,
+    pub(super) selected: Option<PaneCardIdentity>,
+    pane_scroll: usize,
     world_scroll: usize,
     scrollbar_drag: Option<Activity>,
-    pub(in crate::shell) opening: Option<CodexCardIdentity>,
-    pub(in crate::shell) open_failure: Option<CodexOpenTarget>,
     worlds_refresh: RefreshStatus,
-    codex_refresh: RefreshStatus,
+    pane_refresh: RefreshStatus,
     capacity: ResourceCapacity,
 }
 
 impl Default for ControlState {
     fn default() -> Self {
         Self {
-            activity: Activity::Live,
+            activity: Activity::Panes,
             palette: CommandPalette::default(),
             help: Help::default(),
-            codex: Vec::new(),
+            panes: Vec::new(),
             selected: None,
-            codex_scroll: 0,
+            pane_scroll: 0,
             world_scroll: 0,
             scrollbar_drag: None,
-            opening: None,
-            open_failure: None,
             worlds_refresh: RefreshStatus::default(),
-            codex_refresh: RefreshStatus::default(),
+            pane_refresh: RefreshStatus::default(),
             capacity: Default::default(),
         }
     }
@@ -74,11 +70,11 @@ impl ControlState {
         &self.help
     }
 
-    pub(in crate::shell) fn codex(&self) -> &[CodexCard] {
-        &self.codex
+    pub(in crate::shell) fn panes(&self) -> &[PaneCard] {
+        &self.panes
     }
 
-    pub(in crate::shell) fn selected(&self) -> Option<&CodexCardIdentity> {
+    pub(in crate::shell) fn selected(&self) -> Option<&PaneCardIdentity> {
         self.selected.as_ref()
     }
 
@@ -86,69 +82,62 @@ impl ControlState {
         &self.worlds_refresh
     }
 
-    pub(in crate::shell) fn codex_refresh(&self) -> &RefreshStatus {
-        &self.codex_refresh
+    pub(in crate::shell) fn pane_refresh(&self) -> &RefreshStatus {
+        &self.pane_refresh
     }
 
-    pub(in crate::shell) fn codex_refresh_mut(&mut self) -> &mut RefreshStatus {
-        &mut self.codex_refresh
+    pub(in crate::shell) fn pane_refresh_mut(&mut self) -> &mut RefreshStatus {
+        &mut self.pane_refresh
     }
 
     pub(in crate::shell) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
         self.worlds_refresh.finish(result);
     }
 
-    pub(in crate::shell) fn codex_scroll(&self) -> usize {
-        self.codex_scroll
-    }
-
     pub(in crate::shell) fn world_scroll(&self) -> usize {
         self.world_scroll
     }
 
-    pub(in crate::shell) fn opening(&self) -> Option<&CodexCardIdentity> {
-        self.opening.as_ref()
+    pub(in crate::shell) fn pane_scroll(&self) -> usize {
+        self.pane_scroll
     }
 
-    pub(in crate::shell) fn set_codex(
+    pub(in crate::shell) fn set_panes(
         &mut self,
-        codex: Vec<CodexCard>,
+        panes: Vec<PaneCard>,
         updated_at: String,
         area: Rect,
     ) -> bool {
-        if self.opening.is_some() {
-            return false;
-        }
         let selected = self
             .selected
             .as_ref()
-            .filter(|selected| codex.iter().any(|card| &card.identity == *selected))
+            .filter(|selected| panes.iter().any(|card| &card.identity == *selected))
             .cloned()
-            .or_else(|| codex.first().map(|card| card.identity.clone()));
-        self.codex = codex;
+            .or_else(|| panes.first().map(|card| card.identity.clone()));
+        self.panes = panes;
         self.selected = selected;
-        self.select_first_visible_codex();
-        self.keep_codex_selection_visible(area);
-        self.codex_refresh.finish(Ok(updated_at));
+        self.select_first_visible_pane();
+        self.keep_pane_selection_visible(area);
+        self.pane_refresh.finish(Ok(updated_at));
         true
     }
 
-    pub(in crate::shell) fn apply_codex_refresh(
+    pub(in crate::shell) fn apply_pane_refresh(
         &mut self,
-        codex: Vec<CodexCard>,
+        panes: Vec<PaneCard>,
         failures: Vec<String>,
         updated_at: String,
         area: Rect,
     ) -> bool {
-        self.set_context_failures(failures);
-        if self.context_failure().is_some() {
+        self.pane_refresh_mut().set_failures(failures);
+        if self.pane_refresh().failures().is_some() {
             return true;
         }
-        self.set_codex(codex, updated_at, area)
+        self.set_panes(panes, updated_at, area)
     }
 
     pub(in crate::shell) fn resize(&mut self, area: Rect) {
-        self.keep_codex_selection_visible(area);
+        self.keep_pane_selection_visible(area);
     }
 
     pub(in crate::shell) fn scroll_worlds(&mut self, delta: isize, area: Rect, count: usize) {
@@ -177,7 +166,7 @@ impl ControlState {
         area: Rect,
         count: usize,
     ) -> bool {
-        if self.palette.is_open() || self.help.is_open() || self.open_failure.is_some() {
+        if self.palette.is_open() || self.help.is_open() {
             return false;
         }
         let maximum = card_grid(area, self.world_scroll, count, WORLD_CARD_HEIGHT).maximum_scroll();
@@ -189,16 +178,6 @@ impl ControlState {
         key: KeyEvent,
         area: Rect,
     ) -> Option<ControlAction> {
-        if self.open_failure.is_some() && key.modifiers == KeyModifiers::NONE {
-            match key.code {
-                KeyCode::Enter => return self.retry_open(),
-                KeyCode::Esc => {
-                    self.open_failure = None;
-                    return None;
-                }
-                _ => {}
-            }
-        }
         if self.help.is_open() {
             if key.modifiers == KeyModifiers::NONE
                 && matches!(key.code, KeyCode::Char('2') | KeyCode::F(2) | KeyCode::Esc)
@@ -216,25 +195,19 @@ impl ControlState {
         match key.code {
             KeyCode::Tab => {
                 self.activity = self.activity.next();
-                self.select_first_visible_codex();
-                self.keep_codex_selection_visible(area);
+                self.select_first_visible_pane();
+                self.keep_pane_selection_visible(area);
             }
             KeyCode::Char('1') | KeyCode::F(1) => self.palette.open(),
             KeyCode::Char('2') | KeyCode::F(2) => self.help.toggle(),
             KeyCode::Up if self.activity != Activity::Worlds => {
-                self.move_codex(-(super::super::live::columns(area) as isize), area)
+                self.move_pane(-(CARD_COLUMNS as isize), area)
             }
             KeyCode::Down if self.activity != Activity::Worlds => {
-                self.move_codex(super::super::live::columns(area) as isize, area)
+                self.move_pane(CARD_COLUMNS as isize, area)
             }
-            KeyCode::Left if self.activity != Activity::Worlds => self.move_codex(-1, area),
-            KeyCode::Right if self.activity != Activity::Worlds => self.move_codex(1, area),
-            KeyCode::Enter if self.activity != Activity::Worlds => {
-                return self
-                    .activate_selected()
-                    .map(Box::new)
-                    .map(ControlAction::OpenCodex)
-            }
+            KeyCode::Left if self.activity != Activity::Worlds => self.move_pane(-1, area),
+            KeyCode::Right if self.activity != Activity::Worlds => self.move_pane(1, area),
             _ => {}
         }
         None
@@ -258,15 +231,12 @@ impl ControlState {
                 return (true, None);
             }
         }
-        if self.activity != Activity::Worlds
-            && !self.palette.is_open()
-            && self.open_failure.is_none()
-        {
-            let maximum = codex_card_grid(
+        if self.activity != Activity::Worlds && !self.palette.is_open() {
+            let maximum = pane_card_grid(
                 area,
                 self.activity,
-                self.codex_scroll,
-                self.visible_codex_len(),
+                self.pane_scroll,
+                self.visible_pane_len(),
             )
             .maximum_scroll();
             if self.handle_scrollbar(mouse, area, self.activity, maximum) {
@@ -275,29 +245,15 @@ impl ControlState {
         }
         match mouse.kind {
             MouseEventKind::ScrollUp if self.activity != Activity::Worlds => {
-                self.scroll_codex(-1, area);
+                self.scroll_pane(-1, area);
                 return (true, None);
             }
             MouseEventKind::ScrollDown if self.activity != Activity::Worlds => {
-                self.scroll_codex(1, area);
+                self.scroll_pane(1, area);
                 return (true, None);
             }
             MouseEventKind::Down(MouseButton::Left) => {}
             _ => return (false, None),
-        }
-        if self.open_failure.is_some() {
-            let (retry, dismiss) = super::super::toast::actions(area);
-            let position = (mouse.column, mouse.row).into();
-            if retry.contains(position) {
-                return (true, self.retry_open());
-            }
-            if dismiss.contains(position) {
-                self.open_failure = None;
-                return (true, None);
-            }
-            if super::super::toast::area(area).contains(position) {
-                return (true, None);
-            }
         }
         if self.palette.is_open() {
             let (_, results) = command_palette_layout(control_areas(area).1);
@@ -314,29 +270,21 @@ impl ControlState {
         }
         if let Some(activity) = super::super::activity::at_position(area, mouse.column, mouse.row) {
             self.activity = activity;
-            self.select_first_visible_codex();
-            self.keep_codex_selection_visible(area);
+            self.select_first_visible_pane();
+            self.keep_pane_selection_visible(area);
             return (true, None);
         }
         if self.activity != Activity::Worlds {
-            if self.opening.is_some() {
-                return (true, None);
-            }
             if let Some(index) = session_card_at_position(
                 area,
                 self.activity,
-                self.codex_scroll,
-                self.visible_codex_len(),
+                self.pane_scroll,
+                self.visible_pane_len(),
                 mouse.column,
                 mouse.row,
             ) {
-                self.selected = Some(self.visible_codex_identities()[index].clone());
-                return (
-                    true,
-                    self.activate_selected()
-                        .map(Box::new)
-                        .map(ControlAction::OpenCodex),
-                );
+                self.selected = Some(self.visible_pane_identities()[index].clone());
+                return (true, None);
             }
         }
         (false, None)
@@ -347,24 +295,9 @@ impl ControlState {
         self.help.close();
     }
 
-    fn activate_selected(&mut self) -> Option<CodexOpenTarget> {
-        if self.opening.is_some() {
-            return None;
-        }
-        let selected = self.selected.as_ref()?;
-        let target = self
-            .codex
-            .iter()
-            .find(|card| &card.identity == selected)?
-            .open_target()?;
-        self.opening = Some(target.identity.clone());
-        self.open_failure = None;
-        Some(target)
-    }
-
-    fn move_codex(&mut self, delta: isize, area: Rect) {
-        let identities = self.visible_codex_identities();
-        if identities.is_empty() || self.opening.is_some() {
+    fn move_pane(&mut self, delta: isize, area: Rect) {
+        let identities = self.visible_pane_identities();
+        if identities.is_empty() {
             return;
         }
         let current = self
@@ -376,37 +309,29 @@ impl ControlState {
             .saturating_add_signed(delta)
             .min(identities.len().saturating_sub(1));
         self.selected = Some(identities[selected].clone());
-        self.keep_codex_selection_visible(area);
+        self.keep_pane_selection_visible(area);
     }
 
-    fn keep_codex_selection_visible(&mut self, area: Rect) {
-        let identities = self.visible_codex_identities();
-        let grid = codex_card_grid(area, self.activity, self.codex_scroll, identities.len());
-        self.codex_scroll = self.codex_scroll.min(grid.maximum_scroll());
+    fn keep_pane_selection_visible(&mut self, area: Rect) {
+        let identities = self.visible_pane_identities();
+        let grid = pane_card_grid(area, self.activity, self.pane_scroll, identities.len());
+        self.pane_scroll = self.pane_scroll.min(grid.maximum_scroll());
         let Some(selected) = self
             .selected
             .as_ref()
             .and_then(|selected| identities.iter().position(|identity| identity == selected))
         else {
-            self.codex_scroll = 0;
+            self.pane_scroll = 0;
             return;
         };
-        let (height, gap) = if self.activity == Activity::Live {
-            (
-                super::super::live::CARD_HEIGHT,
-                super::super::live::CARD_GAP,
-            )
-        } else {
-            (super::layout::CODEX_CARD_HEIGHT, super::layout::CARD_GAP)
-        };
-        self.codex_scroll = reveal_card(self.codex_scroll, selected, grid, height, gap);
+        let (height, gap) = (super::layout::PANE_CARD_HEIGHT, super::layout::CARD_GAP);
+        self.pane_scroll = reveal_card(self.pane_scroll, selected, grid, height, gap);
     }
 
-    fn scroll_codex(&mut self, delta: isize, area: Rect) {
-        let count = self.visible_codex_len();
-        let maximum =
-            codex_card_grid(area, self.activity, self.codex_scroll, count).maximum_scroll();
-        self.codex_scroll = self.codex_scroll.saturating_add_signed(delta).min(maximum);
+    fn scroll_pane(&mut self, delta: isize, area: Rect) {
+        let count = self.visible_pane_len();
+        let maximum = pane_card_grid(area, self.activity, self.pane_scroll, count).maximum_scroll();
+        self.pane_scroll = self.pane_scroll.saturating_add_signed(delta).min(maximum);
     }
 
     fn handle_scrollbar(
@@ -444,7 +369,7 @@ impl ControlState {
         if activity == Activity::Worlds {
             self.world_scroll = position;
         } else {
-            self.codex_scroll = position;
+            self.pane_scroll = position;
         }
         true
     }

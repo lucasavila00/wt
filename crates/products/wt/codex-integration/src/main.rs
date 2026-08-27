@@ -1,14 +1,15 @@
-mod focus;
-mod install;
 mod reconcile;
-mod report;
 mod startup;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::ffi::OsString;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+
+const REAL_CODEX_SUFFIX: &str = ".codex/packages/standalone/current/bin/codex";
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-codex-integration")]
@@ -19,58 +20,35 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Ask Codex to discover shared session rollouts.
+    /// Synchronize shared Codex history.
     Reconcile,
-    /// Install WT's exact Codex user configuration.
-    InstallConfig,
-    /// Report a WT-managed Codex lifecycle hook.
-    #[command(hide = true)]
-    ReportHook,
-    /// Focus a strictly identified WT Byobu pane.
-    #[command(hide = true)]
-    FocusPane {
-        session_id: uuid::Uuid,
-        tmux_session: String,
-        pane_id: String,
-    },
 }
 
 #[allow(dead_code)]
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
-    let silent = args.get(1).is_some_and(|value| value == "report-hook");
     if let Err(error) = run(args) {
-        if silent {
-            return;
-        }
         eprintln!("wt-codex-integration: {error:#}");
         std::process::exit(1);
     }
 }
 
 pub fn run(args: Vec<OsString>) -> Result<()> {
-    if install::invoked_as_codex(&args)? {
+    if invoked_as_codex(&args) {
         return run_trampoline(args);
     }
 
     match Cli::parse_from(args).command {
         Command::Reconcile => {
             startup::reconcile_manual()?;
-            println!("Codex session index refreshed.");
+            println!("Codex history synchronized.");
         }
-        Command::InstallConfig => install::install_user_config()?,
-        Command::ReportHook => report::report_hook()?,
-        Command::FocusPane {
-            session_id,
-            tmux_session,
-            pane_id,
-        } => println!("{}", focus::focus(session_id, &tmux_session, &pane_id)?),
     }
     Ok(())
 }
 
 fn run_trampoline(args: Vec<OsString>) -> Result<()> {
-    let real_codex = install::real_codex()?;
+    let real_codex = real_codex()?;
     if std::env::var("IGNORE_CODEX_WT_CHECKS").as_deref() != Ok("true")
         && !is_version_request(&args)
     {
@@ -86,6 +64,31 @@ fn run_trampoline(args: Vec<OsString>) -> Result<()> {
         .args(&args[1..])
         .exec();
     Err(error).context("start the real Codex CLI")
+}
+
+fn invoked_as_codex(args: &[OsString]) -> bool {
+    args.first().is_some_and(|argv0| {
+        Path::new(argv0)
+            .file_name()
+            .is_some_and(|name| name == "codex")
+    })
+}
+
+fn real_codex() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    let path = Path::new(&home).join(REAL_CODEX_SUFFIX);
+    match path.metadata() {
+        Ok(metadata) if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 => Ok(path),
+        Ok(_) => anyhow::bail!(
+            "real Codex CLI is missing or not executable at {}; recreate this world from a verified WT image",
+            path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => anyhow::bail!(
+            "real Codex CLI is missing or not executable at {}; recreate this world from a verified WT image",
+            path.display()
+        ),
+        Err(error) => Err(error).with_context(|| format!("inspect real Codex CLI {}", path.display())),
+    }
 }
 
 fn is_version_request(args: &[OsString]) -> bool {
@@ -105,9 +108,8 @@ mod tests {
 Usage: wt-codex-integration <COMMAND>
 
 Commands:
-  reconcile       Ask Codex to discover shared session rollouts
-  install-config  Install WT's exact Codex user configuration
-  help            Print this message or the help of the given subcommand(s)
+  reconcile  Synchronize shared Codex history
+  help       Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
