@@ -58,12 +58,6 @@ impl ControlState {
         self.help.close();
     }
 
-    pub(in crate::shell) fn show_codex(&mut self, identity: PaneCardIdentity, area: Rect) {
-        self.activity = Activity::Codex;
-        self.selected = Some(identity);
-        self.keep_pane_selection_visible(area);
-    }
-
     pub(in crate::shell) fn activity(&self) -> Activity {
         self.activity
     }
@@ -215,7 +209,7 @@ impl ControlState {
             KeyCode::Left if self.activity != Activity::Worlds => self.move_pane(-1, area),
             KeyCode::Right if self.activity != Activity::Worlds => self.move_pane(1, area),
             KeyCode::Enter if self.activity == Activity::Live => {
-                return self.selected.clone().map(ControlAction::ShowCodex);
+                return self.selected.clone().map(ControlAction::OpenPane);
             }
             _ => {}
         }
@@ -296,7 +290,7 @@ impl ControlState {
                 self.selected = Some(identity.clone());
                 return (
                     true,
-                    (self.activity == Activity::Live).then_some(ControlAction::ShowCodex(identity)),
+                    (self.activity == Activity::Live).then_some(ControlAction::OpenPane(identity)),
                 );
             }
         }

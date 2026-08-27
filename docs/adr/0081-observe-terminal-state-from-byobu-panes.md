@@ -15,9 +15,10 @@ content.
 
 The shell renders these server observations as Codex panes. Stale or missing
 data stays stale or unavailable; it never implies an application exit. Live
-previews use the shell's existing per-world SSH/PTY parsers and link to their
-matching Codex pane. The shell does not switch panes to create state or create
-another SSH connection for previews.
+previews use the shell's existing per-world SSH/PTY parsers. Opening a preview
+verifies and selects its matching Codex pane through the playback connection's
+SSH control master, then shows the world. The shell does not switch panes to
+create observation state or create another playback connection for previews.
 
 This is one incompatible cutover: delete every Codex lifecycle hook, report,
 protocol, persistence record, local liveness/checkout tracker, and related UI.

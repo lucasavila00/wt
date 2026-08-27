@@ -1,3 +1,4 @@
+use super::control::PaneCardIdentity;
 use super::model::{ShellWorld, WorldIdentity};
 use crate::create::Input;
 use crossterm::event::{Event, MouseButton, MouseEventKind};
@@ -13,6 +14,7 @@ pub(super) type ActionId = u64;
 pub(super) enum Intent {
     Create(Input),
     Delete(ShellWorld),
+    OpenPane(PaneCardIdentity),
     Reconnect(WorldIdentity),
 }
 
@@ -269,6 +271,7 @@ pub(super) fn label(intent: &Intent) -> String {
     match intent {
         Intent::Create(input) => format!("Create {}.{}", input.context, input.name),
         Intent::Delete(world) => format!("Delete {}", world.name),
+        Intent::OpenPane(_) => "Open Codex pane".into(),
         Intent::Reconnect(identity) => format!("Reconnect {}", identity.context),
     }
 }

@@ -105,5 +105,5 @@ pub(in crate::shell) enum ControlCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::shell) enum ControlAction {
     Command(ControlCommand),
-    ShowCodex(PaneCardIdentity),
+    OpenPane(PaneCardIdentity),
 }

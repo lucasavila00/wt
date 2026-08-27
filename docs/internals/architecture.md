@@ -67,8 +67,10 @@ does not expose every pane in the world. The observation is server-owned and
 does not change that shared selection.
 
 The Live control activity renders previews from those existing playback
-parsers. It changes the shared PTY dimensions while visible, but creates no
-additional SSH sessions and does not select a Byobu pane.
+parsers. It changes the shared PTY dimensions while visible and creates no
+additional playback sessions. Opening a preview verifies and selects the
+observed Codex pane through the existing SSH control master, then shows that
+world's shared Byobu session.
 
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved

@@ -238,6 +238,16 @@ impl SessionSet {
         Ok(())
     }
 
+    pub(super) fn is_open(&self, index: usize) -> bool {
+        self.sessions
+            .get(index)
+            .is_some_and(|session| session.closed_message.is_none())
+    }
+
+    pub(super) fn control_path(&self, index: usize) -> &Path {
+        &self.sessions[index].control_path
+    }
+
     fn control_path_for(&self, token: u64) -> PathBuf {
         self.control_dir.path().join(token.to_string())
     }
@@ -314,6 +324,7 @@ impl Drop for SessionSet {
 struct WorldSession {
     token: u64,
     world: ShellWorld,
+    control_path: PathBuf,
     name: String,
     parser: vt100::Parser,
     writer: Option<Box<dyn std::io::Write + Send>>,
@@ -343,7 +354,7 @@ impl WorldSession {
     fn start(
         token: u64,
         world: &ShellWorld,
-        _control_path: PathBuf,
+        control_path: PathBuf,
         command: CommandBuilder,
         rows: u16,
         columns: u16,
@@ -374,6 +385,7 @@ impl WorldSession {
         Ok(Self {
             token,
             world: world.clone(),
+            control_path,
             name: world.name.clone(),
             parser: vt100::Parser::new(rows, columns, SCROLLBACK_ROWS),
             writer: Some(writer),

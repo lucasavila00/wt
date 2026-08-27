@@ -62,7 +62,7 @@ pub(super) enum InputRoute {
     Consumed,
     World,
     Command(ControlCommand),
-    ShowCodex(Box<PaneCardIdentity>),
+    OpenPane(Box<PaneCardIdentity>),
     DeleteWorld(Box<ShellWorld>),
 }
 
@@ -171,10 +171,6 @@ impl ShellModel {
         self.control.show_worlds();
     }
 
-    pub(super) fn show_codex(&mut self, identity: PaneCardIdentity, area: Rect) {
-        self.control.show_codex(identity, area);
-    }
-
     pub(super) fn finish_worlds_refresh(&mut self, result: Result<String, Vec<String>>) {
         self.control.finish_worlds_refresh(result);
     }
@@ -183,6 +179,36 @@ impl ShellModel {
         self.control.resize(area);
         self.control
             .keep_world_selection_visible(area, self.active, self.worlds.len());
+    }
+
+    pub(super) fn pane_route(&self, target: &PaneCardIdentity) -> Option<(usize, &str)> {
+        if !self
+            .control
+            .panes()
+            .iter()
+            .any(|card| &card.identity == target)
+        {
+            return None;
+        }
+        let PaneCardIdentity::Observation {
+            context, world_id, ..
+        } = target
+        else {
+            return None;
+        };
+        self.worlds
+            .iter()
+            .enumerate()
+            .find(|(_, world)| {
+                world.identity.context == *context && world.identity.world_id == *world_id
+            })
+            .map(|(index, world)| (index, world.control_alias.as_str()))
+    }
+
+    pub(super) fn open_world(&mut self, index: usize) {
+        self.active = index;
+        self.control.close();
+        self.mode = Mode::World;
     }
 }
 
