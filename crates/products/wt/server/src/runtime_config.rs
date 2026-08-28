@@ -308,7 +308,7 @@ impl ServerConfig {
     fn shared_mounts(&self) -> SharedMounts {
         let paths = self.codex_paths();
         SharedMounts {
-            sessions: PathBuf::from(paths.sessions),
+            sessions_root: PathBuf::from(paths.sessions),
             auth: PathBuf::from(paths.auth_share),
             ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
         }
@@ -399,7 +399,7 @@ binary_dir = "/usr/local/bin"
         assert_eq!(
             machine.shared_mounts,
             Some(SharedMounts {
-                sessions: PathBuf::from(CODEX_SESSIONS_PATH),
+                sessions_root: PathBuf::from(CODEX_SESSIONS_PATH),
                 auth: PathBuf::from(CODEX_AUTH_SHARE_DIR),
                 ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
             })
@@ -421,7 +421,7 @@ binary_dir = "/usr/local/bin"
         assert_eq!(
             machine.shared_mounts.unwrap(),
             SharedMounts {
-                sessions: PathBuf::from(TEST_CODEX_SESSIONS_PATH),
+                sessions_root: PathBuf::from(TEST_CODEX_SESSIONS_PATH),
                 auth: PathBuf::from(TEST_CODEX_AUTH_SHARE_DIR),
                 ssh_authorized_keys: PathBuf::from(SSH_AUTHORIZED_KEYS_SHARE_DIR),
             }

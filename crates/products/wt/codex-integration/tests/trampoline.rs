@@ -4,10 +4,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-fn run_codex(codex: &Path, home: &Path, ignore_checks: bool) {
-    let sync_marker = home.join("sync-called");
-    let _ = fs::remove_file(&sync_marker);
-
+fn run_codex(codex: &Path, home: &Path) {
     let mut command = Command::new("/bin/sh");
     command
         .args(["-c", "umask 0077; exec \"$@\"", "sh"])
@@ -16,10 +13,6 @@ fn run_codex(codex: &Path, home: &Path, ignore_checks: bool) {
         .env("HOME", home)
         .env("CODEX_HOME", home.join(".codex"))
         .env("WT_CODEX_TEST_ENV", "unchanged")
-        .env(
-            "IGNORE_CODEX_WT_CHECKS",
-            if ignore_checks { "true" } else { "false" },
-        )
         .current_dir(home)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -36,22 +29,15 @@ fn run_codex(codex: &Path, home: &Path, ignore_checks: bool) {
 
     assert_eq!(run.status.code(), Some(23));
     let expected_stdout = format!(
-        "{}argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0077\nstdin=unchanged\npid={}\n",
-        if ignore_checks {
-            ""
-        } else {
-            "Syncing shared Codex history before starting Codex. Set IGNORE_CODEX_WT_CHECKS=true to skip this synchronization.\n"
-        },
-        home.display(),
-        pid
+        "argc=3\narg=[resume]\narg=[thread id]\narg=[--all]\nenv=unchanged\ncwd={}\numask=0077\nstdin=unchanged\npid={}\n",
+        home.display(), pid
     );
     assert_eq!(String::from_utf8(run.stdout).unwrap(), expected_stdout);
-    assert_eq!(sync_marker.exists(), !ignore_checks);
     assert_eq!(String::from_utf8(run.stderr).unwrap(), "stderr=unchanged\n");
 }
 
 #[test]
-fn both_image_entrypoints_synchronize_before_execing_the_fixed_real_codex() {
+fn both_image_entrypoints_immediately_exec_the_fixed_real_codex() {
     let temp = tempfile::tempdir().unwrap();
     let real_codex = temp
         .path()
@@ -63,17 +49,6 @@ fn both_image_entrypoints_synchronize_before_execing_the_fixed_real_codex() {
             "#!/bin/sh\n",
             "case \"${1-}\" in\n",
             "  --version) printf 'codex-cli 0.149.0\\n' ;;\n",
-            "  app-server)\n",
-            "    printf 'synced\\n' > \"$HOME/sync-called\"\n",
-            "    while IFS= read -r line; do\n",
-            "      case \"$line\" in\n",
-            "        *'\"method\":\"initialize\"'*)\n",
-            "          printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"codexHome\":\"%s\"}}\\n' \"$CODEX_HOME\" ;;\n",
-            "        *'\"method\":\"thread/list\"'*)\n",
-            "          id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n",
-            "          printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"data\":[],\"nextCursor\":null}}\\n' \"$id\" ;;\n",
-            "      esac\n",
-            "    done ;;\n",
             "  *)\n",
             "    printf 'argc=%s\\n' \"$#\"\n",
             "    for arg do printf 'arg=[%s]\\n' \"$arg\"; done\n",
@@ -99,13 +74,12 @@ fn both_image_entrypoints_synchronize_before_execing_the_fixed_real_codex() {
     symlink(integration, user_bin.join("codex")).unwrap();
     symlink(integration, system_bin.join("codex")).unwrap();
 
-    run_codex(&user_bin.join("codex"), temp.path(), false);
-    run_codex(&system_bin.join("codex"), temp.path(), false);
-    run_codex(&system_bin.join("codex"), temp.path(), true);
+    run_codex(&user_bin.join("codex"), temp.path());
+    run_codex(&system_bin.join("codex"), temp.path());
 }
 
 #[test]
-fn version_does_not_require_history_synchronization() {
+fn version_execs_the_fixed_real_codex() {
     let temp = tempfile::tempdir().unwrap();
     let real_codex = temp
         .path()
@@ -116,19 +90,6 @@ fn version_does_not_require_history_synchronization() {
         r#"#!/bin/sh
 case "${1-}" in
   --version) printf 'codex-cli 0.149.0\n' ;;
-  app-server)
-    while IFS= read -r line; do
-      case "$line" in
-        *'"method":"initialize"'*)
-          printf '{"jsonrpc":"2.0","id":1,"result":{"codexHome":"%s"}}\n' "$CODEX_HOME"
-          ;;
-        *'"method":"thread/list"'*)
-          id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-          printf '{"jsonrpc":"2.0","id":%s,"result":{"data":[],"nextCursor":null}}\n' "$id"
-          ;;
-      esac
-    done
-    ;;
   *) exit 64 ;;
 esac
 "#,

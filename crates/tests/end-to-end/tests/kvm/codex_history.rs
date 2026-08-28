@@ -2,31 +2,8 @@ use super::*;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
-
-pub(crate) struct CodexHistoryFixture {
-    pub(crate) marker: String,
-    root: PathBuf,
-}
-
-impl CodexHistoryFixture {
-    pub(crate) fn new(name: &WorldName, config: &wt_server::ServerConfig) -> Self {
-        let sessions = Path::new(config.codex_paths().sessions);
-        let fixture_name = format!(".wt-kvm-e2e-{name}");
-        let root = sessions.join(&fixture_name);
-        let transcript_dir = root.join("2026/08/21");
-        fs::create_dir_all(&transcript_dir).unwrap();
-        let marker = format!("{fixture_name}/2026/08/21/rollout.jsonl");
-        Self { marker, root }
-    }
-}
-
-impl Drop for CodexHistoryFixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
-}
 
 pub(crate) fn assert_server_codex_auth_export(config: &wt_server::ServerConfig) -> String {
     let paths = config.codex_paths();

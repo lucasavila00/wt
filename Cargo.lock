@@ -3943,11 +3943,7 @@ dependencies = [
  "anyhow",
  "clap",
  "insta",
- "nix 0.31.3",
- "serde",
- "serde_json",
  "tempfile",
- "uuid",
  "wt-agent-tool-gateway",
 ]
 
