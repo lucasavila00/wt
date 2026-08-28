@@ -348,6 +348,126 @@ pub(super) fn selected_card_border_style(selected: bool) -> Style {
 mod tests {
     use super::*;
     use crate::shell::control::{PaneCardIdentity, PaneCardKind};
+    use ratatui::{backend::TestBackend, Terminal};
+    use wt_control_protocol::{PaneCell, PaneColor, PaneFrame, ResourceCapacity, Resources};
+
+    fn rendered_control(model: &ShellModel, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| super::draw(frame, &[], None, model, None, None, None))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn capacity() -> ResourceCapacity {
+        ResourceCapacity {
+            reserved: Resources {
+                vcpus: 6,
+                memory_mib: 12_288,
+                disk_gib: 96,
+            },
+            total: Resources {
+                vcpus: 20,
+                memory_mib: 32_768,
+                disk_gib: 238,
+            },
+        }
+    }
+
+    fn pane_frame(lines: &[&str], columns: u16) -> PaneFrame {
+        let cells = lines
+            .iter()
+            .flat_map(|line| {
+                let mut characters = line.chars();
+                (0..columns).map(move |_| PaneCell {
+                    text: characters.next().unwrap_or(' ').to_string(),
+                    foreground: PaneColor::Default,
+                    background: PaneColor::Default,
+                    bold: false,
+                    italic: false,
+                    underlined: false,
+                    inverse: false,
+                })
+            })
+            .collect();
+        PaneFrame {
+            rows: u16::try_from(lines.len()).unwrap(),
+            columns,
+            cells,
+        }
+    }
+
+    #[test]
+    fn snapshots_the_complete_worlds_dashboard() {
+        let mut first = super::super::model::ShellWorld::test("ars.clever-turtle", 1);
+        first.resources = "2 CPU · 4G · 6G/32G disk".into();
+        first.action_log = super::super::action_log::ActionLog::Loaded(vec![
+            "wtg: opened PR #250 for wt/world-card-action-log · github.com/lucasavila00/wt".into(),
+            "Git: pushed wt/world-card-action-log to github.com/lucasavila00/wt".into(),
+            "wtg: checked CI · github.com/lucasavila00/wt".into(),
+        ]);
+        let mut second = super::super::model::ShellWorld::test("ars.nimble-panda", 2);
+        second.resources = "2 CPU · 4G · 4.3G/32G disk".into();
+        second.action_log = super::super::action_log::ActionLog::Loaded(vec![
+            "Git: cloned github.com/lucasavila00/diffo".into(),
+            "wtg: created world ars.nimble-panda".into(),
+        ]);
+        let mut model = ShellModel::new(vec![first, second]);
+        model.show_worlds();
+        model.finish_worlds_refresh(Ok("2026-08-28T10:26:08Z".into()));
+        model.control_mut().set_capacity(capacity());
+
+        insta::assert_snapshot!(rendered_control(&model, 128, 20));
+    }
+
+    #[test]
+    fn snapshots_the_complete_live_dashboard() {
+        let world = super::super::model::ShellWorld::test("ars.clever-turtle", 1);
+        let observation = PaneCard {
+            identity: PaneCardIdentity::Observation {
+                context: "ars".into(),
+                world_id: world.identity.world_id,
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            created_at_unix_ms: Some(1_000),
+            observed_at_unix_ms: Some(10_000),
+            classified_at_unix_ms: 10_000,
+            kind: PaneCardKind::Observation {
+                world_name: "clever-turtle".into(),
+                changed_at_unix_ms: 10_000,
+                cwd: "/home/wt/wt".into(),
+                git_branch: Some("wt/world-card-action-log".into()),
+                frame: Some(pane_frame(
+                    &[
+                        "$ cargo test -p wt-client",
+                        "running 107 tests",
+                        "test shell::world_card::tests ... ok",
+                        "test result: ok. 107 passed; 0 failed",
+                    ],
+                    51,
+                )),
+            },
+        };
+        let mut model = ShellModel::new(vec![world]);
+        model.control_mut().set_capacity(capacity());
+        model.control_mut().set_panes(
+            vec![observation, PaneCard::context_error("lab")],
+            "2026-08-28T10:26:08Z".into(),
+            Rect::new(0, 0, 128, 20),
+        );
+
+        insta::assert_snapshot!(rendered_control(&model, 128, 20));
+    }
 
     #[test]
     fn changing_pane_titles_omit_the_relative_age() {
