@@ -2,7 +2,7 @@
 source: crates/products/wt/client/src/shell/render.rs
 expression: "rendered_control(&model, 128, 20)"
 ---
-    │┌ 󰔟 CHANGING · ars.clever-turtle · window “codex” ──────────┐┌ 󰅚 CONTEXT ERROR ──────────────────────────────────────────┐
+    │┌ 󰔟 CHANGING · ars.clever-turtle · window “codex” ──────────┐┌ 󰅚 CONTEXT ERROR · lab ────────────────────────────────────┐
 ▌ 󰆍 ││$ cargo test -p wt-client                                  ││                   context data rejected                   │
     ││running 107 tests                                          ││                                                           │
     ││test shell::world_card::tests ... ok                       ││                                                           │
