@@ -2,7 +2,7 @@
 source: crates/products/wt/client/src/shell/render.rs
 expression: "rendered_control(&model, 128, 20)"
 ---
-    │┌ 󰔟 CHANGING · ars.clever-turtle · window “codex” ──────────┐┌ 󰅚 CONTEXT ERROR ──────────────────────────────────────────┐
+    │┌ 󰔟 CHANGING · ars.clever-turtle · window “codex” ──────────┐┌ 󰅚 CONTEXT ERROR · lab ────────────────────────────────────┐
 ▌ 󰆍 ││$ cargo test -p wt-client                                  ││                   context data rejected                   │
     ││running 107 tests                                          ││                                                           │
     ││test shell::world_card::tests ... ok                       ││                                                           │
@@ -21,4 +21,4 @@ expression: "rendered_control(&model, 128, 20)"
     ││                             preview reaches the right edge││                                                           │
     │└─────────────────── /home/wt/wt · wt/world-card-action-log ┘└───────────────────────────────────────────────────────────┘
     │
-    │Live Codex screens · Last updated 2026-08-28T10:26:08Z              CPU 6/20 · RAM 12G/32G · Disk 96G/238G[ Help (2 / F2) ]
+    │Live Codex screens · Last updated 2026-08-28T10:26:08Z             CPU 6/20 · RAM 12G/32G · Disk 96G/238G [ Help (2 / F2) ]

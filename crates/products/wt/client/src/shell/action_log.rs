@@ -11,7 +11,7 @@ use wt_control_protocol::{
     WtToolsActivity, WtToolsActivityQuery,
 };
 
-const MAX_ACTIONS: usize = 5;
+pub(super) const MAX_ACTIONS: usize = 5;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, Eq, PartialEq)]

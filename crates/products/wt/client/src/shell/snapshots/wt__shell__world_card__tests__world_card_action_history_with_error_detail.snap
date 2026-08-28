@@ -1,6 +1,5 @@
 ---
 source: crates/products/wt/client/src/shell/world_card.rs
-assertion_line: 461
 expression: "rendered_card(&world, &[], 76)"
 ---
 ┌ 󰅚 ERROR ───────────────────────────────────────────────────────── … Menu ┐
@@ -8,14 +7,14 @@ expression: "rendered_card(&world, &[], 76)"
 │2 CPU · 4G · 6G/32G disk                                                  │
 │SSH readiness failed; run `wt rm ars.clever-turtle`                       │
 │Codex no observed Byobu panes                                             │
+│                                                                          │
+│                                                                          │
+│                                                                          │
+│                                                                          │
 ├─ Action history ─────────────────────────────────────────────────────────┤
 │wtg: opened PR #250 for wt/world-card-action-log · github.com/lucasavila0…│
 │Git: pushed wt/world-card-action-log to github.com/lucasavila00/wt        │
 │wtg: checked CI · github.com/lucasavila00/wt                              │
 │Git: fetched from github.com/lucasavila00/wt                              │
 │wtg: commented on PR #250 · github.com/lucasavila00/wt                    │
-│                                                                          │
-│                                                                          │
-│                                                                          │
-│                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘

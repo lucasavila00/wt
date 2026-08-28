@@ -174,9 +174,10 @@ pub(super) fn draw(
     footer: &str,
     show_actions: bool,
 ) {
+    let border_style = super::render::selected_card_border_style(selected);
     let mut block = Block::new()
         .borders(Borders::ALL)
-        .border_style(super::render::selected_card_border_style(selected))
+        .border_style(border_style)
         .title(Span::styled(
             format!(" {icon} {status} "),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
@@ -200,16 +201,17 @@ pub(super) fn draw(
         lines.push(Line::from(detail.to_owned()));
     }
     if let Some(action_history) = action_history {
-        let maximum_live_rows = usize::from(inner.height)
+        let history_rows = u16::try_from(super::action_log::MAX_ACTIONS)
+            .unwrap_or(u16::MAX)
+            .min(inner.height.saturating_sub(1));
+        let separator_y = inner
+            .bottom()
+            .saturating_sub(history_rows.saturating_add(1))
+            .max(inner.y);
+        let maximum_live_rows = usize::from(separator_y.saturating_sub(inner.y))
             .saturating_sub(lines.len())
-            .saturating_sub(action_history.len())
-            .saturating_sub(1)
             .min(MAX_PANE_ROWS);
         lines.extend(bounded_pane_lines(live_details, maximum_live_rows));
-        let separator_y = inner
-            .y
-            .saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX))
-            .min(inner.bottom().saturating_sub(1));
         Paragraph::new(lines).render(
             Rect::new(
                 inner.x,
@@ -219,7 +221,14 @@ pub(super) fn draw(
             ),
             buffer,
         );
-        draw_action_history(buffer, area, inner, separator_y, action_history);
+        draw_action_history(
+            buffer,
+            area,
+            inner,
+            separator_y,
+            action_history,
+            border_style,
+        );
         return;
     }
     lines.extend_from_slice(live_details);
@@ -236,6 +245,7 @@ fn draw_action_history(
     inner: Rect,
     separator_y: u16,
     lines: &[Line<'static>],
+    junction_style: Style,
 ) {
     let style = super::render::muted_style();
     Block::new()
@@ -257,10 +267,10 @@ fn draw_action_history(
     if area.width > 1 {
         buffer[(area.x, separator_y)]
             .set_symbol("├")
-            .set_style(style);
+            .set_style(junction_style);
         buffer[(area.right().saturating_sub(1), separator_y)]
             .set_symbol("┤")
-            .set_style(style);
+            .set_style(junction_style);
     }
     let content = Rect::new(
         inner.x,
@@ -288,6 +298,15 @@ mod tests {
     use super::*;
 
     fn rendered_card_buffer(world: &ShellWorld, cards: &[PaneCard], width: u16) -> Buffer {
+        rendered_card_buffer_with_selection(world, cards, width, false)
+    }
+
+    fn rendered_card_buffer_with_selection(
+        world: &ShellWorld,
+        cards: &[PaneCard],
+        width: u16,
+        selected: bool,
+    ) -> Buffer {
         let area = Rect::new(0, 0, width, super::super::control::WORLD_CARD_HEIGHT);
         let mut buffer = Buffer::empty(area);
         let (icon, color, status) = status(world, Liveness::Current);
@@ -304,7 +323,7 @@ mod tests {
             (world.detail != "-").then_some(world.detail.as_str()),
             &live,
             Some(&history),
-            false,
+            selected,
             "",
             true,
         );
@@ -502,13 +521,56 @@ mod tests {
     }
 
     #[test]
+    fn action_history_dividers_align_across_different_live_content() {
+        let world = world_with_actions();
+        let now = now_unix_ms();
+        let dense_panes = (1..=8)
+            .map(|index| observation(&world, &format!("%{index}"), now))
+            .collect::<Vec<_>>();
+        let mut detailed = world.clone();
+        detailed.detail = "SSH readiness failed".into();
+        let separator_y = |buffer: &Buffer| {
+            (0..super::super::control::WORLD_CARD_HEIGHT)
+                .find(|y| buffer[(0, *y)].symbol() == "├")
+                .unwrap()
+        };
+
+        let sparse = rendered_card_buffer(&world, &[], 76);
+        let dense = rendered_card_buffer(&world, &dense_panes, 76);
+        let detailed = rendered_card_buffer(&detailed, &[], 76);
+
+        assert_eq!(separator_y(&sparse), separator_y(&dense));
+        assert_eq!(separator_y(&sparse), separator_y(&detailed));
+    }
+
+    #[test]
     fn action_history_is_dimmed_while_live_status_remains_normal() {
         let world = world_with_actions();
         let now = now_unix_ms();
         let buffer = rendered_card_buffer(&world, &[observation(&world, "%1", now)], 76);
+        let separator_y = (0..super::super::control::WORLD_CARD_HEIGHT)
+            .find(|y| buffer[(0, *y)].symbol() == "├")
+            .unwrap();
 
         assert!(!buffer[(17, 3)].modifier.contains(Modifier::DIM));
-        assert!(buffer[(6, 5)].modifier.contains(Modifier::DIM));
+        assert!(buffer[(6, separator_y + 1)]
+            .modifier
+            .contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn selected_border_color_continues_through_history_junctions() {
+        let world = world_with_actions();
+        let selected = rendered_card_buffer_with_selection(&world, &[], 76, true);
+        let unselected = rendered_card_buffer_with_selection(&world, &[], 76, false);
+        let junction_y = (0..super::super::control::WORLD_CARD_HEIGHT)
+            .find(|y| selected[(0, *y)].symbol() == "├")
+            .unwrap();
+
+        assert_eq!(selected[(0, junction_y)].fg, Color::Blue);
+        assert_eq!(selected[(75, junction_y)].fg, Color::Blue);
+        assert_ne!(unselected[(0, junction_y)].fg, Color::Blue);
+        assert_ne!(unselected[(75, junction_y)].fg, Color::Blue);
     }
 
     #[test]
