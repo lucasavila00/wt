@@ -7,7 +7,7 @@ use wt_control_protocol::{
 };
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_workload_registry::Resources;
-use wt_workload_registry::{Store, StoreError, StoredWorld};
+use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
 mod activity;
 mod gateway;
 mod lifecycle;
@@ -156,26 +156,20 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         let world_id = WorldId::new();
         let grant = self.gateway.reserve(world_id);
         let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
-        let stored = StoredWorld {
-            world: World {
-                world_id,
-                name: request.name.clone(),
-                owner: owner.to_owned(),
-                status: WorldStatus::Provisioning,
-                vcpus: request.vcpus,
-                memory_mib: request.memory_mib,
-                disk_gib: request.disk_gib,
-                guest_ip: None,
-                last_error: None,
-                ssh: None,
-            },
-            created_at_unix_ms: 0,
+        let new_world = NewWorld {
+            world_id,
+            name: request.name.clone(),
+            owner: owner.to_owned(),
+            status: WorldStatus::Provisioning,
+            vcpus: request.vcpus,
+            memory_mib: request.memory_mib,
+            disk_gib: request.disk_gib,
             setup_fingerprint,
             gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
         if let Err(error) = self
             .store
-            .insert_with_capacity_limit(&stored, self.capacity_limit)
+            .insert_with_capacity_limit(&new_world, self.capacity_limit)
         {
             if let Some(grant) = &grant {
                 if let Err(cleanup) = self.gateway.revoke(&grant.id) {
@@ -205,7 +199,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 if let Err(store_error) = self.store.mark_error(world_id, &provisioning_error) {
                     eprintln!(
                         "wt-server: record failed host create {}: {store_error}",
-                        stored.world.name
+                        new_world.name
                     );
                     return Err(ApiError::new(
                         ErrorCode::Backend,
@@ -217,21 +211,21 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 }
                 eprintln!(
                     "wt-server: preserved failed guest {}: {provisioning_error}",
-                    stored.world.name
+                    new_world.name
                 );
                 return Err(ApiError::new(
                     ErrorCode::Backend,
                     format!(
                         "{provisioning_error}; guest '{}' was preserved in error state; \
                          run `wt rm {}` to delete it",
-                        stored.world.name, stored.world.name
+                        new_world.name, new_world.name
                     ),
                 ));
             }
         }
         let world = self
             .store
-            .get_owned_by_id(owner, stored.world.world_id)
+            .get_owned_by_id(owner, new_world.world_id)
             .map_err(map_store_error)?
             .world;
         Ok(Response::World {

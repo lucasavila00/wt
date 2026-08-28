@@ -12,7 +12,7 @@ pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
-pub use store::{Store, StoreError, StoredWorld};
+pub use store::{NewWorld, Store, StoreError, StoredWorld};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
