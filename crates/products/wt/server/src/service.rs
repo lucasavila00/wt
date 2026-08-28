@@ -1,4 +1,4 @@
-use crate::operations::Operations;
+use crate::operations::{Operations, WorldOperationGuard};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use wt_control_protocol::{
@@ -236,10 +236,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         for world in &stored {
-            let Some(_operation) = self.operations.try_lock_world(world.world.world_id) else {
+            let Some(operation) = self.operations.try_lock_world(world.world.world_id) else {
                 continue;
             };
-            self.reconcile_locked(world)?;
+            self.reconcile_locked(world, &operation)?;
         }
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         let mut disk_usage_bytes = std::collections::BTreeMap::new();
@@ -264,7 +264,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 
-    fn reconcile_locked(&self, stored: &StoredWorld) -> Result<(), ApiError> {
+    fn reconcile_locked(
+        &self,
+        stored: &StoredWorld,
+        operation: &WorldOperationGuard,
+    ) -> Result<(), ApiError> {
+        assert_eq!(operation.world_id(), stored.world.world_id);
         if !matches!(
             stored.world.status,
             WorldStatus::Running | WorldStatus::Stopped | WorldStatus::Error
@@ -379,11 +384,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_name(owner, name)
             .map_err(map_store_error)?;
-        let _operation = self
+        let operation = self
             .operations
             .try_lock_world(stored.world.world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile_locked(&stored)?;
+        self.reconcile_locked(&stored, &operation)?;
         let world = self
             .store
             .get_owned_by_id(owner, stored.world.world_id)
@@ -399,11 +404,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        let _operation = self
+        let operation = self
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile_locked(&stored)?;
+        self.reconcile_locked(&stored, &operation)?;
         let stored = self
             .store
             .get_owned_by_id(owner, world_id)
