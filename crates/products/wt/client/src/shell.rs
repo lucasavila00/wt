@@ -533,8 +533,12 @@ fn world_rows(terminal_rows: u16) -> u16 {
     terminal_rows.saturating_sub(BAR_HEIGHT).max(1)
 }
 
-fn session_viewport(_model: &ShellModel, area: Rect) -> (u16, u16) {
-    (world_rows(area.height), area.width)
+fn session_viewport(model: &ShellModel, area: Rect) -> (u16, u16) {
+    if model.mode() == Mode::Control {
+        live::preview_size(area, model.control().panes().len())
+    } else {
+        (world_rows(area.height), area.width)
+    }
 }
 
 fn world_area(area: Rect) -> Rect {

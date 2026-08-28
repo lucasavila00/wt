@@ -22,6 +22,10 @@ pub(in crate::shell) struct CardGrid {
 }
 
 impl CardGrid {
+    pub(in crate::shell) fn card_size(self) -> (u16, u16) {
+        (self.card_height, self.card_width)
+    }
+
     pub(in crate::shell) fn maximum_scroll(self) -> usize {
         self.content_height
             .saturating_sub(usize::from(self.viewport.height))
