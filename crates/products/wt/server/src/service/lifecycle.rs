@@ -8,11 +8,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        let _operation = self
+        let operation = self
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile_locked(&stored)?;
+        self.reconcile_locked(&stored, &operation)?;
         let stored = self
             .store
             .get_owned_by_id(owner, world_id)

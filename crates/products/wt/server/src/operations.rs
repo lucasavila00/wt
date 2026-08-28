@@ -20,6 +20,12 @@ pub struct OperationGuard {
     key: Option<OperationKey>,
 }
 
+#[derive(Debug)]
+pub struct WorldOperationGuard {
+    _operation: OperationGuard,
+    world_id: WorldId,
+}
+
 impl Operations {
     pub fn lock_create(&self, name: &WorldName) -> OperationGuard {
         let key = OperationKey::Create(name.clone());
@@ -35,17 +41,26 @@ impl Operations {
         }
     }
 
-    pub fn try_lock_world(&self, world_id: WorldId) -> Option<OperationGuard> {
+    pub fn try_lock_world(&self, world_id: WorldId) -> Option<WorldOperationGuard> {
         let key = OperationKey::World(world_id);
         let (active, _) = &*self.state;
         let mut active = lock_unpoisoned(active);
         if !active.insert(key.clone()) {
             return None;
         }
-        Some(OperationGuard {
-            state: Arc::clone(&self.state),
-            key: Some(key),
+        Some(WorldOperationGuard {
+            _operation: OperationGuard {
+                state: Arc::clone(&self.state),
+                key: Some(key),
+            },
+            world_id,
         })
+    }
+}
+
+impl WorldOperationGuard {
+    pub(crate) fn world_id(&self) -> WorldId {
+        self.world_id
     }
 }
 
