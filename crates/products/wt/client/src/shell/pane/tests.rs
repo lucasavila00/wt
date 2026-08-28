@@ -31,6 +31,7 @@ fn creates_pane_cards_directly_from_observations() {
         "ars",
         vec![observation(&world, 1)],
         std::slice::from_ref(&world),
+        now_unix_ms(),
     )
     .unwrap();
 
@@ -57,7 +58,7 @@ fn attaches_each_card_to_its_observed_frame() {
     let mut pane = observation(&world, 1);
     pane.frame = Some(frame.clone());
 
-    let cards = validate_context("ars", vec![pane], &[world]).unwrap();
+    let cards = validate_context("ars", vec![pane], &[world], now_unix_ms()).unwrap();
 
     assert_eq!(cards[0].frame(), Some(&frame));
 }
@@ -68,7 +69,7 @@ fn rejects_invalid_pane_observations() {
     let mut invalid_pane = observation(&world, 1);
     invalid_pane.pane_id = "%not-a-number".into();
     insta::assert_snapshot!(
-        validate_context("ars", vec![invalid_pane], &[world]).unwrap_err(),
+        validate_context("ars", vec![invalid_pane], &[world], now_unix_ms()).unwrap_err(),
         @"context ars: failed invariant pane_id is % plus 1-16 ASCII digits; value \"%not-a-number\""
     );
 }
@@ -79,10 +80,30 @@ fn marks_an_unrefreshed_observation_stale() {
     let mut stale = observation(&world, 1);
     stale.changed_at_unix_ms = 0;
     stale.observed_at_unix_ms = 0;
-    let cards = validate_context("ars", vec![stale], &[world]).unwrap();
+    let cards = validate_context("ars", vec![stale], &[world], now_unix_ms()).unwrap();
 
     assert!(cards[0].is_stale());
     assert!(!cards[0].changed_recently());
+}
+
+#[test]
+fn retains_liveness_until_another_snapshot_is_applied() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut pane = observation(&world, 1);
+    pane.changed_at_unix_ms = 1_000;
+    pane.observed_at_unix_ms = 1_000;
+
+    let current = validate_context(
+        "ars",
+        vec![pane.clone()],
+        std::slice::from_ref(&world),
+        10_000,
+    )
+    .unwrap();
+    assert!(current[0].changed_recently());
+
+    let refreshed = validate_context("ars", vec![pane], &[world], 20_000).unwrap();
+    assert!(!refreshed[0].changed_recently());
 }
 
 #[test]
@@ -151,7 +172,7 @@ fn retains_the_observed_cwd_and_git_branch() {
     pane.cwd = "/home/wt/wt".into();
     pane.git_branch = Some("wt/live-pane-cwd".into());
 
-    let cards = validate_context("ars", vec![pane], &[world]).unwrap();
+    let cards = validate_context("ars", vec![pane], &[world], now_unix_ms()).unwrap();
 
     assert_eq!(
         cards[0].location().as_deref(),

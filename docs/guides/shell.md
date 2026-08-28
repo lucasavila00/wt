@@ -58,10 +58,13 @@ recent screen change is `CHANGING`; an unchanged pane is `STATIC`. The bottom
 right of a Live card shows the observed current working directory and, when its
 `.git` folder exists, the checked-out branch. The Codex panel identifies the
 foreground process only; it does not infer a Codex session lifecycle or
-application liveness. Failed pane-context queries leave existing cards intact
-and show the query error in red beside the last successful update time. The
-Worlds and Codex footer labels show when their latest snapshot was applied in
-UTC, or `Updating…` before the first snapshot arrives.
+application liveness. Liveness classification changes only when a successful
+pane update is applied, so a retained observation cannot age from `CHANGING` to
+`STATIC` or `IDLE`. After one minute without a successful pane update, World
+cards show `CONNECTION LOST · NO PANE UPDATE`. Failed pane-context queries leave
+existing cards intact and show the query error in red beside the last successful
+update time. The Worlds and Codex footer labels show when their latest snapshot
+was applied in UTC, or `Updating…` before the first snapshot arrives.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

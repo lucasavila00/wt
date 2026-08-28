@@ -158,6 +158,10 @@ fn run_loop(
     let mut redraw = true;
     let mut flows = ControlFlows::default();
     while !shutdown.load(Ordering::Relaxed) {
+        redraw |= model
+            .control_mut()
+            .pane_refresh_mut()
+            .update_staleness(refresh_status::PANE_REFRESH_TIMEOUT);
         let area: Rect = terminal
             .size()
             .context("read wt shell terminal area")?
