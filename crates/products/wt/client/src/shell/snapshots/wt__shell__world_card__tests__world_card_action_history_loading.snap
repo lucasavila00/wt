@@ -1,19 +1,18 @@
 ---
 source: crates/products/wt/client/src/shell/world_card.rs
-assertion_line: 445
 expression: "rendered_card(&loading, &[], 52)"
 ---
 ┌ 󰐊 RUNNING ─────────────────────────────── … Menu ┐
 │ars.loading-panda                                 │
 │2 CPU · 4G · 1G/32G disk                          │
 │Codex no observed Byobu panes                     │
+│                                                  │
+│                                                  │
+│                                                  │
+│                                                  │
+│                                                  │
 ├─ Action history ─────────────────────────────────┤
 │Loading…                                          │
-│                                                  │
-│                                                  │
-│                                                  │
-│                                                  │
-│                                                  │
 │                                                  │
 │                                                  │
 │                                                  │
