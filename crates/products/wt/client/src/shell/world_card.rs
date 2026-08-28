@@ -9,26 +9,36 @@ use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 const MAX_PANE_ROWS: usize = 6;
 
-pub(super) fn status(world: &ShellWorld, idle: bool) -> (&'static str, Color, String) {
-    match (world.status, idle) {
-        (_, true) => (
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Liveness {
+    Current,
+    Idle,
+    ConnectionLost,
+}
+
+pub(super) fn status(world: &ShellWorld, liveness: Liveness) -> (&'static str, Color, String) {
+    match (world.status, liveness) {
+        (_, Liveness::Idle) => (
             "󰚩",
             Color::Yellow,
             "IDLE · NO RECENT PANE CHANGE".to_owned(),
         ),
-        (wt_control_protocol::WorldStatus::Running, false) => {
+        (wt_control_protocol::WorldStatus::Running, Liveness::ConnectionLost) => (
+            "󰅚",
+            Color::Yellow,
+            "CONNECTION LOST · NO PANE UPDATE".to_owned(),
+        ),
+        (wt_control_protocol::WorldStatus::Running, Liveness::Current) => {
             ("󰐊", Color::Green, "RUNNING".to_owned())
         }
-        (wt_control_protocol::WorldStatus::Provisioning, false) => {
+        (wt_control_protocol::WorldStatus::Provisioning, _) => {
             ("󰔟", Color::Yellow, "PROVISIONING".to_owned())
         }
-        (wt_control_protocol::WorldStatus::Stopped, false) => {
-            ("󰅖", Color::Reset, "STOPPED".to_owned())
-        }
-        (wt_control_protocol::WorldStatus::Destroying, false) => {
+        (wt_control_protocol::WorldStatus::Stopped, _) => ("󰅖", Color::Reset, "STOPPED".to_owned()),
+        (wt_control_protocol::WorldStatus::Destroying, _) => {
             ("󰩹", Color::Yellow, "DESTROYING".to_owned())
         }
-        (wt_control_protocol::WorldStatus::Error, false) => ("󰅚", Color::Red, "ERROR".to_owned()),
+        (wt_control_protocol::WorldStatus::Error, _) => ("󰅚", Color::Red, "ERROR".to_owned()),
     }
 }
 
@@ -46,6 +56,12 @@ pub(super) fn is_idle(world: &ShellWorld, cards: &[PaneCard]) -> bool {
         .filter(|card| belongs_to_world(card, world))
         .collect::<Vec<_>>();
     !panes.iter().any(|card| card.is_stale()) && !panes.iter().any(|card| card.changed_recently())
+}
+
+pub(super) fn has_lost_connection(world: &ShellWorld, cards: &[PaneCard]) -> bool {
+    cards
+        .iter()
+        .any(|card| belongs_to_world(card, world) && card.is_stale())
 }
 
 pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'static>> {
@@ -215,6 +231,7 @@ mod tests {
             context: world.identity.context.clone(),
             created_at_unix_ms: Some(now),
             observed_at_unix_ms: Some(now),
+            classified_at_unix_ms: now,
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms,
@@ -293,6 +310,19 @@ mod tests {
         stale_pane.observed_at_unix_ms = Some(0);
         assert!(!is_idle(&world, &[stale_pane]));
         assert!(!is_idle(&world, &[PaneCard::context_error("ars")]));
+    }
+
+    #[test]
+    fn marks_stale_panes_as_a_lost_connection() {
+        let world = ShellWorld::test("ars.dev", 1);
+        let mut stale_pane = observation(&world, "%1", 0);
+        stale_pane.observed_at_unix_ms = Some(0);
+
+        assert!(has_lost_connection(&world, &[stale_pane]));
+        insta::assert_snapshot!(
+            status(&world, Liveness::ConnectionLost).2,
+            @"CONNECTION LOST · NO PANE UPDATE"
+        );
     }
 
     #[test]

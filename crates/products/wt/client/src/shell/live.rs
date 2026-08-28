@@ -104,6 +104,7 @@ mod tests {
             context: "ars".into(),
             created_at_unix_ms: Some(now),
             observed_at_unix_ms: Some(now),
+            classified_at_unix_ms: now,
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
                 changed_at_unix_ms: now,
