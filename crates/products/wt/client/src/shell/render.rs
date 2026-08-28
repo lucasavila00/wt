@@ -390,7 +390,20 @@ mod tests {
         }
     }
 
-    fn pane_frame(lines: &[&str], columns: u16) -> PaneFrame {
+    fn pane_frame(rows: u16, columns: u16) -> PaneFrame {
+        let mut lines = vec![String::new(); usize::from(rows)];
+        lines[0] = "$ cargo test -p wt-client".into();
+        lines[1] = "running 107 tests".into();
+        lines[2] = "test shell::world_card::tests ... ok".into();
+        lines[3] = "test result: ok. 107 passed; 0 failed".into();
+        let final_visible_row = lines.len().saturating_sub(2);
+        lines[final_visible_row] = format!(
+            "{:>width$}",
+            "preview reaches the right edge",
+            width = usize::from(columns)
+        );
+        let last_row = lines.len().saturating_sub(1);
+        lines[last_row] = "Byobu status row".into();
         let cells = lines
             .iter()
             .flat_map(|line| {
@@ -407,9 +420,35 @@ mod tests {
             })
             .collect();
         PaneFrame {
-            rows: u16::try_from(lines.len()).unwrap(),
+            rows,
             columns,
             cells,
+        }
+    }
+
+    fn observation(world: &super::super::model::ShellWorld, frame: PaneFrame) -> PaneCard {
+        PaneCard {
+            identity: PaneCardIdentity::Observation {
+                context: world.identity.context.clone(),
+                world_id: world.identity.world_id,
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: world.identity.context.clone(),
+            created_at_unix_ms: Some(1_000),
+            observed_at_unix_ms: Some(10_000),
+            classified_at_unix_ms: 10_000,
+            kind: PaneCardKind::Observation {
+                world_name: world.world_name.to_string(),
+                changed_at_unix_ms: 10_000,
+                cwd: "/home/wt/wt".into(),
+                git_branch: Some("wt/world-card-action-log".into()),
+                render: PaneRender {
+                    window_index: 1,
+                    window_name: "codex".into(),
+                    frame,
+                },
+            },
         }
     }
 
@@ -425,13 +464,19 @@ mod tests {
         let mut second = super::super::model::ShellWorld::test("ars.nimble-panda", 2);
         second.resources = "2 CPU · 4G · 4.3G/32G disk".into();
         second.action_log = super::super::action_log::ActionLog::Loaded(vec![
-            "Git: cloned github.com/lucasavila00/diffo".into(),
-            "wtg: created world ars.nimble-panda".into(),
+            "Git: fetched from github.com/lucasavila00/diffo".into(),
+            "wtg: checked CI · github.com/lucasavila00/diffo".into(),
         ]);
+        let area = Rect::new(0, 0, 128, 20);
+        let (rows, columns) = super::super::live::preview_size(area, 2);
+        let first_pane = observation(&first, pane_frame(rows, columns));
         let mut model = ShellModel::new(vec![first, second]);
         model.show_worlds();
         model.finish_worlds_refresh(Ok("2026-08-28T10:26:08Z".into()));
         model.control_mut().set_capacity(capacity());
+        model
+            .control_mut()
+            .set_panes(vec![first_pane], "2026-08-28T10:26:08Z".into(), area);
 
         insta::assert_snapshot!(rendered_control(&model, 128, 20));
     }
@@ -439,43 +484,15 @@ mod tests {
     #[test]
     fn snapshots_the_complete_live_dashboard() {
         let world = super::super::model::ShellWorld::test("ars.clever-turtle", 1);
-        let observation = PaneCard {
-            identity: PaneCardIdentity::Observation {
-                context: "ars".into(),
-                world_id: world.identity.world_id,
-                tmux_session: "wt-host".into(),
-                pane_id: "%1".into(),
-            },
-            context: "ars".into(),
-            created_at_unix_ms: Some(1_000),
-            observed_at_unix_ms: Some(10_000),
-            classified_at_unix_ms: 10_000,
-            kind: PaneCardKind::Observation {
-                world_name: "clever-turtle".into(),
-                changed_at_unix_ms: 10_000,
-                cwd: "/home/wt/wt".into(),
-                git_branch: Some("wt/world-card-action-log".into()),
-                render: PaneRender {
-                    window_index: 1,
-                    window_name: "codex".into(),
-                    frame: pane_frame(
-                        &[
-                            "$ cargo test -p wt-client",
-                            "running 107 tests",
-                            "test shell::world_card::tests ... ok",
-                            "test result: ok. 107 passed; 0 failed",
-                        ],
-                        51,
-                    ),
-                },
-            },
-        };
+        let area = Rect::new(0, 0, 128, 20);
+        let (rows, columns) = super::super::live::preview_size(area, 2);
+        let observation = observation(&world, pane_frame(rows, columns));
         let mut model = ShellModel::new(vec![world]);
         model.control_mut().set_capacity(capacity());
         model.control_mut().set_panes(
             vec![observation, PaneCard::context_error("lab")],
             "2026-08-28T10:26:08Z".into(),
-            Rect::new(0, 0, 128, 20),
+            area,
         );
 
         insta::assert_snapshot!(rendered_control(&model, 128, 20));
