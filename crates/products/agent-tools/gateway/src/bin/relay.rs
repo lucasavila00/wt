@@ -298,7 +298,18 @@ fn valid_display_text(value: &str, maximum_bytes: usize) -> bool {
 
 fn pane_frame(captured: &[u8], rows: u16, columns: u16) -> PaneFrame {
     let mut parser = vt100::Parser::new(rows, columns, 0);
-    parser.process(captured);
+    // `capture-pane -p` separates its physical screen rows with LF. A terminal
+    // interprets LF as only a row movement, so replaying the dump directly
+    // makes every row retain the previous cursor column. Reconstruct each row
+    // with CRLF instead. The final LF is a dump delimiter, not a movement past
+    // the viewport's last row.
+    let captured = captured.strip_suffix(b"\n").unwrap_or(captured);
+    for (index, row) in captured.split(|byte| *byte == b'\n').enumerate() {
+        if index > 0 {
+            parser.process(b"\r\n");
+        }
+        parser.process(row);
+    }
     let screen = parser.screen();
     let cells = (0..rows)
         .flat_map(|row| {
@@ -451,12 +462,37 @@ mod tests {
 
     #[test]
     fn pane_frame_keeps_terminal_styles_as_inert_cells() {
-        let frame = pane_frame(b"\x1b[31mR\x1b[0m", 1, 2);
+        let frame = pane_frame(b"\x1b[31mR\x1b[0m\nplain\n", 2, 5);
 
         assert_eq!(frame.cells[0].text, "R");
         assert_eq!(frame.cells[0].foreground, PaneColor::Indexed { index: 1 });
-        assert_eq!(frame.cells[1].text, " ");
+        assert_eq!(frame.cells[5].text, "p");
+        assert_eq!(frame.cells[5].foreground, PaneColor::Default);
         assert_eq!(frame.validate(), Ok(()));
+    }
+
+    #[test]
+    fn pane_frame_starts_each_captured_row_at_column_zero() {
+        let frame = pane_frame(b"left\nright\n\n", 3, 5);
+
+        assert_eq!(frame_row(&frame, 0), "left ");
+        assert_eq!(frame_row(&frame, 1), "right");
+        assert_eq!(frame_row(&frame, 2), "     ");
+    }
+
+    #[test]
+    fn pane_frame_does_not_scroll_past_the_final_capture_delimiter() {
+        let frame = pane_frame(b"one\ntwo\nthree\n", 3, 5);
+
+        assert_eq!(frame_row(&frame, 0), "one  ");
+        assert_eq!(frame_row(&frame, 1), "two  ");
+        assert_eq!(frame_row(&frame, 2), "three");
+    }
+
+    fn frame_row(frame: &PaneFrame, row: u16) -> String {
+        (0..frame.columns)
+            .map(|column| frame.cell(row, column).unwrap().text.as_str())
+            .collect()
     }
 
     #[test]
