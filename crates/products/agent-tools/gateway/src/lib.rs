@@ -12,7 +12,8 @@ pub mod tools_command;
 mod vsock;
 
 pub use gateway::{
-    wt_tools_help, FixtureApi, Gateway, GatewayConfig, PaneObservationSnapshot, Provider,
+    wt_tools_help, ActivityRecorder, FixtureApi, Gateway, GatewayConfig, PaneObservationSnapshot,
+    Provider,
 };
 pub use protocol::{
     valid_byobu_pane_id, valid_byobu_tmux_session, validate_pane_observations, ClientOperation,

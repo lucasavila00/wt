@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use wt_git_smart_protocol::{
@@ -21,8 +21,52 @@ use wt_world::WorldId;
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
     pub state_file: PathBuf,
-    pub database_path: PathBuf,
     pub providers: Vec<Provider>,
+}
+
+#[derive(Clone)]
+pub struct ActivityRecorder {
+    registry: Arc<Mutex<wt_workload_registry::Registry>>,
+}
+
+impl ActivityRecorder {
+    pub fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            registry: Arc::new(Mutex::new(
+                wt_workload_registry::Registry::open(path).context("open WT activity registry")?,
+            )),
+        })
+    }
+
+    fn registry(&self) -> Result<std::sync::MutexGuard<'_, wt_workload_registry::Registry>> {
+        self.registry
+            .lock()
+            .map_err(|_| anyhow::anyhow!("activity registry lock poisoned"))
+    }
+
+    fn record_git_activity(&self, input: wt_workload_registry::GitActivityInput<'_>) -> Result<()> {
+        self.registry()?.insert_git_activity(input)?;
+        Ok(())
+    }
+
+    fn record_wt_tools_activity(
+        &self,
+        input: wt_workload_registry::WtToolsActivityInput<'_>,
+    ) -> Result<()> {
+        self.registry()?.insert_wt_tools_activity(input)?;
+        Ok(())
+    }
+
+    fn record_agent_tool_report(
+        &self,
+        world_id: WorldId,
+        kind: wt_workload_registry::AgentToolReportKind,
+        description: &str,
+    ) -> Result<()> {
+        self.registry()?
+            .insert_agent_tool_report(world_id, kind, description)?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +111,7 @@ impl Provider {
 #[derive(Clone)]
 pub struct Gateway {
     config: GatewayConfig,
+    activity: ActivityRecorder,
     state: Arc<Mutex<State>>,
     pane_observations: Arc<Mutex<PaneObservations>>,
 }
