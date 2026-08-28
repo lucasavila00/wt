@@ -9,6 +9,7 @@ fn observation(world: &ShellWorld, created_at_unix_ms: i64) -> PaneObservation {
         pane_id: "%1".into(),
         changed_at_unix_ms: now_unix_ms(),
         observed_at_unix_ms: now_unix_ms(),
+        frame: None,
     }
 }
 
@@ -33,6 +34,30 @@ fn creates_pane_cards_directly_from_observations() {
 
     assert_eq!(cards.len(), 1);
     assert!(cards[0].changed_recently());
+}
+
+#[test]
+fn attaches_each_card_to_its_observed_frame() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let frame = wt_control_protocol::PaneFrame {
+        rows: 1,
+        columns: 1,
+        cells: vec![wt_control_protocol::PaneCell {
+            text: "C".into(),
+            foreground: wt_control_protocol::PaneColor::Default,
+            background: wt_control_protocol::PaneColor::Default,
+            bold: false,
+            italic: false,
+            underlined: false,
+            inverse: false,
+        }],
+    };
+    let mut pane = observation(&world, 1);
+    pane.frame = Some(frame.clone());
+
+    let cards = validate_context("ars", vec![pane], &[world]).unwrap();
+
+    assert_eq!(cards[0].frame(), Some(&frame));
 }
 
 #[test]

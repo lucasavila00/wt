@@ -12,7 +12,10 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use create::{validate_create_world_resources, CreateWorld};
-pub use pane::PaneObservation;
+pub use pane::{
+    PaneCell, PaneColor, PaneFrame, PaneObservation, MAX_PANE_CELL_TEXT_BYTES,
+    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
+};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -23,7 +26,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -392,7 +395,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 14,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "get_world",
                 "name": "repo-feature"
             })
@@ -409,7 +412,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 14,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "start_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
@@ -426,7 +429,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 14,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "stop_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
@@ -443,13 +446,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 14,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "delete_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
         assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 14,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "delete_world"
         }))
         .is_err());
@@ -476,7 +479,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 14,
+          "protocol_version": 15,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -511,7 +514,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 14,
+          "protocol_version": 15,
           "vcpus": 2
         }
         "###);
@@ -520,14 +523,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 14,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "create_world",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 14,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "create_world",
             "name": "repo-feature",
             "git_user_name": "",
@@ -555,7 +558,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 14,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "get_world",
             "name": "Not-Valid"
         }))
@@ -567,7 +570,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 14,
+          "protocol_version": 15,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -587,11 +590,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 14,
+            "protocol_version": 15,
             "operation": "server_info"
           },
           {
-            "protocol_version": 14,
+            "protocol_version": 15,
             "outcome": "ok",
             "response": {
               "response": "server_info",

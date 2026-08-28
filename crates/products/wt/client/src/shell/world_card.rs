@@ -218,6 +218,7 @@ mod tests {
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms,
+                frame: None,
             },
         }
     }

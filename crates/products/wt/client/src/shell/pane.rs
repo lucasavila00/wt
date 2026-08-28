@@ -138,6 +138,11 @@ fn validate_context(
                 &pane.pane_id,
             ));
         }
+        if let Some(frame) = &pane.frame {
+            frame
+                .validate()
+                .map_err(|error| invalid(context, error, &pane.pane_id))?;
+        }
         if !valid_pane_id(&pane.pane_id) {
             return Err(invalid(
                 context,
@@ -189,6 +194,7 @@ fn validate_context(
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms: pane.changed_at_unix_ms,
+                frame: pane.frame,
             },
         });
     }

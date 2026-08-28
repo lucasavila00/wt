@@ -24,6 +24,7 @@ path = "src/bin/wt-tools.rs"
 
 [dependencies]
 wt-git-smart-protocol = { workspace = true }
+wt-control-protocol = { workspace = true }
 wt-tools = { workspace = true }
 wt-workload-registry = { workspace = true }
 wt-world = { workspace = true }
@@ -37,6 +38,7 @@ socket2 = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+vt100 = { workspace = true }
 
 [dev-dependencies]
 diesel = { workspace = true }

@@ -3,6 +3,11 @@ use wt_control_protocol::WorldId;
 pub trait AgentToolGateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
+    fn pane_frames(
+        &self,
+        world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String>;
+    fn clear_pane_frames(&self, world_id: WorldId) -> Result<(), String>;
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
@@ -37,6 +42,17 @@ impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
                 .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
         }
     }
+
+    fn pane_frames(
+        &self,
+        _world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+        Ok(Vec::new())
+    }
+
+    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
@@ -47,6 +63,19 @@ impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
 
     fn revoke(&self, grant_id: &str) -> Result<(), String> {
         self.revoke_grant(grant_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn pane_frames(
+        &self,
+        world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+        wt_agent_tool_gateway::Gateway::pane_frames(self, world_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn clear_pane_frames(&self, world_id: WorldId) -> Result<(), String> {
+        wt_agent_tool_gateway::Gateway::clear_pane_frames(self, world_id)
             .map_err(|error| error.to_string())
     }
 }

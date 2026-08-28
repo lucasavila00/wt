@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
+use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
+pub const MAX_PANE_OBSERVATIONS: usize = 32;
+pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
 pub fn valid_byobu_tmux_session(value: &str) -> bool {
     value == "wt-host"
@@ -74,6 +77,38 @@ pub struct PaneObservation {
     pub tmux_session: String,
     pub pane_id: String,
     pub screen_fingerprint: String,
+    pub frame: PaneFrame,
+}
+
+pub fn validate_pane_observations(panes: &[PaneObservation]) -> Result<(), String> {
+    if panes.len() > MAX_PANE_OBSERVATIONS {
+        return Err("too many pane observations".into());
+    }
+    if serde_json::to_vec(panes)
+        .map_err(|error| format!("encode pane observations: {error}"))?
+        .len()
+        > MAX_PANE_OBSERVATION_REPORT_BYTES
+    {
+        return Err("pane observation report is too large".into());
+    }
+    let mut targets = std::collections::BTreeSet::new();
+    for pane in panes {
+        if !valid_byobu_tmux_session(&pane.tmux_session)
+            || !valid_byobu_pane_id(&pane.pane_id)
+            || pane.screen_fingerprint.len() != 64
+            || !pane
+                .screen_fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+            || !targets.insert((&pane.tmux_session, &pane.pane_id))
+        {
+            return Err("invalid pane observation".into());
+        }
+        pane.frame
+            .validate()
+            .map_err(|error| format!("invalid pane frame: {error}"))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
