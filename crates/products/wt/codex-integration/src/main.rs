@@ -1,7 +1,5 @@
 mod focus;
 mod install;
-mod reconcile;
-mod startup;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -22,8 +20,6 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Synchronize shared Codex history.
-    Reconcile,
     /// Install WT's Codex configuration.
     InstallConfig,
     /// Focus an observed Codex Byobu pane.
@@ -49,10 +45,6 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
     }
 
     match Cli::parse_from(args).command {
-        Command::Reconcile => {
-            startup::reconcile_manual()?;
-            println!("Codex history synchronized.");
-        }
         Command::InstallConfig => install::install_user_config()?,
         Command::FocusPane {
             tmux_session,
@@ -64,15 +56,6 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
 
 fn run_trampoline(args: Vec<OsString>) -> Result<()> {
     let real_codex = real_codex()?;
-    if std::env::var("IGNORE_CODEX_WT_CHECKS").as_deref() != Ok("true")
-        && !is_version_request(&args)
-    {
-        println!(
-            "Syncing shared Codex history before starting Codex. Set IGNORE_CODEX_WT_CHECKS=true to skip this synchronization."
-        );
-        startup::reconcile_before_start(&real_codex)?;
-    }
-
     let argv0 = args.first().context("missing process name")?;
     let error = ProcessCommand::new(&real_codex)
         .arg0(argv0)
@@ -106,10 +89,6 @@ fn real_codex() -> Result<PathBuf> {
     }
 }
 
-fn is_version_request(args: &[OsString]) -> bool {
-    args.len() == 2 && matches!(args[1].to_str(), Some("--version" | "-V"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,7 +102,6 @@ mod tests {
 Usage: wt-codex-integration <COMMAND>
 
 Commands:
-  reconcile       Synchronize shared Codex history
   install-config  Install WT's Codex configuration
   help            Print this message or the help of the given subcommand(s)
 

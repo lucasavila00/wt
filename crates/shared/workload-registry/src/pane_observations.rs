@@ -64,7 +64,7 @@ impl Registry {
         &self,
         world_id: WorldId,
         inputs: &[PaneObservationInput<'_>],
-    ) -> Result<(), RegistryError> {
+    ) -> Result<i64, RegistryError> {
         let mut targets = BTreeSet::new();
         for input in inputs {
             validate(input)?;
@@ -129,7 +129,7 @@ impl Registry {
                         .execute(connection)?;
                 }
             }
-            Ok(())
+            Ok(observed_at_unix_ms)
         })
     }
 

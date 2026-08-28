@@ -220,6 +220,7 @@ mod tests {
                 changed_at_unix_ms,
                 cwd: "/home/wt".into(),
                 git_branch: None,
+                frame: None,
             },
         }
     }

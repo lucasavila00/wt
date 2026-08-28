@@ -20,7 +20,7 @@ pub struct MachineConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedMounts {
-    pub sessions: PathBuf,
+    pub sessions_root: PathBuf,
     pub auth: PathBuf,
     pub ssh_authorized_keys: PathBuf,
 }

@@ -28,6 +28,7 @@ impl Gateway {
         Ok(Self {
             config,
             state: Arc::new(Mutex::new(state)),
+            pane_frames: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
         })
     }
 
@@ -101,6 +102,7 @@ impl Gateway {
         panes: &[crate::PaneObservation],
         grant: &GrantRecord,
     ) -> Result<()> {
+        crate::protocol::validate_pane_observations(panes).map_err(anyhow::Error::msg)?;
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
         let inputs = panes
             .iter()
@@ -112,10 +114,34 @@ impl Gateway {
                 git_branch: pane.git_branch.as_deref(),
             })
             .collect::<Vec<_>>();
-        wt_workload_registry::Registry::open(&self.config.database_path)
+        let mut frames = self
+            .pane_frames
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?;
+        let observed_at_unix_ms = wt_workload_registry::Registry::open(&self.config.database_path)
             .context("open WT registry")?
             .replace_pane_observations(world_id.into(), &inputs)
-            .context("store pane observations")
+            .context("store pane observations")?;
+        replace_pane_frames(&mut frames, world_id.into(), panes, observed_at_unix_ms);
+        Ok(())
+    }
+
+    pub fn pane_frames(&self, world_id: WorldId) -> Result<Vec<crate::PaneFrameSnapshot>> {
+        Ok(self
+            .pane_frames
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?
+            .get(&world_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    pub fn clear_pane_frames(&self, world_id: WorldId) -> Result<()> {
+        self.pane_frames
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?
+            .remove(&world_id);
+        Ok(())
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {
@@ -409,6 +435,30 @@ impl Gateway {
     }
 }
 
+fn replace_pane_frames(
+    frames: &mut std::collections::BTreeMap<wt_world::WorldId, Vec<crate::PaneFrameSnapshot>>,
+    world_id: wt_world::WorldId,
+    panes: &[crate::PaneObservation],
+    observed_at_unix_ms: i64,
+) {
+    if panes.is_empty() {
+        frames.remove(&world_id);
+        return;
+    }
+    frames.insert(
+        world_id,
+        panes
+            .iter()
+            .map(|pane| crate::PaneFrameSnapshot {
+                tmux_session: pane.tmux_session.clone(),
+                pane_id: pane.pane_id.clone(),
+                observed_at_unix_ms,
+                frame: pane.frame.clone(),
+            })
+            .collect(),
+    );
+}
+
 pub(super) fn push_rejection_message(violation: &PushViolation) -> String {
     match violation {
         PushViolation::NonBranch { .. } => {
@@ -513,6 +563,7 @@ pub(super) fn wt_tools_activity_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wt_control_protocol::{PaneCell, PaneColor, PaneFrame};
 
     #[test]
     fn world_prompt_does_not_require_a_provider_api() {
@@ -538,5 +589,39 @@ mod tests {
             gateway.serve_cli(&["world-prompt".into()], &grant).unwrap(),
             world_prompt()
         );
+    }
+
+    #[test]
+    fn pane_frames_replace_a_world_snapshot_and_drop_closed_panes() {
+        let frame = PaneFrame {
+            rows: 1,
+            columns: 1,
+            cells: vec![PaneCell {
+                text: "C".into(),
+                foreground: PaneColor::Default,
+                background: PaneColor::Default,
+                bold: false,
+                italic: false,
+                underlined: false,
+                inverse: false,
+            }],
+        };
+        let panes = [crate::PaneObservation {
+            tmux_session: "wt-host".into(),
+            pane_id: "%1".into(),
+            screen_fingerprint: "a".repeat(64),
+            cwd: "/home/wt".into(),
+            git_branch: None,
+            frame: frame.clone(),
+        }];
+        let world_id = Uuid::nil().into();
+        let mut frames = std::collections::BTreeMap::new();
+
+        replace_pane_frames(&mut frames, world_id, &panes, 10);
+        assert_eq!(frames[&world_id][0].frame, frame);
+        assert_eq!(frames[&world_id][0].observed_at_unix_ms, 10);
+
+        replace_pane_frames(&mut frames, world_id, &[], 20);
+        assert!(!frames.contains_key(&world_id));
     }
 }

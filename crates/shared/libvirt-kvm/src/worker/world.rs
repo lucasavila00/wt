@@ -29,10 +29,14 @@ pub(super) fn domain_xml(
         "  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>\n".to_owned()
     };
     let shared_mounts = config.shared_mounts.as_ref().map_or_else(String::new, |mounts| {
-        let sessions_path = mounts.sessions.to_string_lossy();
+        let sessions_path = mounts
+            .sessions_root
+            .join(spec.world_id.to_string())
+            .to_string_lossy()
+            .into_owned();
         let auth_path = mounts.auth.to_string_lossy();
         let ssh_authorized_keys_path = mounts.ssh_authorized_keys.to_string_lossy();
-        let sessions = quick_xml::escape::escape(sessions_path.as_ref());
+        let sessions = quick_xml::escape::escape(&sessions_path);
         let auth = quick_xml::escape::escape(auth_path.as_ref());
         let ssh_authorized_keys = quick_xml::escape::escape(ssh_authorized_keys_path.as_ref());
         format!(
@@ -134,7 +138,7 @@ mod tests {
     #[test]
     fn domain_with_codex_mounts_has_virtiofs_support() {
         let xml = test_domain_xml(Some(SharedMounts {
-            sessions: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
+            sessions_root: PathBuf::from("/home/wt/.codex/sessions & rollouts"),
             auth: PathBuf::from("/home/wt/.codex/.wt-auth"),
             ssh_authorized_keys: PathBuf::from("/home/wt/.ssh/.wt-authorized-keys"),
         }));

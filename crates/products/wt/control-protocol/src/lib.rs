@@ -12,7 +12,10 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use create::{validate_create_world_resources, CreateWorld};
-pub use pane::PaneObservation;
+pub use pane::{
+    PaneCell, PaneColor, PaneFrame, PaneObservation, MAX_PANE_CELL_TEXT_BYTES,
+    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
+};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -392,7 +395,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "protocol_version": 15,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "get_world",
                 "name": "repo-feature"
             })
@@ -409,7 +412,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 15,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "start_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
@@ -426,7 +429,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 15,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "stop_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
@@ -443,13 +446,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "protocol_version": 15,
+                "protocol_version": PROTOCOL_VERSION,
                 "operation": "delete_world",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
         assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 15,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "delete_world"
         }))
         .is_err());
@@ -520,14 +523,14 @@ mod tests {
     #[test]
     fn create_request_requires_git_author_identity() {
         let missing = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 15,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "create_world",
             "name": "repo-feature",
         }));
         assert!(missing.is_err());
 
         let empty = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 15,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "create_world",
             "name": "repo-feature",
             "git_user_name": "",
@@ -555,7 +558,7 @@ mod tests {
     #[test]
     fn rejects_invalid_name_from_json() {
         let error = serde_json::from_value::<ApiRequest>(serde_json::json!({
-            "protocol_version": 15,
+            "protocol_version": PROTOCOL_VERSION,
             "operation": "get_world",
             "name": "Not-Valid"
         }))

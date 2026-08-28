@@ -54,7 +54,7 @@ sudo rm -f \
     /etc/credstore.encrypted/wt-agent-tool-gateway-gitlab-api-token \
     /etc/credstore.encrypted/wt-agent-tool-gateway-gitlab-ssh-private-key \
     /etc/credstore.encrypted/wt-agent-tool-gateway-gitlab-ssh-known-hosts
-rm -f "$HOME/.codex/sessions/.wt-image-publication-probe"
+rm -rf "$HOME/.codex/sessions"
 rm -rf "$root/imgs" "$HOME/.local/state/wt" "$HOME/.ssh/wt" "$HOME/.wt"
 rm -rf "$HOME/.codex/.wt-auth"
 rm -rf "$HOME/.ssh/.wt-authorized-keys"

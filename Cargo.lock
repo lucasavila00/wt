@@ -3901,6 +3901,8 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "vt100",
+ "wt-control-protocol",
  "wt-git-smart-protocol",
  "wt-tools",
  "wt-workload-registry",
@@ -3941,11 +3943,7 @@ dependencies = [
  "anyhow",
  "clap",
  "insta",
- "nix 0.31.3",
- "serde",
- "serde_json",
  "tempfile",
- "uuid",
  "wt-agent-tool-gateway",
 ]
 

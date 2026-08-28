@@ -30,7 +30,7 @@ pub(super) fn draw(
         }
     }
     if model.mode() == Mode::Control {
-        draw_control(frame, screens, model, creation);
+        draw_control(frame, model, creation);
         if let Some(error) = action_error {
             draw_action_error(frame, error);
         }
@@ -154,12 +154,7 @@ fn draw_world_bar(frame: &mut Frame<'_>, model: &ShellModel) {
         bar,
     );
 }
-fn draw_control(
-    frame: &mut Frame<'_>,
-    screens: &[&vt100::Screen],
-    model: &ShellModel,
-    creation: Option<&Flow>,
-) {
+fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flow>) {
     let area = frame.area();
     frame.render_widget(Clear, area);
     let (activity_bar, content) = control_areas(area);
@@ -167,7 +162,7 @@ fn draw_control(
     let (body, footer) = control_content_areas(area);
     match model.control().activity() {
         Activity::Worlds => draw_worlds(frame, body, model, creation),
-        Activity::Live => super::live::draw(frame, body, screens, model),
+        Activity::Live => super::live::draw(frame, body, model),
     }
     let (title, failure) = match model.control().activity() {
         Activity::Worlds => {
@@ -367,6 +362,7 @@ mod tests {
                 changed_at_unix_ms: now,
                 cwd: "/home/wt/wt".into(),
                 git_branch: Some("wt/live-pane-cwd".into()),
+                frame: None,
             },
         };
 

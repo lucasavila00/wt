@@ -49,6 +49,17 @@ impl AgentToolGateway for Gateway {
     fn revoke(&self, _grant_id: &str) -> Result<(), String> {
         Ok(())
     }
+
+    fn pane_frames(
+        &self,
+        _world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+        Ok(Vec::new())
+    }
+
+    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl AgentToolGateway for UnavailableGateway {
@@ -62,6 +73,17 @@ impl AgentToolGateway for UnavailableGateway {
     fn revoke(&self, _grant_id: &str) -> Result<(), String> {
         self.revocations.fetch_add(1, Ordering::SeqCst);
         Err("gateway unavailable".to_owned())
+    }
+
+    fn pane_frames(
+        &self,
+        _world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+        Ok(Vec::new())
+    }
+
+    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
     }
 }
 
