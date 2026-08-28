@@ -174,9 +174,10 @@ pub(super) fn draw(
     footer: &str,
     show_actions: bool,
 ) {
+    let border_style = super::render::selected_card_border_style(selected);
     let mut block = Block::new()
         .borders(Borders::ALL)
-        .border_style(super::render::selected_card_border_style(selected))
+        .border_style(border_style)
         .title(Span::styled(
             format!(" {icon} {status} "),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
@@ -219,7 +220,14 @@ pub(super) fn draw(
             ),
             buffer,
         );
-        draw_action_history(buffer, area, inner, separator_y, action_history);
+        draw_action_history(
+            buffer,
+            area,
+            inner,
+            separator_y,
+            action_history,
+            border_style,
+        );
         return;
     }
     lines.extend_from_slice(live_details);
@@ -236,6 +244,7 @@ fn draw_action_history(
     inner: Rect,
     separator_y: u16,
     lines: &[Line<'static>],
+    junction_style: Style,
 ) {
     let style = super::render::muted_style();
     Block::new()
@@ -257,10 +266,10 @@ fn draw_action_history(
     if area.width > 1 {
         buffer[(area.x, separator_y)]
             .set_symbol("├")
-            .set_style(style);
+            .set_style(junction_style);
         buffer[(area.right().saturating_sub(1), separator_y)]
             .set_symbol("┤")
-            .set_style(style);
+            .set_style(junction_style);
     }
     let content = Rect::new(
         inner.x,
@@ -288,6 +297,15 @@ mod tests {
     use super::*;
 
     fn rendered_card_buffer(world: &ShellWorld, cards: &[PaneCard], width: u16) -> Buffer {
+        rendered_card_buffer_with_selection(world, cards, width, false)
+    }
+
+    fn rendered_card_buffer_with_selection(
+        world: &ShellWorld,
+        cards: &[PaneCard],
+        width: u16,
+        selected: bool,
+    ) -> Buffer {
         let area = Rect::new(0, 0, width, super::super::control::WORLD_CARD_HEIGHT);
         let mut buffer = Buffer::empty(area);
         let (icon, color, status) = status(world, Liveness::Current);
@@ -304,7 +322,7 @@ mod tests {
             (world.detail != "-").then_some(world.detail.as_str()),
             &live,
             Some(&history),
-            false,
+            selected,
             "",
             true,
         );
@@ -509,6 +527,21 @@ mod tests {
 
         assert!(!buffer[(17, 3)].modifier.contains(Modifier::DIM));
         assert!(buffer[(6, 5)].modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn selected_border_color_continues_through_history_junctions() {
+        let world = world_with_actions();
+        let selected = rendered_card_buffer_with_selection(&world, &[], 76, true);
+        let unselected = rendered_card_buffer_with_selection(&world, &[], 76, false);
+        let junction_y = (0..super::super::control::WORLD_CARD_HEIGHT)
+            .find(|y| selected[(0, *y)].symbol() == "├")
+            .unwrap();
+
+        assert_eq!(selected[(0, junction_y)].fg, Color::Blue);
+        assert_eq!(selected[(75, junction_y)].fg, Color::Blue);
+        assert_ne!(unselected[(0, junction_y)].fg, Color::Blue);
+        assert_ne!(unselected[(75, junction_y)].fg, Color::Blue);
     }
 
     #[test]
