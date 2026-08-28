@@ -7,6 +7,8 @@ fn observation(world: &ShellWorld, created_at_unix_ms: i64) -> PaneObservation {
         created_at_unix_ms,
         tmux_session: "wt-host".into(),
         pane_id: "%1".into(),
+        cwd: "/home/wt".into(),
+        git_branch: None,
         changed_at_unix_ms: now_unix_ms(),
         observed_at_unix_ms: now_unix_ms(),
         frame: None,
@@ -140,4 +142,19 @@ fn groups_paused_panes_before_active_panes_in_creation_order() {
         .map(|card| card.world_id().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(world_ids, expected);
+}
+
+#[test]
+fn retains_the_observed_cwd_and_git_branch() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut pane = observation(&world, 1);
+    pane.cwd = "/home/wt/wt".into();
+    pane.git_branch = Some("wt/live-pane-cwd".into());
+
+    let cards = validate_context("ars", vec![pane], &[world]).unwrap();
+
+    assert_eq!(
+        cards[0].location().as_deref(),
+        Some("/home/wt/wt · wt/live-pane-cwd")
+    );
 }

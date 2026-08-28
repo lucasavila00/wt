@@ -8,12 +8,13 @@
 Rendered Byobu panes are the sole source of live terminal state. The guest
 observer identifies each pane's foreground process through tmux and sends
 bounded normalized observations for `codex` panes through the authenticated
-path. Observations identify world, tmux session, and pane. The registry
-persists only their fingerprint and timestamps; `wts` retains the latest
+path. Observations identify world, tmux session, pane, current working
+directory, checked-out Git branch when available, screen fingerprint, and
+timestamps. The registry persists that metadata; `wts` retains the latest
 normalized terminal frame for each observation in memory, without logs or
 history. Frames are owner-scoped and disappear on server restart or when their
-pane observation disappears. They contain no Codex IDs, hook events,
-lifecycle, or checkout state.
+pane observation disappears. Observations contain no Codex IDs, hook events,
+or lifecycle state.
 
 The shell renders these server observations as Codex panes. Stale or missing
 data stays stale or unavailable; it never implies an application exit. Each

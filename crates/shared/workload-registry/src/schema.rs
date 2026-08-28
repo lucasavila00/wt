@@ -6,6 +6,8 @@ diesel::table! {
         tmux_session -> Text,
         pane_id -> Text,
         screen_fingerprint -> Text,
+        cwd -> Text,
+        git_branch -> Nullable<Text>,
         changed_at_unix_ms -> BigInt,
         observed_at_unix_ms -> BigInt,
     }

@@ -18,6 +18,8 @@ pub(in crate::shell) enum PaneCardKind {
     Observation {
         world_name: String,
         changed_at_unix_ms: i64,
+        cwd: String,
+        git_branch: Option<String>,
         frame: Option<PaneFrame>,
     },
     ContextError,
@@ -95,6 +97,18 @@ impl PaneCard {
     pub(in crate::shell) fn frame(&self) -> Option<&PaneFrame> {
         match &self.kind {
             PaneCardKind::Observation { frame, .. } => frame.as_ref(),
+            PaneCardKind::ContextError => None,
+        }
+    }
+
+    pub(in crate::shell) fn location(&self) -> Option<String> {
+        match &self.kind {
+            PaneCardKind::Observation {
+                cwd, git_branch, ..
+            } => Some(match git_branch {
+                Some(git_branch) => format!("{cwd} · {git_branch}"),
+                None => cwd.clone(),
+            }),
             PaneCardKind::ContextError => None,
         }
     }

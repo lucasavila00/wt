@@ -77,6 +77,9 @@ pub struct PaneObservation {
     pub tmux_session: String,
     pub pane_id: String,
     pub screen_fingerprint: String,
+    pub cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
     pub frame: PaneFrame,
 }
 
@@ -100,6 +103,11 @@ pub fn validate_pane_observations(panes: &[PaneObservation]) -> Result<(), Strin
                 .screen_fingerprint
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit())
+            || !valid_display_text(&pane.cwd, 4096)
+            || pane
+                .git_branch
+                .as_deref()
+                .is_some_and(|branch| !valid_display_text(branch, 255))
             || !targets.insert((&pane.tmux_session, &pane.pane_id))
         {
             return Err("invalid pane observation".into());
@@ -109,6 +117,10 @@ pub fn validate_pane_observations(panes: &[PaneObservation]) -> Result<(), Strin
             .map_err(|error| format!("invalid pane frame: {error}"))?;
     }
     Ok(())
+}
+
+fn valid_display_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 #[cfg(test)]

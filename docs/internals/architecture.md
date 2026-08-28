@@ -49,10 +49,11 @@ runtime calls image-installed helpers for SSH access, Git author transfer,
 agent tooling, and virtiofs Codex session and authentication mounts.
 
 The guest relay polls each Byobu pane whose foreground process is `codex`, then
-sends its bounded rendered terminal frame, screen fingerprint, and freshness
-through its authenticated server connection. `wts` owns those observations and
-keeps only their latest frames in memory. No Codex hook,
-working-directory probe, or checkout poll participates in live state.
+sends its bounded rendered terminal frame, screen fingerprint, freshness,
+current working directory, and checked-out Git branch when available through
+its authenticated server connection. `wts` owns those observations and keeps
+only their latest frames in memory. No Codex hook or lifecycle tracker
+participates in live state.
 
 ## Shell playback
 

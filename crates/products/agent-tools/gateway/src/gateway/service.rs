@@ -110,6 +110,8 @@ impl Gateway {
                 tmux_session: &pane.tmux_session,
                 pane_id: &pane.pane_id,
                 screen_fingerprint: &pane.screen_fingerprint,
+                cwd: &pane.cwd,
+                git_branch: pane.git_branch.as_deref(),
             })
             .collect::<Vec<_>>();
         let mut frames = self
@@ -608,6 +610,8 @@ mod tests {
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
             screen_fingerprint: "a".repeat(64),
+            cwd: "/home/wt".into(),
+            git_branch: None,
             frame: frame.clone(),
         }];
         let world_id = Uuid::nil().into();

@@ -5,7 +5,7 @@ use super::terminal_view::PaneFrameView;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use ratatui::Frame;
 
@@ -50,13 +50,20 @@ fn draw_card(buffer: &mut Buffer, rect: Rect, card: &PaneCard, selected: bool) {
         }
         PaneCardKind::ContextError => status,
     };
-    let block = Block::new()
+    let mut block = Block::new()
         .borders(Borders::ALL)
         .border_style(selected_card_border_style(selected))
         .title(Span::styled(
             format!(" {title} "),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
         ));
+    if let Some(location) = card.location() {
+        block = block.title_bottom(
+            Line::from(format!(" {location} "))
+                .alignment(Alignment::Right)
+                .style(muted_style()),
+        );
+    }
     let viewport = block.inner(rect);
     block.render(rect, buffer);
     if let Some(frame) = card.frame() {
@@ -72,9 +79,52 @@ fn draw_card(buffer: &mut Buffer, rect: Rect, card: &PaneCard, selected: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shell::control::PaneCardIdentity;
 
     #[test]
     fn live_uses_two_equal_columns() {
         assert_eq!(columns(Rect::new(0, 0, 100, 30)), 2);
+    }
+
+    #[test]
+    fn live_card_insets_the_cwd_and_git_branch_in_its_footer() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .try_into()
+            .unwrap();
+        let card = PaneCard {
+            identity: PaneCardIdentity::Observation {
+                context: "ars".into(),
+                world_id: uuid::Uuid::nil().into(),
+                tmux_session: "wt-host".into(),
+                pane_id: "%1".into(),
+            },
+            context: "ars".into(),
+            created_at_unix_ms: Some(now),
+            observed_at_unix_ms: Some(now),
+            kind: PaneCardKind::Observation {
+                world_name: "dev".into(),
+                changed_at_unix_ms: now,
+                cwd: "/home/wt/wt".into(),
+                git_branch: Some("wt/live-pane-cwd".into()),
+                frame: None,
+            },
+        };
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 52, 4));
+
+        draw_card(&mut buffer, Rect::new(0, 0, 52, 4), &card, false);
+        let footer = buffer
+            .content()
+            .chunks(52)
+            .last()
+            .unwrap()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>()
+            .join("");
+
+        insta::assert_snapshot!(footer, @"└────────────────── /home/wt/wt · wt/live-pane-cwd ┘");
     }
 }

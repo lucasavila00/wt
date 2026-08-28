@@ -218,6 +218,8 @@ mod tests {
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms,
+                cwd: "/home/wt".into(),
+                git_branch: None,
                 frame: None,
             },
         }
