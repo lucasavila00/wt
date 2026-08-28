@@ -276,7 +276,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 &world.resources,
                 (world.detail != "-").then_some(world.detail.as_str()),
                 &[
-                    super::world_card::git_lines(world),
+                    super::world_card::action_lines(world),
                     super::world_card::pane_lines(world, model.control().panes()),
                 ]
                 .concat(),

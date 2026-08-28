@@ -101,37 +101,37 @@ pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'st
     }
 }
 
-pub(super) fn git_lines(world: &ShellWorld) -> Vec<Line<'static>> {
-    let repositories = match &world.git_activity {
-        super::git_activity::RepositoryActivity::Loading => {
+pub(super) fn action_lines(world: &ShellWorld) -> Vec<Line<'static>> {
+    let actions = match &world.action_log {
+        super::action_log::ActionLog::Loading => {
             return vec![Line::styled(
-                "Git activity loading…",
+                "Action log loading…",
                 super::render::muted_style(),
             )]
         }
-        super::git_activity::RepositoryActivity::Unavailable => {
+        super::action_log::ActionLog::Unavailable => {
             return vec![Line::styled(
-                "Git activity unavailable",
+                "Action log unavailable",
                 super::render::muted_style(),
             )]
         }
-        super::git_activity::RepositoryActivity::Loaded(repositories)
-            if repositories.is_empty() =>
-        {
+        super::action_log::ActionLog::Loaded(actions) if actions.is_empty() => {
             return vec![Line::styled(
-                "Git no recorded interactions",
+                "No recorded actions",
                 super::render::muted_style(),
             )]
         }
-        super::git_activity::RepositoryActivity::Loaded(repositories) => repositories,
+        super::action_log::ActionLog::Loaded(actions) => actions,
     };
-    repositories
+    actions
         .iter()
-        .map(|repository| {
-            let interaction = if repository.wrote { "write" } else { "read" };
+        .map(|action| {
+            let Some((source, description)) = action.split_once(": ") else {
+                return Line::from(action.clone());
+            };
             Line::from(vec![
-                Span::styled(format!("Git {interaction} "), super::render::muted_style()),
-                Span::raw(repository.target.clone()),
+                Span::styled(format!("{source}: "), super::render::muted_style()),
+                Span::raw(description.to_owned()),
             ])
         })
         .collect()
@@ -288,29 +288,23 @@ mod tests {
     }
 
     #[test]
-    fn lists_git_interactions_before_empty_pane_state() {
+    fn lists_actions_before_empty_pane_state() {
         let mut world = ShellWorld::test("ars.dev", 1);
-        world.git_activity = super::super::git_activity::RepositoryActivity::Loaded(vec![
-            super::super::git_activity::RepositoryInteraction {
-                target: "github.com/owner/write".into(),
-                wrote: true,
-            },
-            super::super::git_activity::RepositoryInteraction {
-                target: "github.com/owner/read".into(),
-                wrote: false,
-            },
+        world.action_log = super::super::action_log::ActionLog::Loaded(vec![
+            "wtg: opened PR #42 for wt/topic · github.com/owner/write".into(),
+            "Git: pushed wt/topic to github.com/owner/write".into(),
         ]);
 
         insta::assert_snapshot!(
-            git_lines(&world)
+            action_lines(&world)
                 .into_iter()
                 .chain(pane_lines(&world, &[]))
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()
                 .join("\n"),
             @r###"
-        Git write github.com/owner/write
-        Git read github.com/owner/read
+        wtg: opened PR #42 for wt/topic · github.com/owner/write
+        Git: pushed wt/topic to github.com/owner/write
         Codex no observed Byobu panes
         "###
         );
