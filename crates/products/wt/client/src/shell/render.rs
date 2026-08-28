@@ -242,6 +242,7 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                     resources,
                     None,
                     &[],
+                    None,
                     false,
                     "Creation in progress",
                     false,
@@ -266,6 +267,8 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
         };
         let (icon, color, status) = super::world_card::status(world, liveness);
         grid.render_card(frame, card, |rect, buffer| {
+            let panes = super::world_card::pane_lines(world, model.control().panes());
+            let actions = super::world_card::action_lines(world);
             super::world_card::draw(
                 buffer,
                 rect,
@@ -275,11 +278,8 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
                 &world.name,
                 &world.resources,
                 (world.detail != "-").then_some(world.detail.as_str()),
-                &[
-                    super::world_card::action_lines(world),
-                    super::world_card::pane_lines(world, model.control().panes()),
-                ]
-                .concat(),
+                &panes,
+                Some(&actions),
                 index == model.active(),
                 "",
                 true,
