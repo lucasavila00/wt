@@ -249,8 +249,6 @@ binary_dir = "/opt/wt bin"
     Restart=on-failure
     RuntimeDirectory=wt
     RuntimeDirectoryMode=0700
-    StateDirectory=wt/agent-tools
-    StateDirectoryMode=0700
     UMask=0077
 
     [Install]

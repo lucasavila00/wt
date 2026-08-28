@@ -40,7 +40,7 @@ pub fn resolve_vsock_port(explicit: Option<u32>) -> anyhow::Result<u32> {
 
 pub fn start_vsock<R>(gateway: Gateway, port: u32, resolve_world: R) -> anyhow::Result<()>
 where
-    R: Fn(u32) -> anyhow::Result<Option<wt_world::WorldId>> + Clone + Send + 'static,
+    R: Fn(u32) -> anyhow::Result<Option<wt_world::WorldId>> + Send + 'static,
 {
     let listener = VsockListener::bind(u32::MAX, validate_vsock_port(port)?)
         .map_err(|error| anyhow::anyhow!("bind gateway vsock: {error}"))?;
@@ -49,17 +49,22 @@ where
         .spawn(move || loop {
             match listener.accept() {
                 Ok((stream, cid)) => {
+                    let world_id = match resolve_world(cid) {
+                        Ok(Some(world_id)) => world_id,
+                        Ok(None) => {
+                            eprintln!(
+                                "wt-server: agent tool request: no active WT world uses vsock CID {cid}"
+                            );
+                            continue;
+                        }
+                        Err(error) => {
+                            eprintln!("wt-server: resolve agent tool peer: {error:#}");
+                            continue;
+                        }
+                    };
                     let gateway = gateway.clone();
-                    let resolve_world = resolve_world.clone();
                     std::thread::spawn(move || {
-                        let result = resolve_world(cid)
-                            .and_then(|world_id| {
-                                world_id.ok_or_else(|| {
-                                    anyhow::anyhow!("no active WT world uses vsock CID {cid}")
-                                })
-                            })
-                            .and_then(|world_id| gateway.handle_transport(stream, world_id));
-                        if let Err(error) = result {
+                        if let Err(error) = gateway.handle_transport(stream, world_id) {
                             eprintln!("wt-server: agent tool request: {error:#}");
                         }
                     });

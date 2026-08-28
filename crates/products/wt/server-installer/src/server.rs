@@ -532,8 +532,6 @@ ExecStart={} serve\n\
 Restart=on-failure\n\
 RuntimeDirectory=wt\n\
 RuntimeDirectoryMode=0700\n\
-StateDirectory=wt/agent-tools\n\
-StateDirectoryMode=0700\n\
 UMask=0077\n\
 \n\
 [Install]\n\

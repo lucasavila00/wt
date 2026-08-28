@@ -114,28 +114,26 @@ impl LibvirtProvider {
         let domains = connection
             .list_all_domains(virt::sys::VIR_CONNECT_LIST_DOMAINS_ACTIVE)
             .map_err(|error| context("list active libvirt domains", error))?;
-        let mut matched = None;
+        let mut candidates = Vec::new();
         for domain in domains {
             let name = domain
                 .get_name()
                 .map_err(|error| context("read active libvirt domain name", error))?;
-            let Some(domain_name) = DomainName::parse(name) else {
+            if DomainName::parse(name.clone()).is_none() {
+                candidates.push((name, None));
                 continue;
-            };
-            let world_id = domain_name.world_id().expect("parsed WT domain name");
+            }
             let xml = domain
                 .get_xml_desc(0)
                 .map_err(|error| context("read active libvirt domain XML", error))?;
-            if vsock_cid(&xml)? != Some(cid) {
-                continue;
-            }
-            if matched.replace(world_id).is_some() {
-                return Err(WorkerError::new(format!(
-                    "multiple active WT domains use vsock CID {cid}"
-                )));
-            }
+            candidates.push((name, vsock_cid(&xml)?));
         }
-        Ok(matched)
+        select_world_for_vsock_cid(
+            cid,
+            candidates
+                .iter()
+                .map(|(name, domain_cid)| (name.as_str(), *domain_cid)),
+        )
     }
 
     fn wait_for_agent(&self, domain_name: &DomainName) -> Result<(), WorkerError> {
@@ -332,6 +330,28 @@ impl LibvirtProvider {
             .map_err(|error| context("write machine progress", error))?;
         Ok(self.machine(spec.world_id, guest_ip))
     }
+}
+
+fn select_world_for_vsock_cid<'a>(
+    cid: u32,
+    domains: impl IntoIterator<Item = (&'a str, Option<u32>)>,
+) -> Result<Option<WorldId>, WorkerError> {
+    let mut matched = None;
+    for (name, domain_cid) in domains {
+        if domain_cid != Some(cid) {
+            continue;
+        }
+        let Some(domain_name) = DomainName::parse(name.to_owned()) else {
+            continue;
+        };
+        let world_id = domain_name.world_id().expect("parsed WT domain name");
+        if matched.replace(world_id).is_some() {
+            return Err(WorkerError::new(format!(
+                "multiple active WT domains use vsock CID {cid}"
+            )));
+        }
+    }
+    Ok(matched)
 }
 
 fn vsock_cid(xml: &str) -> Result<Option<u32>, WorkerError> {

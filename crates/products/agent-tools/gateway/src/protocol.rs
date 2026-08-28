@@ -19,8 +19,8 @@ pub fn valid_byobu_pane_id(value: &str) -> bool {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
-    ActivatePaneObservations { world_id: String },
-    DeactivatePaneObservations { world_id: String },
+    ActivateWorld { world_id: String },
+    DeactivateWorld { world_id: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

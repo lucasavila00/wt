@@ -7,7 +7,7 @@ use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
-use wt_server::service::{LivePaneObservations, Service};
+use wt_server::service::{AgentToolGateway, Service};
 use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
@@ -84,7 +84,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
 
 struct TestGatewayClient(wt_agent_tool_gateway::ControlClient);
 
-impl LivePaneObservations for TestGatewayClient {
+impl AgentToolGateway for TestGatewayClient {
     fn pane_observations(
         &self,
         _world_id: wt_control_protocol::WorldId,
@@ -92,26 +92,16 @@ impl LivePaneObservations for TestGatewayClient {
         Err("the external test gateway does not expose pane observations".to_owned())
     }
 
-    fn activate_pane_observations(
-        &self,
-        world_id: wt_control_protocol::WorldId,
-    ) -> Result<(), String> {
-        self.pane_lifetime_request(
-            wt_agent_tool_gateway::ControlRequest::ActivatePaneObservations {
-                world_id: world_id.to_string(),
-            },
-        )
+    fn activate_world(&self, world_id: wt_control_protocol::WorldId) -> Result<(), String> {
+        self.pane_lifetime_request(wt_agent_tool_gateway::ControlRequest::ActivateWorld {
+            world_id: world_id.to_string(),
+        })
     }
 
-    fn deactivate_pane_observations(
-        &self,
-        world_id: wt_control_protocol::WorldId,
-    ) -> Result<(), String> {
-        self.pane_lifetime_request(
-            wt_agent_tool_gateway::ControlRequest::DeactivatePaneObservations {
-                world_id: world_id.to_string(),
-            },
-        )
+    fn deactivate_world(&self, world_id: wt_control_protocol::WorldId) -> Result<(), String> {
+        self.pane_lifetime_request(wt_agent_tool_gateway::ControlRequest::DeactivateWorld {
+            world_id: world_id.to_string(),
+        })
     }
 }
 

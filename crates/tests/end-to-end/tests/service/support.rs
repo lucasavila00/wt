@@ -7,7 +7,7 @@ use wt_control_protocol::{CreateWorld, WorldId, WorldName};
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
 use wt_server::operations::Operations;
-use wt_server::service::{LivePaneObservations, Service};
+use wt_server::service::{AgentToolGateway, Service};
 use wt_workload_registry::Store;
 
 #[derive(Clone, Default)]
@@ -31,10 +31,10 @@ pub(crate) struct Worker {
 
 #[derive(Clone, Default)]
 pub(crate) struct Gateway {
-    pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
+    pub(crate) deactivated_worlds: Arc<Mutex<Vec<WorldId>>>,
 }
 
-impl LivePaneObservations for Gateway {
+impl AgentToolGateway for Gateway {
     fn pane_observations(
         &self,
         _world_id: WorldId,
@@ -42,15 +42,12 @@ impl LivePaneObservations for Gateway {
         Ok(Vec::new())
     }
 
-    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+    fn activate_world(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 
-    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
-        self.deactivated_pane_observations
-            .lock()
-            .unwrap()
-            .push(world_id);
+    fn deactivate_world(&self, world_id: WorldId) -> Result<(), String> {
+        self.deactivated_worlds.lock().unwrap().push(world_id);
         Ok(())
     }
 }

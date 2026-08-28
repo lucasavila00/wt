@@ -11,7 +11,7 @@ fn stopped_world_can_be_started() {
         ..Worker::default()
     };
     let gateway = Gateway::default();
-    let deactivated_pane_observations = gateway.deactivated_pane_observations.clone();
+    let deactivated_worlds = gateway.deactivated_worlds.clone();
     let reconcile_service = Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         stopped_worker,
@@ -30,10 +30,7 @@ fn stopped_world_can_be_started() {
         worlds[0].last_error.as_deref(),
         Some("guest stopped (crashed)")
     );
-    assert_eq!(
-        *deactivated_pane_observations.lock().unwrap(),
-        [worlds[0].world_id]
-    );
+    assert_eq!(*deactivated_worlds.lock().unwrap(), [worlds[0].world_id]);
 
     let worker = Worker {
         stopped: true,
@@ -102,7 +99,7 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
         ..Worker::default()
     };
     let gateway = Gateway::default();
-    let deactivated_pane_observations = gateway.deactivated_pane_observations.clone();
+    let deactivated_worlds = gateway.deactivated_worlds.clone();
     let service = Service::with_capacity_limit(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker.clone(),
@@ -138,10 +135,7 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
         Some("guest stopped (requested)")
     );
     assert_eq!(worker.stops.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        *deactivated_pane_observations.lock().unwrap(),
-        [first.world_id]
-    );
+    assert_eq!(*deactivated_worlds.lock().unwrap(), [first.world_id]);
 
     service
         .execute("tester", Operation::CreateWorld(create("second")))

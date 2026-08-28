@@ -27,7 +27,7 @@ pub use runtime_config::{
 
 use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode, PROTOCOL_VERSION};
 
-pub fn handle_request<W: wt_guest::WorldWorker, G: service::LivePaneObservations>(
+pub fn handle_request<W: wt_guest::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,
@@ -35,7 +35,7 @@ pub fn handle_request<W: wt_guest::WorldWorker, G: service::LivePaneObservations
     handle_request_with_progress(service, owner, request, false, &mut std::io::sink())
 }
 
-pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::LivePaneObservations>(
+pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentToolGateway>(
     service: &service::Service<W, G>,
     owner: &str,
     request: ApiRequest,

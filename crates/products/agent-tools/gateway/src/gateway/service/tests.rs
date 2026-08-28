@@ -93,7 +93,7 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
 
     assert!(
         gateway
-            .control(ControlRequest::DeactivatePaneObservations {
+            .control(ControlRequest::DeactivateWorld {
                 world_id: world_uuid.to_string(),
             })
             .unwrap()
@@ -116,7 +116,7 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
 
     assert!(
         gateway
-            .control(ControlRequest::ActivatePaneObservations {
+            .control(ControlRequest::ActivateWorld {
                 world_id: world_uuid.to_string(),
             })
             .unwrap()

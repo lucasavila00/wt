@@ -1,6 +1,7 @@
 use super::{
-    allocated_bytes, create_overlay_command, shutdown_reason, validate_worlds_dir_details,
-    validate_worlds_storage_dir_details, vsock_cid, write_creation_timing,
+    allocated_bytes, create_overlay_command, select_world_for_vsock_cid, shutdown_reason,
+    validate_worlds_dir_details, validate_worlds_storage_dir_details, vsock_cid,
+    write_creation_timing,
 };
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -33,6 +34,45 @@ fn reads_the_runtime_vsock_cid_from_libvirt_xml() {
             .unwrap_err()
             .to_string(),
         "libvirt domain has an invalid vsock CID"
+    );
+}
+
+#[test]
+fn selects_the_only_matching_wt_domain_for_a_vsock_cid() {
+    let first = "wt-0123456789abcdef0123456789abcdef";
+    let second = "wt-fedcba9876543210fedcba9876543210";
+    let expected = uuid::Uuid::parse_str("fedcba9876543210fedcba9876543210")
+        .unwrap()
+        .into();
+
+    assert_eq!(
+        select_world_for_vsock_cid(
+            42,
+            [("other", Some(42)), (first, Some(41)), (second, Some(42)),],
+        )
+        .unwrap(),
+        Some(expected)
+    );
+    assert_eq!(
+        select_world_for_vsock_cid(42, [(first, None), (second, Some(41))]).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn rejects_duplicate_active_wt_vsock_cids() {
+    let error = select_world_for_vsock_cid(
+        42,
+        [
+            ("wt-0123456789abcdef0123456789abcdef", Some(42)),
+            ("wt-fedcba9876543210fedcba9876543210", Some(42)),
+        ],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "multiple active WT domains use vsock CID 42"
     );
 }
 

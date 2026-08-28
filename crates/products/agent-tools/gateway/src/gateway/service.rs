@@ -23,7 +23,7 @@ impl Gateway {
         Ok(Self {
             config,
             activity,
-            pane_observations: Arc::new(Mutex::new(PaneObservations::default())),
+            world_state: Arc::new(Mutex::new(WorldState::default())),
         })
     }
 
@@ -38,12 +38,12 @@ impl Gateway {
 
     pub fn control(&self, request: ControlRequest) -> Result<ControlResponse> {
         match request {
-            ControlRequest::ActivatePaneObservations { world_id } => {
-                self.activate_pane_observations(parse_world_id(&world_id)?)?;
+            ControlRequest::ActivateWorld { world_id } => {
+                self.activate_world(parse_world_id(&world_id)?)?;
                 Ok(ControlResponse::ok())
             }
-            ControlRequest::DeactivatePaneObservations { world_id } => {
-                self.deactivate_pane_observations(parse_world_id(&world_id)?)?;
+            ControlRequest::DeactivateWorld { world_id } => {
+                self.deactivate_world(parse_world_id(&world_id)?)?;
                 Ok(ControlResponse::ok())
             }
         }
@@ -99,7 +99,7 @@ impl Gateway {
         crate::protocol::validate_pane_observations(panes).map_err(anyhow::Error::msg)?;
         let observed_at_unix_ms = now_unix_ms()?;
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         let world_id = authorized.world_id;
@@ -129,7 +129,7 @@ impl Gateway {
         world_id: WorldId,
     ) -> Result<Vec<crate::PaneObservationSnapshot>> {
         Ok(self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?
             .snapshots
@@ -138,9 +138,9 @@ impl Gateway {
             .unwrap_or_default())
     }
 
-    pub fn activate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+    pub fn activate_world(&self, world_id: WorldId) -> Result<()> {
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.remove(&world_id) {
@@ -149,9 +149,9 @@ impl Gateway {
         Ok(())
     }
 
-    pub fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+    pub fn deactivate_world(&self, world_id: WorldId) -> Result<()> {
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.insert(world_id) {
@@ -169,7 +169,7 @@ impl Gateway {
             );
         }
         let observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.contains(&world_id) {
@@ -404,7 +404,7 @@ fn replace_pane_observations(
     observations.insert(world_id, replacements);
 }
 
-fn advance_pane_generation(observations: &mut PaneObservations, world_id: WorldId) {
+fn advance_pane_generation(observations: &mut WorldState, world_id: WorldId) {
     let generation = observations.generations.entry(world_id).or_default();
     *generation = generation.wrapping_add(1);
 }

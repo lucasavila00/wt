@@ -260,11 +260,7 @@ fn delete_deactivates_agent_tools_and_destroys_the_world() {
         .unwrap();
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
     assert_eq!(
-        gateway
-            .deactivated_pane_observations
-            .lock()
-            .unwrap()
-            .as_slice(),
+        gateway.deactivated_worlds.lock().unwrap().as_slice(),
         [world.world_id]
     );
     assert!(Store::open(&temp.path().join("worlds.db"))
@@ -305,11 +301,7 @@ fn delete_rejects_an_unknown_world_id_without_side_effects() {
 
     assert_eq!(error.code, wt_control_protocol::ErrorCode::NotFound);
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
-    assert!(gateway
-        .deactivated_pane_observations
-        .lock()
-        .unwrap()
-        .is_empty());
+    assert!(gateway.deactivated_worlds.lock().unwrap().is_empty());
     assert_eq!(
         Store::open(&temp.path().join("worlds.db"))
             .unwrap()

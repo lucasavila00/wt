@@ -15,7 +15,7 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub use gateway::LivePaneObservations;
+pub use gateway::AgentToolGateway;
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
@@ -289,10 +289,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
                         disk_usage_bytes,
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate stopped world pane observations: {error}");
                 }
             }
@@ -300,10 +297,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
                 self.store
                     .mark_error(stored.world.world_id, "guest domain is missing")
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate missing world pane observations: {error}");
                 }
             }
@@ -314,10 +308,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
                         &format!("guest reconciliation: {error}"),
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate errored world pane observations: {error}");
                 }
             }
@@ -346,10 +337,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
             self.store
                 .mark_error(stored.world.world_id, "SSH host identity changed")
                 .map_err(map_store_error)?;
-            if let Err(error) = self
-                .gateway
-                .deactivate_pane_observations(stored.world.world_id)
-            {
+            if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                 eprintln!("wt-server: deactivate changed world pane observations: {error}");
             }
             return Ok(());
@@ -358,7 +346,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
             .mark_host_running(stored.world.world_id, access.guest_ip(), access.ssh())
             .map_err(map_store_error)?;
         self.gateway
-            .activate_pane_observations(stored.world.world_id)
+            .activate_world(stored.world.world_id)
             .map_err(|error| {
                 ApiError::new(
                     ErrorCode::Internal,
@@ -456,7 +444,7 @@ impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
         self.store
             .mark_destroying(world_id)
             .map_err(map_store_error)?;
-        if let Err(error) = self.gateway.deactivate_pane_observations(world_id) {
+        if let Err(error) = self.gateway.deactivate_world(world_id) {
             eprintln!("wt-server: deactivate deleted world agent tools: {error}");
         }
         if let Err(error) = self.worker.destroy(world_id) {

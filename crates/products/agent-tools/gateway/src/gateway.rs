@@ -108,11 +108,11 @@ impl Provider {
 pub struct Gateway {
     config: GatewayConfig,
     activity: ActivityRecorder,
-    pane_observations: Arc<Mutex<PaneObservations>>,
+    world_state: Arc<Mutex<WorldState>>,
 }
 
 #[derive(Default)]
-struct PaneObservations {
+struct WorldState {
     snapshots: std::collections::BTreeMap<WorldId, Vec<PaneObservationSnapshot>>,
     inactive_worlds: std::collections::BTreeSet<WorldId>,
     generations: std::collections::BTreeMap<WorldId, u64>,
