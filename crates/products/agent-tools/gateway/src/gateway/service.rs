@@ -1,7 +1,7 @@
 use super::*;
 
 impl Gateway {
-    pub fn open(config: GatewayConfig) -> Result<Self> {
+    pub fn open(config: GatewayConfig, activity: ActivityRecorder) -> Result<Self> {
         if config.providers.is_empty() {
             bail!("at least one Git provider is required");
         }
@@ -27,6 +27,7 @@ impl Gateway {
         };
         Ok(Self {
             config,
+            activity,
             state: Arc::new(Mutex::new(state)),
             pane_observations: Arc::new(Mutex::new(PaneObservations::default())),
         })
@@ -355,9 +356,8 @@ impl Gateway {
         let repository = normalize_repository(&source.path);
         let provider_target = provider.api_kind().map(|kind| (kind, repository.as_str()));
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .insert_git_activity(wt_workload_registry::GitActivityInput {
+        self.activity
+            .record_git_activity(wt_workload_registry::GitActivityInput {
                 world_id: world_id.into(),
                 kind: wt_workload_registry::GitActivityKind::Service,
                 provider_host: &source.host,
@@ -397,8 +397,9 @@ impl Gateway {
                     .reference
                     .strip_prefix("refs/heads/")
                     .expect("validated successful push is a branch");
-                if let Err(error) =
-                    self.store_git_activity(wt_workload_registry::GitActivityInput {
+                if let Err(error) = self
+                    .activity
+                    .record_git_activity(wt_workload_registry::GitActivityInput {
                         world_id: world_id.into(),
                         kind: wt_workload_registry::GitActivityKind::BranchUpdate,
                         provider_host: &source.host,
@@ -408,6 +409,7 @@ impl Gateway {
                         previous_oid: Some(&update.previous_oid),
                         new_oid: Some(&update.new_oid),
                     })
+                    .context("store Git activity")
                 {
                     eprintln!("wt-agent-tool-gateway: store Git branch activity: {error}");
                 }
@@ -429,9 +431,8 @@ impl Gateway {
                 let (kind, description) = command.wt_tool_report();
                 let world_id =
                     Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-                wt_workload_registry::Registry::open(&self.config.database_path)
-                    .context("open WT registry")?
-                    .insert_agent_tool_report(world_id.into(), kind, description)
+                self.activity
+                    .record_agent_tool_report(world_id.into(), kind, description)
                     .context("store agent tool report")?;
                 return Ok(api::render_cli_confirmation(
                     "Recorded wtg tools report for this world.",
@@ -473,8 +474,9 @@ impl Gateway {
         let response_json = api::render_cli_command_output(output);
         let (action, branch, change_request) = wt_tools_activity_metadata(command, &response_json)?;
         let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        if let Err(error) =
-            self.store_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
+        if let Err(error) = self
+            .activity
+            .record_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
                 world_id: world_id.into(),
                 provider_host: provider.host(),
                 repository: &repository,
@@ -484,27 +486,11 @@ impl Gateway {
                 request_json: &args[0],
                 response_json: &response_json,
             })
+            .context("store wtg tools activity")
         {
             eprintln!("wt-agent-tool-gateway: store wtg tools activity: {error}");
         }
         Ok(response_json)
-    }
-
-    fn store_git_activity(&self, input: wt_workload_registry::GitActivityInput<'_>) -> Result<()> {
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .insert_git_activity(input)
-            .context("store Git activity")
-    }
-
-    fn store_wt_tools_activity(
-        &self,
-        input: wt_workload_registry::WtToolsActivityInput<'_>,
-    ) -> Result<()> {
-        wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .insert_wt_tools_activity(input)
-            .context("store wtg tools activity")
     }
 }
 

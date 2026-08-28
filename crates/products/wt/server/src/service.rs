@@ -1,4 +1,4 @@
-use crate::operations::Operations;
+use crate::operations::{Operations, WorldOperationGuard};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use wt_control_protocol::{
@@ -7,7 +7,7 @@ use wt_control_protocol::{
 };
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_workload_registry::Resources;
-use wt_workload_registry::{Store, StoreError, StoredWorld};
+use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
 mod activity;
 mod gateway;
 mod lifecycle;
@@ -15,7 +15,7 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub use gateway::AgentToolGateway;
+pub use gateway::{AgentToolGrantAuthority, LivePaneObservations};
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
@@ -158,25 +158,19 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .gateway
             .reserve(world_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
-        let stored = StoredWorld {
-            world: World {
-                world_id,
-                name: request.name.clone(),
-                owner: owner.to_owned(),
-                status: WorldStatus::Provisioning,
-                vcpus: request.vcpus,
-                memory_mib: request.memory_mib,
-                disk_gib: request.disk_gib,
-                guest_ip: None,
-                last_error: None,
-                ssh: None,
-            },
-            created_at_unix_ms: 0,
+        let new_world = NewWorld {
+            world_id,
+            name: request.name.clone(),
+            owner: owner.to_owned(),
+            status: WorldStatus::Provisioning,
+            vcpus: request.vcpus,
+            memory_mib: request.memory_mib,
+            disk_gib: request.disk_gib,
             setup_fingerprint,
         };
         if let Err(error) = self
             .store
-            .insert_with_capacity_limit(&stored, self.capacity_limit)
+            .insert_with_capacity_limit(&new_world, self.capacity_limit)
         {
             if let Err(cleanup) = self.gateway.revoke(world_id) {
                 eprintln!("wt-server: revoke unused Git grant: {cleanup}");
@@ -204,7 +198,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 if let Err(store_error) = self.store.mark_error(world_id, &provisioning_error) {
                     eprintln!(
                         "wt-server: record failed host create {}: {store_error}",
-                        stored.world.name
+                        new_world.name
                     );
                     return Err(ApiError::new(
                         ErrorCode::Backend,
@@ -216,21 +210,21 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 }
                 eprintln!(
                     "wt-server: preserved failed guest {}: {provisioning_error}",
-                    stored.world.name
+                    new_world.name
                 );
                 return Err(ApiError::new(
                     ErrorCode::Backend,
                     format!(
                         "{provisioning_error}; guest '{}' was preserved in error state; \
                          run `wt rm {}` to delete it",
-                        stored.world.name, stored.world.name
+                        new_world.name, new_world.name
                     ),
                 ));
             }
         }
         let world = self
             .store
-            .get_owned_by_id(owner, stored.world.world_id)
+            .get_owned_by_id(owner, new_world.world_id)
             .map_err(map_store_error)?
             .world;
         Ok(Response::World {
@@ -241,10 +235,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         for world in &stored {
-            let Some(_operation) = self.operations.try_lock_world(world.world.world_id) else {
+            let Some(operation) = self.operations.try_lock_world(world.world.world_id) else {
                 continue;
             };
-            self.reconcile_locked(world)?;
+            self.reconcile_locked(world, &operation)?;
         }
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         let mut disk_usage_bytes = std::collections::BTreeMap::new();
@@ -269,7 +263,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 
-    fn reconcile_locked(&self, stored: &StoredWorld) -> Result<(), ApiError> {
+    fn reconcile_locked(
+        &self,
+        stored: &StoredWorld,
+        operation: &WorldOperationGuard,
+    ) -> Result<(), ApiError> {
+        assert_eq!(operation.world_id(), stored.world.world_id);
         if !matches!(
             stored.world.status,
             WorldStatus::Running | WorldStatus::Stopped | WorldStatus::Error
@@ -384,11 +383,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_name(owner, name)
             .map_err(map_store_error)?;
-        let _operation = self
+        let operation = self
             .operations
             .try_lock_world(stored.world.world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile_locked(&stored)?;
+        self.reconcile_locked(&stored, &operation)?;
         let world = self
             .store
             .get_owned_by_id(owner, stored.world.world_id)
@@ -404,11 +403,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        let _operation = self
+        let operation = self
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile_locked(&stored)?;
+        self.reconcile_locked(&stored, &operation)?;
         let stored = self
             .store
             .get_owned_by_id(owner, world_id)

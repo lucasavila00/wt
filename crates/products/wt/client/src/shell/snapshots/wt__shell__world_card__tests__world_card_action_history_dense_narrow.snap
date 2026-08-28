@@ -1,0 +1,20 @@
+---
+source: crates/products/wt/client/src/shell/world_card.rs
+expression: "rendered_card(&world, &panes, 52)"
+---
+┌ 󰐊 RUNNING ─────────────────────────────── … Menu ┐
+│ars.clever-turtle                                 │
+│2 CPU · 4G · 6G/32G disk                          │
+│Codex · window “codex” · CHANGING                 │
+│Codex · window “make” · CHANGING                  │
+│Codex · window “window-3” · CHANGING              │
+│Codex · window “window-4” · CHANGING              │
+│Codex · window “window-5” · CHANGING              │
+│Codex +3 more panes                               │
+├─ Action history ─────────────────────────────────┤
+│wtg: opened PR #250 for wt/world-card-action-log …│
+│Git: pushed wt/world-card-action-log to github.co…│
+│wtg: checked CI · github.com/lucasavila00/wt      │
+│Git: fetched from github.com/lucasavila00/wt      │
+│wtg: commented on PR #250 · github.com/lucasavila…│
+└──────────────────────────────────────────────────┘

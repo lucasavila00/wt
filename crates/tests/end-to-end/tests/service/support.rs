@@ -7,7 +7,7 @@ use wt_control_protocol::{CreateWorld, WorldId, WorldName};
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
 use wt_server::operations::Operations;
-use wt_server::service::{AgentToolGateway, Service};
+use wt_server::service::{AgentToolGrantAuthority, LivePaneObservations, Service};
 use wt_workload_registry::Store;
 
 #[derive(Clone, Default)]
@@ -45,7 +45,7 @@ pub(crate) struct UnavailableGateway {
     pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
 }
 
-impl AgentToolGateway for Gateway {
+impl AgentToolGrantAuthority for Gateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         Ok(wt_agent_tool_gateway::Grant {
             token: format!("token-{world_id}"),
@@ -57,7 +57,9 @@ impl AgentToolGateway for Gateway {
         self.revocations.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+}
 
+impl LivePaneObservations for Gateway {
     fn pane_observations(
         &self,
         _world_id: WorldId,
@@ -79,7 +81,7 @@ impl AgentToolGateway for Gateway {
     }
 }
 
-impl AgentToolGateway for UnavailableGateway {
+impl AgentToolGrantAuthority for UnavailableGateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         Ok(wt_agent_tool_gateway::Grant {
             token: format!("token-{world_id}"),
@@ -90,7 +92,9 @@ impl AgentToolGateway for UnavailableGateway {
         self.revocations.fetch_add(1, Ordering::SeqCst);
         Err("gateway unavailable".to_owned())
     }
+}
 
+impl LivePaneObservations for UnavailableGateway {
     fn pane_observations(
         &self,
         _world_id: WorldId,

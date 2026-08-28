@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use wt_agent_tool_gateway::{
-    resolve_vsock_port, FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, VsockListener,
-    CONTROL_SOCKET,
+    resolve_vsock_port, ActivityRecorder, FixtureApi, Gateway, GatewayConfig, Provider,
+    ProviderKind, VsockListener, CONTROL_SOCKET,
 };
 
 #[derive(Debug, Parser)]
@@ -86,11 +86,14 @@ fn run() -> Result<()> {
             },
         ),
     );
-    let gateway = Gateway::open(GatewayConfig {
-        state_file,
-        database_path,
-        providers,
-    })?;
+    let activity = ActivityRecorder::open(&database_path)?;
+    let gateway = Gateway::open(
+        GatewayConfig {
+            state_file,
+            providers,
+        },
+        activity,
+    )?;
     let control = bind_unix(&control_socket, 0o600)?;
     let control_gateway = gateway.clone();
     std::thread::spawn(move || {

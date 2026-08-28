@@ -1,0 +1,25 @@
+---
+source: crates/products/wt/client/src/create/form_snapshots.rs
+expression: contents
+---
+
+ ┌Create world────────────────────────────────────────────────────────────────────┐
+ │ Review                                                                         │
+ │ World       repo-feature                                                       │
+ │ Context     lab                                                                │
+ │ Resources   4 CPU · 8192 MiB RAM · 64 GiB disk                                 │
+ │ Git author  Test User <test@example.com>                                       │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                                                                                │
+ │                       Enter create · b edit · Esc cancel                       │
+ └────────────────────────────────────────────────────────────────────────────────┘

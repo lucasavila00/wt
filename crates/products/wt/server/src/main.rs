@@ -152,11 +152,14 @@ fn open_gateway(
         },
     )
     .collect();
-    wt_agent_tool_gateway::Gateway::open(wt_agent_tool_gateway::GatewayConfig {
-        state_file: PathBuf::from("/var/lib/wt/agent-tools/state.json"),
-        database_path: database_path.to_owned(),
-        providers,
-    })
+    let activity = wt_agent_tool_gateway::ActivityRecorder::open(database_path)?;
+    wt_agent_tool_gateway::Gateway::open(
+        wt_agent_tool_gateway::GatewayConfig {
+            state_file: PathBuf::from("/var/lib/wt/agent-tools/state.json"),
+            providers,
+        },
+        activity,
+    )
 }
 
 struct DaemonContext {

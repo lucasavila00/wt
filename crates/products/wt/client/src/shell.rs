@@ -13,6 +13,7 @@ use wt_client::config::ClientConfig;
 use wt_client::{inventory, ssh};
 
 mod action;
+mod action_log;
 mod action_queue;
 mod activity;
 mod bar;
@@ -21,7 +22,6 @@ mod control;
 mod control_overlay;
 mod delete;
 mod focus;
-mod git_activity;
 mod input;
 mod lifecycle;
 mod live;
@@ -72,14 +72,14 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let refresh = WorldRefresh::start(config.clone());
     let pane_refresh = PaneRefresh::start(config.clone());
-    let git_activity = git_activity::Refresh::start(config.clone(), report.worlds);
+    let action_log = action_log::Refresh::start(config.clone(), report.worlds);
     let focus = focus::FocusWorker::default();
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
         refresh: &refresh,
         pane_refresh: &pane_refresh,
-        git_activity: &git_activity,
+        action_log: &action_log,
         focus: &focus,
         git_author: &git_author,
     };
@@ -125,7 +125,7 @@ struct ShellRuntime<'a> {
     config: &'a ClientConfig,
     refresh: &'a WorldRefresh,
     pane_refresh: &'a PaneRefresh,
-    git_activity: &'a git_activity::Refresh,
+    action_log: &'a action_log::Refresh,
     focus: &'a focus::FocusWorker,
     git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
@@ -188,7 +188,7 @@ fn run_loop(
                     model.finish_worlds_refresh(Err(vec![error]));
                     redraw = true;
                 } else {
-                    runtime.git_activity.reconcile(snapshot.worlds.clone());
+                    runtime.action_log.reconcile(snapshot.worlds.clone());
                     let worlds = shell_worlds(&snapshot.worlds);
                     let area: Rect = terminal
                         .size()
@@ -222,8 +222,8 @@ fn run_loop(
         } else {
             let _ = runtime.pane_refresh.updates.try_iter().last();
         }
-        for update in runtime.git_activity.updates.try_iter() {
-            redraw |= model.apply_git_activity(update);
+        for update in runtime.action_log.updates.try_iter() {
+            redraw |= model.apply_action_log(update);
         }
         while let Some(result) = runtime.focus.try_recv() {
             if !flows.actions.is_active(result.action_id)

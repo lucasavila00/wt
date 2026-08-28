@@ -684,3 +684,7 @@ mod tests {
         assert_eq!(buffer[(modal.x + 1, modal.y + 1)].symbol(), " ");
     }
 }
+
+#[cfg(test)]
+#[path = "form_snapshots.rs"]
+mod snapshot_tests;
