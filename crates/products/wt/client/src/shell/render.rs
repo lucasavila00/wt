@@ -349,7 +349,9 @@ mod tests {
     use super::*;
     use crate::shell::control::{PaneCardIdentity, PaneCardKind};
     use ratatui::{backend::TestBackend, Terminal};
-    use wt_control_protocol::{PaneCell, PaneColor, PaneFrame, ResourceCapacity, Resources};
+    use wt_control_protocol::{
+        PaneCell, PaneColor, PaneFrame, PaneRender, ResourceCapacity, Resources,
+    };
 
     fn rendered_control(model: &ShellModel, width: u16, height: u16) -> String {
         let backend = TestBackend::new(width, height);
@@ -362,7 +364,13 @@ mod tests {
             .buffer()
             .content()
             .chunks(usize::from(width))
-            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .map(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -447,15 +455,19 @@ mod tests {
                 changed_at_unix_ms: 10_000,
                 cwd: "/home/wt/wt".into(),
                 git_branch: Some("wt/world-card-action-log".into()),
-                frame: Some(pane_frame(
-                    &[
-                        "$ cargo test -p wt-client",
-                        "running 107 tests",
-                        "test shell::world_card::tests ... ok",
-                        "test result: ok. 107 passed; 0 failed",
-                    ],
-                    51,
-                )),
+                render: PaneRender {
+                    window_index: 1,
+                    window_name: "codex".into(),
+                    frame: pane_frame(
+                        &[
+                            "$ cargo test -p wt-client",
+                            "running 107 tests",
+                            "test shell::world_card::tests ... ok",
+                            "test result: ok. 107 passed; 0 failed",
+                        ],
+                        51,
+                    ),
+                },
             },
         };
         let mut model = ShellModel::new(vec![world]);

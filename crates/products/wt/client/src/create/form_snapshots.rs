@@ -29,7 +29,13 @@ fn snapshots_the_world_creation_review_screen() {
         .buffer()
         .content()
         .chunks(84)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .map(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
         .collect::<Vec<_>>()
         .join("\n");
 

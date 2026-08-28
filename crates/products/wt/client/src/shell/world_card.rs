@@ -507,7 +507,7 @@ mod tests {
         let now = now_unix_ms();
         let buffer = rendered_card_buffer(&world, &[observation(&world, "%1", now)], 76);
 
-        assert!(!buffer[(7, 3)].modifier.contains(Modifier::DIM));
+        assert!(!buffer[(17, 3)].modifier.contains(Modifier::DIM));
         assert!(buffer[(6, 5)].modifier.contains(Modifier::DIM));
     }
 
