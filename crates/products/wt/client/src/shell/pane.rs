@@ -47,7 +47,7 @@ impl ShellWorld {
             status: world.status,
             resources: wt_client::inventory::format_resources(world, None),
             detail: world.last_error.as_deref().unwrap_or("-").into(),
-            git_activity: super::git_activity::RepositoryActivity::Loading,
+            action_log: super::action_log::ActionLog::Loading,
         }
     }
 
@@ -65,7 +65,7 @@ impl ShellWorld {
             status: wt_control_protocol::WorldStatus::Running,
             resources: "2 CPU · 4G · 1G/32G disk".into(),
             detail: "-".into(),
-            git_activity: super::git_activity::RepositoryActivity::Loading,
+            action_log: super::action_log::ActionLog::Loading,
         }
     }
 }

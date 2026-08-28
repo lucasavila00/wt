@@ -56,7 +56,10 @@ case "$request" in
     fi
     ;;
   *'"operation":"list_git_activity"'*)
-    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"git_activity","activity":[{"id":2,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":20,"kind":"service","provider_host":"github.com","repository":"owner/write","git_service":"git-receive-pack"},{"id":1,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":10,"kind":"service","provider_host":"github.com","repository":"owner/read","git_service":"git-upload-pack"}]}}'
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"git_activity","activity":[{"id":3,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":30,"kind":"branch_update","provider_host":"github.com","repository":"owner/write","git_service":"git-receive-pack","branch":"wt/topic"},{"id":2,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":20,"kind":"service","provider_host":"github.com","repository":"owner/write","git_service":"git-receive-pack"},{"id":1,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":10,"kind":"service","provider_host":"github.com","repository":"owner/read","git_service":"git-upload-pack"}]}}'
+    ;;
+  *'"operation":"list_wt_tools_activity"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"wt_tools_activity","activity":[{"id":1,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":40,"provider_host":"github.com","repository":"owner/write","action":"open_mr","branch":"wt/topic","change_request":"42","request_json":"{}","response_json":"{}"}]}}'
     ;;
   *'"operation":"list_worlds"'*)
     worlds='{"world_id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
@@ -343,8 +346,9 @@ fn world_cards_correlate_observed_byobu_panes_and_show_idle_worlds() -> Result<(
         .press(Key::Tab)?
         .wait_for_text("IDLE · NO RECENT PANE CHANGE")?
         .wait_for_text("Codex · window “codex” · STATIC")?
-        .wait_for_text("Git write github.com/owner/write")?
-        .wait_for_text("Git read github.com/owner/read")?;
+        .wait_for_text("wtg: opened PR #42 for wt/topic")?
+        .wait_for_text("Git: pushed wt/topic")?
+        .wait_for_text("Git: fetched from github.com/owner/read")?;
     Ok(())
 }
 

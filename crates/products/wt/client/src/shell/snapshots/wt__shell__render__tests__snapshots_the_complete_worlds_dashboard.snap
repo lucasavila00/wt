@@ -1,0 +1,24 @@
+---
+source: crates/products/wt/client/src/shell/render.rs
+expression: "rendered_control(&model, 128, 20)"
+---
+    │┌ 󰐊 RUNNING ──────────────────────────────────────── … Menu ┐ ┌ 󰐊 RUNNING ──────────────────────────────────────── … Menu ┐
+  󰆍 ││ars.clever-turtle                                          │ │ars.nimble-panda                                           │
+    ││2 CPU · 4G · 6G/32G disk                                   │ │2 CPU · 4G · 4.3G/32G disk                                 │
+    ││Codex no observed Byobu panes                              │ │Codex no observed Byobu panes                              │
+▌  │├─ Action history ──────────────────────────────────────────┤ ├─ Action history ──────────────────────────────────────────┤
+    ││wtg: opened PR #250 for wt/world-card-action-log · github.…│ │Git: cloned github.com/lucasavila00/diffo                  │
+    ││Git: pushed wt/world-card-action-log to github.com/lucasav…│ │wtg: created world ars.nimble-panda                        │
+    ││wtg: checked CI · github.com/lucasavila00/wt               │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    ││                                                           │ │                                                           │
+    │└───────────────────────────────────────────────────────────┘ └───────────────────────────────────────────────────────────┘
+    │
+    │
+    │
+    │Worlds · Last updated 2026-08-28T10:26:08Z                          CPU 6/20 · RAM 12G/32G · Disk 96G/238G[ Help (2 / F2) ]
