@@ -15,7 +15,7 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub use gateway::AgentToolGateway;
+pub use gateway::{AgentToolGrantAuthority, LivePaneObservations};
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
