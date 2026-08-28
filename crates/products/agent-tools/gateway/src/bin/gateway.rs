@@ -5,17 +5,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use wt_agent_tool_gateway::{
-    resolve_vsock_port, ActivityRecorder, FixtureApi, Gateway, GatewayConfig, Provider,
-    ProviderKind, VsockListener, CONTROL_SOCKET,
+    ActivityRecorder, FixtureApi, Gateway, GatewayConfig, Provider, ProviderKind, CONTROL_SOCKET,
 };
+use wt_world::WorldId;
 
 #[derive(Debug, Parser)]
 #[command(name = "wt-agent-tool-gateway")]
 struct Cli {
     #[arg(long, default_value = CONTROL_SOCKET)]
     control_socket: PathBuf,
-    #[arg(long, default_value = "/var/lib/wt/agent-tools/state.json")]
-    state_file: PathBuf,
     #[arg(long)]
     database_path: Option<PathBuf>,
     #[arg(long, value_parser = parse_local_provider)]
@@ -24,12 +22,8 @@ struct Cli {
     github_provider: Option<(String, PathBuf, PathBuf)>,
     #[arg(long, value_parser = parse_ssh_provider)]
     gitlab_provider: Option<(String, PathBuf, PathBuf)>,
-    #[arg(long)]
-    transport_socket: Option<PathBuf>,
-    #[arg(long)]
-    vsock_port: Option<u32>,
-    #[arg(long)]
-    no_vsock: bool,
+    #[arg(long, value_parser = parse_transport_socket)]
+    transport_socket: Vec<(WorldId, PathBuf)>,
 }
 
 fn main() {
@@ -42,16 +36,12 @@ fn main() {
 fn run() -> Result<()> {
     let Cli {
         control_socket,
-        state_file,
         database_path,
         local_provider,
         github_provider,
         gitlab_provider,
         transport_socket,
-        vsock_port,
-        no_vsock,
     } = Cli::parse();
-    let vsock_port = resolve_vsock_port(vsock_port)?;
     let database_path = match database_path {
         Some(path) => path,
         None => std::env::var_os("HOME")
@@ -87,13 +77,7 @@ fn run() -> Result<()> {
         ),
     );
     let activity = ActivityRecorder::open(&database_path)?;
-    let gateway = Gateway::open(
-        GatewayConfig {
-            state_file,
-            providers,
-        },
-        activity,
-    )?;
+    let gateway = Gateway::open(GatewayConfig { providers }, activity)?;
     let control = bind_unix(&control_socket, 0o600)?;
     let control_gateway = gateway.clone();
     std::thread::spawn(move || {
@@ -111,7 +95,7 @@ fn run() -> Result<()> {
             }
         }
     });
-    if let Some(path) = transport_socket {
+    for (world_id, path) in transport_socket {
         let listener = bind_unix(&path, 0o600)?;
         let transport_gateway = gateway.clone();
         std::thread::spawn(move || {
@@ -120,7 +104,7 @@ fn run() -> Result<()> {
                     Ok(stream) => {
                         let gateway = transport_gateway.clone();
                         std::thread::spawn(move || {
-                            if let Err(error) = gateway.handle_transport(stream) {
+                            if let Err(error) = gateway.handle_transport(stream, world_id) {
                                 eprintln!("wt-agent-tool-gateway: transport request: {error:#}");
                             }
                         });
@@ -132,20 +116,8 @@ fn run() -> Result<()> {
             }
         });
     }
-    if no_vsock {
-        loop {
-            std::thread::park();
-        }
-    }
-    let listener = VsockListener::bind(u32::MAX, vsock_port).context("bind gateway vsock")?;
     loop {
-        let stream = listener.accept().context("accept gateway vsock")?;
-        let gateway = gateway.clone();
-        std::thread::spawn(move || {
-            if let Err(error) = gateway.handle_transport(stream) {
-                eprintln!("wt-agent-tool-gateway: transport request: {error:#}");
-            }
-        });
+        std::thread::park();
     }
 }
 
@@ -213,6 +185,20 @@ fn parse_local_provider(value: &str) -> Result<(String, PathBuf), String> {
         ));
     }
     Ok((host.to_owned(), path))
+}
+
+fn parse_transport_socket(value: &str) -> Result<(WorldId, PathBuf), String> {
+    let (world_id, path) = value
+        .split_once('=')
+        .ok_or_else(|| "expected WORLD_ID=PATH".to_owned())?;
+    let world_id = uuid::Uuid::parse_str(world_id)
+        .map(WorldId::from)
+        .map_err(|_| "expected WORLD_ID=PATH".to_owned())?;
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err("transport socket path must be absolute".to_owned());
+    }
+    Ok((world_id, path))
 }
 
 fn parse_ssh_provider(value: &str) -> Result<(String, PathBuf, PathBuf), String> {

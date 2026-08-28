@@ -72,14 +72,15 @@ Provisioning is not resumable. Remove a failed world and recreate it from the
 golden image. A world disk cannot be smaller than the image build disk.
 
 Provider tokens and SSH private keys remain in encrypted systemd credentials.
-Worlds receive scoped grants, never provider credentials. Gateway Git does not
-pin provider SSH host keys, so provider key rotation cannot block worlds.
+The gateway identifies each guest from its vsock peer CID and active libvirt
+domain; worlds receive no gateway or provider credentials. Gateway Git does
+not pin provider SSH host keys, so provider key rotation cannot block worlds.
 
 ## Reset
 
 `make clear` removes runtime state while preserving verified golden images.
 `make nuke` removes the complete WT installation state, including worlds,
-images, services, generated configuration, grants, registry, and encrypted
+images, services, generated configuration, registry, and encrypted
 credentials. Neither command removes source credentials or installed host
 packages and binaries.
 

@@ -7,7 +7,7 @@ use wt_control_protocol::{CreateWorld, WorldId, WorldName};
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
 use wt_server::operations::Operations;
-use wt_server::service::{AgentToolGrantAuthority, LivePaneObservations, Service};
+use wt_server::service::{AgentToolGateway, Service};
 use wt_workload_registry::Store;
 
 #[derive(Clone, Default)]
@@ -19,7 +19,6 @@ pub(crate) struct Worker {
     pub(crate) stops: Arc<AtomicUsize>,
     pub(crate) destroyed_disks: Arc<Mutex<Vec<WorldId>>>,
     pub(crate) provisioned_disks: Arc<Mutex<Vec<WorldId>>>,
-    pub(crate) host_git_grants: Arc<Mutex<Vec<String>>>,
     pub(crate) provision_gate: Option<Arc<(Mutex<bool>, Condvar)>>,
     pub(crate) missing: bool,
     pub(crate) changed_guest_identity: bool,
@@ -32,28 +31,10 @@ pub(crate) struct Worker {
 
 #[derive(Clone, Default)]
 pub(crate) struct Gateway {
-    pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
+    pub(crate) deactivated_worlds: Arc<Mutex<Vec<WorldId>>>,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct UnavailableGateway {
-    pub(crate) revocations: Arc<AtomicUsize>,
-}
-
-impl AgentToolGrantAuthority for Gateway {
-    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
-        Ok(wt_agent_tool_gateway::Grant {
-            id: format!("grant-{world_id}"),
-            token: format!("token-{world_id}"),
-        })
-    }
-
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-impl LivePaneObservations for Gateway {
+impl AgentToolGateway for Gateway {
     fn pane_observations(
         &self,
         _world_id: WorldId,
@@ -61,46 +42,12 @@ impl LivePaneObservations for Gateway {
         Ok(Vec::new())
     }
 
-    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+    fn activate_world(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 
-    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
-        self.deactivated_pane_observations
-            .lock()
-            .unwrap()
-            .push(world_id);
-        Ok(())
-    }
-}
-
-impl AgentToolGrantAuthority for UnavailableGateway {
-    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
-        Ok(wt_agent_tool_gateway::Grant {
-            id: format!("grant-{world_id}"),
-            token: format!("token-{world_id}"),
-        })
-    }
-
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
-        self.revocations.fetch_add(1, Ordering::SeqCst);
-        Err("gateway unavailable".to_owned())
-    }
-}
-
-impl LivePaneObservations for UnavailableGateway {
-    fn pane_observations(
-        &self,
-        _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
-        Ok(Vec::new())
-    }
-
-    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn deactivate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+    fn deactivate_world(&self, world_id: WorldId) -> Result<(), String> {
+        self.deactivated_worlds.lock().unwrap().push(world_id);
         Ok(())
     }
 }
@@ -123,10 +70,6 @@ impl WorldWorker for Worker {
         if self.provision_error {
             return Err(WorkerError::new("provision failed"));
         }
-        self.host_git_grants
-            .lock()
-            .unwrap()
-            .push(spec.git_grant.to_owned());
         Ok(world())
     }
 

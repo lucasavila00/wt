@@ -10,18 +10,6 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
     build_client.current_dir(workspace);
     run(build_client, "build current WT client for KVM tests");
 
-    let mut build = cmd!(
-        env!("CARGO"),
-        "build",
-        "--target",
-        MUSL_TARGET,
-        "-p",
-        "wt-agent-tool-gateway",
-        "--bin",
-        "wt-agent-tool-gateway",
-    );
-    build.current_dir(workspace);
-    run(build, "build static KVM test binaries");
     let mut build_guest = cmd!(
         env!("CARGO"),
         "build",
@@ -40,12 +28,9 @@ pub(crate) fn prepare_test_binaries(workspace: &Path, destination: &Path) {
 
     fs::create_dir(destination).unwrap();
     fs::copy(workspace.join("target/debug/wt"), destination.join("wt")).unwrap();
-    let binaries = workspace.join("target").join(MUSL_TARGET).join("debug");
-    for name in ["wt-agent-tool-gateway", "wtg"] {
-        let source = binaries.join(name);
-        assert_static(&source, name);
-        fs::copy(source, destination.join(name)).unwrap();
-    }
+    let source = workspace.join("target").join(MUSL_TARGET).join("debug/wtg");
+    assert_static(&source, "wtg");
+    fs::copy(source, destination.join("wtg")).unwrap();
 }
 
 fn assert_static(path: &Path, name: &str) {

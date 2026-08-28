@@ -25,7 +25,7 @@ cleanup and a full `make nuke` are both safe on that host.
 
 Every run validates the E2E install input, runs `make clear`, and installs a
 test server from the current checkout into the ordinary host paths. Existing
-`wt-*` guests, world disks, runtime configuration, grants, the registry, and
+`wt-*` guests, world disks, runtime configuration, the registry, and
 generated SSH inventory are removed. The Ubuntu source image, verified golden
 image, downloads, Cargo artifacts, and build caches remain in place.
 
@@ -64,8 +64,8 @@ make e2e-tests
 
 The KVM suite creates worlds through the API and through `wt shell`. It verifies
 the golden image development tools, Byobu, scoped Git traffic, agent tools, Codex
-session/auth sharing, stop/start persistence, gateway restart, grant
-revocation, and cleanup.
+session/auth sharing, stop/start persistence, gateway restart, vsock peer
+identity, and cleanup.
 
 Installation, image rebuild, `make clear`, and `make nuke` cannot run
 concurrently with KVM E2E.

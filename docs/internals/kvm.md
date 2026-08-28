@@ -64,6 +64,6 @@ The E2E host is a disposable environment with no production workload. Both
 runtime cleanup and full server removal are safe there; the normal test path
 uses the narrower cleanup so verified images and downloads can be reused.
 
-Individual harnesses use temporary ports, databases, grants, provider fixtures,
+Individual harnesses use temporary ports, databases, provider fixtures,
 and disposable world overlays for deterministic test state. Installation,
 image rebuild, reset, and another E2E run cannot execute concurrently.

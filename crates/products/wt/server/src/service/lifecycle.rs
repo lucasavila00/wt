@@ -1,8 +1,8 @@
-use super::{map_store_error, AgentToolGrantAuthority, LivePaneObservations, Service};
+use super::{map_store_error, AgentToolGateway, Service};
 use wt_control_protocol::{ApiError, ErrorCode, Response, WorldId, WorldStatus};
 use wt_guest::WorldWorker;
 
-impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub(super) fn stop(&self, owner: &str, world_id: WorldId) -> Result<Response, ApiError> {
         let stored = self
             .store
@@ -35,7 +35,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
         self.store
             .mark_stopped(world_id, "guest stopped (requested)", disk_usage_bytes)
             .map_err(map_store_error)?;
-        if let Err(error) = self.gateway.deactivate_pane_observations(world_id) {
+        if let Err(error) = self.gateway.deactivate_world(world_id) {
             eprintln!("wt-server: deactivate stopped world pane observations: {error}");
         }
         let world = self

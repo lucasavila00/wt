@@ -11,12 +11,29 @@ use wt_world::WorldId;
 pub(crate) struct DomainName(String);
 
 impl DomainName {
+    pub(crate) fn parse(value: String) -> Option<Self> {
+        let domain_name = Self(value);
+        domain_name.world_id().map(|_| domain_name)
+    }
+
     pub(crate) fn for_world(world_id: WorldId) -> Self {
         Self(format!("wt-{}", world_id.as_uuid().simple()))
     }
 
     pub(crate) fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub(crate) fn world_id(&self) -> Option<WorldId> {
+        let value = self.0.strip_prefix("wt-")?;
+        if value.len() != 32
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return None;
+        }
+        uuid::Uuid::parse_str(value).ok().map(WorldId::from)
     }
 }
 
@@ -101,6 +118,17 @@ mod tests {
         assert_eq!(
             DomainName::for_world(world_id).as_str(),
             "wt-0123456789abcdef0123456789abcdef"
+        );
+        assert_eq!(DomainName::for_world(world_id).world_id(), Some(world_id));
+    }
+
+    #[test]
+    fn rejects_non_wt_domain_names() {
+        assert_eq!(DomainName::parse("other".into()), None);
+        assert_eq!(DomainName::parse("wt-not-a-uuid".into()), None);
+        assert_eq!(
+            DomainName::parse("wt-01234567-89ab-cdef-0123-456789abcdef".into()),
+            None
         );
     }
 }

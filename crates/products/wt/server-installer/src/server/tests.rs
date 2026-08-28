@@ -177,7 +177,7 @@ fn config_drift_message_explains_recovery() {
       scripts/install-server --config ./server.toml
 
     `make clear` destroys every wt-* domain and removes generated runtime state
-    (config, worlds, grants, database, and generated SSH inventory). It keeps
+    (config, worlds, database, and generated SSH inventory). It keeps
     the verified golden image, installed services and credentials, source downloads,
     and caches.
     "
@@ -249,8 +249,6 @@ binary_dir = "/opt/wt bin"
     Restart=on-failure
     RuntimeDirectory=wt
     RuntimeDirectoryMode=0700
-    StateDirectory=wt/agent-tools
-    StateDirectoryMode=0700
     UMask=0077
 
     [Install]

@@ -38,8 +38,6 @@ struct PaneTarget {
 struct Cli {
     #[arg(long, default_value = RELAY_SOCKET)]
     socket: PathBuf,
-    #[arg(long, default_value = "/var/lib/wt-agent-tool-gateway/grant")]
-    grant_file: PathBuf,
     #[arg(long)]
     gateway_unix: Option<PathBuf>,
     #[arg(long)]
@@ -59,16 +57,9 @@ pub fn run_from(
 ) -> Result<()> {
     let cli = Cli::parse_from(args);
     let vsock_port = resolve_vsock_port(cli.vsock_port)?;
-    let token = fs::read_to_string(&cli.grant_file)
-        .with_context(|| format!("read {}", cli.grant_file.display()))?;
-    let token = token.trim();
-    if token.is_empty() {
-        bail!("gateway grant is empty");
-    }
     std::thread::spawn({
-        let token = token.to_owned();
         let gateway_unix = cli.gateway_unix.clone();
-        move || observe_panes(token, gateway_unix, vsock_port)
+        move || observe_panes(gateway_unix, vsock_port)
     });
     if let Some(parent) = cli.socket.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
@@ -87,10 +78,9 @@ pub fn run_from(
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let token = token.to_owned();
                 let gateway_unix = cli.gateway_unix.clone();
                 std::thread::spawn(move || {
-                    if let Err(error) = handle(stream, &token, gateway_unix, vsock_port) {
+                    if let Err(error) = handle(stream, gateway_unix, vsock_port) {
                         eprintln!("wt-agent-tool-gateway-relay: request: {error:#}");
                     }
                 });
@@ -101,12 +91,7 @@ pub fn run_from(
     Ok(())
 }
 
-fn handle(
-    mut client: UnixStream,
-    token: &str,
-    gateway_unix: Option<PathBuf>,
-    vsock_port: u32,
-) -> Result<()> {
+fn handle(mut client: UnixStream, gateway_unix: Option<PathBuf>, vsock_port: u32) -> Result<()> {
     let request: ClientRequest = read_json_line(&mut client)?;
     if matches!(request.operation, ClientOperation::PaneObservations { .. }) {
         bail!("pane observations are relay-internal");
@@ -114,7 +99,6 @@ fn handle(
     let streams_git = matches!(&request.operation, ClientOperation::Git { .. });
     let request = TransportRequest {
         protocol_version: request.protocol_version,
-        token: token.to_owned(),
         operation: request.operation,
     };
     if let Some(path) = gateway_unix {
@@ -138,7 +122,7 @@ fn handle(
     Ok(())
 }
 
-fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) {
+fn observe_panes(gateway_unix: Option<PathBuf>, vsock_port: u32) {
     let mut previous = BTreeMap::new();
     let mut last_sent = Instant::now() - FRESHNESS_INTERVAL;
     loop {
@@ -162,7 +146,6 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
                 let changed = fingerprints != previous;
                 if changed || last_sent.elapsed() >= FRESHNESS_INTERVAL {
                     match send_transport(
-                        &token,
                         gateway_unix.as_ref(),
                         vsock_port,
                         ClientOperation::PaneObservations { panes },
@@ -354,14 +337,12 @@ fn screen_fingerprint(captured: &[u8]) -> String {
 }
 
 fn send_transport(
-    token: &str,
     gateway_unix: Option<&PathBuf>,
     vsock_port: u32,
     operation: ClientOperation,
 ) -> Result<TransportResponse> {
     let request = TransportRequest {
         protocol_version: wt_agent_tool_gateway::PROTOCOL_VERSION,
-        token: token.into(),
         operation,
     };
     if let Some(path) = gateway_unix {

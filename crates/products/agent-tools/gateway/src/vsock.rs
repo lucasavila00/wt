@@ -49,7 +49,14 @@ impl VsockListener {
         Ok(Self(socket))
     }
 
-    pub fn accept(&self) -> std::io::Result<VsockStream> {
-        self.0.accept().map(|(socket, _)| VsockStream(socket))
+    pub fn accept(&self) -> std::io::Result<(VsockStream, u32)> {
+        let (socket, address) = self.0.accept()?;
+        let (cid, _) = address.as_vsock_address().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "accepted socket has no vsock peer address",
+            )
+        })?;
+        Ok((VsockStream(socket), cid))
     }
 }

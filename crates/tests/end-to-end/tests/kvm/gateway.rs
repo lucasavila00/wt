@@ -4,28 +4,17 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 use wt_end_to_end_tests::cmd;
 
-pub(crate) fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
+pub(crate) fn spawn_gateway(temp: &Path) -> Child {
     let control_socket = temp.join("gateway-control.sock");
-    let transport_socket = temp.join("gateway-transport.sock");
     let log_path = temp.join("gateway.log");
-    for socket in [&control_socket, &transport_socket] {
+    for socket in [&control_socket] {
         match fs::remove_file(socket) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => panic!("remove stale gateway socket: {error}"),
         }
     }
-    let mut gateway = cmd!(
-        binary_dir.join("wt-agent-tool-gateway"),
-        "--control-socket",
-        &control_socket,
-        "--transport-socket",
-        &transport_socket,
-        "--state-file",
-        temp.join("gateway-state.json"),
-        "--local-provider",
-        format!("local.test={}", temp.display()),
-    );
+    let mut gateway = cmd!(env!("CARGO_BIN_EXE_wt-test-agent-tool-gateway"), temp);
     let log = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -37,7 +26,7 @@ pub(crate) fn spawn_gateway(temp: &Path, binary_dir: &Path) -> Child {
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
-    for socket in [&control_socket, &transport_socket] {
+    for socket in [&control_socket] {
         while !socket.exists() {
             assert_gateway_running(&mut gateway, &log_path);
             assert!(Instant::now() < deadline, "gateway socket did not appear");

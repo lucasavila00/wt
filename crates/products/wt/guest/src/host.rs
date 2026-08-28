@@ -18,7 +18,6 @@ pub struct WorldProvisionSpec<'a> {
     pub memory_mib: u64,
     pub vcpus: u32,
     pub disk_gib: u64,
-    pub git_grant: &'a str,
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
 }
@@ -95,7 +94,6 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
                 authorized_keys: &authorized_keys,
                 git_user_name: spec.git_user_name,
                 git_user_email: spec.git_user_email,
-                git_grant: spec.git_grant,
             },
             deadline,
             log,
@@ -382,7 +380,6 @@ mod tests {
                     memory_mib: 1024,
                     vcpus: 1,
                     disk_gib: 16,
-                    git_grant: "grant",
                     git_user_name: "WT",
                     git_user_email: "wt@example.com",
                 },

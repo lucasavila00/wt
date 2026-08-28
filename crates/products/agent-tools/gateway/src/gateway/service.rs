@@ -20,16 +20,10 @@ impl Gateway {
                 }
             }
         }
-        let state = match fs::read(&config.state_file) {
-            Ok(bytes) => serde_json::from_slice(&bytes).context("decode gateway state")?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => State::default(),
-            Err(error) => return Err(error).context("read gateway state"),
-        };
         Ok(Self {
             config,
             activity,
-            state: Arc::new(Mutex::new(state)),
-            pane_observations: Arc::new(Mutex::new(PaneObservations::default())),
+            world_state: Arc::new(Mutex::new(WorldState::default())),
         })
     }
 
@@ -44,34 +38,25 @@ impl Gateway {
 
     pub fn control(&self, request: ControlRequest) -> Result<ControlResponse> {
         match request {
-            ControlRequest::Reserve { world_id } => self.reserve(&world_id),
-            ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
-            ControlRequest::ActivatePaneObservations { world_id } => {
-                self.activate_pane_observations(parse_world_id(&world_id)?)?;
-                Ok(ControlResponse::ok(None))
+            ControlRequest::ActivateWorld { world_id } => {
+                self.activate_world(parse_world_id(&world_id)?)?;
+                Ok(ControlResponse::ok())
             }
-            ControlRequest::DeactivatePaneObservations { world_id } => {
-                self.deactivate_pane_observations(parse_world_id(&world_id)?)?;
-                Ok(ControlResponse::ok(None))
+            ControlRequest::DeactivateWorld { world_id } => {
+                self.deactivate_world(parse_world_id(&world_id)?)?;
+                Ok(ControlResponse::ok())
             }
         }
     }
 
-    pub fn reserve_grant(&self, world_id: Uuid) -> Result<Grant> {
-        self.reserve(&world_id.to_string())?
-            .grant
-            .context("gateway reserve response has no grant")
-    }
-
-    pub fn revoke_grant(&self, grant_id: &str) -> Result<()> {
-        self.revoke(grant_id).map(|_| ())
-    }
-
-    pub fn handle_transport<S: DuplexStream>(&self, mut stream: S) -> Result<()> {
+    pub fn handle_transport<S: DuplexStream>(
+        &self,
+        mut stream: S,
+        world_id: WorldId,
+    ) -> Result<()> {
         let request: TransportRequest = crate::read_json_line(&mut stream)?;
-        let result = self.authorize(&request);
-        let grant = match result {
-            Ok(grant) => grant,
+        let authorized = match self.authorize(&request, world_id) {
+            Ok(authorized) => authorized,
             Err(error) => {
                 crate::write_json_line(
                     &mut stream,
@@ -86,18 +71,18 @@ impl Gateway {
                     &mut stream,
                     &TransportResponse::with_message(git_context_header(&source)),
                 )?;
-                self.serve_git(&mut stream, service, &source, &grant.record)
+                self.serve_git(&mut stream, service, &source, authorized.world_id)
                     .context("serve Git request")
             }
             ClientOperation::Cli { args } => {
-                let response = match self.serve_cli(&args, &grant.record) {
+                let response = match self.serve_cli(&args, authorized.world_id) {
                     Ok(output) => TransportResponse::with_message(output),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
                 crate::write_json_line(&mut stream, &response)
             }
             ClientOperation::PaneObservations { panes } => {
-                let response = match self.store_pane_observations(&panes, &grant) {
+                let response = match self.store_pane_observations(&panes, &authorized) {
                     Ok(()) => TransportResponse::ok(),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
@@ -109,34 +94,21 @@ impl Gateway {
     pub(super) fn store_pane_observations(
         &self,
         panes: &[crate::PaneObservation],
-        grant: &AuthorizedGrant,
+        authorized: &AuthorizedWorld,
     ) -> Result<()> {
         crate::protocol::validate_pane_observations(panes).map_err(anyhow::Error::msg)?;
-        let world_id = Uuid::parse_str(&grant.record.world_id).context("invalid grant world ID")?;
         let observed_at_unix_ms = now_unix_ms()?;
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if !state.grants.iter().any(|active| {
-            active.id == grant.record.id
-                && active.token == grant.record.token
-                && active.world_id == grant.record.world_id
-                && !active.revoked
-        }) {
-            bail!("gateway grant is invalid or revoked");
-        }
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
-        let world_id = world_id.into();
+        let world_id = authorized.world_id;
         if observations
             .generations
             .get(&world_id)
             .copied()
             .unwrap_or_default()
-            != grant.pane_generation
+            != authorized.pane_generation
         {
             bail!("pane observation belongs to an expired world run");
         }
@@ -157,7 +129,7 @@ impl Gateway {
         world_id: WorldId,
     ) -> Result<Vec<crate::PaneObservationSnapshot>> {
         Ok(self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?
             .snapshots
@@ -166,9 +138,9 @@ impl Gateway {
             .unwrap_or_default())
     }
 
-    pub fn activate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+    pub fn activate_world(&self, world_id: WorldId) -> Result<()> {
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.remove(&world_id) {
@@ -177,9 +149,9 @@ impl Gateway {
         Ok(())
     }
 
-    pub fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+    pub fn deactivate_world(&self, world_id: WorldId) -> Result<()> {
         let mut observations = self
-            .pane_observations
+            .world_state
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.insert(world_id) {
@@ -189,107 +161,23 @@ impl Gateway {
         Ok(())
     }
 
-    fn reserve(&self, world_id: &str) -> Result<ControlResponse> {
-        if world_id.is_empty() {
-            bail!("invalid gateway grant scope");
-        }
-        {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-            if let Some(existing) = state
-                .grants
-                .iter()
-                .find(|grant| grant.world_id == world_id && !grant.revoked)
-            {
-                return Ok(ControlResponse::ok(Some(Grant {
-                    id: existing.id.clone(),
-                    token: existing.token.clone(),
-                })));
-            }
-        }
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if let Some(existing) = state
-            .grants
-            .iter()
-            .find(|grant| grant.world_id == world_id && !grant.revoked)
-        {
-            return Ok(ControlResponse::ok(Some(Grant {
-                id: existing.id.clone(),
-                token: existing.token.clone(),
-            })));
-        }
-        let record = GrantRecord {
-            id: Uuid::new_v4().to_string(),
-            token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
-            world_id: world_id.to_owned(),
-            revoked: false,
-        };
-        let response = ControlResponse::ok(Some(Grant {
-            id: record.id.clone(),
-            token: record.token.clone(),
-        }));
-        state.grants.push(record);
-        self.save(&state)?;
-        Ok(response)
-    }
-
-    fn revoke(&self, id: &str) -> Result<ControlResponse> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        let world_id = {
-            let grant = state
-                .grants
-                .iter_mut()
-                .find(|grant| grant.id == id)
-                .ok_or_else(|| anyhow::anyhow!("gateway grant not found"))?;
-            if grant.revoked {
-                return Ok(ControlResponse::ok(None));
-            }
-            grant.revoked = true;
-            Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?
-        };
-        self.save(&state)?;
-        let world_id = world_id.into();
-        let mut observations = self
-            .pane_observations
-            .lock()
-            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
-        observations.snapshots.remove(&world_id);
-        observations.inactive_worlds.remove(&world_id);
-        observations.generations.remove(&world_id);
-        Ok(ControlResponse::ok(None))
-    }
-
-    fn authorize(&self, request: &TransportRequest) -> Result<AuthorizedGrant> {
+    fn authorize(&self, request: &TransportRequest, world_id: WorldId) -> Result<AuthorizedWorld> {
         if request.protocol_version != PROTOCOL_VERSION {
             bail!(
                 "unsupported gateway protocol version {}; expected {PROTOCOL_VERSION}",
                 request.protocol_version
             );
         }
-        let state = self
-            .state
+        let observations = self
+            .world_state
             .lock()
-            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        let grant = state
-            .grants
-            .iter()
-            .find(|grant| grant.token == request.token && !grant.revoked)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("gateway grant is invalid or revoked"))?;
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
+        if observations.inactive_worlds.contains(&world_id) {
+            bail!("agent tools are inactive for this world");
+        }
         let pane_generation =
             if matches!(&request.operation, ClientOperation::PaneObservations { .. }) {
-                let world_id = parse_world_id(&grant.world_id)?;
-                self.pane_observations
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?
+                observations
                     .generations
                     .get(&world_id)
                     .copied()
@@ -297,27 +185,10 @@ impl Gateway {
             } else {
                 0
             };
-        Ok(AuthorizedGrant {
-            record: grant,
+        Ok(AuthorizedWorld {
+            world_id,
             pane_generation,
         })
-    }
-
-    fn save(&self, state: &State) -> Result<()> {
-        let parent = self
-            .config
-            .state_file
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("gateway state file has no parent"))?;
-        fs::create_dir_all(parent).context("create gateway state directory")?;
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
-            .context("protect gateway state directory")?;
-        let temporary = self.config.state_file.with_extension("json.new");
-        let bytes = serde_json::to_vec_pretty(state).context("encode gateway state")?;
-        fs::write(&temporary, bytes).context("write gateway state")?;
-        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))
-            .context("protect gateway state")?;
-        fs::rename(&temporary, &self.config.state_file).context("replace gateway state")
     }
 
     fn provider(&self, host: &str) -> Result<&Provider> {
@@ -346,17 +217,16 @@ impl Gateway {
         stream: &mut S,
         service: GitService,
         source: &str,
-        grant: &GrantRecord,
+        world_id: WorldId,
     ) -> Result<()> {
         let source = parse_source(source)?;
         let provider = self.provider(&source.host)?;
         let policy = WritePolicy::new(format!("refs/heads/{BRANCH_PREFIX}"), [])?;
         let repository = normalize_repository(&source.path);
         let provider_target = provider.api_kind().map(|kind| (kind, repository.as_str()));
-        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
         self.activity
             .record_git_activity(wt_workload_registry::GitActivityInput {
-                world_id: world_id.into(),
+                world_id,
                 kind: wt_workload_registry::GitActivityKind::Service,
                 provider_host: &source.host,
                 repository: &repository,
@@ -398,7 +268,7 @@ impl Gateway {
                 if let Err(error) = self
                     .activity
                     .record_git_activity(wt_workload_registry::GitActivityInput {
-                        world_id: world_id.into(),
+                        world_id,
                         kind: wt_workload_registry::GitActivityKind::BranchUpdate,
                         provider_host: &source.host,
                         repository: &repository,
@@ -416,7 +286,7 @@ impl Gateway {
         Ok(())
     }
 
-    pub(super) fn serve_cli(&self, args: &[String], grant: &GrantRecord) -> Result<String> {
+    pub(super) fn serve_cli(&self, args: &[String], world_id: WorldId) -> Result<String> {
         if args == ["--help"] || args == ["-h"] || args == ["help"] {
             return Ok(wt_tools_help());
         }
@@ -427,10 +297,8 @@ impl Gateway {
         let (target, command) = match &parsed {
             api::WtToolsCommand::Feedback { command } => {
                 let (kind, description) = command.wt_tool_report();
-                let world_id =
-                    Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
                 self.activity
-                    .record_agent_tool_report(world_id.into(), kind, description)
+                    .record_agent_tool_report(world_id, kind, description)
                     .context("store agent tool report")?;
                 return Ok(api::render_cli_confirmation(
                     "Recorded wtg tools report for this world.",
@@ -471,11 +339,10 @@ impl Gateway {
         }?;
         let response_json = api::render_cli_command_output(output);
         let (action, branch, change_request) = wt_tools_activity_metadata(command, &response_json)?;
-        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
         if let Err(error) = self
             .activity
             .record_wt_tools_activity(wt_workload_registry::WtToolsActivityInput {
-                world_id: world_id.into(),
+                world_id,
                 provider_host: provider.host(),
                 repository: &repository,
                 action: &action,
@@ -537,7 +404,7 @@ fn replace_pane_observations(
     observations.insert(world_id, replacements);
 }
 
-fn advance_pane_generation(observations: &mut PaneObservations, world_id: WorldId) {
+fn advance_pane_generation(observations: &mut WorldState, world_id: WorldId) {
     let generation = observations.generations.entry(world_id).or_default();
     *generation = generation.wrapping_add(1);
 }

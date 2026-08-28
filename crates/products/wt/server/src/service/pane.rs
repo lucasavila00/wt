@@ -1,7 +1,7 @@
-use super::{map_store_error, LivePaneObservations, Service};
+use super::{map_store_error, AgentToolGateway, Service};
 use wt_control_protocol::{ApiError, PaneObservation, Response};
 
-impl<W, G: LivePaneObservations> Service<W, G> {
+impl<W, G: AgentToolGateway> Service<W, G> {
     pub(super) fn list_pane_observations(&self, owner: &str) -> Result<Response, ApiError> {
         let worlds = self.store.list_owned(owner).map_err(map_store_error)?;
         let mut panes = Vec::new();

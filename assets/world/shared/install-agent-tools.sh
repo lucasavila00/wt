@@ -12,7 +12,6 @@ esac
 test -x /usr/local/bin/wtg
 test -x /usr/local/bin/git-remote-wt-agent
 install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" /var/lib/wt-agent-tool-gateway
-install -m 0600 -o "$WT_USER" -g "$WT_GROUP" "$stage-grant" /var/lib/wt-agent-tool-gateway/grant
 install -m 0600 -o "$WT_USER" -g "$WT_GROUP" \
     "$stage-providers" /var/lib/wt-agent-tool-gateway/providers
 while IFS= read -r host; do
@@ -41,7 +40,7 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 EOF
-rm -f "$stage-grant" "$stage-providers" "$stage-vsock-port"
+rm -f "$stage-providers" "$stage-vsock-port"
 systemctl daemon-reload
 if ! systemctl enable --now wt-agent-tool-gateway-relay.service; then
     systemctl status --no-pager --full wt-agent-tool-gateway-relay.service >&2 || true

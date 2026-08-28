@@ -152,8 +152,8 @@ login.
 make clear
 ```
 
-This destroys `wt-*` domains and removes worlds, gateway grants, the server
-database, generated runtime configuration, and generated SSH inventory. It
+This destroys `wt-*` domains and removes worlds, the server database, generated
+runtime configuration, and generated SSH inventory. It
 keeps verified golden images, installed services and provider credentials,
 source credential files, and downloaded image and package artifacts. Rerun
 `scripts/install-server --config PATH` afterward.

@@ -15,7 +15,6 @@ CREATE TABLE worlds (
     ssh_host          TEXT,
     ssh_port          INTEGER,
     ssh_host_keys     TEXT NOT NULL,
-    gateway_grant_id  TEXT UNIQUE,
     created_at_unix_ms BIGINT NOT NULL DEFAULT 0
 );
 

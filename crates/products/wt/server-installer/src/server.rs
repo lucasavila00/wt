@@ -263,7 +263,7 @@ Intentional change: clear WT server state, then reinstall:
   scripts/install-server --config {input_path}
 
 `make clear` destroys every wt-* domain and removes generated runtime state
-(config, worlds, grants, database, and generated SSH inventory). It keeps
+(config, worlds, database, and generated SSH inventory). It keeps
 the verified golden image, installed services and credentials, source downloads,
 and caches."
     )
@@ -532,8 +532,6 @@ ExecStart={} serve\n\
 Restart=on-failure\n\
 RuntimeDirectory=wt\n\
 RuntimeDirectoryMode=0700\n\
-StateDirectory=wt/agent-tools\n\
-StateDirectoryMode=0700\n\
 UMask=0077\n\
 \n\
 [Install]\n\

@@ -15,7 +15,7 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub use gateway::{AgentToolGrantAuthority, LivePaneObservations};
+pub use gateway::AgentToolGateway;
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
+impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
@@ -154,8 +154,6 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             }
         }
         let world_id = WorldId::new();
-        let grant = self.gateway.reserve(world_id);
-        let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
         let new_world = NewWorld {
             world_id,
             name: request.name.clone(),
@@ -165,26 +163,16 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             memory_mib: request.memory_mib,
             disk_gib: request.disk_gib,
             setup_fingerprint,
-            gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
-        if let Err(error) = self
-            .store
+        self.store
             .insert_with_capacity_limit(&new_world, self.capacity_limit)
-        {
-            if let Some(grant) = &grant {
-                if let Err(cleanup) = self.gateway.revoke(&grant.id) {
-                    eprintln!("wt-server: revoke unused Git grant: {cleanup}");
-                }
-            }
-            return Err(map_store_error(error));
-        }
+            .map_err(map_store_error)?;
 
         let spec = WorldProvisionSpec {
             world_id,
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
-            git_grant: &grant.as_ref().expect("host grant").token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
         };
@@ -301,10 +289,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
                         disk_usage_bytes,
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate stopped world pane observations: {error}");
                 }
             }
@@ -312,10 +297,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
                 self.store
                     .mark_error(stored.world.world_id, "guest domain is missing")
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate missing world pane observations: {error}");
                 }
             }
@@ -326,10 +308,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
                         &format!("guest reconciliation: {error}"),
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self
-                    .gateway
-                    .deactivate_pane_observations(stored.world.world_id)
-                {
+                if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                     eprintln!("wt-server: deactivate errored world pane observations: {error}");
                 }
             }
@@ -358,10 +337,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             self.store
                 .mark_error(stored.world.world_id, "SSH host identity changed")
                 .map_err(map_store_error)?;
-            if let Err(error) = self
-                .gateway
-                .deactivate_pane_observations(stored.world.world_id)
-            {
+            if let Err(error) = self.gateway.deactivate_world(stored.world.world_id) {
                 eprintln!("wt-server: deactivate changed world pane observations: {error}");
             }
             return Ok(());
@@ -370,7 +346,7 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             .mark_host_running(stored.world.world_id, access.guest_ip(), access.ssh())
             .map_err(map_store_error)?;
         self.gateway
-            .activate_pane_observations(stored.world.world_id)
+            .activate_world(stored.world.world_id)
             .map_err(|error| {
                 ApiError::new(
                     ErrorCode::Internal,
@@ -462,19 +438,15 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        let stored = self
-            .store
+        self.store
             .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        let gateway_grant_id = stored.gateway_grant_id.as_ref();
-        if let Some(gateway_grant_id) = gateway_grant_id {
-            self.gateway
-                .revoke(gateway_grant_id)
-                .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
-        }
         self.store
             .mark_destroying(world_id)
             .map_err(map_store_error)?;
+        if let Err(error) = self.gateway.deactivate_world(world_id) {
+            eprintln!("wt-server: deactivate deleted world agent tools: {error}");
+        }
         if let Err(error) = self.worker.destroy(world_id) {
             let message = error.to_string();
             self.store

@@ -9,10 +9,7 @@ use std::process::{Child, Stdio};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use wt_agent_tool_gateway::{
-    read_json_line, write_json_line, ClientOperation, TransportRequest, TransportResponse,
-    PROTOCOL_VERSION, VSOCK_PORT_ENV,
-};
+use wt_agent_tool_gateway::VSOCK_PORT_ENV;
 use wt_control_protocol::{
     ApiProgress, ApiRequest, ApiResponse, CreateWorld, Operation, Outcome, Response, World,
     WorldId, WorldName,
@@ -123,7 +120,7 @@ impl KvmHarness {
             toml::to_string(&capacity).unwrap(),
         )
         .unwrap();
-        let gateway = spawn_gateway(temp.path(), &config.install.binary_dir);
+        let gateway = spawn_gateway(temp.path());
         let control_socket = temp.path().join("gateway-control.sock");
         let deadline = Instant::now() + Duration::from_secs(5);
         while !control_socket.exists() {
@@ -218,39 +215,7 @@ impl KvmHarness {
     pub(crate) fn restart_gateway(&mut self) {
         self.gateway.kill().unwrap();
         self.gateway.wait().unwrap();
-        self.gateway = spawn_gateway(self.temp.path(), &self.config.install.binary_dir);
-    }
-
-    pub(crate) fn grant_token_for(&self, world_id: WorldId) -> String {
-        let state: serde_json::Value =
-            serde_json::from_slice(&fs::read(self.temp.path().join("gateway-state.json")).unwrap())
-                .unwrap();
-        state["grants"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|grant| grant["world_id"] == world_id.to_string())
-            .and_then(|grant| grant["token"].as_str())
-            .unwrap()
-            .to_owned()
-    }
-
-    pub(crate) fn assert_grant_is_revoked(&self, token: String) {
-        let mut stream = std::os::unix::net::UnixStream::connect(
-            self.temp.path().join("gateway-transport.sock"),
-        )
-        .unwrap();
-        write_json_line(
-            &mut stream,
-            &TransportRequest {
-                protocol_version: PROTOCOL_VERSION,
-                token,
-                operation: ClientOperation::Cli { args: Vec::new() },
-            },
-        )
-        .unwrap();
-        let response: TransportResponse = read_json_line(&mut stream).unwrap();
-        assert!(!response.ok, "deleted world grant still works");
+        self.gateway = spawn_gateway(self.temp.path());
     }
 }
 
