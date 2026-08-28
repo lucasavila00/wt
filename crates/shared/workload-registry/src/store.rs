@@ -24,7 +24,6 @@ pub struct NewWorld {
     pub memory_mib: u64,
     pub disk_gib: u64,
     pub setup_fingerprint: String,
-    pub gateway_grant_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,7 +31,6 @@ pub struct StoredWorld {
     pub world: World,
     pub created_at_unix_ms: i64,
     pub setup_fingerprint: String,
-    pub gateway_grant_id: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -70,7 +68,6 @@ struct NewWorldRow<'a> {
     status: String,
     setup_fingerprint: &'a str,
     ssh_host_keys: &'static str,
-    gateway_grant_id: Option<&'a str>,
     created_at_unix_ms: i64,
 }
 
@@ -92,7 +89,6 @@ struct WorldRow {
     ssh_host: Option<String>,
     ssh_port: Option<i32>,
     ssh_host_keys: String,
-    gateway_grant_id: Option<String>,
     created_at_unix_ms: i64,
 }
 
@@ -379,7 +375,6 @@ impl TryFrom<WorldRow> for StoredWorld {
             },
             created_at_unix_ms: row.created_at_unix_ms,
             setup_fingerprint: row.setup_fingerprint,
-            gateway_grant_id: row.gateway_grant_id,
         })
     }
 }
@@ -415,7 +410,6 @@ fn insert_world(
         status: new_world.status.to_string(),
         setup_fingerprint: &new_world.setup_fingerprint,
         ssh_host_keys: "[]",
-        gateway_grant_id: new_world.gateway_grant_id.as_deref(),
         created_at_unix_ms,
     };
     insert_result(
@@ -495,7 +489,6 @@ mod tests {
             memory_mib: 4096,
             disk_gib: 32,
             setup_fingerprint: "fingerprint".into(),
-            gateway_grant_id: None,
         }
     }
 

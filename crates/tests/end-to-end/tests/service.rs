@@ -11,7 +11,7 @@ mod agent_tool_reports;
 mod stop;
 #[path = "service/support.rs"]
 mod support;
-use support::{create, service, Gateway, UnavailableGateway, Worker};
+use support::{create, service, Gateway, Worker};
 
 #[test]
 fn create_returns_a_running_host_and_reuses_an_identical_request() {
@@ -35,7 +35,6 @@ fn create_returns_a_running_host_and_reuses_an_identical_request() {
         &[world.world_id]
     );
     assert_eq!(worker.provisions.load(Ordering::SeqCst), 1);
-    assert_eq!(worker.host_git_grants.lock().unwrap().len(), 1);
 
     let Response::World { world: retry } = service
         .execute("tester", Operation::CreateWorld(create("sample")))
@@ -227,7 +226,7 @@ fn failed_create_is_preserved_until_delete() {
 }
 
 #[test]
-fn delete_keeps_registry_until_gateway_revocation_succeeds() {
+fn delete_deactivates_agent_tools_and_destroys_the_world() {
     let temp = TempDir::new().unwrap();
     let store = Store::open(&temp.path().join("worlds.db")).unwrap();
     let worker = Worker::default();
@@ -242,29 +241,36 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
     .unwrap() else {
         panic!()
     };
-    let gateway = UnavailableGateway::default();
+    let gateway = Gateway::default();
     let service = Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
-        worker,
+        worker.clone(),
         gateway.clone(),
         Operations::default(),
         u64::MAX,
     );
 
-    let error = service
+    service
         .execute(
             "tester",
             Operation::DeleteWorld {
                 world_id: world.world_id,
             },
         )
-        .unwrap_err();
-    assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
-    assert_eq!(gateway.revocations.load(Ordering::SeqCst), 1);
+        .unwrap();
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        gateway
+            .deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .as_slice(),
+        [world.world_id]
+    );
     assert!(Store::open(&temp.path().join("worlds.db"))
         .unwrap()
         .get_owned_by_name("tester", &WorldName::parse("sample").unwrap())
-        .is_ok());
+        .is_err());
 }
 
 #[test]
@@ -279,7 +285,7 @@ fn delete_rejects_an_unknown_world_id_without_side_effects() {
     else {
         panic!()
     };
-    let gateway = UnavailableGateway::default();
+    let gateway = Gateway::default();
     let service = Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker.clone(),
@@ -299,7 +305,11 @@ fn delete_rejects_an_unknown_world_id_without_side_effects() {
 
     assert_eq!(error.code, wt_control_protocol::ErrorCode::NotFound);
     assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
-    assert_eq!(gateway.revocations.load(Ordering::SeqCst), 0);
+    assert!(gateway
+        .deactivated_pane_observations
+        .lock()
+        .unwrap()
+        .is_empty());
     assert_eq!(
         Store::open(&temp.path().join("worlds.db"))
             .unwrap()

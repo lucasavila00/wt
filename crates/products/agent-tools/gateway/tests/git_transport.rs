@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-use wt_agent_tool_gateway::{read_json_line, write_json_line, ControlRequest, ControlResponse};
 use wt_workload_registry::schema::worlds;
 
 struct Process(Option<Child>);
@@ -29,7 +28,7 @@ impl Drop for Process {
 }
 
 #[test]
-fn one_world_grant_reads_and_writes_multiple_repositories() {
+fn world_scoped_transports_read_and_write_multiple_repositories() {
     let temp = tempfile::tempdir().unwrap();
     let repositories = temp.path().join("repositories");
     let upstream = repositories.join("project.git");
@@ -71,35 +70,26 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
 
     let control = temp.path().join("control.sock");
     let transport = temp.path().join("transport.sock");
+    let second_transport = temp.path().join("second-transport.sock");
     let relay_socket = temp.path().join("relay.sock");
     let second_relay_socket = temp.path().join("second-relay.sock");
-    let state = temp.path().join("state.json");
     let database = temp.path().join("instances.db");
     let registry = wt_workload_registry::Registry::open(&database).unwrap();
     let first_world = Uuid::new_v4();
     let second_world = Uuid::new_v4();
     insert_world(&registry, first_world, "first");
     insert_world(&registry, second_world, "second");
-    let mut gateway = spawn_gateway(&control, &transport, &state, &database, &repositories);
+    let mut gateway = spawn_gateway(
+        &control,
+        &[(first_world, &transport), (second_world, &second_transport)],
+        &database,
+        &repositories,
+    );
     wait_for(&control);
     wait_for(&transport);
 
-    let response = reserve(&control, &first_world.to_string());
-    assert!(response.ok, "{:?}", response.error);
-    let grant = response.grant.unwrap();
-    let retry = reserve(&control, &first_world.to_string());
-    assert_eq!(retry.grant.as_ref(), Some(&grant));
-    let response = reserve(&control, &second_world.to_string());
-    assert!(response.ok, "{:?}", response.error);
-    let second_grant = response.grant.unwrap();
-    let grant_file = temp.path().join("grant");
-    let second_grant_file = temp.path().join("second-grant");
-    let original_token = grant.token.clone();
-    fs::write(&grant_file, &grant.token).unwrap();
-    fs::write(&second_grant_file, &second_grant.token).unwrap();
-
-    let _relay = spawn_relay(&relay_socket, &grant_file, &transport);
-    let _second_relay = spawn_relay(&second_relay_socket, &second_grant_file, &transport);
+    let _relay = spawn_relay(&relay_socket, &transport);
+    let _second_relay = spawn_relay(&second_relay_socket, &second_transport);
     wait_for(&relay_socket);
     wait_for(&second_relay_socket);
 
@@ -223,64 +213,51 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     );
 
     gateway.stop();
-    gateway = spawn_gateway(&control, &transport, &state, &database, &repositories);
-    assert_success(&git_output(&checkout, &["fetch", "origin"], &relay_socket));
-
-    let mut stream = UnixStream::connect(&control).unwrap();
-    write_json_line(
-        &mut stream,
-        &ControlRequest::Revoke {
-            grant_id: grant.id.clone(),
-        },
-    )
-    .unwrap();
-    let response: ControlResponse = read_json_line(&mut stream).unwrap();
-    assert!(response.ok, "{:?}", response.error);
-    let rejected = git_output(&checkout, &["fetch", "origin"], &relay_socket);
-    assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr).contains("invalid or revoked"),
-        "{}",
-        String::from_utf8_lossy(&rejected.stderr)
+    gateway = spawn_gateway(
+        &control,
+        &[(first_world, &transport), (second_world, &second_transport)],
+        &database,
+        &repositories,
     );
+    assert_success(&git_output(&checkout, &["fetch", "origin"], &relay_socket));
     assert_success(&git_output(
         &checkout,
         &["fetch", "origin"],
         &second_relay_socket,
     ));
-    let replacement = reserve(&control, &Uuid::new_v4().to_string());
-    assert!(replacement.ok, "{:?}", replacement.error);
-    assert_ne!(replacement.grant.unwrap().token, original_token);
     drop(gateway);
 }
 
 fn spawn_gateway(
     control: &Path,
-    transport: &Path,
-    state: &Path,
+    transports: &[(Uuid, &Path)],
     database: &Path,
     repositories: &Path,
 ) -> Process {
-    let child = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway"))
-        .args([
-            "--control-socket",
-            control.to_str().unwrap(),
+    let mut command = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway"));
+    command.args([
+        "--control-socket",
+        control.to_str().unwrap(),
+        "--database-path",
+        database.to_str().unwrap(),
+        "--local-provider",
+        &format!("local.test={}", repositories.display()),
+    ]);
+    for (world_id, path) in transports {
+        command.args([
             "--transport-socket",
-            transport.to_str().unwrap(),
-            "--state-file",
-            state.to_str().unwrap(),
-            "--database-path",
-            database.to_str().unwrap(),
-            "--local-provider",
-            &format!("local.test={}", repositories.display()),
-            "--no-vsock",
-        ])
+            &format!("{world_id}={}", path.display()),
+        ]);
+    }
+    let child = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
     wait_for_listener(control);
-    wait_for_listener(transport);
+    for (_, path) in transports {
+        wait_for_listener(path);
+    }
     Process(Some(child))
 }
 
@@ -307,25 +284,11 @@ fn insert_world(registry: &wt_workload_registry::Registry, id: Uuid, name: &str)
         .unwrap();
 }
 
-fn reserve(control: &Path, world_id: &str) -> ControlResponse {
-    let mut stream = UnixStream::connect(control).unwrap();
-    write_json_line(
-        &mut stream,
-        &ControlRequest::Reserve {
-            world_id: world_id.to_owned(),
-        },
-    )
-    .unwrap();
-    read_json_line(&mut stream).unwrap()
-}
-
-fn spawn_relay(socket: &Path, grant_file: &Path, transport: &Path) -> Process {
+fn spawn_relay(socket: &Path, transport: &Path) -> Process {
     let relay = Command::new(env!("CARGO_BIN_EXE_wt-agent-tool-gateway-relay"))
         .args([
             "--socket",
             socket.to_str().unwrap(),
-            "--grant-file",
-            grant_file.to_str().unwrap(),
             "--gateway-unix",
             transport.to_str().unwrap(),
         ])

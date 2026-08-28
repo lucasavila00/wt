@@ -26,6 +26,10 @@ path = "src/bin/wt-test-server.rs"
 name = "wt-test-git-proxy"
 path = "src/bin/wt-test-git-proxy.rs"
 
+[[bin]]
+name = "wt-test-agent-tool-gateway"
+path = "src/bin/wt-test-agent-tool-gateway.rs"
+
 [dev-dependencies]
 insta = { workspace = true }
 serde = { workspace = true }

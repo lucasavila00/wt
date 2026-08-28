@@ -1,8 +1,8 @@
-use super::{map_store_error, AgentToolGrantAuthority, LivePaneObservations, Service};
+use super::{map_store_error, LivePaneObservations, Service};
 use wt_control_protocol::{ApiError, ErrorCode, Response, WorldId, WorldStatus};
 use wt_guest::WorldWorker;
 
-impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
+impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
     pub(super) fn stop(&self, owner: &str, world_id: WorldId) -> Result<Response, ApiError> {
         let stored = self
             .store

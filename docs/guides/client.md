@@ -52,7 +52,7 @@ The UUID names its writable qcow2 overlay on the server, so stopping, starting,
 or renaming a world preserves its disk. A running disk display
 such as `1.5G/32G` reports allocated and maximum size; a stopped world reports
 allocated size only. `wt stop` keeps the overlay. `wt rm` deletes it and
-revokes the world's scoped Git grant.
+ends its agent-tool access when its libvirt domain is destroyed.
 
 New worlds require at least one valid regular `~/.ssh/*.pub` file. Private keys
 are never sent to the server. Every world receives the workstation's global

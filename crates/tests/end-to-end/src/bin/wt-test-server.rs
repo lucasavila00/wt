@@ -7,7 +7,7 @@ use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
-use wt_server::service::{AgentToolGrantAuthority, LivePaneObservations, Service};
+use wt_server::service::{LivePaneObservations, Service};
 use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
@@ -83,45 +83,6 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
 }
 
 struct TestGatewayClient(wt_agent_tool_gateway::ControlClient);
-
-impl AgentToolGrantAuthority for TestGatewayClient {
-    fn reserve(
-        &self,
-        world_id: wt_control_protocol::WorldId,
-    ) -> Result<wt_agent_tool_gateway::Grant, String> {
-        let response = self
-            .0
-            .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
-                world_id: world_id.to_string(),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            response
-                .grant
-                .ok_or_else(|| "gateway reserve response has no grant".to_owned())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected grant".to_owned()))
-        }
-    }
-
-    fn revoke(&self, grant_id: &str) -> Result<(), String> {
-        let response = self
-            .0
-            .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
-                grant_id: grant_id.to_owned(),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            Ok(())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
-        }
-    }
-}
 
 impl LivePaneObservations for TestGatewayClient {
     fn pane_observations(

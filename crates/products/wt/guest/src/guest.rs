@@ -182,7 +182,6 @@ pub struct ProvisionSpec<'a> {
     pub authorized_keys: &'a [String],
     pub git_user_name: &'a str,
     pub git_user_email: &'a str,
-    pub git_grant: &'a str,
 }
 
 impl HostConfig {
@@ -210,7 +209,7 @@ impl HostConfig {
         )?;
         crate::write_creation_timing(log, "install Git author", phase_started.elapsed())?;
         let phase_started = Instant::now();
-        self.install_agent_tools(transport, spec.git_grant, deadline, log)?;
+        self.install_agent_tools(transport, deadline, log)?;
         crate::write_creation_timing(log, "configure agent tools", phase_started.elapsed())?;
         let phase_started = Instant::now();
         self.mount_codex(transport, deadline, log)?;
@@ -238,16 +237,11 @@ impl HostConfig {
     fn install_agent_tools(
         &self,
         transport: &dyn GuestTransport,
-        grant: &str,
         deadline: Instant,
         log: &mut dyn Write,
     ) -> Result<(), WorkerError> {
-        if grant.is_empty() {
-            return Err(WorkerError::new("agent tool grant must not be empty"));
-        }
         self.agent_tools.validate()?;
         for (suffix, contents) in [
-            ("grant", grant.as_bytes().to_vec()),
             (
                 "providers",
                 self.agent_tools.provider_hosts_file().into_bytes(),

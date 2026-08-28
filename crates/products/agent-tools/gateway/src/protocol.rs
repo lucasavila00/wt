@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 pub const MAX_PANE_OBSERVATIONS: usize = 32;
 pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
@@ -19,8 +19,6 @@ pub fn valid_byobu_pane_id(value: &str) -> bool {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
-    Reserve { world_id: String },
-    Revoke { grant_id: String },
     ActivatePaneObservations { world_id: String },
     DeactivatePaneObservations { world_id: String },
 }
@@ -29,16 +27,13 @@ pub enum ControlRequest {
 pub struct ControlResponse {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant: Option<Grant>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl ControlResponse {
-    pub fn ok(grant: Option<Grant>) -> Self {
+    pub fn ok() -> Self {
         Self {
             ok: true,
-            grant,
             error: None,
         }
     }
@@ -46,16 +41,9 @@ impl ControlResponse {
     pub fn error(error: impl Into<String>) -> Self {
         Self {
             ok: false,
-            grant: None,
             error: Some(error.into()),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Grant {
-    pub id: String,
-    pub token: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -149,7 +137,6 @@ mod byobu_target_tests {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TransportRequest {
     pub protocol_version: u32,
-    pub token: String,
     #[serde(flatten)]
     pub operation: ClientOperation,
 }
@@ -161,6 +148,31 @@ pub struct TransportResponse {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    #[test]
+    fn transport_identity_is_not_supplied_by_the_guest() {
+        let request = TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::Cli {
+                args: vec!["help".into()],
+            },
+        };
+
+        insta::assert_snapshot!(serde_json::to_string_pretty(&request).unwrap(), @r###"
+        {
+          "protocol_version": 14,
+          "operation": "cli",
+          "args": [
+            "help"
+          ]
+        }
+        "###);
+    }
 }
 
 impl TransportResponse {

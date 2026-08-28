@@ -2,11 +2,12 @@
 
 Scoped Git transport for guests.
 
-The host gateway owns provider credentials and grants. The guest relay carries
-requests over vsock. `git-remote-wt-agent` and `wtg tools` expose the allowed Git
-and provider operations inside guests.
+The host gateway owns provider credentials. The guest relay carries requests
+over vsock, and the gateway identifies the world from the accepted socket's
+peer CID and its currently active libvirt domain. `git-remote-wt-agent` and
+`wtg tools` expose the allowed Git and provider operations inside guests.
 
-The same authenticated relay carries server-owned Byobu pane observations into
+The same relay carries server-owned Byobu pane observations into
 the shared registry. It reports screen fingerprints, timestamps, each pane's
 current working directory, and the branch when that directory has a `.git`
 folder. It never reports terminal contents or application lifecycle events.

@@ -15,7 +15,7 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
-pub use gateway::{AgentToolGrantAuthority, LivePaneObservations};
+pub use gateway::LivePaneObservations;
 
 const INSPECTION_RETRIES: usize = 6;
 const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -28,7 +28,7 @@ pub struct Service<W, G> {
     capacity_limit: Resources,
 }
 
-impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<W, G> {
+impl<W: WorldWorker, G: LivePaneObservations> Service<W, G> {
     pub fn new(
         store: Store,
         worker: W,
@@ -154,8 +154,6 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             }
         }
         let world_id = WorldId::new();
-        let grant = self.gateway.reserve(world_id);
-        let grant = Some(grant.map_err(|error| ApiError::new(ErrorCode::Backend, error))?);
         let new_world = NewWorld {
             world_id,
             name: request.name.clone(),
@@ -165,26 +163,16 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             memory_mib: request.memory_mib,
             disk_gib: request.disk_gib,
             setup_fingerprint,
-            gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
-        if let Err(error) = self
-            .store
+        self.store
             .insert_with_capacity_limit(&new_world, self.capacity_limit)
-        {
-            if let Some(grant) = &grant {
-                if let Err(cleanup) = self.gateway.revoke(&grant.id) {
-                    eprintln!("wt-server: revoke unused Git grant: {cleanup}");
-                }
-            }
-            return Err(map_store_error(error));
-        }
+            .map_err(map_store_error)?;
 
         let spec = WorldProvisionSpec {
             world_id,
             memory_mib: request.memory_mib,
             vcpus: request.vcpus,
             disk_gib: request.disk_gib,
-            git_grant: &grant.as_ref().expect("host grant").token,
             git_user_name: &request.git_user_name,
             git_user_email: &request.git_user_email,
         };
@@ -462,19 +450,15 @@ impl<W: WorldWorker, G: AgentToolGrantAuthority + LivePaneObservations> Service<
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        let stored = self
-            .store
+        self.store
             .get_owned_by_id(owner, world_id)
             .map_err(map_store_error)?;
-        let gateway_grant_id = stored.gateway_grant_id.as_ref();
-        if let Some(gateway_grant_id) = gateway_grant_id {
-            self.gateway
-                .revoke(gateway_grant_id)
-                .map_err(|error| ApiError::new(ErrorCode::Backend, error))?;
-        }
         self.store
             .mark_destroying(world_id)
             .map_err(map_store_error)?;
+        if let Err(error) = self.gateway.deactivate_pane_observations(world_id) {
+            eprintln!("wt-server: deactivate deleted world agent tools: {error}");
+        }
         if let Err(error) = self.worker.destroy(world_id) {
             let message = error.to_string();
             self.store

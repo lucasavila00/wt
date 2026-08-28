@@ -109,6 +109,35 @@ impl LibvirtProvider {
         network_address(&connection, &self.config.network)
     }
 
+    pub fn world_id_for_vsock_cid(&self, cid: u32) -> Result<Option<WorldId>, WorkerError> {
+        let connection = LibvirtConnection::open()?;
+        let domains = connection
+            .list_all_domains(virt::sys::VIR_CONNECT_LIST_DOMAINS_ACTIVE)
+            .map_err(|error| context("list active libvirt domains", error))?;
+        let mut matched = None;
+        for domain in domains {
+            let name = domain
+                .get_name()
+                .map_err(|error| context("read active libvirt domain name", error))?;
+            let Some(domain_name) = DomainName::parse(name) else {
+                continue;
+            };
+            let world_id = domain_name.world_id().expect("parsed WT domain name");
+            let xml = domain
+                .get_xml_desc(0)
+                .map_err(|error| context("read active libvirt domain XML", error))?;
+            if vsock_cid(&xml)? != Some(cid) {
+                continue;
+            }
+            if matched.replace(world_id).is_some() {
+                return Err(WorkerError::new(format!(
+                    "multiple active WT domains use vsock CID {cid}"
+                )));
+            }
+        }
+        Ok(matched)
+    }
+
     fn wait_for_agent(&self, domain_name: &DomainName) -> Result<(), WorkerError> {
         let deadline = Instant::now() + self.config.boot_timeout;
         loop {
@@ -302,6 +331,46 @@ impl LibvirtProvider {
         writeln!(progress, "Machine transport ready at {guest_ip}.")
             .map_err(|error| context("write machine progress", error))?;
         Ok(self.machine(spec.world_id, guest_ip))
+    }
+}
+
+fn vsock_cid(xml: &str) -> Result<Option<u32>, WorkerError> {
+    use quick_xml::events::Event;
+
+    let mut reader = quick_xml::Reader::from_str(xml);
+    let mut in_vsock = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) if element.name().as_ref() == b"vsock" => {
+                in_vsock = true;
+            }
+            Ok(Event::End(element)) if element.name().as_ref() == b"vsock" => {
+                in_vsock = false;
+            }
+            Ok(Event::Empty(element)) if in_vsock && element.name().as_ref() == b"cid" => {
+                for attribute in element.attributes() {
+                    let attribute = attribute.map_err(|error| {
+                        WorkerError::new(format!("parse libvirt domain XML: {error}"))
+                    })?;
+                    if attribute.key.as_ref() == b"address" {
+                        return std::str::from_utf8(attribute.value.as_ref())
+                            .ok()
+                            .and_then(|value| value.parse().ok())
+                            .map(Some)
+                            .ok_or_else(|| {
+                                WorkerError::new("libvirt domain has an invalid vsock CID")
+                            });
+                    }
+                }
+            }
+            Ok(Event::Eof) => return Ok(None),
+            Ok(_) => {}
+            Err(error) => {
+                return Err(WorkerError::new(format!(
+                    "parse libvirt domain XML: {error}"
+                )))
+            }
+        }
     }
 }
 

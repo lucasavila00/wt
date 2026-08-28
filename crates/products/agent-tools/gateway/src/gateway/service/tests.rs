@@ -4,7 +4,6 @@ use wt_control_protocol::{PaneCell, PaneColor, PaneFrame};
 fn gateway(temp: &tempfile::TempDir) -> Gateway {
     Gateway::open(
         GatewayConfig {
-            state_file: temp.path().join("gateway.json"),
             providers: vec![Provider::Local {
                 host: "github.com".into(),
                 repositories: temp.path().to_owned(),
@@ -20,15 +19,11 @@ fn gateway(temp: &tempfile::TempDir) -> Gateway {
 fn world_prompt_does_not_require_a_provider_api() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = gateway(&temp);
-    let grant = GrantRecord {
-        id: "id".into(),
-        token: "token".into(),
-        world_id: "world".into(),
-        revoked: false,
-    };
 
     assert_eq!(
-        gateway.serve_cli(&["world-prompt".into()], &grant).unwrap(),
+        gateway
+            .serve_cli(&["world-prompt".into()], Uuid::nil().into())
+            .unwrap(),
         world_prompt()
     );
 }
@@ -85,55 +80,21 @@ fn pane_observations_are_complete_transient_world_snapshots() {
 }
 
 #[test]
-fn revoked_grant_cannot_restore_cleared_pane_observations() {
-    let temp = tempfile::tempdir().unwrap();
-    let gateway = gateway(&temp);
-    let world_id = Uuid::new_v4();
-    let grant = gateway.reserve_grant(world_id).unwrap();
-    let authorized = gateway
-        .authorize(&TransportRequest {
-            protocol_version: PROTOCOL_VERSION,
-            token: grant.token.clone(),
-            operation: ClientOperation::PaneObservations { panes: Vec::new() },
-        })
-        .unwrap();
-
-    gateway
-        .deactivate_pane_observations(world_id.into())
-        .unwrap();
-    gateway.revoke_grant(&grant.id).unwrap();
-
-    let error = gateway
-        .store_pane_observations(&[], &authorized)
-        .unwrap_err();
-    assert_eq!(error.to_string(), "gateway grant is invalid or revoked");
-    assert!(gateway
-        .pane_observations(world_id.into())
-        .unwrap()
-        .is_empty());
-    let observations = gateway.pane_observations.lock().unwrap();
-    assert!(!observations.inactive_worlds.contains(&world_id.into()));
-    assert!(!observations.generations.contains_key(&world_id.into()));
-}
-
-#[test]
 fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = gateway(&temp);
-    let world_id = Uuid::new_v4();
-    let grant = gateway.reserve_grant(world_id).unwrap();
-    let authorized = gateway
-        .authorize(&TransportRequest {
-            protocol_version: PROTOCOL_VERSION,
-            token: grant.token.clone(),
-            operation: ClientOperation::PaneObservations { panes: Vec::new() },
-        })
-        .unwrap();
+    let world_uuid = Uuid::new_v4();
+    let world_id = world_uuid.into();
+    let request = TransportRequest {
+        protocol_version: PROTOCOL_VERSION,
+        operation: ClientOperation::PaneObservations { panes: Vec::new() },
+    };
+    let authorized = gateway.authorize(&request, world_id).unwrap();
 
     assert!(
         gateway
             .control(ControlRequest::DeactivatePaneObservations {
-                world_id: world_id.to_string(),
+                world_id: world_uuid.to_string(),
             })
             .unwrap()
             .ok
@@ -145,42 +106,29 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
             .to_string(),
         "pane observation belongs to an expired world run"
     );
-    let inactive = gateway
-        .authorize(&TransportRequest {
-            protocol_version: PROTOCOL_VERSION,
-            token: grant.token.clone(),
-            operation: ClientOperation::PaneObservations { panes: Vec::new() },
-        })
-        .unwrap();
     assert_eq!(
         gateway
-            .store_pane_observations(&[], &inactive)
+            .authorize(&request, world_id)
             .unwrap_err()
             .to_string(),
-        "pane observations are inactive for this world"
+        "agent tools are inactive for this world"
     );
 
     assert!(
         gateway
             .control(ControlRequest::ActivatePaneObservations {
-                world_id: world_id.to_string(),
+                world_id: world_uuid.to_string(),
             })
             .unwrap()
             .ok
     );
     assert_eq!(
         gateway
-            .store_pane_observations(&[], &inactive)
+            .store_pane_observations(&[], &authorized)
             .unwrap_err()
             .to_string(),
         "pane observation belongs to an expired world run"
     );
-    let current = gateway
-        .authorize(&TransportRequest {
-            protocol_version: PROTOCOL_VERSION,
-            token: grant.token,
-            operation: ClientOperation::PaneObservations { panes: Vec::new() },
-        })
-        .unwrap();
+    let current = gateway.authorize(&request, world_id).unwrap();
     gateway.store_pane_observations(&[], &current).unwrap();
 }

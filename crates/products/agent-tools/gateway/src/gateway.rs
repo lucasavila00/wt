@@ -1,14 +1,11 @@
 mod service;
 
 use crate::{
-    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, Grant,
-    TransportRequest, TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
+    ClientOperation, ControlRequest, ControlResponse, DuplexStream, GitService, TransportRequest,
+    TransportResponse, BRANCH_PREFIX, PROTOCOL_VERSION,
 };
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -20,7 +17,6 @@ use wt_world::WorldId;
 
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
-    pub state_file: PathBuf,
     pub providers: Vec<Provider>,
 }
 
@@ -112,7 +108,6 @@ impl Provider {
 pub struct Gateway {
     config: GatewayConfig,
     activity: ActivityRecorder,
-    state: Arc<Mutex<State>>,
     pane_observations: Arc<Mutex<PaneObservations>>,
 }
 
@@ -135,22 +130,9 @@ pub struct PaneObservationSnapshot {
     pub render: wt_control_protocol::PaneRender,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct State {
-    grants: Vec<GrantRecord>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct GrantRecord {
-    id: String,
-    token: String,
-    world_id: String,
-    revoked: bool,
-}
-
-struct AuthorizedGrant {
-    record: GrantRecord,
+#[derive(Debug)]
+struct AuthorizedWorld {
+    world_id: WorldId,
     pane_generation: u64,
 }
 

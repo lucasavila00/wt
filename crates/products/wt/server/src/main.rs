@@ -88,6 +88,7 @@ fn run_server() -> Result<()> {
     let test_server = server_config.test_server;
     let provider =
         LibvirtProvider::new(server_config.machine_config()).map_err(anyhow::Error::msg)?;
+    let world_resolver = provider.clone();
     let host_config = server_config.host_config();
     let guest_worker = wt_guest::host::Worker::new(
         provider,
@@ -97,7 +98,15 @@ fn run_server() -> Result<()> {
     .map_err(anyhow::Error::msg)?;
     let worker = guest_worker;
     let gateway = open_gateway(&server_config, &state.database_path())?;
-    wt_agent_tool_gateway::start_vsock(gateway.clone(), server_config.agent_tools.vsock_port)?;
+    wt_agent_tool_gateway::start_vsock(
+        gateway.clone(),
+        server_config.agent_tools.vsock_port,
+        move |cid| {
+            world_resolver
+                .world_id_for_vsock_cid(cid)
+                .map_err(anyhow::Error::msg)
+        },
+    )?;
     let context = DaemonContext {
         state,
         operations,
@@ -147,10 +156,7 @@ fn open_gateway(
     .collect();
     let activity = wt_agent_tool_gateway::ActivityRecorder::open(database_path)?;
     wt_agent_tool_gateway::Gateway::open(
-        wt_agent_tool_gateway::GatewayConfig {
-            state_file: PathBuf::from("/var/lib/wt/agent-tools/state.json"),
-            providers,
-        },
+        wt_agent_tool_gateway::GatewayConfig { providers },
         activity,
     )
 }

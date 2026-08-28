@@ -1,6 +1,6 @@
 use super::{
     allocated_bytes, create_overlay_command, shutdown_reason, validate_worlds_dir_details,
-    validate_worlds_storage_dir_details, write_creation_timing,
+    validate_worlds_storage_dir_details, vsock_cid, write_creation_timing,
 };
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -13,6 +13,27 @@ fn names_known_libvirt_shutdown_reasons() {
         Some("crashed")
     );
     assert_eq!(shutdown_reason(-1), None);
+}
+
+#[test]
+fn reads_the_runtime_vsock_cid_from_libvirt_xml() {
+    assert_eq!(
+        vsock_cid(
+            "<domain><devices><vsock model='virtio'><cid auto='yes' address='42'/></vsock></devices></domain>"
+        )
+        .unwrap(),
+        Some(42)
+    );
+    assert_eq!(
+        vsock_cid("<domain><devices><vsock model='virtio'/></devices></domain>").unwrap(),
+        None
+    );
+    assert_eq!(
+        vsock_cid("<domain><devices><vsock><cid address='invalid'/></vsock></devices></domain>")
+            .unwrap_err()
+            .to_string(),
+        "libvirt domain has an invalid vsock CID"
+    );
 }
 
 #[test]

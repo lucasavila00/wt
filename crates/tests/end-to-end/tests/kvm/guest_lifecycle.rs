@@ -15,7 +15,6 @@ fn guest_lifecycle() {
     let created = timings.run("create guest", || harness.create(&name));
     assert_eq!(created.status, WorldStatus::Running);
     assert!(created.ssh.is_some());
-    let grant_token = harness.grant_token_for(created.world_id);
     harness.sync_inventory();
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
@@ -150,7 +149,6 @@ fn guest_lifecycle() {
     );
 
     timings.run("delete guest", || harness.delete(&name));
-    harness.assert_grant_is_revoked(grant_token);
     assert_eq!(
         count_disks(&harness.config.libvirt.worlds_dir),
         harness.initial_disks
