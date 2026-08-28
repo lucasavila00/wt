@@ -2,7 +2,7 @@ use wt_control_protocol::WorldId;
 
 pub trait AgentToolGateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String>;
-    fn revoke(&self, grant_id: &str) -> Result<(), String>;
+    fn revoke(&self, world_id: WorldId) -> Result<(), String>;
     fn pane_observations(
         &self,
         world_id: WorldId,
@@ -17,8 +17,8 @@ impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
             .map_err(|error| error.to_string())
     }
 
-    fn revoke(&self, grant_id: &str) -> Result<(), String> {
-        self.revoke_grant(grant_id)
+    fn revoke(&self, world_id: WorldId) -> Result<(), String> {
+        self.revoke_grant(world_id.into())
             .map_err(|error| error.to_string())
     }
 

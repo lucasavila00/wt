@@ -106,11 +106,11 @@ impl AgentToolGateway for TestGatewayClient {
         }
     }
 
-    fn revoke(&self, grant_id: &str) -> Result<(), String> {
+    fn revoke(&self, world_id: wt_control_protocol::WorldId) -> Result<(), String> {
         let response = self
             .0
             .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
-                grant_id: grant_id.to_owned(),
+                world_id: world_id.to_string(),
             })
             .map_err(|error| error.to_string())?;
         if response.ok {

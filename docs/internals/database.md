@@ -3,8 +3,8 @@
 WT uses SQLite through Diesel at `~/.local/state/wt/instances.db`.
 
 `worlds` stores each world's immutable UUID, globally unique mutable name,
-creation time, status, request fingerprint, resources, reservation state, SSH
-endpoint, and gateway grant. World listings use creation order. The UUID also
+creation time, status, request fingerprint, resources, reservation state, and
+SSH endpoint. World listings use creation order. The UUID also
 names the world's disk; neither a disk identifier nor a libvirt domain name is
 stored in the registry.
 `agent_tool_reports` stores `wtg tools` feedback and is deleted with its world.

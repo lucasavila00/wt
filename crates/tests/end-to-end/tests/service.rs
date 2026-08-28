@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, Arc, Mutex};
 use tempfile::TempDir;
 use wt_control_protocol::{CapacityResource, Operation, Response, WorldName, WorldStatus};
 use wt_server::operations::Operations;
@@ -227,25 +227,72 @@ fn failed_create_is_preserved_until_delete() {
 }
 
 #[test]
-fn delete_keeps_registry_until_gateway_revocation_succeeds() {
+fn delete_deactivates_and_revokes_before_destroying_the_world() {
     let temp = TempDir::new().unwrap();
-    let store = Store::open(&temp.path().join("worlds.db")).unwrap();
-    let worker = Worker::default();
-    let Response::World { world } = Service::new(
-        store,
-        worker.clone(),
-        Gateway::default(),
-        Operations::default(),
-        u64::MAX,
-    )
-    .execute("tester", Operation::CreateWorld(create("sample")))
-    .unwrap() else {
+    let create_service = service(&temp, Worker::default());
+    let Response::World { world } = create_service
+        .execute("tester", Operation::CreateWorld(create("sample")))
+        .unwrap()
+    else {
         panic!()
     };
+    let lifecycle_events = Arc::<Mutex<Vec<&'static str>>>::default();
+    let worker = Worker {
+        lifecycle_events: lifecycle_events.clone(),
+        ..Worker::default()
+    };
+    let gateway = Gateway {
+        lifecycle_events: lifecycle_events.clone(),
+        ..Gateway::default()
+    };
+    let service = Service::new(
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
+        worker.clone(),
+        gateway.clone(),
+        Operations::default(),
+        u64::MAX,
+    );
+
+    service
+        .execute(
+            "tester",
+            Operation::DeleteWorld {
+                world_id: world.world_id,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        lifecycle_events.lock().unwrap().as_slice(),
+        ["deactivate", "revoke", "destroy"]
+    );
+    assert_eq!(
+        gateway
+            .deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .as_slice(),
+        [world.world_id]
+    );
+    assert_eq!(gateway.revocations.load(Ordering::SeqCst), 1);
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_grant_revocation_preserves_destroying_intent() {
+    let temp = TempDir::new().unwrap();
+    let create_service = service(&temp, Worker::default());
+    let Response::World { world } = create_service
+        .execute("tester", Operation::CreateWorld(create("sample")))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let worker = Worker::default();
     let gateway = UnavailableGateway::default();
     let service = Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
-        worker,
+        worker.clone(),
         gateway.clone(),
         Operations::default(),
         u64::MAX,
@@ -259,12 +306,77 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
             },
         )
         .unwrap_err();
+
     assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
+    assert_eq!(
+        gateway
+            .deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .as_slice(),
+        [world.world_id]
+    );
     assert_eq!(gateway.revocations.load(Ordering::SeqCst), 1);
-    assert!(Store::open(&temp.path().join("worlds.db"))
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 0);
+    let retained = Store::open(&temp.path().join("worlds.db"))
         .unwrap()
         .get_owned_by_name("tester", &WorldName::parse("sample").unwrap())
-        .is_ok());
+        .unwrap();
+    assert_eq!(retained.world.status, WorldStatus::Destroying);
+}
+
+#[test]
+fn failed_world_destruction_happens_after_grant_revocation() {
+    let temp = TempDir::new().unwrap();
+    let create_service = service(&temp, Worker::default());
+    let Response::World { world } = create_service
+        .execute("tester", Operation::CreateWorld(create("sample")))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let worker = Worker {
+        destroy_error: true,
+        ..Worker::default()
+    };
+    let gateway = Gateway::default();
+    let service = Service::new(
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
+        worker.clone(),
+        gateway.clone(),
+        Operations::default(),
+        u64::MAX,
+    );
+
+    let error = service
+        .execute(
+            "tester",
+            Operation::DeleteWorld {
+                world_id: world.world_id,
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, wt_control_protocol::ErrorCode::Backend);
+    assert_eq!(worker.destroys.load(Ordering::SeqCst), 1);
+    assert_eq!(gateway.revocations.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        gateway
+            .deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .as_slice(),
+        [world.world_id]
+    );
+    assert_eq!(
+        Store::open(&temp.path().join("worlds.db"))
+            .unwrap()
+            .get_owned_by_id("tester", world.world_id)
+            .unwrap()
+            .world
+            .status,
+        WorldStatus::Error
+    );
 }
 
 #[test]

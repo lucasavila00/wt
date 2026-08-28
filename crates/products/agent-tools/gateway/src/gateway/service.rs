@@ -44,7 +44,7 @@ impl Gateway {
     pub fn control(&self, request: ControlRequest) -> Result<ControlResponse> {
         match request {
             ControlRequest::Reserve { world_id } => self.reserve(&world_id),
-            ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
+            ControlRequest::Revoke { world_id } => self.revoke(&world_id),
             ControlRequest::ActivatePaneObservations { world_id } => {
                 self.activate_pane_observations(parse_world_id(&world_id)?)?;
                 Ok(ControlResponse::ok(None))
@@ -62,8 +62,28 @@ impl Gateway {
             .context("gateway reserve response has no grant")
     }
 
-    pub fn revoke_grant(&self, grant_id: &str) -> Result<()> {
-        self.revoke(grant_id).map(|_| ())
+    pub fn revoke_grant(&self, world_id: Uuid) -> Result<()> {
+        self.revoke(&world_id.to_string()).map(|_| ())
+    }
+
+    pub fn reconcile_grants(&self, world_ids: impl IntoIterator<Item = WorldId>) -> Result<()> {
+        let world_ids = world_ids
+            .into_iter()
+            .map(|world_id| world_id.to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
+        let mut candidate = state.clone();
+        candidate
+            .grants
+            .retain(|grant| world_ids.contains(&grant.world_id));
+        if candidate.grants.len() != state.grants.len() {
+            self.save(&candidate)?;
+            *state = candidate;
+        }
+        Ok(())
     }
 
     pub fn handle_transport<S: DuplexStream>(&self, mut stream: S) -> Result<()> {
@@ -118,10 +138,7 @@ impl Gateway {
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
         if !state.grants.iter().any(|active| {
-            active.id == grant.record.id
-                && active.token == grant.record.token
-                && active.world_id == grant.record.world_id
-                && !active.revoked
+            active.token == grant.record.token && active.world_id == grant.record.world_id
         }) {
             bail!("gateway grant is invalid or revoked");
         }
@@ -189,80 +206,65 @@ impl Gateway {
     }
 
     fn reserve(&self, world_id: &str) -> Result<ControlResponse> {
-        if world_id.is_empty() {
-            bail!("invalid gateway grant scope");
-        }
-        {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-            if let Some(existing) = state
-                .grants
-                .iter()
-                .find(|grant| grant.world_id == world_id && !grant.revoked)
-            {
-                return Ok(ControlResponse::ok(Some(Grant {
-                    id: existing.id.clone(),
-                    token: existing.token.clone(),
-                })));
-            }
-        }
+        let world_id = parse_world_id(world_id)?.to_string();
         let mut state = self
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        if let Some(existing) = state
-            .grants
-            .iter()
-            .find(|grant| grant.world_id == world_id && !grant.revoked)
-        {
+        if let Some(existing) = state.grants.iter().find(|grant| grant.world_id == world_id) {
             return Ok(ControlResponse::ok(Some(Grant {
-                id: existing.id.clone(),
                 token: existing.token.clone(),
             })));
         }
         let record = GrantRecord {
-            id: Uuid::new_v4().to_string(),
             token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
-            world_id: world_id.to_owned(),
-            revoked: false,
+            world_id,
         };
         let response = ControlResponse::ok(Some(Grant {
-            id: record.id.clone(),
             token: record.token.clone(),
         }));
-        state.grants.push(record);
-        self.save(&state)?;
+        let mut candidate = state.clone();
+        candidate.grants.push(record);
+        self.save(&candidate)?;
+        *state = candidate;
         Ok(response)
     }
 
-    fn revoke(&self, id: &str) -> Result<ControlResponse> {
+    fn revoke(&self, world_id: &str) -> Result<ControlResponse> {
+        let world_id = parse_world_id(world_id)?;
+        let world_id_string = world_id.to_string();
         let mut state = self
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        let world_id = {
-            let grant = state
-                .grants
-                .iter_mut()
-                .find(|grant| grant.id == id)
-                .ok_or_else(|| anyhow::anyhow!("gateway grant not found"))?;
-            if grant.revoked {
-                return Ok(ControlResponse::ok(None));
-            }
-            grant.revoked = true;
-            Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?
+        let mut candidate = state.clone();
+        candidate
+            .grants
+            .retain(|grant| grant.world_id != world_id_string);
+        let save_error = if candidate.grants.len() == state.grants.len() {
+            None
+        } else {
+            self.save(&candidate).err()
         };
-        self.save(&state)?;
-        let world_id = world_id.into();
+        if save_error.is_none() {
+            *state = candidate;
+        }
         let mut observations = self
             .pane_observations
             .lock()
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         observations.snapshots.remove(&world_id);
-        observations.inactive_worlds.remove(&world_id);
         observations.generations.remove(&world_id);
+        if save_error.is_some() {
+            observations.inactive_worlds.insert(world_id);
+        } else {
+            observations.inactive_worlds.remove(&world_id);
+        }
+        drop(observations);
+        drop(state);
+        if let Some(error) = save_error {
+            return Err(error);
+        }
         Ok(ControlResponse::ok(None))
     }
 
@@ -280,7 +282,7 @@ impl Gateway {
         let grant = state
             .grants
             .iter()
-            .find(|grant| grant.token == request.token && !grant.revoked)
+            .find(|grant| grant.token == request.token)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("gateway grant is invalid or revoked"))?;
         let pane_generation =

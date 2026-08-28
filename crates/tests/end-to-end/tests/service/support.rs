@@ -24,32 +24,71 @@ pub(crate) struct Worker {
     pub(crate) missing: bool,
     pub(crate) changed_guest_identity: bool,
     pub(crate) provision_error: bool,
+    pub(crate) destroy_error: bool,
     pub(crate) stopped: bool,
     pub(crate) is_stopped: Arc<AtomicBool>,
     pub(crate) stop_error: bool,
     pub(crate) disk_usage_bytes: u64,
+    pub(crate) lifecycle_events: Arc<Mutex<Vec<&'static str>>>,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct Gateway {
     pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
+    pub(crate) revocations: Arc<AtomicUsize>,
+    pub(crate) lifecycle_events: Arc<Mutex<Vec<&'static str>>>,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct UnavailableGateway {
     pub(crate) revocations: Arc<AtomicUsize>,
+    pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
 }
 
 impl AgentToolGateway for Gateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         Ok(wt_agent_tool_gateway::Grant {
-            id: format!("grant-{world_id}"),
             token: format!("token-{world_id}"),
         })
     }
 
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
+    fn revoke(&self, _world_id: WorldId) -> Result<(), String> {
+        self.lifecycle_events.lock().unwrap().push("revoke");
+        self.revocations.fetch_add(1, Ordering::SeqCst);
         Ok(())
+    }
+
+    fn pane_observations(
+        &self,
+        _world_id: WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
+        Ok(Vec::new())
+    }
+
+    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        self.lifecycle_events.lock().unwrap().push("deactivate");
+        self.deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .push(world_id);
+        Ok(())
+    }
+}
+
+impl AgentToolGateway for UnavailableGateway {
+    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
+        Ok(wt_agent_tool_gateway::Grant {
+            token: format!("token-{world_id}"),
+        })
+    }
+
+    fn revoke(&self, _world_id: WorldId) -> Result<(), String> {
+        self.revocations.fetch_add(1, Ordering::SeqCst);
+        Err("gateway unavailable".to_owned())
     }
 
     fn pane_observations(
@@ -68,35 +107,6 @@ impl AgentToolGateway for Gateway {
             .lock()
             .unwrap()
             .push(world_id);
-        Ok(())
-    }
-}
-
-impl AgentToolGateway for UnavailableGateway {
-    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
-        Ok(wt_agent_tool_gateway::Grant {
-            id: format!("grant-{world_id}"),
-            token: format!("token-{world_id}"),
-        })
-    }
-
-    fn revoke(&self, _grant_id: &str) -> Result<(), String> {
-        self.revocations.fetch_add(1, Ordering::SeqCst);
-        Err("gateway unavailable".to_owned())
-    }
-
-    fn pane_observations(
-        &self,
-        _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
-        Ok(Vec::new())
-    }
-
-    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn deactivate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 }
@@ -127,8 +137,12 @@ impl WorldWorker for Worker {
     }
 
     fn destroy(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        self.lifecycle_events.lock().unwrap().push("destroy");
         self.destroys.fetch_add(1, Ordering::SeqCst);
         self.destroyed_disks.lock().unwrap().push(world_id);
+        if self.destroy_error {
+            return Err(WorkerError::new("destroy failed"));
+        }
         Ok(())
     }
 

@@ -14,15 +14,21 @@ fn gateway(temp: &tempfile::TempDir) -> Gateway {
     .unwrap()
 }
 
+fn persisted_state(temp: &tempfile::TempDir) -> State {
+    serde_json::from_slice(&std::fs::read(temp.path().join("gateway.json")).unwrap()).unwrap()
+}
+
+fn fail_future_saves(temp: &tempfile::TempDir) {
+    std::fs::create_dir(temp.path().join("gateway.json.new")).unwrap();
+}
+
 #[test]
 fn world_prompt_does_not_require_a_provider_api() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = gateway(&temp);
     let grant = GrantRecord {
-        id: "id".into(),
         token: "token".into(),
         world_id: "world".into(),
-        revoked: false,
     };
 
     assert_eq!(
@@ -83,7 +89,7 @@ fn pane_observations_are_complete_transient_world_snapshots() {
 }
 
 #[test]
-fn revoked_grant_cannot_restore_cleared_pane_observations() {
+fn deleted_grant_cannot_restore_cleared_pane_observations() {
     let temp = tempfile::tempdir().unwrap();
     let gateway = gateway(&temp);
     let world_id = Uuid::new_v4();
@@ -99,7 +105,7 @@ fn revoked_grant_cannot_restore_cleared_pane_observations() {
     gateway
         .deactivate_pane_observations(world_id.into())
         .unwrap();
-    gateway.revoke_grant(&grant.id).unwrap();
+    gateway.revoke_grant(world_id).unwrap();
 
     let error = gateway
         .store_pane_observations(&[], &authorized)
@@ -112,6 +118,134 @@ fn revoked_grant_cannot_restore_cleared_pane_observations() {
     let observations = gateway.pane_observations.lock().unwrap();
     assert!(!observations.inactive_worlds.contains(&world_id.into()));
     assert!(!observations.generations.contains_key(&world_id.into()));
+}
+
+#[test]
+fn revocation_removes_the_grant_instead_of_retaining_a_tombstone() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let world_id = Uuid::new_v4();
+    let grant = gateway.reserve_grant(world_id).unwrap();
+
+    gateway.revoke_grant(world_id).unwrap();
+    gateway.revoke_grant(world_id).unwrap();
+
+    assert!(gateway.state.lock().unwrap().grants.is_empty());
+    let persisted: State =
+        serde_json::from_slice(&std::fs::read(temp.path().join("gateway.json")).unwrap()).unwrap();
+    assert!(persisted.grants.is_empty());
+    assert_eq!(
+        gateway
+            .authorize(&TransportRequest {
+                protocol_version: PROTOCOL_VERSION,
+                token: grant.token,
+                operation: ClientOperation::Cli { args: Vec::new() },
+            })
+            .err()
+            .unwrap()
+            .to_string(),
+        "gateway grant is invalid or revoked"
+    );
+}
+
+#[test]
+fn startup_reconciliation_removes_grants_without_worlds() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let existing = Uuid::new_v4();
+    let orphan = Uuid::new_v4();
+    let existing_grant = gateway.reserve_grant(existing).unwrap();
+    let orphan_grant = gateway.reserve_grant(orphan).unwrap();
+
+    gateway.reconcile_grants([existing.into()]).unwrap();
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(state.grants.len(), 1);
+    assert_eq!(state.grants[0].world_id, existing.to_string());
+    drop(state);
+    assert!(gateway
+        .authorize(&TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            token: existing_grant.token,
+            operation: ClientOperation::Cli { args: Vec::new() },
+        })
+        .is_ok());
+    assert_eq!(
+        gateway
+            .authorize(&TransportRequest {
+                protocol_version: PROTOCOL_VERSION,
+                token: orphan_grant.token,
+                operation: ClientOperation::Cli { args: Vec::new() },
+            })
+            .err()
+            .unwrap()
+            .to_string(),
+        "gateway grant is invalid or revoked"
+    );
+}
+
+#[test]
+fn failed_reservation_save_does_not_publish_the_grant_to_memory() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let existing = Uuid::new_v4();
+    gateway.reserve_grant(existing).unwrap();
+    fail_future_saves(&temp);
+
+    assert!(gateway.reserve_grant(Uuid::new_v4()).is_err());
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(state.grants.len(), 1);
+    assert_eq!(state.grants[0].world_id, existing.to_string());
+    drop(state);
+    assert_eq!(persisted_state(&temp).grants.len(), 1);
+}
+
+#[test]
+fn failed_reconciliation_save_preserves_the_persisted_and_memory_grants() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let existing = Uuid::new_v4();
+    let orphan = Uuid::new_v4();
+    gateway.reserve_grant(existing).unwrap();
+    gateway.reserve_grant(orphan).unwrap();
+    fail_future_saves(&temp);
+
+    assert!(gateway.reconcile_grants([existing.into()]).is_err());
+
+    assert_eq!(gateway.state.lock().unwrap().grants.len(), 2);
+    assert_eq!(persisted_state(&temp).grants.len(), 2);
+}
+
+#[test]
+fn failed_revocation_save_preserves_the_grant_but_deactivates_panes() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let world_uuid = Uuid::new_v4();
+    let world_id = world_uuid.into();
+    let grant = gateway.reserve_grant(world_uuid).unwrap();
+    {
+        let mut observations = gateway.pane_observations.lock().unwrap();
+        observations.snapshots.insert(world_id, Vec::new());
+        observations.generations.insert(world_id, 7);
+    }
+    fail_future_saves(&temp);
+
+    assert!(gateway.revoke_grant(world_uuid).is_err());
+
+    assert_eq!(gateway.state.lock().unwrap().grants.len(), 1);
+    assert_eq!(persisted_state(&temp).grants.len(), 1);
+    assert!(gateway
+        .authorize(&TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            token: grant.token,
+            operation: ClientOperation::PaneObservations { panes: Vec::new() },
+        })
+        .is_ok());
+    let observations = gateway.pane_observations.lock().unwrap();
+    assert!(!observations.snapshots.contains_key(&world_id));
+    assert!(!observations.generations.contains_key(&world_id));
+    assert!(observations.inactive_worlds.contains(&world_id));
 }
 
 #[test]

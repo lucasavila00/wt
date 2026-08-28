@@ -98,10 +98,8 @@ struct State {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct GrantRecord {
-    id: String,
     token: String,
     world_id: String,
-    revoked: bool,
 }
 
 struct AuthorizedGrant {

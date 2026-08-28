@@ -19,7 +19,6 @@ pub struct StoredWorld {
     pub world: World,
     pub created_at_unix_ms: i64,
     pub setup_fingerprint: String,
-    pub gateway_grant_id: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -57,7 +56,6 @@ struct NewWorld<'a> {
     status: String,
     setup_fingerprint: &'a str,
     ssh_host_keys: &'static str,
-    gateway_grant_id: Option<&'a str>,
     created_at_unix_ms: i64,
 }
 
@@ -79,7 +77,6 @@ struct WorldRow {
     ssh_host: Option<String>,
     ssh_port: Option<i32>,
     ssh_host_keys: String,
-    gateway_grant_id: Option<String>,
     created_at_unix_ms: i64,
 }
 
@@ -182,6 +179,22 @@ impl Store {
                 .load::<WorldRow>(connection)?
                 .into_iter()
                 .map(TryInto::try_into)
+                .collect()
+        })
+    }
+
+    pub fn grant_eligible_world_ids(&self) -> Result<Vec<WorldId>, StoreError> {
+        self.registry.read(|connection| {
+            worlds::table
+                .filter(worlds::status.ne(WorldStatus::Destroying.to_string()))
+                .select(worlds::world_id)
+                .load::<String>(connection)?
+                .into_iter()
+                .map(|world_id| {
+                    world_id
+                        .parse()
+                        .map_err(|error: uuid::Error| StoreError::InvalidData(error.to_string()))
+                })
                 .collect()
         })
     }
@@ -366,7 +379,6 @@ impl TryFrom<WorldRow> for StoredWorld {
             },
             created_at_unix_ms: row.created_at_unix_ms,
             setup_fingerprint: row.setup_fingerprint,
-            gateway_grant_id: row.gateway_grant_id,
         })
     }
 }
@@ -403,7 +415,6 @@ fn insert_world(
         status: world.status.to_string(),
         setup_fingerprint: &stored.setup_fingerprint,
         ssh_host_keys: "[]",
-        gateway_grant_id: stored.gateway_grant_id.as_deref(),
         created_at_unix_ms,
     };
     insert_result(
@@ -489,7 +500,6 @@ mod tests {
             },
             created_at_unix_ms: 0,
             setup_fingerprint: "fingerprint".into(),
-            gateway_grant_id: None,
         }
     }
 
@@ -551,6 +561,54 @@ mod tests {
                 .world
                 .name,
             first.world.name
+        );
+    }
+
+    #[test]
+    fn startup_grant_snapshot_excludes_only_destroying_worlds() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(&temp.path().join("registry.db")).unwrap();
+        let worlds = [
+            WorldStatus::Provisioning,
+            WorldStatus::Running,
+            WorldStatus::Stopped,
+            WorldStatus::Error,
+            WorldStatus::Destroying,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, status)| {
+            let mut world = stored(&format!("world-{index}"));
+            world.world.status = status;
+            world.world.owner = format!("owner-{index}");
+            store.insert(&world).unwrap();
+            world.world.world_id
+        })
+        .collect::<Vec<_>>();
+
+        let grant_world_ids = store
+            .grant_eligible_world_ids()
+            .unwrap()
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        store.reconcile_interrupted().unwrap();
+
+        assert_eq!(grant_world_ids, worlds[..4].iter().copied().collect());
+        assert_eq!(
+            store
+                .get_owned_by_id("owner-0", worlds[0])
+                .unwrap()
+                .world
+                .status,
+            WorldStatus::Error
+        );
+        assert_eq!(
+            store
+                .get_owned_by_id("owner-4", worlds[4])
+                .unwrap()
+                .world
+                .status,
+            WorldStatus::Error
         );
     }
 

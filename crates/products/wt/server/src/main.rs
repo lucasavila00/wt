@@ -78,6 +78,14 @@ fn run_server() -> Result<()> {
     );
     let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let store = Store::open(&state.database_path()).context("open instance registry")?;
+    let gateway = open_gateway(&server_config, &state.database_path())?;
+    gateway
+        .reconcile_grants(
+            store
+                .grant_eligible_world_ids()
+                .context("list worlds for gateway grant reconciliation")?,
+        )
+        .context("reconcile gateway grants at startup")?;
     store
         .reconcile_interrupted()
         .context("reconcile interrupted operations at startup")?;
@@ -96,7 +104,6 @@ fn run_server() -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
     let worker = guest_worker;
-    let gateway = open_gateway(&server_config, &state.database_path())?;
     wt_agent_tool_gateway::start_vsock(gateway.clone(), server_config.agent_tools.vsock_port)?;
     let context = DaemonContext {
         state,

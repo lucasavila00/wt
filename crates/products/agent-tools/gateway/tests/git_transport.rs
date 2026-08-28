@@ -230,7 +230,7 @@ fn one_world_grant_reads_and_writes_multiple_repositories() {
     write_json_line(
         &mut stream,
         &ControlRequest::Revoke {
-            grant_id: grant.id.clone(),
+            world_id: first_world.to_string(),
         },
     )
     .unwrap();

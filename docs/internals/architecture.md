@@ -94,5 +94,6 @@ again from the guest image.
 - Registry: `~/.local/state/wt/instances.db`
 - KVM machine files: the configured libvirt worlds directories
 
-Each registry record is a guest with its resources, backend,
-disk, SSH endpoint, and gateway grant.
+Each registry record is a guest with its resources, backend, disk, and SSH
+endpoint. The agent tool gateway stores its world-scoped grants in its own
+protected state file.

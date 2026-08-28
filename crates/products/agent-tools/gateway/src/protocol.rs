@@ -20,7 +20,7 @@ pub fn valid_byobu_pane_id(value: &str) -> bool {
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
     Reserve { world_id: String },
-    Revoke { grant_id: String },
+    Revoke { world_id: String },
     ActivatePaneObservations { world_id: String },
     DeactivatePaneObservations { world_id: String },
 }
@@ -54,7 +54,6 @@ impl ControlResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Grant {
-    pub id: String,
     pub token: String,
 }
 
