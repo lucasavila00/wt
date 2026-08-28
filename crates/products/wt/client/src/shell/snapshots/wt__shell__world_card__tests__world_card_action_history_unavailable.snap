@@ -1,19 +1,18 @@
 ---
 source: crates/products/wt/client/src/shell/world_card.rs
-assertion_line: 449
 expression: "rendered_card(&unavailable, &[], 52)"
 ---
 ┌ 󰐊 RUNNING ─────────────────────────────── … Menu ┐
 │ars.offline-panda                                 │
 │2 CPU · 4G · 1G/32G disk                          │
 │Codex no observed Byobu panes                     │
+│                                                  │
+│                                                  │
+│                                                  │
+│                                                  │
+│                                                  │
 ├─ Action history ─────────────────────────────────┤
 │Unavailable                                       │
-│                                                  │
-│                                                  │
-│                                                  │
-│                                                  │
-│                                                  │
 │                                                  │
 │                                                  │
 │                                                  │

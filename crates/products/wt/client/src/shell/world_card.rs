@@ -200,16 +200,17 @@ pub(super) fn draw(
         lines.push(Line::from(detail.to_owned()));
     }
     if let Some(action_history) = action_history {
-        let maximum_live_rows = usize::from(inner.height)
+        let history_rows = u16::try_from(super::action_log::MAX_ACTIONS)
+            .unwrap_or(u16::MAX)
+            .min(inner.height.saturating_sub(1));
+        let separator_y = inner
+            .bottom()
+            .saturating_sub(history_rows.saturating_add(1))
+            .max(inner.y);
+        let maximum_live_rows = usize::from(separator_y.saturating_sub(inner.y))
             .saturating_sub(lines.len())
-            .saturating_sub(action_history.len())
-            .saturating_sub(1)
             .min(MAX_PANE_ROWS);
         lines.extend(bounded_pane_lines(live_details, maximum_live_rows));
-        let separator_y = inner
-            .y
-            .saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX))
-            .min(inner.bottom().saturating_sub(1));
         Paragraph::new(lines).render(
             Rect::new(
                 inner.x,
@@ -502,13 +503,41 @@ mod tests {
     }
 
     #[test]
+    fn action_history_dividers_align_across_different_live_content() {
+        let world = world_with_actions();
+        let now = now_unix_ms();
+        let dense_panes = (1..=8)
+            .map(|index| observation(&world, &format!("%{index}"), now))
+            .collect::<Vec<_>>();
+        let mut detailed = world.clone();
+        detailed.detail = "SSH readiness failed".into();
+        let separator_y = |buffer: &Buffer| {
+            (0..super::super::control::WORLD_CARD_HEIGHT)
+                .find(|y| buffer[(0, *y)].symbol() == "├")
+                .unwrap()
+        };
+
+        let sparse = rendered_card_buffer(&world, &[], 76);
+        let dense = rendered_card_buffer(&world, &dense_panes, 76);
+        let detailed = rendered_card_buffer(&detailed, &[], 76);
+
+        assert_eq!(separator_y(&sparse), separator_y(&dense));
+        assert_eq!(separator_y(&sparse), separator_y(&detailed));
+    }
+
+    #[test]
     fn action_history_is_dimmed_while_live_status_remains_normal() {
         let world = world_with_actions();
         let now = now_unix_ms();
         let buffer = rendered_card_buffer(&world, &[observation(&world, "%1", now)], 76);
+        let separator_y = (0..super::super::control::WORLD_CARD_HEIGHT)
+            .find(|y| buffer[(0, *y)].symbol() == "├")
+            .unwrap();
 
         assert!(!buffer[(17, 3)].modifier.contains(Modifier::DIM));
-        assert!(buffer[(6, 5)].modifier.contains(Modifier::DIM));
+        assert!(buffer[(6, separator_y + 1)]
+            .modifier
+            .contains(Modifier::DIM));
     }
 
     #[test]
