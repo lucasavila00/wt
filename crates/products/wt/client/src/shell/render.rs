@@ -177,7 +177,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
     let capacity = wt_client::inventory::format_capacity(model.control().capacity());
     let help = super::control::help_control_area(footer);
     let capacity_width = capacity.as_ref().map_or(0, |text| {
-        u16::try_from(text.chars().count() + 1).unwrap_or(u16::MAX)
+        u16::try_from(text.chars().count() + 2).unwrap_or(u16::MAX)
     });
     let [title_area, resources, help_area] = Layout::horizontal([
         Constraint::Min(0),
@@ -195,7 +195,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
     );
     if let Some(capacity) = capacity {
         frame.render_widget(
-            Paragraph::new(capacity)
+            Paragraph::new(format!("{capacity} "))
                 .alignment(Alignment::Right)
                 .style(muted_style()),
             resources,
