@@ -1,8 +1,11 @@
 use wt_control_protocol::WorldId;
 
-pub trait AgentToolGateway {
+pub trait AgentToolGrantAuthority {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
+}
+
+pub trait LivePaneObservations {
     fn pane_observations(
         &self,
         world_id: WorldId,
@@ -11,7 +14,7 @@ pub trait AgentToolGateway {
     fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String>;
 }
 
-impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
+impl AgentToolGrantAuthority for wt_agent_tool_gateway::Gateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
         self.reserve_grant(world_id.into())
             .map_err(|error| error.to_string())
@@ -21,7 +24,9 @@ impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
         self.revoke_grant(grant_id)
             .map_err(|error| error.to_string())
     }
+}
 
+impl LivePaneObservations for wt_agent_tool_gateway::Gateway {
     fn pane_observations(
         &self,
         world_id: WorldId,

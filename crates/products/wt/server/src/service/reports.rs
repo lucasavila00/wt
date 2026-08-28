@@ -1,8 +1,7 @@
-use super::{map_store_error, Service, WorldWorker};
-use crate::service::AgentToolGateway;
+use super::{map_store_error, Service};
 use wt_control_protocol::{AgentToolReport, AgentToolReportKind, ApiError, Response, WorldName};
 
-impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
+impl<W, G> Service<W, G> {
     pub(super) fn list_agent_tool_reports(&self, owner: &str) -> Result<Response, ApiError> {
         let reports = self
             .store

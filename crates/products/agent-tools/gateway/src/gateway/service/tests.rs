@@ -2,15 +2,17 @@ use super::*;
 use wt_control_protocol::{PaneCell, PaneColor, PaneFrame};
 
 fn gateway(temp: &tempfile::TempDir) -> Gateway {
-    Gateway::open(GatewayConfig {
-        state_file: temp.path().join("gateway.json"),
-        database_path: temp.path().join("instances.db"),
-        providers: vec![Provider::Local {
-            host: "github.com".into(),
-            repositories: temp.path().to_owned(),
-            api: None,
-        }],
-    })
+    Gateway::open(
+        GatewayConfig {
+            state_file: temp.path().join("gateway.json"),
+            providers: vec![Provider::Local {
+                host: "github.com".into(),
+                repositories: temp.path().to_owned(),
+                api: None,
+            }],
+        },
+        ActivityRecorder::open(&temp.path().join("instances.db")).unwrap(),
+    )
     .unwrap()
 }
 
