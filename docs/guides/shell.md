@@ -53,12 +53,15 @@ confirmed. Both show the same progress notification in the top-right corner;
 click `×` to hide the notification without cancelling the operation. Other
 shell navigation remains available while either operation runs.
 
-Cards show the observed pane, world, context, change age, and freshness. A
-recent screen change is `CHANGING`; an unchanged pane is `STATIC`. The bottom
-right of a Live card shows the observed current working directory and, when its
-`.git` folder exists, the checked-out branch. The Codex panel identifies the
-foreground process only; it does not infer a Codex session lifecycle or
-application liveness. Liveness classification changes only when a successful
+Cards show the observed pane's Byobu window name, world, context, change age,
+and freshness. A recent screen change is `CHANGING`; an unchanged pane is
+`STATIC`. Pane observations and window names are memory-only and are cleared
+when their world stops or the server restarts. Cards return with the next guest
+observation from a running world. The bottom right of a Live card shows the
+observed current working directory and, when its `.git` folder exists, the
+checked-out branch. The Codex panel identifies the foreground process only; it
+does not infer a Codex session lifecycle or application liveness. Liveness
+classification changes only when a successful
 pane update is applied, so a retained observation cannot age from `CHANGING` to
 `STATIC` or `IDLE`. After one minute without a successful pane update, World
 cards show `CONNECTION LOST · NO PANE UPDATE`. Failed pane-context queries leave

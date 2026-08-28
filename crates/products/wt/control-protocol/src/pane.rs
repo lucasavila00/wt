@@ -6,6 +6,7 @@ pub const MAX_PANE_FRAME_ROWS: u16 = 100;
 pub const MAX_PANE_FRAME_COLUMNS: u16 = 300;
 pub const MAX_PANE_FRAME_CELLS: usize = 30_000;
 pub const MAX_PANE_CELL_TEXT_BYTES: usize = 32;
+pub const MAX_PANE_WINDOW_NAME_BYTES: usize = 255;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -21,8 +22,30 @@ pub struct PaneObservation {
     pub git_branch: Option<String>,
     pub changed_at_unix_ms: i64,
     pub observed_at_unix_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame: Option<PaneFrame>,
+    pub render: PaneRender,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaneRender {
+    pub window_index: i64,
+    pub window_name: String,
+    pub frame: PaneFrame,
+}
+
+impl PaneRender {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.window_index < 0 {
+            return Err("window index is negative");
+        }
+        if self.window_name.is_empty()
+            || self.window_name.len() > MAX_PANE_WINDOW_NAME_BYTES
+            || self.window_name.chars().any(char::is_control)
+        {
+            return Err("window name is invalid display text");
+        }
+        self.frame.validate()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -152,5 +175,28 @@ mod tests {
             ..valid
         };
         assert_eq!(control.validate(), Err("frame contains an invalid cell"));
+    }
+
+    #[test]
+    fn pane_render_is_bounded_presentation_data() {
+        let mut render = PaneRender {
+            window_index: 0,
+            window_name: "codex".into(),
+            frame: PaneFrame {
+                rows: 1,
+                columns: 1,
+                cells: vec![cell("C")],
+            },
+        };
+        assert_eq!(render.validate(), Ok(()));
+
+        render.window_index = -1;
+        assert_eq!(render.validate(), Err("window index is negative"));
+        render.window_index = 0;
+        render.window_name = "\n".into();
+        assert_eq!(
+            render.validate(),
+            Err("window name is invalid display text")
+        );
     }
 }

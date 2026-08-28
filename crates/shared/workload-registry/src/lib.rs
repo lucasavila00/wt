@@ -1,6 +1,5 @@
 mod activity;
 mod capacity;
-mod pane_observations;
 mod reports;
 pub mod schema;
 mod store;
@@ -12,7 +11,6 @@ pub use activity::{
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
-pub use pane_observations::{PaneObservation, PaneObservationInput};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{Store, StoreError, StoredWorld};
 
@@ -260,58 +258,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(registry.read(reserved_resources).unwrap(), resources);
-    }
-
-    #[test]
-    fn pane_observations_replace_closed_panes_and_preserve_unchanged_age() {
-        let temp = tempfile::tempdir().unwrap();
-        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
-        let resources = Resources {
-            vcpus: 1,
-            memory_mib: 512,
-            disk_gib: 1,
-        };
-        let world_id = insert_world(&registry, resources, resources);
-        let fingerprint = "a".repeat(64);
-        let cwd = "/home/wt/wt";
-        let git_branch = Some("wt/live-pane-cwd");
-        registry
-            .replace_pane_observations(
-                world_id,
-                &[PaneObservationInput {
-                    tmux_session: "wt-host",
-                    pane_id: "%1",
-                    screen_fingerprint: &fingerprint,
-                    cwd,
-                    git_branch,
-                }],
-            )
-            .unwrap();
-        let first = registry.list_pane_observations("owner").unwrap();
-        assert_eq!(first.len(), 1);
-        assert_eq!(first[0].cwd, cwd);
-        assert_eq!(first[0].git_branch.as_deref(), git_branch);
-
-        registry
-            .replace_pane_observations(
-                world_id,
-                &[PaneObservationInput {
-                    tmux_session: "wt-host",
-                    pane_id: "%1",
-                    screen_fingerprint: &fingerprint,
-                    cwd: "/home/wt/wt/crates",
-                    git_branch: None,
-                }],
-            )
-            .unwrap();
-        let unchanged = registry.list_pane_observations("owner").unwrap();
-        assert_eq!(unchanged[0].changed_at_unix_ms, first[0].changed_at_unix_ms);
-        assert!(unchanged[0].observed_at_unix_ms >= first[0].observed_at_unix_ms);
-        assert_eq!(unchanged[0].cwd, "/home/wt/wt/crates");
-        assert_eq!(unchanged[0].git_branch, None);
-
-        registry.replace_pane_observations(world_id, &[]).unwrap();
-        assert!(registry.list_pane_observations("owner").unwrap().is_empty());
     }
 
     #[test]

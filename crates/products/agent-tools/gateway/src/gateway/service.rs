@@ -28,7 +28,7 @@ impl Gateway {
         Ok(Self {
             config,
             state: Arc::new(Mutex::new(state)),
-            pane_frames: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
+            pane_observations: Arc::new(Mutex::new(PaneObservations::default())),
         })
     }
 
@@ -45,6 +45,14 @@ impl Gateway {
         match request {
             ControlRequest::Reserve { world_id } => self.reserve(&world_id),
             ControlRequest::Revoke { grant_id } => self.revoke(&grant_id),
+            ControlRequest::ActivatePaneObservations { world_id } => {
+                self.activate_pane_observations(parse_world_id(&world_id)?)?;
+                Ok(ControlResponse::ok(None))
+            }
+            ControlRequest::DeactivatePaneObservations { world_id } => {
+                self.deactivate_pane_observations(parse_world_id(&world_id)?)?;
+                Ok(ControlResponse::ok(None))
+            }
         }
     }
 
@@ -77,11 +85,11 @@ impl Gateway {
                     &mut stream,
                     &TransportResponse::with_message(git_context_header(&source)),
                 )?;
-                self.serve_git(&mut stream, service, &source, &grant)
+                self.serve_git(&mut stream, service, &source, &grant.record)
                     .context("serve Git request")
             }
             ClientOperation::Cli { args } => {
-                let response = match self.serve_cli(&args, &grant) {
+                let response = match self.serve_cli(&args, &grant.record) {
                     Ok(output) => TransportResponse::with_message(output),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
@@ -100,47 +108,83 @@ impl Gateway {
     pub(super) fn store_pane_observations(
         &self,
         panes: &[crate::PaneObservation],
-        grant: &GrantRecord,
+        grant: &AuthorizedGrant,
     ) -> Result<()> {
         crate::protocol::validate_pane_observations(panes).map_err(anyhow::Error::msg)?;
-        let world_id = Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?;
-        let inputs = panes
-            .iter()
-            .map(|pane| wt_workload_registry::PaneObservationInput {
-                tmux_session: &pane.tmux_session,
-                pane_id: &pane.pane_id,
-                screen_fingerprint: &pane.screen_fingerprint,
-                cwd: &pane.cwd,
-                git_branch: pane.git_branch.as_deref(),
-            })
-            .collect::<Vec<_>>();
-        let mut frames = self
-            .pane_frames
+        let world_id = Uuid::parse_str(&grant.record.world_id).context("invalid grant world ID")?;
+        let observed_at_unix_ms = now_unix_ms()?;
+        let state = self
+            .state
             .lock()
-            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?;
-        let observed_at_unix_ms = wt_workload_registry::Registry::open(&self.config.database_path)
-            .context("open WT registry")?
-            .replace_pane_observations(world_id.into(), &inputs)
-            .context("store pane observations")?;
-        replace_pane_frames(&mut frames, world_id.into(), panes, observed_at_unix_ms);
+            .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
+        if !state.grants.iter().any(|active| {
+            active.id == grant.record.id
+                && active.token == grant.record.token
+                && active.world_id == grant.record.world_id
+                && !active.revoked
+        }) {
+            bail!("gateway grant is invalid or revoked");
+        }
+        let mut observations = self
+            .pane_observations
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
+        let world_id = world_id.into();
+        if observations
+            .generations
+            .get(&world_id)
+            .copied()
+            .unwrap_or_default()
+            != grant.pane_generation
+        {
+            bail!("pane observation belongs to an expired world run");
+        }
+        if observations.inactive_worlds.contains(&world_id) {
+            bail!("pane observations are inactive for this world");
+        }
+        replace_pane_observations(
+            &mut observations.snapshots,
+            world_id,
+            panes,
+            observed_at_unix_ms,
+        );
         Ok(())
     }
 
-    pub fn pane_frames(&self, world_id: WorldId) -> Result<Vec<crate::PaneFrameSnapshot>> {
+    pub fn pane_observations(
+        &self,
+        world_id: WorldId,
+    ) -> Result<Vec<crate::PaneObservationSnapshot>> {
         Ok(self
-            .pane_frames
+            .pane_observations
             .lock()
-            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?
+            .snapshots
             .get(&world_id)
             .cloned()
             .unwrap_or_default())
     }
 
-    pub fn clear_pane_frames(&self, world_id: WorldId) -> Result<()> {
-        self.pane_frames
+    pub fn activate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+        let mut observations = self
+            .pane_observations
             .lock()
-            .map_err(|_| anyhow::anyhow!("pane frame lock poisoned"))?
-            .remove(&world_id);
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
+        if observations.inactive_worlds.remove(&world_id) {
+            advance_pane_generation(&mut observations, world_id);
+        }
+        Ok(())
+    }
+
+    pub fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<()> {
+        let mut observations = self
+            .pane_observations
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
+        if observations.inactive_worlds.insert(world_id) {
+            advance_pane_generation(&mut observations, world_id);
+        }
+        observations.snapshots.remove(&world_id);
         Ok(())
     }
 
@@ -198,20 +242,31 @@ impl Gateway {
             .state
             .lock()
             .map_err(|_| anyhow::anyhow!("gateway state lock poisoned"))?;
-        let grant = state
-            .grants
-            .iter_mut()
-            .find(|grant| grant.id == id)
-            .ok_or_else(|| anyhow::anyhow!("gateway grant not found"))?;
-        if grant.revoked {
-            return Ok(ControlResponse::ok(None));
-        }
-        grant.revoked = true;
+        let world_id = {
+            let grant = state
+                .grants
+                .iter_mut()
+                .find(|grant| grant.id == id)
+                .ok_or_else(|| anyhow::anyhow!("gateway grant not found"))?;
+            if grant.revoked {
+                return Ok(ControlResponse::ok(None));
+            }
+            grant.revoked = true;
+            Uuid::parse_str(&grant.world_id).context("invalid grant world ID")?
+        };
         self.save(&state)?;
+        let world_id = world_id.into();
+        let mut observations = self
+            .pane_observations
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
+        observations.snapshots.remove(&world_id);
+        observations.inactive_worlds.remove(&world_id);
+        observations.generations.remove(&world_id);
         Ok(ControlResponse::ok(None))
     }
 
-    fn authorize(&self, request: &TransportRequest) -> Result<GrantRecord> {
+    fn authorize(&self, request: &TransportRequest) -> Result<AuthorizedGrant> {
         if request.protocol_version != PROTOCOL_VERSION {
             bail!(
                 "unsupported gateway protocol version {}; expected {PROTOCOL_VERSION}",
@@ -228,7 +283,23 @@ impl Gateway {
             .find(|grant| grant.token == request.token && !grant.revoked)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("gateway grant is invalid or revoked"))?;
-        Ok(grant)
+        let pane_generation =
+            if matches!(&request.operation, ClientOperation::PaneObservations { .. }) {
+                let world_id = parse_world_id(&grant.world_id)?;
+                self.pane_observations
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?
+                    .generations
+                    .get(&world_id)
+                    .copied()
+                    .unwrap_or_default()
+            } else {
+                0
+            };
+        Ok(AuthorizedGrant {
+            record: grant,
+            pane_generation,
+        })
     }
 
     fn save(&self, state: &State) -> Result<()> {
@@ -435,28 +506,70 @@ impl Gateway {
     }
 }
 
-fn replace_pane_frames(
-    frames: &mut std::collections::BTreeMap<wt_world::WorldId, Vec<crate::PaneFrameSnapshot>>,
+fn replace_pane_observations(
+    observations: &mut std::collections::BTreeMap<
+        wt_world::WorldId,
+        Vec<crate::PaneObservationSnapshot>,
+    >,
     world_id: wt_world::WorldId,
     panes: &[crate::PaneObservation],
     observed_at_unix_ms: i64,
 ) {
     if panes.is_empty() {
-        frames.remove(&world_id);
+        observations.remove(&world_id);
         return;
     }
-    frames.insert(
-        world_id,
-        panes
-            .iter()
-            .map(|pane| crate::PaneFrameSnapshot {
+    let existing = observations.get(&world_id);
+    let replacements = panes
+        .iter()
+        .map(|pane| {
+            let changed_at_unix_ms = existing
+                .and_then(|existing| {
+                    existing.iter().find(|snapshot| {
+                        snapshot.tmux_session == pane.tmux_session
+                            && snapshot.pane_id == pane.pane_id
+                            && snapshot.screen_fingerprint == pane.screen_fingerprint
+                    })
+                })
+                .map_or(observed_at_unix_ms, |snapshot| snapshot.changed_at_unix_ms);
+            crate::PaneObservationSnapshot {
                 tmux_session: pane.tmux_session.clone(),
                 pane_id: pane.pane_id.clone(),
+                screen_fingerprint: pane.screen_fingerprint.clone(),
+                cwd: pane.cwd.clone(),
+                git_branch: pane.git_branch.clone(),
+                changed_at_unix_ms,
                 observed_at_unix_ms,
-                frame: pane.frame.clone(),
-            })
-            .collect(),
-    );
+                render: wt_control_protocol::PaneRender {
+                    window_index: pane.window_index,
+                    window_name: pane.window_name.clone(),
+                    frame: pane.frame.clone(),
+                },
+            }
+        })
+        .collect();
+    observations.insert(world_id, replacements);
+}
+
+fn advance_pane_generation(observations: &mut PaneObservations, world_id: WorldId) {
+    let generation = observations.generations.entry(world_id).or_default();
+    *generation = generation.wrapping_add(1);
+}
+
+fn now_unix_ms() -> Result<i64> {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .context("system time is before Unix epoch")?
+            .as_millis(),
+    )
+    .context("system time is too large")
+}
+
+fn parse_world_id(world_id: &str) -> Result<WorldId> {
+    Ok(Uuid::parse_str(world_id)
+        .context("invalid world ID")?
+        .into())
 }
 
 pub(super) fn push_rejection_message(violation: &PushViolation) -> String {
@@ -561,67 +674,4 @@ pub(super) fn wt_tools_activity_metadata(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use wt_control_protocol::{PaneCell, PaneColor, PaneFrame};
-
-    #[test]
-    fn world_prompt_does_not_require_a_provider_api() {
-        let temp = tempfile::tempdir().unwrap();
-        let gateway = Gateway::open(GatewayConfig {
-            state_file: temp.path().join("gateway.json"),
-            database_path: temp.path().join("instances.db"),
-            providers: vec![Provider::Local {
-                host: "github.com".into(),
-                repositories: temp.path().to_owned(),
-                api: None,
-            }],
-        })
-        .unwrap();
-        let grant = GrantRecord {
-            id: "id".into(),
-            token: "token".into(),
-            world_id: "world".into(),
-            revoked: false,
-        };
-
-        assert_eq!(
-            gateway.serve_cli(&["world-prompt".into()], &grant).unwrap(),
-            world_prompt()
-        );
-    }
-
-    #[test]
-    fn pane_frames_replace_a_world_snapshot_and_drop_closed_panes() {
-        let frame = PaneFrame {
-            rows: 1,
-            columns: 1,
-            cells: vec![PaneCell {
-                text: "C".into(),
-                foreground: PaneColor::Default,
-                background: PaneColor::Default,
-                bold: false,
-                italic: false,
-                underlined: false,
-                inverse: false,
-            }],
-        };
-        let panes = [crate::PaneObservation {
-            tmux_session: "wt-host".into(),
-            pane_id: "%1".into(),
-            screen_fingerprint: "a".repeat(64),
-            cwd: "/home/wt".into(),
-            git_branch: None,
-            frame: frame.clone(),
-        }];
-        let world_id = Uuid::nil().into();
-        let mut frames = std::collections::BTreeMap::new();
-
-        replace_pane_frames(&mut frames, world_id, &panes, 10);
-        assert_eq!(frames[&world_id][0].frame, frame);
-        assert_eq!(frames[&world_id][0].observed_at_unix_ms, 10);
-
-        replace_pane_frames(&mut frames, world_id, &[], 20);
-        assert!(!frames.contains_key(&world_id));
-    }
-}
+mod tests;

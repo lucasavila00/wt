@@ -12,7 +12,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile(&stored)?;
+        self.reconcile_locked(&stored)?;
         let stored = self
             .store
             .get_owned_by_id(owner, world_id)
@@ -35,6 +35,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         self.store
             .mark_stopped(world_id, "guest stopped (requested)", disk_usage_bytes)
             .map_err(map_store_error)?;
+        if let Err(error) = self.gateway.deactivate_pane_observations(world_id) {
+            eprintln!("wt-server: deactivate stopped world pane observations: {error}");
+        }
         let world = self
             .store
             .get_owned_by_id(owner, world_id)

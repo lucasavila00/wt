@@ -163,7 +163,7 @@ fn worlds_share_capacity() {
     let service = Service::with_capacity_limit(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         Worker::default(),
-        Gateway,
+        Gateway::default(),
         Operations::default(),
         wt_workload_registry::Resources {
             vcpus: 2,
@@ -234,7 +234,7 @@ fn delete_keeps_registry_until_gateway_revocation_succeeds() {
     let Response::World { world } = Service::new(
         store,
         worker.clone(),
-        Gateway,
+        Gateway::default(),
         Operations::default(),
         u64::MAX,
     )

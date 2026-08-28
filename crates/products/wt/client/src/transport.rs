@@ -574,20 +574,33 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":15,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2}]}}"#;
+        let valid = br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
         assert_eq!(decode_pane_observations(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":15,"outcome":"ok","response":{"response":"pane_observations","panes":[]},"extra":true}"#.as_slice(),
-            br#"{"protocol_version":15,"outcome":"ok","response":{"response":"pane_observations","panes":[],"extra":true}}"#.as_slice(),
-            br#"{"protocol_version":15,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"extra":true}]}}"#.as_slice(),
-            br#"{"protocol_version":15,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
-            br#"{"protocol_version":15,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}},"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]},"extra":true}}]}}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":16,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
             let error = decode_pane_observations(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));
             assert!(error.to_string().contains("unknown field `extra`"));
         }
+    }
+
+    #[test]
+    fn pane_render_requires_window_metadata() {
+        let context = Context {
+            name: "local".into(),
+            kind: ContextKind::BareMetalLocal,
+        };
+        let missing = br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
+
+        let error = decode_pane_observations(&context, missing).unwrap_err();
+        assert!(error.to_string().contains("missing field `window_index`"));
     }
 
     #[test]

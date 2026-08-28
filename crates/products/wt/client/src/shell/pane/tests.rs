@@ -11,7 +11,27 @@ fn observation(world: &ShellWorld, created_at_unix_ms: i64) -> PaneObservation {
         git_branch: None,
         changed_at_unix_ms: now_unix_ms(),
         observed_at_unix_ms: now_unix_ms(),
-        frame: None,
+        render: render(0, "codex"),
+    }
+}
+
+fn render(window_index: i64, window_name: &str) -> wt_control_protocol::PaneRender {
+    wt_control_protocol::PaneRender {
+        window_index,
+        window_name: window_name.into(),
+        frame: wt_control_protocol::PaneFrame {
+            rows: 1,
+            columns: 1,
+            cells: vec![wt_control_protocol::PaneCell {
+                text: "C".into(),
+                foreground: wt_control_protocol::PaneColor::Default,
+                background: wt_control_protocol::PaneColor::Default,
+                bold: false,
+                italic: false,
+                underlined: false,
+                inverse: false,
+            }],
+        },
     }
 }
 
@@ -56,7 +76,11 @@ fn attaches_each_card_to_its_observed_frame() {
         }],
     };
     let mut pane = observation(&world, 1);
-    pane.frame = Some(frame.clone());
+    pane.render = wt_control_protocol::PaneRender {
+        window_index: 0,
+        window_name: "codex".into(),
+        frame: frame.clone(),
+    };
 
     let cards = validate_context("ars", vec![pane], &[world], now_unix_ms()).unwrap();
 
@@ -71,6 +95,17 @@ fn rejects_invalid_pane_observations() {
     insta::assert_snapshot!(
         validate_context("ars", vec![invalid_pane], &[world], now_unix_ms()).unwrap_err(),
         @"context ars: failed invariant pane_id is % plus 1-16 ASCII digits; value \"%not-a-number\""
+    );
+}
+
+#[test]
+fn rejects_invalid_window_metadata() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut invalid_pane = observation(&world, 1);
+    invalid_pane.render.window_index = -1;
+    insta::assert_snapshot!(
+        validate_context("ars", vec![invalid_pane], &[world], now_unix_ms()).unwrap_err(),
+        @"context ars: failed invariant window index is negative; value \"%1\""
     );
 }
 
@@ -177,5 +212,32 @@ fn retains_the_observed_cwd_and_git_branch() {
     assert_eq!(
         cards[0].location().as_deref(),
         Some("/home/wt/wt · wt/live-pane-cwd")
+    );
+}
+
+#[test]
+fn orders_panes_in_a_world_by_window_index() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut later = observation(&world, 1);
+    later.pane_id = "%2".into();
+    later.render = render(2, "later");
+    let mut earlier = observation(&world, 1);
+    earlier.render = render(1, "earlier");
+
+    let result = cards(
+        vec![PaneContextSnapshot::Panes {
+            context: "ars".into(),
+            panes: vec![later, earlier],
+        }],
+        &[world],
+    );
+
+    assert_eq!(
+        result
+            .cards
+            .iter()
+            .map(PaneCard::window_index)
+            .collect::<Vec<_>>(),
+        [1, 2]
     );
 }

@@ -31,7 +31,9 @@ pub(crate) struct Worker {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct Gateway;
+pub(crate) struct Gateway {
+    pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct UnavailableGateway {
@@ -50,14 +52,22 @@ impl AgentToolGateway for Gateway {
         Ok(())
     }
 
-    fn pane_frames(
+    fn pane_observations(
         &self,
         _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
         Ok(Vec::new())
     }
 
-    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        self.deactivated_pane_observations
+            .lock()
+            .unwrap()
+            .push(world_id);
         Ok(())
     }
 }
@@ -75,14 +85,18 @@ impl AgentToolGateway for UnavailableGateway {
         Err("gateway unavailable".to_owned())
     }
 
-    fn pane_frames(
+    fn pane_observations(
         &self,
         _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
         Ok(Vec::new())
     }
 
-    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn deactivate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 }
@@ -178,7 +192,7 @@ pub(crate) fn service(temp: &TempDir, worker: Worker) -> Service<Worker, Gateway
     Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker,
-        Gateway,
+        Gateway::default(),
         Operations::default(),
         64 * 1024,
     )

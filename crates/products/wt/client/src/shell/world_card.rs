@@ -68,18 +68,16 @@ pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'st
     let lines = cards
         .iter()
         .filter_map(|card| {
-            let PaneCardIdentity::Observation {
-                tmux_session,
-                pane_id,
-                ..
-            } = &card.identity
-            else {
+            let PaneCardIdentity::Observation { .. } = &card.identity else {
+                return None;
+            };
+            let PaneCardKind::Observation { render, .. } = &card.kind else {
                 return None;
             };
             belongs_to_world(card, world).then(|| {
                 Line::from(vec![
-                    Span::styled("Codex ", super::render::muted_style()),
-                    Span::raw(format!("{tmux_session}:{pane_id} · {}", pane_status(card))),
+                    Span::styled("Codex · window ", super::render::muted_style()),
+                    Span::raw(format!("“{}” · {}", render.window_name, pane_status(card))),
                 ])
             })
         })
@@ -221,6 +219,12 @@ mod tests {
 
     fn observation(world: &ShellWorld, pane_id: &str, changed_at_unix_ms: i64) -> PaneCard {
         let now = now_unix_ms();
+        let window_index = pane_id.trim_start_matches('%').parse().unwrap();
+        let window_name = match window_index {
+            1 => "codex".to_owned(),
+            2 => "make".to_owned(),
+            _ => format!("window-{window_index}"),
+        };
         PaneCard {
             identity: PaneCardIdentity::Observation {
                 context: world.identity.context.clone(),
@@ -237,7 +241,23 @@ mod tests {
                 changed_at_unix_ms,
                 cwd: "/home/wt".into(),
                 git_branch: None,
-                frame: None,
+                render: wt_control_protocol::PaneRender {
+                    window_index,
+                    window_name,
+                    frame: wt_control_protocol::PaneFrame {
+                        rows: 1,
+                        columns: 1,
+                        cells: vec![wt_control_protocol::PaneCell {
+                            text: "C".into(),
+                            foreground: wt_control_protocol::PaneColor::Default,
+                            background: wt_control_protocol::PaneColor::Default,
+                            bold: false,
+                            italic: false,
+                            underlined: false,
+                            inverse: false,
+                        }],
+                    },
+                },
             },
         }
     }
@@ -261,8 +281,8 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n"),
             @r###"
-        Codex wt-host:%1 · CHANGING
-        Codex wt-host:%2 · STATIC
+        Codex · window “codex” · CHANGING
+        Codex · window “make” · STATIC
         "###
         );
     }
@@ -340,11 +360,11 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n"),
             @r###"
-        Codex wt-host:%1 · CHANGING
-        Codex wt-host:%2 · CHANGING
-        Codex wt-host:%3 · CHANGING
-        Codex wt-host:%4 · CHANGING
-        Codex wt-host:%5 · CHANGING
+        Codex · window “codex” · CHANGING
+        Codex · window “make” · CHANGING
+        Codex · window “window-3” · CHANGING
+        Codex · window “window-4” · CHANGING
+        Codex · window “window-5” · CHANGING
         Codex +3 more panes
         "###
         );

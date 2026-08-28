@@ -116,7 +116,13 @@ pub(super) fn cards(snapshots: Vec<PaneContextSnapshot>, worlds: &[ShellWorld]) 
             PaneContextSnapshot::Failure { message } => failures.push(message),
         }
     }
-    cards.sort_by_key(|card| (card.sort_rank(), card.created_at_unix_ms()));
+    cards.sort_by_key(|card| {
+        (
+            card.sort_rank(),
+            card.created_at_unix_ms(),
+            card.window_index(),
+        )
+    });
     PaneCards { cards, failures }
 }
 
@@ -140,11 +146,9 @@ fn validate_context(
                 &pane.pane_id,
             ));
         }
-        if let Some(frame) = &pane.frame {
-            frame
-                .validate()
-                .map_err(|error| invalid(context, error, &pane.pane_id))?;
-        }
+        pane.render
+            .validate()
+            .map_err(|error| invalid(context, error, &pane.pane_id))?;
         if !valid_display_text(&pane.cwd, 4096)
             || pane
                 .git_branch
@@ -211,7 +215,7 @@ fn validate_context(
                 changed_at_unix_ms: pane.changed_at_unix_ms,
                 cwd: pane.cwd,
                 git_branch: pane.git_branch,
-                frame: pane.frame,
+                render: pane.render,
             },
         });
     }

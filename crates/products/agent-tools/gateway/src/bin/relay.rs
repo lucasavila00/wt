@@ -26,6 +26,8 @@ const CAPTURE_PANE_OPTIONS: &[&str] = &["capture-pane", "-p", "-e"];
 struct PaneTarget {
     tmux_session: String,
     pane_id: String,
+    window_index: i64,
+    window_name: String,
     rows: u16,
     columns: u16,
     cwd: String,
@@ -149,6 +151,8 @@ fn observe_panes(token: String, gateway_unix: Option<PathBuf>, vsock_port: u32) 
                             (pane.tmux_session.clone(), pane.pane_id.clone()),
                             (
                                 pane.screen_fingerprint.clone(),
+                                pane.window_index,
+                                pane.window_name.clone(),
                                 pane.cwd.clone(),
                                 pane.git_branch.clone(),
                             ),
@@ -203,7 +207,7 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_height}\t#{pane_width}\t#{pane_current_path}",
+            "#{session_name}\t#{pane_id}\t#{window_index}\t#{window_name}\t#{pane_current_command}\t#{pane_height}\t#{pane_width}\t#{pane_current_path}",
         ])
         .output()
         .context("list Byobu panes")?;
@@ -225,14 +229,19 @@ fn read_panes() -> Result<Vec<PaneObservation>> {
 
 fn parse_codex_target(line: &[u8]) -> Option<PaneTarget> {
     let (tmux_session, rest) = std::str::from_utf8(line).ok()?.split_once('\t')?;
-    let (pane_id, command) = rest.split_once('\t')?;
+    let (pane_id, rest) = rest.split_once('\t')?;
+    let (window_index, rest) = rest.split_once('\t')?;
+    let (window_name, command) = rest.split_once('\t')?;
     let (command, rows) = command.split_once('\t')?;
     let (rows, columns) = rows.split_once('\t')?;
     let (columns, cwd) = columns.split_once('\t')?;
     let rows = rows.parse().ok()?;
     let columns = columns.parse().ok()?;
+    let window_index = window_index.parse().ok()?;
     (valid_byobu_tmux_session(tmux_session)
         && valid_byobu_pane_id(pane_id)
+        && window_index >= 0
+        && valid_display_text(window_name, 255)
         && command == "codex"
         && (1..=MAX_PANE_FRAME_ROWS).contains(&rows)
         && (1..=MAX_PANE_FRAME_COLUMNS).contains(&columns)
@@ -240,6 +249,8 @@ fn parse_codex_target(line: &[u8]) -> Option<PaneTarget> {
     .then(|| PaneTarget {
         tmux_session: tmux_session.to_owned(),
         pane_id: pane_id.to_owned(),
+        window_index,
+        window_name: window_name.to_owned(),
         rows,
         columns,
         cwd: cwd.to_owned(),
@@ -262,6 +273,8 @@ fn capture_pane(target: &PaneTarget) -> Result<PaneObservation> {
     Ok(PaneObservation {
         tmux_session: target.tmux_session.clone(),
         pane_id: target.pane_id.clone(),
+        window_index: target.window_index,
+        window_name: target.window_name.clone(),
         screen_fingerprint: screen_fingerprint(&output.stdout),
         cwd: target.cwd.clone(),
         git_branch: git_branch(&target.cwd),
@@ -365,19 +378,39 @@ mod tests {
     #[test]
     fn accepts_only_codex_panes_in_wt_byobu() {
         assert_eq!(
-            parse_codex_target(b"wt-host\t%1\tcodex\t24\t80\t/home/wt/wt").map(|target| (
-                target.tmux_session,
-                target.pane_id,
-                target.rows,
-                target.columns,
-                target.cwd,
-            )),
-            Some(("wt-host".into(), "%1".into(), 24, 80, "/home/wt/wt".into()))
+            parse_codex_target(b"wt-host\t%1\t0\tcodex\tcodex\t24\t80\t/home/wt/wt").map(
+                |target| (
+                    target.tmux_session,
+                    target.pane_id,
+                    target.window_index,
+                    target.window_name,
+                    target.rows,
+                    target.columns,
+                    target.cwd,
+                )
+            ),
+            Some((
+                "wt-host".into(),
+                "%1".into(),
+                0,
+                "codex".into(),
+                24,
+                80,
+                "/home/wt/wt".into()
+            ))
         );
-        assert!(parse_codex_target(b"wt-host\t%1\tbash\t24\t80\t/home/wt/wt").is_none());
-        assert!(parse_codex_target(b"other\t%1\tcodex\t24\t80\t/home/wt/wt").is_none());
-        assert!(parse_codex_target(b"wt-host\t%bad\tcodex\t24\t80\t/home/wt/wt").is_none());
-        assert!(parse_codex_target(b"wt-host\t%1\tcodex\t101\t80\t/home/wt/wt").is_none());
+        assert!(parse_codex_target(b"wt-host\t%1\t0\tcodex\tbash\t24\t80\t/home/wt/wt").is_none());
+        assert!(parse_codex_target(b"other\t%1\t0\tcodex\tcodex\t24\t80\t/home/wt/wt").is_none());
+        assert!(
+            parse_codex_target(b"wt-host\t%bad\t0\tcodex\tcodex\t24\t80\t/home/wt/wt").is_none()
+        );
+        assert!(
+            parse_codex_target(b"wt-host\t%1\t-1\tcodex\tcodex\t24\t80\t/home/wt/wt").is_none()
+        );
+        assert!(parse_codex_target(b"wt-host\t%1\t0\t\tcodex\t24\t80\t/home/wt/wt").is_none());
+        assert!(
+            parse_codex_target(b"wt-host\t%1\t0\tcodex\tcodex\t101\t80\t/home/wt/wt").is_none()
+        );
     }
 
     #[test]
