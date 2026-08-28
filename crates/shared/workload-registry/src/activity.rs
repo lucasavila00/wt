@@ -524,3 +524,109 @@ fn now_unix_ms() -> Result<i64, RegistryError> {
 fn to_i32(value: u64, field: &'static str) -> Result<i32, RegistryError> {
     i32::try_from(value).map_err(|_| RegistryError::InvalidData(format!("invalid {field}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn insert_world(registry: &Registry) -> WorldId {
+        let world_id = WorldId::new();
+        registry
+            .transaction::<_, RegistryError>(|connection| {
+                diesel::insert_into(worlds::table)
+                    .values((
+                        worlds::world_id.eq(world_id.to_string()),
+                        worlds::vcpus.eq(1_i64),
+                        worlds::memory_mib.eq(1024_i64),
+                        worlds::disk_gib.eq(10_i64),
+                        worlds::compute_reserved.eq(true),
+                        worlds::disk_reserved_gib.eq(10_i64),
+                        worlds::owner.eq("owner"),
+                        worlds::name.eq(format!("world-{world_id}")),
+                        worlds::status.eq("running"),
+                        worlds::setup_fingerprint.eq("fingerprint"),
+                        worlds::ssh_host_keys.eq("[]"),
+                    ))
+                    .execute(connection)?;
+                Ok(())
+            })
+            .unwrap();
+        world_id
+    }
+
+    fn repository_count(registry: &Registry) -> i64 {
+        registry.read(|connection| repositories::table.count().get_result(connection).unwrap())
+    }
+
+    fn delete_world(registry: &Registry, world_id: WorldId) {
+        registry
+            .transaction::<_, RegistryError>(|connection| {
+                diesel::delete(worlds::table.find(world_id.to_string())).execute(connection)?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn prunes_repository_after_its_last_git_activity_is_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
+        let world_id = insert_world(&registry);
+        registry
+            .insert_git_activity(GitActivityInput {
+                world_id,
+                kind: GitActivityKind::Service,
+                provider_host: "github.test",
+                repository: "owner/repository",
+                git_service: Some("git-upload-pack"),
+                branch: None,
+                previous_oid: None,
+                new_oid: None,
+            })
+            .unwrap();
+        assert_eq!(repository_count(&registry), 1);
+
+        delete_world(&registry, world_id);
+
+        assert_eq!(repository_count(&registry), 0);
+    }
+
+    #[test]
+    fn retains_repository_until_all_activity_kinds_are_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
+        let git_world_id = insert_world(&registry);
+        let tools_world_id = insert_world(&registry);
+        registry
+            .insert_git_activity(GitActivityInput {
+                world_id: git_world_id,
+                kind: GitActivityKind::BranchUpdate,
+                provider_host: "github.test",
+                repository: "owner/repository",
+                git_service: None,
+                branch: Some("main"),
+                previous_oid: Some("old"),
+                new_oid: Some("new"),
+            })
+            .unwrap();
+        registry
+            .insert_wt_tools_activity(WtToolsActivityInput {
+                world_id: tools_world_id,
+                provider_host: "github.test",
+                repository: "owner/repository",
+                action: "show_mr",
+                branch: Some("main"),
+                change_request: Some("1"),
+                request_json: "{}",
+                response_json: "{}",
+            })
+            .unwrap();
+        assert_eq!(repository_count(&registry), 1);
+
+        delete_world(&registry, git_world_id);
+        assert_eq!(repository_count(&registry), 1);
+
+        delete_world(&registry, tools_world_id);
+        assert_eq!(repository_count(&registry), 0);
+    }
+}

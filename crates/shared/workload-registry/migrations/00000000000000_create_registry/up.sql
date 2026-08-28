@@ -70,3 +70,33 @@ CREATE INDEX world_wt_tools_activity_target_branch_id
     ON world_wt_tools_activity (repository_id, branch, id DESC);
 CREATE INDEX world_wt_tools_activity_target_change_request_id
     ON world_wt_tools_activity (repository_id, change_request, id DESC);
+
+CREATE TRIGGER prune_repository_after_git_activity_delete
+AFTER DELETE ON world_git_activity
+BEGIN
+    DELETE FROM repositories
+    WHERE id = OLD.repository_id
+      AND NOT EXISTS (
+          SELECT 1 FROM world_git_activity
+          WHERE repository_id = OLD.repository_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM world_wt_tools_activity
+          WHERE repository_id = OLD.repository_id
+      );
+END;
+
+CREATE TRIGGER prune_repository_after_wt_tools_activity_delete
+AFTER DELETE ON world_wt_tools_activity
+BEGIN
+    DELETE FROM repositories
+    WHERE id = OLD.repository_id
+      AND NOT EXISTS (
+          SELECT 1 FROM world_git_activity
+          WHERE repository_id = OLD.repository_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM world_wt_tools_activity
+          WHERE repository_id = OLD.repository_id
+      );
+END;
