@@ -11,9 +11,21 @@ use ratatui::Frame;
 
 pub(super) const CARD_HEIGHT: u16 = 18;
 pub(super) const CARD_GAP: u16 = 0;
+const BYOBU_STATUS_ROWS: u16 = 1;
 
 pub(super) fn columns(_area: Rect) -> usize {
     CARD_COLUMNS
+}
+
+pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
+    let (height, width) = card_grid_with_gap(area, 0, count, CARD_HEIGHT, CARD_GAP).card_size();
+    (
+        height
+            .saturating_sub(2)
+            .saturating_add(BYOBU_STATUS_ROWS)
+            .max(1),
+        width.saturating_sub(2).max(1),
+    )
 }
 
 pub(super) fn draw(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
@@ -84,6 +96,11 @@ mod tests {
     #[test]
     fn live_uses_two_equal_columns() {
         assert_eq!(columns(Rect::new(0, 0, 100, 30)), 2);
+    }
+
+    #[test]
+    fn preview_size_matches_the_live_card_viewport() {
+        assert_eq!(preview_size(Rect::new(0, 0, 100, 30), 1), (17, 45));
     }
 
     #[test]

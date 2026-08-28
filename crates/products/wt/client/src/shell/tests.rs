@@ -11,17 +11,17 @@ fn world_view_reserves_the_top_row() {
 }
 
 #[test]
-fn control_views_keep_the_world_playback_viewport() {
+fn control_views_use_the_live_preview_viewport() {
     let area = Rect::new(0, 0, 100, 30);
     let mut model = ShellModel::new(vec!["local.one".into()]);
 
-    assert_eq!(session_viewport(&model, area), (29, 100));
+    assert_eq!(session_viewport(&model, area), (17, 45));
     assert_eq!(
         session_viewport(&model, Rect::new(0, 0, 400, 40)),
-        (39, 400)
+        (17, 195)
     );
     model.show_worlds();
-    assert_eq!(session_viewport(&model, area), (29, 100));
+    assert_eq!(session_viewport(&model, area), (17, 45));
 }
 
 #[test]
