@@ -359,6 +359,8 @@ mod tests {
             observed_at_unix_ms: Some(now),
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
+                window_index: 0,
+                window_name: "codex".into(),
                 changed_at_unix_ms: now,
                 cwd: "/home/wt/wt".into(),
                 git_branch: Some("wt/live-pane-cwd".into()),

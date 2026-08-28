@@ -37,6 +37,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     created_at_unix_ms: pane.created_at_unix_ms,
                     tmux_session: pane.tmux_session,
                     pane_id: pane.pane_id,
+                    window_index: pane.window_index,
+                    window_name: pane.window_name,
                     cwd: pane.cwd,
                     git_branch: pane.git_branch,
                     changed_at_unix_ms: pane.changed_at_unix_ms,

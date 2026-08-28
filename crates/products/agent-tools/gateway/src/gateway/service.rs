@@ -109,6 +109,8 @@ impl Gateway {
             .map(|pane| wt_workload_registry::PaneObservationInput {
                 tmux_session: &pane.tmux_session,
                 pane_id: &pane.pane_id,
+                window_index: pane.window_index,
+                window_name: &pane.window_name,
                 screen_fingerprint: &pane.screen_fingerprint,
                 cwd: &pane.cwd,
                 git_branch: pane.git_branch.as_deref(),
@@ -609,6 +611,8 @@ mod tests {
         let panes = [crate::PaneObservation {
             tmux_session: "wt-host".into(),
             pane_id: "%1".into(),
+            window_index: 0,
+            window_name: "codex".into(),
             screen_fingerprint: "a".repeat(64),
             cwd: "/home/wt".into(),
             git_branch: None,

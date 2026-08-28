@@ -281,6 +281,8 @@ mod tests {
                 &[PaneObservationInput {
                     tmux_session: "wt-host",
                     pane_id: "%1",
+                    window_index: 0,
+                    window_name: "codex",
                     screen_fingerprint: &fingerprint,
                     cwd,
                     git_branch,
@@ -291,6 +293,8 @@ mod tests {
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].cwd, cwd);
         assert_eq!(first[0].git_branch.as_deref(), git_branch);
+        assert_eq!(first[0].window_index, 0);
+        assert_eq!(first[0].window_name, "codex");
 
         registry
             .replace_pane_observations(
@@ -298,6 +302,8 @@ mod tests {
                 &[PaneObservationInput {
                     tmux_session: "wt-host",
                     pane_id: "%1",
+                    window_index: 1,
+                    window_name: "make",
                     screen_fingerprint: &fingerprint,
                     cwd: "/home/wt/wt/crates",
                     git_branch: None,
@@ -309,6 +315,8 @@ mod tests {
         assert!(unchanged[0].observed_at_unix_ms >= first[0].observed_at_unix_ms);
         assert_eq!(unchanged[0].cwd, "/home/wt/wt/crates");
         assert_eq!(unchanged[0].git_branch, None);
+        assert_eq!(unchanged[0].window_index, 1);
+        assert_eq!(unchanged[0].window_name, "make");
 
         registry.replace_pane_observations(world_id, &[]).unwrap();
         assert!(registry.list_pane_observations("owner").unwrap().is_empty());

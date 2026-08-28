@@ -36,6 +36,8 @@ CREATE TABLE pane_observations (
         AND substr(pane_id, 1, 1) = '%'
         AND substr(pane_id, 2) NOT GLOB '*[^0-9]*'
     ),
+    window_index BIGINT NOT NULL CHECK (window_index >= 0),
+    window_name TEXT NOT NULL CHECK (length(window_name) BETWEEN 1 AND 255),
     screen_fingerprint TEXT NOT NULL CHECK (length(screen_fingerprint) = 64),
     cwd TEXT NOT NULL CHECK (length(cwd) BETWEEN 1 AND 4096),
     git_branch TEXT CHECK (length(git_branch) BETWEEN 1 AND 255),

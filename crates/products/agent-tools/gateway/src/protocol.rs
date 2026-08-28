@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 pub const MAX_PANE_OBSERVATIONS: usize = 32;
 pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
@@ -76,6 +76,8 @@ pub enum ClientOperation {
 pub struct PaneObservation {
     pub tmux_session: String,
     pub pane_id: String,
+    pub window_index: i64,
+    pub window_name: String,
     pub screen_fingerprint: String,
     pub cwd: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -98,6 +100,8 @@ pub fn validate_pane_observations(panes: &[PaneObservation]) -> Result<(), Strin
     for pane in panes {
         if !valid_byobu_tmux_session(&pane.tmux_session)
             || !valid_byobu_pane_id(&pane.pane_id)
+            || pane.window_index < 0
+            || !valid_display_text(&pane.window_name, 255)
             || pane.screen_fingerprint.len() != 64
             || !pane
                 .screen_fingerprint

@@ -12,6 +12,8 @@ pub struct PaneObservation {
     pub created_at_unix_ms: i64,
     pub tmux_session: String,
     pub pane_id: String,
+    pub window_index: i64,
+    pub window_name: String,
     pub cwd: String,
     pub git_branch: Option<String>,
     pub changed_at_unix_ms: i64,
@@ -22,6 +24,8 @@ pub struct PaneObservation {
 pub struct PaneObservationInput<'a> {
     pub tmux_session: &'a str,
     pub pane_id: &'a str,
+    pub window_index: i64,
+    pub window_name: &'a str,
     pub screen_fingerprint: &'a str,
     pub cwd: &'a str,
     pub git_branch: Option<&'a str>,
@@ -33,6 +37,8 @@ struct NewPaneObservation<'a> {
     world_id: String,
     tmux_session: &'a str,
     pane_id: &'a str,
+    window_index: i64,
+    window_name: &'a str,
     screen_fingerprint: &'a str,
     cwd: &'a str,
     git_branch: Option<&'a str>,
@@ -53,6 +59,8 @@ struct PaneObservationRow {
     created_at_unix_ms: i64,
     tmux_session: String,
     pane_id: String,
+    window_index: i64,
+    window_name: String,
     cwd: String,
     git_branch: Option<String>,
     changed_at_unix_ms: i64,
@@ -96,6 +104,8 @@ impl Registry {
                     world_id: world.clone(),
                     tmux_session: input.tmux_session,
                     pane_id: input.pane_id,
+                    window_index: input.window_index,
+                    window_name: input.window_name,
                     screen_fingerprint: input.screen_fingerprint,
                     cwd: input.cwd,
                     git_branch: input.git_branch,
@@ -112,6 +122,8 @@ impl Registry {
                     .do_update()
                     .set((
                         pane_observations::screen_fingerprint.eq(observation.screen_fingerprint),
+                        pane_observations::window_index.eq(observation.window_index),
+                        pane_observations::window_name.eq(observation.window_name),
                         pane_observations::cwd.eq(observation.cwd),
                         pane_observations::git_branch.eq(observation.git_branch),
                         pane_observations::changed_at_unix_ms.eq(observation.changed_at_unix_ms),
@@ -143,7 +155,7 @@ impl Registry {
                 .filter(worlds::owner.eq(owner))
                 .order((
                     worlds::created_at_unix_ms,
-                    pane_observations::tmux_session,
+                    pane_observations::window_index,
                     pane_observations::pane_id,
                 ))
                 .select((
@@ -152,6 +164,8 @@ impl Registry {
                     worlds::created_at_unix_ms,
                     pane_observations::tmux_session,
                     pane_observations::pane_id,
+                    pane_observations::window_index,
+                    pane_observations::window_name,
                     pane_observations::cwd,
                     pane_observations::git_branch,
                     pane_observations::changed_at_unix_ms,
@@ -168,6 +182,8 @@ impl Registry {
                         created_at_unix_ms: row.created_at_unix_ms,
                         tmux_session: row.tmux_session,
                         pane_id: row.pane_id,
+                        window_index: row.window_index,
+                        window_name: row.window_name,
                         cwd: row.cwd,
                         git_branch: row.git_branch,
                         changed_at_unix_ms: row.changed_at_unix_ms,
@@ -186,6 +202,8 @@ fn validate(input: &PaneObservationInput<'_>) -> Result<(), RegistryError> {
                 && value.len() <= 16
                 && value.bytes().all(|byte| byte.is_ascii_digit())
         })
+        || input.window_index < 0
+        || !valid_display_text(input.window_name, 255)
         || input.screen_fingerprint.len() != 64
         || !input
             .screen_fingerprint

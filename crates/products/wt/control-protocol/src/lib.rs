@@ -26,7 +26,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -479,7 +479,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 15,
+          "protocol_version": 16,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -514,7 +514,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 15,
+          "protocol_version": 16,
           "vcpus": 2
         }
         "###);
@@ -570,7 +570,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 15,
+          "protocol_version": 16,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -590,11 +590,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 15,
+            "protocol_version": 16,
             "operation": "server_info"
           },
           {
-            "protocol_version": 15,
+            "protocol_version": 16,
             "outcome": "ok",
             "response": {
               "response": "server_info",

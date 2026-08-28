@@ -45,8 +45,15 @@ pub(super) fn draw(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
 fn draw_card(buffer: &mut Buffer, rect: Rect, card: &PaneCard, selected: bool) {
     let (status, color) = card_title(card);
     let title = match &card.kind {
-        PaneCardKind::Observation { world_name, .. } => {
-            format!("{status} · {}.{world_name}", card.context)
+        PaneCardKind::Observation {
+            world_name,
+            window_name,
+            ..
+        } => {
+            format!(
+                "{status} · {}.{world_name} · window “{window_name}”",
+                card.context
+            )
         }
         PaneCardKind::ContextError => status,
     };
@@ -106,6 +113,8 @@ mod tests {
             observed_at_unix_ms: Some(now),
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
+                window_index: 0,
+                window_name: "codex".into(),
                 changed_at_unix_ms: now,
                 cwd: "/home/wt/wt".into(),
                 git_branch: Some("wt/live-pane-cwd".into()),
@@ -115,6 +124,15 @@ mod tests {
         let mut buffer = Buffer::empty(Rect::new(0, 0, 52, 4));
 
         draw_card(&mut buffer, Rect::new(0, 0, 52, 4), &card, false);
+        let title = buffer
+            .content()
+            .chunks(52)
+            .next()
+            .unwrap()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>()
+            .join("");
         let footer = buffer
             .content()
             .chunks(52)
@@ -125,6 +143,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
 
+        insta::assert_snapshot!(title, @"┌ 󰔟 CHANGING · ars.dev · window “codex” ───────────┐");
         insta::assert_snapshot!(footer, @"└────────────────── /home/wt/wt · wt/live-pane-cwd ┘");
     }
 }

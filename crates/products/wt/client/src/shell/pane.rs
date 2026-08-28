@@ -115,7 +115,13 @@ pub(super) fn cards(snapshots: Vec<PaneContextSnapshot>, worlds: &[ShellWorld]) 
             PaneContextSnapshot::Failure { message } => failures.push(message),
         }
     }
-    cards.sort_by_key(|card| (card.sort_rank(), card.created_at_unix_ms()));
+    cards.sort_by_key(|card| {
+        (
+            card.sort_rank(),
+            card.created_at_unix_ms(),
+            card.window_index(),
+        )
+    });
     PaneCards { cards, failures }
 }
 
@@ -153,6 +159,13 @@ fn validate_context(
                 context,
                 "safe current working directory and Git branch",
                 &pane.cwd,
+            ));
+        }
+        if pane.window_index < 0 || !valid_display_text(&pane.window_name, 255) {
+            return Err(invalid(
+                context,
+                "nonnegative window_index and safe window_name",
+                &pane.window_name,
             ));
         }
         if !valid_pane_id(&pane.pane_id) {
@@ -205,6 +218,8 @@ fn validate_context(
             observed_at_unix_ms: Some(pane.observed_at_unix_ms),
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
+                window_index: pane.window_index,
+                window_name: pane.window_name,
                 changed_at_unix_ms: pane.changed_at_unix_ms,
                 cwd: pane.cwd,
                 git_branch: pane.git_branch,

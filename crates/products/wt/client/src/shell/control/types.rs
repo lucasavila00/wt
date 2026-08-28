@@ -17,6 +17,8 @@ pub(in crate::shell) enum PaneCardIdentity {
 pub(in crate::shell) enum PaneCardKind {
     Observation {
         world_name: String,
+        window_index: i64,
+        window_name: String,
         changed_at_unix_ms: i64,
         cwd: String,
         git_branch: Option<String>,
@@ -65,6 +67,13 @@ impl PaneCard {
 
     pub(in crate::shell) fn created_at_unix_ms(&self) -> i64 {
         self.created_at_unix_ms.unwrap_or_default()
+    }
+
+    pub(in crate::shell) fn window_index(&self) -> i64 {
+        match self.kind {
+            PaneCardKind::Observation { window_index, .. } => window_index,
+            PaneCardKind::ContextError => i64::MAX,
+        }
     }
 
     pub(in crate::shell) fn timestamp(&self) -> i64 {

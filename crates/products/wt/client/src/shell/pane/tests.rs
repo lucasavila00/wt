@@ -7,6 +7,8 @@ fn observation(world: &ShellWorld, created_at_unix_ms: i64) -> PaneObservation {
         created_at_unix_ms,
         tmux_session: "wt-host".into(),
         pane_id: "%1".into(),
+        window_index: 0,
+        window_name: "codex".into(),
         cwd: "/home/wt".into(),
         git_branch: None,
         changed_at_unix_ms: now_unix_ms(),
@@ -70,6 +72,17 @@ fn rejects_invalid_pane_observations() {
     insta::assert_snapshot!(
         validate_context("ars", vec![invalid_pane], &[world]).unwrap_err(),
         @"context ars: failed invariant pane_id is % plus 1-16 ASCII digits; value \"%not-a-number\""
+    );
+}
+
+#[test]
+fn rejects_invalid_window_metadata() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut invalid_pane = observation(&world, 1);
+    invalid_pane.window_index = -1;
+    insta::assert_snapshot!(
+        validate_context("ars", vec![invalid_pane], &[world]).unwrap_err(),
+        @"context ars: failed invariant nonnegative window_index and safe window_name; value \"codex\""
     );
 }
 
@@ -156,5 +169,34 @@ fn retains_the_observed_cwd_and_git_branch() {
     assert_eq!(
         cards[0].location().as_deref(),
         Some("/home/wt/wt · wt/live-pane-cwd")
+    );
+}
+
+#[test]
+fn orders_panes_in_a_world_by_window_index() {
+    let world = ShellWorld::test("ars.dev", 1);
+    let mut later = observation(&world, 1);
+    later.pane_id = "%2".into();
+    later.window_index = 2;
+    later.window_name = "later".into();
+    let mut earlier = observation(&world, 1);
+    earlier.window_index = 1;
+    earlier.window_name = "earlier".into();
+
+    let result = cards(
+        vec![PaneContextSnapshot::Panes {
+            context: "ars".into(),
+            panes: vec![later, earlier],
+        }],
+        &[world],
+    );
+
+    assert_eq!(
+        result
+            .cards
+            .iter()
+            .map(PaneCard::window_index)
+            .collect::<Vec<_>>(),
+        [1, 2]
     );
 }
