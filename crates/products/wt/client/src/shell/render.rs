@@ -250,11 +250,21 @@ fn draw_worlds(frame: &mut Frame<'_>, area: Rect, model: &ShellModel, creation: 
             continue;
         }
         let world = &model.worlds()[index];
-        let idle = world.status == wt_control_protocol::WorldStatus::Running
+        let liveness = if world.status == wt_control_protocol::WorldStatus::Running
+            && (model.control().pane_refresh().is_stale()
+                || super::world_card::has_lost_connection(world, model.control().panes()))
+        {
+            super::world_card::Liveness::ConnectionLost
+        } else if world.status == wt_control_protocol::WorldStatus::Running
             && model.control().pane_refresh().updated_at().is_some()
             && model.control().pane_refresh().failures().is_none()
-            && super::world_card::is_idle(world, model.control().panes());
-        let (icon, color, status) = super::world_card::status(world, idle);
+            && super::world_card::is_idle(world, model.control().panes())
+        {
+            super::world_card::Liveness::Idle
+        } else {
+            super::world_card::Liveness::Current
+        };
+        let (icon, color, status) = super::world_card::status(world, liveness);
         grid.render_card(frame, card, |rect, buffer| {
             super::world_card::draw(
                 buffer,
@@ -357,6 +367,7 @@ mod tests {
             context: "ars".into(),
             created_at_unix_ms: Some(now),
             observed_at_unix_ms: Some(now),
+            classified_at_unix_ms: now,
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
                 changed_at_unix_ms: now,

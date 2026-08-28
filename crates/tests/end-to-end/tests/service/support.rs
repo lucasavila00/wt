@@ -32,7 +32,7 @@ pub(crate) struct Worker {
 
 #[derive(Clone, Default)]
 pub(crate) struct Gateway {
-    pub(crate) cleared_pane_observations: Arc<Mutex<Vec<WorldId>>>,
+    pub(crate) deactivated_pane_observations: Arc<Mutex<Vec<WorldId>>>,
 }
 
 #[derive(Clone, Default)]
@@ -59,8 +59,12 @@ impl AgentToolGateway for Gateway {
         Ok(Vec::new())
     }
 
-    fn clear_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
-        self.cleared_pane_observations
+    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        self.deactivated_pane_observations
             .lock()
             .unwrap()
             .push(world_id);
@@ -88,7 +92,11 @@ impl AgentToolGateway for UnavailableGateway {
         Ok(Vec::new())
     }
 
-    fn clear_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+    fn activate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn deactivate_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 }

@@ -68,8 +68,14 @@ impl Provider {
 pub struct Gateway {
     config: GatewayConfig,
     state: Arc<Mutex<State>>,
-    pane_observations:
-        Arc<Mutex<std::collections::BTreeMap<WorldId, Vec<PaneObservationSnapshot>>>>,
+    pane_observations: Arc<Mutex<PaneObservations>>,
+}
+
+#[derive(Default)]
+struct PaneObservations {
+    snapshots: std::collections::BTreeMap<WorldId, Vec<PaneObservationSnapshot>>,
+    inactive_worlds: std::collections::BTreeSet<WorldId>,
+    generations: std::collections::BTreeMap<WorldId, u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,6 +102,11 @@ struct GrantRecord {
     token: String,
     world_id: String,
     revoked: bool,
+}
+
+struct AuthorizedGrant {
+    record: GrantRecord,
+    pane_generation: u64,
 }
 
 fn cli_unavailable() -> String {

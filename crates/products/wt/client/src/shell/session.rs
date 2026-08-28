@@ -355,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn hidden_sessions_keep_running_and_parsing_output() {
+    fn world_view_resizes_only_the_active_session() {
         let (sender, events) = mpsc::sync_channel(OUTPUT_QUEUE);
         let mut sessions = SessionSet {
             sessions: vec![
@@ -377,6 +377,10 @@ mod tests {
 
         insta::assert_snapshot!(sessions.screen(0).contents(), @"ready");
         insta::assert_snapshot!(sessions.screen(1).contents(), @"readyhidden");
+
+        sessions.resize(Mode::Control, 1, 4, 20).unwrap();
+        assert_eq!(sessions.screen(0).size(), (4, 20));
+        assert_eq!(sessions.screen(1).size(), (4, 20));
     }
 
     #[test]

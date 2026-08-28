@@ -21,6 +21,8 @@ pub fn valid_byobu_pane_id(value: &str) -> bool {
 pub enum ControlRequest {
     Reserve { world_id: String },
     Revoke { grant_id: String },
+    ActivatePaneObservations { world_id: String },
+    DeactivatePaneObservations { world_id: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

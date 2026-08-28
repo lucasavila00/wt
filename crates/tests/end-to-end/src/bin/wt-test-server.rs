@@ -7,7 +7,7 @@ use wt_control_protocol::{ApiError, ApiRequest, ApiResponse, ErrorCode};
 use wt_libvirt_kvm::LibvirtProvider;
 use wt_server::config::StateConfig;
 use wt_server::operations::Operations;
-use wt_server::service::Service;
+use wt_server::service::{AgentToolGateway, Service};
 use wt_server::ServerConfig;
 use wt_workload_registry::Store;
 
@@ -61,7 +61,7 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     let gateway_socket = std::env::var_os("WT_AGENT_TOOL_TEST_CONTROL_SOCKET")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(wt_agent_tool_gateway::CONTROL_SOCKET));
-    let gateway = wt_agent_tool_gateway::ControlClient::new(gateway_socket);
+    let gateway = TestGatewayClient(wt_agent_tool_gateway::ControlClient::new(gateway_socket));
     let service =
         Service::with_capacity_limit(store, worker, gateway, Operations::default(), capacity);
     let response = match serde_json::from_reader::<_, ApiRequest>(std::io::stdin().lock()) {
@@ -80,6 +80,95 @@ fn run_api(config_path: &Path, capacity_path: &Path) -> Result<()> {
     serde_json::to_writer(std::io::stdout().lock(), &response)?;
     std::io::stdout().write_all(b"\n")?;
     Ok(())
+}
+
+struct TestGatewayClient(wt_agent_tool_gateway::ControlClient);
+
+impl AgentToolGateway for TestGatewayClient {
+    fn reserve(
+        &self,
+        world_id: wt_control_protocol::WorldId,
+    ) -> Result<wt_agent_tool_gateway::Grant, String> {
+        let response = self
+            .0
+            .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
+                world_id: world_id.to_string(),
+            })
+            .map_err(|error| error.to_string())?;
+        if response.ok {
+            response
+                .grant
+                .ok_or_else(|| "gateway reserve response has no grant".to_owned())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "gateway rejected grant".to_owned()))
+        }
+    }
+
+    fn revoke(&self, grant_id: &str) -> Result<(), String> {
+        let response = self
+            .0
+            .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
+                grant_id: grant_id.to_owned(),
+            })
+            .map_err(|error| error.to_string())?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
+        }
+    }
+
+    fn pane_observations(
+        &self,
+        _world_id: wt_control_protocol::WorldId,
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
+        Err("the external test gateway does not expose pane observations".to_owned())
+    }
+
+    fn activate_pane_observations(
+        &self,
+        world_id: wt_control_protocol::WorldId,
+    ) -> Result<(), String> {
+        self.pane_lifetime_request(
+            wt_agent_tool_gateway::ControlRequest::ActivatePaneObservations {
+                world_id: world_id.to_string(),
+            },
+        )
+    }
+
+    fn deactivate_pane_observations(
+        &self,
+        world_id: wt_control_protocol::WorldId,
+    ) -> Result<(), String> {
+        self.pane_lifetime_request(
+            wt_agent_tool_gateway::ControlRequest::DeactivatePaneObservations {
+                world_id: world_id.to_string(),
+            },
+        )
+    }
+}
+
+impl TestGatewayClient {
+    fn pane_lifetime_request(
+        &self,
+        request: wt_agent_tool_gateway::ControlRequest,
+    ) -> Result<(), String> {
+        let response = self
+            .0
+            .request(&request)
+            .map_err(|error| error.to_string())?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "gateway rejected pane lifetime change".to_owned()))
+        }
+    }
 }
 
 #[cfg(test)]

@@ -32,6 +32,13 @@ clears the affected pane observations; cards return after the relay's next
 report from a running world. The window index is a non-negative integer. The
 window name is bounded, normalized display text.
 
+Stopping or losing a world marks its in-memory pane slot inactive while clearing
+the snapshot and advances its run generation, so an in-flight relay report
+cannot restore stale data across a stop and restart. A successful start or
+running-world reconciliation activates the next generation. Lifecycle
+reconciliation uses the same per-world operation lock as start, stop, and
+delete.
+
 Render the window name in user-facing Codex labels:
 
 ```text

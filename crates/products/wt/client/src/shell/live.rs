@@ -11,9 +11,21 @@ use ratatui::Frame;
 
 pub(super) const CARD_HEIGHT: u16 = 18;
 pub(super) const CARD_GAP: u16 = 0;
+const BYOBU_STATUS_ROWS: u16 = 1;
 
 pub(super) fn columns(_area: Rect) -> usize {
     CARD_COLUMNS
+}
+
+pub(super) fn preview_size(area: Rect, count: usize) -> (u16, u16) {
+    let (height, width) = card_grid_with_gap(area, 0, count, CARD_HEIGHT, CARD_GAP).card_size();
+    (
+        height
+            .saturating_sub(2)
+            .saturating_add(BYOBU_STATUS_ROWS)
+            .max(1),
+        width.saturating_sub(2).max(1),
+    )
 }
 
 pub(super) fn draw(frame: &mut Frame<'_>, area: Rect, model: &ShellModel) {
@@ -90,6 +102,11 @@ mod tests {
     }
 
     #[test]
+    fn preview_size_matches_the_live_card_viewport() {
+        assert_eq!(preview_size(Rect::new(0, 0, 100, 30), 1), (17, 45));
+    }
+
+    #[test]
     fn live_card_insets_the_cwd_and_git_branch_in_its_footer() {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -107,6 +124,7 @@ mod tests {
             context: "ars".into(),
             created_at_unix_ms: Some(now),
             observed_at_unix_ms: Some(now),
+            classified_at_unix_ms: now,
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
                 changed_at_unix_ms: now,

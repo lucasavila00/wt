@@ -242,7 +242,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     fn list(&self, owner: &str) -> Result<Response, ApiError> {
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         for world in &stored {
-            self.reconcile(world)?;
+            let Some(_operation) = self.operations.try_lock_world(world.world.world_id) else {
+                continue;
+            };
+            self.reconcile_locked(world)?;
         }
         let stored = self.store.list_owned(owner).map_err(map_store_error)?;
         let mut disk_usage_bytes = std::collections::BTreeMap::new();
@@ -267,7 +270,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 
-    fn reconcile(&self, stored: &StoredWorld) -> Result<(), ApiError> {
+    fn reconcile_locked(&self, stored: &StoredWorld) -> Result<(), ApiError> {
         if !matches!(
             stored.world.status,
             WorldStatus::Running | WorldStatus::Stopped | WorldStatus::Error
@@ -299,16 +302,22 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                         disk_usage_bytes,
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
-                    eprintln!("wt-server: clear stopped world pane observations: {error}");
+                if let Err(error) = self
+                    .gateway
+                    .deactivate_pane_observations(stored.world.world_id)
+                {
+                    eprintln!("wt-server: deactivate stopped world pane observations: {error}");
                 }
             }
             Ok(WorldInspection::Missing) => {
                 self.store
                     .mark_error(stored.world.world_id, "guest domain is missing")
                     .map_err(map_store_error)?;
-                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
-                    eprintln!("wt-server: clear missing world pane observations: {error}");
+                if let Err(error) = self
+                    .gateway
+                    .deactivate_pane_observations(stored.world.world_id)
+                {
+                    eprintln!("wt-server: deactivate missing world pane observations: {error}");
                 }
             }
             Err(error) => {
@@ -318,8 +327,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                         &format!("guest reconciliation: {error}"),
                     )
                     .map_err(map_store_error)?;
-                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
-                    eprintln!("wt-server: clear errored world pane observations: {error}");
+                if let Err(error) = self
+                    .gateway
+                    .deactivate_pane_observations(stored.world.world_id)
+                {
+                    eprintln!("wt-server: deactivate errored world pane observations: {error}");
                 }
             }
         }
@@ -344,14 +356,28 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .as_ref()
             .is_some_and(|ssh| ssh.host_keys == access.ssh().host_keys);
         if !same_guest_identity {
-            return self
-                .store
+            self.store
                 .mark_error(stored.world.world_id, "SSH host identity changed")
-                .map_err(map_store_error);
+                .map_err(map_store_error)?;
+            if let Err(error) = self
+                .gateway
+                .deactivate_pane_observations(stored.world.world_id)
+            {
+                eprintln!("wt-server: deactivate changed world pane observations: {error}");
+            }
+            return Ok(());
         }
         self.store
             .mark_host_running(stored.world.world_id, access.guest_ip(), access.ssh())
-            .map_err(map_store_error)
+            .map_err(map_store_error)?;
+        self.gateway
+            .activate_pane_observations(stored.world.world_id)
+            .map_err(|error| {
+                ApiError::new(
+                    ErrorCode::Internal,
+                    format!("activate world pane observations: {error}"),
+                )
+            })
     }
 
     fn get(&self, owner: &str, name: &WorldName) -> Result<Response, ApiError> {
@@ -359,7 +385,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .store
             .get_owned_by_name(owner, name)
             .map_err(map_store_error)?;
-        self.reconcile(&stored)?;
+        let _operation = self
+            .operations
+            .try_lock_world(stored.world.world_id)
+            .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
+        self.reconcile_locked(&stored)?;
         let world = self
             .store
             .get_owned_by_id(owner, stored.world.world_id)
@@ -379,7 +409,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .operations
             .try_lock_world(world_id)
             .ok_or_else(|| ApiError::new(ErrorCode::Conflict, "world operation is active"))?;
-        self.reconcile(&stored)?;
+        self.reconcile_locked(&stored)?;
         let stored = self
             .store
             .get_owned_by_id(owner, world_id)
@@ -454,9 +484,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(ApiError::new(ErrorCode::Backend, message));
         }
         self.store.delete(world_id).map_err(map_store_error)?;
-        if let Err(error) = self.gateway.clear_pane_observations(world_id) {
-            eprintln!("wt-server: clear deleted world pane observations: {error}");
-        }
         Ok(Response::WorldDeleted { world_id })
     }
 

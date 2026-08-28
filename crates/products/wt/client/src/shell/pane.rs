@@ -102,12 +102,13 @@ pub(super) fn load_snapshots(
 }
 
 pub(super) fn cards(snapshots: Vec<PaneContextSnapshot>, worlds: &[ShellWorld]) -> PaneCards {
+    let classified_at_unix_ms = now_unix_ms();
     let mut cards = Vec::new();
     let mut failures = Vec::new();
     for snapshot in snapshots {
         match snapshot {
             PaneContextSnapshot::Panes { context, panes } => {
-                match validate_context(&context, panes, worlds) {
+                match validate_context(&context, panes, worlds, classified_at_unix_ms) {
                     Ok(mut context_cards) => cards.append(&mut context_cards),
                     Err(_) => cards.push(PaneCard::context_error(&context)),
                 }
@@ -129,6 +130,7 @@ fn validate_context(
     context: &str,
     panes: Vec<PaneObservation>,
     worlds: &[ShellWorld],
+    classified_at_unix_ms: i64,
 ) -> Result<Vec<PaneCard>, String> {
     let mut cards = Vec::new();
     let mut identities = BTreeSet::new();
@@ -207,6 +209,7 @@ fn validate_context(
             context: context.into(),
             created_at_unix_ms: Some(pane.created_at_unix_ms),
             observed_at_unix_ms: Some(pane.observed_at_unix_ms),
+            classified_at_unix_ms,
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
                 changed_at_unix_ms: pane.changed_at_unix_ms,
@@ -217,6 +220,14 @@ fn validate_context(
         });
     }
     Ok(cards)
+}
+
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or_default()
 }
 
 fn valid_display_text(value: &str, maximum_bytes: usize) -> bool {

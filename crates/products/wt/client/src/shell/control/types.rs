@@ -31,6 +31,7 @@ pub(in crate::shell) struct PaneCard {
     pub(in crate::shell) context: String,
     pub(in crate::shell) created_at_unix_ms: Option<i64>,
     pub(in crate::shell) observed_at_unix_ms: Option<i64>,
+    pub(in crate::shell) classified_at_unix_ms: i64,
     pub(in crate::shell) kind: PaneCardKind,
 }
 
@@ -51,6 +52,7 @@ impl PaneCard {
             context: context.into(),
             created_at_unix_ms: None,
             observed_at_unix_ms: None,
+            classified_at_unix_ms: 0,
             kind: PaneCardKind::ContextError,
         }
     }
@@ -85,13 +87,14 @@ impl PaneCard {
                 PaneCardKind::Observation {
                     changed_at_unix_ms,
                     ..
-                } if Self::now_unix_ms().saturating_sub(changed_at_unix_ms) < 15_000
+                } if self.classified_at_unix_ms.saturating_sub(changed_at_unix_ms) < 15_000
             )
     }
 
     pub(in crate::shell) fn is_stale(&self) -> bool {
-        self.observed_at_unix_ms
-            .is_some_and(|observed_at| Self::now_unix_ms().saturating_sub(observed_at) > 30_000)
+        self.observed_at_unix_ms.is_some_and(|observed_at| {
+            self.classified_at_unix_ms.saturating_sub(observed_at) >= 60_000
+        })
     }
 
     pub(in crate::shell) fn disabled_reason(&self) -> Option<&'static str> {
@@ -118,14 +121,6 @@ impl PaneCard {
             }),
             PaneCardKind::ContextError => None,
         }
-    }
-
-    fn now_unix_ms() -> i64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-            .unwrap_or_default()
     }
 }
 

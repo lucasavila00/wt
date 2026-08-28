@@ -1,7 +1,24 @@
-#[derive(Debug, Default)]
+use std::time::{Duration, Instant};
+
+pub(super) const PANE_REFRESH_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Debug)]
 pub(super) struct RefreshStatus {
     updated_at: Option<String>,
     failures: Option<Vec<String>>,
+    last_successful_update: Instant,
+    stale: bool,
+}
+
+impl Default for RefreshStatus {
+    fn default() -> Self {
+        Self {
+            updated_at: None,
+            failures: None,
+            last_successful_update: Instant::now(),
+            stale: false,
+        }
+    }
 }
 
 impl RefreshStatus {
@@ -18,6 +35,8 @@ impl RefreshStatus {
             Ok(updated_at) => {
                 self.updated_at = Some(updated_at);
                 self.failures = None;
+                self.last_successful_update = Instant::now();
+                self.stale = false;
             }
             Err(failures) => self.failures = Some(failures),
         }
@@ -37,5 +56,45 @@ impl RefreshStatus {
     pub(super) fn failure(&self) -> Option<String> {
         self.failures()
             .map(|failures| format!(" · Sync failed: {}", failures.join("; ")))
+    }
+
+    pub(super) fn update_staleness(&mut self, timeout: Duration) -> bool {
+        let stale = self.last_successful_update.elapsed() >= timeout;
+        let changed = stale != self.stale;
+        self.stale = stale;
+        changed
+    }
+
+    pub(super) fn is_stale(&self) -> bool {
+        self.stale
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marks_a_refresh_stale_after_its_timeout() {
+        let mut status = RefreshStatus {
+            last_successful_update: Instant::now() - PANE_REFRESH_TIMEOUT,
+            ..Default::default()
+        };
+
+        assert!(status.update_staleness(PANE_REFRESH_TIMEOUT));
+        assert!(status.is_stale());
+    }
+
+    #[test]
+    fn a_successful_update_restores_a_stale_refresh() {
+        let mut status = RefreshStatus {
+            last_successful_update: Instant::now() - PANE_REFRESH_TIMEOUT,
+            ..Default::default()
+        };
+        status.update_staleness(PANE_REFRESH_TIMEOUT);
+
+        status.finish(Ok("2026-08-28T00:00:00Z".into()));
+
+        assert!(!status.is_stale());
     }
 }

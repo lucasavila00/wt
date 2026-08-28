@@ -7,52 +7,8 @@ pub trait AgentToolGateway {
         &self,
         world_id: WorldId,
     ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String>;
-    fn clear_pane_observations(&self, world_id: WorldId) -> Result<(), String>;
-}
-
-impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
-    fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String> {
-        let response = self
-            .request(&wt_agent_tool_gateway::ControlRequest::Reserve {
-                world_id: world_id.to_string(),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            response
-                .grant
-                .ok_or_else(|| "gateway reserve response has no grant".to_owned())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected grant".to_owned()))
-        }
-    }
-
-    fn revoke(&self, grant_id: &str) -> Result<(), String> {
-        let response = self
-            .request(&wt_agent_tool_gateway::ControlRequest::Revoke {
-                grant_id: grant_id.to_owned(),
-            })
-            .map_err(|error| error.to_string())?;
-        if response.ok {
-            Ok(())
-        } else {
-            Err(response
-                .error
-                .unwrap_or_else(|| "gateway rejected revocation".to_owned()))
-        }
-    }
-
-    fn pane_observations(
-        &self,
-        _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
-        Ok(Vec::new())
-    }
-
-    fn clear_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
-        Ok(())
-    }
+    fn activate_pane_observations(&self, world_id: WorldId) -> Result<(), String>;
+    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String>;
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
@@ -74,8 +30,13 @@ impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
             .map_err(|error| error.to_string())
     }
 
-    fn clear_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
-        wt_agent_tool_gateway::Gateway::clear_pane_observations(self, world_id)
+    fn activate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        wt_agent_tool_gateway::Gateway::activate_pane_observations(self, world_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn deactivate_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        wt_agent_tool_gateway::Gateway::deactivate_pane_observations(self, world_id)
             .map_err(|error| error.to_string())
     }
 }
