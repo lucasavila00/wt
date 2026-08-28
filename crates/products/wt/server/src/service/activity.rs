@@ -1,11 +1,10 @@
-use super::{map_store_error, Service, WorldWorker};
-use crate::service::AgentToolGateway;
+use super::{map_store_error, Service};
 use wt_control_protocol::{
     ApiError, GitActivity, GitActivityKind, GitActivityQuery, Response, WorldName, WtToolsActivity,
     WtToolsActivityQuery,
 };
 
-impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
+impl<W, G> Service<W, G> {
     pub(super) fn list_git_activity(
         &self,
         owner: &str,
