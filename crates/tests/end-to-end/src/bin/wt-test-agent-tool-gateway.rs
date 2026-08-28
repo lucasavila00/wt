@@ -5,7 +5,7 @@ use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use wt_agent_tool_gateway::{ActivityRecorder, Gateway, GatewayConfig, Provider};
 use wt_libvirt_kvm::LibvirtProvider;
-use wt_server::ServerConfig;
+use wt_server::{config::StateConfig, ServerConfig};
 
 fn main() {
     if let Err(error) = run() {
@@ -21,6 +21,7 @@ fn run() -> Result<()> {
         .context("expected temporary directory argument")?;
     let config =
         ServerConfig::load_runtime_from(&temp.join("server.toml")).map_err(anyhow::Error::msg)?;
+    let state = StateConfig::from_env().map_err(anyhow::Error::msg)?;
     let provider = LibvirtProvider::new(config.machine_config()).map_err(anyhow::Error::msg)?;
     let gateway = Gateway::open(
         GatewayConfig {
@@ -30,7 +31,7 @@ fn run() -> Result<()> {
                 api: None,
             }],
         },
-        ActivityRecorder::open(&temp.join("worlds.db"))?,
+        ActivityRecorder::open(&state.database_path())?,
     )?;
     serve_control(gateway.clone(), &temp.join("gateway-control.sock"))?;
     wt_agent_tool_gateway::start_vsock(gateway, config.agent_tools.vsock_port, move |cid| {
