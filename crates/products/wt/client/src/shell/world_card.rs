@@ -55,13 +55,13 @@ pub(super) fn pane_lines(world: &ShellWorld, cards: &[PaneCard]) -> Vec<Line<'st
             let PaneCardIdentity::Observation { .. } = &card.identity else {
                 return None;
             };
-            let PaneCardKind::Observation { window_name, .. } = &card.kind else {
+            let PaneCardKind::Observation { render, .. } = &card.kind else {
                 return None;
             };
             belongs_to_world(card, world).then(|| {
                 Line::from(vec![
                     Span::styled("Codex · window ", super::render::muted_style()),
-                    Span::raw(format!("“{window_name}” · {}", pane_status(card))),
+                    Span::raw(format!("“{}” · {}", render.window_name, pane_status(card))),
                 ])
             })
         })
@@ -221,12 +221,26 @@ mod tests {
             observed_at_unix_ms: Some(now),
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
-                window_index,
-                window_name,
                 changed_at_unix_ms,
                 cwd: "/home/wt".into(),
                 git_branch: None,
-                frame: None,
+                render: wt_control_protocol::PaneRender {
+                    window_index,
+                    window_name,
+                    frame: wt_control_protocol::PaneFrame {
+                        rows: 1,
+                        columns: 1,
+                        cells: vec![wt_control_protocol::PaneCell {
+                            text: "C".into(),
+                            foreground: wt_control_protocol::PaneColor::Default,
+                            background: wt_control_protocol::PaneColor::Default,
+                            bold: false,
+                            italic: false,
+                            underlined: false,
+                            inverse: false,
+                        }],
+                    },
+                },
             },
         }
     }

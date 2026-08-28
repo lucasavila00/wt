@@ -50,10 +50,11 @@ agent tooling, and virtiofs Codex session and authentication mounts.
 
 The guest relay polls each Byobu pane whose foreground process is `codex`, then
 sends its bounded rendered terminal frame, screen fingerprint, freshness,
-Byobu window index and name, current working directory, and checked-out Git
-branch when available through its authenticated server connection. `wts` owns
-those observations and keeps only their latest frames in memory. No Codex hook
-or lifecycle tracker participates in live state.
+current working directory, checked-out Git branch when available, and Byobu
+window index and name through its authenticated server connection. `wts` owns
+those observations and keeps each world's complete latest snapshot only in
+memory. No live pane observation is registry state. No Codex hook or lifecycle
+tracker participates in live state.
 
 ## Shell playback
 

@@ -144,11 +144,9 @@ fn validate_context(
                 &pane.pane_id,
             ));
         }
-        if let Some(frame) = &pane.frame {
-            frame
-                .validate()
-                .map_err(|error| invalid(context, error, &pane.pane_id))?;
-        }
+        pane.render
+            .validate()
+            .map_err(|error| invalid(context, error, &pane.pane_id))?;
         if !valid_display_text(&pane.cwd, 4096)
             || pane
                 .git_branch
@@ -159,13 +157,6 @@ fn validate_context(
                 context,
                 "safe current working directory and Git branch",
                 &pane.cwd,
-            ));
-        }
-        if pane.window_index < 0 || !valid_display_text(&pane.window_name, 255) {
-            return Err(invalid(
-                context,
-                "nonnegative window_index and safe window_name",
-                &pane.window_name,
             ));
         }
         if !valid_pane_id(&pane.pane_id) {
@@ -218,12 +209,10 @@ fn validate_context(
             observed_at_unix_ms: Some(pane.observed_at_unix_ms),
             kind: PaneCardKind::Observation {
                 world_name: world.world_name.to_string(),
-                window_index: pane.window_index,
-                window_name: pane.window_name,
                 changed_at_unix_ms: pane.changed_at_unix_ms,
                 cwd: pane.cwd,
                 git_branch: pane.git_branch,
-                frame: pane.frame,
+                render: pane.render,
             },
         });
     }

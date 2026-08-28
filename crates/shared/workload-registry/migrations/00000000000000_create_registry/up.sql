@@ -28,27 +28,6 @@ CREATE TABLE agent_tool_reports (
 
 CREATE INDEX agent_tool_reports_world_id ON agent_tool_reports(world_id);
 
-CREATE TABLE pane_observations (
-    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
-    tmux_session TEXT NOT NULL CHECK (tmux_session = 'wt-host'),
-    pane_id TEXT NOT NULL CHECK (
-        length(pane_id) BETWEEN 2 AND 17
-        AND substr(pane_id, 1, 1) = '%'
-        AND substr(pane_id, 2) NOT GLOB '*[^0-9]*'
-    ),
-    window_index BIGINT NOT NULL CHECK (window_index >= 0),
-    window_name TEXT NOT NULL CHECK (length(window_name) BETWEEN 1 AND 255),
-    screen_fingerprint TEXT NOT NULL CHECK (length(screen_fingerprint) = 64),
-    cwd TEXT NOT NULL CHECK (length(cwd) BETWEEN 1 AND 4096),
-    git_branch TEXT CHECK (length(git_branch) BETWEEN 1 AND 255),
-    changed_at_unix_ms BIGINT NOT NULL,
-    observed_at_unix_ms BIGINT NOT NULL,
-    PRIMARY KEY (world_id, tmux_session, pane_id)
-);
-
-CREATE INDEX pane_observations_world_changed_at
-    ON pane_observations(world_id, changed_at_unix_ms DESC);
-
 CREATE TABLE repositories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider_host TEXT NOT NULL,

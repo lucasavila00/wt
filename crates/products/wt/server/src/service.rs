@@ -169,6 +169,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 last_error: None,
                 ssh: None,
             },
+            created_at_unix_ms: 0,
             setup_fingerprint,
             gateway_grant_id: Some(grant.as_ref().expect("host grant").id.clone()),
         };
@@ -297,19 +298,30 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                         &stopped_message(reason.as_deref()),
                         disk_usage_bytes,
                     )
-                    .map_err(map_store_error)?
+                    .map_err(map_store_error)?;
+                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
+                    eprintln!("wt-server: clear stopped world pane observations: {error}");
+                }
             }
-            Ok(WorldInspection::Missing) => self
-                .store
-                .mark_error(stored.world.world_id, "guest domain is missing")
-                .map_err(map_store_error)?,
-            Err(error) => self
-                .store
-                .mark_error(
-                    stored.world.world_id,
-                    &format!("guest reconciliation: {error}"),
-                )
-                .map_err(map_store_error)?,
+            Ok(WorldInspection::Missing) => {
+                self.store
+                    .mark_error(stored.world.world_id, "guest domain is missing")
+                    .map_err(map_store_error)?;
+                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
+                    eprintln!("wt-server: clear missing world pane observations: {error}");
+                }
+            }
+            Err(error) => {
+                self.store
+                    .mark_error(
+                        stored.world.world_id,
+                        &format!("guest reconciliation: {error}"),
+                    )
+                    .map_err(map_store_error)?;
+                if let Err(error) = self.gateway.clear_pane_observations(stored.world.world_id) {
+                    eprintln!("wt-server: clear errored world pane observations: {error}");
+                }
+            }
         }
         Ok(())
     }
@@ -442,8 +454,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             return Err(ApiError::new(ErrorCode::Backend, message));
         }
         self.store.delete(world_id).map_err(map_store_error)?;
-        if let Err(error) = self.gateway.clear_pane_frames(world_id) {
-            eprintln!("wt-server: clear deleted world pane frames: {error}");
+        if let Err(error) = self.gateway.clear_pane_observations(world_id) {
+            eprintln!("wt-server: clear deleted world pane observations: {error}");
         }
         Ok(Response::WorldDeleted { world_id })
     }

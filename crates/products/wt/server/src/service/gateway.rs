@@ -3,11 +3,11 @@ use wt_control_protocol::WorldId;
 pub trait AgentToolGateway {
     fn reserve(&self, world_id: WorldId) -> Result<wt_agent_tool_gateway::Grant, String>;
     fn revoke(&self, grant_id: &str) -> Result<(), String>;
-    fn pane_frames(
+    fn pane_observations(
         &self,
         world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String>;
-    fn clear_pane_frames(&self, world_id: WorldId) -> Result<(), String>;
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String>;
+    fn clear_pane_observations(&self, world_id: WorldId) -> Result<(), String>;
 }
 
 impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
@@ -43,14 +43,14 @@ impl AgentToolGateway for wt_agent_tool_gateway::ControlClient {
         }
     }
 
-    fn pane_frames(
+    fn pane_observations(
         &self,
         _world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
         Ok(Vec::new())
     }
 
-    fn clear_pane_frames(&self, _world_id: WorldId) -> Result<(), String> {
+    fn clear_pane_observations(&self, _world_id: WorldId) -> Result<(), String> {
         Ok(())
     }
 }
@@ -66,16 +66,16 @@ impl AgentToolGateway for wt_agent_tool_gateway::Gateway {
             .map_err(|error| error.to_string())
     }
 
-    fn pane_frames(
+    fn pane_observations(
         &self,
         world_id: WorldId,
-    ) -> Result<Vec<wt_agent_tool_gateway::PaneFrameSnapshot>, String> {
-        wt_agent_tool_gateway::Gateway::pane_frames(self, world_id)
+    ) -> Result<Vec<wt_agent_tool_gateway::PaneObservationSnapshot>, String> {
+        wt_agent_tool_gateway::Gateway::pane_observations(self, world_id)
             .map_err(|error| error.to_string())
     }
 
-    fn clear_pane_frames(&self, world_id: WorldId) -> Result<(), String> {
-        wt_agent_tool_gateway::Gateway::clear_pane_frames(self, world_id)
+    fn clear_pane_observations(&self, world_id: WorldId) -> Result<(), String> {
+        wt_agent_tool_gateway::Gateway::clear_pane_observations(self, world_id)
             .map_err(|error| error.to_string())
     }
 }

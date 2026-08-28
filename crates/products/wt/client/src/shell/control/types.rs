@@ -1,4 +1,4 @@
-use wt_control_protocol::{PaneFrame, WorldId};
+use wt_control_protocol::{PaneFrame, PaneRender, WorldId};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(in crate::shell) enum PaneCardIdentity {
@@ -17,12 +17,10 @@ pub(in crate::shell) enum PaneCardIdentity {
 pub(in crate::shell) enum PaneCardKind {
     Observation {
         world_name: String,
-        window_index: i64,
-        window_name: String,
         changed_at_unix_ms: i64,
         cwd: String,
         git_branch: Option<String>,
-        frame: Option<PaneFrame>,
+        render: PaneRender,
     },
     ContextError,
 }
@@ -70,8 +68,8 @@ impl PaneCard {
     }
 
     pub(in crate::shell) fn window_index(&self) -> i64 {
-        match self.kind {
-            PaneCardKind::Observation { window_index, .. } => window_index,
+        match &self.kind {
+            PaneCardKind::Observation { render, .. } => render.window_index,
             PaneCardKind::ContextError => i64::MAX,
         }
     }
@@ -105,7 +103,7 @@ impl PaneCard {
 
     pub(in crate::shell) fn frame(&self) -> Option<&PaneFrame> {
         match &self.kind {
-            PaneCardKind::Observation { frame, .. } => frame.as_ref(),
+            PaneCardKind::Observation { render, .. } => Some(&render.frame),
             PaneCardKind::ContextError => None,
         }
     }

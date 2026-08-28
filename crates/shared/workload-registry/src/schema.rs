@@ -1,21 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    pane_observations (world_id, tmux_session, pane_id) {
-        world_id -> Text,
-        tmux_session -> Text,
-        pane_id -> Text,
-        window_index -> BigInt,
-        window_name -> Text,
-        screen_fingerprint -> Text,
-        cwd -> Text,
-        git_branch -> Nullable<Text>,
-        changed_at_unix_ms -> BigInt,
-        observed_at_unix_ms -> BigInt,
-    }
-}
-
-diesel::table! {
     agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
@@ -84,7 +69,6 @@ diesel::table! {
 }
 
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
-diesel::joinable!(pane_observations -> worlds (world_id));
 diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
@@ -92,7 +76,6 @@ diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     agent_tool_reports,
-    pane_observations,
     repositories,
     world_git_activity,
     world_wt_tools_activity,

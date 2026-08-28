@@ -50,7 +50,7 @@ case "$request" in
       observed_at=$(date +%s%3N)
       changed_at=$((observed_at - 16000))
       frame='{"rows":1,"columns":23,"cells":[{"text":"s"},{"text":"e"},{"text":"s"},{"text":"s"},{"text":"i"},{"text":"o"},{"text":"n"},{"text":":"},{"text":" "},{"text":"l"},{"text":"o"},{"text":"c"},{"text":"a"},{"text":"l"},{"text":"."},{"text":"e"},{"text":"x"},{"text":"i"},{"text":"s"},{"text":"t"},{"text":"i"},{"text":"n"},{"text":"g"}]}'
-      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","window_index":0,"window_name":"codex","cwd":"/home/wt","changed_at_unix_ms":%s,"observed_at_unix_ms":%s,"frame":%s}]}}\n' "$changed_at" "$observed_at" "$frame"
+      printf '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","created_at_unix_ms":10,"tmux_session":"wt-host","pane_id":"%%1","cwd":"/home/wt","changed_at_unix_ms":%s,"observed_at_unix_ms":%s,"render":{"window_index":0,"window_name":"codex","frame":%s}}]}}\n' "$changed_at" "$observed_at" "$frame"
     else
       printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"pane_observations","panes":[]}}'
     fi

@@ -17,6 +17,7 @@ pub struct Store {
 #[derive(Clone, Debug)]
 pub struct StoredWorld {
     pub world: World,
+    pub created_at_unix_ms: i64,
     pub setup_fingerprint: String,
     pub gateway_grant_id: Option<String>,
 }
@@ -363,6 +364,7 @@ impl TryFrom<WorldRow> for StoredWorld {
                 disk_gib: crate::to_u64(row.disk_gib, "disk_gib").map_err(map_registry_error)?,
                 ssh,
             },
+            created_at_unix_ms: row.created_at_unix_ms,
             setup_fingerprint: row.setup_fingerprint,
             gateway_grant_id: row.gateway_grant_id,
         })
@@ -485,6 +487,7 @@ mod tests {
                 last_error: None,
                 ssh: None,
             },
+            created_at_unix_ms: 0,
             setup_fingerprint: "fingerprint".into(),
             gateway_grant_id: None,
         }

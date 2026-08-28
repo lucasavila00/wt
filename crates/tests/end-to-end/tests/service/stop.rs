@@ -10,7 +10,16 @@ fn stopped_world_can_be_started() {
         stopped: true,
         ..Worker::default()
     };
-    let Response::Worlds { worlds, .. } = service(&temp, stopped_worker)
+    let gateway = Gateway::default();
+    let cleared_pane_observations = gateway.cleared_pane_observations.clone();
+    let reconcile_service = Service::new(
+        Store::open(&temp.path().join("worlds.db")).unwrap(),
+        stopped_worker,
+        gateway,
+        Operations::default(),
+        64 * 1024,
+    );
+    let Response::Worlds { worlds, .. } = reconcile_service
         .execute("tester", Operation::ListWorlds)
         .unwrap()
     else {
@@ -20,6 +29,10 @@ fn stopped_world_can_be_started() {
     assert_eq!(
         worlds[0].last_error.as_deref(),
         Some("guest stopped (crashed)")
+    );
+    assert_eq!(
+        *cleared_pane_observations.lock().unwrap(),
+        [worlds[0].world_id]
     );
 
     let worker = Worker {
@@ -49,10 +62,12 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
         disk_usage_bytes: 1536 * 1024 * 1024,
         ..Worker::default()
     };
+    let gateway = Gateway::default();
+    let cleared_pane_observations = gateway.cleared_pane_observations.clone();
     let service = Service::with_capacity_limit(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker.clone(),
-        Gateway,
+        gateway,
         Operations::default(),
         wt_workload_registry::Resources {
             vcpus: 2,
@@ -84,6 +99,7 @@ fn stopped_world_counts_only_used_disk_and_reacquires_capacity_on_start() {
         Some("guest stopped (requested)")
     );
     assert_eq!(worker.stops.load(Ordering::SeqCst), 1);
+    assert_eq!(*cleared_pane_observations.lock().unwrap(), [first.world_id]);
 
     service
         .execute("tester", Operation::CreateWorld(create("second")))
@@ -124,7 +140,7 @@ fn failed_stop_keeps_the_world_running_and_resources_reserved() {
     let service = Service::new(
         Store::open(&temp.path().join("worlds.db")).unwrap(),
         worker,
-        Gateway,
+        Gateway::default(),
         Operations::default(),
         1024,
     );

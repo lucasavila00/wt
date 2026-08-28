@@ -55,13 +55,16 @@ shell navigation remains available while either operation runs.
 
 Cards show the observed pane's Byobu window name, world, context, change age,
 and freshness. A recent screen change is `CHANGING`; an unchanged pane is
-`STATIC`. The bottom right of a Live card shows the observed current working
-directory and, when its `.git` folder exists, the checked-out branch. The Codex
-panel identifies the foreground process only; it does not infer a Codex session
-lifecycle or application liveness. Failed pane-context queries leave existing
-cards intact and show the query error in red beside the last successful update
-time. The Worlds and Codex footer labels show when their latest snapshot was
-applied in UTC, or `Updating…` before the first snapshot arrives.
+`STATIC`. Pane observations and window names are memory-only and are cleared
+when their world stops or the server restarts. Cards return with the next guest
+observation from a running world. The bottom right of a Live card shows the
+observed current working directory and, when its `.git` folder exists, the
+checked-out branch. The Codex panel identifies the foreground process only; it
+does not infer a Codex session lifecycle or application liveness. Failed
+pane-context queries leave existing cards intact and show the query error in red
+beside the last successful update time. The Worlds and Codex footer labels show
+when their latest snapshot was applied in UTC, or `Updating…` before the first
+snapshot arrives.
 
 Known terminal-compatibility gaps are TODOs to fix:
 

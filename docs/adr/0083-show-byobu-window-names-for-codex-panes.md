@@ -18,10 +18,19 @@ operations.
 
 ## Decision
 
-Collect the tmux `window_index` and `window_name` with every observed Codex
-pane. Carry both required fields through the guest relay, control protocol,
-registry, server-owned observation, and shell model. The window index is a
-non-negative integer. The window name is bounded, normalized display text.
+Collect the tmux `window_index` and `window_name` with each rendered Codex pane
+frame. Bundle them with that frame as one `PaneRender` value. The guest gateway
+keeps each world's complete latest pane observations in one bounded in-memory
+snapshot: exact pane target, fingerprint, timestamps, current directory,
+optional Git branch, and render data. The server enriches those observations
+with owner-scoped world names and creation times when serving the client.
+
+Do not persist any pane observation. Live terminal state does not need to
+survive a server crash, and a persisted observation was already incomplete
+without its memory-only frame. A server restart, world stop, or grant revocation
+clears the affected pane observations; cards return after the relay's next
+report from a running world. The window index is a non-negative integer. The
+window name is bounded, normalized display text.
 
 Render the window name in user-facing Codex labels:
 
@@ -30,15 +39,15 @@ Codex · window “codex” · CHANGING
 Codex · window “make” · STATIC
 ```
 
-Use the window index for ordering and disambiguation where required. Do not
-show the tmux session name or pane ID in the normal card label. Continue to use
-`(world, tmux session, pane ID)` as the exact observation and focus identity;
-window indexes and names are mutable presentation metadata, not identity.
+Use an available window index for ordering and disambiguation where required.
+Do not show the tmux session name or pane ID in the normal card label. Continue
+to use `(world, tmux session, pane ID)` as the exact observation and focus
+identity. `PaneRender` is explicitly presentation data inside the transient
+observation, not identity or lifecycle data.
 
-This is one incompatible cutover after `make clear`. Bump the protocol, require
-both new fields, and recreate registry state. Do not accept observations
-without window metadata, add compatibility defaults, or migrate old pane
-observation rows.
+This is one incompatible cutover after `make clear`. Bump both protocols,
+require `PaneRender` on client-facing observations, and remove the
+`pane_observations` table rather than migrating its rows.
 
 ## Consequences
 
@@ -47,5 +56,7 @@ observation rows.
 - Automatic or manual tmux window renames appear on the next observation.
 - Multiple worlds may use the same window index or name without confusing
   operational identity.
-- Every observation carries two additional fields across the guest, server,
-  persistence, and client boundaries.
+- Every pane observation has one in-memory lifetime and disappears completely
+  on server restart.
+- Window metadata has the same lifetime as its rendered frame and cannot be
+  mistaken for durable observation or lifecycle state.

@@ -46,15 +46,11 @@ fn draw_card(buffer: &mut Buffer, rect: Rect, card: &PaneCard, selected: bool) {
     let (status, color) = card_title(card);
     let title = match &card.kind {
         PaneCardKind::Observation {
-            world_name,
-            window_name,
-            ..
-        } => {
-            format!(
-                "{status} · {}.{world_name} · window “{window_name}”",
-                card.context
-            )
-        }
+            world_name, render, ..
+        } => format!(
+            "{status} · {}.{world_name} · window “{}”",
+            card.context, render.window_name
+        ),
         PaneCardKind::ContextError => status,
     };
     let mut block = Block::new()
@@ -113,12 +109,26 @@ mod tests {
             observed_at_unix_ms: Some(now),
             kind: PaneCardKind::Observation {
                 world_name: "dev".into(),
-                window_index: 0,
-                window_name: "codex".into(),
                 changed_at_unix_ms: now,
                 cwd: "/home/wt/wt".into(),
                 git_branch: Some("wt/live-pane-cwd".into()),
-                frame: None,
+                render: wt_control_protocol::PaneRender {
+                    window_index: 0,
+                    window_name: "codex".into(),
+                    frame: wt_control_protocol::PaneFrame {
+                        rows: 1,
+                        columns: 1,
+                        cells: vec![wt_control_protocol::PaneCell {
+                            text: "C".into(),
+                            foreground: wt_control_protocol::PaneColor::Default,
+                            background: wt_control_protocol::PaneColor::Default,
+                            bold: false,
+                            italic: false,
+                            underlined: false,
+                            inverse: false,
+                        }],
+                    },
+                },
             },
         };
         let mut buffer = Buffer::empty(Rect::new(0, 0, 52, 4));

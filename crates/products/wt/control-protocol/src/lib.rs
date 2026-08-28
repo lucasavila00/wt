@@ -13,8 +13,8 @@ pub use activity::{
 };
 pub use create::{validate_create_world_resources, CreateWorld};
 pub use pane::{
-    PaneCell, PaneColor, PaneFrame, PaneObservation, MAX_PANE_CELL_TEXT_BYTES,
-    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
+    PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
+    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};

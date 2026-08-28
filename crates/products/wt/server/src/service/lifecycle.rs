@@ -35,6 +35,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         self.store
             .mark_stopped(world_id, "guest stopped (requested)", disk_usage_bytes)
             .map_err(map_store_error)?;
+        if let Err(error) = self.gateway.clear_pane_observations(world_id) {
+            eprintln!("wt-server: clear stopped world pane observations: {error}");
+        }
         let world = self
             .store
             .get_owned_by_id(owner, world_id)
