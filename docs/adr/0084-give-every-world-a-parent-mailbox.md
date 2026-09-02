@@ -5,8 +5,8 @@
 
 ## Decision
 
-Every WT world has an outbound mailbox in `wts`. A process in the world sends a message with the
-always-available `wtg tools` command:
+Every WT world has an outbound mailbox in `wts`. A process in a WT-managed Byobu window sends a
+message with the always-available `wtg tools` command:
 
 ```json
 {"command":{"action":"send_message_to_parent","message":"..."}}
@@ -16,17 +16,20 @@ This command is the single untargeted `wtg tools` operation. It replaces
 `report_wt_tool_bug`, `report_wt_tool_issue`, `suggest_wt_tool_improvement`, and
 `request_wt_tool_feature`.
 
-Codex invokes the command through its shell tool. Other programs in the world use the same command.
-World creation always provides the guest relay, command schema, and mailbox path.
+Codex invokes the command through its shell tool. Other programs in managed windows use the same
+command. `wtg tools` creates a client message ID and reuses it for transport retries.
 
 ## Transport and storage
 
-`wtg tools` sends the request to the guest relay over its Unix socket. The relay sends it to the
-host gateway over VSOCK. The gateway derives the source world from the VSOCK peer CID and active
-libvirt domain.
+`wtg tools` sends the request to the guest relay over its Unix socket. The relay obtains the caller
+PID from Unix peer credentials and derives its WT window from WT-managed process membership. The
+relay sends the window ID and message to the host gateway over VSOCK. The gateway derives the world
+from the VSOCK peer CID and active libvirt domain.
 
-The gateway commits the message to the WT registry before it returns success. Mailbox rows contain
-a monotonic ID, world ID, creation time, and message. Deleting a world deletes its mailbox rows.
+The gateway commits the message before it returns success. A mailbox row contains the server message
+ID, client message ID, world ID, window ID, creation time, and message. The server message ID is
+monotonic within one WT server. The unique `(world_id, window_id, client_message_id)` key makes a
+retried send return the original row.
 
 The `wts` control API exposes an owner-scoped cursor query:
 
@@ -35,13 +38,18 @@ list_world_mail(world_id, after_id, limit)
 ```
 
 Results use ascending ID order. `after_id` is exclusive. Repeating a page is safe because each row
-keeps its stable WT message ID. Reading preserves the mailbox contents.
+keeps its stable server message ID. Each response includes the highest committed message ID observed
+when the query began. A client can drain through that high-water ID while new messages arrive.
+Reading preserves the mailbox contents.
+
+Messages are limited to 64 KiB. Each world retains up to 64 MiB of mailbox data. A full mailbox
+rejects new messages with a capacity error. Deleting a world deletes its mailbox rows.
 
 ## User interface
 
-`wt ls` and world cards show each world's mailbox count. The shell provides a mailbox view for the
-selected world with message time and text. `wt messages` lists the same server-backed mail across
-configured contexts.
+`wt ls` and world cards show the total retained message count for each world. The shell provides a
+mailbox view with window, message time, and text. `wt messages` lists the same server-backed mail
+across configured contexts.
 
 The mailbox UI reads the same control-plane query used by external clients. Messages remain visible
 after an external controller reads them.
@@ -55,6 +63,6 @@ Generated `wtg tools` types and help expose `send_message_to_parent` as the fixe
 ## Consequences
 
 - A message survives guest, Codex, client, and `wts` process restarts after the registry commit.
-- External controllers poll each world mailbox and route messages using their own relationships.
-- WT authenticates the sender as a world. External controllers own parent relationships.
+- External controllers route messages by server, world, and window.
+- WT authenticates the source world and derives its window. Controllers own parent relationships.
 - The mailbox has one behavior for every world.
