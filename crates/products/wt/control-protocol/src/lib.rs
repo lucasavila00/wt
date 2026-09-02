@@ -21,12 +21,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
-#[cfg(test)]
 use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -81,6 +80,12 @@ impl ApiProgress {
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiRequest {
     pub protocol_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_server_id: Option<Uuid>,
     #[serde(flatten)]
     pub operation: Operation,
 }
@@ -89,6 +94,24 @@ impl ApiRequest {
     pub fn new(operation: Operation) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
+            request_id: None,
+            request_hash: None,
+            expected_server_id: None,
+            operation,
+        }
+    }
+
+    pub fn with_request_id(
+        operation: Operation,
+        request_id: Uuid,
+        request_hash: String,
+        expected_server_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: Some(request_id),
+            request_hash: Some(request_hash),
+            expected_server_id,
             operation,
         }
     }
@@ -116,6 +139,12 @@ pub enum Operation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApiResponse {
     pub protocol_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_unix_ms: Option<i64>,
     #[serde(flatten)]
     pub outcome: Outcome,
 }
@@ -124,6 +153,9 @@ impl ApiResponse {
     pub fn ok(response: Response) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
+            request_id: None,
+            server_id: None,
+            expires_at_unix_ms: None,
             outcome: Outcome::Ok {
                 response: Box::new(response),
             },
@@ -133,8 +165,33 @@ impl ApiResponse {
     pub fn error(error: ApiError) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
+            request_id: None,
+            server_id: None,
+            expires_at_unix_ms: None,
             outcome: Outcome::Error { error },
         }
+    }
+
+    pub fn from_outcome(outcome: Outcome) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: None,
+            server_id: None,
+            expires_at_unix_ms: None,
+            outcome,
+        }
+    }
+
+    pub fn with_request_metadata(
+        mut self,
+        request_id: Uuid,
+        server_id: Uuid,
+        expires_at_unix_ms: Option<i64>,
+    ) -> Self {
+        self.request_id = Some(request_id);
+        self.server_id = Some(server_id);
+        self.expires_at_unix_ms = expires_at_unix_ms;
+        self
     }
 }
 
@@ -295,8 +352,14 @@ pub struct ParseWorldStatusError(String);
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retryable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<Capacity>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl ApiError {
@@ -304,6 +367,7 @@ impl ApiError {
         Self {
             code,
             message: message.into(),
+            retryable: false,
             capacity: None,
         }
     }
@@ -312,8 +376,14 @@ impl ApiError {
         Self {
             code: ErrorCode::Capacity,
             message: format!("world {} capacity is full", capacity.resource),
+            retryable: true,
             capacity: Some(capacity),
         }
+    }
+
+    pub fn retryable(mut self) -> Self {
+        self.retryable = true;
+        self
     }
 }
 
@@ -349,6 +419,7 @@ impl fmt::Display for CapacityResource {
 pub enum ErrorCode {
     InvalidRequest,
     UnsupportedProtocol,
+    ServerMismatch,
     Conflict,
     NotFound,
     Capacity,
@@ -479,11 +550,12 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 16,
+          "protocol_version": 17,
           "outcome": "error",
           "error": {
             "code": "capacity",
             "message": "world memory capacity is full",
+            "retryable": true,
             "capacity": {
               "resource": "memory",
               "total": 32000,
@@ -514,7 +586,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 16,
+          "protocol_version": 17,
           "vcpus": 2
         }
         "###);
@@ -570,7 +642,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 16,
+          "protocol_version": 17,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -590,11 +662,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 16,
+            "protocol_version": 17,
             "operation": "server_info"
           },
           {
-            "protocol_version": 16,
+            "protocol_version": 17,
             "outcome": "ok",
             "response": {
               "response": "server_info",

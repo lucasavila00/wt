@@ -53,6 +53,17 @@ pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentT
         });
     }
 
+    if let Some(request_id) = request.request_id {
+        return service.execute_api_mutation(
+            owner,
+            request_id,
+            request.request_hash.as_deref(),
+            request.expected_server_id,
+            request.operation,
+            progress,
+        );
+    }
+
     match service.execute_with_progress(owner, request.operation, progress) {
         Ok(response) => ApiResponse::ok(response),
         Err(error) => ApiResponse::error(error),
@@ -83,7 +94,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 17; expected 16"
+            @"unsupported protocol version 18; expected 17"
         );
     }
 }

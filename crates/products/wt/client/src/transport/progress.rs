@@ -11,8 +11,16 @@ enum Frame {
 pub fn call_outcome_with_progress(
     context: &Context,
     request: &ApiRequest,
-    mut progress: impl FnMut(String),
+    progress: impl FnMut(String),
 ) -> std::result::Result<Outcome, ContextError> {
+    Ok(call_response_with_progress(context, request, progress)?.outcome)
+}
+
+pub fn call_response_with_progress(
+    context: &Context,
+    request: &ApiRequest,
+    mut progress: impl FnMut(String),
+) -> std::result::Result<ApiResponse, ContextError> {
     let request = serde_json::to_vec(request).map_err(|error| {
         context_error(
             context,
@@ -133,7 +141,7 @@ pub fn call_outcome_with_progress(
     if response.protocol_version != PROTOCOL_VERSION {
         return Err(protocol_version_error(context, response.protocol_version));
     }
-    Ok(response.outcome)
+    Ok(response)
 }
 
 fn accept_frame(
@@ -203,14 +211,14 @@ mod tests {
         assert!(matches!(
             decode_frame(
                 &context(),
-                br#"{"protocol_version":16,"event":"progress","message":"waiting"}"#,
+                br#"{"protocol_version":17,"event":"progress","message":"waiting"}"#,
             )
             .unwrap(),
             Frame::Progress(message) if message == "waiting"
         ));
         assert!(decode_frame(
             &context(),
-            br#"{"protocol_version":16,"event":"future","message":"waiting"}"#,
+            br#"{"protocol_version":17,"event":"future","message":"waiting"}"#,
         )
         .is_err());
     }
@@ -223,12 +231,12 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.body().contains("expected 16"));
+        assert!(error.body().contains("expected 17"));
     }
 
     #[test]
     fn terminal_response_is_unique_and_last() {
-        let response_line = br#"{"protocol_version":16,"outcome":"ok","response":{"response":"worlds","worlds":[],"disk_usage_bytes":{},"agent_tool_report_counts":{}}}"#;
+        let response_line = br#"{"protocol_version":17,"outcome":"ok","response":{"response":"worlds","worlds":[],"disk_usage_bytes":{},"agent_tool_report_counts":{}}}"#;
         let mut response = None;
         assert!(accept_frame(
             &mut response,
@@ -239,7 +247,7 @@ mod tests {
             &mut response,
             decode_frame(
                 &context(),
-                br#"{"protocol_version":16,"event":"progress","message":"late"}"#,
+                br#"{"protocol_version":17,"event":"progress","message":"late"}"#,
             )
             .unwrap()
         )

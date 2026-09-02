@@ -15,7 +15,7 @@ use wt_control_protocol::{
 
 mod progress;
 
-pub use progress::call_outcome_with_progress;
+pub use progress::{call_outcome_with_progress, call_response_with_progress};
 
 #[derive(Debug)]
 pub struct ContextError {
@@ -113,6 +113,9 @@ pub fn rejection(context: &Context, error: &ApiError) -> ContextError {
             }
         }
         wt_control_protocol::ErrorCode::UnsupportedProtocol => version_hint(context),
+        wt_control_protocol::ErrorCode::ServerMismatch => {
+            "verify the context's configured WT server identity".to_owned()
+        }
         _ => server_hint(context),
     };
     context_error(
@@ -506,6 +509,7 @@ fn error_code(code: wt_control_protocol::ErrorCode) -> &'static str {
     match code {
         wt_control_protocol::ErrorCode::InvalidRequest => "invalid request",
         wt_control_protocol::ErrorCode::UnsupportedProtocol => "unsupported protocol",
+        wt_control_protocol::ErrorCode::ServerMismatch => "server mismatch",
         wt_control_protocol::ErrorCode::Conflict => "conflict",
         wt_control_protocol::ErrorCode::NotFound => "not found",
         wt_control_protocol::ErrorCode::Capacity => "capacity unavailable",
@@ -574,16 +578,16 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let valid = br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
+        let valid = br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
         assert_eq!(decode_pane_observations(&context, valid).unwrap().len(), 1);
 
         for invalid in [
-            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[]},"extra":true}"#.as_slice(),
-            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[],"extra":true}}"#.as_slice(),
-            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}},"extra":true}]}}"#.as_slice(),
-            br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]},"extra":true}}]}}"#.as_slice(),
-            br#"{"protocol_version":16,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
-            br#"{"protocol_version":16,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[]},"extra":true}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[],"extra":true}}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}},"extra":true}]}}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"window_index":0,"window_name":"codex","frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]},"extra":true}}]}}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"error","error":{"code":"internal","message":"bad","extra":true}}"#.as_slice(),
+            br#"{"protocol_version":17,"outcome":"error","error":{"code":"capacity","message":"full","capacity":{"resource":"cpu","total":1,"reserved":1,"requested":1,"extra":true}}}"#.as_slice(),
         ] {
             let error = decode_pane_observations(&context, invalid).unwrap_err();
             assert!(error.to_string().contains("invalid response"));
@@ -597,7 +601,7 @@ mod tests {
             name: "local".into(),
             kind: ContextKind::BareMetalLocal,
         };
-        let missing = br#"{"protocol_version":16,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
+        let missing = br#"{"protocol_version":17,"outcome":"ok","response":{"response":"pane_observations","panes":[{"world_id":"123e4567-e89b-12d3-a456-426614174000","world_name":"host","created_at_unix_ms":0,"tmux_session":"wt-host","pane_id":"%1","cwd":"/home/wt","changed_at_unix_ms":1,"observed_at_unix_ms":2,"render":{"frame":{"rows":1,"columns":1,"cells":[{"text":"C"}]}}}]}}"#;
 
         let error = decode_pane_observations(&context, missing).unwrap_err();
         assert!(error.to_string().contains("missing field `window_index`"));

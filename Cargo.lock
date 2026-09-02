@@ -3923,6 +3923,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "sha2",
  "signal-hook",
  "ssh-key",
  "tempfile",

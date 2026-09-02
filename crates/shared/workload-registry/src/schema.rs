@@ -1,11 +1,28 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    api_mutation_results (owner, request_id) {
+        owner -> Text,
+        request_id -> Text,
+        request_hash -> Text,
+        response_json -> Nullable<Text>,
+        expires_at_unix_ms -> BigInt,
+    }
+}
+
+diesel::table! {
     agent_tool_reports (id) {
         id -> Integer,
         world_id -> Text,
         kind -> Text,
         description -> Text,
+    }
+}
+
+diesel::table! {
+    server_metadata (singleton) {
+        singleton -> Integer,
+        server_id -> Text,
     }
 }
 
@@ -74,8 +91,10 @@ diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
 diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    api_mutation_results,
     agent_tool_reports,
     repositories,
+    server_metadata,
     world_git_activity,
     world_wt_tools_activity,
     worlds

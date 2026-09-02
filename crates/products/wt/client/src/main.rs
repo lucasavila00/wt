@@ -11,6 +11,7 @@ use wt_client::inventory::{self, ContextWorld};
 use wt_client::transport::ContextError;
 use wt_control_protocol::{ApiRequest, Operation, Response};
 
+mod api;
 mod code;
 mod create;
 mod git_author;
@@ -55,6 +56,8 @@ enum Command {
     Reports,
     /// Clear reports submitted about wt-tools.
     ClearReports,
+    /// Read one versioned JSON API request from standard input.
+    Api,
     /// Show client and configured server build identities.
     Diagnostics,
 }
@@ -68,6 +71,9 @@ fn main() {
 
 fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
     let command = Cli::parse_from(args).command;
+    if matches!(command, Command::Api) {
+        return api::run();
+    }
     let config = ClientConfig::load()?;
     let test_server = local_test_server(&config);
     if test_server {
@@ -222,6 +228,7 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
         Command::Reports => reports::show(&config)?,
         Command::ClearReports => reports::clear(&config)?,
         Command::Diagnostics => print_diagnostics(&config),
+        Command::Api => unreachable!("API requests return before loading interactive client state"),
     }
     Ok(())
 }

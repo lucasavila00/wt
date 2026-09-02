@@ -1,4 +1,5 @@
 mod activity;
+mod api;
 mod capacity;
 mod reports;
 pub mod schema;
@@ -8,6 +9,7 @@ pub use activity::{
     GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, RepositoryTargetInput,
     WtToolsActivity, WtToolsActivityInput, WtToolsActivityQuery, ACTIVITY_PAGE_SIZE,
 };
+pub use api::ApiMutationStart;
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
