@@ -21,13 +21,21 @@ impl ShellModel {
     }
 
     fn handle_control_key(&mut self, key: KeyEvent, area: Rect) -> InputRoute {
+        if let Some(mailbox) = self.mailbox.as_mut() {
+            if key.code == KeyCode::Esc && key.modifiers == KeyModifiers::NONE {
+                self.mailbox = None;
+            } else {
+                let _ = mailbox.handle_key(key);
+            }
+            return InputRoute::Consumed;
+        }
         if key.code == KeyCode::F(5) && self.has_worlds() {
             self.control.close();
             self.world_menu = None;
             self.mode = Mode::World;
             return InputRoute::Consumed;
         }
-        if let Some(menu) = &self.world_menu {
+        if let Some(menu) = &mut self.world_menu {
             let action = menu.handle_key(key);
             let identity = menu.identity().clone();
             return self.apply_menu_action(action, &identity);
@@ -69,6 +77,9 @@ impl ShellModel {
         area: Rect,
         world_card_count: usize,
     ) -> (bool, Option<InputRoute>) {
+        if self.mailbox.is_some() {
+            return (true, Some(InputRoute::Consumed));
+        }
         if let Some(menu) = &self.world_menu {
             let action = menu.handle_mouse(mouse, area);
             let identity = menu.identity().clone();
@@ -126,6 +137,12 @@ impl ShellModel {
                 self.world_menu = None;
                 self.world_index(identity)
                     .map(|index| InputRoute::DeleteWorld(Box::new(self.worlds[index].clone())))
+                    .unwrap_or(InputRoute::Consumed)
+            }
+            MenuAction::Messages => {
+                self.world_menu = None;
+                self.world_index(identity)
+                    .map(|index| InputRoute::ShowMessages(Box::new(self.worlds[index].clone())))
                     .unwrap_or(InputRoute::Consumed)
             }
         }

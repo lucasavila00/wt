@@ -5,12 +5,13 @@ use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
 use uuid::Uuid;
 use wt_control_protocol::{
-    ApiRequest, CapacityResource, CreateWorld, ErrorCode, Operation, Outcome, Response, World,
-    WorldStatus,
+    ApiRequest, CapacityResource, CreateWorld, ErrorCode, Operation, Outcome, Response,
 };
 
 mod window;
+mod world;
 use window::ApiWindow;
+use world::ApiWorld;
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
@@ -39,6 +40,7 @@ enum Request {
     SendWindowInput { #[serde(flatten)] routing: Routing, window_id: String, control_token: String, data_base64: String },
     StopWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
     DeleteWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
+    ListWorldMail { #[serde(flatten)] routing: Routing, world_id: String, after_id: u64, limit: u32 },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -72,7 +74,8 @@ impl Request {
             | Self::GetWindow { routing, .. }
             | Self::SendWindowInput { routing, .. }
             | Self::StopWindow { routing, .. }
-            | Self::DeleteWindow { routing, .. } => routing,
+            | Self::DeleteWindow { routing, .. }
+            | Self::ListWorldMail { routing, .. } => routing,
         }
     }
 }
@@ -122,77 +125,33 @@ enum ApiResult {
     WindowDeleted {
         window_id: String,
     },
+    WorldMail {
+        messages: Vec<ApiWorldMail>,
+        high_water_id: u64,
+    },
 }
 
 #[derive(Debug, Serialize)]
-struct ApiWorld {
+struct ApiWorldMail {
+    id: u64,
+    client_message_id: String,
     world_id: String,
-    name: String,
-    status: ApiWorldStatus,
-    vcpus: u32,
-    memory_mib: u64,
-    disk_gib: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    guest_ip: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    last_error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ssh: Option<ApiSshAccess>,
+    world_name: String,
+    window_id: String,
+    created_at_unix_ms: i64,
+    message: String,
 }
 
-impl From<World> for ApiWorld {
-    fn from(world: World) -> Self {
+impl From<wt_control_protocol::WorldMail> for ApiWorldMail {
+    fn from(mail: wt_control_protocol::WorldMail) -> Self {
         Self {
-            world_id: world.world_id.to_string(),
-            name: world.name.to_string(),
-            status: world.status.into(),
-            vcpus: world.vcpus,
-            memory_mib: world.memory_mib,
-            disk_gib: world.disk_gib,
-            guest_ip: world.guest_ip,
-            last_error: world.last_error,
-            ssh: world.ssh.map(Into::into),
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiWorldStatus {
-    Provisioning,
-    Running,
-    Stopped,
-    Destroying,
-    Error,
-}
-
-impl From<WorldStatus> for ApiWorldStatus {
-    fn from(status: WorldStatus) -> Self {
-        match status {
-            WorldStatus::Provisioning => Self::Provisioning,
-            WorldStatus::Running => Self::Running,
-            WorldStatus::Stopped => Self::Stopped,
-            WorldStatus::Destroying => Self::Destroying,
-            WorldStatus::Error => Self::Error,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ApiSshAccess {
-    user: String,
-    host: String,
-    port: u16,
-    host_keys: Vec<String>,
-}
-
-impl From<wt_control_protocol::SshAccess> for ApiSshAccess {
-    fn from(access: wt_control_protocol::SshAccess) -> Self {
-        Self {
-            user: access.user,
-            host: access.host,
-            port: access.port,
-            host_keys: access.host_keys,
+            id: mail.id,
+            client_message_id: mail.client_message_id.to_string(),
+            world_id: mail.world_id.to_string(),
+            world_name: mail.world_name.to_string(),
+            window_id: mail.window_id.to_string(),
+            created_at_unix_ms: mail.created_at_unix_ms,
+            message: mail.message,
         }
     }
 }
@@ -478,6 +437,31 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 },
             ))
         }
+        Request::ListWorldMail {
+            routing,
+            world_id,
+            after_id,
+            limit,
+            ..
+        } => {
+            let world_id = world_id
+                .parse()
+                .map_err(|_| "invalid world ID".to_owned())?;
+            if !(1..=wt_control_protocol::MAX_WORLD_MAIL_PAGE_SIZE).contains(&limit) {
+                return Err(format!(
+                    "limit must be between 1 and {}",
+                    wt_control_protocol::MAX_WORLD_MAIL_PAGE_SIZE
+                ));
+            }
+            Ok((
+                routing.context,
+                Operation::ListWorldMail {
+                    world_id,
+                    after_id,
+                    limit,
+                },
+            ))
+        }
     }
 }
 
@@ -563,6 +547,15 @@ fn call(
                 Response::WindowDeleted { window_id } => ApiOutcome::Ok {
                     result: ApiResult::WindowDeleted {
                         window_id: window_id.to_string(),
+                    },
+                },
+                Response::WorldMail {
+                    messages,
+                    high_water_id,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::WorldMail {
+                        messages: messages.into_iter().map(Into::into).collect(),
+                        high_water_id,
                     },
                 },
                 _ => api_error(

@@ -5,12 +5,12 @@ use wt_server::operations::Operations;
 use wt_server::service::Service;
 use wt_workload_registry::Store;
 
-#[path = "service/agent_tool_reports.rs"]
-mod agent_tool_reports;
 #[path = "service/stop.rs"]
 mod stop;
 #[path = "service/support.rs"]
 mod support;
+#[path = "service/world_mail.rs"]
+mod world_mail;
 use support::{create, service, Gateway, Worker};
 
 #[test]

@@ -98,4 +98,9 @@ again from the guest image.
 Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
-that domain's name.
+that domain's name. This authenticates the source world, not a process or window inside it. For
+parent messages, the stock guest relay uses Unix peer credentials and process ancestry to attach a
+managed Byobu window as cooperative provenance. The host validates the native tmux window ID against
+the authenticated world's registry before resolving its persistent WT window UUID and committing
+mail. Because guest software can bypass the relay and speak VSOCK directly, controllers must not use
+the mailbox window ID as an authorization identity.

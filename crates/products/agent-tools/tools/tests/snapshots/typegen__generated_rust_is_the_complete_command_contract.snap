@@ -159,22 +159,10 @@ pub enum GitHostingCommand {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "action", deny_unknown_fields)]
-pub enum WtToolsFeedbackCommand {
-    #[serde(rename = "report_wt_tool_bug")]
-    ReportWtToolBug {
-        description: String,
-    },
-    #[serde(rename = "report_wt_tool_issue")]
-    ReportWtToolIssue {
-        description: String,
-    },
-    #[serde(rename = "suggest_wt_tool_improvement")]
-    SuggestWtToolImprovement {
-        description: String,
-    },
-    #[serde(rename = "request_wt_tool_feature")]
-    RequestWtToolFeature {
-        description: String,
+pub enum WtToolsWorldCommand {
+    #[serde(rename = "send_message_to_parent")]
+    SendMessageToParent {
+        message: String,
     },
 }
 
@@ -185,7 +173,7 @@ pub enum WtToolsCommand {
         target: GitHostingTarget,
         command: GitHostingCommand,
     },
-    Feedback {
-        command: WtToolsFeedbackCommand,
+    World {
+        command: WtToolsWorldCommand,
     },
 }

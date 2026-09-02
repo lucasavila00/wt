@@ -61,6 +61,9 @@ case "$request" in
   *'"operation":"list_wt_tools_activity"'*)
     printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"wt_tools_activity","activity":[{"id":1,"world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","recorded_at_unix_ms":40,"provider_host":"github.com","repository":"owner/write","action":"open_mr","branch":"wt/topic","change_request":"42","request_json":"{}","response_json":"{}"}]}}'
     ;;
+  *'"operation":"list_world_mail"'*)
+    printf '%s\n' '{"protocol_version":@PROTOCOL_VERSION@,"outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"client_message_id":"44444444-4444-4444-8444-444444444444","world_id":"00000000-0000-0000-0000-000000000001","world_name":"existing","window_id":"55555555-5555-4555-8555-555555555555","created_at_unix_ms":1788374400000,"message":"ready for review"}],"high_water_id":7}}'
+    ;;
   *'"operation":"list_worlds"'*)
     worlds='{"world_id":"00000000-0000-0000-0000-000000000001","name":"existing","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}'
     if test -f "$HOME/created-first"; then
@@ -317,10 +320,28 @@ fn world_card_menu_opens_delete_confirmation_without_the_picker() -> Result<()> 
         .click(49, 0)?
         .wait_for_text("World Menu")?
         .wait_for_text("local.existing")?
+        .press(Key::Down)?
         .press(Key::Enter)?
         .wait_for_text("Delete world?")?
         .press(Key::Escape)?
         .wait_for_text_gone("Delete world?")?;
+    Ok(())
+}
+
+#[test]
+fn world_card_menu_opens_the_durable_mailbox() -> Result<()> {
+    let fixture = Fixture::new();
+    let mut screen = fixture.screen()?;
+    screen
+        .wait_for_text("No live Codex panes")?
+        .press(Key::Tab)?
+        .click(49, 0)?
+        .wait_for_text("World Menu")?
+        .press(Key::Enter)?
+        .wait_for_text("Messages · local.existing")?
+        .wait_for_text("ready for review")?
+        .press(Key::Escape)?
+        .wait_for_text_gone("ready for review")?;
     Ok(())
 }
 

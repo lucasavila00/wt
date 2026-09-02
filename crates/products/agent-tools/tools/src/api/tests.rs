@@ -105,14 +105,10 @@ fn command_parser_accepts_only_valid_json_objects() {
         );
         WtToolsCommand::parse(&[json]).unwrap();
     }
-    for command in [
-        r#"{"action":"report_wt_tool_bug","description":"build failed"}"#,
-        r#"{"action":"report_wt_tool_issue","description":"output is unclear"}"#,
-        r#"{"action":"suggest_wt_tool_improvement","description":"show progress"}"#,
-        r#"{"action":"request_wt_tool_feature","description":"add search"}"#,
-    ] {
-        WtToolsCommand::parse(&[format!(r#"{{"command":{command}}}"#)]).unwrap();
-    }
+    WtToolsCommand::parse(&[
+        r#"{"command":{"action":"send_message_to_parent","message":"ready"}}"#.into(),
+    ])
+    .unwrap();
     let targeted = |command: &str| {
         format!(
             r#"{{"target":{{"provider":"github","repository":"acme/widget"}},"command":{command}}}"#
@@ -121,7 +117,7 @@ fn command_parser_accepts_only_valid_json_objects() {
     let parsed_command = |command: &str| match WtToolsCommand::parse(&[targeted(command)]).unwrap()
     {
         WtToolsCommand::GitHosting { command, .. } => command,
-        WtToolsCommand::Feedback { .. } => panic!("expected Git hosting command"),
+        WtToolsCommand::World { .. } => panic!("expected Git hosting command"),
     };
     assert_eq!(
         parsed_command(r#"{"action":"wait_job","job":"42"}"#),
@@ -162,13 +158,13 @@ fn command_parser_accepts_only_valid_json_objects() {
     );
     assert!(WtToolsCommand::parse(&[targeted(r#"{"action":"edit_mr","mr":"7"}"#)]).is_err());
     assert!(WtToolsCommand::parse(&[
-        r#"{"command":{"action":"report_wt_tool_bug","description":"  "}}"#.into()
+        r#"{"command":{"action":"send_message_to_parent","message":""}}"#.into()
     ])
     .is_err());
     assert!(
         WtToolsCommand::parse(&[r#"{"command":{"action":"show_mr","mr":"7"}}"#.into()]).is_err()
     );
-    assert!(WtToolsCommand::parse(&[r#"{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"report_wt_tool_bug","description":"bad"}}"#.into()]).is_err());
+    assert!(WtToolsCommand::parse(&[r#"{"target":{"provider":"github","repository":"acme/widget"},"command":{"action":"send_message_to_parent","message":"bad"}}"#.into()]).is_err());
 }
 
 #[test]

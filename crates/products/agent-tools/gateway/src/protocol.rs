@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 pub const MAX_PANE_OBSERVATIONS: usize = 32;
 pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
@@ -12,6 +12,12 @@ pub fn valid_byobu_tmux_session(value: &str) -> bool {
 
 pub fn valid_byobu_pane_id(value: &str) -> bool {
     value.strip_prefix('%').is_some_and(|number| {
+        !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+pub fn valid_byobu_window_id(value: &str) -> bool {
+    value.strip_prefix('@').is_some_and(|number| {
         !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
     })
 }
@@ -56,9 +62,20 @@ pub struct ClientRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ClientOperation {
-    Git { service: GitService, source: String },
-    Cli { args: Vec<String> },
-    PaneObservations { panes: Vec<PaneObservation> },
+    Git {
+        service: GitService,
+        source: String,
+    },
+    Cli {
+        args: Vec<String>,
+    },
+    PaneObservations {
+        panes: Vec<PaneObservation>,
+    },
+    SendMessageToParent {
+        client_message_id: uuid::Uuid,
+        message: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -131,12 +148,21 @@ mod byobu_target_tests {
         for invalid in ["", "%", "%a", "1", "%12345678901234567"] {
             assert!(!valid_byobu_pane_id(invalid), "{invalid}");
         }
+
+        assert!(valid_byobu_window_id("@0"));
+        assert!(valid_byobu_window_id("@1234567890123456"));
+        for invalid in ["", "@", "@a", "1", "@12345678901234567"] {
+            assert!(!valid_byobu_window_id(invalid), "{invalid}");
+        }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TransportRequest {
     pub protocol_version: u32,
+    /// Cooperative provenance from the stock relay, not an authorization identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmux_window_id: Option<String>,
     #[serde(flatten)]
     pub operation: ClientOperation,
 }
@@ -155,9 +181,10 @@ mod transport_tests {
     use super::*;
 
     #[test]
-    fn transport_identity_is_not_supplied_by_the_guest() {
+    fn ordinary_transport_requests_omit_window_provenance() {
         let request = TransportRequest {
             protocol_version: PROTOCOL_VERSION,
+            tmux_window_id: None,
             operation: ClientOperation::Cli {
                 args: vec!["help".into()],
             },
@@ -165,7 +192,7 @@ mod transport_tests {
 
         insta::assert_snapshot!(serde_json::to_string_pretty(&request).unwrap(), @r###"
         {
-          "protocol_version": 14,
+          "protocol_version": 15,
           "operation": "cli",
           "args": [
             "help"

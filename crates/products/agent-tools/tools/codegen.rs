@@ -75,7 +75,7 @@ fn emit_alias(path: &str, alias: &TsTypeAliasDecl, output: &mut String) -> Resul
             writeln!(output, "}}\n").unwrap();
         }
         ty if name == "GitHostingTarget" => emit_object(path, name, ty, output)?,
-        ty if matches!(name, "GitHostingCommand" | "WtToolsFeedbackCommand") => {
+        ty if matches!(name, "GitHostingCommand" | "WtToolsWorldCommand") => {
             emit_commands(path, name, ty, output)?
         }
         ty if name == "WtToolsCommand" => emit_envelope(path, ty, output)?,
@@ -114,7 +114,7 @@ fn emit_envelope(path: &str, ty: &TsType, output: &mut String) -> Result<(), Str
         let variant = if fields.iter().any(|field| field.0 == "target") {
             "GitHosting"
         } else {
-            "Feedback"
+            "World"
         };
         writeln!(output, "    {variant} {{").unwrap();
         emit_fields(path, &fields, output, false)?;
@@ -162,9 +162,12 @@ fn string_union(ty: &TsType) -> Option<Vec<String>> {
 }
 
 fn emit_commands(path: &str, name: &str, ty: &TsType, output: &mut String) -> Result<(), String> {
-    let TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) = ty
-    else {
-        return Err(format!("{path}: `{name}` must be an object union"));
+    let members = match ty {
+        TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) => {
+            union.types.iter().map(AsRef::as_ref).collect::<Vec<_>>()
+        }
+        TsType::TsTypeLit(_) => vec![ty],
+        _ => return Err(format!("{path}: `{name}` must be an object union")),
     };
     writeln!(
         output,
@@ -177,7 +180,7 @@ fn emit_commands(path: &str, name: &str, ty: &TsType, output: &mut String) -> Re
     )
     .unwrap();
     let mut actions = HashSet::new();
-    for member in &union.types {
+    for member in members {
         let fields = object_fields(path, member)?;
         let mut action_fields = fields.iter().filter(|field| field.0 == "action");
         let action = action_fields

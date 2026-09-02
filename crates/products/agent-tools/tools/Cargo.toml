@@ -8,7 +8,6 @@ description = "GitHub and GitLab operations for WT"
 
 [dependencies]
 anyhow = { workspace = true }
-wt-workload-registry = { workspace = true }
 graphql_client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

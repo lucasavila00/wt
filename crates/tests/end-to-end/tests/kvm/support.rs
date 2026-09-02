@@ -317,7 +317,7 @@ pub(crate) fn sync_inventory(worlds: &[World]) -> Result<(), String> {
             .cloned()
             .map(|world| wt_client::inventory::ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world,
             })

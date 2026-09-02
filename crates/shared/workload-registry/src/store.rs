@@ -1,4 +1,4 @@
-mod reports;
+mod mail;
 
 use crate::schema::worlds;
 use crate::{Registry, RegistryError, Resources};
@@ -46,6 +46,8 @@ pub enum StoreError {
         reserved: u64,
         requested: u64,
     },
+    #[error("world mailbox capacity is full")]
+    MailboxCapacity,
     #[error("database error: {0}")]
     Database(#[from] DieselError),
     #[error("registry error: {0}")]
@@ -434,6 +436,8 @@ fn map_registry_error(error: RegistryError) -> StoreError {
             reserved,
             requested,
         },
+        RegistryError::MailboxCapacity => StoreError::MailboxCapacity,
+        RegistryError::NotFound => StoreError::NotFound,
         RegistryError::Database(DieselError::DatabaseError(
             DatabaseErrorKind::UniqueViolation,
             _,

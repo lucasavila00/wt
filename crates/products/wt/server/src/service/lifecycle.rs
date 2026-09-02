@@ -49,3 +49,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         })
     }
 }
+
+pub(super) fn stopped_message(reason: Option<&str>) -> String {
+    reason.map_or_else(
+        || "guest stopped".to_owned(),
+        |reason| format!("guest stopped ({reason})"),
+    )
+}

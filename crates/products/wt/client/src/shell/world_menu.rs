@@ -11,30 +11,44 @@ pub(super) const CARD_LABEL: &str = " … Menu ";
 #[derive(Debug)]
 pub(super) struct WorldMenu {
     identity: WorldIdentity,
+    selected: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum MenuAction {
     None,
     Close,
+    Messages,
     Delete,
 }
 
 impl WorldMenu {
     pub(super) fn new(identity: WorldIdentity) -> Self {
-        Self { identity }
+        Self {
+            identity,
+            selected: 0,
+        }
     }
 
     pub(super) fn identity(&self) -> &WorldIdentity {
         &self.identity
     }
 
-    pub(super) fn handle_key(&self, key: KeyEvent) -> MenuAction {
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> MenuAction {
         if key.modifiers != KeyModifiers::NONE {
             return MenuAction::None;
         }
         match key.code {
             KeyCode::Esc => MenuAction::Close,
+            KeyCode::Up => {
+                self.selected = self.selected.saturating_sub(1);
+                MenuAction::None
+            }
+            KeyCode::Down => {
+                self.selected = (self.selected + 1).min(1);
+                MenuAction::None
+            }
+            KeyCode::Enter if self.selected == 0 => MenuAction::Messages,
             KeyCode::Enter => MenuAction::Delete,
             _ => MenuAction::None,
         }
@@ -44,10 +58,14 @@ impl WorldMenu {
         if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
             return MenuAction::None;
         }
-        if menu_result_area(area).contains((mouse.column, mouse.row).into()) {
-            MenuAction::Delete
-        } else {
-            MenuAction::None
+        let results = menu_result_area(area);
+        if mouse.column < results.x || mouse.column >= results.right() {
+            return MenuAction::None;
+        }
+        match mouse.row.checked_sub(results.y) {
+            Some(0) => MenuAction::Messages,
+            Some(1) => MenuAction::Delete,
+            _ => MenuAction::None,
         }
     }
 
@@ -61,10 +79,10 @@ impl WorldMenu {
                 .style(super::render::muted_style()),
             separator,
         );
-        let list = List::new([ListItem::new("Delete")])
+        let list = List::new([ListItem::new("Messages"), ListItem::new("Delete")])
             .highlight_symbol(" ")
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
-        let mut state = ListState::default().with_selected(Some(0));
+        let mut state = ListState::default().with_selected(Some(self.selected));
         frame.render_stateful_widget(list, results, &mut state);
         frame.render_widget(
             Paragraph::new("Enter run · Esc close").style(super::render::muted_style()),

@@ -87,6 +87,7 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
     let world_id = world_uuid.into();
     let request = TransportRequest {
         protocol_version: PROTOCOL_VERSION,
+        tmux_window_id: None,
         operation: ClientOperation::PaneObservations { panes: Vec::new() },
     };
     let authorized = gateway.authorize(&request, world_id).unwrap();
@@ -131,4 +132,60 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
     );
     let current = gateway.authorize(&request, world_id).unwrap();
     gateway.store_pane_observations(&[], &current).unwrap();
+}
+
+#[test]
+fn parent_messages_resolve_a_managed_window_in_the_authenticated_world_and_replay() {
+    use wt_control_protocol::{WorldName, WorldStatus};
+    use wt_workload_registry::{NewWindow, NewWorld, Store};
+    use wt_world::WindowId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("instances.db");
+    let store = Store::open(&path).unwrap();
+    let world_id = wt_world::WorldId::new();
+    store
+        .insert(&NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: WorldName::parse("mail-test").unwrap(),
+            status: WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            setup_fingerprint: "fingerprint".into(),
+        })
+        .unwrap();
+    let window_id = WindowId::new();
+    store
+        .insert_window(&NewWindow {
+            window_id,
+            world_id,
+            owner: "owner".into(),
+            tmux_window_id: Some("@7".into()),
+            control_token: "token".into(),
+            control_token_hash: "hash".into(),
+            argv: vec!["codex".into()],
+            cwd: "/home/wt".into(),
+        })
+        .unwrap();
+    drop(store);
+    let gateway = gateway(&temp);
+    let client_message_id = Uuid::new_v4();
+
+    let first = gateway
+        .activity
+        .record_world_mail(world_id, "@7", client_message_id, "ready")
+        .unwrap();
+    let replay = gateway
+        .activity
+        .record_world_mail(world_id, "@7", client_message_id, "ready")
+        .unwrap();
+
+    assert_eq!(first, replay);
+    assert_eq!(first.window_id, window_id);
+    assert!(gateway
+        .activity
+        .record_world_mail(world_id, "@8", Uuid::new_v4(), "wrong")
+        .is_err());
 }

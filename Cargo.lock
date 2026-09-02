@@ -1734,6 +1734,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.2.1",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -3893,6 +3894,7 @@ dependencies = [
  "diesel",
  "getrandom 0.3.4",
  "insta",
+ "nix 0.31.3",
  "serde",
  "serde_json",
  "sha2",
@@ -4148,7 +4150,6 @@ dependencies = [
  "tempfile",
  "ureq",
  "url",
- "wt-workload-registry",
 ]
 
 [[package]]

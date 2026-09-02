@@ -2,10 +2,10 @@
 
 mod activity;
 mod create;
+mod mail;
 mod pane;
 #[cfg(test)]
 mod rename_tests;
-mod reports;
 mod validation;
 mod window;
 
@@ -13,11 +13,11 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use create::{validate_create_world_resources, CreateWorld};
+pub use mail::{WorldMail, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
     MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
 };
-pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -31,7 +31,7 @@ pub use window::{
 };
 pub use wt_world::{WindowId, WorldId};
 
-pub const PROTOCOL_VERSION: u32 = 18;
+pub const PROTOCOL_VERSION: u32 = 19;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -140,8 +140,7 @@ pub enum Operation {
     SendWindowInput { window_id: WindowId, control_token: String, data: Vec<u8>, #[serde(default, skip_serializing_if = "Option::is_none")] api_request_id: Option<Uuid> },
     StopWindow { window_id: WindowId, control_token: String },
     DeleteWindow { window_id: WindowId, control_token: String },
-    ListAgentToolReports,
-    ClearAgentToolReports,
+    ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },
     ListPaneObservations,
     ListGitActivity { query: GitActivityQuery },
     ListWtToolsActivity { query: WtToolsActivityQuery },
@@ -231,13 +230,11 @@ pub enum Response {
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         disk_usage_bytes: std::collections::BTreeMap<WorldId, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        agent_tool_report_counts: std::collections::BTreeMap<WorldId, u64>,
+        world_mail_counts: std::collections::BTreeMap<WorldId, u64>,
     },
-    AgentToolReports {
-        reports: Vec<AgentToolReport>,
-    },
-    AgentToolReportsCleared {
-        count: u64,
+    WorldMail {
+        messages: Vec<WorldMail>,
+        high_water_id: u64,
     },
     PaneObservations {
         panes: Vec<PaneObservation>,
@@ -567,7 +564,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 18,
+          "protocol_version": 19,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -603,7 +600,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 18,
+          "protocol_version": 19,
           "vcpus": 2
         }
         "###);
@@ -659,7 +656,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 18,
+          "protocol_version": 19,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -679,11 +676,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "server_info"
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "outcome": "ok",
             "response": {
               "response": "server_info",

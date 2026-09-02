@@ -235,7 +235,7 @@ mod tests {
                     worlds: vec![],
                     capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
-                    agent_tool_report_counts: Default::default(),
+                    world_mail_counts: Default::default(),
                 })
             })
             .unwrap();
@@ -279,7 +279,7 @@ mod tests {
                     worlds: vec![],
                     capacity: Default::default(),
                     disk_usage_bytes: Default::default(),
-                    agent_tool_report_counts: Default::default(),
+                    world_mail_counts: Default::default(),
                 })
             })
             .unwrap();
