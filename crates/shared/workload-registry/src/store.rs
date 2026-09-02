@@ -11,7 +11,7 @@ use thiserror::Error;
 use wt_control_protocol::{SshAccess, World, WorldId, WorldName, WorldStatus};
 
 pub struct Store {
-    registry: Registry,
+    pub(crate) registry: Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -216,6 +216,7 @@ impl Store {
     }
 
     pub fn reconcile_interrupted(&self) -> Result<(), StoreError> {
+        self.clear_incomplete_api_mutations()?;
         self.registry.read(|connection| {
             diesel::update(
                 worlds::table.filter(

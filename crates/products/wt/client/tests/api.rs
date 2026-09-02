@@ -25,23 +25,35 @@ fn test_home() -> (tempfile::TempDir, std::ffi::OsString) {
 set -eu
 request=$(cat)
 case "$request" in
+  *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"request_hash":"'*) ;;
+  *) exit 3 ;;
+esac
+case "$request" in
+  *'"expected_server_id":"22222222-2222-4222-8222-222222222222"'*'"name":"agent-1"'*) ;;
+  *'"name":"agent-1"'*) exit 4 ;;
+  *) ;;
+esac
+case "$request" in
+  *'"name":"metadata"'*)
+    printf '%s\n' '{"protocol_version":17,"request_id":"33333333-3333-4333-8333-333333333333","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"conflict","message":"ignored"}}'
+    ;;
   *'"name":"capacity"'*)
-    printf '%s\n' '{"protocol_version":16,"outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
+    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
     ;;
   *'"name":"duplicate"'*)
-    printf '%s\n' '{"protocol_version":16,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
+    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
     ;;
   *'"operation":"create_world"'*)
-    printf '%s\n' '{"protocol_version":16,"event":"progress","message":"creating disk"}'
-    printf '%s\n' '{"protocol_version":16,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    printf '%s\n' '{"protocol_version":17,"event":"progress","message":"creating disk"}'
+    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"delete_world"'*)
     case "$request" in
       *'"world_id":"00000000-0000-0000-0000-000000000002"'*)
-        printf '%s\n' '{"protocol_version":16,"outcome":"error","error":{"code":"not_found","message":"world not found"}}'
+        printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}'
         ;;
       *)
-        printf '%s\n' '{"protocol_version":16,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
+        printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
         ;;
     esac
     ;;
@@ -80,7 +92,7 @@ fn creates_a_world_with_the_versioned_json_contract() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"create_world","name":"agent-1","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","expected_server_id":"22222222-2222-4222-8222-222222222222","context":"ars","operation":"create_world","name":"agent-1","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
     );
 
     assert!(
@@ -91,7 +103,7 @@ fn creates_a_world_with_the_versioned_json_contract() {
     );
     assert!(output.stderr.is_empty());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}
     "###);
 }
 
@@ -101,7 +113,7 @@ fn deletes_a_world_with_the_versioned_json_contract() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000001"}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000001"}"#,
     );
 
     assert!(
@@ -112,7 +124,7 @@ fn deletes_a_world_with_the_versioned_json_contract() {
     );
     assert!(output.stderr.is_empty());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world_id":"00000000-0000-0000-0000-000000000001"}}
     "###);
 }
 
@@ -122,12 +134,12 @@ fn rejects_unknown_request_fields() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000001","extra":true}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000001","extra":true}"#,
     );
 
     assert!(!output.status.success());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"error","error":{"code":"invalid_request","message":"invalid JSON request"}}
+    {"api_version":1,"outcome":"error","error":{"code":"invalid_request","message":"invalid JSON request","retryable":false}}
     "###);
 }
 
@@ -137,12 +149,12 @@ fn reports_server_rejections_as_nonzero_json_errors() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"create_world","name":"duplicate","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"create_world","name":"duplicate","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
     );
 
     assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists","retryable":false}}
     "###);
 }
 
@@ -152,12 +164,12 @@ fn deletes_an_already_absent_world_successfully() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000002"}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"delete_world","world_id":"00000000-0000-0000-0000-000000000002"}"#,
     );
 
     assert!(output.status.success());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world_id":"00000000-0000-0000-0000-000000000002"}}
     "###);
 }
 
@@ -167,11 +179,26 @@ fn returns_structured_capacity_details() {
     let output = call_api(
         &temp,
         &path,
-        r#"{"api_version":1,"context":"ars","operation":"create_world","name":"capacity","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"create_world","name":"capacity","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
     );
 
     assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","details":{"kind":"capacity","resource":"cpu","total":4,"reserved":4,"requested":2}}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"details":{"kind":"capacity","resource":"cpu","total":4,"reserved":4,"requested":2}}}
+    "###);
+}
+
+#[test]
+fn rejects_changed_server_response_metadata() {
+    let (temp, path) = test_home();
+    let output = call_api(
+        &temp,
+        &path,
+        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"create_world","name":"metadata","vcpus":2,"memory_mib":4096,"disk_gib":32,"git_user_name":"Ada Lovelace","git_user_email":"ada@example.com"}"#,
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"internal_error","message":"server omitted or changed API request metadata","retryable":false}}
     "###);
 }

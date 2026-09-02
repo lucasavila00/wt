@@ -13,47 +13,92 @@ trailing newline.
 ```json
 {
   "api_version": 1,
-  "request_id": "0199...",
+  "request_id": "0199f65a-6758-7c13-818a-8e925b476d3e",
+  "expected_server_id": "018efb7d-cf8b-70c1-a867-04e912f499a4",
   "context": "work",
-  "operation": "list_world_mail",
-  "world_id": "018f...",
-  "after_id": 120,
-  "limit": 100
+  "operation": "create_world",
+  "name": "review-auth",
+  "vcpus": 2,
+  "memory_mib": 4096,
+  "disk_gib": 32,
+  "git_user_name": "Ada Lovelace",
+  "git_user_email": "ada@example.com"
 }
 ```
+
+Version 1 exposes only `create_world` and `delete_world`. All operation fields are required.
+`expected_server_id` is optional for a first request and binds later requests to the intended
+server. Deletion identifies a world by `world_id` and means "ensure this world is absent", so
+deleting a world that is already absent succeeds. Additional operations require a separate
+decision after their lifecycle and compatibility contracts are understood.
 
 The command returns a tagged response:
 
 ```json
 {
   "api_version": 1,
-  "request_id": "0199...",
-  "server_id": "018e...",
+  "request_id": "0199f65a-6758-7c13-818a-8e925b476d3e",
+  "server_id": "018efb7d-cf8b-70c1-a867-04e912f499a4",
+  "expires_at_unix_ms": 1788374400000,
   "outcome": "ok",
-  "result": {"messages": []}
+  "result": {
+    "world": {
+      "world_id": "018f1e3d-95c0-7e46-8896-3d9b0abf62c8",
+      "name": "review-auth",
+      "status": "running",
+      "vcpus": 2,
+      "memory_mib": 4096,
+      "disk_gib": 32,
+      "guest_ip": "192.0.2.2",
+      "ssh": {
+        "user": "wt",
+        "host": "192.0.2.2",
+        "port": 22,
+        "host_keys": ["ssh-ed25519 AAAA..."]
+      }
+    }
+  }
 }
 ```
 
 An error response replaces `result` with `error`, containing a stable `code`, a human-readable
-`message`, and `retryable`. Server rejections are JSON responses. Local validation and transport
-failures exit with a non-zero status and write diagnostics to standard error.
+`message`, and `retryable`. Capacity errors also include structured resource details. All error
+responses exit with a non-zero status. Local validation and transport failures still produce the
+JSON error response and additionally write a diagnostic to standard error. A request is limited to
+64 KiB.
 
 The WT client resolves `context` through its existing configuration. It calls `wts api` locally or
 over the context's SSH transport. SSH supplies the server identity and authorization boundary.
 
-Each WT server creates a persistent `server_id`. Clients store it with WT resource IDs and verify it
-after resolving a context. This keeps a renamed or redirected client context from addressing the
-wrong server.
+Each WT server creates a persistent `server_id`. On first use, clients trust the returned identity
+and store it with WT resource IDs. They send it as `expected_server_id` on later requests. The
+server rejects a mismatch before executing the operation. This keeps a renamed or redirected
+client context from addressing the wrong server after that initial trust decision.
 
 `api_version` versions the public contract. Version 1 may add optional response fields. Clients
 ignore unknown response fields. WT rejects unknown request fields and unsupported versions. A
-breaking request or response change requires a new API version. `wt` translates this contract to
-the installed `wts` control protocol, which has its own version.
+breaking request or response change requires a new API version. The public response uses dedicated
+types rather than exposing control-protocol types directly. `wt` translates this contract to the
+installed `wts` control protocol, which has its own version.
 
-Every request has a client-generated `request_id`. For a mutating operation, `wts` commits the
-result under `(owner, request_id)`. Repeating the same request returns that result. Reusing the ID
-with different request content returns a conflict error. WT retains mutation results for 30 days
-and includes their expiration time in the response.
+Every request has a client-generated UUID `request_id`. For a mutating operation, the server commits
+each successful or non-retryable result under `(owner, request_id)`. Repeating the same semantic
+operation returns that exact result after it is committed, including after a client disconnect or
+server restart. Routing fields such as `context` and `expected_server_id` do not change an
+operation's identity. Reusing the ID with different operation content returns a non-retryable
+conflict. WT retains completed mutation results for 30 days and includes their expiration time in
+the response. Retryable errors are not committed and omit the expiration time, allowing the same
+request to be attempted again.
+
+The server durably reserves the request ID before changing world state. If the server stops after a
+world-state change but before committing its API result, startup discards the incomplete result and
+reconciles the world. Retrying then uses create/delete's desired-state behavior: it does not create
+a duplicate world or fail merely because the requested world is already absent, but it may return a
+new result rather than the interrupted process's uncommitted response.
+
+Responses echo `request_id` once it has been parsed and include `server_id` once a server responds.
+Malformed requests may therefore omit both, and local configuration or transport failures omit
+`server_id`.
 
 ## Initial execution model
 
