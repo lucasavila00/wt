@@ -1,6 +1,47 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    window_input (window_id, sequence_id) {
+        window_id -> Text,
+        sequence_id -> BigInt,
+        data -> Binary,
+    }
+}
+
+diesel::table! {
+    window_output (window_id, record_id) {
+        window_id -> Text,
+        record_id -> BigInt,
+        channel -> Text,
+        data -> Binary,
+    }
+}
+
+diesel::table! {
+    windows (window_id) {
+        window_id -> Text,
+        world_id -> Text,
+        owner -> Text,
+        tmux_window_id -> Text,
+        control_token_hash -> Text,
+        argv_json -> Text,
+        cwd -> Text,
+        state -> Text,
+        exit_code -> Nullable<Integer>,
+        exit_signal -> Nullable<Integer>,
+        next_output_record_id -> BigInt,
+        oldest_available -> BigInt,
+        retained_output_bytes -> BigInt,
+        next_input_sequence_id -> BigInt,
+        stdout_offset -> BigInt,
+        stderr_offset -> BigInt,
+        screen -> Nullable<Text>,
+        screen_observed_at_unix_ms -> Nullable<BigInt>,
+        created_at_unix_ms -> BigInt,
+    }
+}
+
+diesel::table! {
     api_mutation_results (owner, request_id) {
         owner -> Text,
         request_id -> Text,
@@ -89,6 +130,9 @@ diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
 diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
+diesel::joinable!(window_input -> windows (window_id));
+diesel::joinable!(window_output -> windows (window_id));
+diesel::joinable!(windows -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_mutation_results,
@@ -97,5 +141,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     server_metadata,
     world_git_activity,
     world_wt_tools_activity,
-    worlds
+    worlds,
+    window_input,
+    window_output,
+    windows
 );

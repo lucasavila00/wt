@@ -4,6 +4,7 @@ mod capacity;
 mod reports;
 pub mod schema;
 mod store;
+mod windows;
 
 pub use activity::{
     GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, RepositoryTargetInput,
@@ -15,6 +16,10 @@ pub use capacity::{
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{NewWorld, Store, StoreError, StoredWorld};
+pub use windows::{
+    NewWindow, StoredWindow, WindowInput, WindowOutput, WindowOutputPage, WindowState,
+    WINDOW_OUTPUT_RETENTION_BYTES,
+};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
