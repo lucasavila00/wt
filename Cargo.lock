@@ -3914,6 +3914,7 @@ name = "wt-client"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "crossterm",
  "insta",
@@ -4083,8 +4084,10 @@ name = "wt-server"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "diesel",
+ "getrandom 0.3.4",
  "insta",
  "libsqlite3-sys",
  "nix 0.31.3",

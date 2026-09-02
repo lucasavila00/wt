@@ -1,14 +1,12 @@
 use crate::operations::{Operations, WorldOperationGuard};
 use sha2::{Digest, Sha256};
-use std::time::Duration;
 use wt_control_protocol::{
     ApiError, ApiResponse, Capacity, CapacityResource, CreateWorld, ErrorCode, Operation, Outcome,
     ResourceCapacity, Resources as ProtocolResources, Response, World, WorldId, WorldName,
     WorldStatus,
 };
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
-use wt_workload_registry::Resources;
-use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
+use wt_workload_registry::{ApiMutationStart, NewWorld, Resources, Store, StoreError, StoredWorld};
 mod activity;
 mod gateway;
 mod lifecycle;
@@ -16,10 +14,10 @@ mod pane;
 mod reports;
 #[cfg(test)]
 mod tests;
+mod window;
 pub use gateway::AgentToolGateway;
 
 const INSPECTION_RETRIES: usize = 6;
-const INSPECTION_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 pub struct Service<W, G> {
     store: Store,
@@ -43,37 +41,40 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Ok(server_id) => server_id,
             Err(error) => return ApiResponse::error(map_store_error(error)),
         };
+        let respond_error =
+            |error| ApiResponse::error(error).with_request_metadata(request_id, server_id, None);
         if expected_server_id.is_some_and(|expected| expected != server_id) {
-            return ApiResponse::error(ApiError::new(
+            return respond_error(ApiError::new(
                 ErrorCode::ServerMismatch,
                 "request was addressed to a different WT server",
-            ))
-            .with_request_metadata(request_id, server_id, None);
+            ));
         }
-        if !matches!(
-            operation,
-            Operation::CreateWorld(_) | Operation::DeleteWorld { .. }
-        ) {
-            return ApiResponse::error(ApiError::new(
+        if !window::is_public_operation(&operation) {
+            return respond_error(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "request IDs are supported only for mutating public API operations",
-            ))
-            .with_request_metadata(request_id, server_id, None);
+            ));
         }
         let Some(request_hash) = request_hash
             .filter(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
         else {
-            return ApiResponse::error(ApiError::new(
+            return respond_error(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "request hash must be 64 hexadecimal characters",
-            ))
-            .with_request_metadata(request_id, server_id, None);
+            ));
         };
-        match self
+        let operation = match window::prepare_public_operation(owner, request_id, operation) {
+            Ok(operation) => operation,
+            Err(error) => return respond_error(error),
+        };
+        if matches!(operation, Operation::GetWindow { .. }) {
+            return self.execute_public_read(owner, request_id, server_id, operation, progress);
+        }
+        let mutation = self
             .store
-            .begin_api_mutation(owner, request_id, request_hash)
-        {
-            Ok(wt_workload_registry::ApiMutationStart::Replay {
+            .begin_api_mutation(owner, request_id, request_hash);
+        match mutation {
+            Ok(ApiMutationStart::Replay {
                 response_json,
                 expires_at_unix_ms,
             }) => match serde_json::from_str::<Outcome>(&response_json) {
@@ -88,33 +89,24 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 ))
                 .with_request_metadata(request_id, server_id, None),
             },
-            Ok(wt_workload_registry::ApiMutationStart::InProgress) => ApiResponse::error(
+            Ok(ApiMutationStart::InProgress) => respond_error(
                 ApiError::new(ErrorCode::Conflict, "request is still in progress").retryable(),
-            )
-            .with_request_metadata(request_id, server_id, None),
-            Ok(wt_workload_registry::ApiMutationStart::Conflict) => {
-                ApiResponse::error(ApiError::new(
-                    ErrorCode::Conflict,
-                    "request ID was reused with different content",
-                ))
-                .with_request_metadata(request_id, server_id, None)
-            }
-            Ok(wt_workload_registry::ApiMutationStart::Started { expires_at_unix_ms }) => {
-                let deleted_world_id = match &operation {
-                    Operation::DeleteWorld { world_id } => Some(*world_id),
-                    _ => None,
-                };
+            ),
+            Ok(ApiMutationStart::Conflict) => respond_error(ApiError::new(
+                ErrorCode::Conflict,
+                "request ID was reused with different content",
+            )),
+            Ok(ApiMutationStart::Started { expires_at_unix_ms }) => {
+                let absent_response = window::absent_deletion_response(&operation);
                 let outcome = match self.execute_with_progress(owner, operation, progress) {
                     Ok(response) => Outcome::Ok {
                         response: Box::new(response),
                     },
                     Err(error)
-                        if error.code == ErrorCode::NotFound && deleted_world_id.is_some() =>
+                        if error.code == ErrorCode::NotFound && absent_response.is_some() =>
                     {
                         Outcome::Ok {
-                            response: Box::new(Response::WorldDeleted {
-                                world_id: deleted_world_id.expect("checked above"),
-                            }),
+                            response: Box::new(absent_response.expect("checked above")),
                         }
                     }
                     Err(mut error) => {
@@ -166,8 +158,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     Some(expires_at_unix_ms),
                 )
             }
-            Err(error) => ApiResponse::error(map_store_error(error).retryable())
-                .with_request_metadata(request_id, server_id, None),
+            Err(error) => respond_error(map_store_error(error).retryable()),
         }
     }
 
@@ -219,6 +210,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         if owner.is_empty() {
             return Err(ApiError::new(ErrorCode::Internal, "process user is empty"));
         }
+        if window::is_window_operation(&operation) {
+            return self.execute_window_operation(owner, operation);
+        }
         match operation {
             Operation::ServerInfo => unreachable!("server info is handled before service dispatch"),
             Operation::CreateWorld(request) => self.create(owner, request, progress),
@@ -230,6 +224,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::StartWorld { world_id } => self.start(owner, world_id),
             Operation::StopWorld { world_id } => self.stop(owner, world_id),
             Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
+            Operation::StartWindow(_)
+            | Operation::GetWindow { .. }
+            | Operation::SendWindowInput { .. }
+            | Operation::StopWindow { .. }
+            | Operation::DeleteWindow { .. } => unreachable!("handled above"),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             Operation::ListPaneObservations => self.list_pane_observations(owner),
@@ -414,7 +413,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         match retry(
             || self.worker.inspect(stored.world.world_id),
             retries,
-            || std::thread::sleep(INSPECTION_RETRY_DELAY),
+            || std::thread::sleep(std::time::Duration::from_secs(10)),
         ) {
             Ok(WorldInspection::Running(world)) => {
                 self.store
@@ -579,9 +578,14 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         let _operation = self.operations.try_lock_world(world_id).ok_or_else(|| {
             ApiError::new(ErrorCode::Conflict, "world operation is active").retryable()
         })?;
-        self.store
+        let world_was_running = self
+            .store
             .get_owned_by_id(owner, world_id)
-            .map_err(map_store_error)?;
+            .map_err(map_store_error)?
+            .world
+            .status
+            == WorldStatus::Running;
+        self.stop_windows_for_world(world_id, world_was_running)?;
         self.store
             .mark_destroying(world_id)
             .map_err(map_store_error)?;

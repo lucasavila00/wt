@@ -10,6 +10,7 @@ pub const WINDOW_OUTPUT_RETENTION_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowState {
+    Starting,
     Running,
     Exited,
     Stopped,
@@ -18,6 +19,7 @@ pub enum WindowState {
 impl WindowState {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Starting => "starting",
             Self::Running => "running",
             Self::Exited => "exited",
             Self::Stopped => "stopped",
@@ -30,6 +32,7 @@ impl FromStr for WindowState {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "starting" => Ok(Self::Starting),
             "running" => Ok(Self::Running),
             "exited" => Ok(Self::Exited),
             "stopped" => Ok(Self::Stopped),
@@ -45,7 +48,8 @@ pub struct NewWindow {
     pub window_id: WindowId,
     pub world_id: WorldId,
     pub owner: String,
-    pub tmux_window_id: String,
+    pub tmux_window_id: Option<String>,
+    pub control_token: String,
     pub control_token_hash: String,
     pub argv: Vec<String>,
     pub cwd: String,
@@ -56,7 +60,8 @@ pub struct StoredWindow {
     pub window_id: WindowId,
     pub world_id: WorldId,
     pub owner: String,
-    pub tmux_window_id: String,
+    pub tmux_window_id: Option<String>,
+    pub control_token: String,
     pub control_token_hash: String,
     pub argv: Vec<String>,
     pub cwd: String,
@@ -67,8 +72,7 @@ pub struct StoredWindow {
     pub oldest_available: u64,
     pub retained_output_bytes: u64,
     pub next_input_sequence_id: u64,
-    pub stdout_offset: u64,
-    pub stderr_offset: u64,
+    pub output_offset: u64,
     pub screen: Option<String>,
     pub screen_observed_at_unix_ms: Option<i64>,
 }
@@ -91,6 +95,7 @@ pub struct WindowOutputPage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WindowInput {
     pub sequence_id: u64,
+    pub request_id: uuid::Uuid,
     pub data: Vec<u8>,
 }
 
@@ -100,7 +105,8 @@ struct NewWindowRow<'a> {
     window_id: String,
     world_id: String,
     owner: &'a str,
-    tmux_window_id: &'a str,
+    tmux_window_id: Option<&'a str>,
+    control_token: &'a str,
     control_token_hash: &'a str,
     argv_json: String,
     cwd: &'a str,
@@ -114,7 +120,8 @@ struct WindowRow {
     window_id: String,
     world_id: String,
     owner: String,
-    tmux_window_id: String,
+    tmux_window_id: Option<String>,
+    control_token: String,
     control_token_hash: String,
     argv_json: String,
     cwd: String,
@@ -125,8 +132,7 @@ struct WindowRow {
     oldest_available: i64,
     retained_output_bytes: i64,
     next_input_sequence_id: i64,
-    stdout_offset: i64,
-    stderr_offset: i64,
+    output_offset: i64,
     screen: Option<String>,
     screen_observed_at_unix_ms: Option<i64>,
     created_at_unix_ms: i64,
@@ -149,11 +155,16 @@ impl Store {
                     window_id: window.window_id.to_string(),
                     world_id: window.world_id.to_string(),
                     owner: &window.owner,
-                    tmux_window_id: &window.tmux_window_id,
+                    tmux_window_id: window.tmux_window_id.as_deref(),
+                    control_token: &window.control_token,
                     control_token_hash: &window.control_token_hash,
                     argv_json,
                     cwd: &window.cwd,
-                    state: WindowState::Running.as_str(),
+                    state: if window.tmux_window_id.is_some() {
+                        WindowState::Running.as_str()
+                    } else {
+                        WindowState::Starting.as_str()
+                    },
                     created_at_unix_ms: now_unix_ms(),
                 })
                 .execute(connection)?;
@@ -198,6 +209,25 @@ impl Store {
             .map_err(|error| StoreError::InvalidData(format!("invalid window ID: {error}")))
     }
 
+    pub fn activate_window(
+        &self,
+        window_id: WindowId,
+        tmux_window_id: &str,
+    ) -> Result<(), StoreError> {
+        let changed = self.registry.transaction(|connection| {
+            diesel::update(windows::table.find(window_id.to_string()))
+                .set((
+                    windows::tmux_window_id.eq(tmux_window_id),
+                    windows::state.eq(WindowState::Running.as_str()),
+                ))
+                .execute(connection)
+        })?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn update_window_observation(
         &self,
         window_id: WindowId,
@@ -220,6 +250,88 @@ impl Store {
             if changed == 0 {
                 return Err(StoreError::NotFound);
             }
+            Ok(())
+        })
+    }
+
+    /// Commits one guest observation and its ordered output as one cursor advance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_window_observation(
+        &self,
+        window_id: WindowId,
+        previous_output_offset: u64,
+        output_offset: u64,
+        records: &[(String, Vec<u8>)],
+        state: WindowState,
+        exit_code: Option<i32>,
+        exit_signal: Option<i32>,
+        screen: &str,
+        screen_observed_at_unix_ms: i64,
+    ) -> Result<(), StoreError> {
+        if output_offset < previous_output_offset {
+            return Err(StoreError::InvalidData(
+                "window output cursor moved backwards".into(),
+            ));
+        }
+        self.registry.immediate_transaction(|connection| {
+            let key = window_id.to_string();
+            let (stored_offset, mut next, mut retained) = windows::table
+                .find(&key)
+                .select((
+                    windows::output_offset,
+                    windows::next_output_record_id,
+                    windows::retained_output_bytes,
+                ))
+                .first::<(i64, i64, i64)>(connection)
+                .optional()?
+                .ok_or(StoreError::NotFound)?;
+            if stored_offset != previous_output_offset as i64 {
+                return Err(StoreError::Conflict);
+            }
+            for (channel, data) in records {
+                if !matches!(channel.as_str(), "stdout" | "stderr") {
+                    return Err(StoreError::InvalidData(format!(
+                        "invalid output channel {channel:?}"
+                    )));
+                }
+                diesel::insert_into(window_output::table)
+                    .values((
+                        window_output::window_id.eq(&key),
+                        window_output::record_id.eq(next),
+                        window_output::channel.eq(channel),
+                        window_output::data.eq(data),
+                    ))
+                    .execute(connection)?;
+                next += 1;
+                retained = retained.saturating_add(data.len() as i64);
+            }
+            while retained > WINDOW_OUTPUT_RETENTION_BYTES as i64 {
+                let oldest = window_output::table
+                    .filter(window_output::window_id.eq(&key))
+                    .order(window_output::record_id)
+                    .select((window_output::record_id, window_output::data))
+                    .first::<(i64, Vec<u8>)>(connection)?;
+                diesel::delete(window_output::table.find((&key, oldest.0))).execute(connection)?;
+                retained -= oldest.1.len() as i64;
+            }
+            let oldest = window_output::table
+                .filter(window_output::window_id.eq(&key))
+                .select(diesel::dsl::min(window_output::record_id))
+                .first::<Option<i64>>(connection)?
+                .unwrap_or(next);
+            diesel::update(windows::table.find(&key))
+                .set((
+                    windows::state.eq(state.as_str()),
+                    windows::exit_code.eq(exit_code),
+                    windows::exit_signal.eq(exit_signal),
+                    windows::next_output_record_id.eq(next),
+                    windows::oldest_available.eq(oldest),
+                    windows::retained_output_bytes.eq(retained),
+                    windows::output_offset.eq(output_offset as i64),
+                    windows::screen.eq(screen),
+                    windows::screen_observed_at_unix_ms.eq(screen_observed_at_unix_ms),
+                ))
+                .execute(connection)?;
             Ok(())
         })
     }
@@ -336,6 +448,7 @@ impl Store {
     pub fn enqueue_window_input(
         &self,
         window_id: WindowId,
+        request_id: uuid::Uuid,
         data: &[u8],
     ) -> Result<u64, StoreError> {
         self.registry.immediate_transaction(|connection| {
@@ -349,6 +462,19 @@ impl Store {
             if !exists {
                 return Err(StoreError::NotFound);
             }
+            if let Some((sequence_id, existing_data)) = window_input::table
+                .filter(window_input::window_id.eq(&key))
+                .filter(window_input::request_id.eq(request_id.to_string()))
+                .select((window_input::sequence_id, window_input::data))
+                .first::<(i64, Vec<u8>)>(connection)
+                .optional()?
+            {
+                if existing_data != data {
+                    return Err(StoreError::Conflict);
+                }
+                return u64::try_from(sequence_id)
+                    .map_err(|_| StoreError::InvalidData("negative input sequence ID".into()));
+            }
             let sequence_id = windows::table
                 .find(&key)
                 .select(windows::next_input_sequence_id)
@@ -357,6 +483,7 @@ impl Store {
                 .values((
                     window_input::window_id.eq(&key),
                     window_input::sequence_id.eq(sequence_id),
+                    window_input::request_id.eq(request_id.to_string()),
                     window_input::data.eq(data),
                 ))
                 .execute(connection)?;
@@ -376,13 +503,20 @@ impl Store {
             window_input::table
                 .filter(window_input::window_id.eq(window_id.to_string()))
                 .order(window_input::sequence_id)
-                .select((window_input::sequence_id, window_input::data))
-                .load::<(i64, Vec<u8>)>(connection)?
+                .select((
+                    window_input::sequence_id,
+                    window_input::request_id,
+                    window_input::data,
+                ))
+                .load::<(i64, String, Vec<u8>)>(connection)?
                 .into_iter()
-                .map(|(sequence_id, data)| {
+                .map(|(sequence_id, request_id, data)| {
                     Ok(WindowInput {
                         sequence_id: u64::try_from(sequence_id).map_err(|_| {
                             StoreError::InvalidData("negative input sequence ID".into())
+                        })?,
+                        request_id: request_id.parse().map_err(|error| {
+                            StoreError::InvalidData(format!("invalid input request ID: {error}"))
                         })?,
                         data,
                     })
@@ -434,6 +568,19 @@ impl Store {
                 .collect()
         })
     }
+
+    pub fn mark_world_windows_stopped(&self, world_id: WorldId) -> Result<(), StoreError> {
+        self.registry.transaction(|connection| {
+            diesel::update(windows::table.filter(windows::world_id.eq(world_id.to_string())))
+                .set((
+                    windows::state.eq(WindowState::Stopped.as_str()),
+                    windows::exit_code.eq(None::<i32>),
+                    windows::exit_signal.eq(None::<i32>),
+                ))
+                .execute(connection)?;
+            Ok(())
+        })
+    }
 }
 
 impl TryFrom<WindowRow> for StoredWindow {
@@ -452,6 +599,7 @@ impl TryFrom<WindowRow> for StoredWindow {
                 .map_err(|error| StoreError::InvalidData(format!("invalid world ID: {error}")))?,
             owner: row.owner,
             tmux_window_id: row.tmux_window_id,
+            control_token: row.control_token,
             control_token_hash: row.control_token_hash,
             argv: serde_json::from_str(&row.argv_json).map_err(|error| {
                 StoreError::InvalidData(format!("invalid window argv: {error}"))
@@ -468,10 +616,8 @@ impl TryFrom<WindowRow> for StoredWindow {
                 .map_err(|_| StoreError::InvalidData("negative retained output bytes".into()))?,
             next_input_sequence_id: u64::try_from(row.next_input_sequence_id)
                 .map_err(|_| StoreError::InvalidData("negative next input sequence ID".into()))?,
-            stdout_offset: u64::try_from(row.stdout_offset)
-                .map_err(|_| StoreError::InvalidData("negative stdout offset".into()))?,
-            stderr_offset: u64::try_from(row.stderr_offset)
-                .map_err(|_| StoreError::InvalidData("negative stderr offset".into()))?,
+            output_offset: u64::try_from(row.output_offset)
+                .map_err(|_| StoreError::InvalidData("negative output offset".into()))?,
             screen: row.screen,
             screen_observed_at_unix_ms: row.screen_observed_at_unix_ms,
         })
@@ -488,115 +634,4 @@ fn now_unix_ms() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{NewWorld, Resources};
-    use wt_control_protocol::{WorldName, WorldStatus};
-
-    fn fixture() -> (tempfile::TempDir, Store, WorldId, NewWindow) {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Store::open(&temp.path().join("registry.db")).unwrap();
-        let world_id = WorldId::new();
-        store
-            .insert_with_capacity_limit(
-                &NewWorld {
-                    world_id,
-                    owner: "owner".into(),
-                    name: WorldName::parse("host").unwrap(),
-                    status: WorldStatus::Running,
-                    vcpus: 1,
-                    memory_mib: 1024,
-                    disk_gib: 8,
-                    setup_fingerprint: "test".into(),
-                },
-                Resources::UNLIMITED,
-            )
-            .unwrap();
-        let window = NewWindow {
-            window_id: WindowId::new(),
-            world_id,
-            owner: "owner".into(),
-            tmux_window_id: "@7".into(),
-            control_token_hash: "hash".into(),
-            argv: vec!["sh".into(), "-c".into(), "echo hi".into()],
-            cwd: "/home/wt".into(),
-        };
-        (temp, store, world_id, window)
-    }
-
-    #[test]
-    fn stores_window_and_resolves_native_tmux_identity() {
-        let (_temp, store, world_id, window) = fixture();
-        store.insert_window(&window).unwrap();
-        assert_eq!(
-            store.window_id_by_tmux(world_id, "@7").unwrap(),
-            window.window_id
-        );
-        assert_eq!(
-            store
-                .get_owned_window("owner", window.window_id)
-                .unwrap()
-                .argv,
-            window.argv
-        );
-        assert!(matches!(
-            store.get_owned_window("other", window.window_id),
-            Err(StoreError::NotFound)
-        ));
-    }
-
-    #[test]
-    fn output_is_ordered_and_input_is_committed_in_order() {
-        let (_temp, store, _world_id, window) = fixture();
-        store.insert_window(&window).unwrap();
-        store
-            .append_window_output(
-                window.window_id,
-                &[
-                    ("stdout".into(), b"one".to_vec()),
-                    ("stderr".into(), b"two".to_vec()),
-                ],
-            )
-            .unwrap();
-        let page = store.window_output(window.window_id, 0, 1).unwrap();
-        assert_eq!(page.output[0].record_id, 1);
-        assert_eq!(page.next_after, 1);
-        assert_eq!(
-            store.enqueue_window_input(window.window_id, b"a").unwrap(),
-            1
-        );
-        assert_eq!(
-            store.enqueue_window_input(window.window_id, b"b").unwrap(),
-            2
-        );
-        let pending = store.pending_window_input(window.window_id).unwrap();
-        assert_eq!(
-            pending
-                .iter()
-                .map(|item| item.sequence_id)
-                .collect::<Vec<_>>(),
-            vec![1, 2]
-        );
-        store.acknowledge_window_input(window.window_id, 1).unwrap();
-        assert_eq!(
-            store.pending_window_input(window.window_id).unwrap()[0].sequence_id,
-            2
-        );
-        store.acknowledge_window_input(window.window_id, 2).unwrap();
-        assert_eq!(
-            store.enqueue_window_input(window.window_id, b"c").unwrap(),
-            3
-        );
-    }
-
-    #[test]
-    fn deleting_a_world_cascades_its_windows() {
-        let (_temp, store, world_id, window) = fixture();
-        store.insert_window(&window).unwrap();
-        store.delete(world_id).unwrap();
-        assert!(matches!(
-            store.get_owned_window("owner", window.window_id),
-            Err(StoreError::NotFound)
-        ));
-    }
-}
+mod tests;

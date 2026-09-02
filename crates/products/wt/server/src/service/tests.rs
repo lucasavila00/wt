@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::{Arc, Mutex};
 use wt_control_protocol::{ErrorCode, Operation, Outcome, Response, WorldId, WorldName};
 use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_libvirt_kvm::WorkerError;
@@ -63,6 +64,162 @@ fn test_service(store: Store) -> Service<UnusedWorker, UnusedGateway> {
         Operations::default(),
         u64::MAX,
     )
+}
+
+#[derive(Clone, Default)]
+struct CrashWindowWorker {
+    state: Arc<Mutex<CrashWindowState>>,
+}
+
+#[derive(Default)]
+struct CrashWindowState {
+    attempts: usize,
+    processes: usize,
+    window_id: Option<wt_world::WindowId>,
+}
+
+impl WorldWorker for CrashWindowWorker {
+    fn provision(
+        &self,
+        _: WorldProvisionSpec<'_>,
+        _: &mut dyn std::io::Write,
+    ) -> Result<GuestAccess, WorkerError> {
+        unreachable!()
+    }
+    fn destroy(&self, _: WorldId) -> Result<(), WorkerError> {
+        unreachable!()
+    }
+    fn inspect(&self, _: WorldId) -> Result<WorldInspection, WorkerError> {
+        unreachable!()
+    }
+    fn start(&self, _: WorldId) -> Result<GuestAccess, WorkerError> {
+        unreachable!()
+    }
+    fn stop(&self, _: WorldId) -> Result<(), WorkerError> {
+        unreachable!()
+    }
+    fn disk_usage(&self, _: WorldId) -> Result<u64, WorkerError> {
+        unreachable!()
+    }
+
+    fn start_window(
+        &self,
+        _: WorldId,
+        launch: &wt_guest::WindowLaunch,
+    ) -> Result<wt_guest::WindowStarted, WorkerError> {
+        let mut state = self.state.lock().unwrap();
+        state.attempts += 1;
+        match state.window_id {
+            Some(existing) => assert_eq!(existing, launch.window_id),
+            None => {
+                state.window_id = Some(launch.window_id);
+                state.processes += 1;
+            }
+        }
+        if state.attempts == 1 {
+            return Err(WorkerError::new("connection lost after guest launch"));
+        }
+        Ok(wt_guest::WindowStarted {
+            tmux_window_id: "@7".into(),
+        })
+    }
+}
+
+#[test]
+fn start_window_retry_recovers_the_reserved_identity_without_a_second_process() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let world_id = WorldId::new();
+    store
+        .insert(&wt_workload_registry::NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: WorldName::parse("host").unwrap(),
+            status: wt_control_protocol::WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            setup_fingerprint: "test".into(),
+        })
+        .unwrap();
+    let worker = CrashWindowWorker::default();
+    let service = Service::new(
+        store,
+        worker.clone(),
+        UnusedGateway,
+        Operations::default(),
+        u64::MAX,
+    );
+    let request_id = uuid::Uuid::new_v4();
+    let operation = || {
+        Operation::StartWindow(wt_control_protocol::StartWindow {
+            world_id,
+            argv: vec!["cat".into()],
+            cwd: "/home/wt".into(),
+            window_id: None,
+            control_token: None,
+        })
+    };
+    let first = service.execute_api_mutation(
+        "owner",
+        request_id,
+        Some(&"a".repeat(64)),
+        None,
+        operation(),
+        &mut std::io::sink(),
+    );
+    assert!(matches!(first.outcome, Outcome::Error { ref error } if error.retryable));
+    let second = service.execute_api_mutation(
+        "owner",
+        request_id,
+        Some(&"a".repeat(64)),
+        None,
+        operation(),
+        &mut std::io::sink(),
+    );
+    assert!(
+        matches!(second.outcome, Outcome::Ok { ref response } if matches!(**response, Response::WindowStarted { .. }))
+    );
+    let state = worker.state.lock().unwrap();
+    assert_eq!(state.attempts, 2);
+    assert_eq!(state.processes, 1);
+}
+
+#[test]
+fn start_window_rejects_an_active_world_operation() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let world_id = WorldId::new();
+    store
+        .insert(&wt_workload_registry::NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: WorldName::parse("host").unwrap(),
+            status: wt_control_protocol::WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            setup_fingerprint: "test".into(),
+        })
+        .unwrap();
+    let service = test_service(store);
+    let _active = service.operations.try_lock_world(world_id).unwrap();
+
+    let error = service
+        .execute(
+            "owner",
+            Operation::StartWindow(wt_control_protocol::StartWindow {
+                world_id,
+                argv: vec!["cat".into()],
+                cwd: "/home/wt".into(),
+                window_id: Some(wt_world::WindowId::new()),
+                control_token: Some("token".into()),
+            }),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Conflict);
+    assert!(error.retryable);
 }
 
 #[test]
@@ -169,6 +326,29 @@ fn retryable_api_failure_does_not_consume_the_request_id() {
     );
     assert!(matches!(completed.outcome, Outcome::Ok { .. }));
     assert!(completed.expires_at_unix_ms.is_some());
+}
+
+#[test]
+fn api_delete_window_treats_an_absent_window_as_the_desired_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let service = test_service(Store::open(&temp.path().join("instances.db")).unwrap());
+    let window_id = wt_world::WindowId::new();
+    let response = service.execute_api_mutation(
+        "owner",
+        uuid::Uuid::new_v4(),
+        Some(&"a".repeat(64)),
+        None,
+        Operation::DeleteWindow {
+            window_id,
+            control_token: "already-gone".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(
+        response.outcome,
+        Outcome::Ok { ref response }
+            if **response == Response::WindowDeleted { window_id }
+    ));
 }
 
 #[test]

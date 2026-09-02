@@ -4,6 +4,7 @@ diesel::table! {
     window_input (window_id, sequence_id) {
         window_id -> Text,
         sequence_id -> BigInt,
+        request_id -> Text,
         data -> Binary,
     }
 }
@@ -22,7 +23,8 @@ diesel::table! {
         window_id -> Text,
         world_id -> Text,
         owner -> Text,
-        tmux_window_id -> Text,
+        tmux_window_id -> Nullable<Text>,
+        control_token -> Text,
         control_token_hash -> Text,
         argv_json -> Text,
         cwd -> Text,
@@ -33,8 +35,7 @@ diesel::table! {
         oldest_available -> BigInt,
         retained_output_bytes -> BigInt,
         next_input_sequence_id -> BigInt,
-        stdout_offset -> BigInt,
-        stderr_offset -> BigInt,
+        output_offset -> BigInt,
         screen -> Nullable<Text>,
         screen_observed_at_unix_ms -> Nullable<BigInt>,
         created_at_unix_ms -> BigInt,

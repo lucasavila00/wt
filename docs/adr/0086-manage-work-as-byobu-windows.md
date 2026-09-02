@@ -8,6 +8,9 @@
 WT exposes one window resource for work inside a world. Each WT window is one Byobu tab, implemented
 as one tmux window with one pane. `start_window` starts the requested executable in that pane. The
 window ID addresses the executable, its input and output, and its screen.
+It is a globally unique UUID. The registry persists its mapping to the guest-native tmux
+`#{window_id}` (`@N`); authenticated guest tooling may resolve `(world_id, tmux_window_id)` back to
+the stable window ID without exposing the native ID in the public API.
 
 A window provides:
 
@@ -32,8 +35,16 @@ and `oldest_available`. An output gap tells the client to recover through its ap
 
 Input contains exact bytes encoded as base64. WT serializes writes in committed request order and
 adds no terminal echo to the output records. WT acknowledges input after it commits the bytes to the
-window input queue. The guest drains that queue in order. The `wt api` request ID makes start,
-input, stop, and delete safe to retry during the 30-day idempotency period.
+window input queue. A dedicated guest input socket feeds the executable's standard input without
+terminal line-discipline transformation; tmux is only the screen view. The guest drains that queue
+in order and deduplicates an already acknowledged sequence. The `wt api` request ID gives start,
+input, stop, and delete a stable durable identity during the 30-day idempotency period. Start
+reserves a deterministic window ID before launch and recovers a matching tmux window after an
+interrupted reply. Each input request has at most one durable queue record and sequence ID.
+
+A machine failure in the irreducible interval between an arbitrary process consuming bytes and the
+guest persisting its sequence acknowledgement can still cause at-least-once delivery. Applications
+that require recovery across guest failure must deduplicate messages in their own protocol.
 
 The screen is a bounded plain-text rendering of the same Byobu window. Machine output and the screen
 are two views of one window. `include_screen` lets polling clients request the screen only when they
@@ -60,5 +71,7 @@ continues across client disconnects. `get_window` supports polling through the i
 operations.
 
 WT retains up to 64 MiB of output per window. It persists window metadata, status, cursors, and the
-last screen in the registry. Deleting the window removes that state and closes its Byobu tab.
-Stopping or deleting a world stops its windows.
+last screen in the registry. Retention removes complete oldest records and reports
+`oldest_available` plus `output_gap` when a requested cursor was removed. Deleting the window
+removes that state and closes its Byobu tab; deletion is idempotent at the guest boundary. Stopping
+or deleting a world first stops its windows and records them as stopped.

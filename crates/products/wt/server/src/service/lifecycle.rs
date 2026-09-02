@@ -28,6 +28,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 format!("world is {}; expected running", stored.world.status),
             ));
         }
+        self.stop_windows_for_world(world_id, true)?;
         self.worker
             .stop(world_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("stop world: {error}")))?;

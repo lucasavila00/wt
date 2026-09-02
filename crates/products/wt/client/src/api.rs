@@ -1,4 +1,5 @@
 use anyhow::{bail, Context as _, Result};
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
@@ -8,18 +9,19 @@ use wt_control_protocol::{
     WorldStatus,
 };
 
+mod window;
+use window::ApiWindow;
+
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+#[rustfmt::skip]
 enum Request {
     CreateWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
+        #[serde(flatten)]
+        routing: Routing,
         name: String,
         vcpus: u32,
         memory_mib: u64,
@@ -28,40 +30,49 @@ enum Request {
         git_user_email: String,
     },
     DeleteWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
+        #[serde(flatten)]
+        routing: Routing,
         world_id: String,
     },
+    StartWindow { #[serde(flatten)] routing: Routing, world_id: String, argv: Vec<String>, cwd: String },
+    GetWindow { #[serde(flatten)] routing: Routing, window_id: String, after: u64, limit: u32, include_screen: bool },
+    SendWindowInput { #[serde(flatten)] routing: Routing, window_id: String, control_token: String, data_base64: String },
+    StopWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
+    DeleteWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Routing {
+    api_version: u32,
+    request_id: String,
+    #[serde(default)]
+    expected_server_id: Option<String>,
+    context: String,
 }
 
 impl Request {
     fn api_version(&self) -> u32 {
-        match self {
-            Self::CreateWorld { api_version, .. } | Self::DeleteWorld { api_version, .. } => {
-                *api_version
-            }
-        }
+        self.routing().api_version
     }
 
     fn request_id(&self) -> &str {
-        match self {
-            Self::CreateWorld { request_id, .. } | Self::DeleteWorld { request_id, .. } => {
-                request_id
-            }
-        }
+        &self.routing().request_id
     }
 
     fn expected_server_id(&self) -> Option<&str> {
+        self.routing().expected_server_id.as_deref()
+    }
+
+    fn routing(&self) -> &Routing {
         match self {
-            Self::CreateWorld {
-                expected_server_id, ..
-            }
-            | Self::DeleteWorld {
-                expected_server_id, ..
-            } => expected_server_id.as_deref(),
+            Self::CreateWorld { routing, .. }
+            | Self::DeleteWorld { routing, .. }
+            | Self::StartWindow { routing, .. }
+            | Self::GetWindow { routing, .. }
+            | Self::SendWindowInput { routing, .. }
+            | Self::StopWindow { routing, .. }
+            | Self::DeleteWindow { routing, .. } => routing,
         }
     }
 }
@@ -88,9 +99,29 @@ enum ApiOutcome {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
+#[rustfmt::skip]
 enum ApiResult {
     World { world: ApiWorld },
-    WorldDeleted { world_id: String },
+    WorldDeleted {
+        world_id: String,
+    },
+    WindowStarted {
+        window: ApiWindow,
+        control_token: String,
+    },
+    Window {
+        window: ApiWindow,
+    },
+    WindowInputAccepted {
+        window_id: String,
+        sequence_id: u64,
+    },
+    WindowStopped {
+        window_id: String,
+    },
+    WindowDeleted {
+        window_id: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -303,7 +334,7 @@ fn operation_hash(operation: &Operation) -> String {
 fn request_to_operation(request: Request) -> std::result::Result<(String, Operation), String> {
     match request {
         Request::CreateWorld {
-            context,
+            routing,
             name,
             vcpus,
             memory_mib,
@@ -318,7 +349,7 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 return Err("git_user_name and git_user_email must not be empty".to_owned());
             }
             Ok((
-                context,
+                routing.context,
                 Operation::CreateWorld(CreateWorld {
                     name,
                     vcpus,
@@ -330,12 +361,122 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
             ))
         }
         Request::DeleteWorld {
-            context, world_id, ..
+            routing, world_id, ..
         } => {
             let world_id = world_id
                 .parse()
                 .map_err(|_| "invalid world ID".to_owned())?;
-            Ok((context, Operation::DeleteWorld { world_id }))
+            Ok((routing.context, Operation::DeleteWorld { world_id }))
+        }
+        Request::StartWindow {
+            routing,
+            world_id,
+            argv,
+            cwd,
+            ..
+        } => {
+            let world_id = world_id
+                .parse()
+                .map_err(|_| "invalid world ID".to_owned())?;
+            let request = wt_control_protocol::StartWindow {
+                world_id,
+                argv,
+                cwd,
+                window_id: None,
+                control_token: None,
+            };
+            request.validate()?;
+            Ok((routing.context, Operation::StartWindow(request)))
+        }
+        Request::GetWindow {
+            routing,
+            window_id,
+            after,
+            limit,
+            include_screen,
+            ..
+        } => {
+            let window_id = window_id
+                .parse()
+                .map_err(|_| "invalid window ID".to_owned())?;
+            Ok((
+                routing.context,
+                Operation::GetWindow {
+                    window_id,
+                    after,
+                    limit,
+                    include_screen,
+                },
+            ))
+        }
+        Request::SendWindowInput {
+            routing,
+            window_id,
+            control_token,
+            data_base64,
+            ..
+        } => {
+            let window_id = window_id
+                .parse()
+                .map_err(|_| "invalid window ID".to_owned())?;
+            if control_token.is_empty() {
+                return Err("control token must not be empty".into());
+            }
+            let data = base64::engine::general_purpose::STANDARD
+                .decode(&data_base64)
+                .map_err(|_| "data_base64 is not valid canonical base64".to_owned())?;
+            if base64::engine::general_purpose::STANDARD.encode(&data) != data_base64 {
+                return Err("data_base64 is not valid canonical base64".to_owned());
+            }
+            Ok((
+                routing.context,
+                Operation::SendWindowInput {
+                    window_id,
+                    control_token,
+                    data,
+                    api_request_id: None,
+                },
+            ))
+        }
+        Request::StopWindow {
+            routing,
+            window_id,
+            control_token,
+            ..
+        } => {
+            let window_id = window_id
+                .parse()
+                .map_err(|_| "invalid window ID".to_owned())?;
+            if control_token.is_empty() {
+                return Err("control token must not be empty".into());
+            }
+            Ok((
+                routing.context,
+                Operation::StopWindow {
+                    window_id,
+                    control_token,
+                },
+            ))
+        }
+        Request::DeleteWindow {
+            routing,
+            window_id,
+            control_token,
+            ..
+        } => {
+            let window_id = window_id
+                .parse()
+                .map_err(|_| "invalid window ID".to_owned())?;
+            if control_token.is_empty() {
+                return Err("control token must not be empty".into());
+            }
+            Ok((
+                routing.context,
+                Operation::DeleteWindow {
+                    window_id,
+                    control_token,
+                },
+            ))
         }
     }
 }
@@ -389,6 +530,39 @@ fn call(
                 Response::WorldDeleted { world_id } => ApiOutcome::Ok {
                     result: ApiResult::WorldDeleted {
                         world_id: world_id.to_string(),
+                    },
+                },
+                Response::WindowStarted {
+                    window,
+                    control_token,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::WindowStarted {
+                        window: (*window).into(),
+                        control_token,
+                    },
+                },
+                Response::Window { window } => ApiOutcome::Ok {
+                    result: ApiResult::Window {
+                        window: (*window).into(),
+                    },
+                },
+                Response::WindowInputAccepted {
+                    window_id,
+                    sequence_id,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::WindowInputAccepted {
+                        window_id: window_id.to_string(),
+                        sequence_id,
+                    },
+                },
+                Response::WindowStopped { window_id } => ApiOutcome::Ok {
+                    result: ApiResult::WindowStopped {
+                        window_id: window_id.to_string(),
+                    },
+                },
+                Response::WindowDeleted { window_id } => ApiOutcome::Ok {
+                    result: ApiResult::WindowDeleted {
+                        window_id: window_id.to_string(),
                     },
                 },
                 _ => api_error(
@@ -506,10 +680,12 @@ mod tests {
     #[test]
     fn routing_fields_do_not_change_operation_identity() {
         let request = |context: &str, expected_server_id: Option<&str>| Request::DeleteWorld {
-            api_version: API_VERSION,
-            request_id: Uuid::new_v4().to_string(),
-            expected_server_id: expected_server_id.map(str::to_owned),
-            context: context.to_owned(),
+            routing: Routing {
+                api_version: API_VERSION,
+                request_id: Uuid::new_v4().to_string(),
+                expected_server_id: expected_server_id.map(str::to_owned),
+                context: context.to_owned(),
+            },
             world_id: "00000000-0000-0000-0000-000000000001".to_owned(),
         };
         let (_, first) = request_to_operation(request("old-alias", None)).unwrap();

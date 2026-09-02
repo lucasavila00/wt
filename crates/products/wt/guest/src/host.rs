@@ -6,8 +6,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, RunRequest,
-    WorkerError,
+    CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
+    RunRequest, WorkerError,
 };
 use wt_world::WorldId;
 
@@ -160,6 +160,112 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
 
     fn disk_usage(&self, world_id: WorldId) -> Result<u64, WorkerError> {
         self.provider.disk_usage(world_id)
+    }
+
+    fn start_window(
+        &self,
+        world_id: WorldId,
+        launch: &crate::WindowLaunch,
+    ) -> Result<crate::WindowStarted, WorkerError> {
+        self.window_helper(world_id, "window-start", launch)
+    }
+
+    fn observe_window(
+        &self,
+        world_id: WorldId,
+        window_id: wt_world::WindowId,
+        output_offset: u64,
+    ) -> Result<crate::WindowObservation, WorkerError> {
+        self.window_helper(
+            world_id,
+            "window-observe",
+            &serde_json::json!({
+                "window_id": window_id,
+                "output_offset": output_offset,
+            }),
+        )
+    }
+
+    fn send_window_input(
+        &self,
+        world_id: WorldId,
+        window_id: wt_world::WindowId,
+        sequence_id: u64,
+        data: &[u8],
+    ) -> Result<(), WorkerError> {
+        self.window_helper::<_, serde_json::Value>(
+            world_id,
+            "window-input",
+            &serde_json::json!({"window_id": window_id, "sequence_id": sequence_id, "data": data}),
+        )?;
+        Ok(())
+    }
+
+    fn stop_window(
+        &self,
+        world_id: WorldId,
+        window_id: wt_world::WindowId,
+    ) -> Result<(), WorkerError> {
+        self.window_helper::<_, serde_json::Value>(
+            world_id,
+            "window-stop",
+            &serde_json::json!({"window_id": window_id}),
+        )?;
+        Ok(())
+    }
+
+    fn delete_window(
+        &self,
+        world_id: WorldId,
+        window_id: wt_world::WindowId,
+    ) -> Result<(), WorkerError> {
+        self.window_helper::<_, serde_json::Value>(
+            world_id,
+            "window-delete",
+            &serde_json::json!({"window_id": window_id}),
+        )?;
+        Ok(())
+    }
+
+    fn stop_world_windows(&self, world_id: WorldId) -> Result<(), WorkerError> {
+        self.window_helper::<_, serde_json::Value>(
+            world_id,
+            "window-stop-all",
+            &serde_json::json!({}),
+        )?;
+        Ok(())
+    }
+}
+
+impl<P: MachineProvider> Worker<P> {
+    fn window_helper<I: serde::Serialize, O: serde::de::DeserializeOwned>(
+        &self,
+        world_id: WorldId,
+        action: &str,
+        input: &I,
+    ) -> Result<O, WorkerError> {
+        let MachineInspection::Running(machine) = self.provider.inspect(world_id)? else {
+            return Err(WorkerError::new("world is not running"));
+        };
+        let input = serde_json::to_vec(input)
+            .map_err(|error| WorkerError::new(format!("encode {action} request: {error}")))?;
+        let output = machine.transport.capture(&CaptureRequest {
+            executable: "/usr/bin/runuser",
+            args: &["-u", crate::GUEST_USER, "--", "/usr/local/bin/wtg", action],
+            stdin: Some(&input),
+            deadline: Instant::now() + self.readiness_timeout,
+            stdout_limit: 4 * 1024 * 1024,
+            stderr_limit: 1024 * 1024,
+        })?;
+        if output.exit_code != 0 {
+            return Err(WorkerError::new(format!(
+                "{action}: exit code {}: {}",
+                output.exit_code,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| WorkerError::new(format!("decode {action} response: {error}")))
     }
 }
 

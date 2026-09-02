@@ -2,19 +2,19 @@ CREATE TABLE windows (
     window_id TEXT PRIMARY KEY NOT NULL,
     world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
     owner TEXT NOT NULL,
-    tmux_window_id TEXT NOT NULL,
+    tmux_window_id TEXT,
+    control_token TEXT NOT NULL,
     control_token_hash TEXT NOT NULL,
     argv_json TEXT NOT NULL CHECK (json_valid(argv_json)),
     cwd TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('running', 'exited', 'stopped')),
+    state TEXT NOT NULL CHECK (state IN ('starting', 'running', 'exited', 'stopped')),
     exit_code INTEGER,
     exit_signal INTEGER,
     next_output_record_id BIGINT NOT NULL DEFAULT 1,
     oldest_available BIGINT NOT NULL DEFAULT 1,
     retained_output_bytes BIGINT NOT NULL DEFAULT 0,
     next_input_sequence_id BIGINT NOT NULL DEFAULT 1,
-    stdout_offset BIGINT NOT NULL DEFAULT 0,
-    stderr_offset BIGINT NOT NULL DEFAULT 0,
+    output_offset BIGINT NOT NULL DEFAULT 0,
     screen TEXT,
     screen_observed_at_unix_ms BIGINT,
     created_at_unix_ms BIGINT NOT NULL,
@@ -34,6 +34,8 @@ CREATE TABLE window_output (
 CREATE TABLE window_input (
     window_id TEXT NOT NULL REFERENCES windows(window_id) ON DELETE CASCADE,
     sequence_id BIGINT NOT NULL,
+    request_id TEXT NOT NULL,
     data BLOB NOT NULL,
-    PRIMARY KEY (window_id, sequence_id)
+    PRIMARY KEY (window_id, sequence_id),
+    UNIQUE (window_id, request_id)
 );

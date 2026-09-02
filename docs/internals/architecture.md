@@ -53,8 +53,9 @@ sends its bounded rendered terminal frame, screen fingerprint, freshness,
 current working directory, checked-out Git branch when available, and Byobu
 window index and name through its authenticated server connection. `wts` owns
 those observations and keeps each world's complete latest snapshot only in
-memory. No live pane observation is registry state. No Codex hook or lifecycle
-tracker participates in live state.
+memory. No live Codex pane observation is registry state. Managed window metadata, output cursors,
+bounded output records, queued input, lifecycle status, and the last screen are separate registry
+resources defined by ADR 0086. No Codex hook or lifecycle tracker participates in live state.
 
 ## Shell playback
 

@@ -26,11 +26,26 @@ trailing newline.
 }
 ```
 
-Version 1 exposes only `create_world` and `delete_world`. All operation fields are required.
+Version 1 exposes `create_world`, `delete_world`, `start_window`, `get_window`,
+`send_window_input`, `stop_window`, and `delete_window`. All operation fields are required.
 `expected_server_id` is optional for a first request and binds later requests to the intended
 server. Deletion identifies a world by `world_id` and means "ensure this world is absent", so
-deleting a world that is already absent succeeds. Additional operations require a separate
-decision after their lifecycle and compatibility contracts are understood.
+deleting a world that is already absent succeeds. ADR 0086 defines the window operations' fields,
+lifecycle, authorization, cursor, and retention contracts.
+
+The additional request shapes are:
+
+```text
+start_window(world_id, argv, cwd)
+get_window(window_id, after, limit, include_screen)
+send_window_input(window_id, control_token, data_base64)
+stop_window(window_id, control_token)
+delete_window(window_id, control_token)
+```
+
+They use the same `api_version`, `request_id`, optional `expected_server_id`, and `context` routing
+fields as world operations. Their responses use the same `request_id`, `server_id`, tagged
+`outcome`, structured error, and mutation-expiration envelope.
 
 The command returns a tagged response:
 
@@ -90,11 +105,12 @@ conflict. WT retains completed mutation results for 30 days and includes their e
 the response. Retryable errors are not committed and omit the expiration time, allowing the same
 request to be attempted again.
 
-The server durably reserves the request ID before changing world state. If the server stops after a
-world-state change but before committing its API result, startup discards the incomplete result and
-reconciles the world. Retrying then uses create/delete's desired-state behavior: it does not create
-a duplicate world or fail merely because the requested world is already absent, but it may return a
-new result rather than the interrupted process's uncommitted response.
+The server durably reserves the request ID before changing resource state. If the server stops after
+a state change but before committing its API result, startup discards the incomplete result and
+reconciles the resource. Retrying uses each operation's desired-state or durable identity behavior:
+it does not create a duplicate world or window, enqueue the same input request twice, or fail merely
+because the requested world is already absent, but it may return a new result rather than the
+interrupted process's uncommitted response.
 
 Responses echo `request_id` once it has been parsed and include `server_id` once a server responds.
 Malformed requests may therefore omit both, and local configuration or transport failures omit
