@@ -91,10 +91,18 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::StartWorld { world_id } => self.start(owner, world_id),
             Operation::StopWorld { world_id } => self.stop(owner, world_id),
             Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
-            Operation::RunCodexTurn { .. } => Err(ApiError::new(
-                ErrorCode::InvalidRequest,
-                "run_codex_turn requires a request ID",
-            )),
+            Operation::StartCodex { world_id, message } => {
+                self.start_codex(owner, world_id, &message)
+            }
+            Operation::InspectCodex {
+                world_id,
+                thread_id,
+            } => self.inspect_codex(owner, world_id, &thread_id),
+            Operation::SendCodexMessage {
+                world_id,
+                thread_id,
+                message,
+            } => self.send_codex_message(owner, world_id, &thread_id, &message),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             operation @ Operation::ListWorldMail { .. } => self.list_world_mail(owner, operation),

@@ -35,8 +35,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 .map(|mail| WorldMail {
                     id: mail.id,
                     world_id: mail.world_id,
-                    request_id: mail.request_id,
-                    session_id: mail.session_id,
+                    thread_id: mail.thread_id,
+                    turn_id: mail.turn_id,
+                    pane_id: mail.pane_id,
                     created_at_unix_ms: mail.created_at_unix_ms,
                     kind: match mail.kind {
                         wt_workload_registry::MailKind::Message => {

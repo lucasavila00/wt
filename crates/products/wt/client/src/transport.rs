@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 use wt_control_protocol::{
-    ApiError, ApiRequest, ApiResponse, Outcome, PROTOCOL_VERSION, PaneObservation, Response,
+    ApiError, ApiRequest, ApiResponse, Outcome, PaneObservation, Response, PROTOCOL_VERSION,
 };
 
 mod progress;

@@ -17,7 +17,6 @@ pub enum MailKind {
 pub struct WorldMail {
     pub id: u64,
     pub world_id: WorldId,
-    pub request_id: Option<uuid::Uuid>,
     pub thread_id: Option<String>,
     pub turn_id: Option<String>,
     pub pane_id: Option<String>,

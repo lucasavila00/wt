@@ -13,6 +13,7 @@ use wt_agent_tool_gateway::{
 
 const TMUX: &str = "/usr/bin/tmux";
 const BYOBU: &str = "/usr/bin/byobu-tmux";
+const WTG: &str = "/usr/local/bin/wtg";
 const TMUX_CONFIG: &str = "/usr/local/share/wt-tmux.conf";
 const TMUX_SESSION: &str = "wt-host";
 const THREAD_OPTION: &str = "@wt_codex_thread_id";
@@ -71,8 +72,9 @@ struct Pane {
 
 pub(crate) fn start(codex: &Path, message: &str) -> Result<StartOutput> {
     let mut rpc = Connection::open(codex.as_os_str())?;
-    let (thread_id, turn_id) = start_turn(&mut rpc, message)?;
+    let thread_id = start_thread(&mut rpc)?;
     let pane = create_pane(codex, &thread_id)?;
+    let turn_id = start_turn(&mut rpc, &thread_id, message)?;
     spawn_watcher(&thread_id, &turn_id, &pane.pane_id)?;
     Ok(StartOutput {
         thread_id,
@@ -134,7 +136,7 @@ pub(crate) fn watch(codex: &Path, thread_id: &str, turn_id: &str, pane_id: &str)
     }
 }
 
-fn start_turn(rpc: &mut impl Rpc, message: &str) -> Result<(String, String)> {
+fn start_thread(rpc: &mut impl Rpc) -> Result<String> {
     let started = rpc.call(
         "thread/start",
         json!({
@@ -144,10 +146,12 @@ fn start_turn(rpc: &mut impl Rpc, message: &str) -> Result<(String, String)> {
             "serviceName": "wt"
         }),
     )?;
-    let thread_id = required_string(&started, "/thread/id", "thread/start thread ID")?;
-    let turn = rpc.call("turn/start", text_turn_params(&thread_id, message))?;
-    let turn_id = required_string(&turn, "/turn/id", "turn/start turn ID")?;
-    Ok((thread_id, turn_id))
+    required_string(&started, "/thread/id", "thread/start thread ID")
+}
+
+fn start_turn(rpc: &mut impl Rpc, thread_id: &str, message: &str) -> Result<String> {
+    let turn = rpc.call("turn/start", text_turn_params(thread_id, message))?;
+    required_string(&turn, "/turn/id", "turn/start turn ID")
 }
 
 fn inspect_thread(rpc: &mut impl Rpc, thread_id: &str) -> Result<ThreadState> {
@@ -226,7 +230,6 @@ fn parse_thread_state(thread: &Value) -> Result<ThreadState> {
 
 fn create_pane(codex: &Path, thread_id: &str) -> Result<Pane> {
     ensure_tmux_session()?;
-    let remote = format!("unix://{}", app_server_socket()?.display());
     let output = Command::new(TMUX)
         .args([
             "new-window",
@@ -240,7 +243,7 @@ fn create_pane(codex: &Path, thread_id: &str) -> Result<Pane> {
             WINDOW_NAME,
         ])
         .arg(codex)
-        .args(["--remote", &remote, "resume", thread_id])
+        .args(["--remote", "unix://", "resume", thread_id])
         .output()
         .context("create Codex Byobu window")?;
     if !output.status.success() {
@@ -306,7 +309,9 @@ fn find_pane(thread_id: &str) -> Result<Pane> {
     let output = Command::new(TMUX)
         .args([
             "list-panes",
-            "-a",
+            "-s",
+            "-t",
+            TMUX_SESSION,
             "-F",
             "#{pane_id}\t#{window_name}\t#{@wt_codex_thread_id}\t#{pane_dead}",
         ])
@@ -366,11 +371,10 @@ fn capture_screen(pane_id: &str) -> Result<String> {
 }
 
 fn spawn_watcher(thread_id: &str, turn_id: &str, pane_id: &str) -> Result<()> {
-    let executable = std::env::current_exe().context("resolve WT Codex integration")?;
     let status = Command::new("/usr/bin/setsid")
         .arg("--fork")
-        .arg(executable)
-        .args(["watch-turn", thread_id, turn_id, pane_id])
+        .arg(WTG)
+        .args(["codex", "watch-turn", thread_id, turn_id, pane_id])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -414,7 +418,7 @@ fn completion_from_turn(thread_id: &str, pane_id: &str, turn: &Value) -> Result<
     let (status, message) = match turn.get("status").and_then(Value::as_str) {
         Some("completed") => (
             CodexTurnStatus::Completed,
-            last_agent_message(turn).unwrap_or_default(),
+            last_agent_message(turn).unwrap_or_else(|| "Codex turn completed".into()),
         ),
         Some("failed" | "interrupted") => (
             CodexTurnStatus::Failed,
@@ -471,14 +475,6 @@ fn deliver_completion(completion: Completion) -> Result<()> {
         )
     }
     Ok(())
-}
-
-fn app_server_socket() -> Result<std::path::PathBuf> {
-    let home = std::env::var_os("CODEX_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".codex")))
-        .context("neither CODEX_HOME nor HOME is set")?;
-    Ok(home.join("app-server-control/app-server-control.sock"))
 }
 
 fn now_unix_ms() -> Result<i64> {
@@ -581,6 +577,18 @@ mod tests {
         assert_eq!(completion.pane_id, "%3");
         assert_eq!(completion.status, CodexTurnStatus::Completed);
         assert_eq!(completion.message, "done");
+    }
+
+    #[test]
+    fn completed_turn_always_has_mailbox_text() {
+        let completion = completion_from_turn(
+            "thread-1",
+            "%3",
+            &json!({ "id": "turn-1", "status": "completed", "items": [] }),
+        )
+        .unwrap();
+
+        assert_eq!(completion.message, "Codex turn completed");
     }
 
     #[test]

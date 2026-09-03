@@ -13,7 +13,7 @@ use wt_libvirt_kvm::{
 use wt_world::WorldId;
 
 const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
-const CODEX_RUNTIME: &str = "/usr/local/bin/wt-codex-integration";
+const GUEST_TOOLS: &str = "/usr/local/bin/wtg";
 const CODEX_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
 const CODEX_RUNTIME_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -94,7 +94,7 @@ impl<P: MachineProvider> Worker<P> {
             }
             MachineInspection::Missing => return Err(WorkerError::new("world is missing")),
         };
-        let mut args = vec!["-H", "-u", crate::GUEST_USER, "--", CODEX_RUNTIME];
+        let mut args = vec!["-H", "-u", crate::GUEST_USER, "--", GUEST_TOOLS, "codex"];
         args.extend_from_slice(helper_args);
         let output = machine
             .transport

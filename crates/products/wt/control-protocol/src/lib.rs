@@ -14,11 +14,11 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use codex::{CodexMessageDelivery, CodexStatus};
-pub use create::{CreateWorld, validate_create_world_resources};
-pub use mail::{MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE, MailKind, WorldMail};
+pub use create::{validate_create_world_resources, CreateWorld};
+pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
-    MAX_PANE_CELL_TEXT_BYTES, MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
-    MAX_PANE_WINDOW_NAME_BYTES, PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender,
+    PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
+    MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
 };
 pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
@@ -554,13 +554,11 @@ mod tests {
                 "world_id": "123e4567-e89b-12d3-a456-426614174000"
             })
         );
-        assert!(
-            serde_json::from_value::<ApiRequest>(serde_json::json!({
-                "protocol_version": PROTOCOL_VERSION,
-                "operation": "delete_world"
-            }))
-            .is_err()
-        );
+        assert!(serde_json::from_value::<ApiRequest>(serde_json::json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "operation": "delete_world"
+        }))
+        .is_err());
     }
 
     #[test]

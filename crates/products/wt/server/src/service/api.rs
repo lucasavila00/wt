@@ -21,7 +21,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             ))
             .with_request_metadata(request_id, server_id, None);
         }
-        if !matches!(operation, Operation::ListWorldMail { .. }) {
+        if !matches!(
+            operation,
+            Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
+        ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "request IDs are supported only for public API operations",
@@ -59,7 +62,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             operation,
             Operation::CreateWorld(_)
                 | Operation::DeleteWorld { .. }
-                | Operation::RunCodexTurn { .. }
+                | Operation::StartCodex { .. }
+                | Operation::SendCodexMessage { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -136,14 +140,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::DeleteWorld { world_id } => Some(*world_id),
             _ => None,
         };
-        let result = match operation {
-            Operation::RunCodexTurn {
-                world_id,
-                session_id,
-                message,
-            } => self.run_codex_turn(owner, world_id, session_id, &message, request_id),
-            operation => self.execute_with_progress(owner, operation, progress),
-        };
+        let result = self.execute_with_progress(owner, operation, progress);
         let outcome = match result {
             Ok(response) => Outcome::Ok {
                 response: Box::new(response),

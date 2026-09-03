@@ -61,7 +61,7 @@ case "$request" in
     printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_message_sent","thread_id":"thread-123","turn_id":"turn-789","delivery":"steered"}}'
     ;;
   *'"operation":"list_world_mail"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-0000-0000-000000000001","request_id":"11111111-1111-4111-8111-111111111111","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
+    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
     ;;
   *'"operation":"delete_world"'*)
     case "$request" in
@@ -193,7 +193,7 @@ fn reads_attributed_world_mail() {
         String::from_utf8_lossy(&output.stderr)
     );
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"messages":[{"message_id":7,"world_id":"00000000-0000-0000-0000-000000000001","request_id":"11111111-1111-4111-8111-111111111111","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","text":"done"}],"high_water_message_id":7}}
+    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"messages":[{"message_id":7,"world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","text":"done"}],"high_water_message_id":7}}
     "###);
 }
 

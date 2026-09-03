@@ -7,19 +7,49 @@ use wt_libvirt_kvm::WorkerError;
 struct UnusedWorker;
 
 impl WorldWorker for UnusedWorker {
-    fn run_codex_turn(
+    fn start_codex(
         &self,
         _world_id: WorldId,
-        request: wt_guest::CodexTurnRequest<'_>,
-    ) -> Result<wt_guest::CodexTurnOutput, WorkerError> {
-        if request.message == "fail" {
+        message: &str,
+    ) -> Result<wt_guest::CodexStart, WorkerError> {
+        if message == "fail" {
             return Err(WorkerError::new("Codex unavailable"));
         }
-        Ok(wt_guest::CodexTurnOutput {
-            session_id: request
-                .session_id
-                .or_else(|| Some("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".parse().unwrap())),
-            result: Ok(format!("done: {}", request.message)),
+        Ok(wt_guest::CodexStart {
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+            pane_id: "%7".into(),
+            window_name: "codex-thread-123".into(),
+        })
+    }
+
+    fn inspect_codex(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+    ) -> Result<wt_guest::CodexInspection, WorkerError> {
+        Ok(wt_guest::CodexInspection {
+            status: wt_guest::CodexRuntimeStatus::Active,
+            active_turn_id: Some("turn-456".into()),
+            pane_id: "%7".into(),
+            window_name: "codex-thread-123".into(),
+            screen: "working".into(),
+            observed_at_unix_ms: 1_800_000_000_000,
+        })
+    }
+
+    fn send_codex_message(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        message: &str,
+    ) -> Result<wt_guest::CodexSend, WorkerError> {
+        if message == "fail" {
+            return Err(WorkerError::new("Codex unavailable"));
+        }
+        Ok(wt_guest::CodexSend {
+            turn_id: "turn-789".into(),
+            delivery: wt_guest::CodexMessageDelivery::Steered,
         })
     }
 
@@ -211,7 +241,7 @@ fn world_mail_pages_have_a_small_fixed_limit() {
 }
 
 #[test]
-fn api_codex_turn_writes_its_terminal_mail_before_returning() {
+fn api_controls_an_ephemeral_codex_session() {
     let temp = tempfile::tempdir().unwrap();
     let store = Store::open(&temp.path().join("instances.db")).unwrap();
     let world_id = WorldId::new();
@@ -234,66 +264,75 @@ fn api_codex_turn_writes_its_terminal_mail_before_returning() {
         request_id,
         Some(&"a".repeat(64)),
         None,
-        Operation::RunCodexTurn {
+        Operation::StartCodex {
             world_id,
-            session_id: None,
             message: "review".into(),
         },
         &mut std::io::sink(),
     );
     let Outcome::Ok { response } = response.outcome else {
-        panic!("turn failed")
+        panic!("start failed")
     };
-    let Response::CodexTurn {
-        session_id,
-        message_id,
-        kind,
+    let Response::CodexStarted {
+        thread_id,
+        turn_id,
+        pane_id,
+        window_name,
     } = *response
     else {
         panic!("wrong response")
     };
-    assert_eq!(kind, wt_control_protocol::MailKind::Completed);
-    let page = service
-        .store
-        .list_world_mail("owner", world_id, 0, 10)
-        .unwrap();
-    assert_eq!(page.messages.len(), 1);
-    assert_eq!(page.messages[0].id, message_id);
-    assert_eq!(page.messages[0].request_id, Some(request_id));
-    assert_eq!(page.messages[0].session_id, session_id);
-    assert_eq!(page.messages[0].message, "done: review");
+    assert_eq!(thread_id, "thread-123");
+    assert_eq!(turn_id, "turn-456");
+    assert_eq!(pane_id, "%7");
+    assert_eq!(window_name, "codex-thread-123");
 
-    let failed_request_id = uuid::Uuid::new_v4();
-    let failed = service.execute_api_mutation(
+    let inspected = service.execute_api_read(
         "owner",
-        failed_request_id,
+        uuid::Uuid::new_v4(),
+        None,
+        Operation::InspectCodex {
+            world_id,
+            thread_id: thread_id.clone(),
+        },
+    );
+    assert!(matches!(
+        inspected.outcome,
+        Outcome::Ok { response }
+            if matches!(*response, Response::CodexInspection {
+                status: wt_control_protocol::CodexStatus::Active,
+                ref active_turn_id,
+                ref screen,
+                ..
+            } if active_turn_id.as_deref() == Some("turn-456") && screen == "working")
+    ));
+
+    let sent = service.execute_api_mutation(
+        "owner",
+        uuid::Uuid::new_v4(),
         Some(&"b".repeat(64)),
         None,
-        Operation::RunCodexTurn {
+        Operation::SendCodexMessage {
             world_id,
-            session_id,
-            message: "fail".into(),
+            thread_id,
+            message: "continue".into(),
         },
         &mut std::io::sink(),
     );
     assert!(matches!(
-        failed.outcome,
+        sent.outcome,
         Outcome::Ok { response }
-            if matches!(*response, Response::CodexTurn {
-                kind: wt_control_protocol::MailKind::Failed,
+            if matches!(*response, Response::CodexMessageSent {
+                delivery: wt_control_protocol::CodexMessageDelivery::Steered,
                 ..
             })
     ));
-    let page = service
+    assert!(service
         .store
-        .list_world_mail("owner", world_id, message_id, 10)
-        .unwrap();
-    assert_eq!(page.messages[0].request_id, Some(failed_request_id));
-    assert_eq!(
-        page.messages[0].kind,
-        wt_workload_registry::MailKind::Failed
-    );
-    assert_eq!(page.messages[0].message, "Codex unavailable");
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap()
+        .messages
+        .is_empty());
 }
 
 #[test]

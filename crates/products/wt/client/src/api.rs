@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result, bail};
+use anyhow::{bail, Context as _, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
@@ -182,8 +182,6 @@ enum ApiResult {
 struct ApiWorldMail {
     message_id: u64,
     world_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    request_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thread_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -662,7 +660,6 @@ fn call(
                             .map(|mail| ApiWorldMail {
                                 message_id: mail.id,
                                 world_id: mail.world_id.to_string(),
-                                request_id: mail.request_id.map(|id| id.to_string()),
                                 thread_id: mail.thread_id,
                                 turn_id: mail.turn_id,
                                 pane_id: mail.pane_id,

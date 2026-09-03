@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use wt_client::config::{ClientConfig, Context};
 use wt_client::transport::{self, ContextError};
-use wt_control_protocol::{ApiRequest, MAX_WORLD_MAIL_PAGE_SIZE, Operation, Response, WorldMail};
+use wt_control_protocol::{ApiRequest, Operation, Response, WorldMail, MAX_WORLD_MAIL_PAGE_SIZE};
 
 pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     let result = list_all(config);
@@ -160,7 +160,6 @@ mod tests {
             mail: WorldMail {
                 id: 1,
                 world_id: "00000000-0000-0000-0000-000000000001".parse().unwrap(),
-                request_id: None,
                 thread_id: None,
                 turn_id: None,
                 pane_id: None,
@@ -175,35 +174,29 @@ mod tests {
 
     #[test]
     fn all_failed_depends_on_successful_reads_not_failure_count() {
-        assert!(
-            ListResult {
-                messages: Vec::new(),
-                failures: Vec::new(),
-                successful_reads: 0,
-            }
-            .all_failed()
-        );
-        assert!(
-            !ListResult {
-                messages: Vec::new(),
-                failures: Vec::new(),
-                successful_reads: 1,
-            }
-            .all_failed()
-        );
-        assert!(
-            !ListResult {
-                messages: Vec::new(),
-                failures: vec![transport::wrong_response(
-                    &Context {
-                        name: "local".into(),
-                        kind: wt_client::config::ContextKind::BareMetalLocal,
-                    },
-                    "list one world",
-                )],
-                successful_reads: 1,
-            }
-            .all_failed()
-        );
+        assert!(ListResult {
+            messages: Vec::new(),
+            failures: Vec::new(),
+            successful_reads: 0,
+        }
+        .all_failed());
+        assert!(!ListResult {
+            messages: Vec::new(),
+            failures: Vec::new(),
+            successful_reads: 1,
+        }
+        .all_failed());
+        assert!(!ListResult {
+            messages: Vec::new(),
+            failures: vec![transport::wrong_response(
+                &Context {
+                    name: "local".into(),
+                    kind: wt_client::config::ContextKind::BareMetalLocal,
+                },
+                "list one world",
+            )],
+            successful_reads: 1,
+        }
+        .all_failed());
     }
 }
