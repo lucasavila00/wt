@@ -75,7 +75,11 @@ fn emit_alias(path: &str, alias: &TsTypeAliasDecl, output: &mut String) -> Resul
             writeln!(output, "}}\n").unwrap();
         }
         ty if name == "GitHostingTarget" => emit_object(path, name, ty, output)?,
-        ty if matches!(name, "GitHostingCommand" | "WtToolsWorldCommand") => {
+        ty if matches!(
+            name,
+            "GitHostingCommand" | "WtToolsFeedbackCommand" | "WtToolsWorldCommand"
+        ) =>
+        {
             emit_commands(path, name, ty, output)?
         }
         ty if name == "WtToolsCommand" => emit_envelope(path, ty, output)?,
@@ -97,24 +101,31 @@ fn emit_object(path: &str, name: &str, ty: &TsType, output: &mut String) -> Resu
 }
 
 fn emit_envelope(path: &str, ty: &TsType, output: &mut String) -> Result<(), String> {
-    let TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) = ty
-    else {
-        return Err(format!("{path}: `WtToolsCommand` must be an object union"));
+    let members = match ty {
+        TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) => {
+            union.types.iter().map(|member| member.as_ref()).collect()
+        }
+        TsType::TsTypeLit(_) => vec![ty],
+        _ => {
+            return Err(format!("{path}: `WtToolsCommand` must be an object union"));
+        }
     };
-    if union.types.len() != 2 {
-        return Err(format!("{path}: `WtToolsCommand` must have two members"));
+    if members.len() != 3 {
+        return Err(format!("{path}: `WtToolsCommand` must have three members"));
     }
     writeln!(
         output,
         "#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]\n#[serde(untagged, deny_unknown_fields)]\npub enum WtToolsCommand {{"
     )
     .unwrap();
-    for member in &union.types {
+    for member in members {
         let fields = object_fields(path, member)?;
         let variant = if fields.iter().any(|field| field.0 == "target") {
             "GitHosting"
-        } else {
+        } else if fields.iter().any(|field| matches!(field.2, TsType::TsTypeRef(reference) if reference.type_name.as_ident().is_some_and(|name| name.sym == *"WtToolsWorldCommand"))) {
             "World"
+        } else {
+            "Feedback"
         };
         writeln!(output, "    {variant} {{").unwrap();
         emit_fields(path, &fields, output, false)?;
@@ -164,7 +175,7 @@ fn string_union(ty: &TsType) -> Option<Vec<String>> {
 fn emit_commands(path: &str, name: &str, ty: &TsType, output: &mut String) -> Result<(), String> {
     let members = match ty {
         TsType::TsUnionOrIntersectionType(TsUnionOrIntersectionType::TsUnionType(union)) => {
-            union.types.iter().map(AsRef::as_ref).collect::<Vec<_>>()
+            union.types.iter().map(|member| member.as_ref()).collect()
         }
         TsType::TsTypeLit(_) => vec![ty],
         _ => return Err(format!("{path}: `{name}` must be an object union")),

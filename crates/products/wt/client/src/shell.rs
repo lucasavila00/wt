@@ -25,7 +25,6 @@ mod focus;
 mod input;
 mod lifecycle;
 mod live;
-mod mailbox;
 mod model;
 mod pane;
 mod refresh;
@@ -75,7 +74,6 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let pane_refresh = PaneRefresh::start(config.clone());
     let action_log = action_log::Refresh::start(config.clone(), report.worlds);
     let focus = focus::FocusWorker::default();
-    let mailbox = mailbox::MailboxWorker::default();
     let git_author = crate::git_author::read_git_author().map_err(|error| format!("{error:#}"));
     let runtime = ShellRuntime {
         config,
@@ -83,7 +81,6 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
         pane_refresh: &pane_refresh,
         action_log: &action_log,
         focus: &focus,
-        mailbox: &mailbox,
         git_author: &git_author,
     };
     let shutdown = install_signal_handlers()?;
@@ -130,7 +127,6 @@ struct ShellRuntime<'a> {
     pane_refresh: &'a PaneRefresh,
     action_log: &'a action_log::Refresh,
     focus: &'a focus::FocusWorker,
-    mailbox: &'a mailbox::MailboxWorker,
     git_author: &'a Result<crate::git_author::GitAuthor, String>,
 }
 
@@ -228,9 +224,6 @@ fn run_loop(
         }
         for update in runtime.action_log.updates.try_iter() {
             redraw |= model.apply_action_log(update);
-        }
-        while let Some(result) = runtime.mailbox.try_recv() {
-            redraw |= model.apply_mailbox_result(result);
         }
         while let Some(result) = runtime.focus.try_recv() {
             if !flows.actions.is_active(result.action_id)
@@ -434,9 +427,6 @@ fn dispatch_event(
                 InputRoute::DeleteWorld(world) => {
                     flows.deletion = Some(delete::Flow::confirm(*world));
                 }
-                InputRoute::ShowMessages(world) => {
-                    show_world_messages(runtime, model, *world, flows);
-                }
                 InputRoute::Consumed => {}
             }
             Ok(true)
@@ -526,9 +516,6 @@ fn dispatch_event(
                     Some(InputRoute::DeleteWorld(world)) => {
                         flows.deletion = Some(delete::Flow::confirm(*world));
                     }
-                    Some(InputRoute::ShowMessages(world)) => {
-                        show_world_messages(runtime, model, *world, flows);
-                    }
                     Some(InputRoute::Consumed | InputRoute::World) | None => {}
                 }
                 return Ok(changed);
@@ -544,20 +531,6 @@ fn dispatch_event(
         }
         _ => Ok(false),
     }
-}
-
-fn show_world_messages(
-    runtime: &ShellRuntime<'_>,
-    model: &mut ShellModel,
-    world: ShellWorld,
-    flows: &mut ControlFlows,
-) {
-    let Some(context) = runtime.config.context(&world.identity.context) else {
-        flows.action_error = Some("world context is no longer configured".into());
-        return;
-    };
-    let request_id = runtime.mailbox.start(context.clone(), &world);
-    model.show_mailbox_loading(request_id, world);
 }
 
 fn world_rows(terminal_rows: u16) -> u16 {

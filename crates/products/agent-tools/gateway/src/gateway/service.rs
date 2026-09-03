@@ -81,34 +81,22 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
-            ClientOperation::PaneObservations { panes } => {
-                let response = match self.store_pane_observations(&panes, &authorized) {
-                    Ok(()) => TransportResponse::ok(),
+            ClientOperation::SendMessageToParent { message } => {
+                let response = match self
+                    .activity
+                    .record_world_mail(authorized.world_id, &message)
+                {
+                    Ok(()) => TransportResponse::with_message(api::render_cli_confirmation(
+                        "Sent message to parent.".to_owned(),
+                    )),
                     Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
                 crate::write_json_line(&mut stream, &response)
             }
-            ClientOperation::SendMessageToParent {
-                client_message_id,
-                message,
-            } => {
-                let response = match request.tmux_window_id.as_deref() {
-                    Some(tmux_window_id) => {
-                        self.activity
-                            .record_world_mail(
-                                authorized.world_id,
-                                tmux_window_id,
-                                client_message_id,
-                                &message,
-                            )
-                            .map(|mail| {
-                                TransportResponse::with_message(api::render_cli_confirmation(
-                                    format!("Sent message {} to parent.", mail.id),
-                                ))
-                            })
-                            .unwrap_or_else(|error| TransportResponse::error(format!("{error:#}")))
-                    }
-                    None => TransportResponse::error("managed window identity is missing"),
+            ClientOperation::PaneObservations { panes } => {
+                let response = match self.store_pane_observations(&panes, &authorized) {
+                    Ok(()) => TransportResponse::ok(),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
                 };
                 crate::write_json_line(&mut stream, &response)
             }
@@ -199,21 +187,10 @@ impl Gateway {
         if observations.inactive_worlds.contains(&world_id) {
             bail!("agent tools are inactive for this world");
         }
-        let sends_mail = matches!(
-            &request.operation,
-            ClientOperation::SendMessageToParent { message, .. }
-                if !message.is_empty()
-                    && message.len() <= wt_workload_registry::MAX_MAIL_MESSAGE_BYTES
-        );
-        if matches!(
-            &request.operation,
-            ClientOperation::SendMessageToParent { .. }
-        ) != sends_mail
-        {
-            bail!("message must contain 1 to 65536 UTF-8 bytes");
-        }
-        if sends_mail != request.tmux_window_id.is_some() {
-            bail!("managed window identity is valid only for parent messages");
+        if let ClientOperation::SendMessageToParent { message } = &request.operation {
+            if message.is_empty() || message.len() > wt_workload_registry::MAX_MAIL_MESSAGE_BYTES {
+                bail!("message must contain 1 to 65536 UTF-8 bytes");
+            }
         }
         let pane_generation =
             if matches!(&request.operation, ClientOperation::PaneObservations { .. }) {
@@ -335,6 +312,15 @@ impl Gateway {
         }
         let parsed = api::WtToolsCommand::parse(args)?;
         let (target, command) = match &parsed {
+            api::WtToolsCommand::Feedback { command } => {
+                let (kind, description) = command.wt_tool_report();
+                self.activity
+                    .record_agent_tool_report(world_id, kind, description)
+                    .context("store agent tool report")?;
+                return Ok(api::render_cli_confirmation(
+                    "Recorded wtg tools report for this world.",
+                ));
+            }
             api::WtToolsCommand::World { .. } => {
                 bail!("send_message_to_parent must be sent by the guest relay")
             }

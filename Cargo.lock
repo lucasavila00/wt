@@ -1734,7 +1734,6 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.2.1",
  "libc",
- "memoffset",
 ]
 
 [[package]]
@@ -3894,7 +3893,6 @@ dependencies = [
  "diesel",
  "getrandom 0.3.4",
  "insta",
- "nix 0.31.3",
  "serde",
  "serde_json",
  "sha2",
@@ -3916,7 +3914,6 @@ name = "wt-client"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "clap",
  "crossterm",
  "insta",
@@ -4086,10 +4083,8 @@ name = "wt-server"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "clap",
  "diesel",
- "getrandom 0.3.4",
  "insta",
  "libsqlite3-sys",
  "nix 0.31.3",
@@ -4150,6 +4145,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "url",
+ "wt-workload-registry",
 ]
 
 [[package]]

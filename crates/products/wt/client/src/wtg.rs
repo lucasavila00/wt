@@ -2,8 +2,6 @@ use anyhow::{bail, Context, Result};
 use std::ffi::OsString;
 use std::path::Path;
 
-mod window_guest;
-
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
     let tools = args.get(1).is_some_and(|arg| arg == "tools");
@@ -36,12 +34,6 @@ fn run(mut args: Vec<OsString>) -> Result<()> {
     }
     let command = args.get(1).and_then(|arg| arg.to_str());
     match command {
-        Some("window-run") => window_guest::run_process(
-            args.get(2)
-                .and_then(|arg| arg.to_str())
-                .context("missing window ID")?,
-        ),
-        Some(action) if action.starts_with("window-") => window_guest::run(action),
         Some("relay") => {
             args.remove(1);
             args[0] = "wtg relay".into();

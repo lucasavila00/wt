@@ -1,28 +1,25 @@
 use anyhow::{bail, Context as _, Result};
-use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
 use uuid::Uuid;
 use wt_control_protocol::{
-    ApiRequest, CapacityResource, CreateWorld, ErrorCode, Operation, Outcome, Response,
+    ApiRequest, CapacityResource, CreateWorld, ErrorCode, Operation, Outcome, Response, World,
+    WorldStatus,
 };
-
-mod window;
-mod world;
-use window::ApiWindow;
-use world::ApiWorld;
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-#[rustfmt::skip]
 enum Request {
     CreateWorld {
-        #[serde(flatten)]
-        routing: Routing,
+        api_version: u32,
+        request_id: String,
+        #[serde(default)]
+        expected_server_id: Option<String>,
+        context: String,
         name: String,
         vcpus: u32,
         memory_mib: u64,
@@ -31,51 +28,40 @@ enum Request {
         git_user_email: String,
     },
     DeleteWorld {
-        #[serde(flatten)]
-        routing: Routing,
+        api_version: u32,
+        request_id: String,
+        #[serde(default)]
+        expected_server_id: Option<String>,
+        context: String,
         world_id: String,
     },
-    StartWindow { #[serde(flatten)] routing: Routing, world_id: String, argv: Vec<String>, cwd: String },
-    GetWindow { #[serde(flatten)] routing: Routing, window_id: String, after: u64, limit: u32, include_screen: bool },
-    SendWindowInput { #[serde(flatten)] routing: Routing, window_id: String, control_token: String, data_base64: String },
-    StopWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
-    DeleteWindow { #[serde(flatten)] routing: Routing, window_id: String, control_token: String },
-    ListWorldMail { #[serde(flatten)] routing: Routing, world_id: String, after_id: u64, limit: u32 },
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Routing {
-    api_version: u32,
-    request_id: String,
-    #[serde(default)]
-    expected_server_id: Option<String>,
-    context: String,
 }
 
 impl Request {
     fn api_version(&self) -> u32 {
-        self.routing().api_version
+        match self {
+            Self::CreateWorld { api_version, .. } | Self::DeleteWorld { api_version, .. } => {
+                *api_version
+            }
+        }
     }
 
     fn request_id(&self) -> &str {
-        &self.routing().request_id
+        match self {
+            Self::CreateWorld { request_id, .. } | Self::DeleteWorld { request_id, .. } => {
+                request_id
+            }
+        }
     }
 
     fn expected_server_id(&self) -> Option<&str> {
-        self.routing().expected_server_id.as_deref()
-    }
-
-    fn routing(&self) -> &Routing {
         match self {
-            Self::CreateWorld { routing, .. }
-            | Self::DeleteWorld { routing, .. }
-            | Self::StartWindow { routing, .. }
-            | Self::GetWindow { routing, .. }
-            | Self::SendWindowInput { routing, .. }
-            | Self::StopWindow { routing, .. }
-            | Self::DeleteWindow { routing, .. }
-            | Self::ListWorldMail { routing, .. } => routing,
+            Self::CreateWorld {
+                expected_server_id, ..
+            }
+            | Self::DeleteWorld {
+                expected_server_id, ..
+            } => expected_server_id.as_deref(),
         }
     }
 }
@@ -102,56 +88,80 @@ enum ApiOutcome {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-#[rustfmt::skip]
 enum ApiResult {
     World { world: ApiWorld },
-    WorldDeleted {
-        world_id: String,
-    },
-    WindowStarted {
-        window: ApiWindow,
-        control_token: String,
-    },
-    Window {
-        window: ApiWindow,
-    },
-    WindowInputAccepted {
-        window_id: String,
-        sequence_id: u64,
-    },
-    WindowStopped {
-        window_id: String,
-    },
-    WindowDeleted {
-        window_id: String,
-    },
-    WorldMail {
-        messages: Vec<ApiWorldMail>,
-        high_water_id: u64,
-    },
+    WorldDeleted { world_id: String },
 }
 
 #[derive(Debug, Serialize)]
-struct ApiWorldMail {
-    id: u64,
-    client_message_id: String,
+struct ApiWorld {
     world_id: String,
-    world_name: String,
-    window_id: String,
-    created_at_unix_ms: i64,
-    message: String,
+    name: String,
+    status: ApiWorldStatus,
+    vcpus: u32,
+    memory_mib: u64,
+    disk_gib: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guest_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ssh: Option<ApiSshAccess>,
 }
 
-impl From<wt_control_protocol::WorldMail> for ApiWorldMail {
-    fn from(mail: wt_control_protocol::WorldMail) -> Self {
+impl From<World> for ApiWorld {
+    fn from(world: World) -> Self {
         Self {
-            id: mail.id,
-            client_message_id: mail.client_message_id.to_string(),
-            world_id: mail.world_id.to_string(),
-            world_name: mail.world_name.to_string(),
-            window_id: mail.window_id.to_string(),
-            created_at_unix_ms: mail.created_at_unix_ms,
-            message: mail.message,
+            world_id: world.world_id.to_string(),
+            name: world.name.to_string(),
+            status: world.status.into(),
+            vcpus: world.vcpus,
+            memory_mib: world.memory_mib,
+            disk_gib: world.disk_gib,
+            guest_ip: world.guest_ip,
+            last_error: world.last_error,
+            ssh: world.ssh.map(Into::into),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApiWorldStatus {
+    Provisioning,
+    Running,
+    Stopped,
+    Destroying,
+    Error,
+}
+
+impl From<WorldStatus> for ApiWorldStatus {
+    fn from(status: WorldStatus) -> Self {
+        match status {
+            WorldStatus::Provisioning => Self::Provisioning,
+            WorldStatus::Running => Self::Running,
+            WorldStatus::Stopped => Self::Stopped,
+            WorldStatus::Destroying => Self::Destroying,
+            WorldStatus::Error => Self::Error,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ApiSshAccess {
+    user: String,
+    host: String,
+    port: u16,
+    host_keys: Vec<String>,
+}
+
+impl From<wt_control_protocol::SshAccess> for ApiSshAccess {
+    fn from(access: wt_control_protocol::SshAccess) -> Self {
+        Self {
+            user: access.user,
+            host: access.host,
+            port: access.port,
+            host_keys: access.host_keys,
         }
     }
 }
@@ -293,7 +303,7 @@ fn operation_hash(operation: &Operation) -> String {
 fn request_to_operation(request: Request) -> std::result::Result<(String, Operation), String> {
     match request {
         Request::CreateWorld {
-            routing,
+            context,
             name,
             vcpus,
             memory_mib,
@@ -308,7 +318,7 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 return Err("git_user_name and git_user_email must not be empty".to_owned());
             }
             Ok((
-                routing.context,
+                context,
                 Operation::CreateWorld(CreateWorld {
                     name,
                     vcpus,
@@ -320,147 +330,12 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
             ))
         }
         Request::DeleteWorld {
-            routing, world_id, ..
+            context, world_id, ..
         } => {
             let world_id = world_id
                 .parse()
                 .map_err(|_| "invalid world ID".to_owned())?;
-            Ok((routing.context, Operation::DeleteWorld { world_id }))
-        }
-        Request::StartWindow {
-            routing,
-            world_id,
-            argv,
-            cwd,
-            ..
-        } => {
-            let world_id = world_id
-                .parse()
-                .map_err(|_| "invalid world ID".to_owned())?;
-            let request = wt_control_protocol::StartWindow {
-                world_id,
-                argv,
-                cwd,
-                window_id: None,
-                control_token: None,
-            };
-            request.validate()?;
-            Ok((routing.context, Operation::StartWindow(request)))
-        }
-        Request::GetWindow {
-            routing,
-            window_id,
-            after,
-            limit,
-            include_screen,
-            ..
-        } => {
-            let window_id = window_id
-                .parse()
-                .map_err(|_| "invalid window ID".to_owned())?;
-            Ok((
-                routing.context,
-                Operation::GetWindow {
-                    window_id,
-                    after,
-                    limit,
-                    include_screen,
-                },
-            ))
-        }
-        Request::SendWindowInput {
-            routing,
-            window_id,
-            control_token,
-            data_base64,
-            ..
-        } => {
-            let window_id = window_id
-                .parse()
-                .map_err(|_| "invalid window ID".to_owned())?;
-            if control_token.is_empty() {
-                return Err("control token must not be empty".into());
-            }
-            let data = base64::engine::general_purpose::STANDARD
-                .decode(&data_base64)
-                .map_err(|_| "data_base64 is not valid canonical base64".to_owned())?;
-            if base64::engine::general_purpose::STANDARD.encode(&data) != data_base64 {
-                return Err("data_base64 is not valid canonical base64".to_owned());
-            }
-            Ok((
-                routing.context,
-                Operation::SendWindowInput {
-                    window_id,
-                    control_token,
-                    data,
-                    api_request_id: None,
-                },
-            ))
-        }
-        Request::StopWindow {
-            routing,
-            window_id,
-            control_token,
-            ..
-        } => {
-            let window_id = window_id
-                .parse()
-                .map_err(|_| "invalid window ID".to_owned())?;
-            if control_token.is_empty() {
-                return Err("control token must not be empty".into());
-            }
-            Ok((
-                routing.context,
-                Operation::StopWindow {
-                    window_id,
-                    control_token,
-                },
-            ))
-        }
-        Request::DeleteWindow {
-            routing,
-            window_id,
-            control_token,
-            ..
-        } => {
-            let window_id = window_id
-                .parse()
-                .map_err(|_| "invalid window ID".to_owned())?;
-            if control_token.is_empty() {
-                return Err("control token must not be empty".into());
-            }
-            Ok((
-                routing.context,
-                Operation::DeleteWindow {
-                    window_id,
-                    control_token,
-                },
-            ))
-        }
-        Request::ListWorldMail {
-            routing,
-            world_id,
-            after_id,
-            limit,
-            ..
-        } => {
-            let world_id = world_id
-                .parse()
-                .map_err(|_| "invalid world ID".to_owned())?;
-            if !(1..=wt_control_protocol::MAX_WORLD_MAIL_PAGE_SIZE).contains(&limit) {
-                return Err(format!(
-                    "limit must be between 1 and {}",
-                    wt_control_protocol::MAX_WORLD_MAIL_PAGE_SIZE
-                ));
-            }
-            Ok((
-                routing.context,
-                Operation::ListWorldMail {
-                    world_id,
-                    after_id,
-                    limit,
-                },
-            ))
+            Ok((context, Operation::DeleteWorld { world_id }))
         }
     }
 }
@@ -514,48 +389,6 @@ fn call(
                 Response::WorldDeleted { world_id } => ApiOutcome::Ok {
                     result: ApiResult::WorldDeleted {
                         world_id: world_id.to_string(),
-                    },
-                },
-                Response::WindowStarted {
-                    window,
-                    control_token,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::WindowStarted {
-                        window: (*window).into(),
-                        control_token,
-                    },
-                },
-                Response::Window { window } => ApiOutcome::Ok {
-                    result: ApiResult::Window {
-                        window: (*window).into(),
-                    },
-                },
-                Response::WindowInputAccepted {
-                    window_id,
-                    sequence_id,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::WindowInputAccepted {
-                        window_id: window_id.to_string(),
-                        sequence_id,
-                    },
-                },
-                Response::WindowStopped { window_id } => ApiOutcome::Ok {
-                    result: ApiResult::WindowStopped {
-                        window_id: window_id.to_string(),
-                    },
-                },
-                Response::WindowDeleted { window_id } => ApiOutcome::Ok {
-                    result: ApiResult::WindowDeleted {
-                        window_id: window_id.to_string(),
-                    },
-                },
-                Response::WorldMail {
-                    messages,
-                    high_water_id,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::WorldMail {
-                        messages: messages.into_iter().map(Into::into).collect(),
-                        high_water_id,
                     },
                 },
                 _ => api_error(
@@ -673,12 +506,10 @@ mod tests {
     #[test]
     fn routing_fields_do_not_change_operation_identity() {
         let request = |context: &str, expected_server_id: Option<&str>| Request::DeleteWorld {
-            routing: Routing {
-                api_version: API_VERSION,
-                request_id: Uuid::new_v4().to_string(),
-                expected_server_id: expected_server_id.map(str::to_owned),
-                context: context.to_owned(),
-            },
+            api_version: API_VERSION,
+            request_id: Uuid::new_v4().to_string(),
+            expected_server_id: expected_server_id.map(str::to_owned),
+            context: context.to_owned(),
             world_id: "00000000-0000-0000-0000-000000000001".to_owned(),
         };
         let (_, first) = request_to_operation(request("old-alias", None)).unwrap();

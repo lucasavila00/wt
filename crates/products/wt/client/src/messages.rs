@@ -2,13 +2,11 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use wt_client::config::{ClientConfig, Context};
 use wt_client::transport::{self, ContextError};
-use wt_control_protocol::{
-    ApiRequest, Operation, Response, WorldId, WorldMail, MAX_WORLD_MAIL_PAGE_SIZE,
-};
+use wt_control_protocol::{ApiRequest, Operation, Response, WorldMail, MAX_WORLD_MAIL_PAGE_SIZE};
 
 pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     let result = list_all(config);
-    if result.failures.len() == config.contexts.len() {
+    if result.all_failed() {
         return Err(super::context_failures(
             "could not list world messages because every context failed",
             &result.failures,
@@ -21,20 +19,27 @@ pub fn show(config: &ClientConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug)]
 pub struct ContextWorldMail {
-    pub context: String,
-    pub mail: WorldMail,
+    context: String,
+    mail: WorldMail,
 }
 
 pub struct ListResult {
-    pub messages: Vec<ContextWorldMail>,
-    pub failures: Vec<ContextError>,
+    messages: Vec<ContextWorldMail>,
+    failures: Vec<ContextError>,
+    successful_reads: usize,
 }
 
-pub fn list_all(config: &ClientConfig) -> ListResult {
+impl ListResult {
+    fn all_failed(&self) -> bool {
+        self.successful_reads == 0
+    }
+}
+
+fn list_all(config: &ClientConfig) -> ListResult {
     let mut messages = Vec::new();
     let mut failures = Vec::new();
+    let mut successful_reads = 0;
     for context in &config.contexts {
         let worlds = match transport::call(context, &ApiRequest::new(Operation::ListWorlds)) {
             Ok(Response::Worlds { worlds, .. }) => worlds,
@@ -50,33 +55,36 @@ pub fn list_all(config: &ClientConfig) -> ListResult {
                 continue;
             }
         };
-        let mut failed = false;
+        if worlds.is_empty() {
+            successful_reads += 1;
+        }
         for world in worlds {
             match list_world(context, world.world_id) {
-                Ok(world_messages) => {
-                    messages.extend(world_messages.into_iter().map(|mail| ContextWorldMail {
+                Ok(mail) => {
+                    successful_reads += 1;
+                    messages.extend(mail.into_iter().map(|mail| ContextWorldMail {
                         context: context.name.clone(),
                         mail,
-                    }))
+                    }));
                 }
-                Err(error) => {
-                    failures.push(error);
-                    failed = true;
-                    break;
-                }
+                Err(error) => failures.push(error),
             }
         }
-        if failed {
-            messages.retain(|message| message.context != context.name);
-        }
     }
-    ListResult { messages, failures }
+    ListResult {
+        messages,
+        failures,
+        successful_reads,
+    }
 }
 
-pub fn list_world(context: &Context, world_id: WorldId) -> Result<Vec<WorldMail>, ContextError> {
+fn list_world(
+    context: &Context,
+    world_id: wt_control_protocol::WorldId,
+) -> Result<Vec<WorldMail>, ContextError> {
     let mut messages = Vec::new();
     let mut after_id = 0;
-    let mut high_water_id = None;
+    let mut scan_high_water_id = None;
     loop {
         let response = transport::call(
             context,
@@ -87,136 +95,104 @@ pub fn list_world(context: &Context, world_id: WorldId) -> Result<Vec<WorldMail>
             }),
         )?;
         let Response::WorldMail {
-            messages: page,
-            high_water_id: observed_high_water,
+            messages: mut page,
+            high_water_id,
         } = response
         else {
             return Err(transport::wrong_response(context, "list world messages"));
         };
-        let target = *high_water_id.get_or_insert(observed_high_water);
-        let page_is_empty = page.is_empty();
-        let page = page_through_high_water(page, target);
+        let scan_high_water_id = *scan_high_water_id.get_or_insert(high_water_id);
+        page.retain(|message| message.id <= scan_high_water_id);
         after_id = page.last().map_or(after_id, |message| message.id);
+        let done = page.is_empty() || after_id >= scan_high_water_id;
         messages.extend(page);
-        if after_id >= target || page_is_empty || observed_high_water == 0 {
+        if done {
             return Ok(messages);
         }
     }
 }
 
-fn page_through_high_water(page: Vec<WorldMail>, high_water_id: u64) -> Vec<WorldMail> {
-    page.into_iter()
-        .take_while(|message| message.id <= high_water_id)
-        .collect()
-}
-
-pub fn format(messages: &[ContextWorldMail]) -> String {
+fn format(messages: &[ContextWorldMail]) -> String {
     if messages.is_empty() {
         return "No world messages.\n".to_owned();
     }
-    let mut rows = vec![[
-        "CONTEXT".to_owned(),
-        "WORLD".to_owned(),
-        "WINDOW".to_owned(),
-        "TIME (UNIX MS)".to_owned(),
-        "MESSAGE".to_owned(),
-    ]];
-    rows.extend(messages.iter().map(|item| {
-        let message = item
-            .mail
-            .message
-            .replace('\\', "\\\\")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t");
-        [
-            item.context.clone(),
-            item.mail.world_name.to_string(),
-            item.mail.window_id.to_string(),
-            item.mail.created_at_unix_ms.to_string(),
-            message,
-        ]
-    }));
-    let mut widths = [0; 4];
-    for row in &rows {
-        for (width, value) in widths.iter_mut().zip(row) {
-            *width = (*width).max(value.chars().count());
-        }
-    }
     let mut output = String::new();
-    for row in rows {
+    for message in messages {
         writeln!(
             output,
-            "{:<context_width$}  {:<world_width$}  {:<window_width$}  {:<time_width$}  {}",
-            row[0],
-            row[1],
-            row[2],
-            row[3],
-            row[4],
-            context_width = widths[0],
-            world_width = widths[1],
-            window_width = widths[2],
-            time_width = widths[3],
+            "{}  {}  {}  {}",
+            message.context,
+            message.mail.world_id,
+            message.mail.created_at_unix_ms,
+            escape_message(&message.mail.message)
         )
         .expect("writing to a String cannot fail");
     }
     output
 }
 
+fn escape_message(message: &str) -> String {
+    let mut escaped = String::new();
+    for character in message.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character.is_control() => {
+                write!(escaped, "\\u{{{:x}}}", u32::from(character))
+                    .expect("writing to a String cannot fail");
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
-    use wt_control_protocol::{WindowId, WorldName};
 
     #[test]
-    fn formats_messages_with_stable_identity_and_bounded_rows() {
+    fn formats_world_mail_as_stable_bounded_rows() {
         let messages = [ContextWorldMail {
             context: "local".into(),
             mail: WorldMail {
-                id: 7,
-                client_message_id: Uuid::nil(),
-                world_id: Uuid::nil().into(),
-                world_name: WorldName::parse("checkout").unwrap(),
-                window_id: WindowId::from(
-                    Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
-                ),
-                created_at_unix_ms: 1_788_374_400_000,
-                message: "ready\nreview it".into(),
+                id: 1,
+                world_id: "00000000-0000-0000-0000-000000000001".parse().unwrap(),
+                created_at_unix_ms: 1_800_000_000_000,
+                message: "done\nneeds\r\treview\\\0\u{1b} ✓".into(),
             },
         }];
-        insta::assert_snapshot!(format(&messages), @r###"
-        CONTEXT  WORLD     WINDOW                                TIME (UNIX MS)  MESSAGE
-        local    checkout  11111111-1111-4111-8111-111111111111  1788374400000   ready\nreview it
-        "###);
+
+        insta::assert_snapshot!(format(&messages), @"local  00000000-0000-0000-0000-000000000001  1800000000000  done\\nneeds\\r\\treview\\\\\\u{0}\\u{1b} ✓\n");
     }
 
     #[test]
-    fn explains_an_empty_message_list() {
-        insta::assert_snapshot!(format(&[]), @"No world messages.");
-    }
-
-    #[test]
-    fn later_pages_stop_at_the_first_observed_high_water() {
-        let first = message(7, "ready");
-        let later = message(8, "arrived later");
-        assert_eq!(
-            page_through_high_water(vec![first.clone(), later], 7),
-            vec![first]
-        );
-    }
-
-    fn message(id: u64, message: &str) -> WorldMail {
-        WorldMail {
-            id,
-            client_message_id: Uuid::nil(),
-            world_id: Uuid::nil().into(),
-            world_name: WorldName::parse("checkout").unwrap(),
-            window_id: WindowId::from(
-                Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
-            ),
-            created_at_unix_ms: 1_788_374_400_000,
-            message: message.into(),
+    fn all_failed_depends_on_successful_reads_not_failure_count() {
+        assert!(ListResult {
+            messages: Vec::new(),
+            failures: Vec::new(),
+            successful_reads: 0,
         }
+        .all_failed());
+        assert!(!ListResult {
+            messages: Vec::new(),
+            failures: Vec::new(),
+            successful_reads: 1,
+        }
+        .all_failed());
+        assert!(!ListResult {
+            messages: Vec::new(),
+            failures: vec![transport::wrong_response(
+                &Context {
+                    name: "local".into(),
+                    kind: wt_client::config::ContextKind::BareMetalLocal,
+                },
+                "list one world",
+            )],
+            successful_reads: 1,
+        }
+        .all_failed());
     }
 }

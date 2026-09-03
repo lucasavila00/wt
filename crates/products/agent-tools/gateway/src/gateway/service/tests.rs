@@ -29,6 +29,82 @@ fn world_prompt_does_not_require_a_provider_api() {
 }
 
 #[test]
+fn parent_messages_derive_the_world_and_enforce_the_message_limit() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let world_id = Uuid::new_v4().into();
+    let request = |message: String| TransportRequest {
+        protocol_version: PROTOCOL_VERSION,
+        operation: ClientOperation::SendMessageToParent { message },
+    };
+
+    assert_eq!(
+        gateway
+            .authorize(&request("done".into()), world_id)
+            .unwrap()
+            .world_id,
+        world_id
+    );
+    for message in [
+        String::new(),
+        "x".repeat(wt_workload_registry::MAX_MAIL_MESSAGE_BYTES + 1),
+    ] {
+        assert_eq!(
+            gateway
+                .authorize(&request(message), world_id)
+                .unwrap_err()
+                .to_string(),
+            "message must contain 1 to 65536 UTF-8 bytes"
+        );
+    }
+}
+
+#[test]
+fn parent_message_transport_commits_world_scoped_mail() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("instances.db");
+    let store = wt_workload_registry::Store::open(&path).unwrap();
+    let world_id = Uuid::new_v4().into();
+    store
+        .insert(&wt_workload_registry::NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: wt_control_protocol::WorldName::parse("world").unwrap(),
+            status: wt_control_protocol::WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 10,
+            setup_fingerprint: "fingerprint".into(),
+        })
+        .unwrap();
+    drop(store);
+    let gateway = gateway(&temp);
+    let (mut client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+    crate::write_json_line(
+        &mut client,
+        &TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::SendMessageToParent {
+                message: "ready".into(),
+            },
+        },
+    )
+    .unwrap();
+
+    gateway.handle_transport(server, world_id).unwrap();
+
+    let response: TransportResponse = crate::read_json_line(&mut client).unwrap();
+    assert!(response.ok);
+    let page = wt_workload_registry::Store::open(&path)
+        .unwrap()
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert_eq!(page.messages[0].world_id, world_id);
+    assert_eq!(page.messages[0].message, "ready");
+}
+
+#[test]
 fn pane_observations_are_complete_transient_world_snapshots() {
     let frame = PaneFrame {
         rows: 1,
@@ -87,7 +163,6 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
     let world_id = world_uuid.into();
     let request = TransportRequest {
         protocol_version: PROTOCOL_VERSION,
-        tmux_window_id: None,
         operation: ClientOperation::PaneObservations { panes: Vec::new() },
     };
     let authorized = gateway.authorize(&request, world_id).unwrap();
@@ -132,60 +207,4 @@ fn world_run_epochs_reject_stale_and_inactive_pane_reports() {
     );
     let current = gateway.authorize(&request, world_id).unwrap();
     gateway.store_pane_observations(&[], &current).unwrap();
-}
-
-#[test]
-fn parent_messages_resolve_a_managed_window_in_the_authenticated_world_and_replay() {
-    use wt_control_protocol::{WorldName, WorldStatus};
-    use wt_workload_registry::{NewWindow, NewWorld, Store};
-    use wt_world::WindowId;
-
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("instances.db");
-    let store = Store::open(&path).unwrap();
-    let world_id = wt_world::WorldId::new();
-    store
-        .insert(&NewWorld {
-            world_id,
-            owner: "owner".into(),
-            name: WorldName::parse("mail-test").unwrap(),
-            status: WorldStatus::Running,
-            vcpus: 1,
-            memory_mib: 1024,
-            disk_gib: 8,
-            setup_fingerprint: "fingerprint".into(),
-        })
-        .unwrap();
-    let window_id = WindowId::new();
-    store
-        .insert_window(&NewWindow {
-            window_id,
-            world_id,
-            owner: "owner".into(),
-            tmux_window_id: Some("@7".into()),
-            control_token: "token".into(),
-            control_token_hash: "hash".into(),
-            argv: vec!["codex".into()],
-            cwd: "/home/wt".into(),
-        })
-        .unwrap();
-    drop(store);
-    let gateway = gateway(&temp);
-    let client_message_id = Uuid::new_v4();
-
-    let first = gateway
-        .activity
-        .record_world_mail(world_id, "@7", client_message_id, "ready")
-        .unwrap();
-    let replay = gateway
-        .activity
-        .record_world_mail(world_id, "@7", client_message_id, "ready")
-        .unwrap();
-
-    assert_eq!(first, replay);
-    assert_eq!(first.window_id, window_id);
-    assert!(gateway
-        .activity
-        .record_world_mail(world_id, "@8", Uuid::new_v4(), "wrong")
-        .is_err());
 }

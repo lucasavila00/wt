@@ -7,7 +7,6 @@ use wt_agent_tool_gateway::{
 };
 
 const SOCKET: &str = "/run/wt-agent-tool-gateway/gateway.sock";
-const PARENT_MESSAGE_ATTEMPTS: usize = 2;
 
 #[allow(dead_code)]
 fn main() {
@@ -33,7 +32,21 @@ pub fn run(args: Vec<String>) -> Result<()> {
     let args = input_args(args, &mut std::io::stdin().lock())?;
     let operation = request_operation(args);
     let socket = test_socket();
-    let response = send_operation(&socket, &operation)?;
+    let mut relay = UnixStream::connect(&socket).with_context(|| {
+        format!(
+            "cannot reach the WT Git relay at {socket}; this command only works inside a running WT environment"
+        )
+    })?;
+    write_json_line(
+        &mut relay,
+        &ClientRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation,
+        },
+    )
+    .context("send command to the WT Git relay")?;
+    let response: TransportResponse = read_json_line(&mut relay)
+        .context("read the WT Git gateway response; the relay or gateway may have stopped")?;
     if !response.ok {
         bail!(
             "{}",
@@ -51,47 +64,12 @@ pub fn run(args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn send_operation(socket: &str, operation: &ClientOperation) -> Result<TransportResponse> {
-    let attempts = if matches!(operation, ClientOperation::SendMessageToParent { .. }) {
-        PARENT_MESSAGE_ATTEMPTS
-    } else {
-        1
-    };
-    let mut last_error = None;
-    for _ in 0..attempts {
-        match send_once(socket, operation) {
-            Ok(response) => return Ok(response),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error.expect("at least one transport attempt"))
-}
-
-fn send_once(socket: &str, operation: &ClientOperation) -> Result<TransportResponse> {
-    let mut relay = UnixStream::connect(socket).with_context(|| {
-        format!(
-            "cannot reach the WT Git relay at {socket}; this command only works inside a running WT environment"
-        )
-    })?;
-    write_json_line(
-        &mut relay,
-        &ClientRequest {
-            protocol_version: PROTOCOL_VERSION,
-            operation: operation.clone(),
-        },
-    )
-    .context("send command to the WT Git relay")?;
-    read_json_line(&mut relay)
-        .context("read the WT Git gateway response; the relay or gateway may have stopped")
-}
-
 fn request_operation(args: Vec<String>) -> ClientOperation {
     match wt_tools::WtToolsCommand::parse(&args) {
         Ok(wt_tools::WtToolsCommand::World { command }) => ClientOperation::SendMessageToParent {
-            client_message_id: uuid::Uuid::new_v4(),
             message: command.parent_message().to_owned(),
         },
-        Ok(wt_tools::WtToolsCommand::GitHosting { .. }) | Err(_) => ClientOperation::Cli { args },
+        Ok(_) | Err(_) => ClientOperation::Cli { args },
     }
 }
 
@@ -133,7 +111,6 @@ fn test_socket() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::net::UnixListener;
 
     #[test]
     fn renders_json_errors() {
@@ -143,50 +120,21 @@ mod tests {
     }
 
     #[test]
-    fn parent_message_gets_a_transport_retry_identity() {
-        let operation = request_operation(vec![
-            r#"{"command":{"action":"send_message_to_parent","message":"ready"}}"#.into(),
-        ]);
-        let ClientOperation::SendMessageToParent {
-            client_message_id,
-            message,
-        } = operation
-        else {
-            panic!("parent message was sent as an ordinary CLI command")
-        };
-        assert_ne!(client_message_id, uuid::Uuid::nil());
-        assert_eq!(message, "ready");
-    }
-
-    #[test]
-    fn parent_message_retries_a_lost_response_with_the_same_identity() {
-        let temp = tempfile::tempdir().unwrap();
-        let socket = temp.path().join("relay.sock");
-        let listener = UnixListener::bind(&socket).unwrap();
-        let server = std::thread::spawn(move || {
-            let mut requests = Vec::new();
-            for attempt in 0..PARENT_MESSAGE_ATTEMPTS {
-                let (mut stream, _) = listener.accept().unwrap();
-                let request: ClientRequest = read_json_line(&mut stream).unwrap();
-                requests.push(request);
-                if attempt + 1 == PARENT_MESSAGE_ATTEMPTS {
-                    write_json_line(&mut stream, &TransportResponse::ok()).unwrap();
-                }
+    fn routes_parent_messages_without_changing_other_commands() {
+        assert_eq!(
+            request_operation(vec![
+                r#"{"command":{"action":"send_message_to_parent","message":"done"}}"#.into(),
+            ]),
+            ClientOperation::SendMessageToParent {
+                message: "done".into(),
             }
-            requests
-        });
-        let operation = request_operation(vec![
-            r#"{"command":{"action":"send_message_to_parent","message":"ready"}}"#.into(),
-        ]);
-
-        assert!(
-            send_operation(socket.to_str().unwrap(), &operation)
-                .unwrap()
-                .ok
         );
-        let requests = server.join().unwrap();
-        assert_eq!(requests.len(), PARENT_MESSAGE_ATTEMPTS);
-        assert_eq!(requests[0], requests[1]);
+        let report =
+            r#"{"command":{"action":"report_wt_tool_bug","description":"broken"}}"#.to_owned();
+        assert_eq!(
+            request_operation(vec![report.clone()]),
+            ClientOperation::Cli { args: vec![report] }
+        );
     }
 
     #[test]
@@ -194,7 +142,7 @@ mod tests {
         let temp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(
             temp.path(),
-            "{\"command\":{\"action\":\"send_message_to_parent\",\"message\":\"quotes: \\\" and newlines\\n\"}}\n",
+            "{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n",
         )
         .unwrap();
 
@@ -207,7 +155,7 @@ mod tests {
                 &mut std::io::empty(),
             )
             .unwrap(),
-            vec!["{\"command\":{\"action\":\"send_message_to_parent\",\"message\":\"quotes: \\\" and newlines\\n\"}}\n"]
+            vec!["{\"command\":{\"action\":\"report_wt_tool_bug\",\"description\":\"quotes: \\\" and newlines\\n\"}}\n"]
         );
     }
 
@@ -233,12 +181,14 @@ mod tests {
             vec!["--file".to_owned(), "-".to_owned()],
         ] {
             let mut stdin =
-                r#"{"command":{"action":"send_message_to_parent","message":"piped input"}}"#
+                r#"{"command":{"action":"report_wt_tool_issue","description":"piped input"}}"#
                     .as_bytes();
 
             assert_eq!(
                 input_args(args, &mut stdin).unwrap(),
-                vec![r#"{"command":{"action":"send_message_to_parent","message":"piped input"}}"#]
+                vec![
+                    r#"{"command":{"action":"report_wt_tool_issue","description":"piped input"}}"#
+                ]
             );
         }
     }

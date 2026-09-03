@@ -1,4 +1,5 @@
 mod mail;
+mod reports;
 
 use crate::schema::worlds;
 use crate::{Registry, RegistryError, Resources};

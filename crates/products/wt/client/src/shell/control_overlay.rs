@@ -62,12 +62,6 @@ pub(super) fn draw_world_menu(frame: &mut Frame<'_>, model: &ShellModel) {
     menu.render(frame, &model.worlds()[index].name);
 }
 
-pub(super) fn draw_mailbox(frame: &mut Frame<'_>, model: &ShellModel) {
-    if let Some(mailbox) = model.mailbox() {
-        mailbox.render(frame);
-    }
-}
-
 pub(super) fn draw_help(frame: &mut Frame<'_>, content: Rect, model: &ShellModel) {
     let help = model.control().help();
     if !help.is_open() {

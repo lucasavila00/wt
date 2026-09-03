@@ -5,7 +5,7 @@ use wt_control_protocol::{Capacity, CapacityResource, SshAccess, World, WorldNam
 fn item(context: &str, name: &str, status: WorldStatus) -> ContextWorld {
     ContextWorld {
         context: context.to_owned(),
-        world_mail_count: 0,
+        agent_tool_report_count: 0,
         disk_usage_bytes: None,
         world: World {
             world_id: Uuid::new_v4().into(),
@@ -74,13 +74,13 @@ fn formats_stopped_world_with_recovery_commands() {
 }
 
 #[test]
-fn ls_points_to_world_messages_without_changing_world_status() {
+fn ls_points_to_wt_tools_reports_without_changing_world_status() {
     let mut running = item("local", "work", WorldStatus::Running);
-    running.world_mail_count = 2;
+    running.agent_tool_report_count = 2;
 
     insta::assert_snapshot!(format_worlds(&[running]), @r###"
     CONTEXT  NAME  STATUS   RESOURCES         DETAIL
-    local    work  running  2 CPU · 4G · 32G  2 world messages; run `wt messages`
+    local    work  running  2 CPU · 4G · 32G  2 wt-tools reports; run `wt reports`
     "###);
 }
 
@@ -132,10 +132,16 @@ fn parses_stop_target() {
 }
 
 #[test]
-fn parses_world_messages_command() {
+fn parses_agent_tool_report_commands() {
     assert!(matches!(
-        Cli::try_parse_from(["wt", "messages"]).unwrap().command,
-        Command::Messages
+        Cli::try_parse_from(["wt", "reports"]).unwrap().command,
+        Command::Reports
+    ));
+    assert!(matches!(
+        Cli::try_parse_from(["wt", "clear-reports"])
+            .unwrap()
+            .command,
+        Command::ClearReports
     ));
 }
 

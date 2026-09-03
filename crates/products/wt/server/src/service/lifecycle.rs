@@ -28,7 +28,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 format!("world is {}; expected running", stored.world.status),
             ));
         }
-        self.stop_windows_for_world(world_id, true)?;
         self.worker
             .stop(world_id)
             .map_err(|error| ApiError::new(ErrorCode::Backend, format!("stop world: {error}")))?;
@@ -48,11 +47,4 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             world: Box::new(world),
         })
     }
-}
-
-pub(super) fn stopped_message(reason: Option<&str>) -> String {
-    reason.map_or_else(
-        || "guest stopped".to_owned(),
-        |reason| format!("guest stopped ({reason})"),
-    )
 }

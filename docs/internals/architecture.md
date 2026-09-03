@@ -53,9 +53,8 @@ sends its bounded rendered terminal frame, screen fingerprint, freshness,
 current working directory, checked-out Git branch when available, and Byobu
 window index and name through its authenticated server connection. `wts` owns
 those observations and keeps each world's complete latest snapshot only in
-memory. No live Codex pane observation is registry state. Managed window metadata, output cursors,
-bounded output records, queued input, lifecycle status, and the last screen are separate registry
-resources defined by ADR 0086. No Codex hook or lifecycle tracker participates in live state.
+memory. No live pane observation is registry state. No Codex hook or lifecycle
+tracker participates in live state.
 
 ## Shell playback
 
@@ -98,9 +97,5 @@ again from the guest image.
 Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
-that domain's name. This authenticates the source world, not a process or window inside it. For
-parent messages, the stock guest relay uses Unix peer credentials and process ancestry to attach a
-managed Byobu window as cooperative provenance. The host validates the native tmux window ID against
-the authenticated world's registry before resolving its persistent WT window UUID and committing
-mail. Because guest software can bypass the relay and speak VSOCK directly, controllers must not use
-the mailbox window ID as an authorization identity.
+that domain's name. Parent messages use this world identity and contain no
+window or process attribution.

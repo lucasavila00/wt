@@ -6,8 +6,8 @@ mod mail;
 mod pane;
 #[cfg(test)]
 mod rename_tests;
+mod reports;
 mod validation;
-mod window;
 
 pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
@@ -18,20 +18,16 @@ pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
     MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
 };
+pub use reports::{AgentToolReport, AgentToolReportKind};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
-pub use window::{
-    StartWindow, Window, WindowOutputChannel, WindowOutputRecord, WindowScreen, WindowState,
-    MAX_WINDOW_ARGV_ITEMS, MAX_WINDOW_ARG_BYTES, MAX_WINDOW_CWD_BYTES, MAX_WINDOW_INPUT_BYTES,
-    MAX_WINDOW_OUTPUT_LIMIT,
-};
-pub use wt_world::{WindowId, WorldId};
+pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 19;
+pub const PROTOCOL_VERSION: u32 = 18;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -135,11 +131,8 @@ pub enum Operation {
     StartWorld { world_id: WorldId },
     StopWorld { world_id: WorldId },
     DeleteWorld { world_id: WorldId },
-    StartWindow(StartWindow),
-    GetWindow { window_id: WindowId, after: u64, limit: u32, include_screen: bool },
-    SendWindowInput { window_id: WindowId, control_token: String, data: Vec<u8>, #[serde(default, skip_serializing_if = "Option::is_none")] api_request_id: Option<Uuid> },
-    StopWindow { window_id: WindowId, control_token: String },
-    DeleteWindow { window_id: WindowId, control_token: String },
+    ListAgentToolReports,
+    ClearAgentToolReports,
     ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },
     ListPaneObservations,
     ListGitActivity { query: GitActivityQuery },
@@ -214,7 +207,6 @@ pub enum Outcome {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
-#[rustfmt::skip]
 pub enum Response {
     ServerInfo {
         test_server: bool,
@@ -230,7 +222,13 @@ pub enum Response {
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         disk_usage_bytes: std::collections::BTreeMap<WorldId, u64>,
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        world_mail_counts: std::collections::BTreeMap<WorldId, u64>,
+        agent_tool_report_counts: std::collections::BTreeMap<WorldId, u64>,
+    },
+    AgentToolReports {
+        reports: Vec<AgentToolReport>,
+    },
+    AgentToolReportsCleared {
+        count: u64,
     },
     WorldMail {
         messages: Vec<WorldMail>,
@@ -248,11 +246,6 @@ pub enum Response {
     WorldDeleted {
         world_id: WorldId,
     },
-    WindowStarted { window: Box<Window>, control_token: String },
-    Window { window: Box<Window> },
-    WindowInputAccepted { window_id: WindowId, sequence_id: u64 },
-    WindowStopped { window_id: WindowId },
-    WindowDeleted { window_id: WindowId },
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -564,7 +557,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 19,
+          "protocol_version": 18,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -600,7 +593,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 19,
+          "protocol_version": 18,
           "vcpus": 2
         }
         "###);
@@ -656,7 +649,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 19,
+          "protocol_version": 18,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -676,11 +669,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 19,
+            "protocol_version": 18,
             "operation": "server_info"
           },
           {
-            "protocol_version": 19,
+            "protocol_version": 18,
             "outcome": "ok",
             "response": {
               "response": "server_info",

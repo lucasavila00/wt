@@ -16,12 +16,6 @@ pub fn valid_byobu_pane_id(value: &str) -> bool {
     })
 }
 
-pub fn valid_byobu_window_id(value: &str) -> bool {
-    value.strip_prefix('@').is_some_and(|number| {
-        !number.is_empty() && number.len() <= 16 && number.bytes().all(|byte| byte.is_ascii_digit())
-    })
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
@@ -62,20 +56,10 @@ pub struct ClientRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ClientOperation {
-    Git {
-        service: GitService,
-        source: String,
-    },
-    Cli {
-        args: Vec<String>,
-    },
-    PaneObservations {
-        panes: Vec<PaneObservation>,
-    },
-    SendMessageToParent {
-        client_message_id: uuid::Uuid,
-        message: String,
-    },
+    Git { service: GitService, source: String },
+    Cli { args: Vec<String> },
+    SendMessageToParent { message: String },
+    PaneObservations { panes: Vec<PaneObservation> },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -148,21 +132,12 @@ mod byobu_target_tests {
         for invalid in ["", "%", "%a", "1", "%12345678901234567"] {
             assert!(!valid_byobu_pane_id(invalid), "{invalid}");
         }
-
-        assert!(valid_byobu_window_id("@0"));
-        assert!(valid_byobu_window_id("@1234567890123456"));
-        for invalid in ["", "@", "@a", "1", "@12345678901234567"] {
-            assert!(!valid_byobu_window_id(invalid), "{invalid}");
-        }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TransportRequest {
     pub protocol_version: u32,
-    /// Cooperative provenance from the stock relay, not an authorization identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tmux_window_id: Option<String>,
     #[serde(flatten)]
     pub operation: ClientOperation,
 }
@@ -181,10 +156,9 @@ mod transport_tests {
     use super::*;
 
     #[test]
-    fn ordinary_transport_requests_omit_window_provenance() {
+    fn transport_identity_is_not_supplied_by_the_guest() {
         let request = TransportRequest {
             protocol_version: PROTOCOL_VERSION,
-            tmux_window_id: None,
             operation: ClientOperation::Cli {
                 args: vec!["help".into()],
             },
@@ -197,6 +171,20 @@ mod transport_tests {
           "args": [
             "help"
           ]
+        }
+        "###);
+
+        let mail = TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::SendMessageToParent {
+                message: "done".into(),
+            },
+        };
+        insta::assert_snapshot!(serde_json::to_string_pretty(&mail).unwrap(), @r###"
+        {
+          "protocol_version": 15,
+          "operation": "send_message_to_parent",
+          "message": "done"
         }
         "###);
     }

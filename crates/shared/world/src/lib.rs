@@ -8,11 +8,6 @@ use uuid::Uuid;
 #[serde(transparent)]
 pub struct WorldId(Uuid);
 
-/// The immutable identity of one managed executable and its Byobu window.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct WindowId(Uuid);
-
 impl WorldId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
@@ -48,48 +43,6 @@ impl fmt::Display for WorldId {
 }
 
 impl FromStr for WorldId {
-    type Err = uuid::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(value)?))
-    }
-}
-
-impl WindowId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl Default for WindowId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<Uuid> for WindowId {
-    fn from(value: Uuid) -> Self {
-        Self(value)
-    }
-}
-
-impl From<WindowId> for Uuid {
-    fn from(value: WindowId) -> Self {
-        value.0
-    }
-}
-
-impl fmt::Display for WindowId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-impl FromStr for WindowId {
     type Err = uuid::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {

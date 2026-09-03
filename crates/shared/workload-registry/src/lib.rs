@@ -2,9 +2,9 @@ mod activity;
 mod api;
 mod capacity;
 mod mail;
+mod reports;
 pub mod schema;
 mod store;
-mod windows;
 
 pub use activity::{
     GitActivity, GitActivityInput, GitActivityKind, GitActivityQuery, RepositoryTargetInput,
@@ -15,11 +15,8 @@ pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
 pub use mail::{WorldMail, WorldMailPage, MAILBOX_BYTES_PER_WORLD, MAX_MAIL_MESSAGE_BYTES};
+pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{NewWorld, Store, StoreError, StoredWorld};
-pub use windows::{
-    NewWindow, StoredWindow, WindowInput, WindowOutput, WindowOutputPage, WindowState,
-    WINDOW_OUTPUT_RETENTION_BYTES,
-};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -180,7 +177,7 @@ fn to_u64(value: i64, field: &'static str) -> Result<u64, RegistryError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::worlds;
+    use crate::schema::{agent_tool_reports, worlds};
     use wt_world::WorldId;
 
     fn insert_world(registry: &Registry, resources: Resources, limit: Resources) -> WorldId {
@@ -269,6 +266,55 @@ mod tests {
             })
             .unwrap();
         assert_eq!(registry.read(reserved_resources).unwrap(), resources);
+    }
+
+    #[test]
+    fn mailbox_migration_preserves_existing_agent_tool_reports() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("registry.db");
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        connection
+            .batch_execute("PRAGMA foreign_keys = ON;")
+            .unwrap();
+        connection.run_next_migration(MIGRATIONS).unwrap();
+        let world_id = WorldId::new();
+        diesel::insert_into(worlds::table)
+            .values((
+                worlds::world_id.eq(world_id.to_string()),
+                worlds::vcpus.eq(1_i64),
+                worlds::memory_mib.eq(1024_i64),
+                worlds::disk_gib.eq(10_i64),
+                worlds::compute_reserved.eq(true),
+                worlds::disk_reserved_gib.eq(10_i64),
+                worlds::owner.eq("owner"),
+                worlds::name.eq("existing"),
+                worlds::status.eq("running"),
+                worlds::setup_fingerprint.eq("fingerprint"),
+                worlds::ssh_host_keys.eq("[]"),
+            ))
+            .execute(&mut connection)
+            .unwrap();
+        diesel::insert_into(agent_tool_reports::table)
+            .values((
+                agent_tool_reports::world_id.eq(world_id.to_string()),
+                agent_tool_reports::kind.eq("bug"),
+                agent_tool_reports::description.eq("keep me"),
+            ))
+            .execute(&mut connection)
+            .unwrap();
+        drop(connection);
+
+        let registry = Registry::open(&path).unwrap();
+        let reports = registry.list_agent_tool_reports("owner").unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].description, "keep me");
+        assert_eq!(
+            registry
+                .insert_world_mail(world_id, "migration completed")
+                .unwrap()
+                .message,
+            "migration completed"
+        );
     }
 
     #[test]

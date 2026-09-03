@@ -1,48 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    window_input (window_id, sequence_id) {
-        window_id -> Text,
-        sequence_id -> BigInt,
-        request_id -> Text,
-        data -> Binary,
-    }
-}
-
-diesel::table! {
-    window_output (window_id, record_id) {
-        window_id -> Text,
-        record_id -> BigInt,
-        channel -> Text,
-        data -> Binary,
-    }
-}
-
-diesel::table! {
-    windows (window_id) {
-        window_id -> Text,
-        world_id -> Text,
-        owner -> Text,
-        tmux_window_id -> Nullable<Text>,
-        control_token -> Text,
-        control_token_hash -> Text,
-        argv_json -> Text,
-        cwd -> Text,
-        state -> Text,
-        exit_code -> Nullable<Integer>,
-        exit_signal -> Nullable<Integer>,
-        next_output_record_id -> BigInt,
-        oldest_available -> BigInt,
-        retained_output_bytes -> BigInt,
-        next_input_sequence_id -> BigInt,
-        output_offset -> BigInt,
-        screen -> Nullable<Text>,
-        screen_observed_at_unix_ms -> Nullable<BigInt>,
-        created_at_unix_ms -> BigInt,
-    }
-}
-
-diesel::table! {
     api_mutation_results (owner, request_id) {
         owner -> Text,
         request_id -> Text,
@@ -53,13 +11,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    world_mail (id) {
-        id -> BigInt,
-        client_message_id -> Text,
+    agent_tool_reports (id) {
+        id -> Integer,
         world_id -> Text,
-        window_id -> Text,
-        created_at_unix_ms -> BigInt,
-        message -> Text,
+        kind -> Text,
+        description -> Text,
     }
 }
 
@@ -115,6 +71,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    world_mail (id) {
+        id -> BigInt,
+        world_id -> Text,
+        created_at_unix_ms -> BigInt,
+        message -> Text,
+    }
+}
+
+diesel::table! {
     world_wt_tools_activity (id) {
         id -> Integer,
         world_id -> Text,
@@ -128,24 +93,20 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(world_mail -> worlds (world_id));
+diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
 diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
-diesel::joinable!(window_input -> windows (window_id));
-diesel::joinable!(window_output -> windows (window_id));
-diesel::joinable!(windows -> worlds (world_id));
+diesel::joinable!(world_mail -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_mutation_results,
-    world_mail,
+    agent_tool_reports,
     repositories,
     server_metadata,
     world_git_activity,
+    world_mail,
     world_wt_tools_activity,
-    worlds,
-    window_input,
-    window_output,
-    windows
+    worlds
 );

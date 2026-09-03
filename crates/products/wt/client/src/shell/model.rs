@@ -66,7 +66,6 @@ pub(super) enum InputRoute {
     Command(ControlCommand),
     OpenPane(Box<PaneCardIdentity>),
     DeleteWorld(Box<ShellWorld>),
-    ShowMessages(Box<ShellWorld>),
 }
 
 #[derive(Debug)]
@@ -78,7 +77,6 @@ pub(super) struct ShellModel {
     control: ControlState,
     should_quit: bool,
     world_menu: Option<WorldMenu>,
-    mailbox: Option<super::mailbox::MailboxView>,
 }
 
 impl ShellModel {
@@ -91,7 +89,6 @@ impl ShellModel {
             control: ControlState::default(),
             should_quit: false,
             world_menu: None,
-            mailbox: None,
         }
     }
 
@@ -135,20 +132,6 @@ impl ShellModel {
 
     pub(super) fn world_menu(&self) -> Option<&WorldMenu> {
         self.world_menu.as_ref()
-    }
-
-    pub(super) fn mailbox(&self) -> Option<&super::mailbox::MailboxView> {
-        self.mailbox.as_ref()
-    }
-
-    pub(super) fn show_mailbox_loading(&mut self, request_id: u64, world: ShellWorld) {
-        self.mailbox = Some(super::mailbox::MailboxView::loading(request_id, world));
-    }
-
-    pub(super) fn apply_mailbox_result(&mut self, result: super::mailbox::LoadResult) -> bool {
-        self.mailbox
-            .as_mut()
-            .is_some_and(|mailbox| mailbox.apply(result))
     }
 
     pub(super) fn reconcile_worlds(&mut self, mut worlds: Vec<ShellWorld>) {
