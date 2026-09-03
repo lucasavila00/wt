@@ -63,6 +63,11 @@ impl ActivityRecorder {
             .insert_agent_tool_report(world_id, kind, description)?;
         Ok(())
     }
+
+    fn record_world_mail(&self, world_id: WorldId, message: &str) -> Result<()> {
+        self.registry()?.insert_world_mail(world_id, message)?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]

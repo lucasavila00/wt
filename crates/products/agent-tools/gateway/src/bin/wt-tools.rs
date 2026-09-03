@@ -30,6 +30,7 @@ pub fn render_error(message: &str) -> serde_json::Value {
 
 pub fn run(args: Vec<String>) -> Result<()> {
     let args = input_args(args, &mut std::io::stdin().lock())?;
+    let operation = request_operation(args);
     let socket = test_socket();
     let mut relay = UnixStream::connect(&socket).with_context(|| {
         format!(
@@ -40,7 +41,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
         &mut relay,
         &ClientRequest {
             protocol_version: PROTOCOL_VERSION,
-            operation: ClientOperation::Cli { args },
+            operation,
         },
     )
     .context("send command to the WT Git relay")?;
@@ -61,6 +62,15 @@ pub fn run(args: Vec<String>) -> Result<()> {
             .context("write gateway output")?;
     }
     Ok(())
+}
+
+fn request_operation(args: Vec<String>) -> ClientOperation {
+    match wt_tools::WtToolsCommand::parse(&args) {
+        Ok(wt_tools::WtToolsCommand::World { command }) => ClientOperation::SendMessageToParent {
+            message: command.parent_message().to_owned(),
+        },
+        Ok(_) | Err(_) => ClientOperation::Cli { args },
+    }
 }
 
 fn input_args(args: Vec<String>, stdin: &mut impl Read) -> Result<Vec<String>> {
@@ -107,6 +117,24 @@ mod tests {
         insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
         {"error":{"message":"gateway rejected command"}}
         "###);
+    }
+
+    #[test]
+    fn routes_parent_messages_without_changing_other_commands() {
+        assert_eq!(
+            request_operation(vec![
+                r#"{"command":{"action":"send_message_to_parent","message":"done"}}"#.into(),
+            ]),
+            ClientOperation::SendMessageToParent {
+                message: "done".into(),
+            }
+        );
+        let report =
+            r#"{"command":{"action":"report_wt_tool_bug","description":"broken"}}"#.to_owned();
+        assert_eq!(
+            request_operation(vec![report.clone()]),
+            ClientOperation::Cli { args: vec![report] }
+        );
     }
 
     #[test]

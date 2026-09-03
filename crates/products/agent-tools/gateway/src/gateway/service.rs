@@ -81,6 +81,18 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
+            ClientOperation::SendMessageToParent { message } => {
+                let response = match self
+                    .activity
+                    .record_world_mail(authorized.world_id, &message)
+                {
+                    Ok(()) => TransportResponse::with_message(api::render_cli_confirmation(
+                        "Sent message to parent.".to_owned(),
+                    )),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
+                };
+                crate::write_json_line(&mut stream, &response)
+            }
             ClientOperation::PaneObservations { panes } => {
                 let response = match self.store_pane_observations(&panes, &authorized) {
                     Ok(()) => TransportResponse::ok(),
@@ -174,6 +186,11 @@ impl Gateway {
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.contains(&world_id) {
             bail!("agent tools are inactive for this world");
+        }
+        if let ClientOperation::SendMessageToParent { message } = &request.operation {
+            if message.is_empty() || message.len() > wt_workload_registry::MAX_MAIL_MESSAGE_BYTES {
+                bail!("message must contain 1 to 65536 UTF-8 bytes");
+            }
         }
         let pane_generation =
             if matches!(&request.operation, ClientOperation::PaneObservations { .. }) {
@@ -303,6 +320,9 @@ impl Gateway {
                 return Ok(api::render_cli_confirmation(
                     "Recorded wtg tools report for this world.",
                 ));
+            }
+            api::WtToolsCommand::World { .. } => {
+                bail!("send_message_to_parent must be sent by the guest relay")
             }
             api::WtToolsCommand::GitHosting { target, command } => (target, command),
         };

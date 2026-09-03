@@ -97,4 +97,5 @@ again from the guest image.
 Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
-that domain's name.
+that domain's name. Parent messages use this world identity and contain no
+window or process attribution.

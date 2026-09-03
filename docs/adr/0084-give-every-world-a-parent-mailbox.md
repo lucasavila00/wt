@@ -5,64 +5,30 @@
 
 ## Decision
 
-Every WT world has an outbound mailbox in `wts`. A process in a WT-managed Byobu window sends a
-message with the always-available `wtg tools` command:
+Every world has a durable outbound mailbox in `wts`. Guest software sends an untargeted message with:
 
 ```json
 {"command":{"action":"send_message_to_parent","message":"..."}}
 ```
 
-This command is the single untargeted `wtg tools` operation. It replaces
-`report_wt_tool_bug`, `report_wt_tool_issue`, `suggest_wt_tool_improvement`, and
-`request_wt_tool_feature`.
+The gateway authenticates only the source world by resolving the VSOCK peer CID to an active WT
+domain. This is the trust boundary: any software in that guest can send a message for that world.
+WT records no process, Byobu, tmux, or window attribution.
 
-Codex invokes the command through its shell tool. Other programs in managed windows use the same
-command. `wtg tools` creates a client message ID and reuses it for transport retries.
+A mailbox row contains only a monotonic server message ID, world ID, creation time, and message.
+The gateway commits the row before returning success. A lost response followed by a retry may create
+a duplicate message. This is an at-least-once human notification, not an exactly-once command.
 
-## Transport and storage
+Messages are limited to 64 KiB; a world retains at most 64 MiB. A full mailbox rejects new mail.
+Deleting a world cascades its mailbox rows. Existing agent-tool reports and their data are unchanged.
 
-`wtg tools` sends the request to the guest relay over its Unix socket. The relay obtains the caller
-PID from Unix peer credentials and derives its WT window from WT-managed process membership. The
-relay sends the window ID and message to the host gateway over VSOCK. The gateway derives the world
-from the VSOCK peer CID and active libvirt domain.
-
-The gateway commits the message before it returns success. A mailbox row contains the server message
-ID, client message ID, world ID, window ID, creation time, and message. The server message ID is
-monotonic within one WT server. The unique `(world_id, window_id, client_message_id)` key makes a
-retried send return the original row.
-
-The `wts` control API exposes an owner-scoped cursor query:
-
-```text
-list_world_mail(world_id, after_id, limit)
-```
-
-Results use ascending ID order. `after_id` is exclusive. Repeating a page is safe because each row
-keeps its stable server message ID. Each response includes the highest committed message ID observed
-when the query began. A client can drain through that high-water ID while new messages arrive.
-Reading preserves the mailbox contents.
-
-Messages are limited to 64 KiB. Each world retains up to 64 MiB of mailbox data. A full mailbox
-rejects new messages with a capacity error. Deleting a world deletes its mailbox rows.
-
-## User interface
-
-`wt ls` and world cards show the total retained message count for each world. The shell provides a
-mailbox view with window, message time, and text. `wt messages` lists the same server-backed mail
-across configured contexts.
-
-The mailbox UI reads the same control-plane query used by external clients. Messages remain visible
-after an external controller reads them.
-
-## Replacement
-
-The implementation replaces `agent_tool_reports` with world mailbox storage and replaces the
-report kind, report list, report clear, and report count APIs with mailbox records and cursor reads.
-Generated `wtg tools` types and help expose `send_message_to_parent` as the fixed guest command.
+`wts` provides an owner-scoped bounded cursor read for the built-in `wt messages` command:
+`list_world_mail(world_id, after_id, limit)`. It is an internal control-plane operation, not part
+of the stable public JSON API. It returns ascending IDs and a high-water ID so the client can finish
+a bounded scan while messages arrive.
 
 ## Consequences
 
-- A message survives guest, Codex, client, and `wts` process restarts after the registry commit.
-- External controllers route messages by server, world, and window.
-- WT authenticates the source world and derives its window. Controllers own parent relationships.
-- The mailbox has one behavior for every world.
+- Mail survives client, guest, and server restarts after commit.
+- Mail is associated with a world only.
+- `wtg tools` reports remain available alongside parent messages.

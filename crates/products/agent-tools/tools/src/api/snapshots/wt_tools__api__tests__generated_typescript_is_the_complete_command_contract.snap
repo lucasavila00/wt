@@ -62,7 +62,11 @@ export type WtToolsFeedbackCommand =
   | { action: "suggest_wt_tool_improvement"; description: string }
   | { action: "request_wt_tool_feature"; description: string };
 
+/** A message for the parent of this world. */
+export type WtToolsWorldCommand = { action: "send_message_to_parent"; message: string };
+
 /** One JSON command accepted by wt-tools. */
 export type WtToolsCommand =
   | { target: GitHostingTarget; command: GitHostingCommand }
-  | { command: WtToolsFeedbackCommand };
+  | { command: WtToolsFeedbackCommand }
+  | { command: WtToolsWorldCommand };

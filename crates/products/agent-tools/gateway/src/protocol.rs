@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 pub const MAX_PANE_OBSERVATIONS: usize = 32;
 pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
@@ -58,6 +58,7 @@ pub struct ClientRequest {
 pub enum ClientOperation {
     Git { service: GitService, source: String },
     Cli { args: Vec<String> },
+    SendMessageToParent { message: String },
     PaneObservations { panes: Vec<PaneObservation> },
 }
 
@@ -165,11 +166,25 @@ mod transport_tests {
 
         insta::assert_snapshot!(serde_json::to_string_pretty(&request).unwrap(), @r###"
         {
-          "protocol_version": 14,
+          "protocol_version": 15,
           "operation": "cli",
           "args": [
             "help"
           ]
+        }
+        "###);
+
+        let mail = TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::SendMessageToParent {
+                message: "done".into(),
+            },
+        };
+        insta::assert_snapshot!(serde_json::to_string_pretty(&mail).unwrap(), @r###"
+        {
+          "protocol_version": 15,
+          "operation": "send_message_to_parent",
+          "message": "done"
         }
         "###);
     }

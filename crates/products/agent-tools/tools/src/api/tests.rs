@@ -113,6 +113,14 @@ fn command_parser_accepts_only_valid_json_objects() {
     ] {
         WtToolsCommand::parse(&[format!(r#"{{"command":{command}}}"#)]).unwrap();
     }
+    assert!(WtToolsCommand::parse(&[
+        r#"{"command":{"action":"send_message_to_parent","message":"done"}}"#.into(),
+    ])
+    .is_ok());
+    assert!(WtToolsCommand::parse(&[
+        r#"{"command":{"action":"send_message_to_parent","message":""}}"#.into(),
+    ])
+    .is_err());
     let targeted = |command: &str| {
         format!(
             r#"{{"target":{{"provider":"github","repository":"acme/widget"}},"command":{command}}}"#
@@ -122,6 +130,7 @@ fn command_parser_accepts_only_valid_json_objects() {
     {
         WtToolsCommand::GitHosting { command, .. } => command,
         WtToolsCommand::Feedback { .. } => panic!("expected Git hosting command"),
+        WtToolsCommand::World { .. } => panic!("expected Git hosting command"),
     };
     assert_eq!(
         parsed_command(r#"{"action":"wait_job","job":"42"}"#),

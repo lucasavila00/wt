@@ -29,6 +29,82 @@ fn world_prompt_does_not_require_a_provider_api() {
 }
 
 #[test]
+fn parent_messages_derive_the_world_and_enforce_the_message_limit() {
+    let temp = tempfile::tempdir().unwrap();
+    let gateway = gateway(&temp);
+    let world_id = Uuid::new_v4().into();
+    let request = |message: String| TransportRequest {
+        protocol_version: PROTOCOL_VERSION,
+        operation: ClientOperation::SendMessageToParent { message },
+    };
+
+    assert_eq!(
+        gateway
+            .authorize(&request("done".into()), world_id)
+            .unwrap()
+            .world_id,
+        world_id
+    );
+    for message in [
+        String::new(),
+        "x".repeat(wt_workload_registry::MAX_MAIL_MESSAGE_BYTES + 1),
+    ] {
+        assert_eq!(
+            gateway
+                .authorize(&request(message), world_id)
+                .unwrap_err()
+                .to_string(),
+            "message must contain 1 to 65536 UTF-8 bytes"
+        );
+    }
+}
+
+#[test]
+fn parent_message_transport_commits_world_scoped_mail() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("instances.db");
+    let store = wt_workload_registry::Store::open(&path).unwrap();
+    let world_id = Uuid::new_v4().into();
+    store
+        .insert(&wt_workload_registry::NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: wt_control_protocol::WorldName::parse("world").unwrap(),
+            status: wt_control_protocol::WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 10,
+            setup_fingerprint: "fingerprint".into(),
+        })
+        .unwrap();
+    drop(store);
+    let gateway = gateway(&temp);
+    let (mut client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+    crate::write_json_line(
+        &mut client,
+        &TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::SendMessageToParent {
+                message: "ready".into(),
+            },
+        },
+    )
+    .unwrap();
+
+    gateway.handle_transport(server, world_id).unwrap();
+
+    let response: TransportResponse = crate::read_json_line(&mut client).unwrap();
+    assert!(response.ok);
+    let page = wt_workload_registry::Store::open(&path)
+        .unwrap()
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert_eq!(page.messages[0].world_id, world_id);
+    assert_eq!(page.messages[0].message, "ready");
+}
+
+#[test]
 fn pane_observations_are_complete_transient_world_snapshots() {
     let frame = PaneFrame {
         rows: 1,

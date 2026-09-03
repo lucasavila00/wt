@@ -35,25 +35,25 @@ case "$request" in
 esac
 case "$request" in
   *'"name":"metadata"'*)
-    printf '%s\n' '{"protocol_version":17,"request_id":"33333333-3333-4333-8333-333333333333","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"conflict","message":"ignored"}}'
+    printf '%s\n' '{"protocol_version":18,"request_id":"33333333-3333-4333-8333-333333333333","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"conflict","message":"ignored"}}'
     ;;
   *'"name":"capacity"'*)
-    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
+    printf '%s\n' '{"protocol_version":18,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
     ;;
   *'"name":"duplicate"'*)
-    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
+    printf '%s\n' '{"protocol_version":18,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
     ;;
   *'"operation":"create_world"'*)
-    printf '%s\n' '{"protocol_version":17,"event":"progress","message":"creating disk"}'
-    printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
+    printf '%s\n' '{"protocol_version":18,"event":"progress","message":"creating disk"}'
+    printf '%s\n' '{"protocol_version":18,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"delete_world"'*)
     case "$request" in
       *'"world_id":"00000000-0000-0000-0000-000000000002"'*)
-        printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}'
+        printf '%s\n' '{"protocol_version":18,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}'
         ;;
       *)
-        printf '%s\n' '{"protocol_version":17,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
+        printf '%s\n' '{"protocol_version":18,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
         ;;
     esac
     ;;

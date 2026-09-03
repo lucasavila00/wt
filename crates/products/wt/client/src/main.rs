@@ -15,6 +15,7 @@ mod api;
 mod code;
 mod create;
 mod git_author;
+mod messages;
 mod progress_toast;
 mod reports;
 mod shell;
@@ -56,6 +57,8 @@ enum Command {
     Reports,
     /// Clear reports submitted about wt-tools.
     ClearReports,
+    /// Read durable messages sent by worlds.
+    Messages,
     /// Read one versioned JSON API request from standard input.
     Api,
     /// Show client and configured server build identities.
@@ -227,6 +230,7 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
         }
         Command::Reports => reports::show(&config)?,
         Command::ClearReports => reports::clear(&config)?,
+        Command::Messages => messages::show(&config)?,
         Command::Diagnostics => print_diagnostics(&config),
         Command::Api => unreachable!("API requests return before loading interactive client state"),
     }

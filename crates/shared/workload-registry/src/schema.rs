@@ -71,6 +71,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    world_mail (id) {
+        id -> BigInt,
+        world_id -> Text,
+        created_at_unix_ms -> BigInt,
+        message -> Text,
+    }
+}
+
+diesel::table! {
     world_wt_tools_activity (id) {
         id -> Integer,
         world_id -> Text,
@@ -89,6 +98,7 @@ diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
 diesel::joinable!(world_wt_tools_activity -> worlds (world_id));
+diesel::joinable!(world_mail -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_mutation_results,
@@ -96,6 +106,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     repositories,
     server_metadata,
     world_git_activity,
+    world_mail,
     world_wt_tools_activity,
     worlds
 );
