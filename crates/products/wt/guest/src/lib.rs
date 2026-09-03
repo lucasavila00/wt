@@ -16,7 +16,7 @@ mod guest;
 pub mod host;
 
 pub use guest::*;
-pub use host::{WorldInspection, WorldProvisionSpec};
+pub use host::{CodexTurnOutput, CodexTurnRequest, WorldInspection, WorldProvisionSpec};
 
 fn write_creation_timing(
     log: &mut dyn Write,
@@ -32,6 +32,15 @@ fn write_creation_timing(
 }
 
 pub trait WorldWorker: Clone + Send + Sync + 'static {
+    fn run_codex_turn(
+        &self,
+        _world_id: WorldId,
+        _request: CodexTurnRequest<'_>,
+    ) -> Result<CodexTurnOutput, WorkerError> {
+        Err(WorkerError::new(
+            "Codex turns are not supported by this worker",
+        ))
+    }
     fn provision(
         &self,
         spec: WorldProvisionSpec<'_>,

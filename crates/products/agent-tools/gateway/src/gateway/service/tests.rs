@@ -54,7 +54,7 @@ fn parent_messages_derive_the_world_and_enforce_the_message_limit() {
                 .authorize(&request(message), world_id)
                 .unwrap_err()
                 .to_string(),
-            "message must contain 1 to 65536 UTF-8 bytes"
+            "message must contain 1 to 67108864 UTF-8 bytes"
         );
     }
 }

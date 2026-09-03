@@ -6,12 +6,25 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, RunRequest,
-    WorkerError,
+    CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
+    RunRequest, WorkerError,
 };
 use wt_world::WorldId;
 
 const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
+const CODEX_CAPTURE_BYTES: usize = 128 * 1024 * 1024;
+const CODEX_TURN_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
+
+pub struct CodexTurnRequest<'a> {
+    pub message: &'a str,
+    pub session_id: Option<uuid::Uuid>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CodexTurnOutput {
+    pub session_id: Option<uuid::Uuid>,
+    pub result: Result<String, String>,
+}
 
 pub struct WorldProvisionSpec<'a> {
     pub world_id: WorldId,
@@ -51,7 +64,126 @@ impl<P> Worker<P> {
     }
 }
 
+impl<P: MachineProvider> Worker<P> {
+    pub fn run_codex_turn(
+        &self,
+        world_id: WorldId,
+        request: CodexTurnRequest<'_>,
+    ) -> Result<CodexTurnOutput, WorkerError> {
+        let machine = match self.provider.inspect(world_id)? {
+            MachineInspection::Running(machine) => machine,
+            MachineInspection::Stopped { .. } => {
+                return Err(WorkerError::new("world is stopped"));
+            }
+            MachineInspection::Missing => return Err(WorkerError::new("world is missing")),
+        };
+        let mut codex_args = vec!["exec"];
+        if request.session_id.is_some() {
+            codex_args.push("resume");
+        }
+        codex_args.extend([
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+        ]);
+        let session_id = request.session_id.map(|id| id.to_string());
+        if let Some(thread_id) = session_id.as_deref() {
+            codex_args.push(thread_id);
+        }
+        codex_args.push("-");
+        let mut args = vec![
+            "-H",
+            "-u",
+            crate::GUEST_USER,
+            "--",
+            "/bin/sh",
+            "-c",
+            "cd /home/wt && exec /usr/local/bin/codex \"$@\"",
+            "wt-codex",
+        ];
+        args.extend(codex_args);
+        let output = machine
+            .transport
+            .capture(&CaptureRequest {
+                executable: "/usr/bin/sudo",
+                args: &args,
+                stdin: Some(request.message.as_bytes()),
+                deadline: Instant::now() + CODEX_TURN_TIMEOUT,
+                stdout_limit: CODEX_CAPTURE_BYTES,
+                stderr_limit: CODEX_CAPTURE_BYTES,
+            })
+            .map_err(|error| WorkerError::new(format!("run Codex: {error}")))?;
+        parse_codex_output(
+            output.exit_code,
+            &output.stdout,
+            &output.stderr,
+            request.session_id,
+        )
+    }
+}
+
+fn parse_codex_output(
+    exit_code: i64,
+    stdout: &[u8],
+    stderr: &[u8],
+    requested_session_id: Option<uuid::Uuid>,
+) -> Result<CodexTurnOutput, WorkerError> {
+    let mut thread_id = None;
+    let mut message = None;
+    for line in stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let event: serde_json::Value = serde_json::from_slice(line)
+            .map_err(|error| WorkerError::new(format!("decode Codex JSONL: {error}")))?;
+        match event.get("type").and_then(serde_json::Value::as_str) {
+            Some("thread.started") => {
+                thread_id = event
+                    .get("thread_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::parse)
+                    .transpose()
+                    .map_err(|error| {
+                        WorkerError::new(format!("invalid Codex thread ID: {error}"))
+                    })?;
+            }
+            Some("item.completed")
+                if event
+                    .pointer("/item/type")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("agent_message") =>
+            {
+                message = event
+                    .pointer("/item/text")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+            }
+            _ => {}
+        }
+    }
+    let session_id = thread_id.or(requested_session_id);
+    let result = if exit_code != 0 {
+        let stderr = String::from_utf8_lossy(stderr).trim().to_owned();
+        Err(if stderr.is_empty() {
+            format!("Codex exited with status {exit_code}")
+        } else {
+            format!("Codex exited with status {exit_code}: {stderr}")
+        })
+    } else {
+        message.ok_or_else(|| "Codex did not return a final message".to_owned())
+    };
+    Ok(CodexTurnOutput { session_id, result })
+}
+
 impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
+    fn run_codex_turn(
+        &self,
+        world_id: WorldId,
+        request: CodexTurnRequest<'_>,
+    ) -> Result<CodexTurnOutput, WorkerError> {
+        Self::run_codex_turn(self, world_id, request)
+    }
+
     fn provision(
         &self,
         spec: WorldProvisionSpec<'_>,
@@ -389,5 +521,45 @@ mod tests {
 
         assert_eq!(create_calls.load(Ordering::SeqCst), 0);
         insta::assert_snapshot!(error.to_string(), @"guest image guest identity mismatch: expected UID/GID 1001:1001, got 1000:1000");
+    }
+
+    #[test]
+    fn codex_jsonl_yields_the_thread_and_final_message() {
+        let session_id = uuid::Uuid::new_v4();
+        let output = parse_codex_output(
+            0,
+            format!(
+                "{{\"type\":\"thread.started\",\"thread_id\":\"{session_id}\"}}\n\
+                 {{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"done\"}}}}\n\
+                 {{\"type\":\"turn.completed\"}}\n"
+            )
+            .as_bytes(),
+            b"",
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            output,
+            CodexTurnOutput {
+                session_id: Some(session_id),
+                result: Ok("done".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn codex_failure_is_not_mistaken_for_a_terminal_message() {
+        let session_id = uuid::Uuid::new_v4();
+        let output =
+            parse_codex_output(1, b"", b"authentication failed", Some(session_id)).unwrap();
+
+        assert_eq!(
+            output,
+            CodexTurnOutput {
+                session_id: Some(session_id),
+                result: Err("Codex exited with status 1: authentication failed".into()),
+            }
+        );
     }
 }

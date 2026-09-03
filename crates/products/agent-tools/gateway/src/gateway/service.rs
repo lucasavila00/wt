@@ -189,7 +189,10 @@ impl Gateway {
         }
         if let ClientOperation::SendMessageToParent { message } = &request.operation {
             if message.is_empty() || message.len() > wt_workload_registry::MAX_MAIL_MESSAGE_BYTES {
-                bail!("message must contain 1 to 65536 UTF-8 bytes");
+                bail!(
+                    "message must contain 1 to {} UTF-8 bytes",
+                    wt_workload_registry::MAX_MAIL_MESSAGE_BYTES
+                );
             }
         }
         let pane_generation =

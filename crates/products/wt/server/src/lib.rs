@@ -54,6 +54,17 @@ pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentT
     }
 
     if let Some(request_id) = request.request_id {
+        if matches!(
+            &request.operation,
+            wt_control_protocol::Operation::ListWorldMail { .. }
+        ) {
+            return service.execute_api_read(
+                owner,
+                request_id,
+                request.expected_server_id,
+                request.operation,
+            );
+        }
         return service.execute_api_mutation(
             owner,
             request_id,
@@ -94,7 +105,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 19; expected 18"
+            @"unsupported protocol version 20; expected 19"
         );
     }
 }

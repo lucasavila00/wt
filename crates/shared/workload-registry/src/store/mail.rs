@@ -1,5 +1,6 @@
 use super::{map_registry_error, Store, StoreError};
-use crate::{WorldMail, WorldMailPage};
+use crate::{MailKind, WorldMail, WorldMailPage};
+use uuid::Uuid;
 use wt_world::WorldId;
 
 impl Store {
@@ -22,6 +23,19 @@ impl Store {
     ) -> Result<WorldMailPage, StoreError> {
         self.registry
             .list_world_mail(owner, world_id, after_id, limit)
+            .map_err(map_registry_error)
+    }
+
+    pub fn insert_codex_result(
+        &self,
+        world_id: WorldId,
+        request_id: Uuid,
+        session_id: Option<Uuid>,
+        kind: MailKind,
+        message: &str,
+    ) -> Result<WorldMail, StoreError> {
+        self.registry
+            .insert_codex_result(world_id, request_id, session_id, kind, message)
             .map_err(map_registry_error)
     }
 }

@@ -7,6 +7,22 @@ use wt_libvirt_kvm::WorkerError;
 struct UnusedWorker;
 
 impl WorldWorker for UnusedWorker {
+    fn run_codex_turn(
+        &self,
+        _world_id: WorldId,
+        request: wt_guest::CodexTurnRequest<'_>,
+    ) -> Result<wt_guest::CodexTurnOutput, WorkerError> {
+        if request.message == "fail" {
+            return Err(WorkerError::new("Codex unavailable"));
+        }
+        Ok(wt_guest::CodexTurnOutput {
+            session_id: request
+                .session_id
+                .or_else(|| Some("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".parse().unwrap())),
+            result: Ok(format!("done: {}", request.message)),
+        })
+    }
+
     fn provision(
         &self,
         _spec: WorldProvisionSpec<'_>,
@@ -85,7 +101,9 @@ fn api_delete_replays_after_restart_and_rejects_changed_content() {
     assert!(matches!(
         first.outcome,
         Outcome::Ok { ref response }
-            if **response == (Response::WorldDeleted { world_id })
+            if **response == (Response::WorldDeleted {
+                world_id,
+            })
     ));
     assert!(first.expires_at_unix_ms.is_some());
 
@@ -190,6 +208,92 @@ fn world_mail_pages_have_a_small_fixed_limit() {
         assert_eq!(error.code, ErrorCode::InvalidRequest);
         assert_eq!(error.message, "mail limit must be between 1 and 1000");
     }
+}
+
+#[test]
+fn api_codex_turn_writes_its_terminal_mail_before_returning() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let world_id = WorldId::new();
+    store
+        .insert(&NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: WorldName::parse("world").unwrap(),
+            status: WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            setup_fingerprint: "test".into(),
+        })
+        .unwrap();
+    let service = test_service(store);
+    let request_id = uuid::Uuid::new_v4();
+    let response = service.execute_api_mutation(
+        "owner",
+        request_id,
+        Some(&"a".repeat(64)),
+        None,
+        Operation::RunCodexTurn {
+            world_id,
+            session_id: None,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    let Outcome::Ok { response } = response.outcome else {
+        panic!("turn failed")
+    };
+    let Response::CodexTurn {
+        session_id,
+        message_id,
+        kind,
+    } = *response
+    else {
+        panic!("wrong response")
+    };
+    assert_eq!(kind, wt_control_protocol::MailKind::Completed);
+    let page = service
+        .store
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert_eq!(page.messages[0].id, message_id);
+    assert_eq!(page.messages[0].request_id, Some(request_id));
+    assert_eq!(page.messages[0].session_id, session_id);
+    assert_eq!(page.messages[0].message, "done: review");
+
+    let failed_request_id = uuid::Uuid::new_v4();
+    let failed = service.execute_api_mutation(
+        "owner",
+        failed_request_id,
+        Some(&"b".repeat(64)),
+        None,
+        Operation::RunCodexTurn {
+            world_id,
+            session_id,
+            message: "fail".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(
+        failed.outcome,
+        Outcome::Ok { response }
+            if matches!(*response, Response::CodexTurn {
+                kind: wt_control_protocol::MailKind::Failed,
+                ..
+            })
+    ));
+    let page = service
+        .store
+        .list_world_mail("owner", world_id, message_id, 10)
+        .unwrap();
+    assert_eq!(page.messages[0].request_id, Some(failed_request_id));
+    assert_eq!(
+        page.messages[0].kind,
+        wt_workload_registry::MailKind::Failed
+    );
+    assert_eq!(page.messages[0].message, "Codex unavailable");
 }
 
 #[test]

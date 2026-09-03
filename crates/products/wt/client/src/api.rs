@@ -9,7 +9,7 @@ use wt_control_protocol::{
 };
 
 const API_VERSION: u32 = 1;
-const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+const MAX_REQUEST_BYTES: u64 = 128 * 1024 * 1024;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -35,22 +35,45 @@ enum Request {
         context: String,
         world_id: String,
     },
+    RunCodexTurn {
+        api_version: u32,
+        request_id: String,
+        #[serde(default)]
+        expected_server_id: Option<String>,
+        context: String,
+        world_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
+        message: String,
+    },
+    ReadWorldMail {
+        api_version: u32,
+        request_id: String,
+        #[serde(default)]
+        expected_server_id: Option<String>,
+        context: String,
+        world_id: String,
+        after_message_id: u64,
+        limit: u32,
+    },
 }
 
 impl Request {
     fn api_version(&self) -> u32 {
         match self {
-            Self::CreateWorld { api_version, .. } | Self::DeleteWorld { api_version, .. } => {
-                *api_version
-            }
+            Self::CreateWorld { api_version, .. }
+            | Self::DeleteWorld { api_version, .. }
+            | Self::RunCodexTurn { api_version, .. }
+            | Self::ReadWorldMail { api_version, .. } => *api_version,
         }
     }
 
     fn request_id(&self) -> &str {
         match self {
-            Self::CreateWorld { request_id, .. } | Self::DeleteWorld { request_id, .. } => {
-                request_id
-            }
+            Self::CreateWorld { request_id, .. }
+            | Self::DeleteWorld { request_id, .. }
+            | Self::RunCodexTurn { request_id, .. }
+            | Self::ReadWorldMail { request_id, .. } => request_id,
         }
     }
 
@@ -60,6 +83,12 @@ impl Request {
                 expected_server_id, ..
             }
             | Self::DeleteWorld {
+                expected_server_id, ..
+            }
+            | Self::RunCodexTurn {
+                expected_server_id, ..
+            }
+            | Self::ReadWorldMail {
                 expected_server_id, ..
             } => expected_server_id.as_deref(),
         }
@@ -89,8 +118,43 @@ enum ApiOutcome {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum ApiResult {
-    World { world: ApiWorld },
-    WorldDeleted { world_id: String },
+    World {
+        world: ApiWorld,
+    },
+    WorldDeleted {
+        world_id: String,
+    },
+    CodexTurn {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        message_id: u64,
+        kind: ApiMailKind,
+    },
+    WorldMail {
+        messages: Vec<ApiWorldMail>,
+        high_water_message_id: u64,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct ApiWorldMail {
+    message_id: u64,
+    world_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    created_at_unix_ms: i64,
+    kind: ApiMailKind,
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApiMailKind {
+    Message,
+    Completed,
+    Failed,
 }
 
 #[derive(Debug, Serialize)]
@@ -337,6 +401,42 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 .map_err(|_| "invalid world ID".to_owned())?;
             Ok((context, Operation::DeleteWorld { world_id }))
         }
+        Request::RunCodexTurn {
+            context,
+            world_id,
+            session_id,
+            message,
+            ..
+        } => Ok((
+            context,
+            Operation::RunCodexTurn {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                session_id: session_id
+                    .as_deref()
+                    .map(str::parse)
+                    .transpose()
+                    .map_err(|_| "invalid session ID".to_owned())?,
+                message,
+            },
+        )),
+        Request::ReadWorldMail {
+            context,
+            world_id,
+            after_message_id,
+            limit,
+            ..
+        } => Ok((
+            context,
+            Operation::ListWorldMail {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                after_id: after_message_id,
+                limit,
+            },
+        )),
     }
 }
 
@@ -347,21 +447,29 @@ fn call(
     expected_server_id: Option<Uuid>,
     operation: Operation,
 ) -> Reply {
-    let response = match wt_client::transport::call_response_with_progress(
-        context,
-        &ApiRequest::with_request_id(operation, request_id, request_hash, expected_server_id),
-        |_| {},
-    ) {
-        Ok(response) => response,
-        Err(error) => {
-            return Reply {
-                request_id: Some(request_id.to_string()),
-                server_id: None,
-                expires_at_unix_ms: None,
-                outcome: api_error("context_error", error.to_string(), true, None),
-            }
+    let api_request = if matches!(&operation, Operation::ListWorldMail { .. }) {
+        ApiRequest {
+            protocol_version: wt_control_protocol::PROTOCOL_VERSION,
+            request_id: Some(request_id),
+            request_hash: None,
+            expected_server_id,
+            operation,
         }
+    } else {
+        ApiRequest::with_request_id(operation, request_id, request_hash, expected_server_id)
     };
+    let response =
+        match wt_client::transport::call_response_with_progress(context, &api_request, |_| {}) {
+            Ok(response) => response,
+            Err(error) => {
+                return Reply {
+                    request_id: Some(request_id.to_string()),
+                    server_id: None,
+                    expires_at_unix_ms: None,
+                    outcome: api_error("context_error", error.to_string(), true, None),
+                }
+            }
+        };
     if response.request_id != Some(request_id) || response.server_id.is_none() {
         return Reply {
             request_id: Some(request_id.to_string()),
@@ -389,6 +497,47 @@ fn call(
                 Response::WorldDeleted { world_id } => ApiOutcome::Ok {
                     result: ApiResult::WorldDeleted {
                         world_id: world_id.to_string(),
+                    },
+                },
+                Response::CodexTurn {
+                    session_id,
+                    message_id,
+                    kind,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::CodexTurn {
+                        session_id: session_id.map(|id| id.to_string()),
+                        message_id,
+                        kind: match kind {
+                            wt_control_protocol::MailKind::Message => ApiMailKind::Message,
+                            wt_control_protocol::MailKind::Completed => ApiMailKind::Completed,
+                            wt_control_protocol::MailKind::Failed => ApiMailKind::Failed,
+                        },
+                    },
+                },
+                Response::WorldMail {
+                    messages,
+                    high_water_id,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::WorldMail {
+                        messages: messages
+                            .into_iter()
+                            .map(|mail| ApiWorldMail {
+                                message_id: mail.id,
+                                world_id: mail.world_id.to_string(),
+                                request_id: mail.request_id.map(|id| id.to_string()),
+                                session_id: mail.session_id.map(|id| id.to_string()),
+                                created_at_unix_ms: mail.created_at_unix_ms,
+                                kind: match mail.kind {
+                                    wt_control_protocol::MailKind::Message => ApiMailKind::Message,
+                                    wt_control_protocol::MailKind::Completed => {
+                                        ApiMailKind::Completed
+                                    }
+                                    wt_control_protocol::MailKind::Failed => ApiMailKind::Failed,
+                                },
+                                text: mail.message,
+                            })
+                            .collect(),
+                        high_water_message_id: high_water_id,
                     },
                 },
                 _ => api_error(

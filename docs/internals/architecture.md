@@ -19,9 +19,9 @@ standalone Git client
 
 `wts` owns guests. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
-protected server socket. The protocol carries world resources, a Git author,
-server information, server-owned terminal-pane observations, and streamed
-creation progress events.
+protected server socket. The protocol carries world resources, blocking Codex
+turns and mailbox entries, a Git author, server information, server-owned
+terminal-pane observations, and streamed creation progress events.
 
 ## Crates
 
@@ -98,4 +98,6 @@ Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
 that domain's name. Parent messages use this world identity and contain no
-window or process attribution.
+window or process attribution. WT runs non-interactive Codex turns and adds
+each terminal result to the same mailbox with its API request ID and optional
+opaque Codex thread ID. It does not persist session or turn lifecycle state.

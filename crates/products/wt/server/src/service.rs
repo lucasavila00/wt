@@ -10,6 +10,7 @@ use wt_guest::{GuestAccess, WorldInspection, WorldProvisionSpec, WorldWorker};
 use wt_workload_registry::Resources;
 use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
 mod activity;
+mod codex;
 mod gateway;
 mod lifecycle;
 mod mail;
@@ -31,6 +32,38 @@ pub struct Service<W, G> {
 }
 
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
+    pub fn execute_api_read(
+        &self,
+        owner: &str,
+        request_id: uuid::Uuid,
+        expected_server_id: Option<uuid::Uuid>,
+        operation: Operation,
+    ) -> ApiResponse {
+        let server_id = match self.store.server_id() {
+            Ok(server_id) => server_id,
+            Err(error) => return ApiResponse::error(map_store_error(error)),
+        };
+        if expected_server_id.is_some_and(|expected| expected != server_id) {
+            return ApiResponse::error(ApiError::new(
+                ErrorCode::ServerMismatch,
+                "request was addressed to a different WT server",
+            ))
+            .with_request_metadata(request_id, server_id, None);
+        }
+        if !matches!(operation, Operation::ListWorldMail { .. }) {
+            return ApiResponse::error(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "request IDs are supported only for public API operations",
+            ))
+            .with_request_metadata(request_id, server_id, None);
+        }
+        match self.execute(owner, operation) {
+            Ok(response) => ApiResponse::ok(response),
+            Err(error) => ApiResponse::error(error),
+        }
+        .with_request_metadata(request_id, server_id, None)
+    }
+
     pub fn execute_api_mutation(
         &self,
         owner: &str,
@@ -53,7 +86,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         if !matches!(
             operation,
-            Operation::CreateWorld(_) | Operation::DeleteWorld { .. }
+            Operation::CreateWorld(_)
+                | Operation::DeleteWorld { .. }
+                | Operation::RunCodexTurn { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -105,17 +140,24 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                     Operation::DeleteWorld { world_id } => Some(*world_id),
                     _ => None,
                 };
-                let outcome = match self.execute_with_progress(owner, operation, progress) {
+                let result = match operation {
+                    Operation::RunCodexTurn {
+                        world_id,
+                        session_id,
+                        message,
+                    } => self.run_codex_turn(owner, world_id, session_id, &message, request_id),
+                    operation => self.execute_with_progress(owner, operation, progress),
+                };
+                let outcome = match result {
                     Ok(response) => Outcome::Ok {
                         response: Box::new(response),
                     },
                     Err(error)
                         if error.code == ErrorCode::NotFound && deleted_world_id.is_some() =>
                     {
+                        let world_id = deleted_world_id.expect("checked above");
                         Outcome::Ok {
-                            response: Box::new(Response::WorldDeleted {
-                                world_id: deleted_world_id.expect("checked above"),
-                            }),
+                            response: Box::new(Response::WorldDeleted { world_id }),
                         }
                     }
                     Err(mut error) => {
@@ -231,6 +273,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::StartWorld { world_id } => self.start(owner, world_id),
             Operation::StopWorld { world_id } => self.stop(owner, world_id),
             Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
+            Operation::RunCodexTurn { .. } => Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "run_codex_turn requires a request ID",
+            )),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             operation @ Operation::ListWorldMail { .. } => self.list_world_mail(owner, operation),
