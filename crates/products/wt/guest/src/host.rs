@@ -1,4 +1,5 @@
-use crate::{GuestAccess, HostConfig};
+use crate::{CodexInspection, CodexSend, CodexStart, GuestAccess, HostConfig};
+use serde::de::DeserializeOwned;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -6,12 +7,15 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_control_protocol::SshAccess;
 use wt_libvirt_kvm::{
-    GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec, RunRequest,
-    WorkerError,
+    CaptureRequest, GuestTransport, Machine, MachineInspection, MachineProvider, MachineSpec,
+    RunRequest, WorkerError,
 };
 use wt_world::WorldId;
 
 const PREPARE: &str = "/usr/local/libexec/wt-guest-prepare";
+const GUEST_TOOLS: &str = "/usr/local/bin/wtg";
+const CODEX_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
+const CODEX_RUNTIME_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct WorldProvisionSpec<'a> {
     pub world_id: WorldId,
@@ -51,7 +55,92 @@ impl<P> Worker<P> {
     }
 }
 
+impl<P: MachineProvider> Worker<P> {
+    pub fn start_codex(&self, world_id: WorldId, message: &str) -> Result<CodexStart, WorkerError> {
+        self.run_codex_runtime(world_id, &["runtime-start"], Some(message.as_bytes()))
+    }
+
+    pub fn inspect_codex(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<CodexInspection, WorkerError> {
+        self.run_codex_runtime(world_id, &["runtime-inspect", thread_id], None)
+    }
+
+    pub fn send_codex_message(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+        message: &str,
+    ) -> Result<CodexSend, WorkerError> {
+        self.run_codex_runtime(
+            world_id,
+            &["runtime-send", thread_id],
+            Some(message.as_bytes()),
+        )
+    }
+
+    fn run_codex_runtime<T: DeserializeOwned>(
+        &self,
+        world_id: WorldId,
+        helper_args: &[&str],
+        stdin: Option<&[u8]>,
+    ) -> Result<T, WorkerError> {
+        let machine = match self.provider.inspect(world_id)? {
+            MachineInspection::Running(machine) => machine,
+            MachineInspection::Stopped { .. } => {
+                return Err(WorkerError::new("world is stopped"));
+            }
+            MachineInspection::Missing => return Err(WorkerError::new("world is missing")),
+        };
+        let mut args = vec!["-H", "-u", crate::GUEST_USER, "--", GUEST_TOOLS, "codex"];
+        args.extend_from_slice(helper_args);
+        let output = machine
+            .transport
+            .capture(&CaptureRequest {
+                executable: "/usr/bin/sudo",
+                args: &args,
+                stdin,
+                deadline: Instant::now() + CODEX_RUNTIME_TIMEOUT,
+                stdout_limit: CODEX_CAPTURE_BYTES,
+                stderr_limit: CODEX_CAPTURE_BYTES,
+            })
+            .map_err(|error| WorkerError::new(format!("run Codex runtime: {error}")))?;
+        if output.exit_code != 0 {
+            return Err(WorkerError::new(format!(
+                "Codex runtime exited with status {}: {}",
+                output.exit_code,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| WorkerError::new(format!("decode Codex runtime response: {error}")))
+    }
+}
+
 impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
+    fn start_codex(&self, world_id: WorldId, message: &str) -> Result<CodexStart, WorkerError> {
+        Self::start_codex(self, world_id, message)
+    }
+
+    fn inspect_codex(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<CodexInspection, WorkerError> {
+        Self::inspect_codex(self, world_id, thread_id)
+    }
+
+    fn send_codex_message(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+        message: &str,
+    ) -> Result<CodexSend, WorkerError> {
+        Self::send_codex_message(self, world_id, thread_id, message)
+    }
+
     fn provision(
         &self,
         spec: WorldProvisionSpec<'_>,

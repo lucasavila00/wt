@@ -1,5 +1,5 @@
 use anyhow::{bail, Context as _, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
 use uuid::Uuid;
@@ -8,63 +8,13 @@ use wt_control_protocol::{
     WorldStatus,
 };
 
+mod request;
+use request::Request;
+#[cfg(test)]
+mod tests;
+
 const API_VERSION: u32 = 1;
-const MAX_REQUEST_BYTES: u64 = 64 * 1024;
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-enum Request {
-    CreateWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        name: String,
-        vcpus: u32,
-        memory_mib: u64,
-        disk_gib: u64,
-        git_user_name: String,
-        git_user_email: String,
-    },
-    DeleteWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-    },
-}
-
-impl Request {
-    fn api_version(&self) -> u32 {
-        match self {
-            Self::CreateWorld { api_version, .. } | Self::DeleteWorld { api_version, .. } => {
-                *api_version
-            }
-        }
-    }
-
-    fn request_id(&self) -> &str {
-        match self {
-            Self::CreateWorld { request_id, .. } | Self::DeleteWorld { request_id, .. } => {
-                request_id
-            }
-        }
-    }
-
-    fn expected_server_id(&self) -> Option<&str> {
-        match self {
-            Self::CreateWorld {
-                expected_server_id, ..
-            }
-            | Self::DeleteWorld {
-                expected_server_id, ..
-            } => expected_server_id.as_deref(),
-        }
-    }
-}
+const MAX_REQUEST_BYTES: u64 = 128 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
 struct ApiResponse {
@@ -89,8 +39,94 @@ enum ApiOutcome {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum ApiResult {
-    World { world: ApiWorld },
-    WorldDeleted { world_id: String },
+    World {
+        world: ApiWorld,
+    },
+    WorldDeleted {
+        world_id: String,
+    },
+    CodexStarted {
+        thread_id: String,
+        turn_id: String,
+        pane_id: String,
+        window_name: String,
+    },
+    CodexInspection {
+        thread_id: String,
+        status: ApiCodexStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        active_turn_id: Option<String>,
+        pane_id: String,
+        window_name: String,
+        screen: String,
+        observed_at_unix_ms: i64,
+    },
+    CodexMessageSent {
+        thread_id: String,
+        turn_id: String,
+        delivery: ApiCodexMessageDelivery,
+    },
+    WorldMail {
+        messages: Vec<ApiWorldMail>,
+        high_water_message_id: u64,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct ApiWorldMail {
+    message_id: u64,
+    world_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pane_id: Option<String>,
+    created_at_unix_ms: i64,
+    kind: ApiMailKind,
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApiMailKind {
+    Message,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApiCodexStatus {
+    Active,
+    Idle,
+    Error,
+}
+
+impl From<wt_control_protocol::CodexStatus> for ApiCodexStatus {
+    fn from(status: wt_control_protocol::CodexStatus) -> Self {
+        match status {
+            wt_control_protocol::CodexStatus::Active => Self::Active,
+            wt_control_protocol::CodexStatus::Idle => Self::Idle,
+            wt_control_protocol::CodexStatus::Error => Self::Error,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApiCodexMessageDelivery {
+    Steered,
+    Started,
+}
+
+impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery {
+    fn from(delivery: wt_control_protocol::CodexMessageDelivery) -> Self {
+        match delivery {
+            wt_control_protocol::CodexMessageDelivery::Steered => Self::Steered,
+            wt_control_protocol::CodexMessageDelivery::Started => Self::Started,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -246,7 +282,7 @@ pub fn run() -> Result<()> {
                 Some(request_id_text),
                 "invalid_request",
                 "invalid request ID".to_owned(),
-            )
+            );
         }
     };
     let expected_server_id = match request.expected_server_id().map(str::parse::<Uuid>) {
@@ -256,14 +292,14 @@ pub fn run() -> Result<()> {
                 Some(request_id.to_string()),
                 "invalid_request",
                 "invalid expected server ID".to_owned(),
-            )
+            );
         }
         None => None,
     };
     let (context_name, operation) = match request_to_operation(request) {
         Ok(request) => request,
         Err(message) => {
-            return write_local_error(Some(request_id.to_string()), "invalid_request", message)
+            return write_local_error(Some(request_id.to_string()), "invalid_request", message);
         }
     };
     let request_hash = operation_hash(&operation);
@@ -274,7 +310,7 @@ pub fn run() -> Result<()> {
                 Some(request_id.to_string()),
                 "configuration_error",
                 format!("{error:#}"),
-            )
+            );
         }
     };
     let Some(context) = config.context(&context_name) else {
@@ -337,6 +373,66 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 .map_err(|_| "invalid world ID".to_owned())?;
             Ok((context, Operation::DeleteWorld { world_id }))
         }
+        Request::StartCodex {
+            context,
+            world_id,
+            message,
+            ..
+        } => Ok((
+            context,
+            Operation::StartCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                message,
+            },
+        )),
+        Request::InspectCodex {
+            context,
+            world_id,
+            thread_id,
+            ..
+        } => Ok((
+            context,
+            Operation::InspectCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+            },
+        )),
+        Request::SendCodexMessage {
+            context,
+            world_id,
+            thread_id,
+            message,
+            ..
+        } => Ok((
+            context,
+            Operation::SendCodexMessage {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+                message,
+            },
+        )),
+        Request::ReadWorldMail {
+            context,
+            world_id,
+            after_message_id,
+            limit,
+            ..
+        } => Ok((
+            context,
+            Operation::ListWorldMail {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                after_id: after_message_id,
+                limit,
+            },
+        )),
     }
 }
 
@@ -347,21 +443,35 @@ fn call(
     expected_server_id: Option<Uuid>,
     operation: Operation,
 ) -> Reply {
-    let response = match wt_client::transport::call_response_with_progress(
-        context,
-        &ApiRequest::with_request_id(operation, request_id, request_hash, expected_server_id),
-        |_| {},
+    let api_request = if matches!(
+        &operation,
+        Operation::ListWorldMail { .. }
+            | Operation::StartCodex { .. }
+            | Operation::InspectCodex { .. }
+            | Operation::SendCodexMessage { .. }
     ) {
-        Ok(response) => response,
-        Err(error) => {
-            return Reply {
-                request_id: Some(request_id.to_string()),
-                server_id: None,
-                expires_at_unix_ms: None,
-                outcome: api_error("context_error", error.to_string(), true, None),
-            }
+        ApiRequest {
+            protocol_version: wt_control_protocol::PROTOCOL_VERSION,
+            request_id: Some(request_id),
+            request_hash: None,
+            expected_server_id,
+            operation,
         }
+    } else {
+        ApiRequest::with_request_id(operation, request_id, request_hash, expected_server_id)
     };
+    let response =
+        match wt_client::transport::call_response_with_progress(context, &api_request, |_| {}) {
+            Ok(response) => response,
+            Err(error) => {
+                return Reply {
+                    request_id: Some(request_id.to_string()),
+                    server_id: None,
+                    expires_at_unix_ms: None,
+                    outcome: api_error("context_error", error.to_string(), true, None),
+                };
+            }
+        };
     if response.request_id != Some(request_id) || response.server_id.is_none() {
         return Reply {
             request_id: Some(request_id.to_string()),
@@ -389,6 +499,76 @@ fn call(
                 Response::WorldDeleted { world_id } => ApiOutcome::Ok {
                     result: ApiResult::WorldDeleted {
                         world_id: world_id.to_string(),
+                    },
+                },
+                Response::CodexStarted {
+                    thread_id,
+                    turn_id,
+                    pane_id,
+                    window_name,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::CodexStarted {
+                        thread_id,
+                        turn_id,
+                        pane_id,
+                        window_name,
+                    },
+                },
+                Response::CodexInspection {
+                    thread_id,
+                    status,
+                    active_turn_id,
+                    pane_id,
+                    window_name,
+                    screen,
+                    observed_at_unix_ms,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::CodexInspection {
+                        thread_id,
+                        status: status.into(),
+                        active_turn_id,
+                        pane_id,
+                        window_name,
+                        screen,
+                        observed_at_unix_ms,
+                    },
+                },
+                Response::CodexMessageSent {
+                    thread_id,
+                    turn_id,
+                    delivery,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::CodexMessageSent {
+                        thread_id,
+                        turn_id,
+                        delivery: delivery.into(),
+                    },
+                },
+                Response::WorldMail {
+                    messages,
+                    high_water_id,
+                } => ApiOutcome::Ok {
+                    result: ApiResult::WorldMail {
+                        messages: messages
+                            .into_iter()
+                            .map(|mail| ApiWorldMail {
+                                message_id: mail.id,
+                                world_id: mail.world_id.to_string(),
+                                thread_id: mail.thread_id,
+                                turn_id: mail.turn_id,
+                                pane_id: mail.pane_id,
+                                created_at_unix_ms: mail.created_at_unix_ms,
+                                kind: match mail.kind {
+                                    wt_control_protocol::MailKind::Message => ApiMailKind::Message,
+                                    wt_control_protocol::MailKind::Completed => {
+                                        ApiMailKind::Completed
+                                    }
+                                    wt_control_protocol::MailKind::Failed => ApiMailKind::Failed,
+                                },
+                                text: mail.message,
+                            })
+                            .collect(),
+                        high_water_message_id: high_water_id,
                     },
                 },
                 _ => api_error(
@@ -497,28 +677,4 @@ fn write_response(reply: Reply) -> Result<()> {
     .context("write API response")?;
     output.write_all(b"\n").context("finish API response")?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn routing_fields_do_not_change_operation_identity() {
-        let request = |context: &str, expected_server_id: Option<&str>| Request::DeleteWorld {
-            api_version: API_VERSION,
-            request_id: Uuid::new_v4().to_string(),
-            expected_server_id: expected_server_id.map(str::to_owned),
-            context: context.to_owned(),
-            world_id: "00000000-0000-0000-0000-000000000001".to_owned(),
-        };
-        let (_, first) = request_to_operation(request("old-alias", None)).unwrap();
-        let (_, second) = request_to_operation(request(
-            "new-alias",
-            Some("22222222-2222-4222-8222-222222222222"),
-        ))
-        .unwrap();
-
-        assert_eq!(operation_hash(&first), operation_hash(&second));
-    }
 }

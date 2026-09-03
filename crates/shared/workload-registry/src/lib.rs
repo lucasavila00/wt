@@ -14,7 +14,7 @@ pub use api::ApiMutationStart;
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
-pub use mail::{WorldMail, WorldMailPage, MAILBOX_BYTES_PER_WORLD, MAX_MAIL_MESSAGE_BYTES};
+pub use mail::{MailKind, WorldMail, WorldMailPage, MAX_MAIL_MESSAGE_BYTES};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{NewWorld, Store, StoreError, StoredWorld};
 
@@ -105,8 +105,6 @@ pub enum RegistryError {
         reserved: u64,
         requested: u64,
     },
-    #[error("world mailbox capacity is full")]
-    MailboxCapacity,
     #[error("resource not found")]
     NotFound,
     #[error("database connection error: {0}")]

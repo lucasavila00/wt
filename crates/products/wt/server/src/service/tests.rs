@@ -7,6 +7,52 @@ use wt_libvirt_kvm::WorkerError;
 struct UnusedWorker;
 
 impl WorldWorker for UnusedWorker {
+    fn start_codex(
+        &self,
+        _world_id: WorldId,
+        message: &str,
+    ) -> Result<wt_guest::CodexStart, WorkerError> {
+        if message == "fail" {
+            return Err(WorkerError::new("Codex unavailable"));
+        }
+        Ok(wt_guest::CodexStart {
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+            pane_id: "%7".into(),
+            window_name: "codex-thread-123".into(),
+        })
+    }
+
+    fn inspect_codex(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+    ) -> Result<wt_guest::CodexInspection, WorkerError> {
+        Ok(wt_guest::CodexInspection {
+            status: wt_guest::CodexRuntimeStatus::Active,
+            active_turn_id: Some("turn-456".into()),
+            pane_id: "%7".into(),
+            window_name: "codex-thread-123".into(),
+            screen: "working".into(),
+            observed_at_unix_ms: 1_800_000_000_000,
+        })
+    }
+
+    fn send_codex_message(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        message: &str,
+    ) -> Result<wt_guest::CodexSend, WorkerError> {
+        if message == "fail" {
+            return Err(WorkerError::new("Codex unavailable"));
+        }
+        Ok(wt_guest::CodexSend {
+            turn_id: "turn-789".into(),
+            delivery: wt_guest::CodexMessageDelivery::Steered,
+        })
+    }
+
     fn provision(
         &self,
         _spec: WorldProvisionSpec<'_>,
@@ -85,7 +131,9 @@ fn api_delete_replays_after_restart_and_rejects_changed_content() {
     assert!(matches!(
         first.outcome,
         Outcome::Ok { ref response }
-            if **response == (Response::WorldDeleted { world_id })
+            if **response == (Response::WorldDeleted {
+                world_id,
+            })
     ));
     assert!(first.expires_at_unix_ms.is_some());
 
@@ -190,6 +238,101 @@ fn world_mail_pages_have_a_small_fixed_limit() {
         assert_eq!(error.code, ErrorCode::InvalidRequest);
         assert_eq!(error.message, "mail limit must be between 1 and 1000");
     }
+}
+
+#[test]
+fn api_controls_an_ephemeral_codex_session() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let world_id = WorldId::new();
+    store
+        .insert(&NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: WorldName::parse("world").unwrap(),
+            status: WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 8,
+            setup_fingerprint: "test".into(),
+        })
+        .unwrap();
+    let service = test_service(store);
+    let request_id = uuid::Uuid::new_v4();
+    let response = service.execute_api_mutation(
+        "owner",
+        request_id,
+        Some(&"a".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    let Outcome::Ok { response } = response.outcome else {
+        panic!("start failed")
+    };
+    let Response::CodexStarted {
+        thread_id,
+        turn_id,
+        pane_id,
+        window_name,
+    } = *response
+    else {
+        panic!("wrong response")
+    };
+    assert_eq!(thread_id, "thread-123");
+    assert_eq!(turn_id, "turn-456");
+    assert_eq!(pane_id, "%7");
+    assert_eq!(window_name, "codex-thread-123");
+
+    let inspected = service.execute_api_read(
+        "owner",
+        uuid::Uuid::new_v4(),
+        None,
+        Operation::InspectCodex {
+            world_id,
+            thread_id: thread_id.clone(),
+        },
+    );
+    assert!(matches!(
+        inspected.outcome,
+        Outcome::Ok { response }
+            if matches!(*response, Response::CodexInspection {
+                status: wt_control_protocol::CodexStatus::Active,
+                ref active_turn_id,
+                ref screen,
+                ..
+            } if active_turn_id.as_deref() == Some("turn-456") && screen == "working")
+    ));
+
+    let sent = service.execute_api_mutation(
+        "owner",
+        uuid::Uuid::new_v4(),
+        Some(&"b".repeat(64)),
+        None,
+        Operation::SendCodexMessage {
+            world_id,
+            thread_id,
+            message: "continue".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(
+        sent.outcome,
+        Outcome::Ok { response }
+            if matches!(*response, Response::CodexMessageSent {
+                delivery: wt_control_protocol::CodexMessageDelivery::Steered,
+                ..
+            })
+    ));
+    assert!(service
+        .store
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap()
+        .messages
+        .is_empty());
 }
 
 #[test]

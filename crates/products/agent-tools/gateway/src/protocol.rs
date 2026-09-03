@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use wt_control_protocol::PaneFrame;
 use wt_git_smart_protocol::GitService;
 
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 pub const MAX_PANE_OBSERVATIONS: usize = 32;
 pub const MAX_PANE_OBSERVATION_REPORT_BYTES: usize = 2_000_000;
 
@@ -56,10 +56,33 @@ pub struct ClientRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ClientOperation {
-    Git { service: GitService, source: String },
-    Cli { args: Vec<String> },
-    SendMessageToParent { message: String },
-    PaneObservations { panes: Vec<PaneObservation> },
+    Git {
+        service: GitService,
+        source: String,
+    },
+    Cli {
+        args: Vec<String>,
+    },
+    SendMessageToParent {
+        message: String,
+    },
+    CodexTurnFinished {
+        thread_id: String,
+        turn_id: String,
+        pane_id: String,
+        status: CodexTurnStatus,
+        message: String,
+    },
+    PaneObservations {
+        panes: Vec<PaneObservation>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexTurnStatus {
+    Completed,
+    Failed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -166,7 +189,7 @@ mod transport_tests {
 
         insta::assert_snapshot!(serde_json::to_string_pretty(&request).unwrap(), @r###"
         {
-          "protocol_version": 15,
+          "protocol_version": 16,
           "operation": "cli",
           "args": [
             "help"
@@ -182,7 +205,7 @@ mod transport_tests {
         };
         insta::assert_snapshot!(serde_json::to_string_pretty(&mail).unwrap(), @r###"
         {
-          "protocol_version": 15,
+          "protocol_version": 16,
           "operation": "send_message_to_parent",
           "message": "done"
         }

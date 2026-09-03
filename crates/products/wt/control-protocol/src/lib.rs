@@ -1,6 +1,8 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
 mod activity;
+mod capacity;
+mod codex;
 mod create;
 mod mail;
 mod pane;
@@ -12,8 +14,10 @@ mod validation;
 pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
+pub use capacity::{Capacity, CapacityResource};
+pub use codex::{CodexMessageDelivery, CodexStatus};
 pub use create::{validate_create_world_resources, CreateWorld};
-pub use mail::{WorldMail, MAX_WORLD_MAIL_PAGE_SIZE};
+pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
     MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
@@ -27,7 +31,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 18;
+pub const PROTOCOL_VERSION: u32 = 20;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -131,6 +135,9 @@ pub enum Operation {
     StartWorld { world_id: WorldId },
     StopWorld { world_id: WorldId },
     DeleteWorld { world_id: WorldId },
+    StartCodex { world_id: WorldId, message: String },
+    InspectCodex { world_id: WorldId, thread_id: String },
+    SendCodexMessage { world_id: WorldId, thread_id: String, message: String },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },
@@ -233,6 +240,26 @@ pub enum Response {
     WorldMail {
         messages: Vec<WorldMail>,
         high_water_id: u64,
+    },
+    CodexStarted {
+        thread_id: String,
+        turn_id: String,
+        pane_id: String,
+        window_name: String,
+    },
+    CodexInspection {
+        thread_id: String,
+        status: CodexStatus,
+        active_turn_id: Option<String>,
+        pane_id: String,
+        window_name: String,
+        screen: String,
+        observed_at_unix_ms: i64,
+    },
+    CodexMessageSent {
+        thread_id: String,
+        turn_id: String,
+        delivery: CodexMessageDelivery,
     },
     PaneObservations {
         panes: Vec<PaneObservation>,
@@ -395,33 +422,6 @@ impl ApiError {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Capacity {
-    pub resource: CapacityResource,
-    pub total: u64,
-    pub reserved: u64,
-    pub requested: u64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CapacityResource {
-    Cpu,
-    Memory,
-    Disk,
-}
-
-impl fmt::Display for CapacityResource {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Cpu => "CPU",
-            Self::Memory => "memory",
-            Self::Disk => "disk",
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     InvalidRequest,
@@ -557,7 +557,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 18,
+          "protocol_version": 20,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -593,7 +593,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 18,
+          "protocol_version": 20,
           "vcpus": 2
         }
         "###);
@@ -649,7 +649,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 18,
+          "protocol_version": 20,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -669,11 +669,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 18,
+            "protocol_version": 20,
             "operation": "server_info"
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 20,
             "outcome": "ok",
             "response": {
               "response": "server_info",

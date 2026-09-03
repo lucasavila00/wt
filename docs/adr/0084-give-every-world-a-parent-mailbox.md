@@ -1,34 +1,42 @@
 # ADR 0084: Give every world a parent mailbox
 
 - Status: Accepted
-- Date: 2026-09-02
+- Date: 2026-09-03
+
+## Context
+
+Work performed in a world needs a small durable path back to its controller. Live Codex session
+events are useful while a session is running, but a terminal result also needs to survive a client
+disconnect and remain available after the session window has closed.
 
 ## Decision
 
-Every world has a durable outbound mailbox in `wts`. Guest software sends an untargeted message with:
+Every world has one durable, owner-scoped outbound mailbox. The guest command
+`send_message_to_parent` appends a UTF-8 message to that mailbox. The gateway derives the source
+world from the authenticated guest connection, so callers do not supply a world ID.
 
-```json
-{"command":{"action":"send_message_to_parent","message":"..."}}
-```
+Mailbox rows contain a monotonic message ID, world ID, creation time, and message. Reads are
+ascending and cursor-based, accept a bounded count, and return the high-water ID observed at the
+start of the read. A consumer can therefore finish a finite scan while newer messages arrive and
+use the message ID as its import deduplication key.
 
-The gateway authenticates only the source world by resolving the VSOCK peer CID to an active WT
-domain. This is the trust boundary: any software in that guest can send a message for that world.
-WT records no process, Byobu, tmux, or window attribution.
+ADR 0086 uses the same mailbox for terminal Codex-session delivery. WT appends one terminal entry
+when a turn completes or fails. Its versioned message payload carries the Codex thread ID, turn ID,
+pane ID, terminal status, and final assistant or error text so the controller can associate the
+result with the session it started. The payload is a delivery record; live window, App Server, and
+turn state remain runtime state.
 
-A mailbox row contains only a monotonic server message ID, world ID, creation time, and message.
-The gateway commits the row before returning success. A lost response followed by a retry may create
-a duplicate message. This is an at-least-once human notification, not an exactly-once command.
+Mailbox writes commit before they are acknowledged. Explicit guest messages and terminal session
+messages share the same ordering and read path. A message is limited to 64 MiB of UTF-8 text, and a
+read returns at most 1,000 entries.
 
-Messages are limited to 64 KiB; a world retains at most 64 MiB. A full mailbox rejects new mail.
-Deleting a world cascades its mailbox rows. Existing agent-tool reports and their data are unchanged.
-
-`wts` provides an owner-scoped bounded cursor read for the built-in `wt messages` command:
-`list_world_mail(world_id, after_id, limit)`. It is an internal control-plane operation, not part
-of the stable public JSON API. It returns ascending IDs and a high-water ID so the client can finish
-a bounded scan while messages arrive.
+Mailbox rows retain a foreign key to their world and are deleted with it. A controller imports
+messages through the deletion high-water mark before deleting a world when it needs to retain
+them.
 
 ## Consequences
 
-- Mail survives client, guest, and server restarts after commit.
-- Mail is associated with a world only.
-- `wtg tools` reports remain available alongside parent messages.
+- Guest tools have one small, durable way to report to the parent controller.
+- Controllers consume mail incrementally and idempotently.
+- Codex terminal results remain available independently of the live session connection.
+- World deletion is also the mailbox retention boundary.

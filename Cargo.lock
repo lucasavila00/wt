@@ -3944,6 +3944,8 @@ dependencies = [
  "anyhow",
  "clap",
  "insta",
+ "serde",
+ "serde_json",
  "tempfile",
  "wt-agent-tool-gateway",
 ]

@@ -12,9 +12,11 @@ macro_rules! cmd {
     }};
 }
 
+mod codex;
 mod guest;
 pub mod host;
 
+pub use codex::*;
 pub use guest::*;
 pub use host::{WorldInspection, WorldProvisionSpec};
 
@@ -32,6 +34,24 @@ fn write_creation_timing(
 }
 
 pub trait WorldWorker: Clone + Send + Sync + 'static {
+    fn start_codex(&self, _world_id: WorldId, _message: &str) -> Result<CodexStart, WorkerError> {
+        Err(WorkerError::new("Codex is not supported by this worker"))
+    }
+    fn inspect_codex(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+    ) -> Result<CodexInspection, WorkerError> {
+        Err(WorkerError::new("Codex is not supported by this worker"))
+    }
+    fn send_codex_message(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        _message: &str,
+    ) -> Result<CodexSend, WorkerError> {
+        Err(WorkerError::new("Codex is not supported by this worker"))
+    }
     fn provision(
         &self,
         spec: WorldProvisionSpec<'_>,

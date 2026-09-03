@@ -160,7 +160,11 @@ mod tests {
             mail: WorldMail {
                 id: 1,
                 world_id: "00000000-0000-0000-0000-000000000001".parse().unwrap(),
+                thread_id: None,
+                turn_id: None,
+                pane_id: None,
                 created_at_unix_ms: 1_800_000_000_000,
+                kind: wt_control_protocol::MailKind::Message,
                 message: "done\nneeds\r\treview\\\0\u{1b} ✓".into(),
             },
         }];

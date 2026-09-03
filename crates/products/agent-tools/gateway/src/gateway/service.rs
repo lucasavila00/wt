@@ -93,6 +93,26 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
+            ClientOperation::CodexTurnFinished {
+                thread_id,
+                turn_id,
+                pane_id,
+                status,
+                message,
+            } => {
+                let response = match self.activity.record_codex_result(
+                    authorized.world_id,
+                    &thread_id,
+                    &turn_id,
+                    &pane_id,
+                    status,
+                    &message,
+                ) {
+                    Ok(()) => TransportResponse::ok(),
+                    Err(error) => TransportResponse::error(format!("{error:#}")),
+                };
+                crate::write_json_line(&mut stream, &response)
+            }
             ClientOperation::PaneObservations { panes } => {
                 let response = match self.store_pane_observations(&panes, &authorized) {
                     Ok(()) => TransportResponse::ok(),
@@ -187,9 +207,25 @@ impl Gateway {
         if observations.inactive_worlds.contains(&world_id) {
             bail!("agent tools are inactive for this world");
         }
-        if let ClientOperation::SendMessageToParent { message } = &request.operation {
+        if let ClientOperation::SendMessageToParent { message }
+        | ClientOperation::CodexTurnFinished { message, .. } = &request.operation
+        {
             if message.is_empty() || message.len() > wt_workload_registry::MAX_MAIL_MESSAGE_BYTES {
-                bail!("message must contain 1 to 65536 UTF-8 bytes");
+                bail!(
+                    "message must contain 1 to {} UTF-8 bytes",
+                    wt_workload_registry::MAX_MAIL_MESSAGE_BYTES
+                );
+            }
+        }
+        if let ClientOperation::CodexTurnFinished {
+            thread_id,
+            turn_id,
+            pane_id,
+            ..
+        } = &request.operation
+        {
+            if thread_id.is_empty() || turn_id.is_empty() || !crate::valid_byobu_pane_id(pane_id) {
+                bail!("invalid Codex turn identity");
             }
         }
         let pane_generation =
