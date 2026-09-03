@@ -1,46 +1,42 @@
-# ADR 0084: Let WT run Codex turns and own the parent mailbox
+# ADR 0084: Give every world a parent mailbox
 
 - Status: Accepted
 - Date: 2026-09-03
 
 ## Context
 
-An external controller needs to delegate work to Codex in a world and recover the final result
-after a client connection disappears. WT already has world lifecycle serialization, Codex access,
-and a durable world mailbox.
+Work performed in a world needs a small durable path back to its controller. Live Codex session
+events are useful while a session is running, but a terminal result also needs to survive a client
+disconnect and remain available after the session window has closed.
 
 ## Decision
 
-WT exposes one blocking operation, `run_codex_turn(world_id, session_id?, message)`. An initial call
-runs `codex exec --json`; a call carrying a session ID runs `codex exec resume --json`. The returned
-Codex thread UUID is an opaque session ID that a caller may pass to a later turn. Execution state
-lives for the duration of the blocking call.
+Every world has one durable, owner-scoped outbound mailbox. The guest command
+`send_message_to_parent` appends a UTF-8 message to that mailbox. The gateway derives the source
+world from the authenticated guest connection, so callers do not supply a world ID.
 
-WT holds the existing per-world operation lock for the whole turn and mailbox write. A second turn
-or lifecycle operation in that world receives a retryable conflict; other worlds can proceed in
-parallel. The server handler continues the operation after a client disconnect when the underlying
-server process remains alive.
+Mailbox rows contain a monotonic message ID, world ID, creation time, and message. Reads are
+ascending and cursor-based, accept a bounded count, and return the high-water ID observed at the
+start of the read. A consumer can therefore finish a finite scan while newer messages arrive and
+use the message ID as its import deduplication key.
 
-Every terminal result is appended before WT returns. It uses the existing `world_mail.message`
-column with a private versioned JSON envelope containing the API request ID, optional session ID,
-`completed` or `failed` kind, and full text. Mail reads decode that envelope; old and explicit guest
-messages remain ordinary unattributed `message` entries. A controller can therefore recover an
-unknown response by reading mail and matching its request ID.
+ADR 0086 uses the same mailbox for terminal Codex-session delivery. WT appends one terminal entry
+when a turn completes or fails. Its versioned message payload carries the runtime session handle,
+terminal status, and final assistant or error text so the controller can associate the result with
+the session it started. The payload is a delivery record; live window, App Server, and turn state
+remain runtime state.
 
-Mail reads remain owner-scoped, ascending, bounded by entry count, and cursor-based. Their
-high-water ID gives consumers a finite scan boundary. The stable message ID is the deduplication
-key. The existing `send_message_to_parent` tool remains a simple world-scoped write.
+Mailbox writes commit before they are acknowledged. Explicit guest messages and terminal session
+messages share the same ordering and read path. A message is limited to 64 MiB of UTF-8 text, and a
+read returns at most 1,000 entries.
 
-Inputs and complete stored mailbox rows have a coarse 64 MiB UTF-8 limit. The transport accepts
-requests up to 128 MiB.
-
-Mailbox rows retain the existing foreign key to their world and are deleted with it. Consumers
-import required messages before deleting a world. If `wts` stops during a turn, retrying can repeat
-work; this is the initial crash behavior of the blocking operation.
+Mailbox rows retain a foreign key to their world and are deleted with it. A controller imports
+messages through the deletion high-water mark before deleting a world when it needs to retain
+them.
 
 ## Consequences
 
-- Controllers use a small WT-owned execution and mailbox API.
-- Terminal messages are durable and execution state lasts for one blocking call.
-- WT is coupled to the non-interactive Codex CLI thread and JSONL contracts.
-- A server crash can make retrying a turn repeat work.
+- Guest tools have one small, durable way to report to the parent controller.
+- Controllers consume mail incrementally and idempotently.
+- Codex terminal results remain available independently of the live session connection.
+- World deletion is also the mailbox retention boundary.

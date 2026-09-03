@@ -19,9 +19,9 @@ standalone Git client
 
 `wts` owns guests. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
-protected server socket. The protocol carries world resources, blocking Codex
-turns and mailbox entries, a Git author, server information, server-owned
-terminal-pane observations, and streamed creation progress events.
+protected server socket. The protocol carries world resources, asynchronous
+Codex session operations and mailbox entries, a Git author, server information,
+server-owned terminal-pane observations, and streamed creation progress events.
 
 ## Crates
 
@@ -55,6 +55,12 @@ window index and name through its authenticated server connection. `wts` owns
 those observations and keeps each world's complete latest snapshot only in
 memory. No live pane observation is registry state. No Codex hook or lifecycle
 tracker participates in live state.
+
+WT starts a guest Codex App Server runtime for each delegated session and runs the native Codex TUI
+with `--remote` in a dedicated window of the world's shared Byobu session. The server keeps the
+window, App Server, Codex thread, active turn, and recent semantic-event associations in memory.
+Start, inspect, and send operations use that runtime state; completed and failed turns publish
+their terminal result through the durable world mailbox.
 
 ## Shell playback
 
@@ -98,6 +104,6 @@ Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
 that domain's name. Parent messages use this world identity and contain no
-window or process attribution. WT runs non-interactive Codex turns and adds
-each terminal result to the same mailbox with its API request ID and optional
-opaque Codex thread ID. It does not persist session or turn lifecycle state.
+window or process attribution. Terminal Codex results use the same mailbox and carry a versioned
+delivery payload that controllers can correlate with the runtime session. Session, window, thread,
+turn, and semantic-event associations remain runtime state.
