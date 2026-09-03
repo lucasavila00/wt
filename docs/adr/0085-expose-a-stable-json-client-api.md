@@ -26,11 +26,13 @@ trailing newline.
 }
 ```
 
-Version 1 exposes only `create_world` and `delete_world`. All operation fields are required.
+Version 1 initially exposes only `create_world` and `delete_world`. All operation fields are required.
 `expected_server_id` is optional for a first request and binds later requests to the intended
 server. Deletion identifies a world by `world_id` and means "ensure this world is absent", so
-deleting a world that is already absent succeeds. Additional operations require a separate
-decision after their lifecycle and compatibility contracts are understood.
+deleting a world that is already absent succeeds. ADR 0084 separately defines the lifecycle for
+Codex session and mailbox operations that may be added to this transport without changing its
+request/response execution model. Once those operations exist, world deletion also returns its
+final mailbox high-water message ID.
 
 The command returns a tagged response:
 
@@ -65,7 +67,8 @@ An error response replaces `result` with `error`, containing a stable `code`, a 
 `message`, and `retryable`. Capacity errors also include structured resource details. All error
 responses exit with a non-zero status. Local validation and transport failures still produce the
 JSON error response and additionally write a diagnostic to standard error. A request is limited to
-64 KiB.
+32 MiB so the same transport can carry a 16 MiB session input plus its JSON envelope as defined by
+ADR 0084.
 
 The WT client resolves `context` through its existing configuration. It calls `wts api` locally or
 over the context's SSH transport. SSH supplies the server identity and authorization boundary.
