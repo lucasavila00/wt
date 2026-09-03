@@ -1,6 +1,7 @@
 //! Shared control-plane wire types for `wt` and server helpers.
 
 mod activity;
+mod capacity;
 mod codex;
 mod create;
 mod mail;
@@ -13,6 +14,7 @@ mod validation;
 pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
+pub use capacity::{Capacity, CapacityResource};
 pub use codex::{CodexMessageDelivery, CodexStatus};
 pub use create::{validate_create_world_resources, CreateWorld};
 pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
@@ -416,33 +418,6 @@ impl ApiError {
     pub fn retryable(mut self) -> Self {
         self.retryable = true;
         self
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Capacity {
-    pub resource: CapacityResource,
-    pub total: u64,
-    pub reserved: u64,
-    pub requested: u64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CapacityResource {
-    Cpu,
-    Memory,
-    Disk,
-}
-
-impl fmt::Display for CapacityResource {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Cpu => "CPU",
-            Self::Memory => "memory",
-            Self::Disk => "disk",
-        })
     }
 }
 

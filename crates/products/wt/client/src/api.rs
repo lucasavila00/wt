@@ -1,5 +1,5 @@
 use anyhow::{bail, Context as _, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
 use uuid::Uuid;
@@ -8,119 +8,13 @@ use wt_control_protocol::{
     WorldStatus,
 };
 
+mod request;
+use request::Request;
+#[cfg(test)]
+mod tests;
+
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: u64 = 128 * 1024 * 1024;
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-enum Request {
-    CreateWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        name: String,
-        vcpus: u32,
-        memory_mib: u64,
-        disk_gib: u64,
-        git_user_name: String,
-        git_user_email: String,
-    },
-    DeleteWorld {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-    },
-    StartCodex {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-        message: String,
-    },
-    InspectCodex {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-        thread_id: String,
-    },
-    SendCodexMessage {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-        thread_id: String,
-        message: String,
-    },
-    ReadWorldMail {
-        api_version: u32,
-        request_id: String,
-        #[serde(default)]
-        expected_server_id: Option<String>,
-        context: String,
-        world_id: String,
-        after_message_id: u64,
-        limit: u32,
-    },
-}
-
-impl Request {
-    fn api_version(&self) -> u32 {
-        match self {
-            Self::CreateWorld { api_version, .. }
-            | Self::DeleteWorld { api_version, .. }
-            | Self::StartCodex { api_version, .. }
-            | Self::InspectCodex { api_version, .. }
-            | Self::SendCodexMessage { api_version, .. }
-            | Self::ReadWorldMail { api_version, .. } => *api_version,
-        }
-    }
-
-    fn request_id(&self) -> &str {
-        match self {
-            Self::CreateWorld { request_id, .. }
-            | Self::DeleteWorld { request_id, .. }
-            | Self::StartCodex { request_id, .. }
-            | Self::InspectCodex { request_id, .. }
-            | Self::SendCodexMessage { request_id, .. }
-            | Self::ReadWorldMail { request_id, .. } => request_id,
-        }
-    }
-
-    fn expected_server_id(&self) -> Option<&str> {
-        match self {
-            Self::CreateWorld {
-                expected_server_id, ..
-            }
-            | Self::DeleteWorld {
-                expected_server_id, ..
-            }
-            | Self::StartCodex {
-                expected_server_id, ..
-            }
-            | Self::InspectCodex {
-                expected_server_id, ..
-            }
-            | Self::SendCodexMessage {
-                expected_server_id, ..
-            }
-            | Self::ReadWorldMail {
-                expected_server_id, ..
-            } => expected_server_id.as_deref(),
-        }
-    }
-}
 
 #[derive(Debug, Serialize)]
 struct ApiResponse {
@@ -783,28 +677,4 @@ fn write_response(reply: Reply) -> Result<()> {
     .context("write API response")?;
     output.write_all(b"\n").context("finish API response")?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn routing_fields_do_not_change_operation_identity() {
-        let request = |context: &str, expected_server_id: Option<&str>| Request::DeleteWorld {
-            api_version: API_VERSION,
-            request_id: Uuid::new_v4().to_string(),
-            expected_server_id: expected_server_id.map(str::to_owned),
-            context: context.to_owned(),
-            world_id: "00000000-0000-0000-0000-000000000001".to_owned(),
-        };
-        let (_, first) = request_to_operation(request("old-alias", None)).unwrap();
-        let (_, second) = request_to_operation(request(
-            "new-alias",
-            Some("22222222-2222-4222-8222-222222222222"),
-        ))
-        .unwrap();
-
-        assert_eq!(operation_hash(&first), operation_hash(&second));
-    }
 }
