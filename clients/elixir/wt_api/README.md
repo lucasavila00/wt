@@ -29,7 +29,8 @@ request = %WtApi.Request.CreateWorld{
   git_user_email: "ada@example.com"
 }
 
-{:ok, %WtApi.Result.CreateWorld{world: world}} = WtApi.create_world(request)
+{:ok, %WtApi.Success{server_id: server_id, result: result}} = WtApi.create_world(request)
+world = result.world
 ```
 
 The client invokes `wt api` directly through Exile with request JSON on stdin.

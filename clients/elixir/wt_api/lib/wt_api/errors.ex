@@ -10,6 +10,20 @@ defmodule WtApi.TransportError do
         }
 end
 
+defmodule WtApi.Success do
+  @moduledoc "A validated successful WT API response and its typed operation result."
+
+  @enforce_keys [:request_id, :server_id, :result]
+  defstruct [:request_id, :server_id, :expires_at_unix_ms, :result]
+
+  @type t(result) :: %__MODULE__{
+          request_id: String.t(),
+          server_id: String.t(),
+          expires_at_unix_ms: integer() | nil,
+          result: result
+        }
+end
+
 defmodule WtApi.ProtocolError do
   @moduledoc "A response that does not satisfy the WT API v1 protocol."
 

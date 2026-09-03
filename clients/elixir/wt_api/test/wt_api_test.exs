@@ -3,7 +3,7 @@ defmodule WtApiTest do
 
   alias WtApi.Request
   alias WtApi.Result
-  alias WtApi.{Client, ProtocolError, ServerError, TransportError}
+  alias WtApi.{Client, ProtocolError, ServerError, Success, TransportError}
 
   @request_id "11111111-1111-4111-8111-111111111111"
   @server_id "22222222-2222-4222-8222-222222222222"
@@ -38,12 +38,16 @@ defmodule WtApiTest do
 
   test "all v1 operations cross the real wt api binary", %{client: client} do
     assert {:ok,
-            %Result.CreateWorld{
-              world: %WtApi.World{
-                world_id: @world_id,
-                name: "agent-1",
-                status: "running",
-                ssh: %WtApi.SshAccess{user: "wt"}
+            %Success{
+              request_id: @request_id,
+              server_id: @server_id,
+              result: %Result.CreateWorld{
+                world: %WtApi.World{
+                  world_id: @world_id,
+                  name: "agent-1",
+                  status: "running",
+                  ssh: %WtApi.SshAccess{user: "wt"}
+                }
               }
             }} =
              WtApi.create_world(client, %Request.CreateWorld{
@@ -58,14 +62,17 @@ defmodule WtApiTest do
                git_user_email: "ada@example.com"
              })
 
-    assert {:ok, %Result.DeleteWorld{world_id: @world_id}} =
+    assert {:ok, %Success{result: %Result.DeleteWorld{world_id: @world_id}}} =
              WtApi.delete_world(client, %Request.DeleteWorld{
                request_id: @request_id,
                context: "ars",
                world_id: @world_id
              })
 
-    assert {:ok, %Result.StartCodex{thread_id: "thread-123", turn_id: "turn-456"}} =
+    assert {:ok,
+            %Success{
+              result: %Result.StartCodex{thread_id: "thread-123", turn_id: "turn-456"}
+            }} =
              WtApi.start_codex(client, %Request.StartCodex{
                request_id: @request_id,
                context: "ars",
@@ -73,7 +80,8 @@ defmodule WtApiTest do
                message: "review this"
              })
 
-    assert {:ok, %Result.InspectCodex{thread_id: "thread-123", status: "active"}} =
+    assert {:ok,
+            %Success{result: %Result.InspectCodex{thread_id: "thread-123", status: "active"}}} =
              WtApi.inspect_codex(client, %Request.InspectCodex{
                request_id: @request_id,
                context: "ars",
@@ -82,10 +90,12 @@ defmodule WtApiTest do
              })
 
     assert {:ok,
-            %Result.SendCodexMessage{
-              thread_id: "thread-123",
-              turn_id: "turn-789",
-              delivery: "steered"
+            %Success{
+              result: %Result.SendCodexMessage{
+                thread_id: "thread-123",
+                turn_id: "turn-789",
+                delivery: "steered"
+              }
             }} =
              WtApi.send_codex_message(client, %Request.SendCodexMessage{
                request_id: @request_id,
@@ -96,9 +106,11 @@ defmodule WtApiTest do
              })
 
     assert {:ok,
-            %Result.ReadWorldMail{
-              messages: [%WtApi.WorldMail{world_id: @world_id, text: "done"}],
-              high_water_message_id: 7
+            %Success{
+              result: %Result.ReadWorldMail{
+                messages: [%WtApi.WorldMail{world_id: @world_id, text: "done"}],
+                high_water_message_id: 7
+              }
             }} =
              WtApi.read_world_mail(client, %Request.ReadWorldMail{
                request_id: @request_id,

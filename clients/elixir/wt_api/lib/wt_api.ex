@@ -3,24 +3,26 @@ defmodule WtApi do
 
   alias WtApi.Request
   alias WtApi.Result
-  alias WtApi.{Client, ErrorData, ProtocolError, ServerError, TransportError}
+  alias WtApi.{Client, ErrorData, ProtocolError, ServerError, Success, TransportError}
 
   @type error :: TransportError.t() | ProtocolError.t() | ServerError.t()
 
-  @spec create_world(Request.CreateWorld.t()) :: {:ok, Result.CreateWorld.t()} | {:error, error()}
+  @spec create_world(Request.CreateWorld.t()) ::
+          {:ok, Success.t(Result.CreateWorld.t())} | {:error, error()}
   def create_world(request), do: create_world(Client.new(), request)
 
   @spec create_world(Client.t(), Request.CreateWorld.t()) ::
-          {:ok, Result.CreateWorld.t()} | {:error, error()}
+          {:ok, Success.t(Result.CreateWorld.t())} | {:error, error()}
   def create_world(client, %Request.CreateWorld{} = request) do
     call(client, request, Result.CreateWorld, &world_identity(&1, request))
   end
 
-  @spec delete_world(Request.DeleteWorld.t()) :: {:ok, Result.DeleteWorld.t()} | {:error, error()}
+  @spec delete_world(Request.DeleteWorld.t()) ::
+          {:ok, Success.t(Result.DeleteWorld.t())} | {:error, error()}
   def delete_world(request), do: delete_world(Client.new(), request)
 
   @spec delete_world(Client.t(), Request.DeleteWorld.t()) ::
-          {:ok, Result.DeleteWorld.t()} | {:error, error()}
+          {:ok, Success.t(Result.DeleteWorld.t())} | {:error, error()}
   def delete_world(client, %Request.DeleteWorld{} = request) do
     call(
       client,
@@ -30,21 +32,22 @@ defmodule WtApi do
     )
   end
 
-  @spec start_codex(Request.StartCodex.t()) :: {:ok, Result.StartCodex.t()} | {:error, error()}
+  @spec start_codex(Request.StartCodex.t()) ::
+          {:ok, Success.t(Result.StartCodex.t())} | {:error, error()}
   def start_codex(request), do: start_codex(Client.new(), request)
 
   @spec start_codex(Client.t(), Request.StartCodex.t()) ::
-          {:ok, Result.StartCodex.t()} | {:error, error()}
+          {:ok, Success.t(Result.StartCodex.t())} | {:error, error()}
   def start_codex(client, %Request.StartCodex{} = request) do
     call(client, request, Result.StartCodex, fn _result -> :ok end)
   end
 
   @spec inspect_codex(Request.InspectCodex.t()) ::
-          {:ok, Result.InspectCodex.t()} | {:error, error()}
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
   def inspect_codex(request), do: inspect_codex(Client.new(), request)
 
   @spec inspect_codex(Client.t(), Request.InspectCodex.t()) ::
-          {:ok, Result.InspectCodex.t()} | {:error, error()}
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
   def inspect_codex(client, %Request.InspectCodex{} = request) do
     call(
       client,
@@ -55,11 +58,11 @@ defmodule WtApi do
   end
 
   @spec send_codex_message(Request.SendCodexMessage.t()) ::
-          {:ok, Result.SendCodexMessage.t()} | {:error, error()}
+          {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
   def send_codex_message(request), do: send_codex_message(Client.new(), request)
 
   @spec send_codex_message(Client.t(), Request.SendCodexMessage.t()) ::
-          {:ok, Result.SendCodexMessage.t()} | {:error, error()}
+          {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
   def send_codex_message(client, %Request.SendCodexMessage{} = request) do
     call(
       client,
@@ -70,11 +73,11 @@ defmodule WtApi do
   end
 
   @spec read_world_mail(Request.ReadWorldMail.t()) ::
-          {:ok, Result.ReadWorldMail.t()} | {:error, error()}
+          {:ok, Success.t(Result.ReadWorldMail.t())} | {:error, error()}
   def read_world_mail(request), do: read_world_mail(Client.new(), request)
 
   @spec read_world_mail(Client.t(), Request.ReadWorldMail.t()) ::
-          {:ok, Result.ReadWorldMail.t()} | {:error, error()}
+          {:ok, Success.t(Result.ReadWorldMail.t())} | {:error, error()}
   def read_world_mail(client, %Request.ReadWorldMail{} = request) do
     call(client, request, Result.ReadWorldMail, &mail_identity(&1, request.world_id))
   end
@@ -88,7 +91,13 @@ defmodule WtApi do
          :ok <- validate_metadata(response, request),
          {:ok, result} <- decode_outcome(response, execution, result_module),
          :ok <- validate_identity.(result) do
-      {:ok, result}
+      {:ok,
+       %Success{
+         request_id: response["request_id"],
+         server_id: response["server_id"],
+         expires_at_unix_ms: response["expires_at_unix_ms"],
+         result: result
+       }}
     end
   end
 
