@@ -105,6 +105,61 @@ fn parent_message_transport_commits_world_scoped_mail() {
 }
 
 #[test]
+fn codex_completion_transport_commits_attributed_terminal_mail() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("instances.db");
+    let store = wt_workload_registry::Store::open(&path).unwrap();
+    let world_id = Uuid::new_v4().into();
+    store
+        .insert(&wt_workload_registry::NewWorld {
+            world_id,
+            owner: "owner".into(),
+            name: wt_control_protocol::WorldName::parse("world").unwrap(),
+            status: wt_control_protocol::WorldStatus::Running,
+            vcpus: 1,
+            memory_mib: 1024,
+            disk_gib: 10,
+            setup_fingerprint: "fingerprint".into(),
+        })
+        .unwrap();
+    drop(store);
+    let gateway = gateway(&temp);
+    let (mut client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+    crate::write_json_line(
+        &mut client,
+        &TransportRequest {
+            protocol_version: PROTOCOL_VERSION,
+            operation: ClientOperation::CodexTurnFinished {
+                thread_id: "thread-1".into(),
+                turn_id: "turn-1".into(),
+                pane_id: "%3".into(),
+                status: crate::CodexTurnStatus::Completed,
+                message: "finished".into(),
+            },
+        },
+    )
+    .unwrap();
+
+    gateway.handle_transport(server, world_id).unwrap();
+
+    let response: TransportResponse = crate::read_json_line(&mut client).unwrap();
+    assert!(response.ok);
+    let page = wt_workload_registry::Store::open(&path)
+        .unwrap()
+        .list_world_mail("owner", world_id, 0, 10)
+        .unwrap();
+    assert_eq!(page.messages.len(), 1);
+    assert_eq!(page.messages[0].thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(page.messages[0].turn_id.as_deref(), Some("turn-1"));
+    assert_eq!(page.messages[0].pane_id.as_deref(), Some("%3"));
+    assert_eq!(
+        page.messages[0].kind,
+        wt_workload_registry::MailKind::Completed
+    );
+    assert_eq!(page.messages[0].message, "finished");
+}
+
+#[test]
 fn pane_observations_are_complete_transient_world_snapshots() {
     let frame = PaneFrame {
         rows: 1,

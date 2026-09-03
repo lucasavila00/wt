@@ -68,6 +68,24 @@ impl ActivityRecorder {
         self.registry()?.insert_world_mail(world_id, message)?;
         Ok(())
     }
+
+    fn record_codex_result(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+        turn_id: &str,
+        pane_id: &str,
+        status: crate::CodexTurnStatus,
+        message: &str,
+    ) -> Result<()> {
+        let kind = match status {
+            crate::CodexTurnStatus::Completed => wt_workload_registry::MailKind::Completed,
+            crate::CodexTurnStatus::Failed => wt_workload_registry::MailKind::Failed,
+        };
+        self.registry()?
+            .insert_codex_result(world_id, thread_id, turn_id, pane_id, kind, message)?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]

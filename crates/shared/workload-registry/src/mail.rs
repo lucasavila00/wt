@@ -8,6 +8,7 @@ use wt_world::WorldId;
 
 pub const MAX_MAIL_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const CODEX_RESULT_PREFIX: &str = "WT_CODEX_RESULT_V1:";
+const CODEX_WINDOW_RESULT_PREFIX: &str = "WT_CODEX_RESULT_V2:";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -22,7 +23,9 @@ pub struct WorldMail {
     pub id: u64,
     pub world_id: WorldId,
     pub request_id: Option<Uuid>,
-    pub session_id: Option<Uuid>,
+    pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub pane_id: Option<String>,
     pub created_at_unix_ms: i64,
     pub kind: MailKind,
     pub message: String,
@@ -39,6 +42,17 @@ pub struct WorldMailPage {
 struct CodexResultEnvelope<'a> {
     request_id: Uuid,
     session_id: Option<Uuid>,
+    kind: MailKind,
+    #[serde(borrow)]
+    message: std::borrow::Cow<'a, str>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CodexWindowResultEnvelope<'a> {
+    thread_id: &'a str,
+    turn_id: &'a str,
+    pane_id: &'a str,
     kind: MailKind,
     #[serde(borrow)]
     message: std::borrow::Cow<'a, str>,
@@ -65,8 +79,9 @@ impl Registry {
     pub fn insert_codex_result(
         &self,
         world_id: WorldId,
-        request_id: Uuid,
-        session_id: Option<Uuid>,
+        thread_id: &str,
+        turn_id: &str,
+        pane_id: &str,
         kind: MailKind,
         message: &str,
     ) -> Result<WorldMail, RegistryError> {
@@ -75,14 +90,20 @@ impl Registry {
                 "Codex result must be completed or failed".into(),
             ));
         }
-        let envelope = serde_json::to_string(&CodexResultEnvelope {
-            request_id,
-            session_id,
+        if thread_id.is_empty() || turn_id.is_empty() || pane_id.is_empty() {
+            return Err(RegistryError::InvalidData(
+                "Codex result identity must not be empty".into(),
+            ));
+        }
+        let envelope = serde_json::to_string(&CodexWindowResultEnvelope {
+            thread_id,
+            turn_id,
+            pane_id,
             kind,
             message: message.into(),
         })
         .map_err(|error| RegistryError::InvalidData(error.to_string()))?;
-        let stored = format!("{CODEX_RESULT_PREFIX}{envelope}");
+        let stored = format!("{CODEX_WINDOW_RESULT_PREFIX}{envelope}");
         validate_mail_text(&stored)?;
         self.immediate_transaction(|connection| insert_mail_row(connection, world_id, &stored))
     }
@@ -168,7 +189,7 @@ fn insert_mail_row(
 }
 
 fn parse(row: Row) -> Result<WorldMail, RegistryError> {
-    let (request_id, session_id, kind, message) = decode(&row.message);
+    let (request_id, thread_id, turn_id, pane_id, kind, message) = decode(&row.message);
     Ok(WorldMail {
         id: u64::try_from(row.id)
             .map_err(|_| RegistryError::InvalidData("invalid mail ID".into()))?,
@@ -177,26 +198,52 @@ fn parse(row: Row) -> Result<WorldMail, RegistryError> {
             .parse()
             .map_err(|error: uuid::Error| RegistryError::InvalidData(error.to_string()))?,
         request_id,
-        session_id,
+        thread_id,
+        turn_id,
+        pane_id,
         created_at_unix_ms: row.created_at_unix_ms,
         kind,
         message,
     })
 }
 
-fn decode(stored: &str) -> (Option<Uuid>, Option<Uuid>, MailKind, String) {
-    let Some(json) = stored.strip_prefix(CODEX_RESULT_PREFIX) else {
-        return (None, None, MailKind::Message, stored.to_owned());
-    };
-    match serde_json::from_str::<CodexResultEnvelope<'_>>(json) {
-        Ok(envelope) if matches!(envelope.kind, MailKind::Completed | MailKind::Failed) => (
-            Some(envelope.request_id),
-            envelope.session_id,
-            envelope.kind,
-            envelope.message.into_owned(),
-        ),
-        _ => (None, None, MailKind::Message, stored.to_owned()),
+fn decode(
+    stored: &str,
+) -> (
+    Option<Uuid>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    MailKind,
+    String,
+) {
+    if let Some(json) = stored.strip_prefix(CODEX_WINDOW_RESULT_PREFIX) {
+        return match serde_json::from_str::<CodexWindowResultEnvelope<'_>>(json) {
+            Ok(envelope) if matches!(envelope.kind, MailKind::Completed | MailKind::Failed) => (
+                None,
+                Some(envelope.thread_id.to_owned()),
+                Some(envelope.turn_id.to_owned()),
+                Some(envelope.pane_id.to_owned()),
+                envelope.kind,
+                envelope.message.into_owned(),
+            ),
+            _ => (None, None, None, None, MailKind::Message, stored.to_owned()),
+        };
     }
+    if let Some(json) = stored.strip_prefix(CODEX_RESULT_PREFIX) {
+        return match serde_json::from_str::<CodexResultEnvelope<'_>>(json) {
+            Ok(envelope) if matches!(envelope.kind, MailKind::Completed | MailKind::Failed) => (
+                Some(envelope.request_id),
+                envelope.session_id.map(|id| id.to_string()),
+                None,
+                None,
+                envelope.kind,
+                envelope.message.into_owned(),
+            ),
+            _ => (None, None, None, None, MailKind::Message, stored.to_owned()),
+        };
+    }
+    (None, None, None, None, MailKind::Message, stored.to_owned())
 }
 
 fn now_unix_ms() -> Result<i64, RegistryError> {
@@ -218,14 +265,13 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let registry = Registry::open(&temp.path().join("registry.db")).unwrap();
         let world_id = insert_world(&registry, "alice", "first");
-        let request_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
         registry.insert_world_mail(world_id, "hello").unwrap();
         registry
             .insert_codex_result(
                 world_id,
-                request_id,
-                Some(session_id),
+                "thread-1",
+                "turn-1",
+                "%7",
                 MailKind::Completed,
                 "done",
             )
@@ -233,8 +279,10 @@ mod tests {
         let page = registry.list_world_mail("alice", world_id, 0, 10).unwrap();
         assert_eq!(page.messages[0].kind, MailKind::Message);
         assert_eq!(page.messages[0].message, "hello");
-        assert_eq!(page.messages[1].request_id, Some(request_id));
-        assert_eq!(page.messages[1].session_id, Some(session_id));
+        assert_eq!(page.messages[1].request_id, None);
+        assert_eq!(page.messages[1].thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(page.messages[1].turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(page.messages[1].pane_id.as_deref(), Some("%7"));
         assert_eq!(page.messages[1].kind, MailKind::Completed);
         assert_eq!(page.messages[1].message, "done");
         assert!(matches!(
