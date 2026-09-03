@@ -18,7 +18,9 @@ pub struct WorldMail {
     pub id: u64,
     pub world_id: WorldId,
     pub request_id: Option<uuid::Uuid>,
-    pub session_id: Option<uuid::Uuid>,
+    pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub pane_id: Option<String>,
     pub created_at_unix_ms: i64,
     pub kind: MailKind,
     pub message: String,
@@ -49,21 +51,47 @@ mod tests {
     }
 
     #[test]
-    fn codex_turn_request_has_a_stable_shape() {
+    fn codex_requests_have_stable_shapes() {
         let world_id = "123e4567-e89b-12d3-a456-426614174000".parse().unwrap();
         assert_eq!(
-            serde_json::to_value(ApiRequest::new(Operation::RunCodexTurn {
+            serde_json::to_value(ApiRequest::new(Operation::StartCodex {
                 world_id,
-                session_id: None,
                 message: "review".into(),
             }))
             .unwrap(),
             serde_json::json!({
                 "protocol_version": PROTOCOL_VERSION,
-                "operation": "run_codex_turn",
+                "operation": "start_codex",
                 "world_id": "123e4567-e89b-12d3-a456-426614174000",
-                "session_id": null,
                 "message": "review"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ApiRequest::new(Operation::InspectCodex {
+                world_id,
+                thread_id: "thread-123".into(),
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "protocol_version": PROTOCOL_VERSION,
+                "operation": "inspect_codex",
+                "world_id": "123e4567-e89b-12d3-a456-426614174000",
+                "thread_id": "thread-123"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ApiRequest::new(Operation::SendCodexMessage {
+                world_id,
+                thread_id: "thread-123".into(),
+                message: "continue".into(),
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "protocol_version": PROTOCOL_VERSION,
+                "operation": "send_codex_message",
+                "world_id": "123e4567-e89b-12d3-a456-426614174000",
+                "thread_id": "thread-123",
+                "message": "continue"
             })
         );
     }

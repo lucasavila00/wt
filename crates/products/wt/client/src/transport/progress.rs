@@ -211,16 +211,18 @@ mod tests {
         assert!(matches!(
             decode_frame(
                 &context(),
-                br#"{"protocol_version":19,"event":"progress","message":"waiting"}"#,
+                br#"{"protocol_version":20,"event":"progress","message":"waiting"}"#,
             )
             .unwrap(),
             Frame::Progress(message) if message == "waiting"
         ));
-        assert!(decode_frame(
-            &context(),
-            br#"{"protocol_version":19,"event":"future","message":"waiting"}"#,
-        )
-        .is_err());
+        assert!(
+            decode_frame(
+                &context(),
+                br#"{"protocol_version":20,"event":"future","message":"waiting"}"#,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -231,27 +233,31 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.body().contains("expected 19"));
+        assert!(error.body().contains("expected 20"));
     }
 
     #[test]
     fn terminal_response_is_unique_and_last() {
-        let response_line = br#"{"protocol_version":19,"outcome":"ok","response":{"response":"worlds","worlds":[],"disk_usage_bytes":{},"agent_tool_report_counts":{}}}"#;
+        let response_line = br#"{"protocol_version":20,"outcome":"ok","response":{"response":"worlds","worlds":[],"disk_usage_bytes":{},"agent_tool_report_counts":{}}}"#;
         let mut response = None;
-        assert!(accept_frame(
-            &mut response,
-            decode_frame(&context(), response_line).unwrap()
-        )
-        .is_ok());
-        assert!(accept_frame(
-            &mut response,
-            decode_frame(
-                &context(),
-                br#"{"protocol_version":19,"event":"progress","message":"late"}"#,
+        assert!(
+            accept_frame(
+                &mut response,
+                decode_frame(&context(), response_line).unwrap()
             )
-            .unwrap()
-        )
-        .is_err());
+            .is_ok()
+        );
+        assert!(
+            accept_frame(
+                &mut response,
+                decode_frame(
+                    &context(),
+                    br#"{"protocol_version":20,"event":"progress","message":"late"}"#,
+                )
+                .unwrap()
+            )
+            .is_err()
+        );
 
         let mut response = None;
         accept_frame(
@@ -259,10 +265,12 @@ mod tests {
             decode_frame(&context(), response_line).unwrap(),
         )
         .unwrap();
-        assert!(accept_frame(
-            &mut response,
-            decode_frame(&context(), response_line).unwrap()
-        )
-        .is_err());
+        assert!(
+            accept_frame(
+                &mut response,
+                decode_frame(&context(), response_line).unwrap()
+            )
+            .is_err()
+        );
     }
 }

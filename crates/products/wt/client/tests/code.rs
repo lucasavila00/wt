@@ -25,10 +25,10 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"operation":"server_info"'*)
-    printf '%s\n' '{{"protocol_version":19,"outcome":"ok","response":{{"response":"server_info","test_server":false,"build":{{"version":"test","commit":"0000000000000000000000000000000000000000"}}}}}}'
+    printf '%s\n' '{{"protocol_version":20,"outcome":"ok","response":{{"response":"server_info","test_server":false,"build":{{"version":"test","commit":"0000000000000000000000000000000000000000"}}}}}}'
     ;;
   *'"operation":"list_worlds"'*)
-    printf '%s\n' '{{"protocol_version":19,"outcome":"ok","response":{{"response":"worlds","worlds":[{{"world_id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"{status}","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}]}}}}'
+    printf '%s\n' '{{"protocol_version":20,"outcome":"ok","response":{{"response":"worlds","worlds":[{{"world_id":"00000000-0000-0000-0000-000000000001","name":"world","owner":"tester","status":"{status}","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}]}}}}'
     ;;
   *) exit 2 ;;
 esac
