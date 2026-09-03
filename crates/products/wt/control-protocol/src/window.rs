@@ -140,7 +140,7 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&requests).unwrap(), @r###"
         [
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "start_window",
             "world_id": "123e4567-e89b-12d3-a456-426614174000",
             "argv": [
@@ -149,7 +149,7 @@ mod tests {
             "cwd": "/home/wt"
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "get_window",
             "window_id": "223e4567-e89b-12d3-a456-426614174000",
             "after": 4,
@@ -157,7 +157,7 @@ mod tests {
             "include_screen": true
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "send_window_input",
             "window_id": "223e4567-e89b-12d3-a456-426614174000",
             "control_token": "opaque",
@@ -167,13 +167,13 @@ mod tests {
             ]
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "stop_window",
             "window_id": "223e4567-e89b-12d3-a456-426614174000",
             "control_token": "opaque"
           },
           {
-            "protocol_version": 18,
+            "protocol_version": 19,
             "operation": "delete_window",
             "window_id": "223e4567-e89b-12d3-a456-426614174000",
             "control_token": "opaque"

@@ -9,8 +9,9 @@ WT exposes one window resource for work inside a world. Each WT window is one By
 as one tmux window with one pane. `start_window` starts the requested executable in that pane. The
 window ID addresses the executable, its input and output, and its screen.
 It is a globally unique UUID. The registry persists its mapping to the guest-native tmux
-`#{window_id}` (`@N`); authenticated guest tooling may resolve `(world_id, tmux_window_id)` back to
-the stable window ID without exposing the native ID in the public API.
+`#{window_id}` (`@N`); guest tooling may resolve `(world_id, tmux_window_id)` back to the stable
+window ID without exposing the native ID in the public API. ADR 0084 defines the trust limits of
+guest-supplied window provenance.
 
 A window provides:
 

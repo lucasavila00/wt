@@ -10,7 +10,7 @@ use wt_control_protocol::{ApiRequest, Operation, ResourceCapacity, Response, Wor
 pub struct ContextWorld {
     pub context: String,
     pub world: World,
-    pub agent_tool_report_count: u64,
+    pub world_mail_count: u64,
     pub disk_usage_bytes: Option<u64>,
 }
 
@@ -84,22 +84,18 @@ pub fn format_detail(item: &ContextWorld) -> String {
         ),
         _ => world.last_error.as_deref().unwrap_or("-").to_owned(),
     };
-    if item.agent_tool_report_count == 0 {
+    if item.world_mail_count == 0 {
         return detail;
     }
-    let reports = format!(
-        "{} wt-tools report{}; run `wt reports`",
-        item.agent_tool_report_count,
-        if item.agent_tool_report_count == 1 {
-            ""
-        } else {
-            "s"
-        }
+    let messages = format!(
+        "{} world message{}; run `wt messages`",
+        item.world_mail_count,
+        if item.world_mail_count == 1 { "" } else { "s" }
     );
     if detail == "-" {
-        reports
+        messages
     } else {
-        format!("{detail}; {reports}")
+        format!("{detail}; {messages}")
     }
 }
 
@@ -164,7 +160,7 @@ fn list_all_inner(
             worlds,
             capacity: context_capacity,
             disk_usage_bytes,
-            agent_tool_report_counts,
+            world_mail_counts,
         } = response
         else {
             failures.push(transport::wrong_response(context, "list"));
@@ -172,7 +168,7 @@ fn list_all_inner(
         };
         capacity = capacity.saturating_add(context_capacity);
         all.extend(worlds.into_iter().map(|world| {
-            let agent_tool_report_count = agent_tool_report_counts
+            let world_mail_count = world_mail_counts
                 .get(&world.world_id)
                 .copied()
                 .unwrap_or_default();
@@ -180,7 +176,7 @@ fn list_all_inner(
             ContextWorld {
                 context: context.name.clone(),
                 world,
-                agent_tool_report_count,
+                world_mail_count,
                 disk_usage_bytes,
             }
         }));
@@ -256,7 +252,7 @@ mod tests {
     fn item(context: &str, name: &str) -> ContextWorld {
         ContextWorld {
             context: context.into(),
-            agent_tool_report_count: 0,
+            world_mail_count: 0,
             disk_usage_bytes: None,
             world: World {
                 world_id: Uuid::new_v4().into(),

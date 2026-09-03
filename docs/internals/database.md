@@ -7,7 +7,9 @@ creation time, status, request fingerprint, resources, reservation state, SSH
 endpoint. World listings use creation order. The UUID also
 names the world's disk; neither a disk identifier nor a libvirt domain name is
 stored in the registry.
-`agent_tool_reports` stores `wtg tools` feedback and is deleted with its world.
+`world_mail` stores durable messages from managed world windows and is deleted with its world.
+The monotonic row ID is the mailbox cursor; `(world_id, window_id, client_message_id)` makes guest
+transport retries idempotent.
 The registry does not store live terminal observations, rendered terminal
 contents, Byobu window presentation, Codex lifecycle events, or agent-tool
 authorization state.

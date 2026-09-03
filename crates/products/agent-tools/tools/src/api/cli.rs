@@ -13,7 +13,7 @@ impl WtToolsCommand {
                 nonempty(&target.repository, "repository")?;
                 command.validate()?;
             }
-            Self::Feedback { command } => command.validate()?,
+            Self::World { command } => command.validate()?,
         }
         Ok(parsed)
     }
@@ -138,35 +138,15 @@ impl GitHostingCommand {
     }
 }
 
-impl WtToolsFeedbackCommand {
+impl WtToolsWorldCommand {
     fn validate(&self) -> Result<()> {
-        let description = match self {
-            Self::ReportWtToolBug { description }
-            | Self::ReportWtToolIssue { description }
-            | Self::SuggestWtToolImprovement { description }
-            | Self::RequestWtToolFeature { description } => description,
-        };
-        nonempty(description.trim(), "description")
+        let Self::SendMessageToParent { message } = self;
+        nonempty(message, "message")
     }
 
-    pub fn wt_tool_report(&self) -> (wt_workload_registry::AgentToolReportKind, &str) {
-        match self {
-            Self::ReportWtToolBug { description } => {
-                (wt_workload_registry::AgentToolReportKind::Bug, description)
-            }
-            Self::ReportWtToolIssue { description } => (
-                wt_workload_registry::AgentToolReportKind::Issue,
-                description,
-            ),
-            Self::SuggestWtToolImprovement { description } => (
-                wt_workload_registry::AgentToolReportKind::Improvement,
-                description,
-            ),
-            Self::RequestWtToolFeature { description } => (
-                wt_workload_registry::AgentToolReportKind::FeatureRequest,
-                description,
-            ),
-        }
+    pub fn parent_message(&self) -> &str {
+        let Self::SendMessageToParent { message } = self;
+        message
     }
 }
 

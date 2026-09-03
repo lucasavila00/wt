@@ -10,15 +10,15 @@ use wt_workload_registry::{ApiMutationStart, NewWorld, Resources, Store, StoreEr
 mod activity;
 mod gateway;
 mod lifecycle;
+mod mail;
 mod pane;
-mod reports;
 #[cfg(test)]
 mod tests;
 mod window;
 pub use gateway::AgentToolGateway;
+use lifecycle::stopped_message;
 
 const INSPECTION_RETRIES: usize = 6;
-
 pub struct Service<W, G> {
     store: Store,
     worker: W,
@@ -26,7 +26,6 @@ pub struct Service<W, G> {
     operations: Operations,
     capacity_limit: Resources,
 }
-
 impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
     pub fn execute_api_mutation(
         &self,
@@ -48,6 +47,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 ErrorCode::ServerMismatch,
                 "request was addressed to a different WT server",
             ));
+        }
+        if matches!(operation, Operation::ListWorldMail { .. }) {
+            return self
+                .execute_public_mail(owner, operation, progress)
+                .with_request_metadata(request_id, server_id, None);
         }
         if !window::is_public_operation(&operation) {
             return respond_error(ApiError::new(
@@ -229,8 +233,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             | Operation::SendWindowInput { .. }
             | Operation::StopWindow { .. }
             | Operation::DeleteWindow { .. } => unreachable!("handled above"),
-            Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
-            Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
+            Operation::ListWorldMail {
+                world_id,
+                after_id,
+                limit,
+            } => self.list_world_mail(owner, world_id, after_id, limit),
             Operation::ListPaneObservations => self.list_pane_observations(owner),
             Operation::ListGitActivity { query } => self.list_git_activity(owner, query),
             Operation::ListWtToolsActivity { query } => self.list_wt_tools_activity(owner, query),
@@ -377,9 +384,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             disk_usage_bytes.insert(world.world.world_id, usage);
         }
         let worlds = stored.into_iter().map(|stored| stored.world).collect();
-        let agent_tool_report_counts = self
+        let world_mail_counts = self
             .store
-            .agent_tool_report_counts(owner)
+            .world_mail_counts(owner)
             .map_err(map_store_error)?;
         let reserved = self.store.reserved_resources().map_err(map_store_error)?;
         Ok(Response::Worlds {
@@ -389,7 +396,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 total: protocol_resources(self.capacity_limit),
             },
             disk_usage_bytes,
-            agent_tool_report_counts,
+            world_mail_counts,
         })
     }
 
@@ -690,11 +697,4 @@ fn map_store_error(error: StoreError) -> ApiError {
         }),
         other => ApiError::new(ErrorCode::Internal, other.to_string()),
     }
-}
-
-fn stopped_message(reason: Option<&str>) -> String {
-    reason.map_or_else(
-        || "guest stopped".to_owned(),
-        |reason| format!("guest stopped ({reason})"),
-    )
 }

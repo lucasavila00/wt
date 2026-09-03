@@ -53,11 +53,13 @@ diesel::table! {
 }
 
 diesel::table! {
-    agent_tool_reports (id) {
-        id -> Integer,
+    world_mail (id) {
+        id -> BigInt,
+        client_message_id -> Text,
         world_id -> Text,
-        kind -> Text,
-        description -> Text,
+        window_id -> Text,
+        created_at_unix_ms -> BigInt,
+        message -> Text,
     }
 }
 
@@ -126,7 +128,7 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(agent_tool_reports -> worlds (world_id));
+diesel::joinable!(world_mail -> worlds (world_id));
 diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));
 diesel::joinable!(world_wt_tools_activity -> repositories (repository_id));
@@ -137,7 +139,7 @@ diesel::joinable!(windows -> worlds (world_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_mutation_results,
-    agent_tool_reports,
+    world_mail,
     repositories,
     server_metadata,
     world_git_activity,

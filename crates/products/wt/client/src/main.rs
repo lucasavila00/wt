@@ -15,8 +15,8 @@ mod api;
 mod code;
 mod create;
 mod git_author;
+mod messages;
 mod progress_toast;
-mod reports;
 mod shell;
 
 const TEST_SERVER_WARNING: &str = "WARNING: WT E2E TEST SERVER — test fixtures are installed.";
@@ -52,10 +52,8 @@ enum Command {
     Shell,
     /// Update managed OpenSSH inventory.
     Sync,
-    /// Show reports submitted about wt-tools.
-    Reports,
-    /// Clear reports submitted about wt-tools.
-    ClearReports,
+    /// Show retained messages from worlds.
+    Messages,
     /// Read one versioned JSON API request from standard input.
     Api,
     /// Show client and configured server build identities.
@@ -225,8 +223,7 @@ fn run_from(args: Vec<std::ffi::OsString>) -> Result<()> {
             let path = sync_complete_inventory(&config)?;
             println!("updated {}", path.display());
         }
-        Command::Reports => reports::show(&config)?,
-        Command::ClearReports => reports::clear(&config)?,
+        Command::Messages => messages::show(&config)?,
         Command::Diagnostics => print_diagnostics(&config),
         Command::Api => unreachable!("API requests return before loading interactive client state"),
     }

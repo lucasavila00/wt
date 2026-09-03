@@ -51,14 +51,10 @@ export type GitHostingCommand =
   | { action: "cancel_job"; job: string }
   | { action: "cancel_run"; run: string };
 
-/** Feedback about wt-tools itself. */
-export type WtToolsFeedbackCommand =
-  | { action: "report_wt_tool_bug"; description: string }
-  | { action: "report_wt_tool_issue"; description: string }
-  | { action: "suggest_wt_tool_improvement"; description: string }
-  | { action: "request_wt_tool_feature"; description: string };
+/** Untargeted message to the controller responsible for this world. */
+export type WtToolsWorldCommand = { action: "send_message_to_parent"; message: string };
 
 /** One JSON command accepted by wt-tools. */
 export type WtToolsCommand =
   | { target: GitHostingTarget; command: GitHostingCommand }
-  | { command: WtToolsFeedbackCommand };
+  | { command: WtToolsWorldCommand };

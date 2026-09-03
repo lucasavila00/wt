@@ -105,7 +105,7 @@ fn guest_lifecycle() {
     run_guest(
         &harness,
         &name,
-        r#"test "$(wtg tools '{"command":{"action":"report_wt_tool_issue","description":"KVM guest fixture"}}')" = '{"type":"confirmation","data":"Recorded wtg tools report for this world."}'"#,
+        r#"test "$(wtg tools '{"command":{"action":"send_message_to_parent","message":"KVM guest fixture"}}')" = '{"type":"confirmation","data":"Sent message 1 to parent."}'"#,
         "use agent tool gateway",
     );
     assert_eq!(

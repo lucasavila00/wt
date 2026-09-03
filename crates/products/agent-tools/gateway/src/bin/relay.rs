@@ -10,8 +10,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use wt_agent_tool_gateway::{
     copy_bidirectional, read_json_line, resolve_vsock_port, valid_byobu_pane_id,
-    valid_byobu_tmux_session, validate_pane_observations, write_json_line, ClientOperation,
-    ClientRequest, PaneObservation, TransportRequest, TransportResponse, VsockStream, RELAY_SOCKET,
+    valid_byobu_tmux_session, valid_byobu_window_id, validate_pane_observations, write_json_line,
+    ClientOperation, ClientRequest, PaneObservation, TransportRequest, TransportResponse,
+    VsockStream, RELAY_SOCKET,
 };
 use wt_control_protocol::{
     PaneCell, PaneColor, PaneFrame, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS,
@@ -92,13 +93,24 @@ pub fn run_from(
 }
 
 fn handle(mut client: UnixStream, gateway_unix: Option<PathBuf>, vsock_port: u32) -> Result<()> {
+    let peer_pid =
+        nix::sys::socket::getsockopt(&client, nix::sys::socket::sockopt::PeerCredentials)
+            .context("read caller credentials")?
+            .pid();
     let request: ClientRequest = read_json_line(&mut client)?;
     if matches!(request.operation, ClientOperation::PaneObservations { .. }) {
         bail!("pane observations are relay-internal");
     }
     let streams_git = matches!(&request.operation, ClientOperation::Git { .. });
+    let tmux_window_id = matches!(
+        &request.operation,
+        ClientOperation::SendMessageToParent { .. }
+    )
+    .then(|| caller_tmux_window_id(peer_pid))
+    .transpose()?;
     let request = TransportRequest {
         protocol_version: request.protocol_version,
+        tmux_window_id,
         operation: request.operation,
     };
     if let Some(path) = gateway_unix {
@@ -343,6 +355,7 @@ fn send_transport(
 ) -> Result<TransportResponse> {
     let request = TransportRequest {
         protocol_version: wt_agent_tool_gateway::PROTOCOL_VERSION,
+        tmux_window_id: None,
         operation,
     };
     if let Some(path) = gateway_unix {
@@ -353,6 +366,63 @@ fn send_transport(
     let mut stream = VsockStream::connect(2, vsock_port)?;
     write_json_line(&mut stream, &request)?;
     read_json_line(&mut stream).context("read pane observation response")
+}
+
+fn caller_tmux_window_id(pid: i32) -> Result<String> {
+    let ancestors = process_ancestors(pid)?;
+    let output = Command::new("/usr/bin/tmux")
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}\t#{window_id}\t#{pane_pid}",
+        ])
+        .output()
+        .context("list Byobu process membership")?;
+    if !output.status.success() {
+        bail!(
+            "list Byobu process membership failed: {}",
+            escaped(&output.stderr)
+        );
+    }
+    let mut matches = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| {
+            let line = std::str::from_utf8(line).ok()?;
+            let (session, rest) = line.split_once('\t')?;
+            let (window_id, pane_pid) = rest.split_once('\t')?;
+            let pane_pid = pane_pid.parse::<i32>().ok()?;
+            (valid_byobu_tmux_session(session)
+                && valid_byobu_window_id(window_id)
+                && ancestors.contains(&pane_pid))
+            .then(|| window_id.to_owned())
+        });
+    let window_id = matches
+        .next()
+        .context("caller is not a member of a WT-managed Byobu window")?;
+    if matches.next().is_some() {
+        bail!("caller belongs to multiple WT-managed Byobu windows");
+    }
+    Ok(window_id)
+}
+
+fn process_ancestors(mut pid: i32) -> Result<std::collections::BTreeSet<i32>> {
+    let mut ancestors = std::collections::BTreeSet::new();
+    while pid > 1 && ancestors.insert(pid) {
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat"))
+            .with_context(|| format!("read caller process {pid}"))?;
+        let (_, fields) = stat
+            .rsplit_once(") ")
+            .context("parse caller process status")?;
+        pid = fields
+            .split_whitespace()
+            .nth(1)
+            .context("caller process has no parent")?
+            .parse()
+            .context("parse caller parent PID")?;
+    }
+    Ok(ancestors)
 }
 
 fn escaped(bytes: &[u8]) -> String {
@@ -427,6 +497,13 @@ mod tests {
     fn observer_interval_has_twenty_five_percent_jitter() {
         assert_eq!(observer_interval(0), Duration::from_millis(1500));
         assert_eq!(observer_interval(u16::MAX), Duration::from_millis(2500));
+    }
+
+    #[test]
+    fn process_membership_starts_with_the_authenticated_peer() {
+        let pid = i32::try_from(std::process::id()).unwrap();
+        let ancestors = process_ancestors(pid).unwrap();
+        assert!(ancestors.contains(&pid));
     }
 
     #[test]

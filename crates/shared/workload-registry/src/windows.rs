@@ -189,24 +189,13 @@ impl Store {
         })
     }
 
-    /// Resolves a guest-native tmux window after the caller authenticated its world.
+    /// Resolves guest-supplied tmux provenance within an authenticated world.
     pub fn window_id_by_tmux(
         &self,
         world_id: WorldId,
         tmux_window_id: &str,
     ) -> Result<WindowId, StoreError> {
-        let value = self.registry.read(|connection| {
-            windows::table
-                .filter(windows::world_id.eq(world_id.to_string()))
-                .filter(windows::tmux_window_id.eq(tmux_window_id))
-                .select(windows::window_id)
-                .first::<String>(connection)
-                .optional()
-        })?;
-        value
-            .ok_or(StoreError::NotFound)?
-            .parse()
-            .map_err(|error| StoreError::InvalidData(format!("invalid window ID: {error}")))
+        self.registry.window_id_by_tmux(world_id, tmux_window_id)
     }
 
     pub fn activate_window(
@@ -580,6 +569,27 @@ impl Store {
                 .execute(connection)?;
             Ok(())
         })
+    }
+}
+
+impl crate::Registry {
+    pub fn window_id_by_tmux(
+        &self,
+        world_id: WorldId,
+        tmux_window_id: &str,
+    ) -> Result<WindowId, StoreError> {
+        let value = self.read(|connection| {
+            windows::table
+                .filter(windows::world_id.eq(world_id.to_string()))
+                .filter(windows::tmux_window_id.eq(tmux_window_id))
+                .select(windows::window_id)
+                .first::<String>(connection)
+                .optional()
+        })?;
+        value
+            .ok_or(StoreError::NotFound)?
+            .parse()
+            .map_err(|error| StoreError::InvalidData(format!("invalid window ID: {error}")))
     }
 }
 

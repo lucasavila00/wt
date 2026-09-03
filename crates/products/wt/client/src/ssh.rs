@@ -167,7 +167,7 @@ mod tests {
     fn world(name: &str, host_key: &str) -> ContextWorld {
         ContextWorld {
             context: "local".into(),
-            agent_tool_report_count: 0,
+            world_mail_count: 0,
             disk_usage_bytes: None,
             world: World {
                 world_id: Uuid::new_v4().into(),
@@ -266,7 +266,7 @@ mod tests {
             &client_config,
             &[ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world,
             }],
@@ -281,7 +281,7 @@ mod tests {
             &client_config,
             &[ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world: replacement_world,
             }],
@@ -325,7 +325,7 @@ mod tests {
             &local_config(),
             &[ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world,
             }],
@@ -366,7 +366,7 @@ mod tests {
             &local_config(),
             &[ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world,
             }],
@@ -466,7 +466,7 @@ mod tests {
             &local_config(),
             &[ContextWorld {
                 context: "local".into(),
-                agent_tool_report_count: 0,
+                world_mail_count: 0,
                 disk_usage_bytes: None,
                 world,
             }],
@@ -485,7 +485,7 @@ mod tests {
         std::env::set_var("HOME", temp.path());
         let world = |id: Uuid, context: &str| ContextWorld {
             context: context.into(),
-            agent_tool_report_count: 0,
+            world_mail_count: 0,
             disk_usage_bytes: None,
             world: World {
                 world_id: id.into(),
@@ -542,7 +542,7 @@ mod tests {
         std::env::set_var("HOME", temp.path());
         let world = |name: &str, host: &str| ContextWorld {
             context: "lab".into(),
-            agent_tool_report_count: 0,
+            world_mail_count: 0,
             disk_usage_bytes: None,
             world: World {
                 world_id: Uuid::new_v4().into(),

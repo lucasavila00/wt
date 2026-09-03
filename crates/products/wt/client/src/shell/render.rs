@@ -209,6 +209,7 @@ fn draw_control(frame: &mut Frame<'_>, model: &ShellModel, creation: Option<&Flo
     );
     super::control_overlay::draw_palette(frame, content, model.control().palette());
     super::control_overlay::draw_world_menu(frame, model);
+    super::control_overlay::draw_mailbox(frame, model);
     super::control_overlay::draw_help(frame, content, model);
 }
 

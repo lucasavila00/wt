@@ -53,15 +53,20 @@ impl ActivityRecorder {
         Ok(())
     }
 
-    fn record_agent_tool_report(
+    fn record_world_mail(
         &self,
         world_id: WorldId,
-        kind: wt_workload_registry::AgentToolReportKind,
-        description: &str,
-    ) -> Result<()> {
-        self.registry()?
-            .insert_agent_tool_report(world_id, kind, description)?;
-        Ok(())
+        tmux_window_id: &str,
+        client_message_id: Uuid,
+        message: &str,
+    ) -> Result<wt_workload_registry::WorldMail> {
+        let registry = self.registry()?;
+        let window_id = registry
+            .window_id_by_tmux(world_id, tmux_window_id)
+            .context("resolve managed window")?;
+        registry
+            .insert_world_mail(world_id, window_id, client_message_id, message)
+            .context("store world mail")
     }
 }
 
@@ -277,9 +282,9 @@ fn git_target<'a>(provider: &'a Provider, source: &'a GitSource) -> Result<GitTa
 }
 
 const HELP_PREFIX: &str = "\
-wtg tools reads and changes explicitly identified Git provider resources and records\n\
-feedback about wtg tools itself. It accepts exactly one JSON command object and\n\
-rejects unknown fields.\n\
+wtg tools reads and changes explicitly identified Git provider resources and sends\n\
+messages to the controller responsible for this world. It accepts exactly one JSON\n\
+command object and rejects unknown fields.\n\
 \n\
 USAGE:\n\
     wtg tools '<JSON>'\n\
@@ -297,13 +302,13 @@ const HELP_SUFFIX: &str = "\
 EXAMPLE:\n\
     wtg tools '{\"target\":{\"provider\":\"github\",\"repository\":\"acme/widget\"},\"command\":{\"action\":\"show_mr_for_branch\",\"branch\":\"wt/fix-login\"}}'\n\
     wtg tools --file command.json\n\
-    printf '%s\\n' '{\"command\":{\"action\":\"report_wt_tool_issue\",\"description\":\"example\"}}' | wtg tools -\n\
+    printf '%s\\n' '{\"command\":{\"action\":\"send_message_to_parent\",\"message\":\"example\"}}' | wtg tools -\n\
 \n\
 `show_mr_for_branch` returns the single open MR from the named branch in the target\n\
 repository. It fails when there is no match or multiple matches.\n\
 \n\
-The four wtg tools feedback actions omit `target` and store feedback against this world\n\
-without contacting the Git provider.\n\
+`send_message_to_parent` omits `target` and commits durable mail from the caller's\n\
+managed Byobu window without contacting the Git provider.\n\
 \n\
 Provider operations return one JSON result or error object. Help remains\n\
 plain text.\n\

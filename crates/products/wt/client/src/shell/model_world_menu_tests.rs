@@ -19,6 +19,7 @@ fn button_does_not_open_card_and_deletes_by_stable_identity() {
 
     let selected = model.worlds()[1].clone();
     model.reconcile_worlds(vec![selected.clone(), world("three")]);
+    model.handle_key(key(KeyCode::Down), area);
     let InputRoute::DeleteWorld(world) = model.handle_key(key(KeyCode::Enter), area) else {
         panic!("world menu did not request deletion");
     };
@@ -42,7 +43,7 @@ fn supports_mouse_selection_and_escape() {
 
     model.handle_mouse(mouse(card.right() - 2, card.y), area);
     let result = super::super::world_menu::menu_result_area(area);
-    let (_, route) = model.handle_mouse(mouse(result.x, result.y), area);
+    let (_, route) = model.handle_mouse(mouse(result.x, result.y + 1), area);
     let Some(InputRoute::DeleteWorld(world)) = route else {
         panic!("clicking Delete did not request deletion");
     };

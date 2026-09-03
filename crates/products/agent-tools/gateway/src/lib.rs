@@ -16,9 +16,9 @@ pub use gateway::{
     Provider,
 };
 pub use protocol::{
-    valid_byobu_pane_id, valid_byobu_tmux_session, validate_pane_observations, ClientOperation,
-    ClientRequest, ControlRequest, ControlResponse, PaneObservation, TransportRequest,
-    TransportResponse, PROTOCOL_VERSION,
+    valid_byobu_pane_id, valid_byobu_tmux_session, valid_byobu_window_id,
+    validate_pane_observations, ClientOperation, ClientRequest, ControlRequest, ControlResponse,
+    PaneObservation, TransportRequest, TransportResponse, PROTOCOL_VERSION,
 };
 pub use stream::{copy_bidirectional, read_json_line, write_json_line};
 pub use vsock::{VsockListener, VsockStream};
