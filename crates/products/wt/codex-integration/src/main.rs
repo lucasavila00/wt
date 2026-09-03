@@ -1,9 +1,12 @@
+mod app_server;
 mod focus;
 mod install;
+mod runtime;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::ffi::OsString;
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -28,6 +31,22 @@ enum Command {
         tmux_session: String,
         pane_id: String,
     },
+    /// Start a managed Codex thread and its visible Byobu window.
+    #[command(hide = true)]
+    RuntimeStart,
+    /// Inspect a managed Codex thread and its visible Byobu window.
+    #[command(hide = true)]
+    RuntimeInspect { thread_id: String },
+    /// Steer an active turn or start the next turn.
+    #[command(hide = true)]
+    RuntimeSend { thread_id: String },
+    /// Forward one Codex turn completion to the WT guest relay.
+    #[command(hide = true)]
+    WatchTurn {
+        thread_id: String,
+        turn_id: String,
+        pane_id: String,
+    },
 }
 
 #[allow(dead_code)]
@@ -50,7 +69,40 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             tmux_session,
             pane_id,
         } => println!("{}", focus::focus(&tmux_session, &pane_id)?),
+        Command::RuntimeStart => {
+            let message = read_stdin()?;
+            print_json(&runtime::start(&real_codex()?, &message)?)?;
+        }
+        Command::RuntimeInspect { thread_id } => {
+            print_json(&runtime::inspect(&real_codex()?, &thread_id)?)?;
+        }
+        Command::RuntimeSend { thread_id } => {
+            let message = read_stdin()?;
+            print_json(&runtime::send(&real_codex()?, &thread_id, &message)?)?;
+        }
+        Command::WatchTurn {
+            thread_id,
+            turn_id,
+            pane_id,
+        } => runtime::watch(&real_codex()?, &thread_id, &turn_id, &pane_id)?,
     }
+    Ok(())
+}
+
+fn read_stdin() -> Result<String> {
+    let mut value = String::new();
+    std::io::stdin()
+        .read_to_string(&mut value)
+        .context("read Codex message")?;
+    if value.is_empty() {
+        anyhow::bail!("Codex message is empty")
+    }
+    Ok(value)
+}
+
+fn print_json(value: &impl serde::Serialize) -> Result<()> {
+    serde_json::to_writer(std::io::stdout().lock(), value).context("encode runtime response")?;
+    println!();
     Ok(())
 }
 

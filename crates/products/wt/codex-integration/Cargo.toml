@@ -9,6 +9,8 @@ publish.workspace = true
 wt-agent-tool-gateway.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
