@@ -12,12 +12,11 @@ output. Diagnostics use standard error.
 Version 1 exposes these operations:
 
 - `create_world` and `delete_world` manage a world by immutable `world_id`.
-- `start_codex_session` starts an asynchronous Codex session in a visible Byobu window and returns
-  its runtime session handle.
-- `inspect_codex_session` returns the session's current runtime status and recent semantic
-  activity.
-- `send_to_codex_session` sends semantic input to the session's active turn or starts its next
-  turn.
+- `start_codex` starts an asynchronous Codex session in a visible Byobu window and returns its
+  Codex thread ID, initial turn ID, and pane metadata.
+- `inspect_codex` returns the thread's current status, active turn ID, pane metadata, and captured
+  terminal screen.
+- `send_codex_message` steers the active turn or starts the thread's next turn.
 - `read_world_mail` reads a bounded cursor page from a world's mailbox.
 
 Deleting an already absent world succeeds. ADR 0084 defines mailbox behavior, and ADR 0086 defines
@@ -29,7 +28,7 @@ the Codex session lifecycle.
   "request_id": "0199f65a-6758-7c13-818a-8e925b476d3e",
   "expected_server_id": "018efb7d-cf8b-70c1-a867-04e912f499a4",
   "context": "work",
-  "operation": "start_codex_session",
+  "operation": "start_codex",
   "world_id": "018f1e3d-95c0-7e46-8896-3d9b0abf62c8",
   "message": "Review the current change"
 }
@@ -43,7 +42,7 @@ still produce JSON and additionally write a diagnostic to standard error. Reques
 
 The client resolves `context` through its existing configuration and calls `wts api` locally or
 over SSH. Each server has a persistent `server_id`; `expected_server_id` binds later requests to the
-server that owns previously returned world IDs and runtime session handles.
+server that owns previously returned world and Codex thread IDs.
 
 `api_version` versions this public contract. Version 1 may add optional response fields. Clients
 ignore unknown response fields; WT rejects unknown request fields and unsupported versions. The
@@ -56,9 +55,9 @@ do not affect operation identity. Completed mutation results expire after 30 day
 are eligible for another attempt. Read responses describe current state and do not carry mutation
 expiration metadata.
 
-Session start and send responses acknowledge acceptance rather than waiting for a turn to finish.
-`inspect_codex_session` exposes the current in-memory view. Terminal results arrive through
-`read_world_mail`, which gives controllers a durable completion path even when their live API
+Codex start and send responses acknowledge acceptance rather than waiting for a turn to finish.
+`inspect_codex` reads the current guest runtime and terminal view. Terminal results arrive through
+`read_world_mail`, which gives controllers a durable completion path after their live API
 connection has ended.
 
 Each invocation starts one `wt api` process. For SSH contexts it starts one SSH command, and

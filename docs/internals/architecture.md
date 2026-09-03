@@ -56,10 +56,10 @@ those observations and keeps each world's complete latest snapshot only in
 memory. No live pane observation is registry state. No Codex hook or lifecycle
 tracker participates in live state.
 
-WT starts a guest Codex App Server runtime for each delegated session and runs the native Codex TUI
-with `--remote` in a dedicated window of the world's shared Byobu session. The server keeps the
-window, App Server, Codex thread, active turn, and recent semantic-event associations in memory.
-Start, inspect, and send operations use that runtime state; completed and failed turns publish
+Each world uses one guest-local Codex App Server daemon. WT runs the native Codex TUI with
+`--remote` in a dedicated window of the world's shared Byobu session for each delegated thread.
+App Server owns live thread and turn state, and a tmux pane option associates each visible TUI with
+its thread. Start, inspect, and send operations use that guest runtime; WT-started turns publish
 their terminal result through the durable world mailbox.
 
 ## Shell playback
@@ -105,5 +105,5 @@ endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
 that domain's name. Parent messages use this world identity and contain no
 window or process attribution. Terminal Codex results use the same mailbox and carry a versioned
-delivery payload that controllers can correlate with the runtime session. Session, window, thread,
-turn, and semantic-event associations remain runtime state.
+delivery payload that controllers can correlate with the Codex thread and turn. App Server and
+Byobu own the live execution and presentation state.

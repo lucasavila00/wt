@@ -21,10 +21,10 @@ start of the read. A consumer can therefore finish a finite scan while newer mes
 use the message ID as its import deduplication key.
 
 ADR 0086 uses the same mailbox for terminal Codex-session delivery. WT appends one terminal entry
-when a turn completes or fails. Its versioned message payload carries the runtime session handle,
-terminal status, and final assistant or error text so the controller can associate the result with
-the session it started. The payload is a delivery record; live window, App Server, and turn state
-remain runtime state.
+when a turn completes or fails. Its versioned message payload carries the Codex thread ID, turn ID,
+pane ID, terminal status, and final assistant or error text so the controller can associate the
+result with the session it started. The payload is a delivery record; live window, App Server, and
+turn state remain runtime state.
 
 Mailbox writes commit before they are acknowledged. Explicit guest messages and terminal session
 messages share the same ordering and read path. A message is limited to 64 MiB of UTF-8 text, and a
